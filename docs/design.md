@@ -237,10 +237,15 @@ COM add-in, registered with `install.ps1` (RegAsm).
   (`FileSaveAsNotify2`), CVC checks the file out and saves it in place
   (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
   to save under another name.
-- **Open files.** They can't be replaced on disk. Get latest closes the files it
-  updates and reopens the active one, and a check-out that needs the latest version
-  does the same. Check-out and check-in switch open documents between read-only and
-  editable (`SetReadOnlyState`).
+- **Open files.** SolidWorks holds the files it has open, including parts that an open
+  assembly uses, even after the part's own window is closed. Before get latest, undo,
+  or a check-out that needs the latest version replaces open files, SolidWorks lets go
+  of them (`ForceReleaseLocks`; drawings are closed), and afterwards reloads them in
+  place (`ReloadOrReplace`), so windows stay open and assemblies update. A file with
+  unsaved changes isn't replaced, except by an undo you've confirmed; one changed while
+  it was being replaced keeps its changes and isn't reloaded. These decisions use the
+  vault's current state, not the task pane's last refresh. Check-out and check-in
+  switch open documents between read-only and editable (`SetReadOnlyState`).
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 

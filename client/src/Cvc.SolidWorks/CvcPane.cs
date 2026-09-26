@@ -78,7 +78,7 @@ internal sealed class CvcPane : UserControl
             _rootBox,
             Row(_signInButton));
 
-        _checkOutButton = MakeButton("Check out", (_, _) => OnActiveDocument(CheckOutAsync));
+        _checkOutButton = MakeButton("Check out", (_, _) => OnActiveDocument(path => CheckOutAsync(new[] { path })));
         _checkInButton = MakeButton("Check in...", (_, _) => OnActiveDocument(path => CheckInAsync(new[] { path })));
         _undoButton = MakeButton("Undo check-out", (_, _) => OnActiveDocument(UndoAsync));
         _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
@@ -301,34 +301,21 @@ internal sealed class CvcPane : UserControl
         }
         else if (Ask($"You're changing {name}, but it isn't checked out to you, so you won't be able to save. Check it out now?") == DialogResult.Yes)
         {
-            await CheckOutAsync(path);
+            await CheckOutAsync(new[] { path });
         }
     }
 
-    private Task CheckOutAsync(string path) => RunAsync("Checking out", async workspace =>
+    private Task CheckOutAsync(IReadOnlyList<string> paths) => RunAsync("Checking out", async workspace =>
     {
-        var outdated = StatusOf(path)?.State == FileState.Outdated;
-        var reopen = outdated && _sw.IsOpen(path);
-        if (reopen)
-        {
-            if (_sw.HasUnsavedChanges(path))
-            {
-                throw new WorkspaceException(
-                    $"{Path.GetFileName(path)} has unsaved changes, and there's a newer version in the vault. "
-                    + "Save your work under another name, close the file, then check out.");
-            }
-            _sw.Close(path); // it's about to be replaced with the latest version
-        }
-        await workspace.CheckoutAsync(new[] { path });
-        if (reopen)
-        {
-            _sw.Open(path);
-        }
-        else
+        // Checking out an out-of-date file downloads the latest version first, over the open document.
+        var outdated = (await CurrentStatusAsync(workspace, paths)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
+        RefuseUnsaved(outdated, "check out");
+        await ReplacingAsync(outdated, () => workspace.CheckoutAsync(paths));
+        foreach (var path in paths)
         {
             _sw.SetReadOnly(path, false);
         }
-        return $"Checked out {Path.GetFileName(path)}.";
+        return paths.Count == 1 ? $"Checked out {Path.GetFileName(paths[0])}." : $"Checked out {Count(paths.Count, "file")}.";
     });
 
     private async Task CheckInAsync(IReadOnlyList<string> paths)
@@ -380,55 +367,43 @@ internal sealed class CvcPane : UserControl
     private Task UndoAsync(string path) => RunAsync("Undoing the check-out", async workspace =>
     {
         var name = Path.GetFileName(path);
-        var changed = StatusOf(path)?.State is FileState.Modified or FileState.Conflict || _sw.HasUnsavedChanges(path);
+        // What's on disk now: a save a moment ago may not be in the last refresh.
+        var replaced = (await CurrentStatusAsync(workspace, new[] { path })).Any(s => s.State is FileState.Modified or FileState.Conflict or FileState.Outdated);
+        var changed = replaced || _sw.HasUnsavedChanges(path);
         if (changed && Ask($"Undo the check-out of {name} and throw away your changes? A copy is kept in {workspace.Root}\\.cvc\\backup.") != DialogResult.Yes)
         {
             return null;
         }
-        var reopen = changed && _sw.IsOpen(path);
-        if (reopen)
-        {
-            _sw.Close(path);
-        }
-        var result = await workspace.UndoCheckoutAsync(new[] { path });
-        if (reopen)
-        {
-            _sw.Open(path);
-        }
-        else
-        {
-            _sw.SetReadOnly(path, true);
-        }
+        // You've agreed to lose unsaved changes too, so the document is reloaded regardless.
+        var result = await ReplacingAsync(changed ? new[] { path } : Array.Empty<string>(), () => workspace.UndoCheckoutAsync(new[] { path }), discardChanges: true);
+        _sw.SetReadOnly(path, true);
         return result.BackedUp.Count > 0 ? $"Undone. Your changes were saved to {result.BackedUp[0]}." : $"Undid the check-out of {name}.";
     });
 
     private Task GetLatestAsync(string path) => RunAsync("Getting the latest version", async workspace =>
     {
-        // Open files can't be replaced: close the ones being updated, then reopen the active one.
+        // The file and the parts it uses are updated in place, open or not.
         var involved = new List<string> { path };
         involved.AddRange(_sw.AllReferences(path));
-        var stale = involved.Where(p => StatusOf(p)?.State == FileState.Outdated && _sw.IsOpen(p)).ToList();
-        var unsaved = stale.Where(_sw.HasUnsavedChanges).ToList();
-        if (unsaved.Count > 0)
-        {
-            throw new WorkspaceException("Save or close these first: " + string.Join(", ", unsaved.Select(Path.GetFileName)));
-        }
-        var reopen = stale.Count > 0 && _sw.IsOpen(path);
-        if (stale.Count > 0)
-        {
-            _sw.Close(path);
-            stale.Where(_sw.IsOpen).ToList().ForEach(_sw.Close);
-        }
-        var result = await workspace.GetLatestAsync(new[] { path });
-        if (reopen)
-        {
-            _sw.Open(path);
-        }
-        return Summary(result);
+        var stale = (await CurrentStatusAsync(workspace, involved)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
+        RefuseUnsaved(stale, "get the latest version");
+        return Summary(await ReplacingAsync(stale, () => workspace.GetLatestAsync(new[] { path })));
     });
 
     private Task GetEverythingAsync() =>
-        RunAsync("Getting the latest versions", async workspace => Summary(await workspace.GetLatestAsync()));
+        RunAsync("Getting the latest versions", async workspace => Summary(await GetLatestUpdatingOpenAsync(workspace, null)));
+
+    /// <summary>
+    /// Get the latest versions of these files (or everything), updating open documents in place. Open
+    /// documents with unsaved changes are left alone and show up as files that couldn't be updated.
+    /// </summary>
+    private async Task<GetResult> GetLatestUpdatingOpenAsync(Workspace workspace, IReadOnlyList<string>? paths)
+    {
+        var open = _sw.OpenDocuments().Select(SolidWorksHost.PathOf).Where(p => p != null).Cast<string>();
+        var stale = (await CurrentStatusAsync(workspace, open))
+            .Where(s => s.State == FileState.Outdated && !_sw.HasUnsavedChanges(s.LocalPath)).Select(s => s.LocalPath).ToList();
+        return await ReplacingAsync(stale, () => workspace.GetLatestAsync(paths));
+    }
 
     // --- plumbing -----------------------------------------------------------------------------
 
@@ -513,6 +488,49 @@ internal sealed class CvcPane : UserControl
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Run a workspace operation that replaces these files while they're open in SolidWorks, which
+    /// holds them (and closing a part isn't enough when an open assembly uses it). SolidWorks lets go
+    /// of them first and reloads them after, so windows stay put and assemblies update. Unsaved changes
+    /// are thrown away only with discardChanges, when the user has agreed to that.
+    /// </summary>
+    private async Task<T> ReplacingAsync<T>(IReadOnlyCollection<string> files, Func<Task<T>> operation, bool discardChanges = false)
+    {
+        var released = _sw.Release(files);
+        try
+        {
+            return await operation();
+        }
+        finally
+        {
+            var kept = released.Reload(discardChanges);
+            if (kept.Count > 0)
+            {
+                Warn($"{string.Join(", ", kept.Select(Path.GetFileName))} changed while CVC was updating it, so SolidWorks still shows "
+                    + "the old version, with your changes. Save them under another name, then close and reopen the file to see the latest version.");
+            }
+        }
+    }
+
+    // A file about to be replaced with the latest version can't have unsaved changes: they'd be lost.
+    private void RefuseUnsaved(IEnumerable<string> replaced, string then)
+    {
+        var unsaved = replaced.Where(_sw.HasUnsavedChanges).Select(Path.GetFileName).ToList();
+        if (unsaved.Count > 0)
+        {
+            throw new WorkspaceException(
+                $"{string.Join(", ", unsaved)} {(unsaved.Count == 1 ? "has" : "have")} unsaved changes, and there's a newer version in the vault. "
+                + $"Close without saving, or save your changes under another name, then {then}.");
+        }
+    }
+
+    // The vault's state for these files now, not at the last refresh. Files outside the workspace have none.
+    private async Task<IReadOnlyList<FileStatus>> CurrentStatusAsync(Workspace workspace, IEnumerable<string> paths)
+    {
+        var inside = paths.Where(IsInWorkspace).ToList();
+        return inside.Count == 0 ? Array.Empty<FileStatus>() : await workspace.StatusAsync(inside);
     }
 
     /// <summary>
@@ -821,16 +839,10 @@ internal sealed class CvcPane : UserControl
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open", null, (_, _) => OpenSelected());
-        menu.Items.Add("Check out", null, (_, _) => Safely(() => RunAsync("Checking out", async workspace =>
-        {
-            var paths = SelectedPaths();
-            await workspace.CheckoutAsync(paths);
-            paths.ForEach(p => _sw.SetReadOnly(p, false));
-            return $"Checked out {Count(paths.Count, "file")}.";
-        })));
+        menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
         menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
         menu.Items.Add("Get latest", null, (_, _) => Safely(() => RunAsync("Getting the latest versions", async workspace =>
-            Summary(await workspace.GetLatestAsync(SelectedPaths())))));
+            Summary(await GetLatestUpdatingOpenAsync(workspace, SelectedPaths())))));
         return menu;
     }
 

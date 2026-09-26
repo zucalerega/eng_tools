@@ -41,8 +41,6 @@ internal sealed class SolidWorksHost
 
     public ModelDoc2? OpenDocument(string path) => _app.GetOpenDocumentByName(path) as ModelDoc2;
 
-    public bool IsOpen(string path) => OpenDocument(path) != null;
-
     public bool HasUnsavedChanges(string path) => OpenDocument(path)?.GetSaveFlag() == true;
 
     /// <summary>The files a SolidWorks file uses directly: an assembly's components, a drawing's models.</summary>
@@ -112,6 +110,34 @@ internal sealed class SolidWorksHost
     /// <summary>Close a document without saving it.</summary>
     public void Close(string path) => _app.CloseDoc(path);
 
+    /// <summary>
+    /// Have SolidWorks let go of these files, where they're open, so CVC can replace them. That includes
+    /// parts an open assembly uses, which closing the part's window wouldn't release. Unsaved changes in
+    /// them are lost when they're reloaded (<see cref="Released.Reload"/>), so callers check for those first.
+    /// </summary>
+    public Released Release(IEnumerable<string> paths)
+    {
+        var released = new Released(this);
+        foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            switch (OpenDocument(path))
+            {
+                case null:
+                    break;
+                case DrawingDoc:
+                    // ForceReleaseLocks is for parts and assemblies. Nothing uses a drawing, so closing it is enough.
+                    Close(path);
+                    released.Closed.Add(path);
+                    break;
+                case var document:
+                    document.ForceReleaseLocks();
+                    released.Documents.Add((document, path));
+                    break;
+            }
+        }
+        return released;
+    }
+
     public void Open(string path)
     {
         if (!IsSolidWorksFile(path))
@@ -132,4 +158,45 @@ internal sealed class SolidWorksHost
         ".slddrw" => swDocumentTypes_e.swDocDRAWING,
         _ => swDocumentTypes_e.swDocPART,
     };
+
+    /// <summary>Open files SolidWorks has let go of (see <see cref="Release"/>), to load again once replaced.</summary>
+    internal sealed class Released
+    {
+        private readonly SolidWorksHost _sw;
+
+        public Released(SolidWorksHost sw) => _sw = sw;
+
+        public List<(ModelDoc2 Document, string Path)> Documents { get; } = new List<(ModelDoc2, string)>();
+
+        public List<string> Closed { get; } = new List<string>();
+
+        /// <summary>
+        /// Load the files again, in place: read-only or editable to match the file on disk. A document
+        /// changed since it was released keeps its changes and isn't reloaded, unless discardChanges is
+        /// set; those are returned.
+        /// </summary>
+        public IReadOnlyList<string> Reload(bool discardChanges)
+        {
+            var kept = new List<string>();
+            foreach (var (document, path) in Documents)
+            {
+                if (!discardChanges && document.GetSaveFlag())
+                {
+                    kept.Add(path);
+                    continue;
+                }
+                var readOnly = !File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
+                var result = (swComponentReloadError_e)document.ReloadOrReplace(readOnly, path, true);
+                if (result is not (swComponentReloadError_e.swReloadOkay or swComponentReloadError_e.swDocumentNotChanged or swComponentReloadError_e.swReadOnlyChanged))
+                {
+                    Log.Error($"Reloading {path} after replacing it failed: {result}");
+                }
+            }
+            foreach (var path in Closed)
+            {
+                _sw.Open(path);
+            }
+            return kept;
+        }
+    }
 }

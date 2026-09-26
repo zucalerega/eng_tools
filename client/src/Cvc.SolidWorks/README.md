@@ -18,8 +18,9 @@ While you work:
 - **Check in an assembly** and the new parts it uses, and the parts you changed, go
   into the same check-in. Each is recorded with the version it used, and SolidWorks
   is asked what the assembly references.
-- **Getting the latest version** of an open file closes it, updates it, and reopens
-  it. Files with unsaved changes are never closed for you.
+- **Getting the latest version** of an open file updates it in place, along with the
+  parts it uses; an open assembly that uses an updated part updates too. Files with
+  unsaved changes are never replaced for you.
 
 ## Install
 
@@ -67,9 +68,10 @@ these on SolidWorks 2025:
    The new part goes in too, and `cvc history` on the assembly lists both references
    with their versions.
 7. With a newer version checked in elsewhere, click Get latest on the open file. It
-   closes, updates, and reopens.
+   updates in place, without closing.
 8. Undo a check-out that has changes. The file goes back to the vault's version, and
-   your copy is in `C:\CVC\.cvc\backup`.
+   your copy is in `C:\CVC\.cvc\backup`. Do it again with the file saved just before the
+   undo, and with an open assembly that uses the file: both work the same way.
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
    the CVC tab and the Check in dialog look as they do at 100%, only larger: no text is
    cut off, and the comment box is full size.

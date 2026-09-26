@@ -1,5 +1,5 @@
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
-import { Notice } from "./components";
+import { Notice, VaultMark } from "./components";
 import { folderFromUrl } from "./paths";
 import { Activity } from "./pages/Activity";
 import { Admin } from "./pages/Admin";
@@ -24,7 +24,8 @@ export function App() {
         <>
             <header className={`topbar ${adminMode ? "topbar-admin" : ""}`}>
                 <Link to="/" className="brand">
-                    CVC
+                    <VaultMark />
+                    <span className="wordmark">Vault</span>
                 </Link>
                 <nav className="nav" aria-label="Main">
                     {nav("/", "files", "Files")}
@@ -63,7 +64,7 @@ export function App() {
             <main>
                 {vault.error && vault.status === "ready" && (
                     <Notice tone="warning">
-                        Can't reach the CVC server ({vault.error}). Showing what was here; trying again.
+                        Can't reach the Vault server ({vault.error}). Showing what was here; trying again.
                     </Notice>
                 )}
                 <Page pathname={pathname} vault={vault} />

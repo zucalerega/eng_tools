@@ -19,7 +19,7 @@ internal sealed class Session : IDisposable
         var host = new SolidWorksHost(app);
         _pane = new CvcPane(host);
         _documents = new DocumentWatcher(host, _pane);
-        _taskPane = app.CreateTaskpaneView3(Icons.Write(), "CVC: check files in and out");
+        _taskPane = app.CreateTaskpaneView3(Icons.Write(), "Vault: check files in and out");
         _taskPane.DisplayWindowFromHandlex64(_pane.Handle.ToInt64());
         app.ActiveDocChangeNotify += OnActiveDocumentChanged;
         app.FileOpenPostNotify += OnFileOpened;

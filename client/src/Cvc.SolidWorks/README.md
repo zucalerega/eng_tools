@@ -1,6 +1,6 @@
-# CVC add-in for SolidWorks 2025
+# Vault add-in for SolidWorks 2025
 
-Check files in and out without leaving SolidWorks. The add-in adds a **CVC** tab to the
+Check files in and out without leaving SolidWorks. The add-in adds a **Vault** tab to the
 task pane with these parts:
 
 - **Active document:** its version and who has it checked out, with Check out,
@@ -20,7 +20,7 @@ task pane with these parts:
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
 
 While you work:
-- **Start editing a file you haven't checked out** and CVC offers to check it out.
+- **Start editing a file you haven't checked out** and Vault offers to check it out.
   Saving such a file also offers a check-out first, then saves it in place, or explains
   why it can't be saved (someone else has it, or there's a newer version) and offers to
   save your changes under another name.
@@ -32,8 +32,8 @@ While you work:
   unsaved changes are never replaced for you.
 - **Take over** a check-out from another computer: your own (you checked it out on the
   lab PC), or, if you're a lead of the folder or an admin, someone else's. Their changes
-  stay on their computer, and CVC tells them who took it over if they try to check in.
-- **Open in SolidWorks** from the web app: CVC gets the latest version, and the parts it
+  stay on their computer, and Vault tells them who took it over if they try to check in.
+- **Open in SolidWorks** from the web app: Vault gets the latest version, and the parts it
   uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
   `cvc-open.exe`, which install.ps1 registers for `cvc:` links.)
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
@@ -51,10 +51,10 @@ While you work:
    ```
    powershell -ExecutionPolicy Bypass -File install.ps1
    ```
-4. Start SolidWorks 2025. Open the CVC tab in the task pane, enter the server address,
+4. Start SolidWorks 2025. Open the Vault tab in the task pane, enter the server address,
    and sign in. Your browser opens; confirm there.
 
-If the CVC tab doesn't appear, check **Tools > Add-ins** and tick CVC (both boxes, so it
+If the Vault tab doesn't appear, check **Tools > Add-ins** and tick Vault (both boxes, so it
 loads at startup). To remove the add-in, run `uninstall.ps1` the same way. To update it,
 close SolidWorks and replace the folder's files; run `install.ps1` again only if the new
 version's release notes say so.
@@ -75,15 +75,15 @@ the development form as `you@example.com`.
 The add-in can't be tested automatically (that would need SolidWorks), so run through
 these on SolidWorks 2025:
 
-1. After installing, SolidWorks starts with the CVC tab, and `addin.log` says the add-in
+1. After installing, SolidWorks starts with the Vault tab, and `addin.log` says the add-in
    started.
 2. Sign in: your browser opens, you confirm, and the tab shows your name and
    `C:\CVC`.
 3. Save a new part into `C:\CVC\Test`. The tab says "New". Check it in with a comment,
    and the part turns read-only in SolidWorks.
-4. Start editing it. CVC offers a check-out; accept, save, and check in: it's now v2.
+4. Start editing it. Vault offers a check-out; accept, save, and check in: it's now v2.
 5. As a second person (another PC, or `cvc checkout` as someone else), check the part
-   out. The first PC shows who has it. Change the part there and save: CVC says who has
+   out. The first PC shows who has it. Change the part there and save: Vault says who has
    it, and offers to save your changes under another name.
 6. Make an assembly from a new part and an existing part, then check in the assembly.
    The new part goes in too, and `cvc history` on the assembly lists both references
@@ -94,16 +94,16 @@ these on SolidWorks 2025:
    your copy is in `C:\CVC\.cvc\backup`. Do it again with the file saved just before the
    undo, and with an open assembly that uses the file: both work the same way.
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
-   the CVC tab and the Check in dialog look as they do at 100%, only larger: no text is
+   the Vault tab and the Check in dialog look as they do at 100%, only larger: no text is
    cut off, and the comment box is full size.
 10. Create a new part, save it into `C:\CVC\Test`, and check it in. Without switching
-    windows, start editing it: CVC offers the check-out.
-11. Change a checked-in file, answer No when CVC offers the check-out, then save
-    (Ctrl+S). CVC offers the check-out again; Yes saves the file in place, with no Save
+    windows, start editing it: Vault offers the check-out.
+11. Change a checked-in file, answer No when Vault offers the check-out, then save
+    (Ctrl+S). Vault offers the check-out again; Yes saves the file in place, with no Save
     As dialog.
 12. As an admin (or a lead of the folder), open a file someone else has checked out: the
     tab offers Take over. Take it over; it's checked out to you. When they try to check it
-    in (`cvc checkin` as them), CVC says you took it over. Someone who isn't a lead doesn't
+    in (`cvc checkin` as them), Vault says you took it over. Someone who isn't a lead doesn't
     see Take over.
 13. In the web app, click Open in SolidWorks on an assembly that isn't downloaded here:
     SolidWorks comes to the front with it open, and its parts were downloaded too. Close

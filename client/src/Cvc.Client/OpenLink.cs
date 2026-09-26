@@ -56,25 +56,25 @@ public static class OpenLink
             || !string.Equals(uri.Scheme, Scheme, StringComparison.OrdinalIgnoreCase)
             || uri.AbsolutePath.Trim('/').Length > 0)
         {
-            throw new WorkspaceException("That isn't a CVC link to a file: " + link);
+            throw new WorkspaceException("That isn't a Vault link to a file: " + link);
         }
         var action = uri.Host.ToLowerInvariant() switch
         {
             "open" => LinkAction.Open,
             "new" => LinkAction.New,
-            _ => throw new WorkspaceException("That isn't a CVC link to a file: " + link),
+            _ => throw new WorkspaceException("That isn't a Vault link to a file: " + link),
         };
         var query = BrowserSignIn.ParseQuery(uri.Query);
         if (!query.TryGetValue("server", out var serverText)
             || !Uri.TryCreate(serverText, UriKind.Absolute, out var server)
             || (server.Scheme != Uri.UriSchemeHttps && server.Scheme != Uri.UriSchemeHttp))
         {
-            throw new WorkspaceException("The CVC link doesn't say which server it's from: " + link);
+            throw new WorkspaceException("The Vault link doesn't say which server it's from: " + link);
         }
         var path = VaultPathIn(query, "path");
         if (path == null)
         {
-            throw new WorkspaceException("The CVC link doesn't say which file: " + link);
+            throw new WorkspaceException("The Vault link doesn't say which file: " + link);
         }
         string? model = null;
         if (action == LinkAction.New)
@@ -82,7 +82,7 @@ public static class OpenLink
             var kind = Path.GetExtension(path).ToLowerInvariant();
             if (!NewKinds.Contains(kind))
             {
-                throw new WorkspaceException($"CVC starts new parts, assemblies, and drawings, not {Path.GetFileName(path)}");
+                throw new WorkspaceException($"Vault starts new parts, assemblies, and drawings, not {Path.GetFileName(path)}");
             }
             model = VaultPathIn(query, "model");
             if (kind == ".slddrw" && (model == null || !Models.Contains(Path.GetExtension(model).ToLowerInvariant())))

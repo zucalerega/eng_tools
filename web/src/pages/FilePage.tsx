@@ -102,7 +102,7 @@ export function FilePage({ id }: { id: number }) {
             {kind === "drawing" && file.uses.length === 0 && (
                 <Notice tone="warning">
                     This drawing isn't linked to the part or assembly it shows. Check it in again from SolidWorks, where
-                    CVC records what each drawing shows.
+                    Vault records what each drawing shows.
                 </Notice>
             )}
 

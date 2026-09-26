@@ -32,7 +32,7 @@ internal static class Program
             if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != "cvc"
                 || !(uri.Host.Equals("open", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("new", StringComparison.OrdinalIgnoreCase)))
             {
-                return Fail("This follows links from the CVC web app (Open in SolidWorks, New part). It was given: " + (link.Length > 0 ? link : "nothing"));
+                return Fail("This follows links from the Vault web app (Open in SolidWorks, New part). It was given: " + (link.Length > 0 ? link : "nothing"));
             }
             var problem = HandToAddIn(link);
             return problem.Length == 0 ? 0 : Fail(problem);
@@ -64,10 +64,10 @@ internal static class Program
         {
             return solidWorks.HasExited
                 ? "SolidWorks closed before it could open the file."
-                : "The CVC add-in isn't answering in SolidWorks. Check that it's on: Tools > Add-ins > CVC.";
+                : "The Vault add-in isn't answering in SolidWorks. Check that it's on: Tools > Add-ins > Vault.";
         }
         OpenPipe.Write(pipe, link);
-        return OpenPipe.Read(pipe) ?? "The CVC add-in stopped before answering. Details may be in %LOCALAPPDATA%\\CVC\\addin.log.";
+        return OpenPipe.Read(pipe) ?? "The Vault add-in stopped before answering. Details may be in %LOCALAPPDATA%\\CVC\\addin.log.";
     }
 
     private static Process? Start()
@@ -104,7 +104,7 @@ internal static class Program
 
     private static int Fail(string message)
     {
-        MessageBox.Show(message, "CVC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBox.Show(message, "Vault", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         return 1;
     }
 

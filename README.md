@@ -2,7 +2,9 @@
 
 CAD version control for the team's SolidWorks and STEP files: check out, check in,
 version history, and per-folder permissions, from SolidWorks, the command line, or
-the web. It replaces Kenesto.
+the web. It replaces Kenesto. People know it as **Vault**: that's its name in the web
+app and in SolidWorks, in the Yellow Jacket Space Program's colors. The code, the `cvc`
+command, and this repository keep the name CVC.
 
 > **Status:** early development. The server, the `cvc` command-line tool, and the web
 > app work and are tested. The SolidWorks 2025 add-in had its first run in SolidWorks in

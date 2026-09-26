@@ -86,7 +86,7 @@ export function NewFileDialog({
                 {model
                     ? `SolidWorks on this computer starts it from your default drawing template, with a view of ${model.name}`
                     : `SolidWorks on this computer starts it from your default ${kind} template`}
-                , saves it in your CVC workspace, and checks it in as version 1, checked out to you, so everyone sees
+                , saves it in your Vault workspace, and checks it in as version 1, checked out to you, so everyone sees
                 it's yours while you work on it.
             </p>
         </Dialog>
@@ -108,7 +108,7 @@ export function StartedNotice({ path, onDismiss }: { path: string; onDismiss: ()
     ) : (
         <Notice>
             Starting {path.slice(path.lastIndexOf("/") + 1)} in SolidWorks on this computer. It shows up here once
-            SolidWorks has saved it. (This needs the CVC add-in for SolidWorks.){" "}
+            SolidWorks has saved it. (This needs the Vault add-in for SolidWorks.){" "}
             <button type="button" className="button-small" onClick={onDismiss}>
                 Dismiss
             </button>

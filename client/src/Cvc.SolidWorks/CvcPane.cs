@@ -79,8 +79,8 @@ internal sealed class CvcPane : UserControl
         _signInButton = MakeButton("Sign in", (_, _) => Safely(SignInAsync));
         _setupView = Stack(
             null,
-            Heading("CVC"),
-            Caption("Sign in to the team's CVC server to check SolidWorks files in and out."),
+            Heading("Vault"),
+            Caption("Sign in to the team's Vault server to check SolidWorks files in and out."),
             Caption("Server address"),
             _serverBox,
             Caption("Workspace folder (use the same one on every computer)"),
@@ -231,7 +231,7 @@ internal sealed class CvcPane : UserControl
         var answer = MessageBox.Show(
             this,
             $"{name} isn't checked out to you.\n\nYes: check it out and save it.\nNo: save your changes under another name.",
-            "CVC",
+            "Vault",
             MessageBoxButtons.YesNoCancel,
             MessageBoxIcon.Question);
         return answer switch
@@ -279,11 +279,11 @@ internal sealed class CvcPane : UserControl
         var workspace = _workspace;
         if (workspace == null)
         {
-            return "Sign in to CVC in SolidWorks first: open the CVC tab in the task pane.";
+            return "Sign in to Vault in SolidWorks first: open the Vault tab in the task pane.";
         }
         if (!SameServer(workspace.Server, request.Server))
         {
-            return $"That link is for the CVC server at {request.Server}, but this computer's workspace is for {workspace.Server}.";
+            return $"That link is for the Vault server at {request.Server}, but this computer's workspace is for {workspace.Server}.";
         }
         var path = workspace.ToLocalPath(request.VaultPath);
         SolidWorksHost.BringToFront();
@@ -433,7 +433,7 @@ internal sealed class CvcPane : UserControl
         var question = other.User.Id == _me?.Id
             ? $"Move your check-out of {name} from {other.Host} to this computer? Changes you made on {other.Host} stay there."
             : $"Take over {other.User.Name}'s check-out of {name}? It will be checked out to you here, and their check-out ends. "
-                + $"Their changes stay on {other.Host}, and CVC tells them what happened if they try to check in.";
+                + $"Their changes stay on {other.Host}, and Vault tells them what happened if they try to check in.";
         if (Ask(question) == DialogResult.Yes)
         {
             await CheckOutAsync(new[] { path }, force: true);
@@ -467,7 +467,7 @@ internal sealed class CvcPane : UserControl
             var answer = MessageBox.Show(
                 this,
                 "Save changes before checking in?\n\n" + string.Join("\n", unsaved.Select(Path.GetFileName)),
-                "CVC",
+                "Vault",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question);
             if (answer == DialogResult.Cancel)
@@ -653,7 +653,7 @@ internal sealed class CvcPane : UserControl
             var kept = released.Reload(discardChanges);
             if (kept.Count > 0)
             {
-                Warn($"{string.Join(", ", kept.Select(Path.GetFileName))} changed while CVC was updating it, so SolidWorks still shows "
+                Warn($"{string.Join(", ", kept.Select(Path.GetFileName))} changed while Vault was updating it, so SolidWorks still shows "
                     + "the old version, with your changes. Save them under another name, then close and reopen the file to see the latest version.");
             }
         }
@@ -686,7 +686,7 @@ internal sealed class CvcPane : UserControl
     {
         if (!_gate.Wait(0))
         {
-            Warn("CVC is busy. Try saving again in a moment.");
+            Warn("Vault is busy. Try saving again in a moment.");
             return false;
         }
         try
@@ -888,7 +888,7 @@ internal sealed class CvcPane : UserControl
         }
         if (!IsInWorkspace(path))
         {
-            return ($"Not in the CVC workspace. Save it under {_workspace.Root} to version it.", Attention);
+            return ($"Not in the Vault workspace. Save it under {_workspace.Root} to version it.", Attention);
         }
         if (status == null)
         {
@@ -986,9 +986,9 @@ internal sealed class CvcPane : UserControl
         _message.ForeColor = color;
     }
 
-    private void Warn(string text) => MessageBox.Show(this, text, "CVC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    private void Warn(string text) => MessageBox.Show(this, text, "Vault", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
-    private DialogResult Ask(string question) => MessageBox.Show(this, question, "CVC", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+    private DialogResult Ask(string question) => MessageBox.Show(this, question, "Vault", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
     /// <summary>Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses.</summary>
     private async Task OpenAsync(IReadOnlyList<string> paths)

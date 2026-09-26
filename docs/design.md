@@ -258,7 +258,7 @@ on top of it.
 against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework 4.8
 COM add-in, registered with `install.ps1` (RegAsm).
 
-- **Task pane.** Everything is in the CVC tab: sign-in, the active document's status
+- **Task pane.** Everything is in the Vault tab: sign-in, the active document's status
   and actions (including opening its drawing), and two views: the files that need
   attention, and Browse, the whole vault as a tree (`Workspace.BrowseAsync`, a
   `VaultTree`) in which every file says whether it's checked in, assemblies open up into
@@ -329,6 +329,11 @@ cookie, and sends `X-CVC-Request` on every request.
   server checks every one of them; the app only hides what your role can't do.
 - **Open in SolidWorks** links to `cvc://open?server=…&path=…`, which the add-in's
   installer registers on Windows PCs.
+- **Branding:** the app calls itself Vault, in the Yellow Jacket Space Program's colors:
+  near-black, white, and dark blue, with its gold. Its mark is a vault door crossed by a
+  gold orbit, after the team's logo (`VaultMark`); the favicon, the server's sign-in
+  pages, and the add-in's task pane icon draw the same shapes. The code, the `cvc`
+  command, and the repository keep the name CVC.
 - **New files:** New part and New assembly in a folder you can edit, and New drawing on
   a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this

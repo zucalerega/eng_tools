@@ -5,6 +5,33 @@ import { kindOf, opensInSolidWorks } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
+/**
+ * Vault's mark: a vault door (an octagon with a wheel) crossed by a gold orbit, after the Yellow Jacket
+ * Space Program's logo. The door takes the text color; the favicon in index.html and the server's
+ * sign-in page draw the same shapes.
+ */
+export function VaultMark({ size = 30 }: { size?: number }) {
+    return (
+        <svg className="vault-mark" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+            <g fill="none" stroke="currentColor">
+                <polygon
+                    points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 41.2,9.8 54.2,22.8"
+                    strokeWidth="5"
+                />
+                <circle cx="32" cy="32" r="12.5" strokeWidth="3" />
+                <path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" strokeWidth="3" />
+            </g>
+            <g fill="currentColor">
+                <circle cx="32" cy="32" r="4.5" />
+                <circle cx="32" cy="14.5" r="2.8" />
+                <circle cx="16.8" cy="40.8" r="2.8" />
+                <circle cx="47.2" cy="40.8" r="2.8" />
+            </g>
+            <path className="vault-orbit" d="M4 57Q42 52 60 5Q36 45 4 57Z" />
+        </svg>
+    );
+}
+
 export function FileIcon({ name }: { name: string }) {
     const kind = kindOf(name);
     return (
@@ -65,7 +92,7 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
         <a
             className={compact ? "button button-small" : "button button-primary"}
             href={solidWorksLink("open", path)}
-            title="Needs the CVC add-in for SolidWorks on this computer"
+            title="Needs the Vault add-in for SolidWorks on this computer"
         >
             Open in SolidWorks
         </a>

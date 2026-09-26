@@ -1,13 +1,18 @@
+/* Vault, in the Yellow Jacket Space Program's colors: near-black, white, and dark blue, with its gold. */
 :root {
     color-scheme: light dark;
-    --bg: #f6f7f9;
+    --bg: #f2f4f8;
     --surface: #ffffff;
-    --text: #1c2128;
-    --muted: #5f6b7a;
-    --border: #d9dee5;
-    --row-hover: #f2f5f9;
-    --accent: #1f6feb;
-    --accent-soft: #e5efff;
+    --text: #0d1726;
+    --muted: #5a667a;
+    --border: #d6dce6;
+    --row-hover: #edf1f7;
+    --accent: #1c4b8f;
+    --accent-soft: #e1eaf7;
+    --primary: #1c4b8f; /* buttons: dark blue, with white text */
+    --heading: #0b1b33;
+    --topbar: #08111f;
+    --gold: #e0a500;
     --danger: #cf222e;
     --danger-soft: #ffebe9;
     --warning: #9a6700;
@@ -16,6 +21,7 @@
     --admin: #bc4c00;
     --admin-soft: #fff1e5;
     --radius: 6px;
+    --font-brand: Bahnschrift, "DIN Alternate", "DIN Next", Rubik, "Segoe UI", system-ui, sans-serif;
     font-family:
         system-ui,
         -apple-system,
@@ -28,14 +34,17 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg: #0f1216;
-        --surface: #161b22;
-        --text: #e6edf3;
-        --muted: #8d96a0;
-        --border: #30363d;
-        --row-hover: #1c232c;
-        --accent: #4493f8;
-        --accent-soft: #15253d;
+        --bg: #05080f;
+        --surface: #0c1422;
+        --text: #e6ecf5;
+        --muted: #8b97ab;
+        --border: #1d2940;
+        --row-hover: #111c2f;
+        --accent: #6b9ae6;
+        --accent-soft: #13233d;
+        --primary: #2459a8;
+        --heading: #e0a500;
+        --topbar: #03060c;
         --danger: #f85149;
         --danger-soft: #3a1618;
         --warning: #d29922;
@@ -66,12 +75,19 @@ a:hover {
 }
 
 h1 {
+    font-family: var(--font-brand);
     font-size: 1.5rem;
+    font-weight: 600;
     margin: 0;
 }
 
 h2 {
-    font-size: 1.1rem;
+    font-family: var(--font-brand);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--heading);
     margin: 1.75rem 0 0.6rem;
 }
 
@@ -83,50 +99,98 @@ main {
 
 /* --- top bar --------------------------------------------------------------------------------- */
 
+/* Always dark, like the team's site: white type, the current page underlined in gold. */
 .topbar {
     position: sticky;
     top: 0;
     z-index: 10;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-    padding: 0 1rem;
-    height: 3.25rem;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    gap: 1.75rem;
+    padding: 0 1.25rem;
+    height: 3.5rem;
+    background: var(--topbar);
+    color: #fff;
+    border-bottom: 3px solid var(--gold);
 }
 
 .topbar-admin {
-    border-bottom: 3px solid var(--admin);
+    border-bottom-color: var(--admin);
 }
 
 .brand {
-    font-weight: 800;
-    font-size: 1.1rem;
-    letter-spacing: 0.04em;
-    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: #fff;
+}
+
+.brand:hover {
+    text-decoration: none;
+}
+
+.vault-mark {
+    flex: none;
+    color: #fff;
+}
+
+.vault-orbit {
+    fill: var(--gold);
+    stroke: var(--topbar);
+    stroke-width: 2.5;
+    paint-order: stroke;
+}
+
+.wordmark {
+    font-family: var(--font-brand);
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
 }
 
 .nav {
     display: flex;
+    align-self: stretch;
     gap: 0.25rem;
     flex: 1;
 }
 
-.nav a,
+.nav a {
+    display: flex;
+    align-items: center;
+    padding: 0 0.7rem;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -3px;
+    color: rgb(255 255 255 / 72%);
+    font-family: var(--font-brand);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.nav a:hover {
+    color: #fff;
+    text-decoration: none;
+}
+
+.nav a[aria-current="page"] {
+    color: #fff;
+    border-bottom-color: var(--gold);
+}
+
 .tabs a {
     padding: 0.35rem 0.7rem;
     border-radius: var(--radius);
     color: var(--muted);
 }
 
-.nav a:hover,
 .tabs a:hover {
     background: var(--row-hover);
     text-decoration: none;
 }
 
-.nav a[aria-current="page"],
 .tabs a[aria-current="page"] {
     color: var(--text);
     background: var(--accent-soft);
@@ -143,12 +207,22 @@ main {
     margin: 0;
 }
 
+.topbar-end button {
+    background: transparent;
+    border-color: rgb(255 255 255 / 35%);
+    color: #fff;
+}
+
+.topbar-end button:hover:not(:disabled) {
+    border-color: #fff;
+}
+
 .me {
-    color: var(--muted);
+    color: rgb(255 255 255 / 72%);
 }
 
 .admin-switch {
-    color: var(--admin);
+    color: var(--gold);
     font-weight: 600;
 }
 
@@ -559,8 +633,8 @@ button:disabled {
 }
 
 .button-primary {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--primary);
+    border-color: var(--primary);
     color: #fff;
 }
 
@@ -668,6 +742,10 @@ select {
 
 .dialog h2 {
     margin: 0 0 0.75rem;
+    font-size: 1.1rem;
+    letter-spacing: normal;
+    text-transform: none; /* titles name files: keep their case */
+    color: var(--text);
 }
 
 .dialog-actions {

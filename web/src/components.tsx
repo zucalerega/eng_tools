@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useId, useRef, type ReactNode } from "react";
-import type { Account, Lock } from "./api";
+import type { Account, Lock, VaultFile } from "./api";
 import { formatAgo, formatTime } from "./format";
 import { kindOf, opensInSolidWorks } from "./paths";
 
@@ -27,17 +27,24 @@ export function Time({ at }: { at: string }) {
 }
 
 /** "Checked out by Alice on ALICE-PC, 2 hours ago" (or by you). */
-export function LockLabel({ lock, me, short = false }: { lock: Lock; me: Account | null; short?: boolean }) {
-    const who = lock.user.id === me?.id ? "you" : lock.user.name;
+export function LockLabel({ lock, me }: { lock: Lock; me: Account | null }) {
     return (
         <span className={`lock ${lock.user.id === me?.id ? "lock-mine" : ""}`}>
-            {short ? `${who} on ${lock.host}` : `Checked out by ${who} on ${lock.host}`}
-            {short ? null : (
-                <>
-                    {", "}
-                    <Time at={lock.since} />
-                </>
-            )}
+            Checked out by {lock.user.id === me?.id ? "you" : lock.user.name} on {lock.host}, <Time at={lock.since} />
+        </span>
+    );
+}
+
+/** In lists: "Checked in", or "Checked out by Alice on ALICE-PC" (since when is in its tooltip). */
+export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null }) {
+    const lock = file.checked_out;
+    if (!lock) {
+        return <span className="checked-in">Checked in</span>;
+    }
+    const mine = lock.user.id === me?.id;
+    return (
+        <span className={`lock ${mine ? "lock-mine" : ""}`} title={`Since ${formatTime(lock.since)}`}>
+            Checked out by {mine ? "you" : lock.user.name} on {lock.host}
         </span>
     );
 }

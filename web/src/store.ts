@@ -18,6 +18,8 @@ export interface VaultState {
     folders: ReadonlyMap<string, Folder>; // by path key
     files: ReadonlyMap<number, VaultFile>; // by id
     children: ReadonlyMap<string, Contents>; // by the path key of the folder they're in ("" is the top)
+    usedBy: ReadonlyMap<number, VaultFile[]>; // by id: the files whose latest version uses it, by name
+    checkedOut: ReadonlyMap<string, number>; // by folder path key: files checked out in it, at any depth
     revision: number; // goes up whenever anything you can see changes
 }
 
@@ -32,6 +34,8 @@ export class VaultStore {
         folders: new Map(),
         files: new Map(),
         children: new Map(),
+        usedBy: new Map(),
+        checkedOut: new Map(),
         revision: 0,
     };
     private readonly listeners = new Set<() => void>();
@@ -143,7 +147,7 @@ export class VaultStore {
             rootRole,
             folders,
             files,
-            children: group(folders, files),
+            ...index(folders, files),
             revision: this.state.revision + 1,
         });
     }
@@ -157,7 +161,12 @@ export class VaultStore {
 const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 
-function group(folders: ReadonlyMap<string, Folder>, files: ReadonlyMap<number, VaultFile>): Map<string, Contents> {
+// What each folder holds, where each file is used, and where things are checked out: worked out once
+// per change, so pages never search the whole vault while they draw.
+function index(
+    folders: ReadonlyMap<string, Folder>,
+    files: ReadonlyMap<number, VaultFile>,
+): Pick<VaultState, "children" | "usedBy" | "checkedOut"> {
     const children = new Map<string, Contents>();
     const inFolder = (path: string) => {
         const key = pathKey(path);
@@ -168,13 +177,32 @@ function group(folders: ReadonlyMap<string, Folder>, files: ReadonlyMap<number, 
         }
         return found;
     };
+    const usedBy = new Map<number, VaultFile[]>();
+    const checkedOut = new Map<string, number>();
     folders.forEach((folder) => inFolder(parentOf(folder.path)).folders.push(folder));
-    files.forEach((file) => inFolder(parentOf(file.path)).files.push(file));
+    files.forEach((file) => {
+        inFolder(parentOf(file.path)).files.push(file);
+        for (const use of file.uses) {
+            const parents = usedBy.get(use.file_id);
+            if (parents) {
+                parents.push(file);
+            } else {
+                usedBy.set(use.file_id, [file]);
+            }
+        }
+        if (file.checked_out) {
+            for (let folder = parentOf(file.path); folder !== ""; folder = parentOf(folder)) {
+                const key = pathKey(folder);
+                checkedOut.set(key, (checkedOut.get(key) ?? 0) + 1);
+            }
+        }
+    });
     children.forEach((contents) => {
         contents.folders.sort(byName);
         contents.files.sort(byName);
     });
-    return children;
+    usedBy.forEach((parents) => parents.sort(byName));
+    return { children, usedBy, checkedOut };
 }
 
 export const StoreContext = createContext<VaultStore | null>(null);

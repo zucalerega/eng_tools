@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAdminMode } from "../admin";
-import { api, type FileDetail, type Reference } from "../api";
-import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, Time } from "../components";
+import { api, type FileDetail, type VaultFile } from "../api";
+import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
-import { fileUrl, parentOf } from "../paths";
+import { fileUrl, kindOf, parentOf } from "../paths";
 import { Link } from "../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
+import { parentsOf, StructureTree, UsedVersion } from "../structure";
 import { Breadcrumbs } from "./Browse";
 
 type Asking = { action: "release" } | { action: "revert"; version: number } | null;
@@ -44,7 +45,7 @@ export function FilePage({ id }: { id: number }) {
     const holder = lock && lock.user.id !== vault.me?.id ? lock : null; // checked out by someone else
     const canLead = atLeast(role, "lead");
     const canRevert = atLeast(role, "editor") && (!holder || (adminMode && canLead));
-    const latest = detail.versions[0];
+    const kind = kindOf(file.name);
 
     async function act(action: () => Promise<unknown>) {
         setBusy(true);
@@ -97,6 +98,38 @@ export function FilePage({ id }: { id: number }) {
             </header>
 
             {problem && <Notice tone="error">{problem}</Notice>}
+            {kind === "drawing" && file.uses.length === 0 && (
+                <Notice tone="warning">
+                    This drawing isn't linked to the part or assembly it shows. Check it in again from SolidWorks, where
+                    CVC records what each drawing shows.
+                </Notice>
+            )}
+
+            {(kind === "part" || kind === "assembly") && <Drawings model={file} />}
+            <div className="columns">
+                <section>
+                    <h2>{kind === "assembly" ? "Contains" : kind === "drawing" ? "Shows" : "Uses"}</h2>
+                    <StructureTree
+                        file={file}
+                        direction="down"
+                        empty={`v${file.version} doesn't use other files in the vault.`}
+                    />
+                </section>
+                {kind !== "drawing" && (
+                    <section>
+                        <h2>Used in</h2>
+                        <StructureTree
+                            file={file}
+                            direction="up"
+                            empty={
+                                kind === "assembly"
+                                    ? "No other assembly uses it: it's a top-level assembly."
+                                    : "No assembly uses it."
+                            }
+                        />
+                    </section>
+                )}
+            </div>
 
             <h2>History</h2>
             <table className="table history">
@@ -148,33 +181,6 @@ export function FilePage({ id }: { id: number }) {
                 </tbody>
             </table>
 
-            <div className="columns">
-                <section>
-                    <h2>Uses</h2>
-                    {latest && latest.references.length > 0 ? (
-                        <ReferenceList references={latest.references} />
-                    ) : (
-                        <p className="muted">v{file.version} doesn't use other files.</p>
-                    )}
-                </section>
-                <section>
-                    <h2>Used by</h2>
-                    {detail.used_by.length > 0 ? (
-                        <ul className="plain">
-                            {detail.used_by.map(({ file: parent, uses_version }) => (
-                                <li key={parent.id}>
-                                    <FileIcon name={parent.name} />
-                                    <Link to={fileUrl(parent.id)}>{parent.path}</Link>
-                                    <span className="muted"> uses v{uses_version}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <p className="muted">Nothing in the vault uses this file.</p>
-                    )}
-                </section>
-            </div>
-
             {asking?.action === "release" && holder && (
                 <Dialog
                     title={`Release ${holder.user.name}'s check-out?`}
@@ -219,26 +225,40 @@ export function FilePage({ id }: { id: number }) {
     );
 }
 
-function ReferenceList({ references }: { references: Reference[] }) {
+/** A part's or assembly's drawings, each with the version of it that it shows. */
+function Drawings({ model }: { model: VaultFile }) {
     const vault = useVault();
+    const heading = useId();
+    const folder = parentOf(model.path);
+    const drawings = parentsOf(vault, model).filter((parent) => kindOf(parent.file.name) === "drawing");
     return (
-        <ul className="plain">
-            {references.map((reference) => {
-                const now = vault.files.get(reference.file_id);
-                return (
-                    <li key={reference.file_id}>
-                        <FileIcon name={reference.path} />
-                        <Link to={fileUrl(reference.file_id)}>{reference.path}</Link>
-                        <span className="muted">
-                            {" "}
-                            v{reference.version}
-                            {reference.deleted
-                                ? " (deleted since)"
-                                : now && now.version !== reference.version && ` (now v${now.version})`}
-                        </span>
-                    </li>
-                );
-            })}
-        </ul>
+        <section aria-labelledby={heading}>
+            <h2 id={heading}>Drawings</h2>
+            {drawings.length === 0 ? (
+                <p className="muted">There's no drawing of {model.name} yet.</p>
+            ) : (
+                <ul className="tree">
+                    {drawings.map(({ use, file: drawing }) => (
+                        <li key={drawing.id}>
+                            <span className="tree-row">
+                                <span className="disclosure-space" />
+                                <Link to={fileUrl(drawing.id)} className="name">
+                                    <FileIcon name={drawing.name} />
+                                    {drawing.name}
+                                </Link>
+                                {parentOf(drawing.path) !== folder && (
+                                    <span className="muted">in {parentOf(drawing.path) || "the top folder"}</span>
+                                )}
+                                <span className="muted">
+                                    shows <UsedVersion used={use} user={drawing.name} part={model} />
+                                </span>
+                                <StatusLabel file={drawing} me={vault.me} />
+                                <OpenInSolidWorks path={drawing.path} compact />
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
     );
 }

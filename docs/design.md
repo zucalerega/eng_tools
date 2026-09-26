@@ -294,9 +294,20 @@ cookie, and sends `X-CVC-Request` on every request.
   feed (`GET /api/sync`, as the clients do) and asks it for changes every few seconds
   while the page is visible, so browsing and searching need no more requests, and
   check-ins and check-outs on anyone's PC show up within seconds.
-- **Pages:** files (browse and search), a file (history, downloads, what it uses and
-  what uses it), checked out (who has what), activity, and admin (people for admins;
-  access for admins and folder leads).
+- **Pages:**
+  - Files: browse and search. Every file says whether it's checked in, or who has it
+    checked out on which computer, and every folder how many files in it are checked
+    out. Assemblies (and drawings) open up to show what they use, level by level, each
+    with its own status; parts and assemblies link to their drawings.
+  - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
+    into its sub-assemblies and parts, wherever those are kept.
+  - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
+    the top-level ones, its drawings, and its history, with downloads.
+  - Checked out (who has what), activity, and admin (people for admins; access for
+    admins and folder leads).
+
+  All of it comes from the sync feed's `uses`, so a check-in anywhere shows up in every
+  tree within seconds.
 - **Admin mode**, a switch for admins and folder leads, remembered per browser: it adds
   releasing someone's check-out and reverting a file someone has checked out. The
   server checks every one of them; the app only hides what your role can't do.

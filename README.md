@@ -23,9 +23,10 @@ the web. It replaces Kenesto.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
 - **Sign in with Google.** An admin approves new accounts.
-- **See everything on the web:** browse and search the vault, see each file's history
-  and who has what checked out, download any version, and follow the activity as it
-  happens. Admins and folder leads can switch on admin mode to release someone's
+- **See everything on the web:** browse and search the vault; see what each assembly
+  contains and which assemblies each part is in, at every level, and whether each file
+  is checked in; see each file's history and drawings and who has what checked out;
+  download any version; and follow the activity as it happens. Admins and folder leads can switch on admin mode to release someone's
   check-out or revert a file they have checked out.
 
 ## Layout

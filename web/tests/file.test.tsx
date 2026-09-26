@@ -18,13 +18,37 @@ test("a file's page shows its history and what it uses, and follows check-outs l
 
     renderApp(team.chief, fileUrl(can!.id));
     expect(await screen.findByText("case with its grain")).toBeTruthy();
-    const uses = screen.getByRole("heading", { name: "Uses" }).parentElement!;
-    expect(within(uses).getByRole("link", { name: `${team.folder}/Motor/Grain.SLDPRT` })).toBeTruthy();
-    expect(within(uses).getByText(/v1 \(now v2\)/)).toBeTruthy();
+    const contains = screen.getByRole("heading", { name: "Contains" }).parentElement!;
+    const grain = within(contains).getByRole("link", { name: "Grain.SLDPRT" }).closest("li")!;
+    expect(grain.textContent).toContain("v1 (now v2)");
+    expect(within(grain).getByText("Checked in")).toBeTruthy();
 
     // Someone checks it out on their PC: the page shows it without a reload.
     await team.checkout(alice, "Motor/Case.SLDASM", "ALICE-PC");
     expect(await screen.findByText(/Checked out by Alice on ALICE-PC/)).toBeTruthy();
+});
+
+test("a part's page shows where it's used, up to the top-level assembly, and its drawings", async () => {
+    const team = await Team.create();
+    const [fin] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+    await team.checkin(
+        team.chief,
+        { "Fins/Fin Can.SLDASM": "can", "Rocket.SLDASM": "rocket", "Fins/Fin.SLDDRW": "drawing" },
+        {
+            refs: {
+                "Fins/Fin Can.SLDASM": ["Fins/Fin.SLDPRT"],
+                "Rocket.SLDASM": ["Fins/Fin Can.SLDASM"],
+                "Fins/Fin.SLDDRW": ["Fins/Fin.SLDPRT"],
+            },
+        },
+    );
+
+    renderApp(team.chief, fileUrl(fin!.id));
+    const usedIn = (await screen.findByRole("heading", { name: "Used in" })).parentElement!;
+    expect(within(usedIn).getByRole("link", { name: "Fin Can.SLDASM" })).toBeTruthy();
+    expect(within(usedIn).getByRole("link", { name: "Rocket.SLDASM" })).toBeTruthy(); // open up to the top
+    const drawings = screen.getByRole("region", { name: "Drawings" });
+    expect(within(drawings).getByRole("link", { name: "Fin.SLDDRW" })).toBeTruthy();
 });
 
 test("editors can revert a file nobody else has checked out", async () => {

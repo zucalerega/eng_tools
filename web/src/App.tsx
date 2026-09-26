@@ -3,6 +3,7 @@ import { Notice } from "./components";
 import { folderFromUrl } from "./paths";
 import { Activity } from "./pages/Activity";
 import { Admin } from "./pages/Admin";
+import { Assemblies } from "./pages/Assemblies";
 import { Browse } from "./pages/Browse";
 import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
@@ -27,6 +28,7 @@ export function App() {
                 </Link>
                 <nav className="nav" aria-label="Main">
                     {nav("/", "files", "Files")}
+                    {nav("/assemblies", "assemblies", "Assemblies")}
                     {nav("/locks", "locks", "Checked out")}
                     {nav("/activity", "activity", "Activity")}
                     {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
@@ -85,6 +87,8 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
         return <Browse folder={folderFromUrl(pathname)} />;
     }
     switch (pathname.replace(/\/$/, "")) {
+        case "/assemblies":
+            return <Assemblies />;
         case "/locks":
             return <Locks />;
         case "/activity":

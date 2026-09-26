@@ -28,6 +28,12 @@ export interface Lock {
     since: string;
 }
 
+/** A file that another file's latest version uses, and the version it was checked in with. */
+export interface Use {
+    file_id: number;
+    version: number;
+}
+
 export interface VaultFile {
     id: number;
     path: string;
@@ -40,6 +46,7 @@ export interface VaultFile {
     modified_by: UserRef;
     checked_out: Lock | null;
     deleted_at: string | null;
+    uses: Use[]; // an assembly's parts, a drawing's model: files you can see, maybe deleted since
 }
 
 export interface Listing {

@@ -34,6 +34,7 @@ internal sealed class CvcPane : UserControl
     private readonly Timer _debounce = new Timer { Interval = 400 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private Workspace? _workspace;
+    private Account? _me;
     private Dictionary<string, FileStatus> _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
     private bool _busy;
 
@@ -49,6 +50,7 @@ internal sealed class CvcPane : UserControl
     private readonly Button _checkInButton;
     private readonly Button _undoButton;
     private readonly Button _getButton;
+    private readonly Button _takeOverButton;
     private readonly ListView _changes = new ListView
     {
         View = View.Details,
@@ -82,6 +84,7 @@ internal sealed class CvcPane : UserControl
         _checkInButton = MakeButton("Check in...", (_, _) => OnActiveDocument(path => CheckInAsync(new[] { path })));
         _undoButton = MakeButton("Undo check-out", (_, _) => OnActiveDocument(UndoAsync));
         _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
+        _takeOverButton = MakeButton("Take over...", (_, _) => OnActiveDocument(TakeOverAsync));
         _changes.Columns.Add("File");
         _changes.Columns.Add("State");
         _changes.Columns.Add("Checked out by");
@@ -95,7 +98,7 @@ internal sealed class CvcPane : UserControl
             Heading("Active document"),
             _activeName,
             _activeState,
-            Row(_checkOutButton, _checkInButton, _undoButton, _getButton),
+            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton),
             Heading("Needs attention"),
             _changes,
             Row(
@@ -305,12 +308,30 @@ internal sealed class CvcPane : UserControl
         }
     }
 
-    private Task CheckOutAsync(IReadOnlyList<string> paths) => RunAsync("Checking out", async workspace =>
+    /// <summary>Take over a check-out on another computer (see Workspace.CanTakeOver), after asking.</summary>
+    private async Task TakeOverAsync(string path)
+    {
+        if (_workspace == null || StatusOf(path) is not { Lock: { } other } status || !_workspace.CanTakeOver(status))
+        {
+            return;
+        }
+        var name = Path.GetFileName(path);
+        var question = other.User.Id == _me?.Id
+            ? $"Move your check-out of {name} from {other.Host} to this computer? Changes you made on {other.Host} stay there."
+            : $"Take over {other.User.Name}'s check-out of {name}? It will be checked out to you here, and their check-out ends. "
+                + $"Their changes stay on {other.Host}, and CVC tells them what happened if they try to check in.";
+        if (Ask(question) == DialogResult.Yes)
+        {
+            await CheckOutAsync(new[] { path }, force: true);
+        }
+    }
+
+    private Task CheckOutAsync(IReadOnlyList<string> paths, bool force = false) => RunAsync("Checking out", async workspace =>
     {
         // Checking out an out-of-date file downloads the latest version first, over the open document.
         var outdated = (await CurrentStatusAsync(workspace, paths)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
         RefuseUnsaved(outdated, "check out");
-        await ReplacingAsync(outdated, () => workspace.CheckoutAsync(paths));
+        await ReplacingAsync(outdated, () => workspace.CheckoutAsync(paths, force));
         foreach (var path in paths)
         {
             _sw.SetReadOnly(path, false);
@@ -459,7 +480,7 @@ internal sealed class CvcPane : UserControl
         }
         try
         {
-            var me = await workspace.WhoAmIAsync();
+            var me = _me = await workspace.WhoAmIAsync();
             var statuses = await workspace.StatusAsync();
             _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
             foreach (var status in statuses)
@@ -693,6 +714,9 @@ internal sealed class CvcPane : UserControl
         _checkInButton.Enabled = !_busy && status != null && (status.State == FileState.New || status.CheckedOutByMe);
         _undoButton.Enabled = !_busy && status?.CheckedOutByMe == true;
         _getButton.Enabled = !_busy && inVault;
+        // Only where you may: most people never see it.
+        _takeOverButton.Visible = status != null && _workspace?.CanTakeOver(status) == true;
+        _takeOverButton.Enabled = !_busy;
     }
 
     private (string Text, Color Color) Describe(string? path, FileStatus? status)

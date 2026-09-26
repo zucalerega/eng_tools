@@ -80,7 +80,7 @@ In the workspace (`C:\CVC` on Windows):
 |---|---|
 | `cvc status` | What's new, changed, out of date, or checked out |
 | `cvc get` | Get the latest versions. Your local changes are never overwritten unless you add `--force`, and even then they're backed up. |
-| `cvc checkout <files>` | Check files out to edit them. Everyone else sees who has them. |
+| `cvc checkout <files>` | Check files out to edit them. Everyone else sees who has them. `--force` takes over a check-out on another computer: yours, or anyone's if you're a lead there. |
 | `cvc checkin <files> -m "what changed"` | Check in changed and new files as one version |
 | `cvc undo <files>` | Give up a check-out. Local changes are backed up in `.cvc/backup`. |
 | `cvc history <file>` | Every version, with who changed it and why |

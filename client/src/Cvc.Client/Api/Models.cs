@@ -144,6 +144,20 @@ public sealed class SyncResult
     public List<VaultFile> Files { get; set; } = new List<VaultFile>();
 }
 
+/// <summary>An entry in the activity log (GET /api/activity), newest first.</summary>
+public sealed class VaultEvent
+{
+    public long Id { get; set; }
+    public DateTimeOffset At { get; set; }
+
+    /// <summary>"checkin", "checkout", "break_lock", ... (see vault.py).</summary>
+    public string Action { get; set; } = "";
+    public UserRef? User { get; set; }
+    public long? FileId { get; set; }
+    public Dictionary<string, System.Text.Json.JsonElement> Detail { get; set; } = new Dictionary<string, System.Text.Json.JsonElement>();
+    public string? Comment { get; set; }
+}
+
 public sealed class IssuedToken
 {
     public string Token { get; set; } = "";

@@ -219,6 +219,12 @@ on top of it.
   open in SolidWorks) stays checked out to you.
 - **Checking out updates first.** Checking out a file whose local copy is out of date
   downloads the latest version. A conflict has to be resolved before checking out.
+- **Taking over** (`cvc checkout --force`, the add-in's Take over): a check-out on
+  another computer, yours or, for leads and admins, someone else's. The workspace knows
+  your role in each folder from the sync feed, so the add-in only offers it where the
+  server will allow it. When someone whose check-out was released or taken over tries
+  to check in, they're told who did it and when (from the activity log), and that their
+  changes are still on their computer.
 - **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,
   `Thumbs.db`, `desktop.ini`, `.DS_Store`.
 - **Saved sign-ins:** `%APPDATA%\CVC\tokens.json`, encrypted with Windows DPAPI.

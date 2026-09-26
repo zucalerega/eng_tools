@@ -21,6 +21,9 @@ While you work:
 - **Getting the latest version** of an open file updates it in place, along with the
   parts it uses; an open assembly that uses an updated part updates too. Files with
   unsaved changes are never replaced for you.
+- **Take over** a check-out from another computer: your own (you checked it out on the
+  lab PC), or, if you're a lead of the folder or an admin, someone else's. Their changes
+  stay on their computer, and CVC tells them who took it over if they try to check in.
 
 ## Install
 
@@ -80,6 +83,10 @@ these on SolidWorks 2025:
 11. Change a checked-in file, answer No when CVC offers the check-out, then save
     (Ctrl+S). CVC offers the check-out again; Yes saves the file in place, with no Save
     As dialog.
+12. As an admin (or a lead of the folder), open a file someone else has checked out: the
+    tab offers Take over. Take it over; it's checked out to you. When they try to check it
+    in (`cvc checkin` as them), CVC says you took it over. Someone who isn't a lead doesn't
+    see Take over.
 
 ## When something goes wrong
 

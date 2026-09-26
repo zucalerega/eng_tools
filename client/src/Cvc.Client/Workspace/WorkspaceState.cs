@@ -23,6 +23,12 @@ internal sealed class WorkspaceState
 
     /// <summary>Files this workspace downloaded or checked in, by file id.</summary>
     public Dictionary<long, LocalEntry> Local { get; set; } = new Dictionary<long, LocalEntry>();
+
+    /// <summary>Your role in each folder you can see, by path key: viewer, editor, lead, admin, or null.</summary>
+    public Dictionary<string, string?> Roles { get; set; } = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+    /// <summary>Whether Roles is complete. Workspaces made before it existed sync everything once.</summary>
+    public bool RolesSynced { get; set; }
 }
 
 internal sealed class RemoteEntry

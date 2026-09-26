@@ -135,10 +135,16 @@ public sealed class Workspace : IDisposable
     public async Task RefreshAsync(CancellationToken ct = default)
     {
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
-        var sync = await Api.SyncAsync(_state.Seq, ct).ConfigureAwait(false);
+        var sync = await Api.SyncAsync(_state.RolesSynced ? _state.Seq : 0, ct).ConfigureAwait(false);
         if (sync.Full)
         {
             _state.Remote.Clear();
+            _state.Roles.Clear();
+            _state.RolesSynced = true;
+        }
+        foreach (var folder in sync.Folders)
+        {
+            _state.Roles[VaultPaths.Key(folder.Path)] = folder.Role;
         }
         foreach (var file in sync.Files)
         {
@@ -257,8 +263,20 @@ public sealed class Workspace : IDisposable
         return result;
     }
 
-    /// <summary>Check files out to edit them: all or nothing. Out-of-date copies are updated first.</summary>
-    public async Task<IReadOnlyList<FileStatus>> CheckoutAsync(IEnumerable<string> localPaths, CancellationToken ct = default)
+    /// <summary>
+    /// Whether you can take over this file's check-out (checkout with force): your own on another
+    /// computer, or someone else's if you're a lead or admin there. The server has the last word.
+    /// </summary>
+    public bool CanTakeOver(FileStatus status) =>
+        status.Lock is { } other && !status.CheckedOutByMe
+        && (other.User.Id == _me?.Id || status.MyRole is "lead" or "admin");
+
+    /// <summary>
+    /// Check files out to edit them: all or nothing. Out-of-date copies are updated first. With
+    /// force, check-outs elsewhere are taken over (see CanTakeOver): the other check-out ends, and
+    /// changes on that computer stay there.
+    /// </summary>
+    public async Task<IReadOnlyList<FileStatus>> CheckoutAsync(IEnumerable<string> localPaths, bool force = false, CancellationToken ct = default)
     {
         var scope = Scope(RequirePaths(localPaths, "check out"));
         await RefreshAsync(ct).ConfigureAwait(false);
@@ -281,7 +299,7 @@ public sealed class Workspace : IDisposable
                 + ". Get the latest with force to take theirs (yours is backed up), then check out.");
         }
 
-        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, ct).ConfigureAwait(false);
+        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force, ct).ConfigureAwait(false);
         foreach (var file in locked)
         {
             _state.Remote[file.Id] = RemoteEntry.From(file);
@@ -339,9 +357,8 @@ public sealed class Workspace : IDisposable
                 {
                     { State: FileState.Missing } => $"{status.VaultPath} isn't in this workspace; get it first",
                     { State: FileState.DeletedInVault } => $"{status.VaultPath} was deleted in the vault",
-                    { Lock: null } => $"Check out {status.VaultPath} before checking it in",
-                    { Lock: { } other } when other.User.Id == _me?.Id => $"{status.VaultPath} is checked out to you on {other.Host}, not this computer",
-                    { Lock: { } other } => $"{status.VaultPath} is checked out by {other.User.Name} on {other.Host}",
+                    { Lock: { } mine } when mine.User.Id == _me?.Id => $"{status.VaultPath} is checked out to you on {mine.Host}, not this computer",
+                    _ => await NotYoursAsync(status, ct).ConfigureAwait(false),
                 });
             }
         }
@@ -523,6 +540,76 @@ public sealed class Workspace : IDisposable
     private bool IsMine(FileLock? fileLock) =>
         fileLock != null && _me != null && fileLock.User.Id == _me.Id && fileLock.Host == Host;
 
+    /// <summary>
+    /// Why you can't check in a file that isn't checked out to you. If it was, until a lead released
+    /// your check-out or took it over, say so: your changes are still here.
+    /// </summary>
+    private async Task<string> NotYoursAsync(FileStatus status, CancellationToken ct)
+    {
+        var released = await ReleasedAsync(status, ct).ConfigureAwait(false);
+        if (status.Lock is { } other)
+        {
+            var how = released == null ? ""
+                : released.By == other.User.Name ? $": {released.By} took it over from you {released.When}"
+                : $". {released.By} released your check-out {released.When}";
+            return $"{status.VaultPath} is checked out by {other.User.Name} on {other.Host}{how}";
+        }
+        return released == null
+            ? $"Check out {status.VaultPath} before checking it in"
+            : $"{released.By} released your check-out of {status.VaultPath} {released.When}. "
+                + "Your changes are still here: check it out again, then check it in.";
+    }
+
+    private sealed class Release
+    {
+        public string By { get; set; } = "";
+        public string When { get; set; } = "";
+    }
+
+    // The latest release of your check-out of this file (a "break_lock" with you as the holder), unless
+    // you've checked it out since.
+    private async Task<Release?> ReleasedAsync(FileStatus status, CancellationToken ct)
+    {
+        if (status.FileId is not { } id || _me == null)
+        {
+            return null;
+        }
+        List<VaultEvent> events;
+        try
+        {
+            events = await Api.ActivityAsync(id, 50, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is CvcApiException or HttpRequestException)
+        {
+            return null; // only for the explanation
+        }
+        foreach (var e in events)
+        {
+            if (e.Action == "checkout" && e.User?.Id == _me.Id)
+            {
+                return null;
+            }
+            if (e.Action == "break_lock" && e.Detail.TryGetValue("holder", out var holder)
+                && holder.ValueKind == JsonValueKind.String && string.Equals(holder.GetString(), _me.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var when = e.At.ToLocalTime().ToString("MMM d 'at' HH:mm", CultureInfo.InvariantCulture);
+                return new Release { By = e.User?.Name ?? "Someone", When = "on " + when };
+            }
+        }
+        return null;
+    }
+
+    // Your role in the folder a vault file is in. The top of the vault isn't in the sync feed.
+    private string? RoleIn(string vaultPath)
+    {
+        if (_me?.IsAdmin == true)
+        {
+            return "admin";
+        }
+        var slash = vaultPath.LastIndexOf('/');
+        return slash > 0 && _state.Roles.TryGetValue(VaultPaths.Key(vaultPath.Substring(0, slash)), out var role) ? role : null;
+    }
+
     private List<FileStatus> Compute(List<string> scope)
     {
         var locals = LocalFiles(scope);
@@ -543,6 +630,7 @@ public sealed class Workspace : IDisposable
                 RemoteVersion = remote.Version,
                 Lock = remote.Lock,
                 CheckedOutByMe = IsMine(remote.Lock),
+                MyRole = RoleIn(remote.Path),
             };
             if (!locals.TryGetValue(key, out var localPath))
             {

@@ -38,6 +38,9 @@ public sealed class FileStatus
 
     /// <summary>Checked out by you, on this computer.</summary>
     public bool CheckedOutByMe { get; internal set; }
+
+    /// <summary>Your role in the file's folder: viewer, editor, lead, or admin (null if unknown).</summary>
+    public string? MyRole { get; internal set; }
 }
 
 public sealed class GetResult

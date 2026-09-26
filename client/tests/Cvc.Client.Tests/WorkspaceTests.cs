@@ -143,6 +143,53 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task LeadsCanTakeOverSomeonesCheckout()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var chief = await WorkspaceAsync("chief"); // the server's admin
+        var pump = Write(alice, "Pump.SLDPRT", "v1");
+        await alice.CheckinAsync([pump], "add pump");
+        await alice.CheckoutAsync([pump]);
+        File.WriteAllText(pump, "alice's impeller");
+
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobPump = Local(bob, "Pump.SLDPRT");
+        Assert.False(bob.CanTakeOver(Assert.Single(await bob.StatusAsync([bobPump])))); // an editor
+        await Assert.ThrowsAsync<CvcApiException>(() => bob.CheckoutAsync([bobPump], force: true));
+
+        await chief.GetLatestAsync([Folder(chief)]);
+        var chiefPump = Local(chief, "Pump.SLDPRT");
+        Assert.True(chief.CanTakeOver(Assert.Single(await chief.StatusAsync([chiefPump]))));
+        await chief.CheckoutAsync([chiefPump], force: true);
+        Assert.False(IsReadOnly(chiefPump));
+
+        var refused = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([pump], "new impeller"));
+        Assert.Contains("on CHIEF-PC: chief took it over from you", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("alice's impeller", File.ReadAllText(pump)); // still here
+    }
+
+    [Fact]
+    public async Task CheckingInAfterYourCheckoutWasReleasedSaysWhoReleasedIt()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var chief = await WorkspaceAsync("chief");
+        var fin = Write(alice, "Fin.SLDPRT", "v1");
+        await alice.CheckinAsync([fin], "add fin");
+        await alice.CheckoutAsync([fin]);
+        File.WriteAllText(fin, "swept fin");
+        await chief.Api.UndoCheckoutAsync([$"{_folder}/Fin.SLDPRT"]); // a lead's "break lock"
+
+        var refused = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([fin], "swept"));
+        Assert.Contains("chief released your check-out", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("check it out again", refused.Message, StringComparison.Ordinal);
+
+        await alice.CheckoutAsync([fin]);
+        var checkedIn = await alice.CheckinAsync([fin], "swept");
+        Assert.Equal(2, Assert.Single(checkedIn.Files).File.Version);
+    }
+
+    [Fact]
     public async Task UnchangedCheckinJustReleasesTheLock()
     {
         var alice = await WorkspaceAsync("alice");

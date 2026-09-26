@@ -73,9 +73,19 @@ public sealed class CvcApi : IDisposable
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
-    /// <summary>Lock files for this computer: all of them, or none (a "checked_out" error says who has them).</summary>
-    public async Task<List<VaultFile>> CheckoutAsync(IEnumerable<string> paths, string host, CancellationToken ct = default) =>
-        (await PostAsync<FileList>("api/checkout", new { files = paths.ToList(), host }, ct).ConfigureAwait(false)).Files;
+    /// <summary>
+    /// Lock files for this computer: all of them, or none (a "checked_out" error says who has them).
+    /// With force, take over check-outs elsewhere: your own, or anyone's if you're a lead there.
+    /// </summary>
+    public async Task<List<VaultFile>> CheckoutAsync(IEnumerable<string> paths, string host, bool force = false, CancellationToken ct = default) =>
+        (await PostAsync<FileList>("api/checkout", new { files = paths.ToList(), host, force }, ct).ConfigureAwait(false)).Files;
+
+    /// <summary>Recent events you can see, newest first; with fileId, only that file's.</summary>
+    public Task<List<VaultEvent>> ActivityAsync(long? fileId = null, int limit = 100, CancellationToken ct = default) =>
+        GetAsync<List<VaultEvent>>(
+            "api/activity?limit=" + limit.ToString(CultureInfo.InvariantCulture)
+            + (fileId is { } id ? "&file_id=" + id.ToString(CultureInfo.InvariantCulture) : ""),
+            ct);
 
     public async Task<List<VaultFile>> UndoCheckoutAsync(IEnumerable<string> paths, CancellationToken ct = default) =>
         (await PostAsync<FileList>("api/undo-checkout", new { files = paths.ToList() }, ct).ConfigureAwait(false)).Files;

@@ -151,6 +151,7 @@ class SyncResult:
 class EventView:
     event: Event
     user: User | None
+    checkin: Checkin | None = None  # for events that made a version: the check-in, with its comment
 
 
 @dataclass
@@ -393,7 +394,15 @@ def activity(
         cursor = page[-1].id
     found = found[:limit]
     users = _users(db, {e.user_id for e in found})
-    return [EventView(e, users.get(e.user_id) if e.user_id else None) for e in found]
+    version_ids = {e.version_id for e in found if e.version_id is not None}
+    query = (
+        select(Version.id, Checkin).join(Checkin, Checkin.id == Version.checkin_id).where(Version.id.in_(version_ids))
+    )
+    checkins = {version_id: checkin for version_id, checkin in db.execute(query)}
+    return [
+        EventView(e, users.get(e.user_id) if e.user_id else None, checkins.get(e.version_id) if e.version_id else None)
+        for e in found
+    ]
 
 
 # --- changing files -----------------------------------------------------------------------

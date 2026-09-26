@@ -62,6 +62,20 @@ def test_one_editor_at_a_time(team):
     assert events[0]["detail"]["holder"] == "alice@x.test"
 
 
+def test_activity_shows_what_each_check_in_said(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"}, comment="first fin can")
+    team.checkout(chief, "Fins/Fin.SLDPRT")
+    events = client.get("/api/activity", headers=chief).json()
+    assert [(e["action"], e["comment"]) for e in events] == [
+        ("checkout", None),
+        ("add", "first fin can"),
+        ("add", "first fin can"),
+        ("create_folder", None),
+    ]
+    assert events[1]["checkin_id"] == events[2]["checkin_id"] is not None
+
+
 def test_checkout_is_all_or_nothing(team, client):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test", admin=True)

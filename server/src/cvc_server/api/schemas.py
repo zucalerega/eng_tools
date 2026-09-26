@@ -248,6 +248,9 @@ class EventOut(BaseModel):
     folder_id: int | None
     file_id: int | None
     detail: dict[str, Any]
+    # Events that made a version (add, checkin): its check-in, which groups the files checked in together.
+    checkin_id: int | None = None
+    comment: str | None = None
 
     @classmethod
     def of(cls, view: vault.EventView) -> "EventOut":
@@ -260,6 +263,8 @@ class EventOut(BaseModel):
             folder_id=e.folder_id,
             file_id=e.file_id,
             detail=e.detail,
+            checkin_id=view.checkin.id if view.checkin else None,
+            comment=view.checkin.comment if view.checkin else None,
         )
 
 

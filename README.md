@@ -1,13 +1,12 @@
 # CVC
 
 CAD version control for the team's SolidWorks and STEP files: check out, check in,
-version history, and per-folder permissions, with a SolidWorks add-in on the way.
-It replaces Kenesto.
+version history, and per-folder permissions, from SolidWorks, the command line, or
+the web. It replaces Kenesto.
 
-> **Status:** early development. The server and the `cvc` command-line tool work and
-> are tested. The SolidWorks 2025 add-in is built, but hasn't been tried in SolidWorks
-> yet. The web app is next. See [docs/design.md](docs/design.md) for how it works and
-> the roadmap.
+> **Status:** early development. The server, the `cvc` command-line tool, and the web
+> app work and are tested. The SolidWorks 2025 add-in had its first run in SolidWorks in
+> September 2026. See [docs/design.md](docs/design.md) for how it works and the roadmap.
 
 ## How it works
 
@@ -20,6 +19,10 @@ It replaces Kenesto.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
 - **Sign in with Google.** An admin approves new accounts.
+- **See everything on the web:** browse and search the vault, see each file's history
+  and who has what checked out, download any version, and follow the activity as it
+  happens. Admins and folder leads can switch on admin mode to release someone's
+  check-out or revert a file they have checked out.
 
 ## Layout
 
@@ -27,8 +30,8 @@ It replaces Kenesto.
 |---|---|---|
 | `server/` | API server: Python, FastAPI, SQLAlchemy; Docker image | working |
 | `client/` | C# workspace library and `cvc` CLI | working |
-| `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | built, not yet tested in SolidWorks |
-| `web/` | Web app: React + Vite | planned |
+| `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | working |
+| `web/` | Web app: TypeScript, React, Vite; served by the server | working |
 | `docs/` | Design and roadmap | |
 
 ## Run the server locally
@@ -47,6 +50,16 @@ Open http://localhost:8000 and sign in with the development form as
 `you@example.com`, which makes you an admin. The API is at
 http://localhost:8000/docs. The local database and file contents go in
 `server/data/`, which git ignores.
+
+To get the web app there too, build it once. You need [Node.js](https://nodejs.org/) 24:
+
+```bash
+cd web && npm ci && npm run build
+```
+
+To work on the web app, `cd web && npm run dev` serves it at http://localhost:5173 and
+updates it as you edit. Sign in at http://localhost:8000 first; the dev server passes
+API requests to it.
 
 ## Use the `cvc` command
 
@@ -83,5 +96,9 @@ cd server && uv run pytest
 cd client && dotnet test
 ```
 
-The client tests start the real server, so they need uv too. How we work (branches,
-reviews, releases) is in [CLAUDE.md](CLAUDE.md).
+```bash
+cd web && npm test
+```
+
+The client and web app tests start the real server, so they need uv too. How we work
+(branches, reviews, releases) is in [CLAUDE.md](CLAUDE.md).

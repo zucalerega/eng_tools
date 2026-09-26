@@ -57,7 +57,7 @@ Web app (React) ─────────────────────�
 | Client library: the local workspace | `client/src/Cvc.Client` (netstandard2.0 + net10.0) | working |
 | CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
 | SolidWorks 2025 add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | built; untested in SolidWorks |
-| Web app | `web/` (React + Vite), served by the server | planned |
+| Web app | `web/` (TypeScript, React + Vite), served by the server | working |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
 COM components. The workspace logic lives in a netstandard2.0 library so the add-in
@@ -248,6 +248,26 @@ COM add-in, registered with `install.ps1` (RegAsm).
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 
+## The web app
+
+`web/` is one page (TypeScript, React, Vite) that the server serves at `/` and at any
+path the API doesn't own (`api/web.py`), to people who are signed in and approved;
+everyone else signs in on the server's home page first. It uses the browser session
+cookie, and sends `X-CVC-Request` on every request.
+
+- **A live copy of the vault index.** It loads everything you can see from the sync
+  feed (`GET /api/sync`, as the clients do) and asks it for changes every few seconds
+  while the page is visible, so browsing and searching need no more requests, and
+  check-ins and check-outs on anyone's PC show up within seconds.
+- **Pages:** files (browse and search), a file (history, downloads, what it uses and
+  what uses it), checked out (who has what), activity, and admin (people for admins;
+  access for admins and folder leads).
+- **Admin mode**, a switch for admins and folder leads, remembered per browser: it adds
+  releasing someone's check-out and reverting a file someone has checked out. The
+  server checks every one of them; the app only hides what your role can't do.
+- **Open in SolidWorks** links to `cvc://open?server=…&path=…`, which the add-in's
+  installer registers on Windows PCs.
+
 ## API
 
 Every endpoint needs sign-in except `/auth/*` and `/healthz`. Errors look like
@@ -305,8 +325,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 3. **SolidWorks 2025 add-in** (built; needs its first run in SolidWorks): task pane
    with status and actions, check-out offers when you edit, save checks, and
    check-ins that include an assembly's references.
-4. **Web app**: browse, history, download, who-has-what, admin (approvals,
-   permissions, breaking locks).
+4. **Web app** (done): browse and search, history, download, who-has-what, activity,
+   admin (approvals, permissions), and admin mode (releasing check-outs, forced
+   reverts). Still to do: opening files in SolidWorks from it (the `cvc:` link).
 5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
    backups, and importing the current files from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in

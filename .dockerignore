@@ -1,0 +1,16 @@
+# The image is built from the repository root (docker build -f server/Dockerfile .). It needs only
+# server/ and web/: leave out everything else, and anything local or secret in those two.
+.git
+.github
+.claude
+client
+docs
+**/.env
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+server/data
+server/tests
+web/dist

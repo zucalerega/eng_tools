@@ -101,6 +101,8 @@ class FileView:
     latest: Version
     modified_by: User
     locked_by: User | None
+    # What the latest version uses that the user can see (an assembly's parts): (file id, version used).
+    uses: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -151,6 +153,7 @@ class SyncResult:
 class EventView:
     event: Event
     user: User | None
+    checkin: Checkin | None = None  # for events that made a version: the check-in, with its comment
 
 
 @dataclass
@@ -181,19 +184,47 @@ def _with_latest(db: Session, *where: Any) -> list[tuple[File, Version]]:
     return [(f, v) for f, v in db.execute(stmt)]
 
 
-def _file_views(db: Session, tree: Tree, rows: list[tuple[File, Version]]) -> list[FileView]:
+def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, Version]]) -> list[FileView]:
     users = _users(db, {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows})
+    uses = _uses(db, access, [v.id for _, v in rows])
     return [
         FileView(
-            f, tree.file_path(f), v, users[v.created_by], users.get(f.checked_out_by) if f.checked_out_by else None
+            f,
+            tree.file_path(f),
+            v,
+            users[v.created_by],
+            users.get(f.checked_out_by) if f.checked_out_by else None,
+            uses.get(v.id, []),
         )
         for f, v in rows
     ]
 
 
-def _views_by_id(db: Session, tree: Tree, files: list[File]) -> dict[int, FileView]:
-    views = _file_views(db, tree, _with_latest(db, File.id.in_([f.id for f in files])))
+def _views_by_id(db: Session, tree: Tree, access: Access, files: list[File]) -> dict[int, FileView]:
+    views = _file_views(db, tree, access, _with_latest(db, File.id.in_([f.id for f in files])))
     return {view.file.id: view for view in views}
+
+
+_BATCH = 500  # ids per IN (...): SQLite limits how many parameters a statement can have
+
+
+def _uses(db: Session, access: Access, version_ids: list[int]) -> dict[int, list[tuple[int, int]]]:
+    """What each version uses that the user can see, as (file id, version used), by version id.
+
+    Files deleted since are included: the version still uses them.
+    """
+    uses: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for start in range(0, len(version_ids), _BATCH):
+        rows = db.execute(
+            select(VersionRef.version_id, VersionRef.child_file_id, VersionRef.child_version, File.folder_id)
+            .join(File, File.id == VersionRef.child_file_id)
+            .where(VersionRef.version_id.in_(version_ids[start : start + _BATCH]))
+            .order_by(VersionRef.version_id, VersionRef.child_file_id)
+        )
+        for version_id, file_id, number, folder_id in rows:
+            if access.can(folder_id, Role.VIEWER):
+                uses[version_id].append((file_id, number))
+    return uses
 
 
 # --- finding files ------------------------------------------------------------------------
@@ -287,7 +318,7 @@ def list_folder(db: Session, user: User, path: str = "", *, deleted: bool = Fals
     files: list[FileView] = []
     if access.can(folder.id, Role.VIEWER):
         state = File.deleted_at.is_not(None) if deleted else File.deleted_at.is_(None)
-        files = _file_views(db, tree, _with_latest(db, File.folder_id == folder.id, state))
+        files = _file_views(db, tree, access, _with_latest(db, File.folder_id == folder.id, state))
     return Listing(_folder_view(tree, access, folder), [_folder_view(tree, access, f) for f in subfolders], files)
 
 
@@ -317,9 +348,9 @@ def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
     ]
     latest = next(view.version for view in versions if view.version.number == file.latest_version)
     parents = [(p, v, n) for p, v, n in _parents(db, file.id) if access.can(p.folder_id, Role.VIEWER)]
-    parent_views = _file_views(db, tree, [(p, v) for p, v, _ in parents])
+    parent_views = _file_views(db, tree, access, [(p, v) for p, v, _ in parents])
     used_by = [UsedBy(view, n) for view, (_, _, n) in zip(parent_views, parents, strict=True)]
-    return FileDetail(_file_views(db, tree, [(file, latest)])[0], versions, used_by)
+    return FileDetail(_file_views(db, tree, access, [(file, latest)])[0], versions, used_by)
 
 
 def version_content(db: Session, user: User, file_id: int, number: int | None = None) -> tuple[File, Version]:
@@ -341,7 +372,7 @@ def checkouts(db: Session, user: User, *, mine: bool = False) -> list[FileView]:
     if mine:
         where.append(File.checked_out_by == user.id)
     rows = [(f, v) for f, v in _with_latest(db, *where) if access.can(f.folder_id, Role.VIEWER)]
-    return _file_views(db, tree, rows)
+    return _file_views(db, tree, access, rows)
 
 
 def sync(db: Session, user: User, since: int = 0) -> SyncResult:
@@ -363,7 +394,7 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     ]
     changed = File.deleted_at.is_(None) if full else File.change_seq > since
     rows = [(f, v) for f, v in _with_latest(db, changed) if access.can(f.folder_id, Role.VIEWER)]
-    return SyncResult(seq, full, folders, _file_views(db, tree, rows))
+    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows))
 
 
 def activity(
@@ -393,7 +424,15 @@ def activity(
         cursor = page[-1].id
     found = found[:limit]
     users = _users(db, {e.user_id for e in found})
-    return [EventView(e, users.get(e.user_id) if e.user_id else None) for e in found]
+    version_ids = {e.version_id for e in found if e.version_id is not None}
+    query = (
+        select(Version.id, Checkin).join(Checkin, Checkin.id == Version.checkin_id).where(Version.id.in_(version_ids))
+    )
+    checkins = {version_id: checkin for version_id, checkin in db.execute(query)}
+    return [
+        EventView(e, users.get(e.user_id) if e.user_id else None, checkins.get(e.version_id) if e.version_id else None)
+        for e in found
+    ]
 
 
 # --- changing files -----------------------------------------------------------------------
@@ -437,8 +476,12 @@ def create_folder(db: Session, user: User, path: str) -> FolderView:
     return _folder_view(tree, access, folder)
 
 
-def checkout(db: Session, user: User, refs: list[FileRef], host: str) -> list[FileView]:
-    """Lock files for editing on this computer. All or nothing; already yours here is fine."""
+def checkout(db: Session, user: User, refs: list[FileRef], host: str, *, force: bool = False) -> list[FileView]:
+    """Lock files for editing on this computer. All or nothing; already yours here is fine.
+
+    With force, files checked out elsewhere are taken over: your own check-out moves to this
+    computer, and a lead can take someone else's, which releases it (a 'break lock').
+    """
     host = _host(host)
     seq = begin_write(db)
     tree, access = _context(db, user)
@@ -446,20 +489,31 @@ def checkout(db: Session, user: User, refs: list[FileRef], host: str) -> list[Fi
     for file in files:
         access.require(file.folder_id, Role.EDITOR, f"check out {tree.file_path(file)}")
     taken = [
-        _lock_json(db, tree, f)
-        for f in files
-        if f.checked_out_by is not None and (f.checked_out_by, f.checked_out_host) != (user.id, host)
+        f for f in files if f.checked_out_by is not None and (f.checked_out_by, f.checked_out_host) != (user.id, host)
     ]
-    if taken:
-        raise Conflict("Already checked out: " + ", ".join(map(_lock_text, taken)), code="checked_out", files=taken)
+    locks = {f.id: _lock_json(db, tree, f) for f in taken}
+    if taken and not force:
+        text = ", ".join(_lock_text(locks[f.id]) for f in taken)
+        raise Conflict("Already checked out: " + text, code="checked_out", files=list(locks.values()))
+    for file in taken:
+        if file.checked_out_by != user.id:
+            lock = locks[file.id]
+            access.require(file.folder_id, Role.LEAD, f"take over {lock['user']}'s check-out of {lock['path']}")
     now = utcnow()
     for file in files:
+        if file.id in locks:
+            lock = locks[file.id]
+            if file.checked_out_by == user.id:
+                _event(db, user, "undo_checkout", file=file, path=lock["path"], host=lock["host"])
+            else:
+                _event(db, user, "break_lock", file=file, path=lock["path"], host=lock["host"], holder=lock["email"])
+            _clear_lock(file)
         if file.checked_out_by is None:
             file.checked_out_by, file.checked_out_at, file.checked_out_host = user.id, now, host
             file.change_seq = seq
             _event(db, user, "checkout", file=file, path=tree.file_path(file), host=host)
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -483,7 +537,7 @@ def undo_checkout(db: Session, user: User, refs: list[FileRef]) -> list[FileView
         _clear_lock(file)
         file.change_seq = seq
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -632,10 +686,13 @@ def checkin(
     db.flush()
 
     missing = []
+    unlinked: list[str] = []  # drawings that don't show a part or assembly
+    misnamed: list[dict[str, str]] = []  # drawings not named after one they show
     for status, file, version, item in done.values():
         if status == "unchanged":
             continue  # same contents, same references
         linked: set[int] = set()
+        shows: list[File] = []
         for ref in item.references:
             ref_names = paths.split(ref.path)
             in_batch = done.get(paths.key(paths.join(*ref_names)))
@@ -653,11 +710,36 @@ def checkin(
                 continue
             linked.add(child.id)
             db.add(VersionRef(version_id=version.id, child_file_id=child.id, child_version=child_version))
+            if paths.is_model(child.name):
+                shows.append(child)
+        # A drawing stays tied to what it shows: by reference, and by name, so the two sit side by side.
+        if paths.is_drawing(file.name):
+            if not shows:
+                unlinked.append(tree.file_path(file))
+            elif not any(paths.named_after(file.name, model.name) for model in shows):
+                misnamed.append({"drawing": tree.file_path(file), "shows": tree.file_path(shows[0])})
     if missing:
         raise CvcError(
             "Some referenced files aren't in the vault; add them to this check-in",
             code="missing_references",
             missing=missing,
+        )
+    if unlinked:
+        raise CvcError(
+            f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
+            "vault. Check drawings in from SolidWorks, with the CVC add-in: it records what each drawing shows.",
+            code="drawing_without_model",
+            drawings=unlinked,
+        )
+    if misnamed:
+        first = misnamed[0]
+        model = first["shows"].rsplit("/", 1)[-1]
+        stem = model.rsplit(".", 1)[0]
+        raise CvcError(
+            f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, so "
+            f'call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
+            code="drawing_name",
+            drawings=misnamed,
         )
 
     for status, file, version, _ in done.values():
@@ -668,8 +750,67 @@ def checkin(
         elif not keep_checked_out:
             _event(db, user, "undo_checkout", file=file, path=path, host=host, unchanged=True)
     db.commit()
-    views = _views_by_id(db, tree, [f for _, f, _, _ in done.values()])
+    views = _views_by_id(db, tree, access, [f for _, f, _, _ in done.values()])
     return CheckinResult(record.id if record else None, [(s, views[f.id]) for s, f, _, _ in done.values()])
+
+
+def revert(
+    db: Session, user: User, file_id: int, number: int, *, comment: str = "", host: str = "web", force: bool = False
+) -> FileView:
+    """Make an older version the latest again, as a new version with its contents and references.
+
+    Nothing is lost: it's recorded as a check-in like any other. It needs editor rights, and the
+    file not checked out by someone else; a lead can force that, which releases their check-out.
+    Your own check-out ends, as it would with a check-in.
+    """
+    host = _host(host)
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id)
+    path = tree.file_path(file)
+    access.require(file.folder_id, Role.EDITOR, f"revert {path}")
+    if number == file.latest_version:
+        raise CvcError(f"v{number} is already the latest version of {path}", code="bad_version")
+    if not 1 <= number < file.latest_version:
+        raise CvcError(f"{path} has no version {number}", code="bad_version")
+    if file.checked_out_by is not None and file.checked_out_by != user.id:
+        lock = _lock_json(db, tree, file)
+        if not force:
+            raise Conflict(
+                f"{path} is checked out by {lock['user']} on {lock['host']}", code="checked_out", files=[lock]
+            )
+        access.require(file.folder_id, Role.LEAD, f"release {lock['user']}'s check-out of {path}")
+        _event(db, user, "break_lock", file=file, path=path, host=lock["host"], holder=lock["email"])
+
+    old = _version(db, file.id, number)
+    now = utcnow()
+    note = comment.strip()
+    record = Checkin(
+        user_id=user.id, host=host, comment=f"Reverted to v{number}" + (f": {note}" if note else ""), created_at=now
+    )
+    db.add(record)
+    db.flush()
+    file.latest_version += 1
+    version = Version(
+        file_id=file.id,
+        number=file.latest_version,
+        checkin_id=record.id,
+        blob_sha256=old.blob_sha256,
+        size=old.size,
+        created_at=now,
+        created_by=user.id,
+    )
+    db.add(version)
+    db.flush()
+    for ref in db.scalars(select(VersionRef).where(VersionRef.version_id == old.id)):
+        db.add(VersionRef(version_id=version.id, child_file_id=ref.child_file_id, child_version=ref.child_version))
+    _clear_lock(file)
+    file.change_seq = seq
+    _event(
+        db, user, "revert", file=file, version=version, path=path, number=version.number, reverted_to=number, host=host
+    )
+    db.commit()
+    return _views_by_id(db, tree, access, [file])[file.id]
 
 
 def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False) -> list[FileView]:
@@ -700,7 +841,7 @@ def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False)
         file.change_seq = seq
         _event(db, user, "delete", file=file, path=tree.file_path(file))
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -719,7 +860,7 @@ def restore(db: Session, user: User, file_id: int) -> FileView:
         file.change_seq = seq
         _event(db, user, "restore", file=file, path=path)
         db.commit()
-    return _views_by_id(db, tree, [file])[file.id]
+    return _views_by_id(db, tree, access, [file])[file.id]
 
 
 def can_upload(db: Session, user: User) -> bool:

@@ -135,10 +135,17 @@ public sealed class Workspace : IDisposable
     public async Task RefreshAsync(CancellationToken ct = default)
     {
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
-        var sync = await Api.SyncAsync(_state.Seq, ct).ConfigureAwait(false);
+        var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
+        var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
         if (sync.Full)
         {
             _state.Remote.Clear();
+            _state.Folders.Clear();
+            _state.SyncFormat = WorkspaceState.CurrentSyncFormat;
+        }
+        foreach (var folder in sync.Folders)
+        {
+            _state.Folders[VaultPaths.Key(folder.Path)] = new FolderEntry { Path = folder.Path, Role = folder.Role };
         }
         foreach (var file in sync.Files)
         {
@@ -151,6 +158,13 @@ public sealed class Workspace : IDisposable
                 _state.Remote[file.Id] = RemoteEntry.From(file);
             }
         }
+        // Synced while the server didn't say what files use (it was older): now it does, so get it all again.
+        if (!sync.Full && sync.Files.Any(f => f.Uses != null) && _state.Remote.Values.Any(r => r.Uses == null))
+        {
+            _state.SyncFormat = 0;
+            await RefreshAsync(ct).ConfigureAwait(false);
+            return;
+        }
         _state.Seq = sync.Seq;
         SaveState();
     }
@@ -162,6 +176,47 @@ public sealed class Workspace : IDisposable
         var statuses = Compute(Scope(localPaths));
         SaveState();
         return statuses;
+    }
+
+    /// <summary>
+    /// Everything, for browsing: the vault's folders and this workspace's, each file's status, and what
+    /// each file uses and where it's used (see <see cref="VaultTree"/>).
+    /// </summary>
+    public async Task<VaultTree> BrowseAsync(CancellationToken ct = default)
+    {
+        var statuses = await StatusAsync(null, ct).ConfigureAwait(false);
+        var uses = _state.Remote.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<UsedFile>?)pair.Value.Uses);
+        return new VaultTree(statuses, _state.Folders.Values.Select(f => f.Path), uses);
+    }
+
+    /// <summary>
+    /// Check that a new file can be made at this path before making it: nothing is there, in the vault or
+    /// here, and you can add files to its folder, as far as this workspace knows (the server has the last word).
+    /// </summary>
+    public async Task CheckNewFileAsync(string localPath, CancellationToken ct = default)
+    {
+        var vaultPath = string.Join("/", VaultPaths.Split(RelativePath(localPath)));
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var key = VaultPaths.Key(vaultPath);
+        if (_state.Remote.Values.Any(r => VaultPaths.Key(r.Path) == key))
+        {
+            throw new WorkspaceException($"{vaultPath} is already in the vault");
+        }
+        if (File.Exists(localPath))
+        {
+            throw new WorkspaceException($"{localPath} is already here, not checked in yet. Open it, or choose another name.");
+        }
+        if (Directory.Exists(localPath) || _state.Folders.ContainsKey(key))
+        {
+            throw new WorkspaceException($"{vaultPath} is a folder");
+        }
+        var folder = vaultPath.Contains("/") ? vaultPath.Substring(0, vaultPath.LastIndexOf('/')) : "";
+        var (known, role) = RoleNear(folder);
+        if (known && role is null or "viewer")
+        {
+            throw new WorkspaceException(
+                $"You can't add files to {(folder.Length > 0 ? folder : "the top of the vault")}: that takes editor access. Ask a lead of that folder.");
+        }
     }
 
     public async Task<FileDetail> HistoryAsync(string localPath, CancellationToken ct = default)
@@ -257,8 +312,20 @@ public sealed class Workspace : IDisposable
         return result;
     }
 
-    /// <summary>Check files out to edit them: all or nothing. Out-of-date copies are updated first.</summary>
-    public async Task<IReadOnlyList<FileStatus>> CheckoutAsync(IEnumerable<string> localPaths, CancellationToken ct = default)
+    /// <summary>
+    /// Whether you can take over this file's check-out (checkout with force): your own on another
+    /// computer, or someone else's if you're a lead or admin there. The server has the last word.
+    /// </summary>
+    public bool CanTakeOver(FileStatus status) =>
+        status.Lock is { } other && !status.CheckedOutByMe
+        && (other.User.Id == _me?.Id || status.MyRole is "lead" or "admin");
+
+    /// <summary>
+    /// Check files out to edit them: all or nothing. Out-of-date copies are updated first. With
+    /// force, check-outs elsewhere are taken over (see CanTakeOver): the other check-out ends, and
+    /// changes on that computer stay there.
+    /// </summary>
+    public async Task<IReadOnlyList<FileStatus>> CheckoutAsync(IEnumerable<string> localPaths, bool force = false, CancellationToken ct = default)
     {
         var scope = Scope(RequirePaths(localPaths, "check out"));
         await RefreshAsync(ct).ConfigureAwait(false);
@@ -281,7 +348,7 @@ public sealed class Workspace : IDisposable
                 + ". Get the latest with force to take theirs (yours is backed up), then check out.");
         }
 
-        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, ct).ConfigureAwait(false);
+        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force, ct).ConfigureAwait(false);
         foreach (var file in locked)
         {
             _state.Remote[file.Id] = RemoteEntry.From(file);
@@ -312,11 +379,16 @@ public sealed class Workspace : IDisposable
     /// drawing's models). When given, referenced files that are new, or checked out to you with
     /// changes, join the check-in, and every reference is recorded with the version used.
     /// </param>
+    /// <param name="withChangedReferences">
+    /// False: referenced files checked out to you with changes stay out of the check-in (new ones still
+    /// join), pinned to their version in the vault. For a new drawing of a part you're changing.
+    /// </param>
     public async Task<CheckinResult> CheckinAsync(
         IEnumerable<string> localPaths,
         string comment,
         bool keepCheckedOut = false,
         Func<string, IEnumerable<string>>? referencesOf = null,
+        bool withChangedReferences = true,
         CancellationToken ct = default)
     {
         var scope = Scope(RequirePaths(localPaths, "check in"));
@@ -339,9 +411,8 @@ public sealed class Workspace : IDisposable
                 {
                     { State: FileState.Missing } => $"{status.VaultPath} isn't in this workspace; get it first",
                     { State: FileState.DeletedInVault } => $"{status.VaultPath} was deleted in the vault",
-                    { Lock: null } => $"Check out {status.VaultPath} before checking it in",
-                    { Lock: { } other } when other.User.Id == _me?.Id => $"{status.VaultPath} is checked out to you on {other.Host}, not this computer",
-                    { Lock: { } other } => $"{status.VaultPath} is checked out by {other.User.Name} on {other.Host}",
+                    { Lock: { } mine } when mine.User.Id == _me?.Id => $"{status.VaultPath} is checked out to you on {mine.Host}, not this computer",
+                    _ => await NotYoursAsync(status, ct).ConfigureAwait(false),
                 });
             }
         }
@@ -351,7 +422,7 @@ public sealed class Workspace : IDisposable
         }
         var references = referencesOf is null
             ? new Dictionary<string, List<CheckinReference>>()
-            : CollectReferences(items, referencesOf);
+            : CollectReferences(items, referencesOf, withChangedReferences);
         foreach (var status in items.Where(s => s.State == FileState.New))
         {
             VaultPaths.Split(status.VaultPath); // the server's name rules, before uploading anything
@@ -412,16 +483,11 @@ public sealed class Workspace : IDisposable
             throw new WorkspaceException("Nothing is checked out to you there");
         }
 
-        var released = await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false);
-        foreach (var file in released)
-        {
-            _state.Remote[file.Id] = RemoteEntry.From(file);
-        }
+        // Put the vault's versions back before releasing the locks. If a file can't be replaced (SolidWorks
+        // has it open), it's still checked out to you, so you can close it and undo again.
         var result = new UndoResult();
         foreach (var status in targets)
         {
-            status.Lock = null;
-            status.CheckedOutByMe = false;
             if (status.State is FileState.Modified or FileState.Conflict)
             {
                 result.BackedUp.Add(Backup(status));
@@ -431,10 +497,17 @@ public sealed class Workspace : IDisposable
             {
                 await DownloadAsync(status, ct).ConfigureAwait(false);
             }
-            else
-            {
-                SetReadOnly(status.LocalPath, true);
-            }
+        }
+        var released = await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false);
+        foreach (var file in released)
+        {
+            _state.Remote[file.Id] = RemoteEntry.From(file);
+        }
+        foreach (var status in targets)
+        {
+            status.Lock = null;
+            status.CheckedOutByMe = false;
+            SetReadOnly(status.LocalPath, true);
             result.Released.Add(status);
         }
         SaveState();
@@ -455,11 +528,12 @@ public sealed class Workspace : IDisposable
 
     /// <summary>
     /// Each item's references as vault paths. Referenced files that are new, or checked out to
-    /// you with changes, are added to items (and their own references followed); the rest are
-    /// pinned to the version this workspace has, which is the one the item was built against.
+    /// you with changes (unless withChanged is false), are added to items (and their own references
+    /// followed); the rest are pinned to the version this workspace has, which is the one the item
+    /// was built against.
     /// </summary>
     private Dictionary<string, List<CheckinReference>> CollectReferences(
-        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf)
+        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf, bool withChanged)
     {
         var everything = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
         foreach (var status in Compute(new List<string> { "" }))
@@ -486,7 +560,7 @@ public sealed class Workspace : IDisposable
                     var problem = used.State == FileState.Conflict ? "changed here after someone checked in a newer version" : "was deleted in the vault";
                     throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which {problem}");
                 }
-                var joins = used.State == FileState.New || (used.CheckedOutByMe && used.State == FileState.Modified);
+                var joins = used.State == FileState.New || (withChanged && used.CheckedOutByMe && used.State == FileState.Modified);
                 if (joins && included.Add(key))
                 {
                     items.Add(used);
@@ -521,6 +595,90 @@ public sealed class Workspace : IDisposable
     private bool IsMine(FileLock? fileLock) =>
         fileLock != null && _me != null && fileLock.User.Id == _me.Id && fileLock.Host == Host;
 
+    /// <summary>
+    /// Why you can't check in a file that isn't checked out to you. If it was, until a lead released
+    /// your check-out or took it over, say so: your changes are still here.
+    /// </summary>
+    private async Task<string> NotYoursAsync(FileStatus status, CancellationToken ct)
+    {
+        var released = await ReleasedAsync(status, ct).ConfigureAwait(false);
+        if (status.Lock is { } other)
+        {
+            var how = released == null ? ""
+                : released.By == other.User.Name ? $": {released.By} took it over from you {released.When}"
+                : $". {released.By} released your check-out {released.When}";
+            return $"{status.VaultPath} is checked out by {other.User.Name} on {other.Host}{how}";
+        }
+        return released == null
+            ? $"Check out {status.VaultPath} before checking it in"
+            : $"{released.By} released your check-out of {status.VaultPath} {released.When}. "
+                + "Your changes are still here: check it out again, then check it in.";
+    }
+
+    private sealed class Release
+    {
+        public string By { get; set; } = "";
+        public string When { get; set; } = "";
+    }
+
+    // The latest release of your check-out of this file (a "break_lock" with you as the holder), unless
+    // you've checked it out since.
+    private async Task<Release?> ReleasedAsync(FileStatus status, CancellationToken ct)
+    {
+        if (status.FileId is not { } id || _me == null)
+        {
+            return null;
+        }
+        List<VaultEvent> events;
+        try
+        {
+            events = await Api.ActivityAsync(id, 50, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is CvcApiException or HttpRequestException)
+        {
+            return null; // only for the explanation
+        }
+        foreach (var e in events)
+        {
+            if (e.Action == "checkout" && e.User?.Id == _me.Id)
+            {
+                return null;
+            }
+            if (e.Action == "break_lock" && e.Detail.TryGetValue("holder", out var holder)
+                && holder.ValueKind == JsonValueKind.String && string.Equals(holder.GetString(), _me.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var when = e.At.ToLocalTime().ToString("MMM d 'at' HH:mm", CultureInfo.InvariantCulture);
+                return new Release { By = e.User?.Name ?? "Someone", When = "on " + when };
+            }
+        }
+        return null;
+    }
+
+    // Your role in the folder a vault file is in. The top of the vault isn't in the sync feed.
+    private string? RoleIn(string vaultPath)
+    {
+        var slash = vaultPath.LastIndexOf('/');
+        return RoleNear(slash > 0 ? vaultPath.Substring(0, slash) : "").Role;
+    }
+
+    // Your role in a vault folder, or in the nearest one above it that exists; known is false when that's
+    // the top of the vault, which isn't in the sync feed.
+    private (bool Known, string? Role) RoleNear(string vaultFolder)
+    {
+        if (_me?.IsAdmin == true)
+        {
+            return (true, "admin");
+        }
+        for (var folder = vaultFolder; folder.Length > 0; folder = folder.Contains("/") ? folder.Substring(0, folder.LastIndexOf('/')) : "")
+        {
+            if (_state.Folders.TryGetValue(VaultPaths.Key(folder), out var entry))
+            {
+                return (true, entry.Role);
+            }
+        }
+        return (false, null);
+    }
+
     private List<FileStatus> Compute(List<string> scope)
     {
         var locals = LocalFiles(scope);
@@ -541,6 +699,7 @@ public sealed class Workspace : IDisposable
                 RemoteVersion = remote.Version,
                 Lock = remote.Lock,
                 CheckedOutByMe = IsMine(remote.Lock),
+                MyRole = RoleIn(remote.Path),
             };
             if (!locals.TryGetValue(key, out var localPath))
             {
@@ -679,12 +838,18 @@ public sealed class Workspace : IDisposable
             {
                 continue; // STEP files and the like never reference other files
             }
-            var detail = await Api.FileAsync(id, ct).ConfigureAwait(false);
-            foreach (var reference in detail.Versions.FirstOrDefault()?.References ?? new List<VersionReference>())
+            var uses = remote.Uses?.Select(used => used.FileId);
+            if (uses == null)
             {
-                if (!reference.Deleted && seen.Add(reference.FileId))
+                // A server older than the sync feed's uses: ask for the latest version's references.
+                var detail = await Api.FileAsync(id, ct).ConfigureAwait(false);
+                uses = (detail.Versions.FirstOrDefault()?.References ?? new List<VersionReference>()).Where(r => !r.Deleted).Select(r => r.FileId);
+            }
+            foreach (var used in uses)
+            {
+                if (seen.Add(used))
                 {
-                    queue.Enqueue(reference.FileId);
+                    queue.Enqueue(used);
                 }
             }
         }

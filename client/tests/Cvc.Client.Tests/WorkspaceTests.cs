@@ -1,3 +1,7 @@
+using System.Runtime.Versioning;
+using System.Text;
+using System.Text.Json.Nodes;
+
 namespace Cvc.Client.Tests;
 
 /// <summary>Two people's workspaces against a real server: the everyday check-out/check-in loop.</summary>
@@ -116,6 +120,78 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task UndoKeepsTheCheckoutWhenTheFileCannotBeRestored()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var valve = Write(alice, "Valve.SLDPRT", "v1");
+        await alice.CheckinAsync([valve], "add valve");
+        await alice.CheckoutAsync([valve]);
+        File.WriteAllText(valve, "bigger orifice");
+
+        using (HoldOpen(valve))
+        {
+            await Assert.ThrowsAsync<WorkspaceException>(() => alice.UndoCheckoutAsync([valve]));
+        }
+        // Still checked out, changes and all, so closing the file and undoing again works.
+        var kept = Assert.Single(await alice.StatusAsync([valve]));
+        Assert.Equal((FileState.Modified, true), (kept.State, kept.CheckedOutByMe));
+        Assert.Equal("bigger orifice", File.ReadAllText(valve));
+
+        var undone = await alice.UndoCheckoutAsync([valve]);
+        Assert.Equal("v1", File.ReadAllText(valve));
+        Assert.True(IsReadOnly(valve));
+        Assert.Equal("bigger orifice", File.ReadAllText(Assert.Single(undone.BackedUp)));
+        Assert.Null(Assert.Single(await alice.StatusAsync([valve])).Lock);
+    }
+
+    [Fact]
+    public async Task LeadsCanTakeOverSomeonesCheckout()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var chief = await WorkspaceAsync("chief"); // the server's admin
+        var pump = Write(alice, "Pump.SLDPRT", "v1");
+        await alice.CheckinAsync([pump], "add pump");
+        await alice.CheckoutAsync([pump]);
+        File.WriteAllText(pump, "alice's impeller");
+
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobPump = Local(bob, "Pump.SLDPRT");
+        Assert.False(bob.CanTakeOver(Assert.Single(await bob.StatusAsync([bobPump])))); // an editor
+        await Assert.ThrowsAsync<CvcApiException>(() => bob.CheckoutAsync([bobPump], force: true));
+
+        await chief.GetLatestAsync([Folder(chief)]);
+        var chiefPump = Local(chief, "Pump.SLDPRT");
+        Assert.True(chief.CanTakeOver(Assert.Single(await chief.StatusAsync([chiefPump]))));
+        await chief.CheckoutAsync([chiefPump], force: true);
+        Assert.False(IsReadOnly(chiefPump));
+
+        var refused = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([pump], "new impeller"));
+        Assert.Contains("on CHIEF-PC: chief took it over from you", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("alice's impeller", File.ReadAllText(pump)); // still here
+    }
+
+    [Fact]
+    public async Task CheckingInAfterYourCheckoutWasReleasedSaysWhoReleasedIt()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var chief = await WorkspaceAsync("chief");
+        var fin = Write(alice, "Fin.SLDPRT", "v1");
+        await alice.CheckinAsync([fin], "add fin");
+        await alice.CheckoutAsync([fin]);
+        File.WriteAllText(fin, "swept fin");
+        await chief.Api.UndoCheckoutAsync([$"{_folder}/Fin.SLDPRT"]); // a lead's "break lock"
+
+        var refused = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([fin], "swept"));
+        Assert.Contains("chief released your check-out", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("check it out again", refused.Message, StringComparison.Ordinal);
+
+        await alice.CheckoutAsync([fin]);
+        var checkedIn = await alice.CheckinAsync([fin], "swept");
+        Assert.Equal(2, Assert.Single(checkedIn.Files).File.Version);
+    }
+
+    [Fact]
     public async Task UnchangedCheckinJustReleasesTheLock()
     {
         var alice = await WorkspaceAsync("alice");
@@ -198,6 +274,93 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task BrowsingShowsFoldersFilesAndHowTheyFitTogether()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var can = Write(alice, "Fins/Fin Can.SLDASM", "can");
+        var drawing = Write(alice, "Fins/Fin.SLDDRW", "drawing");
+        var rocket = Write(alice, "Rocket.SLDASM", "rocket");
+        var uses = new Dictionary<string, string[]> { [rocket] = [can], [can] = [fin], [drawing] = [fin], [fin] = [] };
+        await alice.CheckinAsync([rocket, drawing], "the rocket", referencesOf: path => uses[path]);
+        Write(alice, "Fins/Bracket.SLDPRT", "not checked in yet");
+        await bob.CheckoutAsync([Local(bob, "Fins/Fin.SLDPRT")]);
+
+        var tree = await alice.BrowseAsync();
+        var top = Assert.Single(tree.Root.Folders, f => f.Name == _folder);
+        Assert.Equal(["Rocket.SLDASM"], top.Files.Select(Name));
+        var fins = Assert.Single(top.Folders);
+        Assert.Equal(["Bracket.SLDPRT", "Fin Can.SLDASM", "Fin.SLDDRW", "Fin.SLDPRT"], fins.Files.Select(Name));
+        Assert.Equal((FileState.New, 1, 1), (fins.Files[0].State, fins.CheckedOut, top.CheckedOut));
+        Assert.Empty(tree.Uses(fins.Files[0])!); // not in the vault
+
+        var assembly = Assert.Single(tree.Uses(top.Files[0])!);
+        Assert.Equal(("Fin Can.SLDASM", 1), (Name(assembly.File!), assembly.Version));
+        var part = Assert.Single(tree.Uses(assembly.File!)!).File!;
+        Assert.Equal(("Fin.SLDPRT", "BOB-PC"), (Name(part), part.Lock?.Host));
+        Assert.Equal(["Fin Can.SLDASM", "Fin.SLDDRW"], tree.UsedBy(part).Select(Name));
+        Assert.Equal(["Fin.SLDDRW"], tree.Drawings(part).Select(Name));
+    }
+
+    [Fact]
+    public async Task ANewDrawingOfAPartYoureChangingLeavesThePartOut()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var tank = Write(alice, "Tank.SLDPRT", "tank v1");
+        await alice.CheckinAsync([tank], "add tank");
+        await alice.CheckoutAsync([tank]);
+        File.WriteAllText(tank, "tank v2, not done yet");
+        var drawing = Write(alice, "Tank.SLDDRW", "drawing");
+
+        var result = await alice.CheckinAsync(
+            [drawing], "new drawing", keepCheckedOut: true, referencesOf: path => path == drawing ? [tank] : [], withChangedReferences: false);
+        Assert.Equal(["Tank.SLDDRW"], result.Files.Select(f => f.File.Name));
+        var part = Assert.Single(await alice.StatusAsync([tank]));
+        Assert.Equal((FileState.Modified, true), (part.State, part.CheckedOutByMe)); // still yours, changes and all
+        Assert.Equal(1, Assert.Single((await alice.HistoryAsync(drawing)).Versions[0].References).Version);
+    }
+
+    [Fact]
+    public async Task NewFilesNeedAFreeName()
+    {
+        var alice = await WorkspaceAsync("alice");
+        await alice.CheckinAsync([Write(alice, "Fins/Fin.SLDPRT", "fin")], "add fin");
+        Write(alice, "Fins/Draft.SLDPRT", "not checked in yet");
+
+        await alice.CheckNewFileAsync(Local(alice, "Fins/Bracket.SLDPRT"));
+        await alice.CheckNewFileAsync(Local(alice, "Recovery/Harness.SLDPRT")); // a new folder is fine
+        var taken = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "fins/FIN.sldprt")));
+        Assert.Contains("already in the vault", taken.Message, StringComparison.Ordinal);
+        var here = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "Fins/Draft.SLDPRT")));
+        Assert.Contains("already here", here.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "Fins")));
+        await Assert.ThrowsAsync<VaultPathException>(() => alice.CheckNewFileAsync(Local(alice, "Fins/Fin: v2.SLDPRT")));
+    }
+
+    [Fact]
+    public async Task WorksWithAServerFromBeforeFilesSaidWhatTheyUse()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var older = new OlderServer();
+        var bob = await WorkspaceAsync("bob", older);
+        var can = Write(alice, "Fin Can.SLDASM", "can");
+        var fin = Write(alice, "Fin.SLDPRT", "fin");
+        await alice.CheckinAsync([can], "fin can", referencesOf: path => path == can ? [fin] : []);
+
+        await bob.GetLatestAsync([Local(bob, "Fin Can.SLDASM")]);
+        Assert.True(File.Exists(Local(bob, "Fin.SLDPRT"))); // its part came along all the same
+        var before = await bob.BrowseAsync();
+        Assert.Null(before.Uses(before.Files.Single(f => f.LocalPath == Local(bob, "Fin Can.SLDASM"))));
+
+        older.IsOlder = false; // the server is updated
+        await alice.CheckoutAsync([can]); // and something changes
+        var after = await bob.BrowseAsync();
+        var uses = after.Uses(after.Files.Single(f => f.LocalPath == Local(bob, "Fin Can.SLDASM")))!;
+        Assert.Equal(["Fin.SLDPRT"], uses.Select(used => Name(used.File!)));
+    }
+
+    [Fact]
     public async Task ReferencesOutsideTheWorkspaceAreRejected()
     {
         var alice = await WorkspaceAsync("alice");
@@ -261,13 +424,15 @@ public sealed class WorkspaceTests : IDisposable
         await Assert.ThrowsAsync<VaultPathException>(() => alice.CheckinAsync([bad], "bad name"));
     }
 
-    private async Task<Workspace> WorkspaceAsync(string person)
+    private async Task<Workspace> WorkspaceAsync(string person, HttpMessageHandler? handler = null)
     {
         var token = await _server.MemberTokenAsync($"{person}@rocketry.test");
-        var workspace = Workspace.Create(Path.Combine(_temp, person), _server.Url, token, host: person.ToUpperInvariant() + "-PC");
+        var workspace = Workspace.Create(Path.Combine(_temp, person), _server.Url, token, host: person.ToUpperInvariant() + "-PC", handler: handler);
         _workspaces.Add(workspace);
         return workspace;
     }
+
+    private static string Name(FileStatus status) => status.VaultPath.Substring(status.VaultPath.LastIndexOf('/') + 1);
 
     private string Folder(Workspace workspace) => Path.Combine(workspace.Root, _folder);
 
@@ -284,5 +449,73 @@ public sealed class WorkspaceTests : IDisposable
 
     private static bool IsReadOnly(string path) => (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
 
+    /// <summary>Stop a file from being replaced until disposed, as SolidWorks does while it has the file open.</summary>
+    private static IDisposable HoldOpen(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Like SolidWorks with a checked-out file: others can read it (so it can be backed up), not replace it.
+            return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+        }
+        return new ReadOnlyFolder(Path.GetDirectoryName(path)!);
+    }
+
+    // Unix lets a file be replaced while it's open, but not inside a read-only folder.
+    [UnsupportedOSPlatform("windows")]
+    private sealed class ReadOnlyFolder : IDisposable
+    {
+        private readonly string _folder;
+
+        public ReadOnlyFolder(string folder)
+        {
+            _folder = folder;
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        public void Dispose() => File.SetUnixFileMode(_folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
     private static void MakeWritable(string path) => File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
+
+    /// <summary>The server as the release before it said what files use: its answers without "uses".</summary>
+    private sealed class OlderServer : DelegatingHandler
+    {
+        public OlderServer()
+            : base(new HttpClientHandler())
+        {
+        }
+
+        public bool IsOlder { get; set; } = true;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = await base.SendAsync(request, cancellationToken);
+            if (IsOlder && response.Content.Headers.ContentType?.MediaType == "application/json")
+            {
+                var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                WithoutUses(json);
+                response.Content = new StringContent(json?.ToJsonString() ?? "null", Encoding.UTF8, "application/json");
+            }
+            return response;
+        }
+
+        private static void WithoutUses(JsonNode? node)
+        {
+            if (node is JsonObject item)
+            {
+                item.Remove("uses");
+                foreach (var child in item.Select(pair => pair.Value).ToList())
+                {
+                    WithoutUses(child);
+                }
+            }
+            else if (node is JsonArray items)
+            {
+                foreach (var child in items)
+                {
+                    WithoutUses(child);
+                }
+            }
+        }
+    }
 }

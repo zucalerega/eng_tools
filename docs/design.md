@@ -57,7 +57,7 @@ Web app (React) ─────────────────────�
 | Client library: the local workspace | `client/src/Cvc.Client` (netstandard2.0 + net10.0) | working |
 | CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
 | SolidWorks 2025 add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | built; untested in SolidWorks |
-| Web app | `web/` (React + Vite), served by the server | planned |
+| Web app | `web/` (TypeScript, React + Vite), served by the server | working |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
 COM components. The workspace logic lives in a netstandard2.0 library so the add-in
@@ -85,7 +85,9 @@ and the CLI share it, and it can be developed and tested on a Mac through the CL
 **Check out.** Takes locks on one or more files for you on this computer: all of
 them or none. If a file is already checked out by someone else, the error says who
 has it, on which computer, and since when. Checking out a file you already have
-checked out on this computer succeeds and changes nothing.
+checked out on this computer succeeds and changes nothing. With `force`, a check-out
+takes over: your own check-out moves to this computer, and a lead (or admin) can take
+someone else's, which releases it as a "break lock" (below).
 
 **Check in.** Uploads the new contents, then creates the new versions under one
 comment, all or nothing:
@@ -102,12 +104,24 @@ comment, all or nothing:
    model. Each one must already be in the vault or be part of this check-in, and
    is recorded with the version it used. That's how "where used" works, and later
    "get this assembly as it was at version 5".
+4. A new version of a drawing must show a part or assembly (reference one), and be
+   named after one it shows: `Fin.SLDDRW`, or a name that starts with it and goes on
+   after a space or a symbol (`Fin - machining.SLDDRW`), for `Fin.SLDPRT`
+   (`paths.named_after`). So a drawing is never lost from its model, and sorts next to
+   it. The CLI can't read what a drawing shows, so drawings are checked in from
+   SolidWorks.
 
 Locks are released unless `keep_checked_out` is set.
 
 **Undo check-out.** Releases your lock without checking in. A lead can do this to
 someone else's lock ("break lock"), for when someone went home for the summer with
 files checked out. It's recorded in the activity log with the lock holder's name.
+
+**Revert.** Makes an older version the latest again, as a new version with that
+version's contents and pinned references, recorded as a check-in ("Reverted to v2:
+…"), so nothing is lost. It needs editor rights and the file not checked out by
+someone else; a lead can force it, which releases their check-out. Your own check-out
+ends, as with a check-in.
 
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. CVC refuses to delete a file that the
@@ -117,7 +131,12 @@ needs the name freed up first.
 
 **History and where-used.** `GET /api/files/{id}` returns every version, newest
 first, with comments, authors, and pinned references, plus the live files whose
-latest version uses this file.
+latest version uses this file. Every file the API returns, including in the sync
+feed, also lists what its latest version uses (`uses`: file ids, each with the version
+it was checked in with, limited to files you can see). So the web app and the add-in,
+which keep a copy of the feed, know every assembly's parts and where each part is used,
+at every level, without asking for each file. References are by id, so renaming a file
+later won't touch the files that use it.
 
 **Get latest** (client). The client asks `GET /api/sync?since=<seq>` for what
 changed since its last sync. It downloads only the files you open or ask for (an
@@ -128,8 +147,8 @@ assembly brings its references along), not the whole vault.
 | Role | Can |
 |---|---|
 | Viewer | browse, download, see history |
-| Editor | + check out, check in, add files and folders, delete and restore |
-| Lead | + undo other people's check-outs, and change who has access to the folder |
+| Editor | + check out, check in, add files and folders, delete and restore, revert |
+| Lead | + undo or take over other people's check-outs, force a revert, and change who has access to the folder |
 | Admin (a flag on the account) | everything, everywhere, plus approving and disabling accounts |
 
 A role is granted on a folder, for one person or for *everyone* (all active
@@ -191,9 +210,12 @@ on top of it.
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.
-- **Local state.** `.cvc/state.json` records the sync cursor, the vault's files, and
-  each local copy's id, version, hash, size, and write time. A file is rehashed only
-  when its size or write time changes. From this state each file is one of:
+- **Local state.** `.cvc/state.json` records the sync cursor, the vault's files (with
+  what each uses) and folders (with your role in each), and each local copy's id,
+  version, hash, size, and write time. A file is rehashed only when its size or write
+  time changes. A workspace whose state is from an older client (`SyncFormat`), or that
+  synced while its server didn't say what files use yet, gets everything once more.
+  From this state each file is one of:
   - up to date
   - out of date
   - modified
@@ -206,9 +228,17 @@ on top of it.
 - **Local changes are never lost.** Get latest skips files changed here unless forced.
   Forcing it, or undoing a check-out, first copies your version to
   `.cvc/backup/<time>/`. Downloads are verified by SHA-256 and moved into place, so
-  an interrupted download changes nothing.
+  an interrupted download changes nothing. Undoing a check-out puts the vault's
+  version back before it releases the lock, so a file that can't be replaced (it's
+  open in SolidWorks) stays checked out to you.
 - **Checking out updates first.** Checking out a file whose local copy is out of date
   downloads the latest version. A conflict has to be resolved before checking out.
+- **Taking over** (`cvc checkout --force`, the add-in's Take over): a check-out on
+  another computer, yours or, for leads and admins, someone else's. The workspace knows
+  your role in each folder from the sync feed, so the add-in only offers it where the
+  server will allow it. When someone whose check-out was released or taken over tries
+  to check in, they're told who did it and when (from the activity log), and that their
+  changes are still on their computer.
 - **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,
   `Thumbs.db`, `desktop.ini`, `.DS_Store`.
 - **Saved sign-ins:** `%APPDATA%\CVC\tokens.json`, encrypted with Windows DPAPI.
@@ -219,7 +249,8 @@ on top of it.
   workspace has, which is the one the assembly was built against. References outside the
   workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
   saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
-  references.
+  references, and the server refuses drawings from it (a drawing must show a part or
+  assembly).
 
 ## The SolidWorks add-in
 
@@ -227,18 +258,86 @@ on top of it.
 against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework 4.8
 COM add-in, registered with `install.ps1` (RegAsm).
 
-- **Task pane.** Everything is in the CVC tab: sign-in, the active document's status
-  and actions, and a list of files that need attention.
+- **Task pane.** Everything is in the Vault tab: sign-in, the active document's status
+  and actions (including opening its drawing), and two views: the files that need
+  attention, and Browse, the whole vault as a tree (`Workspace.BrowseAsync`, a
+  `VaultTree`) in which every file says whether it's checked in, assemblies open up into
+  their parts, and parts and assemblies list their drawings. It refreshes every 20
+  seconds and after every action, and redraws only when something changed, so what you
+  opened in the tree stays open.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, CVC offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a
-  file also offers a check-out, or cancels the save with the reason.
-- **Open files.** They can't be replaced on disk. Get latest closes the files it
-  updates and reopens the active one, and a check-out that needs the latest version
-  does the same. Check-out and check-in switch open documents between read-only and
-  editable (`SetReadOnlyState`).
+  file offers the check-out too. The file is read-only, so SolidWorks turns Save into
+  Save As (without the `FileSaveNotify` event): before the dialog opens
+  (`FileSaveAsNotify2`), CVC checks the file out and saves it in place
+  (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
+  to save under another name.
+- **Open files.** SolidWorks holds the files it has open, including parts that an open
+  assembly uses, even after the part's own window is closed. Before get latest, undo,
+  or a check-out that needs the latest version replaces open files, SolidWorks lets go
+  of them (`ForceReleaseLocks`; drawings are closed), and afterwards reloads them in
+  place (`ReloadOrReplace`), so windows stay open and assemblies update. A file with
+  unsaved changes isn't replaced, except by an undo you've confirmed; one changed while
+  it was being replaced keeps its changes and isn't reloaded. These decisions use the
+  vault's current state, not the task pane's last refresh. Check-out and check-in
+  switch open documents between read-only and editable (`SetReadOnlyState`).
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
+- **Links from the web app.** "Open in SolidWorks" is a `cvc://open?server=…&path=…`
+  link (`OpenLink`). install.ps1 registers `cvc-open.exe` (in the add-in's folder) for
+  them. It starts SolidWorks if needed and hands the link to the add-in over a named
+  pipe for the Windows session, which only the current user can open. The add-in checks
+  that the link is for its workspace's server, gets the file's latest version and the
+  parts it uses (updating open copies in place), opens it, and comes to the front.
+- **New files from the web app.** New part, New assembly, and New drawing (of a part or
+  assembly) are `cvc://new?server=…&path=…[&model=…]` links. The add-in checks that the
+  name is free and that you can add files there (`Workspace.CheckNewFileAsync`); for a
+  drawing, gets the model and the parts it uses; starts the file from SolidWorks' default
+  template for its type (a drawing with an isometric view of the model); saves it; and
+  checks it in at once as version 1, kept checked out to you, so everyone sees it and
+  the name is taken. Changes to the model that you haven't checked in stay out of that
+  check-in.
+
+## The web app
+
+`web/` is one page (TypeScript, React, Vite) that the server serves at `/` and at any
+path the API doesn't own (`api/web.py`), to people who are signed in and approved;
+everyone else signs in on the server's home page first. It uses the browser session
+cookie, and sends `X-CVC-Request` on every request.
+
+- **A live copy of the vault index.** It loads everything you can see from the sync
+  feed (`GET /api/sync`, as the clients do) and asks it for changes every few seconds
+  while the page is visible, so browsing and searching need no more requests, and
+  check-ins and check-outs on anyone's PC show up within seconds.
+- **Pages:**
+  - Files: browse and search. Every file says whether it's checked in, or who has it
+    checked out on which computer, and every folder how many files in it are checked
+    out. Assemblies (and drawings) open up to show what they use, level by level, each
+    with its own status; parts and assemblies link to their drawings.
+  - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
+    into its sub-assemblies and parts, wherever those are kept.
+  - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
+    the top-level ones, its drawings, and its history, with downloads.
+  - Checked out (who has what), activity, and admin (people for admins; access for
+    admins and folder leads).
+
+  All of it comes from the sync feed's `uses`, so a check-in anywhere shows up in every
+  tree within seconds.
+- **Admin mode**, a switch for admins and folder leads, remembered per browser: it adds
+  releasing someone's check-out and reverting a file someone has checked out. The
+  server checks every one of them; the app only hides what your role can't do.
+- **Open in SolidWorks** links to `cvc://open?server=…&path=…`, which the add-in's
+  installer registers on Windows PCs.
+- **Branding:** the app calls itself Vault, in the Yellow Jacket Space Program's colors:
+  near-black, white, and dark blue, with its gold. Its mark is a vault door crossed by a
+  gold orbit, after the team's logo (`VaultMark`); the favicon, the server's sign-in
+  pages, and the add-in's task pane icon draw the same shapes. The code, the `cvc`
+  command, and the repository keep the name CVC.
+- **New files:** New part and New assembly in a folder you can edit, and New drawing on
+  a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
+  a drawing named after its model), then links to `cvc://new`, and SolidWorks on this
+  computer makes it. It shows up in the vault a few seconds later, checked out to you.
 
 ## API
 
@@ -254,7 +353,8 @@ are at `/docs`.
 | `GET /api/files/{id}` | a file's versions, references, and where it's used |
 | `GET /api/files/{id}/content?version=` | download a version (default: latest) |
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
-| `POST /api/checkout` | lock files `{files: [id or path], host}` |
+| `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
+| `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
 | `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete`, `POST /api/files/{id}/restore` | trash and restore |
@@ -296,8 +396,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 3. **SolidWorks 2025 add-in** (built; needs its first run in SolidWorks): task pane
    with status and actions, check-out offers when you edit, save checks, and
    check-ins that include an assembly's references.
-4. **Web app**: browse, history, download, who-has-what, admin (approvals,
-   permissions, breaking locks).
+4. **Web app** (done): browse and search, history, download, who-has-what, activity,
+   admin (approvals, permissions), admin mode (releasing check-outs, forced reverts),
+   and opening files in SolidWorks (the `cvc:` link).
 5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
    backups, and importing the current files from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in

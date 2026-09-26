@@ -23,6 +23,7 @@ from .schemas import (
     FolderIn,
     FolderOut,
     ListingOut,
+    RevertIn,
     SyncOut,
 )
 
@@ -58,7 +59,15 @@ def get_content(file_id: int, user: ActiveUser, db: DB, store: Store, version: i
 
 @router.post("/checkout")
 def post_checkout(body: CheckoutIn, user: ActiveUser, db: DB) -> FilesOut:
-    return FilesOut.of(vault.checkout(db, user, body.files, body.host))
+    return FilesOut.of(vault.checkout(db, user, body.files, body.host, force=body.force))
+
+
+@router.post("/files/{file_id}/revert")
+def post_revert(file_id: int, body: RevertIn, user: ActiveUser, db: DB) -> FileOut:
+    """Make an older version the latest again (a new version with its contents)."""
+    return FileOut.of(
+        vault.revert(db, user, file_id, body.version, comment=body.comment, host=body.host, force=body.force)
+    )
 
 
 @router.post("/undo-checkout")

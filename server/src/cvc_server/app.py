@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__
-from .api import admin, files, signin
+from .api import admin, files, signin, web
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import CvcError
@@ -30,7 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         engine.dispose()
 
-    app = FastAPI(title="CVC", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="Vault", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.sessionmaker = sessions
     app.state.store = BlobStore(settings.blob_dir)
@@ -59,4 +59,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(files.router)
     app.include_router(admin.router)
     app.include_router(signin.router)
+    web.mount_assets(app, settings)
+    app.include_router(web.router)  # last: it takes every path nothing else did
     return app

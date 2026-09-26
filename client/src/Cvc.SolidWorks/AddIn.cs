@@ -20,8 +20,8 @@ namespace Cvc.SolidWorks;
 public sealed class AddIn : ISwAddin
 {
     public const string Id = "eb689878-bd0e-44c5-b2e4-f958d6061b99";
-    private const string Title = "CVC";
-    private const string Description = "Check SolidWorks files in and out of CVC";
+    private const string Title = "Vault";
+    private const string Description = "Check SolidWorks files in and out of Vault";
 
     private IDisposable? _session;
 

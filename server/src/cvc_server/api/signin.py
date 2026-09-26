@@ -1,17 +1,17 @@
 """Sign-in pages: Google for people, a browser handshake for the CLI/add-in, dev shortcuts.
 
-Also serves a placeholder home page until the web app exists.
+The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
 
 import html
 import re
 from datetime import timedelta
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,8 @@ from .. import auth
 from ..config import Settings
 from ..errors import CvcError, Forbidden, NotFound
 from ..models import User, UserStatus
-from .deps import DB, SESSION_COOKIE, Config
+from . import web
+from .deps import DB, SESSION_COOKIE, Config, session_user
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -45,21 +46,47 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+# Vault's mark, as the web app draws it (VaultMark in web/src/components.tsx), and its favicon (web/index.html).
+_MARK = (
+    '<svg class="mark" width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#fff">'
+    '<polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 41.2,9.8 54.2,22.8" stroke-width="5"/>'
+    '<circle cx="32" cy="32" r="12.5" stroke-width="3"/><path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" '
+    'stroke-width="3"/></g><g fill="#fff"><circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/>'
+    '<circle cx="16.8" cy="40.8" r="2.8"/><circle cx="47.2" cy="40.8" r="2.8"/></g>'
+    '<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="#e0a500" stroke="#05080f" stroke-width="2.5" paint-order="stroke"/>'
+    "</svg>"
+)
+_FAVICON = "data:image/svg+xml," + quote(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b1b33"/>'
+    + _MARK.split(">", 1)[1].replace("#05080f", "#0b1b33")
+)
+
+
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    tab_title = title if title == "CVC" else f"{title} · CVC"
+    """A sign-in page, branded like the web app's top bar. The title "Vault" is just the brand."""
+    heading = "" if title == "Vault" else f"<h1>{_esc(title)}</h1>"
+    tab_title = title if title == "Vault" else f"{title} · Vault"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(tab_title)}</title>
+<title>{_esc(tab_title)}</title><link rel="icon" href="{_esc(_FAVICON)}">
 <style>
-  :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }}
+  :root {{ color-scheme: dark; font-family: system-ui, sans-serif; line-height: 1.5;
+    background: #05080f; color: #e6ecf5; }}
   body {{ max-width: 36rem; margin: 4rem auto; padding: 0 1rem; }}
+  .brand {{ display: flex; align-items: center; gap: .75rem; padding-bottom: 1.25rem; margin-bottom: 1.5rem;
+    border-bottom: 3px solid #e0a500; }}
+  .brand span, h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
+  .brand span {{ font-size: 1.6rem; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; }}
+  h1 {{ font-size: 1.3rem; font-weight: 600; }}
+  a {{ color: #6b9ae6; }}
   .button, button {{ display: inline-block; font: inherit; padding: .45rem 1rem; border-radius: .4rem;
-    border: 1px solid #1f6feb; background: #1f6feb; color: #fff; text-decoration: none; cursor: pointer; }}
-  .secondary {{ background: transparent; color: inherit; border-color: #888; }}
-  input {{ font: inherit; padding: .4rem; }}
+    border: 1px solid #1c4b8f; background: #1c4b8f; color: #fff; text-decoration: none; cursor: pointer; }}
+  .secondary {{ background: transparent; color: inherit; border-color: #5a667a; }}
+  input {{ font: inherit; padding: .4rem; border-radius: .4rem; border: 1px solid #1d2940; background: #0c1422;
+    color: inherit; }}
 </style></head>
-<body><h1>{_esc(title)}</h1>{body}</body></html>""",
+<body><div class="brand">{_MARK}<span>Vault</span></div>{heading}{body}</body></html>""",
         status_code=status_code,
     )
 
@@ -69,11 +96,6 @@ def _safe_next(target: str | None) -> str:
     if not target or not target.startswith("/") or target.startswith(("//", "/\\")):
         return "/"
     return target
-
-
-def _cookie_user(request: Request, db: Session) -> User | None:
-    secret = request.cookies.get(SESSION_COOKIE)
-    return auth.authenticate(db, secret) if secret else None
 
 
 def _start_session(request: Request, db: Session, settings: Settings, user: User, target: str) -> RedirectResponse:
@@ -92,8 +114,13 @@ def _start_session(request: Request, db: Session, settings: Settings, user: User
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") -> HTMLResponse:
-    user = _cookie_user(request, db)
+def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") -> Response:
+    user = session_user(request, db)
+    if user is not None and user.status == UserStatus.ACTIVE:
+        if _safe_next(next_path) != "/":
+            return RedirectResponse(_safe_next(next_path), status_code=303)  # signed in already: carry on
+        if (index := web.app_index(settings)) is not None:
+            return web.index_response(index)
     if user is None:
         parts = []
         if request.app.state.oauth is not None:
@@ -107,17 +134,20 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             )
         if not parts:
             parts.append("<p>Sign-in isn't set up on this server yet.</p>")
-        return _page("CVC", "".join(parts))
+        return _page("Sign in", "".join(parts))
 
     body = f"<p>Signed in as <strong>{_esc(user.display_name)}</strong> ({_esc(user.email)}){', admin' if user.is_admin else ''}.</p>"
     if user.status == UserStatus.PENDING:
-        body += "<p>An admin needs to approve your account before you can use CVC.</p>"
+        body += "<p>An admin needs to approve your account before you can use Vault.</p>"
     elif user.status == UserStatus.DISABLED:
         body += "<p>This account is disabled.</p>"
     else:
-        body += '<p>The web app isn\'t built yet. Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
+        body += (
+            "<p>The web app isn't built on this server (<code>npm run build</code> in <code>web/</code>). "
+            'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
+        )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
-    return _page("CVC", body)
+    return _page("Vault", body)
 
 
 @router.get("/auth/login", include_in_schema=False)
@@ -171,7 +201,7 @@ def _approval_signer(settings: Settings) -> URLSafeTimedSerializer:
 
 def _check_client_request(port: int, state: str, challenge: str) -> None:
     if not 1024 <= port <= 65535 or not _CHALLENGE.fullmatch(challenge) or not 0 < len(state) <= 200:
-        raise CvcError("This sign-in request from the CVC client is malformed", code="bad_client_request")
+        raise CvcError("This sign-in request from the Vault client is malformed", code="bad_client_request")
 
 
 def _client_callback(port: int, **params: str) -> str:
@@ -180,11 +210,11 @@ def _client_callback(port: int, **params: str) -> str:
 
 @router.get("/auth/client", include_in_schema=False)
 def client_start(
-    request: Request, db: DB, settings: Config, port: int, state: str, challenge: str, name: str = "CVC client"
+    request: Request, db: DB, settings: Config, port: int, state: str, challenge: str, name: str = "Vault client"
 ):
     """The page a client opens in the browser: sign in if needed, then confirm."""
     _check_client_request(port, state, challenge)
-    user = _cookie_user(request, db)
+    user = session_user(request, db)
     if user is None:
         here = f"{request.url.path}?{request.url.query}"
         return RedirectResponse("/auth/login?" + urlencode({"next": here}), status_code=303)
@@ -193,14 +223,14 @@ def client_start(
             "Waiting for approval",
             f"<p>Signed in as {_esc(user.email)}. An admin needs to approve your account first.</p>",
         )
-    name = name.strip()[:100] or "CVC client"
+    name = name.strip()[:100] or "Vault client"
     approval = _approval_signer(settings).dumps({"u": user.id, "p": port, "s": state, "c": challenge})
     cancel = _client_callback(port, error="access_denied", state=state)
     fields = {"port": port, "state": state, "challenge": challenge, "name": name, "approval": approval}
     hidden = "".join(f'<input type="hidden" name="{k}" value="{_esc(v)}">' for k, v in fields.items())
     return _page(
-        "Sign in to CVC",
-        f"""<p><strong>{_esc(name)}</strong> wants to use CVC as <strong>{_esc(user.email)}</strong>.
+        "Sign in to Vault",
+        f"""<p><strong>{_esc(name)}</strong> wants to use Vault as <strong>{_esc(user.email)}</strong>.
 It will be able to check files in and out with your permissions until you sign it out.</p>
 <form method="post" action="/auth/client/approve">{hidden}
 <button type="submit">Allow</button> <a class="button secondary" href="{_esc(cancel)}">Cancel</a></form>""",
@@ -219,7 +249,7 @@ def client_approve(
     approval: Annotated[str, Form()],
 ) -> RedirectResponse:
     _check_client_request(port, state, challenge)
-    user = _cookie_user(request, db)
+    user = session_user(request, db)
     if user is None or user.status != UserStatus.ACTIVE:
         raise Forbidden("Sign in first", code="unauthorized")
     try:
@@ -228,7 +258,7 @@ def client_approve(
         raise Forbidden("This page expired; start signing in again from the client", code="expired") from exc
     if approved != {"u": user.id, "p": port, "s": state, "c": challenge}:
         raise Forbidden("This sign-in request doesn't match", code="mismatch")
-    code = auth.create_client_code(db, user, challenge=challenge, name=name.strip()[:100] or "CVC client")
+    code = auth.create_client_code(db, user, challenge=challenge, name=name.strip()[:100] or "Vault client")
     return RedirectResponse(_client_callback(port, code=code, state=state), status_code=303)
 
 

@@ -52,3 +52,22 @@ def test_path_length_limit():
     paths.split("/".join(["a" * 9] * 20))  # 199 characters
     with pytest.raises(PathError):
         paths.split("/".join(["a" * 9] * 21))
+
+
+@pytest.mark.parametrize(
+    ("drawing", "model", "expected"),
+    [
+        ("Fin.SLDDRW", "Fin.SLDPRT", True),
+        ("fin.slddrw", "FIN.SLDPRT", True),
+        ("Fin - machining.SLDDRW", "Fin.SLDPRT", True),
+        ("Fin (sheet 2).SLDDRW", "Fin.SLDPRT", True),
+        ("Fin_flat.SLDDRW", "Fin.SLDPRT", True),
+        ("Fin Can.SLDDRW", "Fin Can.SLDASM", True),
+        ("Fin2.SLDDRW", "Fin.SLDPRT", False),  # another part's name
+        ("Finish.SLDDRW", "Fin.SLDPRT", False),
+        ("Bracket.SLDDRW", "Fin.SLDPRT", False),
+        ("Fin.SLDDRW", "Fin Can.SLDASM", False),
+    ],
+)
+def test_drawings_are_named_after_what_they_show(drawing, model, expected):
+    assert paths.named_after(drawing, model) is expected

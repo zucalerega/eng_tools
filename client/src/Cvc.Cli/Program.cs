@@ -21,7 +21,8 @@ internal static class Program
         Working
           status [paths]                 What's changed, out of date, or checked out (--all: everything)
           get [paths]                    Get the latest versions (--force: replace your local changes; they're backed up)
-          checkout <paths>               Check files out to edit them (alias: co)
+          checkout <paths>               Check files out to edit them (alias: co; --force: take over a check-out
+                                         on another computer: yours, or anyone's if you're a lead there)
           checkin <paths> -m "what"      Check in changed and new files (alias: ci; --keep: stay checked out)
           undo <paths>                   Undo your check-out; local changes are backed up in .cvc/backup
           history <file>                 A file's versions (alias: log)
@@ -177,7 +178,7 @@ internal static class Program
     private static async Task<int> CheckoutAsync(Options options)
     {
         using var workspace = OpenWorkspace();
-        var statuses = await workspace.CheckoutAsync(RequirePaths(options));
+        var statuses = await workspace.CheckoutAsync(RequirePaths(options), options.Force);
         foreach (var status in statuses)
         {
             Console.WriteLine($"  checked out  v{status.RemoteVersion}  {Show(status.LocalPath)}");

@@ -60,16 +60,37 @@ jobs:
           path: ${{ runner.temp }}/cvc-windows/cvc.exe
           if-no-files-found: error
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The web app's tests run against the real server.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked
+        working-directory: server
+      - run: npm ci
+      - run: npm run check  # types, and Prettier's formatting
+      - run: npm test
+      - run: npm run build
+
   image:
     runs-on: ubuntu-latest
-    needs: [server, client]
+    needs: [server, client, web]
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v7
       - name: Build
-        run: docker build --tag cvc-server:ci server
+        run: docker build --tag cvc-server:ci --file server/Dockerfile .
       - name: Smoke test
         run: |
           docker run -d --name cvc -p 127.0.0.1:8000:8000 -e CVC_DEV_AUTH=1 cvc-server:ci

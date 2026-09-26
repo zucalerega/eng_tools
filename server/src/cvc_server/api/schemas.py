@@ -51,6 +51,11 @@ class LockOut(BaseModel):
     since: datetime
 
 
+class UseOut(BaseModel):
+    file_id: int
+    version: int  # the version it was checked in with; the file may have newer ones since
+
+
 class FileOut(BaseModel):
     id: int
     path: str
@@ -63,6 +68,9 @@ class FileOut(BaseModel):
     modified_by: UserRef
     checked_out: LockOut | None
     deleted_at: datetime | None
+    # What the latest version uses (an assembly's parts, a drawing's model), by id: the files you can
+    # see, including any deleted since. Clients look them up in their copy of the sync feed.
+    uses: list[UseOut]
 
     @classmethod
     def of(cls, view: vault.FileView) -> "FileOut":
@@ -82,6 +90,7 @@ class FileOut(BaseModel):
             modified_by=UserRef.of(view.modified_by),
             checked_out=lock,
             deleted_at=file.deleted_at,
+            uses=[UseOut(file_id=file_id, version=number) for file_id, number in view.uses],
         )
 
 
@@ -182,6 +191,14 @@ class FilesIn(BaseModel):
 
 class CheckoutIn(FilesIn):
     host: str  # this computer's name; the lock belongs to it
+    force: bool = False  # take over files checked out elsewhere (someone else's: leads only)
+
+
+class RevertIn(BaseModel):
+    version: int = Field(ge=1)  # the version to make the latest again
+    comment: str = Field(default="", max_length=5000)
+    host: str = "web"
+    force: bool = False  # even if someone else has it checked out (leads only): releases their check-out
 
 
 class DeleteIn(FilesIn):
@@ -248,6 +265,9 @@ class EventOut(BaseModel):
     folder_id: int | None
     file_id: int | None
     detail: dict[str, Any]
+    # Events that made a version (add, checkin): its check-in, which groups the files checked in together.
+    checkin_id: int | None = None
+    comment: str | None = None
 
     @classmethod
     def of(cls, view: vault.EventView) -> "EventOut":
@@ -260,6 +280,8 @@ class EventOut(BaseModel):
             folder_id=e.folder_id,
             file_id=e.file_id,
             detail=e.detail,
+            checkin_id=view.checkin.id if view.checkin else None,
+            comment=view.checkin.comment if view.checkin else None,
         )
 
 

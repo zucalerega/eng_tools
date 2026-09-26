@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Cvc.Client\Cvc.Client.csproj" />
+    <!-- cvc-open.exe: follows the web app's "Open in SolidWorks" links; it goes in the add-in's folder. -->
+    <ProjectReference Include="..\Cvc.SolidWorks.Open\Cvc.SolidWorks.Open.csproj" />
   </ItemGroup>
 
   <ItemGroup>

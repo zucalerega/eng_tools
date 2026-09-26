@@ -13,6 +13,7 @@ internal sealed class CheckinDialog : Form
 
     public CheckinDialog(IEnumerable<string> fileNames)
     {
+        SuspendLayout();
         Text = "Check in";
         Font = SystemFonts.MessageBoxFont;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -32,11 +33,12 @@ internal sealed class CheckinDialog : Form
             MaximumSize = new Size(440, 0),
             Dock = DockStyle.Fill,
         };
-        var ok = new Button { Text = "Check in", DialogResult = DialogResult.OK, AutoSize = true, Enabled = false };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var ok = DialogButton("Check in", DialogResult.OK);
+        ok.Enabled = false;
+        var cancel = DialogButton("Cancel", DialogResult.Cancel);
         _comment.TextChanged += (_, _) => ok.Enabled = _comment.Text.Trim().Length > 0;
 
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
@@ -52,9 +54,20 @@ internal sealed class CheckinDialog : Form
         Controls.Add(layout);
         AcceptButton = ok;
         CancelButton = cancel;
+        // The sizes above are for a 100% (96 DPI) display. SolidWorks is DPI-aware, so Windows doesn't
+        // scale its windows for us, and at 250% the text crowded the comment box down to nothing.
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        ResumeLayout(false);
+        PerformLayout();
     }
 
     public string Comment => _comment.Text.Trim();
 
     public bool KeepCheckedOut => _keep.Checked;
+
+    // Sized by their text (at least Windows' standard 75x23), which already scales with the display.
+    // GrowAndShrink keeps the DPI scaling from leaving them enlarged, as GrowOnly (the default) would.
+    private static Button DialogButton(string text, DialogResult result) =>
+        new Button { Text = text, DialogResult = result, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(75, 23) };
 }

@@ -11,6 +11,7 @@ internal sealed class Session : IDisposable
     private readonly CvcPane _pane;
     private readonly DocumentWatcher _documents;
     private readonly TaskpaneView _taskPane;
+    private readonly LinkListener _links;
 
     public Session(SldWorks app)
     {
@@ -18,20 +19,24 @@ internal sealed class Session : IDisposable
         var host = new SolidWorksHost(app);
         _pane = new CvcPane(host);
         _documents = new DocumentWatcher(host, _pane);
-        _taskPane = app.CreateTaskpaneView3(Icons.Write(), "CVC: check files in and out");
+        _taskPane = app.CreateTaskpaneView3(Icons.Write(), "Vault: check files in and out");
         _taskPane.DisplayWindowFromHandlex64(_pane.Handle.ToInt64());
         app.ActiveDocChangeNotify += OnActiveDocumentChanged;
         app.FileOpenPostNotify += OnFileOpened;
         app.DocumentLoadNotify2 += OnDocumentLoaded;
+        app.FileNewNotify2 += OnFileNew;
         _documents.WatchOpenDocuments();
         _pane.Start();
+        _links = new LinkListener(_pane);
     }
 
     public void Dispose()
     {
+        _links.Dispose();
         _app.ActiveDocChangeNotify -= OnActiveDocumentChanged;
         _app.FileOpenPostNotify -= OnFileOpened;
         _app.DocumentLoadNotify2 -= OnDocumentLoaded;
+        _app.FileNewNotify2 -= OnFileNew;
         _documents.Dispose();
         _taskPane.DeleteView();
         Marshal.ReleaseComObject(_taskPane);
@@ -51,6 +56,9 @@ internal sealed class Session : IDisposable
     });
 
     private int OnDocumentLoaded(string title, string path) => Guard(_documents.WatchOpenDocuments);
+
+    // Follow a new document from the start: nothing else tells us when it's first saved.
+    private int OnFileNew(object document, int type, string template) => Guard(_documents.WatchOpenDocuments);
 
     // An exception must never escape into SolidWorks.
     private static int Guard(Action handler)

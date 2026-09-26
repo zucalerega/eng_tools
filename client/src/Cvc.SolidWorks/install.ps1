@@ -13,6 +13,14 @@ $regasm = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe
 & $regasm /codebase $dll
 if ($LASTEXITCODE -ne 0) { throw "RegAsm failed with exit code $LASTEXITCODE" }
 
+# cvc:// links, which the web app's "Open in SolidWorks" uses, go to cvc-open.exe in this folder.
+$open = Join-Path $PSScriptRoot 'cvc-open.exe'
+$link = 'HKLM:\SOFTWARE\Classes\cvc'
+New-Item -Path "$link\shell\open\command" -Force | Out-Null
+Set-ItemProperty -Path $link -Name '(default)' -Value 'URL:Vault'
+Set-ItemProperty -Path $link -Name 'URL Protocol' -Value ''
+Set-ItemProperty -Path "$link\shell\open\command" -Name '(default)' -Value "`"$open`" `"%1`""
+
 Write-Host ''
-Write-Host 'CVC is registered. Start SolidWorks: the CVC tab is in the task pane on the right.'
+Write-Host 'Vault is registered. Start SolidWorks: the Vault tab is in the task pane on the right.'
 Write-Host "Keep this folder where it is: SolidWorks loads the add-in from $PSScriptRoot."

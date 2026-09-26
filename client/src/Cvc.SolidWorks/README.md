@@ -68,6 +68,9 @@ these on SolidWorks 2025:
    closes, updates, and reopens.
 8. Undo a check-out that has changes. The file goes back to the vault's version, and
    your copy is in `C:\CVC\.cvc\backup`.
+9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
+   the CVC tab and the Check in dialog look as they do at 100%, only larger: no text is
+   cut off, and the comment box is full size.
 
 ## When something goes wrong
 

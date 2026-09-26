@@ -63,6 +63,7 @@ internal sealed class CvcPane : UserControl
     public CvcPane(SolidWorksHost sw)
     {
         _sw = sw;
+        SuspendLayout();
         Font = SystemFonts.MessageBoxFont;
         Padding = new Padding(8);
 
@@ -81,9 +82,10 @@ internal sealed class CvcPane : UserControl
         _checkInButton = MakeButton("Check in...", (_, _) => OnActiveDocument(path => CheckInAsync(new[] { path })));
         _undoButton = MakeButton("Undo check-out", (_, _) => OnActiveDocument(UndoAsync));
         _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
-        _changes.Columns.Add("File", 190);
-        _changes.Columns.Add("State", 100);
-        _changes.Columns.Add("Checked out by", 130);
+        _changes.Columns.Add("File");
+        _changes.Columns.Add("State");
+        _changes.Columns.Add("Checked out by");
+        _changes.ClientSizeChanged += (_, _) => FitColumns();
         _changes.DoubleClick += (_, _) => OpenSelected();
         _changes.ContextMenuStrip = ListMenu();
         _workView = Stack(
@@ -104,6 +106,12 @@ internal sealed class CvcPane : UserControl
         Controls.Add(_workView);
         Controls.Add(_setupView);
         Controls.Add(_message);
+        // Sizes in this file are for a 100% (96 DPI) display. SolidWorks is DPI-aware, so Windows
+        // doesn't scale the pane for us; this does, once the layout is built.
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        ResumeLayout(false);
+        PerformLayout();
         _poll.Tick += (_, _) => RefreshSoon();
         _debounce.Tick += async (_, _) =>
         {
@@ -657,6 +665,16 @@ internal sealed class CvcPane : UserControl
         _changes.EndUpdate();
     }
 
+    // The task pane's width depends on SolidWorks and the display, so the columns share whatever
+    // width the list has instead of overflowing it (at 100%) or leaving most of it empty (at 250%).
+    private void FitColumns()
+    {
+        var width = _changes.ClientSize.Width;
+        _changes.Columns[0].Width = width / 2;
+        _changes.Columns[1].Width = width / 5;
+        _changes.Columns[2].Width = width - _changes.Columns[0].Width - _changes.Columns[1].Width;
+    }
+
     private static string StateText(FileState state) => state switch
     {
         FileState.New => "new",
@@ -768,14 +786,17 @@ internal sealed class CvcPane : UserControl
 
     private static FlowLayoutPanel Row(params Control[] controls)
     {
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true };
         row.Controls.AddRange(controls);
         return row;
     }
 
+    // Buttons (at least Windows' standard 75x23) and rows are sized by their text, which already scales
+    // with the display. GrowAndShrink keeps the pane's DPI scaling from leaving them enlarged, as
+    // GrowOnly (the default) would.
     private static Button MakeButton(string text, EventHandler onClick)
     {
-        var button = new Button { Text = text, AutoSize = true };
+        var button = new Button { Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(75, 23) };
         button.Click += onClick;
         return button;
     }

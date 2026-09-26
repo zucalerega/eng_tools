@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     dev_auth: bool = False
     session_days: int = 30
     max_upload_mb: int = 2048
+    # The web app's build (`npm run build` in web/). The default is the build in this repository.
+    web_dir: Path = Path(__file__).resolve().parents[3] / "web" / "dist"
 
     @property
     def production(self) -> bool:

@@ -20,6 +20,7 @@ def settings(tmp_path) -> Settings:
         blob_dir=tmp_path / "blobs",
         dev_auth=True,
         bootstrap_admins=BOOTSTRAP_ADMIN,
+        web_dir=tmp_path / "web",  # empty: tests that need the web app build a stand-in
     )
 
 

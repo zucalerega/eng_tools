@@ -37,6 +37,12 @@ Config = Annotated[Settings, Depends(get_settings)]
 Store = Annotated[BlobStore, Depends(get_store)]
 
 
+def session_user(request: Request, db: Session) -> User | None:
+    """Who the browser's session cookie belongs to, if anyone: for pages, which redirect instead of failing."""
+    secret = request.cookies.get(SESSION_COOKIE)
+    return auth.authenticate(db, secret) if secret else None
+
+
 def any_user(request: Request, db: DB) -> User:
     """The signed-in user, whether or not an admin has approved them yet."""
     header = request.headers.get("authorization", "")

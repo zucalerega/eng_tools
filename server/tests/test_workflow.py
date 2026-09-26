@@ -62,6 +62,106 @@ def test_one_editor_at_a_time(team):
     assert events[0]["detail"]["holder"] == "alice@x.test"
 
 
+def test_leads_can_take_over_a_check_out(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    team.grant(chief, "", None, "editor")
+    team.checkin(alice, {"Tank.SLDPRT": b"v1"})
+    team.checkout(alice, "Tank.SLDPRT", host="ALICE-PC")
+
+    assert team.checkout(bob, "Tank.SLDPRT", host="BOB-PC").status_code == 409
+    assert team.checkout(bob, "Tank.SLDPRT", host="BOB-PC", force=True).status_code == 403  # editors can't
+    team.grant(chief, "", "bob@x.test", "lead")
+    taken = team.checkout(bob, "Tank.SLDPRT", host="BOB-PC", force=True)
+    assert taken.status_code == 200, taken.text
+    lock = taken.json()["files"][0]["checked_out"]
+    assert (lock["user"]["email"], lock["host"]) == ("bob@x.test", "BOB-PC")
+    events = client.get("/api/activity", headers=chief).json()
+    assert [(e["action"], e["detail"].get("holder")) for e in events[:2]] == [
+        ("checkout", None),
+        ("break_lock", "alice@x.test"),
+    ]
+    assert team.checkin(alice, {"Tank.SLDPRT": b"alice's v2"}, host="ALICE-PC").json()["error"] == "checked_out"
+
+
+def test_you_can_move_your_own_check_out_to_another_computer(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    team.grant(chief, "", None, "editor")
+    team.checkin(alice, {"Valve.SLDPRT": b"v1"})
+    team.checkout(alice, "Valve.SLDPRT", host="ALICE-PC")
+    moved = team.checkout(alice, "Valve.SLDPRT", host="LAB-PC", force=True)
+    assert moved.json()["files"][0]["checked_out"]["host"] == "LAB-PC"
+
+
+def test_revert_brings_an_old_version_back_as_a_new_one(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(chief, {"Motor/Grain.SLDPRT": b"grain"})
+    team.checkin(chief, {"Motor/Case.SLDASM": b"case v1"}, refs={"Motor/Case.SLDASM": ["Motor/Grain.SLDPRT"]})
+    for number in (2, 3):
+        team.checkout(chief, "Motor/Case.SLDASM")
+        team.checkin(chief, {"Motor/Case.SLDASM": f"case v{number}".encode()})
+    case = next(f for f in team.listing(chief, "Motor")["files"] if f["name"] == "Case.SLDASM")
+
+    def revert(**body):
+        return client.post(f"/api/files/{case['id']}/revert", json=body, headers=chief)
+
+    reverted = revert(version=1, comment="v2 and v3 broke the fit")
+    assert reverted.status_code == 200, reverted.text
+    assert (reverted.json()["version"], reverted.json()["checked_out"]) == (4, None)
+    assert client.get(f"/api/files/{case['id']}/content", headers=chief).content == b"case v1"
+    latest = client.get(f"/api/files/{case['id']}", headers=chief).json()["versions"][0]
+    assert latest["comment"] == "Reverted to v1: v2 and v3 broke the fit"
+    assert [(r["path"], r["version"]) for r in latest["references"]] == [("Motor/Grain.SLDPRT", 1)]
+    event = client.get("/api/activity", headers=chief).json()[0]
+    assert (event["action"], event["detail"]["reverted_to"], event["comment"]) == (
+        "revert",
+        1,
+        "Reverted to v1: v2 and v3 broke the fit",
+    )
+    assert revert(version=4).json()["error"] == "bad_version"  # already the latest
+    assert revert(version=9).json()["error"] == "bad_version"
+
+
+def test_reverting_a_file_someone_has_checked_out_takes_a_lead(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    vic = team.member("vic@x.test")
+    team.checkin(chief, {"Recovery/Chute.SLDPRT": b"v1"})
+    team.checkout(chief, "Recovery/Chute.SLDPRT")
+    chute = team.checkin(chief, {"Recovery/Chute.SLDPRT": b"v2"}).json()["files"][0]["file"]
+    team.grant(chief, "", None, "viewer")
+    team.grant(chief, "Recovery", "alice@x.test", "editor")
+    team.grant(chief, "Recovery", "bob@x.test", "editor")
+    team.checkout(alice, "Recovery/Chute.SLDPRT", host="ALICE-PC")
+
+    def revert(who, **body):
+        return client.post(f"/api/files/{chute['id']}/revert", json={"version": 1, **body}, headers=who)
+
+    assert revert(vic).status_code == 403  # viewers can't revert
+    assert revert(bob).json()["error"] == "checked_out"  # Alice has it
+    assert revert(bob, force=True).status_code == 403  # forcing takes a lead
+    forced = revert(chief, force=True)
+    assert (forced.status_code, forced.json()["version"], forced.json()["checked_out"]) == (200, 3, None)
+    assert [e["action"] for e in client.get("/api/activity", headers=chief).json()[:2]] == ["revert", "break_lock"]
+
+
+def test_activity_shows_what_each_check_in_said(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"}, comment="first fin can")
+    team.checkout(chief, "Fins/Fin.SLDPRT")
+    events = client.get("/api/activity", headers=chief).json()
+    assert [(e["action"], e["comment"]) for e in events] == [
+        ("checkout", None),
+        ("add", "first fin can"),
+        ("add", "first fin can"),
+        ("create_folder", None),
+    ]
+    assert events[1]["checkin_id"] == events[2]["checkin_id"] is not None
+
+
 def test_checkout_is_all_or_nothing(team, client):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test", admin=True)

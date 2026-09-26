@@ -182,6 +182,14 @@ class FilesIn(BaseModel):
 
 class CheckoutIn(FilesIn):
     host: str  # this computer's name; the lock belongs to it
+    force: bool = False  # take over files checked out elsewhere (someone else's: leads only)
+
+
+class RevertIn(BaseModel):
+    version: int = Field(ge=1)  # the version to make the latest again
+    comment: str = Field(default="", max_length=5000)
+    host: str = "web"
+    force: bool = False  # even if someone else has it checked out (leads only): releases their check-out
 
 
 class DeleteIn(FilesIn):
@@ -248,6 +256,9 @@ class EventOut(BaseModel):
     folder_id: int | None
     file_id: int | None
     detail: dict[str, Any]
+    # Events that made a version (add, checkin): its check-in, which groups the files checked in together.
+    checkin_id: int | None = None
+    comment: str | None = None
 
     @classmethod
     def of(cls, view: vault.EventView) -> "EventOut":
@@ -260,6 +271,8 @@ class EventOut(BaseModel):
             folder_id=e.folder_id,
             file_id=e.file_id,
             detail=e.detail,
+            checkin_id=view.checkin.id if view.checkin else None,
+            comment=view.checkin.comment if view.checkin else None,
         )
 
 

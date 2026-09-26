@@ -12,6 +12,7 @@ roadmap. Read the design before changing behavior.
 |---|---|
 | `server/` | Python 3.13 FastAPI server. Start at `vault.py` (every vault operation, no HTTP). `access.py`: folder tree and permissions. `paths.py`: path rules. `auth.py`: accounts and tokens. `api/`: thin routes and request/response schemas. |
 | `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). Tests run against the real server. |
+| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). Start at `store.ts`: the vault index, kept current through the sync feed. `api.ts`: the server's API. `pages/`: one file per page. Tests run against the real server. |
 | `docs/design.md` | Design, API, roadmap, open questions. |
 | `.github/workflows/ci.yml` | The checks every change must pass. |
 
@@ -22,6 +23,7 @@ The full check, the same one CI runs. Run it before every commit:
 ```bash
 cd server && uv sync --locked && uv run ruff check . && uv run ruff format --check . && uv run pytest
 cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
+cd web && npm ci && npm run check && npm test && npm run build
 ```
 
 - `cd server && uv run ruff format .`: format the Python.
@@ -29,10 +31,13 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
 - `cd server && CVC_DEV_AUTH=1 CVC_BOOTSTRAP_ADMINS=you@example.com uv run cvc-server`: local
   server at http://localhost:8000 (API docs at `/docs`).
 - `cd client && dotnet run --project src/Cvc.Cli -- <command>`: the CLI.
+- `cd web && npm run build`: build the web app; the local server then serves it at
+  http://localhost:8000. `npm run dev` serves it at http://localhost:5173 and reloads as you
+  edit (sign in at http://localhost:8000 first). `npm run format`: format the TypeScript.
 - The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks 2025 on
   Windows. CI uploads each build as the `cvc-solidworks-addin` artifact. Install and
   manual-testing steps are in `client/src/Cvc.SolidWorks/README.md`.
-- `docker build -t cvc-server server/`: the production image.
+- `docker build -f server/Dockerfile -t cvc-server .`: the production image, server and web app.
 
 ## How changes are made
 
@@ -55,13 +60,16 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
   Server errors are `CvcError` subclasses with a stable `code`.
 - **Comments explain why.** Match the style of the code around you.
 - **Dependencies:** add one only with a reason given in the PR. Lockfiles (`uv.lock`,
-  `packages.lock.json`) are committed and only change on purpose.
+  `packages.lock.json`, `package-lock.json`) are committed and only change on purpose.
 - **Python:** type hints on every function, SQLAlchemy 2.0 typed models, ruff clean
   (line length 120).
 - **C#:** `Cvc.Client` must build for netstandard2.0 (the add-in runs on .NET
   Framework 4.8), so .NET 5+ APIs only inside `#if NET...`. Nullable references are
   on, warnings are errors, `dotnet format` must be clean, and library awaits use
   `ConfigureAwait(false)`.
+- **TypeScript:** strict, Prettier-formatted (line length 120), no `any`. The web app only
+  shows what the server allows and asks it to do things; permission rules stay on the
+  server, and the app hides what your role can't do.
 
 ## Testing
 
@@ -70,6 +78,8 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
 - **Test through the public surface:**
   - server: the HTTP API, using the `Team` helper in `tests/conftest.py`
   - client: `Workspace`, against the real server via `ServerFixture`
+  - web: the rendered app (Testing Library), against the real server started by
+    `web/tests/server.ts`, with data set up through the API (`web/tests/team.tsx`)
 
   Don't mock the protocol.
 - Tests are offline, deterministic, and isolated: temporary folders, no sleeping to

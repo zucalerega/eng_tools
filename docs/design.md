@@ -57,7 +57,7 @@ Web app (React) ─────────────────────�
 | Client library: the local workspace | `client/src/Cvc.Client` (netstandard2.0 + net10.0) | working |
 | CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
 | SolidWorks 2025 add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | built; untested in SolidWorks |
-| Web app | `web/` (React + Vite), served by the server | planned |
+| Web app | `web/` (TypeScript, React + Vite), served by the server | working |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
 COM components. The workspace logic lives in a netstandard2.0 library so the add-in
@@ -85,7 +85,9 @@ and the CLI share it, and it can be developed and tested on a Mac through the CL
 **Check out.** Takes locks on one or more files for you on this computer: all of
 them or none. If a file is already checked out by someone else, the error says who
 has it, on which computer, and since when. Checking out a file you already have
-checked out on this computer succeeds and changes nothing.
+checked out on this computer succeeds and changes nothing. With `force`, a check-out
+takes over: your own check-out moves to this computer, and a lead (or admin) can take
+someone else's, which releases it as a "break lock" (below).
 
 **Check in.** Uploads the new contents, then creates the new versions under one
 comment, all or nothing:
@@ -109,6 +111,12 @@ Locks are released unless `keep_checked_out` is set.
 someone else's lock ("break lock"), for when someone went home for the summer with
 files checked out. It's recorded in the activity log with the lock holder's name.
 
+**Revert.** Makes an older version the latest again, as a new version with that
+version's contents and pinned references, recorded as a check-in ("Reverted to v2:
+…"), so nothing is lost. It needs editor rights and the file not checked out by
+someone else; a lead can force it, which releases their check-out. Your own check-out
+ends, as with a check-in.
+
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. CVC refuses to delete a file that the
 latest version of another file still uses, unless you force it or delete both
@@ -128,8 +136,8 @@ assembly brings its references along), not the whole vault.
 | Role | Can |
 |---|---|
 | Viewer | browse, download, see history |
-| Editor | + check out, check in, add files and folders, delete and restore |
-| Lead | + undo other people's check-outs, and change who has access to the folder |
+| Editor | + check out, check in, add files and folders, delete and restore, revert |
+| Lead | + undo or take over other people's check-outs, force a revert, and change who has access to the folder |
 | Admin (a flag on the account) | everything, everywhere, plus approving and disabling accounts |
 
 A role is granted on a folder, for one person or for *everyone* (all active
@@ -251,6 +259,26 @@ COM add-in, registered with `install.ps1` (RegAsm).
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 
+## The web app
+
+`web/` is one page (TypeScript, React, Vite) that the server serves at `/` and at any
+path the API doesn't own (`api/web.py`), to people who are signed in and approved;
+everyone else signs in on the server's home page first. It uses the browser session
+cookie, and sends `X-CVC-Request` on every request.
+
+- **A live copy of the vault index.** It loads everything you can see from the sync
+  feed (`GET /api/sync`, as the clients do) and asks it for changes every few seconds
+  while the page is visible, so browsing and searching need no more requests, and
+  check-ins and check-outs on anyone's PC show up within seconds.
+- **Pages:** files (browse and search), a file (history, downloads, what it uses and
+  what uses it), checked out (who has what), activity, and admin (people for admins;
+  access for admins and folder leads).
+- **Admin mode**, a switch for admins and folder leads, remembered per browser: it adds
+  releasing someone's check-out and reverting a file someone has checked out. The
+  server checks every one of them; the app only hides what your role can't do.
+- **Open in SolidWorks** links to `cvc://open?server=…&path=…`, which the add-in's
+  installer registers on Windows PCs.
+
 ## API
 
 Every endpoint needs sign-in except `/auth/*` and `/healthz`. Errors look like
@@ -265,7 +293,8 @@ are at `/docs`.
 | `GET /api/files/{id}` | a file's versions, references, and where it's used |
 | `GET /api/files/{id}/content?version=` | download a version (default: latest) |
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
-| `POST /api/checkout` | lock files `{files: [id or path], host}` |
+| `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
+| `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
 | `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete`, `POST /api/files/{id}/restore` | trash and restore |
@@ -307,8 +336,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 3. **SolidWorks 2025 add-in** (built; needs its first run in SolidWorks): task pane
    with status and actions, check-out offers when you edit, save checks, and
    check-ins that include an assembly's references.
-4. **Web app**: browse, history, download, who-has-what, admin (approvals,
-   permissions, breaking locks).
+4. **Web app** (done): browse and search, history, download, who-has-what, activity,
+   admin (approvals, permissions), and admin mode (releasing check-outs, forced
+   reverts). Still to do: opening files in SolidWorks from it (the `cvc:` link).
 5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
    backups, and importing the current files from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in

@@ -1,6 +1,6 @@
 """Sign-in pages: Google for people, a browser handshake for the CLI/add-in, dev shortcuts.
 
-Also serves a placeholder home page until the web app exists.
+The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
 
 import html
@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,8 @@ from .. import auth
 from ..config import Settings
 from ..errors import CvcError, Forbidden, NotFound
 from ..models import User, UserStatus
-from .deps import DB, SESSION_COOKIE, Config
+from . import web
+from .deps import DB, SESSION_COOKIE, Config, session_user
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -46,7 +47,7 @@ def _esc(value: object) -> str:
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    tab_title = title if title == "CVC" else f"{title} · CVC"
+    tab_title = title if title == "CVC" else f"{title} Â· CVC"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -71,11 +72,6 @@ def _safe_next(target: str | None) -> str:
     return target
 
 
-def _cookie_user(request: Request, db: Session) -> User | None:
-    secret = request.cookies.get(SESSION_COOKIE)
-    return auth.authenticate(db, secret) if secret else None
-
-
 def _start_session(request: Request, db: Session, settings: Settings, user: User, target: str) -> RedirectResponse:
     agent = request.headers.get("user-agent", "browser")
     secret = auth.issue_token(db, user, kind=auth.SESSION, name=agent, ttl=timedelta(days=settings.session_days))
@@ -92,8 +88,13 @@ def _start_session(request: Request, db: Session, settings: Settings, user: User
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") -> HTMLResponse:
-    user = _cookie_user(request, db)
+def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") -> Response:
+    user = session_user(request, db)
+    if user is not None and user.status == UserStatus.ACTIVE:
+        if _safe_next(next_path) != "/":
+            return RedirectResponse(_safe_next(next_path), status_code=303)  # signed in already: carry on
+        if (index := web.app_index(settings)) is not None:
+            return web.index_response(index)
     if user is None:
         parts = []
         if request.app.state.oauth is not None:
@@ -115,7 +116,10 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
     elif user.status == UserStatus.DISABLED:
         body += "<p>This account is disabled.</p>"
     else:
-        body += '<p>The web app isn\'t built yet. Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
+        body += (
+            "<p>The web app isn't built on this server (<code>npm run build</code> in <code>web/</code>). "
+            'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
+        )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
     return _page("CVC", body)
 
@@ -184,7 +188,7 @@ def client_start(
 ):
     """The page a client opens in the browser: sign in if needed, then confirm."""
     _check_client_request(port, state, challenge)
-    user = _cookie_user(request, db)
+    user = session_user(request, db)
     if user is None:
         here = f"{request.url.path}?{request.url.query}"
         return RedirectResponse("/auth/login?" + urlencode({"next": here}), status_code=303)
@@ -219,7 +223,7 @@ def client_approve(
     approval: Annotated[str, Form()],
 ) -> RedirectResponse:
     _check_client_request(port, state, challenge)
-    user = _cookie_user(request, db)
+    user = session_user(request, db)
     if user is None or user.status != UserStatus.ACTIVE:
         raise Forbidden("Sign in first", code="unauthorized")
     try:

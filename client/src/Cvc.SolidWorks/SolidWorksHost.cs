@@ -157,6 +157,45 @@ internal sealed class SolidWorksHost
         _app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
     }
 
+    /// <summary>
+    /// Start a new part, assembly, or drawing from SolidWorks' default template for it (a drawing with a view
+    /// of model), and save it at path, leaving it open. Returns what went wrong, or null.
+    /// </summary>
+    public string? CreateDocument(string path, string? model)
+    {
+        var type = DocumentType(path);
+        var (preference, kind) = type switch
+        {
+            swDocumentTypes_e.swDocASSEMBLY => (swUserPreferenceStringValue_e.swDefaultTemplateAssembly, "assembly"),
+            swDocumentTypes_e.swDocDRAWING => (swUserPreferenceStringValue_e.swDefaultTemplateDrawing, "drawing"),
+            _ => (swUserPreferenceStringValue_e.swDefaultTemplatePart, "part"),
+        };
+        var template = _app.GetUserPreferenceStringValue((int)preference);
+        if (string.IsNullOrEmpty(template) || !File.Exists(template))
+        {
+            return $"SolidWorks has no default {kind} template. Choose one in Tools > Options > System Options > Default Templates, then try again.";
+        }
+        if (_app.NewDocument(template, 0, 0, 0) is not ModelDoc2 document)
+        {
+            return $"SolidWorks couldn't start a new {kind} from {template}.";
+        }
+        if (model != null && document is DrawingDoc drawing)
+        {
+            // One view to start from, in the middle of the sheet; the model loads for it if it isn't open.
+            double width = 0, height = 0;
+            ((Sheet)drawing.GetCurrentSheet()).GetSize(ref width, ref height);
+            if (drawing.CreateDrawViewFromModelView3(model, "*Isometric", width / 2, height / 2, 0) == null)
+            {
+                return $"SolidWorks couldn't put a view of {Path.GetFileName(model)} on the new drawing. It's open, not saved.";
+            }
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        int errors = 0, warnings = 0;
+        var saved = document.Extension.SaveAs3(
+            path, (int)swSaveAsVersion_e.swSaveAsCurrentVersion, (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, null, ref errors, ref warnings);
+        return saved ? null : $"SolidWorks couldn't save {path} (error {errors}). The new {kind} is open, not saved.";
+    }
+
     /// <summary>Bring SolidWorks' window to the front, when cvc-open (following a link from the web app) allowed it.</summary>
     public static void BringToFront()
     {

@@ -267,11 +267,10 @@ internal sealed class CvcPane : UserControl
 
     private async Task<string> OpenLinkAsync(string link)
     {
-        Uri server;
-        string vaultPath;
+        LinkRequest request;
         try
         {
-            (server, vaultPath) = OpenLink.Parse(link);
+            request = OpenLink.Parse(link);
         }
         catch (Exception e) when (e is WorkspaceException or VaultPathException)
         {
@@ -282,21 +281,58 @@ internal sealed class CvcPane : UserControl
         {
             return "Sign in to CVC in SolidWorks first: open the CVC tab in the task pane.";
         }
-        if (!SameServer(workspace.Server, server))
+        if (!SameServer(workspace.Server, request.Server))
         {
-            return $"That link is for the CVC server at {server}, but this computer's workspace is for {workspace.Server}.";
+            return $"That link is for the CVC server at {request.Server}, but this computer's workspace is for {workspace.Server}.";
         }
-        var path = workspace.ToLocalPath(vaultPath);
+        var path = workspace.ToLocalPath(request.VaultPath);
         SolidWorksHost.BringToFront();
+        if (request.Action == LinkAction.New)
+        {
+            await NewFileAsync(path, request.Model == null ? null : workspace.ToLocalPath(request.Model));
+            SolidWorksHost.BringToFront();
+            return ""; // what went wrong, if anything, is shown here in SolidWorks
+        }
         await GetLatestAsync(path); // with the parts it uses; open copies update in place
         if (!File.Exists(path))
         {
-            return $"{vaultPath} isn't in the vault, or you don't have access to it.";
+            return $"{request.VaultPath} isn't in the vault, or you don't have access to it.";
         }
         _sw.Open(path);
         SolidWorksHost.BringToFront();
         return "";
     }
+
+    /// <summary>
+    /// Start a new part, assembly, or drawing (of model) at path, for the web app: SolidWorks makes it from
+    /// its default template, and it's checked in at once, staying checked out to you, so everyone sees the
+    /// name is taken. Changes to the model that you haven't checked in stay out of it.
+    /// </summary>
+    private Task NewFileAsync(string path, string? model) => RunAsync($"Starting {Path.GetFileName(path)}", async workspace =>
+    {
+        await workspace.CheckNewFileAsync(path);
+        if (model != null)
+        {
+            // The drawing's view needs the model here, with the parts it uses.
+            await GetLatestHereAsync(workspace, model);
+            if (!File.Exists(model))
+            {
+                throw new WorkspaceException($"{Path.GetFileName(model)} isn't in the vault, or you don't have access to it.");
+            }
+        }
+        if (_sw.CreateDocument(path, model) is { } problem)
+        {
+            throw new WorkspaceException(problem);
+        }
+        var uses = ReferenceMap(new[] { path });
+        await workspace.CheckinAsync(
+            new[] { path },
+            "Started from the web app",
+            keepCheckedOut: true,
+            referencesOf: p => uses.TryGetValue(p, out var found) ? found : Array.Empty<string>(),
+            withChangedReferences: false);
+        return $"{Path.GetFileName(path)} is in the vault, checked out to you.";
+    });
 
     /// <summary>The active document was changed: offer to check it out if it isn't yours (once per session).</summary>
     public void DocumentModified(string path)

@@ -189,6 +189,36 @@ public sealed class Workspace : IDisposable
         return new VaultTree(statuses, _state.Folders.Values.Select(f => f.Path), uses);
     }
 
+    /// <summary>
+    /// Check that a new file can be made at this path before making it: nothing is there, in the vault or
+    /// here, and you can add files to its folder, as far as this workspace knows (the server has the last word).
+    /// </summary>
+    public async Task CheckNewFileAsync(string localPath, CancellationToken ct = default)
+    {
+        var vaultPath = string.Join("/", VaultPaths.Split(RelativePath(localPath)));
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var key = VaultPaths.Key(vaultPath);
+        if (_state.Remote.Values.Any(r => VaultPaths.Key(r.Path) == key))
+        {
+            throw new WorkspaceException($"{vaultPath} is already in the vault");
+        }
+        if (File.Exists(localPath))
+        {
+            throw new WorkspaceException($"{localPath} is already here, not checked in yet. Open it, or choose another name.");
+        }
+        if (Directory.Exists(localPath) || _state.Folders.ContainsKey(key))
+        {
+            throw new WorkspaceException($"{vaultPath} is a folder");
+        }
+        var folder = vaultPath.Contains("/") ? vaultPath.Substring(0, vaultPath.LastIndexOf('/')) : "";
+        var (known, role) = RoleNear(folder);
+        if (known && role is null or "viewer")
+        {
+            throw new WorkspaceException(
+                $"You can't add files to {(folder.Length > 0 ? folder : "the top of the vault")}: that takes editor access. Ask a lead of that folder.");
+        }
+    }
+
     public async Task<FileDetail> HistoryAsync(string localPath, CancellationToken ct = default)
     {
         await RefreshAsync(ct).ConfigureAwait(false);
@@ -349,11 +379,16 @@ public sealed class Workspace : IDisposable
     /// drawing's models). When given, referenced files that are new, or checked out to you with
     /// changes, join the check-in, and every reference is recorded with the version used.
     /// </param>
+    /// <param name="withChangedReferences">
+    /// False: referenced files checked out to you with changes stay out of the check-in (new ones still
+    /// join), pinned to their version in the vault. For a new drawing of a part you're changing.
+    /// </param>
     public async Task<CheckinResult> CheckinAsync(
         IEnumerable<string> localPaths,
         string comment,
         bool keepCheckedOut = false,
         Func<string, IEnumerable<string>>? referencesOf = null,
+        bool withChangedReferences = true,
         CancellationToken ct = default)
     {
         var scope = Scope(RequirePaths(localPaths, "check in"));
@@ -387,7 +422,7 @@ public sealed class Workspace : IDisposable
         }
         var references = referencesOf is null
             ? new Dictionary<string, List<CheckinReference>>()
-            : CollectReferences(items, referencesOf);
+            : CollectReferences(items, referencesOf, withChangedReferences);
         foreach (var status in items.Where(s => s.State == FileState.New))
         {
             VaultPaths.Split(status.VaultPath); // the server's name rules, before uploading anything
@@ -493,11 +528,12 @@ public sealed class Workspace : IDisposable
 
     /// <summary>
     /// Each item's references as vault paths. Referenced files that are new, or checked out to
-    /// you with changes, are added to items (and their own references followed); the rest are
-    /// pinned to the version this workspace has, which is the one the item was built against.
+    /// you with changes (unless withChanged is false), are added to items (and their own references
+    /// followed); the rest are pinned to the version this workspace has, which is the one the item
+    /// was built against.
     /// </summary>
     private Dictionary<string, List<CheckinReference>> CollectReferences(
-        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf)
+        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf, bool withChanged)
     {
         var everything = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
         foreach (var status in Compute(new List<string> { "" }))
@@ -524,7 +560,7 @@ public sealed class Workspace : IDisposable
                     var problem = used.State == FileState.Conflict ? "changed here after someone checked in a newer version" : "was deleted in the vault";
                     throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which {problem}");
                 }
-                var joins = used.State == FileState.New || (used.CheckedOutByMe && used.State == FileState.Modified);
+                var joins = used.State == FileState.New || (withChanged && used.CheckedOutByMe && used.State == FileState.Modified);
                 if (joins && included.Add(key))
                 {
                     items.Add(used);

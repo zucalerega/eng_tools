@@ -76,6 +76,29 @@ test("the assemblies page starts from the top-level assemblies", async () => {
     expect(screen.getByRole("link", { name: "Fin Can.SLDASM" })).toBeTruthy();
 });
 
+test("a new part is named here, then started in SolidWorks", async () => {
+    const team = await Team.create();
+    await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+
+    renderApp(team.chief, folderUrl(`${team.folder}/Fins`));
+    await userEvent.click(await screen.findByRole("button", { name: "New part" }));
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByRole("textbox", { name: "Name" });
+    await userEvent.type(name, "Fin");
+    expect(within(dialog).getByRole("alert").textContent).toContain("already in the vault");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Fin: Bracket");
+    expect(within(dialog).getByRole("alert").textContent).toContain("can't contain");
+    expect(within(dialog).getByRole("button", { name: "Start it in SolidWorks" })).toHaveProperty("disabled", true);
+
+    await userEvent.clear(name);
+    await userEvent.type(name, "Fin Bracket");
+    const start = within(dialog).getByRole("link", { name: "Start it in SolidWorks" });
+    const link = new URL(start.getAttribute("href")!);
+    expect([link.protocol, link.host]).toEqual(["cvc:", "new"]);
+    expect(link.searchParams.get("path")).toBe(`${team.folder}/Fins/Fin Bracket.SLDPRT`);
+});
+
 test("search finds files anywhere in the vault", async () => {
     const team = await Team.create();
     await team.checkin(team.chief, { "Recovery/Drogue/Chute.SLDPRT": "chute", "Recovery/Harness.SLDPRT": "harness" });

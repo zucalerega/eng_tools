@@ -290,6 +290,14 @@ COM add-in, registered with `install.ps1` (RegAsm).
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.
+- **New files from the web app.** New part, New assembly, and New drawing (of a part or
+  assembly) are `cvc://new?server=…&path=…[&model=…]` links. The add-in checks that the
+  name is free and that you can add files there (`Workspace.CheckNewFileAsync`); for a
+  drawing, gets the model and the parts it uses; starts the file from SolidWorks' default
+  template for its type (a drawing with an isometric view of the model); saves it; and
+  checks it in at once as version 1, kept checked out to you, so everyone sees it and
+  the name is taken. Changes to the model that you haven't checked in stay out of that
+  check-in.
 
 ## The web app
 
@@ -321,6 +329,10 @@ cookie, and sends `X-CVC-Request` on every request.
   server checks every one of them; the app only hides what your role can't do.
 - **Open in SolidWorks** links to `cvc://open?server=…&path=…`, which the add-in's
   installer registers on Windows PCs.
+- **New files:** New part and New assembly in a folder you can edit, and New drawing on
+  a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
+  a drawing named after its model), then links to `cvc://new`, and SolidWorks on this
+  computer makes it. It shows up in the vault a few seconds later, checked out to you.
 
 ## API
 

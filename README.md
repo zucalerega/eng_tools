@@ -26,7 +26,8 @@ the web. It replaces Kenesto.
 - **See everything on the web:** browse and search the vault; see what each assembly
   contains and which assemblies each part is in, at every level, and whether each file
   is checked in; see each file's history and drawings and who has what checked out;
-  download any version; and follow the activity as it happens. Admins and folder leads can switch on admin mode to release someone's
+  download any version; follow the activity as it happens; and start new parts,
+  assemblies, and drawings, which SolidWorks makes on your computer. Admins and folder leads can switch on admin mode to release someone's
   check-out or revert a file they have checked out.
 
 ## Layout

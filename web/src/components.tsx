@@ -50,18 +50,21 @@ export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null 
 }
 
 /**
- * Opens the file in SolidWorks on this computer through the cvc: link that the add-in's installer
- * registers. The add-in (or its helper) gets the latest version, and the parts it uses, first.
+ * A link that SolidWorks on this computer follows, through the cvc: links the add-in's installer
+ * registers: open a vault file (after getting its latest version and the parts it uses), or start a
+ * new part or assembly there.
  */
+export const solidWorksLink = (action: "open" | "new", path: string, more: Record<string, string> = {}): string =>
+    `cvc://${action}?` + new URLSearchParams({ server: window.location.origin, path, ...more }).toString();
+
 export function OpenInSolidWorks({ path, compact = false }: { path: string; compact?: boolean }) {
     if (!opensInSolidWorks(path)) {
         return null;
     }
-    const link = "cvc://open?" + new URLSearchParams({ server: window.location.origin, path }).toString();
     return (
         <a
             className={compact ? "button button-small" : "button button-primary"}
-            href={link}
+            href={solidWorksLink("open", path)}
             title="Needs the CVC add-in for SolidWorks on this computer"
         >
             Open in SolidWorks
@@ -77,7 +80,10 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warning" 
     );
 }
 
-/** A modal question: the page underneath waits until it's answered. */
+/**
+ * A modal question: the page underneath waits until it's answered. With confirmHref, confirming follows
+ * that link (a cvc: link for SolidWorks, say), also by pressing Enter; without one, it's disabled.
+ */
 export function Dialog({
     title,
     children,
@@ -86,6 +92,8 @@ export function Dialog({
     onCancel,
     busy = false,
     danger = false,
+    link = false,
+    confirmHref,
 }: {
     title: string;
     children: ReactNode;
@@ -94,40 +102,61 @@ export function Dialog({
     onCancel: () => void;
     busy?: boolean;
     danger?: boolean;
+    link?: boolean;
+    confirmHref?: string;
 }) {
     const heading = useId();
+    const dialog = useRef<HTMLFormElement>(null);
     const cancel = useRef<HTMLButtonElement>(null);
     const escape = useEffectEvent((event: KeyboardEvent) => {
         if (event.key === "Escape" && !busy) {
             onCancel();
         }
     });
-    // Once, when it opens: focusing again on every render would pull focus out of its fields.
+    // Once, when it opens (unless one of its fields took focus): focusing again on every render would
+    // pull focus out of its fields.
     useEffect(() => {
-        cancel.current?.focus();
+        if (!dialog.current?.contains(document.activeElement)) {
+            cancel.current?.focus();
+        }
         const listener = (event: KeyboardEvent) => escape(event);
         window.addEventListener("keydown", listener);
         return () => window.removeEventListener("keydown", listener);
     }, []);
+    const className = danger ? "button-danger" : "button-primary";
     return (
         <div className="dialog-backdrop">
-            <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={heading}>
+            <form
+                className="dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={heading}
+                ref={dialog}
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    if (link && confirmHref) {
+                        window.location.assign(confirmHref);
+                        onConfirm();
+                    }
+                }}
+            >
                 <h2 id={heading}>{title}</h2>
                 <div className="dialog-body">{children}</div>
                 <div className="dialog-actions">
                     <button type="button" ref={cancel} onClick={onCancel} disabled={busy}>
                         Cancel
                     </button>
-                    <button
-                        type="button"
-                        className={danger ? "button-danger" : "button-primary"}
-                        onClick={onConfirm}
-                        disabled={busy}
-                    >
-                        {busy ? "Working…" : confirm}
-                    </button>
+                    {link && confirmHref ? (
+                        <a className={`button ${className}`} href={confirmHref} onClick={onConfirm}>
+                            {confirm}
+                        </a>
+                    ) : (
+                        <button type="button" className={className} onClick={onConfirm} disabled={busy || link}>
+                            {busy ? "Working…" : confirm}
+                        </button>
+                    )}
                 </div>
-            </div>
+            </form>
         </div>
     );
 }

@@ -425,6 +425,18 @@ a.tag:hover {
     margin-bottom: 0.4rem;
 }
 
+.page-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.field-problem {
+    color: var(--danger);
+    margin: 0.25rem 0 0;
+}
+
 .file-head h1 {
     display: flex;
     align-items: center;

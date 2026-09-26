@@ -304,6 +304,41 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task ANewDrawingOfAPartYoureChangingLeavesThePartOut()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var tank = Write(alice, "Tank.SLDPRT", "tank v1");
+        await alice.CheckinAsync([tank], "add tank");
+        await alice.CheckoutAsync([tank]);
+        File.WriteAllText(tank, "tank v2, not done yet");
+        var drawing = Write(alice, "Tank.SLDDRW", "drawing");
+
+        var result = await alice.CheckinAsync(
+            [drawing], "new drawing", keepCheckedOut: true, referencesOf: path => path == drawing ? [tank] : [], withChangedReferences: false);
+        Assert.Equal(["Tank.SLDDRW"], result.Files.Select(f => f.File.Name));
+        var part = Assert.Single(await alice.StatusAsync([tank]));
+        Assert.Equal((FileState.Modified, true), (part.State, part.CheckedOutByMe)); // still yours, changes and all
+        Assert.Equal(1, Assert.Single((await alice.HistoryAsync(drawing)).Versions[0].References).Version);
+    }
+
+    [Fact]
+    public async Task NewFilesNeedAFreeName()
+    {
+        var alice = await WorkspaceAsync("alice");
+        await alice.CheckinAsync([Write(alice, "Fins/Fin.SLDPRT", "fin")], "add fin");
+        Write(alice, "Fins/Draft.SLDPRT", "not checked in yet");
+
+        await alice.CheckNewFileAsync(Local(alice, "Fins/Bracket.SLDPRT"));
+        await alice.CheckNewFileAsync(Local(alice, "Recovery/Harness.SLDPRT")); // a new folder is fine
+        var taken = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "fins/FIN.sldprt")));
+        Assert.Contains("already in the vault", taken.Message, StringComparison.Ordinal);
+        var here = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "Fins/Draft.SLDPRT")));
+        Assert.Contains("already here", here.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckNewFileAsync(Local(alice, "Fins")));
+        await Assert.ThrowsAsync<VaultPathException>(() => alice.CheckNewFileAsync(Local(alice, "Fins/Fin: v2.SLDPRT")));
+    }
+
+    [Fact]
     public async Task WorksWithAServerFromBeforeFilesSaidWhatTheyUse()
     {
         var alice = await WorkspaceAsync("alice");

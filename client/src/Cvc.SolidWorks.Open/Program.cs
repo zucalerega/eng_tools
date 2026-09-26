@@ -13,8 +13,8 @@ namespace Cvc.SolidWorks.Open;
 
 /// <summary>
 /// cvc-open.exe "cvc://open?server=...&amp;path=...": opens a vault file in SolidWorks, for the web app's
-/// "Open in SolidWorks". It hands the link to the CVC add-in, starting SolidWorks first if it isn't
-/// running; the add-in gets the latest version, and the parts it uses, and opens it.
+/// "Open in SolidWorks", or (cvc://new) starts a new part, assembly, or drawing there. It hands the link
+/// to the CVC add-in, starting SolidWorks first if it isn't running; the add-in does the rest.
 /// </summary>
 internal static class Program
 {
@@ -28,10 +28,11 @@ internal static class Program
         try
         {
             var link = args.Length == 1 ? args[0] : "";
-            // Only open links: anything else shouldn't start SolidWorks. The add-in checks the rest.
-            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != "cvc" || !uri.Host.Equals("open", StringComparison.OrdinalIgnoreCase))
+            // Only CVC's links: anything else shouldn't start SolidWorks. The add-in checks the rest.
+            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != "cvc"
+                || !(uri.Host.Equals("open", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("new", StringComparison.OrdinalIgnoreCase)))
             {
-                return Fail("This opens files from the CVC web app (Open in SolidWorks). It was given: " + (link.Length > 0 ? link : "nothing"));
+                return Fail("This follows links from the CVC web app (Open in SolidWorks, New part). It was given: " + (link.Length > 0 ? link : "nothing"));
             }
             var problem = HandToAddIn(link);
             return problem.Length == 0 ? 0 : Fail(problem);

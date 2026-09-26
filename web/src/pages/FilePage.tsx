@@ -3,6 +3,7 @@ import { useAdminMode } from "../admin";
 import { api, type FileDetail, type VaultFile } from "../api";
 import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
+import { NewFileDialog, StartedNotice } from "../newFile";
 import { fileUrl, kindOf, parentOf } from "../paths";
 import { Link } from "../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
@@ -105,7 +106,7 @@ export function FilePage({ id }: { id: number }) {
                 </Notice>
             )}
 
-            {(kind === "part" || kind === "assembly") && <Drawings model={file} />}
+            {(kind === "part" || kind === "assembly") && <Drawings model={file} canAdd={atLeast(role, "editor")} />}
             <div className="columns">
                 <section>
                     <h2>{kind === "assembly" ? "Contains" : kind === "drawing" ? "Shows" : "Uses"}</h2>
@@ -225,10 +226,12 @@ export function FilePage({ id }: { id: number }) {
     );
 }
 
-/** A part's or assembly's drawings, each with the version of it that it shows. */
-function Drawings({ model }: { model: VaultFile }) {
+/** A part's or assembly's drawings, each with the version of it that it shows, and a way to start one. */
+function Drawings({ model, canAdd }: { model: VaultFile; canAdd: boolean }) {
     const vault = useVault();
     const heading = useId();
+    const [adding, setAdding] = useState(false);
+    const [started, setStarted] = useState<string | null>(null);
     const folder = parentOf(model.path);
     const drawings = parentsOf(vault, model).filter((parent) => kindOf(parent.file.name) === "drawing");
     return (
@@ -258,6 +261,23 @@ function Drawings({ model }: { model: VaultFile }) {
                         </li>
                     ))}
                 </ul>
+            )}
+            {canAdd && (
+                <p>
+                    <button type="button" onClick={() => setAdding(true)}>
+                        New drawing
+                    </button>
+                </p>
+            )}
+            {started && <StartedNotice path={started} onDismiss={() => setStarted(null)} />}
+            {adding && (
+                <NewFileDialog
+                    kind="drawing"
+                    folder={folder}
+                    model={model}
+                    onCancel={() => setAdding(false)}
+                    onStart={(path) => (setAdding(false), setStarted(path))}
+                />
             )}
         </section>
     );

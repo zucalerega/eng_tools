@@ -49,6 +49,7 @@ test("a part's page shows where it's used, up to the top-level assembly, and its
     expect(within(usedIn).getByRole("link", { name: "Rocket.SLDASM" })).toBeTruthy(); // open up to the top
     const drawings = screen.getByRole("region", { name: "Drawings" });
     expect(within(drawings).getByRole("link", { name: "Fin.SLDDRW" })).toBeTruthy();
+    expect(within(drawings).getByRole("button", { name: "New drawing" })).toBeTruthy();
 });
 
 test("editors can revert a file nobody else has checked out", async () => {

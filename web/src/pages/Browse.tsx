@@ -2,9 +2,10 @@ import { useState } from "react";
 import { api, type Folder, type Use, type VaultFile } from "../api";
 import { FileIcon, FolderIcon, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
+import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
 import { fileUrl, folderUrl, kindOf, parentOf, pathKey } from "../paths";
 import { Link } from "../router";
-import { contentsOf, useVault } from "../store";
+import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
 
 const MAX_RESULTS = 200;
@@ -12,6 +13,8 @@ const MAX_RESULTS = 200;
 export function Browse({ folder }: { folder: string }) {
     const vault = useVault();
     const [search, setSearch] = useState("");
+    const [creating, setCreating] = useState<NewKind | null>(null);
+    const [started, setStarted] = useState<string | null>(null); // a new file's path, until it's in the vault
     const here = folder === "" ? null : vault.folders.get(pathKey(folder));
     if (folder !== "" && !here) {
         return (
@@ -28,19 +31,33 @@ export function Browse({ folder }: { folder: string }) {
               .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }))
         : null;
     const { folders, files } = contentsOf(vault, folder);
+    const canAdd = atLeast(roleIn(vault, folder), "editor");
     return (
         <section>
             <div className="page-head">
                 <Breadcrumbs path={here?.path ?? ""} />
-                <input
-                    type="search"
-                    className="search"
-                    placeholder={`Search ${vault.files.size} files`}
-                    aria-label="Search all files"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                />
+                <div className="page-actions">
+                    {canAdd && (
+                        <>
+                            <button type="button" onClick={() => setCreating("part")}>
+                                New part
+                            </button>
+                            <button type="button" onClick={() => setCreating("assembly")}>
+                                New assembly
+                            </button>
+                        </>
+                    )}
+                    <input
+                        type="search"
+                        className="search"
+                        placeholder={`Search ${vault.files.size} files`}
+                        aria-label="Search all files"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                    />
+                </div>
             </div>
+            {started && <StartedNotice path={started} onDismiss={() => setStarted(null)} />}
             {found ? (
                 <>
                     <p className="muted">
@@ -56,6 +73,14 @@ export function Browse({ folder }: { folder: string }) {
                 <p className="empty">{folder === "" ? "The vault is empty." : "This folder is empty."}</p>
             ) : (
                 <FileTable key={folder} folders={folders} files={files} />
+            )}
+            {creating && (
+                <NewFileDialog
+                    kind={creating}
+                    folder={here?.path ?? ""}
+                    onCancel={() => setCreating(null)}
+                    onStart={(path) => (setCreating(null), setStarted(path))}
+                />
             )}
         </section>
     );

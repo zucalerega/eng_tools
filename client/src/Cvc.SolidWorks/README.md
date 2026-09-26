@@ -36,6 +36,10 @@ While you work:
 - **Open in SolidWorks** from the web app: CVC gets the latest version, and the parts it
   uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
   `cvc-open.exe`, which install.ps1 registers for `cvc:` links.)
+- **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
+  your default template (a drawing with a view of its part or assembly), saves it in the
+  workspace, and checks it in at once, checked out to you. Everyone sees it's there and
+  yours; design it, then check it in.
 
 ## Install
 
@@ -110,6 +114,10 @@ these on SolidWorks 2025:
     has it, and the tree stays open where it was. Double-click a file that isn't
     downloaded here: it's downloaded, and opens. With a part that has a drawing active,
     Open drawing opens the drawing.
+15. In the web app, in a folder, click New part, name it, and Start it in SolidWorks: a new
+    part opens in SolidWorks, and within seconds the web app lists it as v1, checked out
+    to you. On a part's page, click New drawing: a drawing named after the part opens,
+    with a view of it, and the part's page lists the drawing.
 
 ## When something goes wrong
 

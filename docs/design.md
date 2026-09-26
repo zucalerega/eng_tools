@@ -56,7 +56,7 @@ Web app (React) ─────────────────────�
 | Server: API, sign-in, permissions | `server/` | working |
 | Client library: the local workspace | `client/src/Cvc.Client` (netstandard2.0 + net10.0) | working |
 | CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
-| SolidWorks add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | next |
+| SolidWorks 2025 add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | built; untested in SolidWorks |
 | Web app | `web/` (React + Vite), served by the server | planned |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
@@ -213,10 +213,32 @@ on top of it.
   `Thumbs.db`, `desktop.ini`, `.DS_Store`.
 - **Saved sign-ins:** `%APPDATA%\CVC\tokens.json`, encrypted with Windows DPAPI.
   Elsewhere, `~/.config/cvc/tokens.json`, readable only by its owner.
-- **Assemblies (add-in, next):** SolidWorks lists an assembly's references. Any that
-  are new, or checked out to you with changes, go into the same check-in, pinned to
-  the versions used. The CLI can't read SolidWorks files, so it doesn't send
+- **Assemblies:** the add-in asks SolidWorks for an assembly's references
+  (`GetDocumentDependencies2`). Referenced files that are new, or checked out to you with
+  changes, go into the same check-in. Every reference is pinned to the version this
+  workspace has, which is the one the assembly was built against. References outside the
+  workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
+  saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
   references.
+
+## The SolidWorks add-in
+
+`client/src/Cvc.SolidWorks` targets SolidWorks 2025 (API version 33) and is built
+against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework 4.8
+COM add-in, registered with `install.ps1` (RegAsm).
+
+- **Task pane.** Everything is in the CVC tab: sign-in, the active document's status
+  and actions, and a list of files that need attention.
+- **Offering a check-out.** When you start editing the active document and it isn't
+  checked out to you, CVC offers to check it out. It asks once per document per
+  session, and ignores the changes SolidWorks makes while opening a file. Saving such a
+  file also offers a check-out, or cancels the save with the reason.
+- **Open files.** They can't be replaced on disk. Get latest closes the files it
+  updates and reopens the active one, and a check-out that needs the latest version
+  does the same. Check-out and check-in switch open documents between read-only and
+  editable (`SetReadOnlyState`).
+- **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
+  the CLI.
 
 ## API
 
@@ -271,8 +293,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 2. **Client library + `cvc` CLI** (done): workspace, status, get latest, check
    out/in, undo with backups, history, locks, browser sign-in. Tested against the
    real server.
-3. **SolidWorks add-in**: task pane with status and actions, blocking saves of
-   files you haven't checked out, check-ins that include an assembly's references.
+3. **SolidWorks 2025 add-in** (built; needs its first run in SolidWorks): task pane
+   with status and actions, check-out offers when you edit, save checks, and
+   check-ins that include an assembly's references.
 4. **Web app**: browse, history, download, who-has-what, admin (approvals,
    permissions, breaking locks).
 5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
@@ -284,7 +307,6 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 ## Open questions
 
 - Hosting: Render, a VPS, or a campus machine (decide at deploy time).
-- Which SolidWorks version the team runs. This sets the API level the add-in
-  targets.
+- SolidWorks version: 2025 (decided September 2026). The add-in targets API version 33.
 - Kenesto: the plan is to import the current files from a synced Kenesto folder
   and keep Kenesto read-only as the archive of old history.

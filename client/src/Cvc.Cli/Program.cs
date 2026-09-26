@@ -166,8 +166,12 @@ internal static class Program
         {
             Console.WriteLine($"  backed up    {Show(copy)}");
         }
+        foreach (var failure in result.Failures)
+        {
+            Console.WriteLine($"  failed       {failure}");
+        }
         Console.WriteLine($"Downloaded {Count(result.Downloaded.Count, "file")}.");
-        return result.Skipped.Count > 0 ? 1 : 0;
+        return result.Skipped.Count > 0 || result.Failures.Count > 0 ? 1 : 0;
     }
 
     private static async Task<int> CheckoutAsync(Options options)

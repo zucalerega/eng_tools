@@ -52,6 +52,9 @@ public sealed class GetResult
 
     /// <summary>Where local changes were saved before being replaced.</summary>
     public List<string> BackedUp { get; } = new List<string>();
+
+    /// <summary>Files that couldn't be updated, and why (for example, open in SolidWorks).</summary>
+    public List<string> Failures { get; } = new List<string>();
 }
 
 public sealed class UndoResult

@@ -157,6 +157,103 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task AnAssemblyBringsItsNewPartsAndPinsWhatItUses()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var aliceBolt = Write(alice, "Library/Bolt.STEP", "bolt v1");
+        await alice.CheckinAsync([aliceBolt], "add bolt");
+        // Bob lengthens the bolt; Alice's assembly is still built against v1.
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobBolt = Local(bob, "Library/Bolt.STEP");
+        await bob.CheckoutAsync([bobBolt]);
+        File.WriteAllText(bobBolt, "bolt v2");
+        await bob.CheckinAsync([bobBolt], "longer bolt");
+
+        var can = Write(alice, "Fins/Fin Can.SLDASM", "assembly");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var uses = new Dictionary<string, string[]> { [can] = [fin, aliceBolt], [fin] = [] };
+        var result = await alice.CheckinAsync([can], "fin can", referencesOf: path => uses[path]);
+
+        Assert.Equal(["Fin Can.SLDASM", "Fin.SLDPRT"], result.Files.Select(f => f.File.Name).OrderBy(n => n, StringComparer.Ordinal));
+        var history = await alice.HistoryAsync(can);
+        var pinned = history.Versions[0].References.Select(r => (r.Path, r.Version)).OrderBy(r => r.Path, StringComparer.Ordinal);
+        Assert.Equal(new[] { ($"{_folder}/Fins/Fin.SLDPRT", 1), ($"{_folder}/Library/Bolt.STEP", 1) }, pinned.ToArray());
+    }
+
+    [Fact]
+    public async Task ChangedPartsCheckedOutToYouJoinTheirAssembly()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var tank = Write(alice, "Tank.SLDASM", "asm v1");
+        var wall = Write(alice, "Tank Wall.SLDPRT", "wall v1");
+        var uses = (string path) => path == tank ? new[] { wall } : Array.Empty<string>();
+        await alice.CheckinAsync([tank], "add tank", referencesOf: uses);
+        await alice.CheckoutAsync([tank, wall]);
+        File.WriteAllText(tank, "asm v2");
+        File.WriteAllText(wall, "wall v2");
+
+        var result = await alice.CheckinAsync([tank], "thicker wall", referencesOf: uses);
+        Assert.Equal([2, 2], result.Files.Select(f => f.File.Version));
+    }
+
+    [Fact]
+    public async Task ReferencesOutsideTheWorkspaceAreRejected()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var outside = Path.Combine(_temp, "Desktop", "Bolt.SLDPRT");
+        Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+        File.WriteAllText(outside, "bolt");
+        var motor = Write(alice, "Motor.SLDASM", "asm");
+
+        var error = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([motor], "motor", referencesOf: _ => [outside]));
+        Assert.Contains("outside the workspace", error.Message, StringComparison.Ordinal);
+        Assert.Equal(FileState.New, Assert.Single(await alice.StatusAsync([motor])).State); // nothing was checked in
+    }
+
+    [Fact]
+    public async Task MissingReferencesAreRejected()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var sled = Write(alice, "Sled.SLDASM", "asm");
+        var gone = Local(alice, "Battery.SLDPRT"); // neither here nor in the vault
+        var error = await Assert.ThrowsAsync<WorkspaceException>(() => alice.CheckinAsync([sled], "sled", referencesOf: _ => [gone]));
+        Assert.Contains("missing", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetLatestCarriesOnPastFilesItCannotReplace()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // uses Unix folder permissions to make one file impossible to replace
+        }
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var stuck = Write(alice, "Stuck/A.STEP", "a1");
+        var free = Write(alice, "Free/B.STEP", "b1");
+        await alice.CheckinAsync([Folder(alice)], "add a and b");
+        await bob.GetLatestAsync([Folder(bob)]);
+        await alice.CheckoutAsync([Folder(alice)]);
+        File.WriteAllText(stuck, "a2");
+        File.WriteAllText(free, "b2");
+        await alice.CheckinAsync([Folder(alice)], "update both");
+
+        var locked = Path.GetDirectoryName(Local(bob, "Stuck/A.STEP"))!;
+        File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var result = await bob.GetLatestAsync([Folder(bob)]);
+            Assert.Contains("A.STEP", Assert.Single(result.Failures), StringComparison.Ordinal);
+            Assert.Equal("b2", File.ReadAllText(Local(bob, "Free/B.STEP")));
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
     public async Task BadNamesAreRejectedBeforeUploading()
     {
         var alice = await WorkspaceAsync("alice");

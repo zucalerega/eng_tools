@@ -43,6 +43,12 @@ jobs:
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
+      # Ready to install on a Windows PC with SolidWorks 2025 (see its README).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cvc-solidworks-addin
+          path: client/src/Cvc.SolidWorks/bin/Release/net48/
+          if-no-files-found: error
 
   image:
     runs-on: ubuntu-latest

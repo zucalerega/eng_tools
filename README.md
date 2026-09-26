@@ -4,9 +4,10 @@ CAD version control for the team's SolidWorks and STEP files: check out, check i
 version history, and per-folder permissions, with a SolidWorks add-in on the way.
 It replaces Kenesto.
 
-> **Status:** early development. The server and the `cvc` command-line tool work
-> and are tested. The web app and the SolidWorks add-in are next. See
-> [docs/design.md](docs/design.md) for how it works and the roadmap.
+> **Status:** early development. The server and the `cvc` command-line tool work and
+> are tested. The SolidWorks 2025 add-in is built, but hasn't been tried in SolidWorks
+> yet. The web app is next. See [docs/design.md](docs/design.md) for how it works and
+> the roadmap.
 
 ## How it works
 
@@ -26,7 +27,7 @@ It replaces Kenesto.
 |---|---|---|
 | `server/` | API server: Python, FastAPI, SQLAlchemy; Docker image | working |
 | `client/` | C# workspace library and `cvc` CLI | working |
-| `client/` | SolidWorks add-in | next |
+| `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | built, not yet tested in SolidWorks |
 | `web/` | Web app: React + Vite | planned |
 | `docs/` | Design and roadmap | |
 

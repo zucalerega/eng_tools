@@ -42,5 +42,5 @@ export function kindOf(name: string): Kind {
     }
 }
 
-/** Whether SolidWorks opens it: its own files, and the neutral formats it imports. */
-export const opensInSolidWorks = (name: string): boolean => kindOf(name) !== "file";
+/** Whether "Open in SolidWorks" applies: SolidWorks' own files, which the add-in opens. */
+export const opensInSolidWorks = (name: string): boolean => ["part", "assembly", "drawing"].includes(kindOf(name));

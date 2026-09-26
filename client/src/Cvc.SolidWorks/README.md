@@ -24,6 +24,9 @@ While you work:
 - **Take over** a check-out from another computer: your own (you checked it out on the
   lab PC), or, if you're a lead of the folder or an admin, someone else's. Their changes
   stay on their computer, and CVC tells them who took it over if they try to check in.
+- **Open in SolidWorks** from the web app: CVC gets the latest version, and the parts it
+  uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
+  `cvc-open.exe`, which install.ps1 registers for `cvc:` links.)
 
 ## Install
 
@@ -39,7 +42,9 @@ While you work:
    and sign in. Your browser opens; confirm there.
 
 If the CVC tab doesn't appear, check **Tools > Add-ins** and tick CVC (both boxes, so it
-loads at startup). To remove the add-in, run `uninstall.ps1` the same way.
+loads at startup). To remove the add-in, run `uninstall.ps1` the same way. To update it,
+close SolidWorks and replace the folder's files; run `install.ps1` again only if the new
+version's release notes say so.
 
 ## Testing against a development server
 
@@ -87,6 +92,9 @@ these on SolidWorks 2025:
     tab offers Take over. Take it over; it's checked out to you. When they try to check it
     in (`cvc checkin` as them), CVC says you took it over. Someone who isn't a lead doesn't
     see Take over.
+13. In the web app, click Open in SolidWorks on an assembly that isn't downloaded here:
+    SolidWorks comes to the front with it open, and its parts were downloaded too. Close
+    SolidWorks and do it again: SolidWorks starts, then opens it.
 
 ## When something goes wrong
 

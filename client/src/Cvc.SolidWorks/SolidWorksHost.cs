@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -149,8 +151,35 @@ internal sealed class SolidWorksHost
         if (errors != 0)
         {
             Log.Error($"Opening {path} returned SolidWorks error {errors}");
+            return;
         }
+        // Opening a file that's already open doesn't bring its window forward; this does.
+        _app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
     }
+
+    /// <summary>Bring SolidWorks' window to the front, when cvc-open (following a link from the web app) allowed it.</summary>
+    public static void BringToFront()
+    {
+        var window = Process.GetCurrentProcess().MainWindowHandle;
+        if (window == IntPtr.Zero)
+        {
+            return;
+        }
+        if (IsIconic(window))
+        {
+            ShowWindow(window, 9); // SW_RESTORE
+        }
+        SetForegroundWindow(window);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
 
     private static swDocumentTypes_e DocumentType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {

@@ -11,6 +11,7 @@ internal sealed class Session : IDisposable
     private readonly CvcPane _pane;
     private readonly DocumentWatcher _documents;
     private readonly TaskpaneView _taskPane;
+    private readonly LinkListener _links;
 
     public Session(SldWorks app)
     {
@@ -26,10 +27,12 @@ internal sealed class Session : IDisposable
         app.FileNewNotify2 += OnFileNew;
         _documents.WatchOpenDocuments();
         _pane.Start();
+        _links = new LinkListener(_pane);
     }
 
     public void Dispose()
     {
+        _links.Dispose();
         _app.ActiveDocChangeNotify -= OnActiveDocumentChanged;
         _app.FileOpenPostNotify -= OnFileOpened;
         _app.DocumentLoadNotify2 -= OnDocumentLoaded;

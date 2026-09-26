@@ -264,6 +264,12 @@ COM add-in, registered with `install.ps1` (RegAsm).
   switch open documents between read-only and editable (`SetReadOnlyState`).
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
+- **Links from the web app.** "Open in SolidWorks" is a `cvc://open?server=…&path=…`
+  link (`OpenLink`). install.ps1 registers `cvc-open.exe` (in the add-in's folder) for
+  them. It starts SolidWorks if needed and hands the link to the add-in over a named
+  pipe for the Windows session, which only the current user can open. The add-in checks
+  that the link is for its workspace's server, gets the file's latest version and the
+  parts it uses (updating open copies in place), opens it, and comes to the front.
 
 ## The web app
 
@@ -343,8 +349,8 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    with status and actions, check-out offers when you edit, save checks, and
    check-ins that include an assembly's references.
 4. **Web app** (done): browse and search, history, download, who-has-what, activity,
-   admin (approvals, permissions), and admin mode (releasing check-outs, forced
-   reverts). Still to do: opening files in SolidWorks from it (the `cvc:` link).
+   admin (approvals, permissions), admin mode (releasing check-outs, forced reverts),
+   and opening files in SolidWorks (the `cvc:` link).
 5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
    backups, and importing the current files from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in

@@ -220,6 +220,62 @@ internal sealed class CvcPane : UserControl
         };
     }
 
+    /// <summary>
+    /// From the link listener's thread: open a cvc:// link from the web app. It's done on SolidWorks'
+    /// thread, and this waits for it; the answer is what went wrong, or empty.
+    /// </summary>
+    public string OpenLinkFromAnotherThread(string link)
+    {
+        var done = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        BeginInvoke(new Action(async () =>
+        {
+            try
+            {
+                done.SetResult(await OpenLinkAsync(link));
+            }
+            catch (Exception e)
+            {
+                Log.Error("Opening a link from the web app failed", e);
+                done.SetResult($"Something went wrong. Details are in {Log.FilePath}");
+            }
+        }));
+        // A big assembly can take a while to download; the file still opens when it's done.
+        return done.Task.Wait(TimeSpan.FromMinutes(10)) ? done.Task.Result : "";
+    }
+
+    private async Task<string> OpenLinkAsync(string link)
+    {
+        Uri server;
+        string vaultPath;
+        try
+        {
+            (server, vaultPath) = OpenLink.Parse(link);
+        }
+        catch (Exception e) when (e is WorkspaceException or VaultPathException)
+        {
+            return e.Message;
+        }
+        var workspace = _workspace;
+        if (workspace == null)
+        {
+            return "Sign in to CVC in SolidWorks first: open the CVC tab in the task pane.";
+        }
+        if (!SameServer(workspace.Server, server))
+        {
+            return $"That link is for the CVC server at {server}, but this computer's workspace is for {workspace.Server}.";
+        }
+        var path = workspace.ToLocalPath(vaultPath);
+        SolidWorksHost.BringToFront();
+        await GetLatestAsync(path); // with the parts it uses; open copies update in place
+        if (!File.Exists(path))
+        {
+            return $"{vaultPath} isn't in the vault, or you don't have access to it.";
+        }
+        _sw.Open(path);
+        SolidWorksHost.BringToFront();
+        return "";
+    }
+
     /// <summary>The active document was changed: offer to check it out if it isn't yours (once per session).</summary>
     public void DocumentModified(string path)
     {

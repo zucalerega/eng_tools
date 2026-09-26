@@ -23,6 +23,7 @@ internal sealed class Session : IDisposable
         app.ActiveDocChangeNotify += OnActiveDocumentChanged;
         app.FileOpenPostNotify += OnFileOpened;
         app.DocumentLoadNotify2 += OnDocumentLoaded;
+        app.FileNewNotify2 += OnFileNew;
         _documents.WatchOpenDocuments();
         _pane.Start();
     }
@@ -32,6 +33,7 @@ internal sealed class Session : IDisposable
         _app.ActiveDocChangeNotify -= OnActiveDocumentChanged;
         _app.FileOpenPostNotify -= OnFileOpened;
         _app.DocumentLoadNotify2 -= OnDocumentLoaded;
+        _app.FileNewNotify2 -= OnFileNew;
         _documents.Dispose();
         _taskPane.DeleteView();
         Marshal.ReleaseComObject(_taskPane);
@@ -51,6 +53,9 @@ internal sealed class Session : IDisposable
     });
 
     private int OnDocumentLoaded(string title, string path) => Guard(_documents.WatchOpenDocuments);
+
+    // Follow a new document from the start: nothing else tells us when it's first saved.
+    private int OnFileNew(object document, int type, string template) => Guard(_documents.WatchOpenDocuments);
 
     // An exception must never escape into SolidWorks.
     private static int Guard(Action handler)

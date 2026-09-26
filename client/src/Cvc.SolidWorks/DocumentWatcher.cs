@@ -7,14 +7,17 @@ namespace Cvc.SolidWorks;
 
 /// <summary>
 /// Follows each open document's edits and saves, so CVC can offer to check a file out when
-/// you start changing it, and explain why a file that isn't checked out won't save.
+/// you start changing it, and explain why a file that isn't checked out won't save. Documents
+/// are followed from when they're created or opened, and their file is looked up at each event:
+/// a new document gets a path only when it's first saved, and Save As changes it.
 /// </summary>
 internal sealed class DocumentWatcher : IDisposable
 {
     private readonly SolidWorksHost _sw;
     private readonly CvcPane _pane;
-    private readonly Dictionary<string, Action> _unhook = new Dictionary<string, Action>(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DateTime> _loadedAt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+    // Keyed by the document itself, which SolidWorks keeps the same through saves and renames.
+    private readonly Dictionary<ModelDoc2, Action> _unhook = new Dictionary<ModelDoc2, Action>();
+    private readonly Dictionary<ModelDoc2, DateTime> _loadedAt = new Dictionary<ModelDoc2, DateTime>();
 
     public DocumentWatcher(SolidWorksHost sw, CvcPane pane)
     {
@@ -41,24 +44,23 @@ internal sealed class DocumentWatcher : IDisposable
 
     private void Watch(ModelDoc2 document)
     {
-        var path = SolidWorksHost.PathOf(document);
-        if (path == null || _unhook.ContainsKey(path))
+        if (_unhook.ContainsKey(document))
         {
             return;
         }
-        _loadedAt[path] = DateTime.UtcNow;
+        _loadedAt[document] = DateTime.UtcNow;
         switch (document)
         {
             case PartDoc part:
-                DPartDocEvents_FileSaveNotifyEventHandler partSave = _ => BeforeSave(path);
+                DPartDocEvents_FileSaveNotifyEventHandler partSave = _ => BeforeSave(document);
                 DPartDocEvents_FileSavePostNotifyEventHandler partSaved = (_, _) => AfterSave();
-                DPartDocEvents_ModifyNotifyEventHandler partModified = () => Modified(path);
-                DPartDocEvents_DestroyNotify2EventHandler partDestroyed = type => Destroyed(path, type);
+                DPartDocEvents_ModifyNotifyEventHandler partModified = () => Modified(document);
+                DPartDocEvents_DestroyNotify2EventHandler partDestroyed = type => Destroyed(document, type);
                 part.FileSaveNotify += partSave;
                 part.FileSavePostNotify += partSaved;
                 part.ModifyNotify += partModified;
                 part.DestroyNotify2 += partDestroyed;
-                _unhook[path] = () =>
+                _unhook[document] = () =>
                 {
                     part.FileSaveNotify -= partSave;
                     part.FileSavePostNotify -= partSaved;
@@ -67,15 +69,15 @@ internal sealed class DocumentWatcher : IDisposable
                 };
                 break;
             case AssemblyDoc assembly:
-                DAssemblyDocEvents_FileSaveNotifyEventHandler assemblySave = _ => BeforeSave(path);
+                DAssemblyDocEvents_FileSaveNotifyEventHandler assemblySave = _ => BeforeSave(document);
                 DAssemblyDocEvents_FileSavePostNotifyEventHandler assemblySaved = (_, _) => AfterSave();
-                DAssemblyDocEvents_ModifyNotifyEventHandler assemblyModified = () => Modified(path);
-                DAssemblyDocEvents_DestroyNotify2EventHandler assemblyDestroyed = type => Destroyed(path, type);
+                DAssemblyDocEvents_ModifyNotifyEventHandler assemblyModified = () => Modified(document);
+                DAssemblyDocEvents_DestroyNotify2EventHandler assemblyDestroyed = type => Destroyed(document, type);
                 assembly.FileSaveNotify += assemblySave;
                 assembly.FileSavePostNotify += assemblySaved;
                 assembly.ModifyNotify += assemblyModified;
                 assembly.DestroyNotify2 += assemblyDestroyed;
-                _unhook[path] = () =>
+                _unhook[document] = () =>
                 {
                     assembly.FileSaveNotify -= assemblySave;
                     assembly.FileSavePostNotify -= assemblySaved;
@@ -84,15 +86,15 @@ internal sealed class DocumentWatcher : IDisposable
                 };
                 break;
             case DrawingDoc drawing:
-                DDrawingDocEvents_FileSaveNotifyEventHandler drawingSave = _ => BeforeSave(path);
+                DDrawingDocEvents_FileSaveNotifyEventHandler drawingSave = _ => BeforeSave(document);
                 DDrawingDocEvents_FileSavePostNotifyEventHandler drawingSaved = (_, _) => AfterSave();
-                DDrawingDocEvents_ModifyNotifyEventHandler drawingModified = () => Modified(path);
-                DDrawingDocEvents_DestroyNotify2EventHandler drawingDestroyed = type => Destroyed(path, type);
+                DDrawingDocEvents_ModifyNotifyEventHandler drawingModified = () => Modified(document);
+                DDrawingDocEvents_DestroyNotify2EventHandler drawingDestroyed = type => Destroyed(document, type);
                 drawing.FileSaveNotify += drawingSave;
                 drawing.FileSavePostNotify += drawingSaved;
                 drawing.ModifyNotify += drawingModified;
                 drawing.DestroyNotify2 += drawingDestroyed;
-                _unhook[path] = () =>
+                _unhook[document] = () =>
                 {
                     drawing.FileSaveNotify -= drawingSave;
                     drawing.FileSavePostNotify -= drawingSaved;
@@ -106,7 +108,8 @@ internal sealed class DocumentWatcher : IDisposable
     }
 
     // SolidWorks pre-notifications cancel the operation when the handler returns nonzero.
-    private int BeforeSave(string path) => Guard(() => _pane.AllowSave(path) ? 0 : 1);
+    private int BeforeSave(ModelDoc2 document) =>
+        Guard(() => SolidWorksHost.PathOf(document) is { } path && !_pane.AllowSave(path) ? 1 : 0);
 
     private int AfterSave() => Guard(() =>
     {
@@ -114,24 +117,26 @@ internal sealed class DocumentWatcher : IDisposable
         return 0;
     });
 
-    private int Modified(string path) => Guard(() =>
+    private int Modified(ModelDoc2 document) => Guard(() =>
     {
         // Opening a document can mark it changed (a rebuild, or converting an older file):
-        // only offer a check-out for edits made after it finished loading.
-        if (_loadedAt.TryGetValue(path, out var loaded) && DateTime.UtcNow - loaded > TimeSpan.FromSeconds(3))
+        // only offer a check-out for edits made after it finished loading. A new document
+        // has no file to check out until it's saved.
+        if (SolidWorksHost.PathOf(document) is { } path
+            && _loadedAt.TryGetValue(document, out var loaded) && DateTime.UtcNow - loaded > TimeSpan.FromSeconds(3))
         {
             _pane.DocumentModified(path);
         }
         return 0;
     });
 
-    private int Destroyed(string path, int type) => Guard(() =>
+    private int Destroyed(ModelDoc2 document, int type) => Guard(() =>
     {
-        if (type == (int)swDestroyNotifyType_e.swDestroyNotifyDestroy && _unhook.TryGetValue(path, out var unhook))
+        if (type == (int)swDestroyNotifyType_e.swDestroyNotifyDestroy && _unhook.TryGetValue(document, out var unhook))
         {
             unhook();
-            _unhook.Remove(path);
-            _loadedAt.Remove(path);
+            _unhook.Remove(document);
+            _loadedAt.Remove(document);
         }
         return 0;
     });

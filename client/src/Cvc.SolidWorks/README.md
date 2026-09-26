@@ -71,6 +71,8 @@ these on SolidWorks 2025:
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
    the CVC tab and the Check in dialog look as they do at 100%, only larger: no text is
    cut off, and the comment box is full size.
+10. Create a new part, save it into `C:\CVC\Test`, and check it in. Without switching
+    windows, start editing it: CVC offers the check-out.
 
 ## When something goes wrong
 

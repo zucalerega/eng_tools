@@ -104,6 +104,12 @@ comment, all or nothing:
    model. Each one must already be in the vault or be part of this check-in, and
    is recorded with the version it used. That's how "where used" works, and later
    "get this assembly as it was at version 5".
+4. A new version of a drawing must show a part or assembly (reference one), and be
+   named after one it shows: `Fin.SLDDRW`, or a name that starts with it and goes on
+   after a space or a symbol (`Fin - machining.SLDDRW`), for `Fin.SLDPRT`
+   (`paths.named_after`). So a drawing is never lost from its model, and sorts next to
+   it. The CLI can't read what a drawing shows, so drawings are checked in from
+   SolidWorks.
 
 Locks are released unless `keep_checked_out` is set.
 
@@ -240,7 +246,8 @@ on top of it.
   workspace has, which is the one the assembly was built against. References outside the
   workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
   saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
-  references.
+  references, and the server refuses drawings from it (a drawing must show a part or
+  assembly).
 
 ## The SolidWorks add-in
 

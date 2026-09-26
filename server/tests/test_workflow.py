@@ -247,6 +247,33 @@ def test_files_say_what_they_use(team, client):
     assert uses(team.listing(chief, "Fins"), "Can.SLDASM") == [{"file_id": ids["Fin.SLDPRT"], "version": 2}]
 
 
+def test_drawings_show_a_part_or_assembly_and_are_named_after_it(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"})
+
+    unlinked = team.checkin(chief, {"Fins/Fin.SLDDRW": b"drawing"})  # as the CLI would: no references
+    assert (unlinked.status_code, unlinked.json()["error"]) == (400, "drawing_without_model")
+    assert "Check drawings in from SolidWorks" in unlinked.json()["message"]
+    misnamed = team.checkin(
+        chief, {"Fins/Bracket.SLDDRW": b"drawing"}, refs={"Fins/Bracket.SLDDRW": ["Fins/Fin.SLDPRT"]}
+    )
+    assert (misnamed.status_code, misnamed.json()["error"]) == (400, "drawing_name")
+    assert "call it Fin.SLDDRW" in misnamed.json()["message"]
+    assert [f["name"] for f in team.listing(chief, "Fins")["files"]] == ["Can.SLDASM", "Fin.SLDPRT"]  # neither added
+
+    drawings = {
+        "Fins/Fin.SLDDRW": ["Fins/Fin.SLDPRT"],
+        "Fins/Fin - flat pattern.SLDDRW": ["Fins/Fin.SLDPRT"],
+        "Fins/Can.SLDDRW": ["Fins/Can.SLDASM", "Fins/Fin.SLDPRT"],  # named after one of what it shows
+    }
+    added = team.checkin(chief, dict.fromkeys(drawings, b"drawing"), refs=drawings)
+    assert added.status_code == 200, added.text
+
+    # A drawing that's checked in without changes keeps its version, so nothing is asked of it.
+    team.checkout(chief, "Fins/Fin.SLDDRW")
+    assert team.checkin(chief, {"Fins/Fin.SLDDRW": b"drawing"}).json()["files"][0]["status"] == "unchanged"
+
+
 def test_missing_reference_rolls_back_the_whole_check_in(team):
     chief = team.member("chief@x.test", admin=True)
     response = team.checkin(

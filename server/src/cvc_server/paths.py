@@ -53,5 +53,31 @@ def key(name: str) -> str:
     return unicodedata.normalize("NFC", name).lower()
 
 
+def extension(name: str) -> str:
+    """'.sldprt' for 'Fin.SLDPRT': lowercase, with the dot; '' if there's none."""
+    dot = name.rfind(".")
+    return key(name[dot:]) if dot > 0 else ""
+
+
+def is_drawing(name: str) -> bool:
+    return extension(name) == ".slddrw"
+
+
+def is_model(name: str) -> bool:
+    """A part or an assembly: what a drawing shows."""
+    return extension(name) in (".sldprt", ".sldasm")
+
+
+def named_after(drawing: str, model: str) -> bool:
+    """Whether a drawing is named after a model: Fin.SLDDRW, or 'Fin - machining.SLDDRW', for Fin.SLDPRT.
+
+    The drawing's name is the model's, or starts with it and goes on after a space or a symbol, so
+    'Fin2' or 'Finish' aren't drawings of Fin.
+    """
+    stem = key(drawing[: len(drawing) - len(extension(drawing))])
+    base = key(model[: len(model) - len(extension(model))])
+    return stem == base or (stem.startswith(base) and not stem[len(base)].isalnum())
+
+
 def join(*names: str) -> str:
     return "/".join(n for n in names if n)

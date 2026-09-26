@@ -686,10 +686,13 @@ def checkin(
     db.flush()
 
     missing = []
+    unlinked: list[str] = []  # drawings that don't show a part or assembly
+    misnamed: list[dict[str, str]] = []  # drawings not named after one they show
     for status, file, version, item in done.values():
         if status == "unchanged":
             continue  # same contents, same references
         linked: set[int] = set()
+        shows: list[File] = []
         for ref in item.references:
             ref_names = paths.split(ref.path)
             in_batch = done.get(paths.key(paths.join(*ref_names)))
@@ -707,11 +710,36 @@ def checkin(
                 continue
             linked.add(child.id)
             db.add(VersionRef(version_id=version.id, child_file_id=child.id, child_version=child_version))
+            if paths.is_model(child.name):
+                shows.append(child)
+        # A drawing stays tied to what it shows: by reference, and by name, so the two sit side by side.
+        if paths.is_drawing(file.name):
+            if not shows:
+                unlinked.append(tree.file_path(file))
+            elif not any(paths.named_after(file.name, model.name) for model in shows):
+                misnamed.append({"drawing": tree.file_path(file), "shows": tree.file_path(shows[0])})
     if missing:
         raise CvcError(
             "Some referenced files aren't in the vault; add them to this check-in",
             code="missing_references",
             missing=missing,
+        )
+    if unlinked:
+        raise CvcError(
+            f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
+            "vault. Check drawings in from SolidWorks, with the CVC add-in: it records what each drawing shows.",
+            code="drawing_without_model",
+            drawings=unlinked,
+        )
+    if misnamed:
+        first = misnamed[0]
+        model = first["shows"].rsplit("/", 1)[-1]
+        stem = model.rsplit(".", 1)[0]
+        raise CvcError(
+            f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, so "
+            f'call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
+            code="drawing_name",
+            drawings=misnamed,
         )
 
     for status, file, version, _ in done.values():

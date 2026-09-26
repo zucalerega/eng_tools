@@ -16,6 +16,10 @@ the web. It replaces Kenesto.
   version.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
   or changed parts it uses. Getting an assembly brings its parts along.
+- **Drawings stay with what they show.** A drawing is checked in only if it shows a
+  part or assembly in the vault, and only if it's named after it (`Fin.SLDDRW`, or
+  `Fin - machining.SLDDRW`, for `Fin.SLDPRT`), so it sits next to it in its folder.
+  Check drawings in from SolidWorks: the `cvc` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
 - **Sign in with Google.** An admin approves new accounts.

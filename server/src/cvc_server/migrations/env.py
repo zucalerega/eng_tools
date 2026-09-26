@@ -1,0 +1,40 @@
+"""Alembic environment.
+
+The server runs `upgrade head` at startup (db.migrate). After changing
+models.py, generate a migration from server/:
+
+    uv run alembic revision --autogenerate -m "what changed"
+"""
+
+from alembic import context
+
+from cvc_server import models  # noqa: F401  (registers the tables)
+from cvc_server.db import Base, UTCDateTime, make_engine
+
+
+def render_item(type_, obj, autogen_context):
+    # UTCDateTime only converts values in Python; the column itself is a timezone-aware DateTime.
+    if type_ == "type" and isinstance(obj, UTCDateTime):
+        return "sa.DateTime(timezone=True)"
+    return False
+
+
+def run(connection) -> None:
+    context.configure(
+        connection=connection,
+        target_metadata=Base.metadata,
+        render_as_batch=True,  # SQLite can't ALTER most things; batch mode rebuilds the table
+        render_item=render_item,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+connection = context.config.attributes.get("connection")
+if connection is not None:
+    run(connection)
+else:
+    from cvc_server.config import Settings
+
+    with make_engine(Settings().database_url).connect() as conn:
+        run(conn)

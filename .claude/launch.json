@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cvc-server",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CVC_DEV_AUTH=1",
+        "CVC_BOOTSTRAP_ADMINS=dev@cvc.test",
+        "uv",
+        "run",
+        "--directory",
+        "server",
+        "cvc-server"
+      ],
+      "port": 8000
+    }
+  ]
+}

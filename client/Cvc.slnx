@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cvc.Cli/Cvc.Cli.csproj" />
+    <Project Path="src/Cvc.Client/Cvc.Client.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cvc.Client.Tests/Cvc.Client.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local server data: database and file contents. Never commit.
+data/
+
+# Secrets
+.env
+
+# Web app (planned)
+node_modules/
+dist/
+
+# .NET client and add-in (planned)
+bin/
+obj/
+.vs/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

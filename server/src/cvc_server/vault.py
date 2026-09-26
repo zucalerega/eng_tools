@@ -101,6 +101,8 @@ class FileView:
     latest: Version
     modified_by: User
     locked_by: User | None
+    # What the latest version uses that the user can see (an assembly's parts): (file id, version used).
+    uses: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -182,19 +184,47 @@ def _with_latest(db: Session, *where: Any) -> list[tuple[File, Version]]:
     return [(f, v) for f, v in db.execute(stmt)]
 
 
-def _file_views(db: Session, tree: Tree, rows: list[tuple[File, Version]]) -> list[FileView]:
+def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, Version]]) -> list[FileView]:
     users = _users(db, {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows})
+    uses = _uses(db, access, [v.id for _, v in rows])
     return [
         FileView(
-            f, tree.file_path(f), v, users[v.created_by], users.get(f.checked_out_by) if f.checked_out_by else None
+            f,
+            tree.file_path(f),
+            v,
+            users[v.created_by],
+            users.get(f.checked_out_by) if f.checked_out_by else None,
+            uses.get(v.id, []),
         )
         for f, v in rows
     ]
 
 
-def _views_by_id(db: Session, tree: Tree, files: list[File]) -> dict[int, FileView]:
-    views = _file_views(db, tree, _with_latest(db, File.id.in_([f.id for f in files])))
+def _views_by_id(db: Session, tree: Tree, access: Access, files: list[File]) -> dict[int, FileView]:
+    views = _file_views(db, tree, access, _with_latest(db, File.id.in_([f.id for f in files])))
     return {view.file.id: view for view in views}
+
+
+_BATCH = 500  # ids per IN (...): SQLite limits how many parameters a statement can have
+
+
+def _uses(db: Session, access: Access, version_ids: list[int]) -> dict[int, list[tuple[int, int]]]:
+    """What each version uses that the user can see, as (file id, version used), by version id.
+
+    Files deleted since are included: the version still uses them.
+    """
+    uses: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for start in range(0, len(version_ids), _BATCH):
+        rows = db.execute(
+            select(VersionRef.version_id, VersionRef.child_file_id, VersionRef.child_version, File.folder_id)
+            .join(File, File.id == VersionRef.child_file_id)
+            .where(VersionRef.version_id.in_(version_ids[start : start + _BATCH]))
+            .order_by(VersionRef.version_id, VersionRef.child_file_id)
+        )
+        for version_id, file_id, number, folder_id in rows:
+            if access.can(folder_id, Role.VIEWER):
+                uses[version_id].append((file_id, number))
+    return uses
 
 
 # --- finding files ------------------------------------------------------------------------
@@ -288,7 +318,7 @@ def list_folder(db: Session, user: User, path: str = "", *, deleted: bool = Fals
     files: list[FileView] = []
     if access.can(folder.id, Role.VIEWER):
         state = File.deleted_at.is_not(None) if deleted else File.deleted_at.is_(None)
-        files = _file_views(db, tree, _with_latest(db, File.folder_id == folder.id, state))
+        files = _file_views(db, tree, access, _with_latest(db, File.folder_id == folder.id, state))
     return Listing(_folder_view(tree, access, folder), [_folder_view(tree, access, f) for f in subfolders], files)
 
 
@@ -318,9 +348,9 @@ def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
     ]
     latest = next(view.version for view in versions if view.version.number == file.latest_version)
     parents = [(p, v, n) for p, v, n in _parents(db, file.id) if access.can(p.folder_id, Role.VIEWER)]
-    parent_views = _file_views(db, tree, [(p, v) for p, v, _ in parents])
+    parent_views = _file_views(db, tree, access, [(p, v) for p, v, _ in parents])
     used_by = [UsedBy(view, n) for view, (_, _, n) in zip(parent_views, parents, strict=True)]
-    return FileDetail(_file_views(db, tree, [(file, latest)])[0], versions, used_by)
+    return FileDetail(_file_views(db, tree, access, [(file, latest)])[0], versions, used_by)
 
 
 def version_content(db: Session, user: User, file_id: int, number: int | None = None) -> tuple[File, Version]:
@@ -342,7 +372,7 @@ def checkouts(db: Session, user: User, *, mine: bool = False) -> list[FileView]:
     if mine:
         where.append(File.checked_out_by == user.id)
     rows = [(f, v) for f, v in _with_latest(db, *where) if access.can(f.folder_id, Role.VIEWER)]
-    return _file_views(db, tree, rows)
+    return _file_views(db, tree, access, rows)
 
 
 def sync(db: Session, user: User, since: int = 0) -> SyncResult:
@@ -364,7 +394,7 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     ]
     changed = File.deleted_at.is_(None) if full else File.change_seq > since
     rows = [(f, v) for f, v in _with_latest(db, changed) if access.can(f.folder_id, Role.VIEWER)]
-    return SyncResult(seq, full, folders, _file_views(db, tree, rows))
+    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows))
 
 
 def activity(
@@ -483,7 +513,7 @@ def checkout(db: Session, user: User, refs: list[FileRef], host: str, *, force: 
             file.change_seq = seq
             _event(db, user, "checkout", file=file, path=tree.file_path(file), host=host)
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -507,7 +537,7 @@ def undo_checkout(db: Session, user: User, refs: list[FileRef]) -> list[FileView
         _clear_lock(file)
         file.change_seq = seq
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -692,7 +722,7 @@ def checkin(
         elif not keep_checked_out:
             _event(db, user, "undo_checkout", file=file, path=path, host=host, unchanged=True)
     db.commit()
-    views = _views_by_id(db, tree, [f for _, f, _, _ in done.values()])
+    views = _views_by_id(db, tree, access, [f for _, f, _, _ in done.values()])
     return CheckinResult(record.id if record else None, [(s, views[f.id]) for s, f, _, _ in done.values()])
 
 
@@ -752,7 +782,7 @@ def revert(
         db, user, "revert", file=file, version=version, path=path, number=version.number, reverted_to=number, host=host
     )
     db.commit()
-    return _views_by_id(db, tree, [file])[file.id]
+    return _views_by_id(db, tree, access, [file])[file.id]
 
 
 def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False) -> list[FileView]:
@@ -783,7 +813,7 @@ def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False)
         file.change_seq = seq
         _event(db, user, "delete", file=file, path=tree.file_path(file))
     db.commit()
-    views = _views_by_id(db, tree, files)
+    views = _views_by_id(db, tree, access, files)
     return [views[f.id] for f in files]
 
 
@@ -802,7 +832,7 @@ def restore(db: Session, user: User, file_id: int) -> FileView:
         file.change_seq = seq
         _event(db, user, "restore", file=file, path=path)
         db.commit()
-    return _views_by_id(db, tree, [file])[file.id]
+    return _views_by_id(db, tree, access, [file])[file.id]
 
 
 def can_upload(db: Session, user: User) -> bool:

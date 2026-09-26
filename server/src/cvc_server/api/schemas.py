@@ -51,6 +51,11 @@ class LockOut(BaseModel):
     since: datetime
 
 
+class UseOut(BaseModel):
+    file_id: int
+    version: int  # the version it was checked in with; the file may have newer ones since
+
+
 class FileOut(BaseModel):
     id: int
     path: str
@@ -63,6 +68,9 @@ class FileOut(BaseModel):
     modified_by: UserRef
     checked_out: LockOut | None
     deleted_at: datetime | None
+    # What the latest version uses (an assembly's parts, a drawing's model), by id: the files you can
+    # see, including any deleted since. Clients look them up in their copy of the sync feed.
+    uses: list[UseOut]
 
     @classmethod
     def of(cls, view: vault.FileView) -> "FileOut":
@@ -82,6 +90,7 @@ class FileOut(BaseModel):
             modified_by=UserRef.of(view.modified_by),
             checked_out=lock,
             deleted_at=file.deleted_at,
+            uses=[UseOut(file_id=file_id, version=number) for file_id, number in view.uses],
         )
 
 

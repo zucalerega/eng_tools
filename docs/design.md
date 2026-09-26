@@ -125,7 +125,12 @@ needs the name freed up first.
 
 **History and where-used.** `GET /api/files/{id}` returns every version, newest
 first, with comments, authors, and pinned references, plus the live files whose
-latest version uses this file.
+latest version uses this file. Every file the API returns, including in the sync
+feed, also lists what its latest version uses (`uses`: file ids, each with the version
+it was checked in with, limited to files you can see). So the web app and the add-in,
+which keep a copy of the feed, know every assembly's parts and where each part is used,
+at every level, without asking for each file. References are by id, so renaming a file
+later won't touch the files that use it.
 
 **Get latest** (client). The client asks `GET /api/sync?since=<seq>` for what
 changed since its last sync. It downloads only the files you open or ask for (an

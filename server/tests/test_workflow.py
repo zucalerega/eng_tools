@@ -213,6 +213,40 @@ def test_assembly_checked_in_with_its_parts(team, client):
     assert [(u["file"]["path"], u["uses_version"]) for u in used_by] == [("Fins/Fin Can.SLDASM", 1)]
 
 
+def test_files_say_what_they_use(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Recovery/Chute.SLDPRT": b"chute"})
+    team.checkin(
+        chief, {"Fins/Can.SLDASM": b"can"}, refs={"Fins/Can.SLDASM": ["Fins/Fin.SLDPRT", "Recovery/Chute.SLDPRT"]}
+    )
+    team.grant(chief, "Fins", "alice@x.test", "viewer")  # not Recovery
+    first = client.get("/api/sync", headers=chief).json()
+    ids = {f["name"]: f["id"] for f in first["files"]}
+
+    def uses(feed: dict, name: str) -> list[dict] | None:
+        return next((f["uses"] for f in feed["files"] if f["name"] == name), None)
+
+    fin, chute = {"file_id": ids["Fin.SLDPRT"], "version": 1}, {"file_id": ids["Chute.SLDPRT"], "version": 1}
+    assert uses(first, "Can.SLDASM") == [fin, chute]
+    assert uses(first, "Fin.SLDPRT") == []
+    assert uses(client.get("/api/sync", headers=alice).json(), "Can.SLDASM") == [fin]  # only what she can see
+
+    # A new version of the assembly comes through the feed with what it uses now.
+    team.checkout(chief, "Fins/Fin.SLDPRT", "Fins/Can.SLDASM")
+    team.checkin(
+        chief,
+        {"Fins/Fin.SLDPRT": b"fin v2", "Fins/Can.SLDASM": b"can v2"},
+        refs={"Fins/Can.SLDASM": ["Fins/Fin.SLDPRT"]},
+    )
+    changes = client.get("/api/sync", params={"since": first["seq"]}, headers=chief).json()
+    assert uses(changes, "Can.SLDASM") == [{"file_id": ids["Fin.SLDPRT"], "version": 2}]
+
+    # A part deleted since is still what that version used.
+    assert client.post("/api/delete", json={"files": ["Fins/Fin.SLDPRT"], "force": True}, headers=chief).is_success
+    assert uses(team.listing(chief, "Fins"), "Can.SLDASM") == [{"file_id": ids["Fin.SLDPRT"], "version": 2}]
+
+
 def test_missing_reference_rolls_back_the_whole_check_in(team):
     chief = team.member("chief@x.test", admin=True)
     response = team.checkin(

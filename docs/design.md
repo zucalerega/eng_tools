@@ -42,7 +42,7 @@ year's team to keep running.
 
 ```
 SolidWorks add-in (C#, .NET Framework 4.8) ─┐
-cvc CLI (C#, .NET 8, Windows + macOS)       ─┴─ Cvc.Client library ─┐
+cvc CLI (C#, .NET 10, Windows + macOS)      ─┴─ Cvc.Client library ─┐
                                                                      │ HTTPS, JSON
 Web app (React) ─────────────────────────────────────────────────────┤
                                                                      ▼
@@ -54,10 +54,10 @@ Web app (React) ─────────────────────�
 | Part | Where | Status |
 |---|---|---|
 | Server: API, sign-in, permissions | `server/` | working |
-| Client library: the local workspace | `client/Cvc.Client` (netstandard2.0) | next |
-| CLI | `client/Cvc.Cli` (.NET 8) | next |
+| Client library: the local workspace | `client/src/Cvc.Client` (netstandard2.0 + net10.0) | working |
+| CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
+| SolidWorks add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | next |
 | Web app | `web/` (React + Vite), served by the server | planned |
-| SolidWorks add-in | `client/Cvc.SolidWorks` (.NET Framework 4.8) | planned |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
 COM components. The workspace logic lives in a netstandard2.0 library so the add-in
@@ -180,23 +180,43 @@ These rules keep the data consistent. The code relies on them, so keep them true
 - **Every permission check goes through `access.Access`.**
 - **Timestamps are timezone-aware UTC.**
 
-## The local workspace (client, next)
+## The local workspace (client)
 
-- Every machine uses the same root (`C:\CVC` by default). SolidWorks stores
+`Cvc.Client` implements the workspace. The `cvc` CLI and the add-in are thin layers
+on top of it.
+
+- **Same root everywhere.** Every machine uses `C:\CVC` by default. SolidWorks stores
   absolute paths to referenced files, so with the same root, references resolve on
   every machine.
-- Files you don't have checked out are read-only on disk, so SolidWorks opens them
-  read-only. Checking out makes a file writable; checking in or undoing makes it
-  read-only again.
-- A local state file records each file's id, version, and hash. From it the client
-  can show each file's status: up to date, out of date, changed locally, checked
-  out by you or by someone else, or not in the vault yet.
-- These are never added to the vault: `~$*` (SolidWorks lock files), `*.tmp`,
+- **Read-only unless checked out.** Files you don't have checked out are read-only
+  on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
+  checking in or undoing makes it read-only again.
+- **Local state.** `.cvc/state.json` records the sync cursor, the vault's files, and
+  each local copy's id, version, hash, size, and write time. A file is rehashed only
+  when its size or write time changes. From this state each file is one of:
+  - up to date
+  - out of date
+  - modified
+  - conflict: changed here, but a newer version was checked in since
+  - not downloaded
+  - new
+  - deleted in the vault
+
+  Each status also records who has the file checked out.
+- **Local changes are never lost.** Get latest skips files changed here unless forced.
+  Forcing it, or undoing a check-out, first copies your version to
+  `.cvc/backup/<time>/`. Downloads are verified by SHA-256 and moved into place, so
+  an interrupted download changes nothing.
+- **Checking out updates first.** Checking out a file whose local copy is out of date
+  downloads the latest version. A conflict has to be resolved before checking out.
+- **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,
   `Thumbs.db`, `desktop.ini`, `.DS_Store`.
-- Checking in an assembly from the add-in: SolidWorks lists its references. Any
-  that are new, or checked out to you with changes, go into the same check-in.
-- Checking out a file whose local copy is out of date downloads the latest version
-  first.
+- **Saved sign-ins:** `%APPDATA%\CVC\tokens.json`, encrypted with Windows DPAPI.
+  Elsewhere, `~/.config/cvc/tokens.json`, readable only by its owner.
+- **Assemblies (add-in, next):** SolidWorks lists an assembly's references. Any that
+  are new, or checked out to you with changes, go into the same check-in, pinned to
+  the versions used. The CLI can't read SolidWorks files, so it doesn't send
+  references.
 
 ## API
 
@@ -223,10 +243,13 @@ are at `/docs`.
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 
-## Deploying (planned)
+## Deploying
 
-The server is one process. It needs somewhere to keep its database and file
-contents, plus a Google OAuth client:
+The server ships as a Docker image (`server/Dockerfile`). It runs as a non-root user,
+has a health check, and keeps its database and file contents on a `/data` volume.
+CI builds and smoke-tests the image on every change, and publishes it to
+`ghcr.io/<owner>/cvc-server:<tag>` for version tags. The release, backup, and
+rollback rules are in CLAUDE.md, under "Deployment". Setup:
 
 1. In Google Cloud Console, create an OAuth client of type *Web application* with
    the redirect URI `https://<your CVC address>/auth/callback`. Sign-in only asks
@@ -239,21 +262,21 @@ contents, plus a Google OAuth client:
    download fees) is planned.
 
 We still need to decide where to host it: Render (about $7/month plus disk), a
-~$5/month VPS, or a machine on campus. The server will ship as a Docker image
-that runs on any of them.
+~$5/month VPS, or a machine on campus. The image runs on any of them.
 
 ## Roadmap
 
 1. **Server core** (done): folders, check-out/check-in with references, history,
    trash, permissions, Google and client sign-in, sync feed, activity log.
-2. **Client library + `cvc` CLI**: workspace, get latest, status, check out/in,
-   browser sign-in.
-3. **Web app**: browse, history, download, who-has-what, admin (approvals,
-   permissions, breaking locks).
-4. **SolidWorks add-in**: task pane with status and actions, blocking saves of
+2. **Client library + `cvc` CLI** (done): workspace, status, get latest, check
+   out/in, undo with backups, history, locks, browser sign-in. Tested against the
+   real server.
+3. **SolidWorks add-in**: task pane with status and actions, blocking saves of
    files you haven't checked out, check-ins that include an assembly's references.
-5. **Deploy**: Docker image, R2 blob store, hosting, backups, and importing the
-   current files from Kenesto.
+4. **Web app**: browse, history, download, who-has-what, admin (approvals,
+   permissions, breaking locks).
+5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
+   backups, and importing the current files from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.

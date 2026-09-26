@@ -412,16 +412,11 @@ public sealed class Workspace : IDisposable
             throw new WorkspaceException("Nothing is checked out to you there");
         }
 
-        var released = await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false);
-        foreach (var file in released)
-        {
-            _state.Remote[file.Id] = RemoteEntry.From(file);
-        }
+        // Put the vault's versions back before releasing the locks. If a file can't be replaced (SolidWorks
+        // has it open), it's still checked out to you, so you can close it and undo again.
         var result = new UndoResult();
         foreach (var status in targets)
         {
-            status.Lock = null;
-            status.CheckedOutByMe = false;
             if (status.State is FileState.Modified or FileState.Conflict)
             {
                 result.BackedUp.Add(Backup(status));
@@ -431,10 +426,17 @@ public sealed class Workspace : IDisposable
             {
                 await DownloadAsync(status, ct).ConfigureAwait(false);
             }
-            else
-            {
-                SetReadOnly(status.LocalPath, true);
-            }
+        }
+        var released = await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false);
+        foreach (var file in released)
+        {
+            _state.Remote[file.Id] = RemoteEntry.From(file);
+        }
+        foreach (var status in targets)
+        {
+            status.Lock = null;
+            status.CheckedOutByMe = false;
+            SetReadOnly(status.LocalPath, true);
             result.Released.Add(status);
         }
         SaveState();

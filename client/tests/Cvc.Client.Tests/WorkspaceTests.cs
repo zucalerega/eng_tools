@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+
 namespace Cvc.Client.Tests;
 
 /// <summary>Two people's workspaces against a real server: the everyday check-out/check-in loop.</summary>
@@ -113,6 +115,31 @@ public sealed class WorkspaceTests : IDisposable
         Assert.Equal("experiment that didn't work", File.ReadAllText(Assert.Single(undone.BackedUp)));
         var status = Assert.Single(await alice.StatusAsync([bulkhead]));
         Assert.Equal((FileState.UpToDate, null), (status.State, status.Lock));
+    }
+
+    [Fact]
+    public async Task UndoKeepsTheCheckoutWhenTheFileCannotBeRestored()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var valve = Write(alice, "Valve.SLDPRT", "v1");
+        await alice.CheckinAsync([valve], "add valve");
+        await alice.CheckoutAsync([valve]);
+        File.WriteAllText(valve, "bigger orifice");
+
+        using (HoldOpen(valve))
+        {
+            await Assert.ThrowsAsync<WorkspaceException>(() => alice.UndoCheckoutAsync([valve]));
+        }
+        // Still checked out, changes and all, so closing the file and undoing again works.
+        var kept = Assert.Single(await alice.StatusAsync([valve]));
+        Assert.Equal((FileState.Modified, true), (kept.State, kept.CheckedOutByMe));
+        Assert.Equal("bigger orifice", File.ReadAllText(valve));
+
+        var undone = await alice.UndoCheckoutAsync([valve]);
+        Assert.Equal("v1", File.ReadAllText(valve));
+        Assert.True(IsReadOnly(valve));
+        Assert.Equal("bigger orifice", File.ReadAllText(Assert.Single(undone.BackedUp)));
+        Assert.Null(Assert.Single(await alice.StatusAsync([valve])).Lock);
     }
 
     [Fact]
@@ -283,6 +310,32 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     private static bool IsReadOnly(string path) => (File.GetAttributes(path) & FileAttributes.ReadOnly) != 0;
+
+    /// <summary>Stop a file from being replaced until disposed, as SolidWorks does while it has the file open.</summary>
+    private static IDisposable HoldOpen(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Like SolidWorks with a checked-out file: others can read it (so it can be backed up), not replace it.
+            return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+        }
+        return new ReadOnlyFolder(Path.GetDirectoryName(path)!);
+    }
+
+    // Unix lets a file be replaced while it's open, but not inside a read-only folder.
+    [UnsupportedOSPlatform("windows")]
+    private sealed class ReadOnlyFolder : IDisposable
+    {
+        private readonly string _folder;
+
+        public ReadOnlyFolder(string folder)
+        {
+            _folder = folder;
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        public void Dispose() => File.SetUnixFileMode(_folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
 
     private static void MakeWritable(string path) => File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
 }

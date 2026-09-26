@@ -206,7 +206,9 @@ on top of it.
 - **Local changes are never lost.** Get latest skips files changed here unless forced.
   Forcing it, or undoing a check-out, first copies your version to
   `.cvc/backup/<time>/`. Downloads are verified by SHA-256 and moved into place, so
-  an interrupted download changes nothing.
+  an interrupted download changes nothing. Undoing a check-out puts the vault's
+  version back before it releases the lock, so a file that can't be replaced (it's
+  open in SolidWorks) stays checked out to you.
 - **Checking out updates first.** Checking out a file whose local copy is out of date
   downloads the latest version. A conflict has to be resolved before checking out.
 - **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,

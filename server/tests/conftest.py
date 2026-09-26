@@ -84,8 +84,9 @@ class Team:
         body = {"comment": comment, "host": host, "keep_checked_out": keep, "items": items}
         return self.client.post("/api/checkin", json=body, headers=as_)
 
-    def checkout(self, as_: dict[str, str], *files: str | int, host: str = "PC-1"):
-        return self.client.post("/api/checkout", json={"files": list(files), "host": host}, headers=as_)
+    def checkout(self, as_: dict[str, str], *files: str | int, host: str = "PC-1", force: bool = False):
+        body = {"files": list(files), "host": host, "force": force}
+        return self.client.post("/api/checkout", json=body, headers=as_)
 
     def undo(self, as_: dict[str, str], *files: str | int):
         return self.client.post("/api/undo-checkout", json={"files": list(files)}, headers=as_)

@@ -182,6 +182,14 @@ class FilesIn(BaseModel):
 
 class CheckoutIn(FilesIn):
     host: str  # this computer's name; the lock belongs to it
+    force: bool = False  # take over files checked out elsewhere (someone else's: leads only)
+
+
+class RevertIn(BaseModel):
+    version: int = Field(ge=1)  # the version to make the latest again
+    comment: str = Field(default="", max_length=5000)
+    host: str = "web"
+    force: bool = False  # even if someone else has it checked out (leads only): releases their check-out
 
 
 class DeleteIn(FilesIn):

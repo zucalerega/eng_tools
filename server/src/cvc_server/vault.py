@@ -446,8 +446,12 @@ def create_folder(db: Session, user: User, path: str) -> FolderView:
     return _folder_view(tree, access, folder)
 
 
-def checkout(db: Session, user: User, refs: list[FileRef], host: str) -> list[FileView]:
-    """Lock files for editing on this computer. All or nothing; already yours here is fine."""
+def checkout(db: Session, user: User, refs: list[FileRef], host: str, *, force: bool = False) -> list[FileView]:
+    """Lock files for editing on this computer. All or nothing; already yours here is fine.
+
+    With force, files checked out elsewhere are taken over: your own check-out moves to this
+    computer, and a lead can take someone else's, which releases it (a 'break lock').
+    """
     host = _host(host)
     seq = begin_write(db)
     tree, access = _context(db, user)
@@ -455,14 +459,25 @@ def checkout(db: Session, user: User, refs: list[FileRef], host: str) -> list[Fi
     for file in files:
         access.require(file.folder_id, Role.EDITOR, f"check out {tree.file_path(file)}")
     taken = [
-        _lock_json(db, tree, f)
-        for f in files
-        if f.checked_out_by is not None and (f.checked_out_by, f.checked_out_host) != (user.id, host)
+        f for f in files if f.checked_out_by is not None and (f.checked_out_by, f.checked_out_host) != (user.id, host)
     ]
-    if taken:
-        raise Conflict("Already checked out: " + ", ".join(map(_lock_text, taken)), code="checked_out", files=taken)
+    locks = {f.id: _lock_json(db, tree, f) for f in taken}
+    if taken and not force:
+        text = ", ".join(_lock_text(locks[f.id]) for f in taken)
+        raise Conflict("Already checked out: " + text, code="checked_out", files=list(locks.values()))
+    for file in taken:
+        if file.checked_out_by != user.id:
+            lock = locks[file.id]
+            access.require(file.folder_id, Role.LEAD, f"take over {lock['user']}'s check-out of {lock['path']}")
     now = utcnow()
     for file in files:
+        if file.id in locks:
+            lock = locks[file.id]
+            if file.checked_out_by == user.id:
+                _event(db, user, "undo_checkout", file=file, path=lock["path"], host=lock["host"])
+            else:
+                _event(db, user, "break_lock", file=file, path=lock["path"], host=lock["host"], holder=lock["email"])
+            _clear_lock(file)
         if file.checked_out_by is None:
             file.checked_out_by, file.checked_out_at, file.checked_out_host = user.id, now, host
             file.change_seq = seq
@@ -679,6 +694,65 @@ def checkin(
     db.commit()
     views = _views_by_id(db, tree, [f for _, f, _, _ in done.values()])
     return CheckinResult(record.id if record else None, [(s, views[f.id]) for s, f, _, _ in done.values()])
+
+
+def revert(
+    db: Session, user: User, file_id: int, number: int, *, comment: str = "", host: str = "web", force: bool = False
+) -> FileView:
+    """Make an older version the latest again, as a new version with its contents and references.
+
+    Nothing is lost: it's recorded as a check-in like any other. It needs editor rights, and the
+    file not checked out by someone else; a lead can force that, which releases their check-out.
+    Your own check-out ends, as it would with a check-in.
+    """
+    host = _host(host)
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id)
+    path = tree.file_path(file)
+    access.require(file.folder_id, Role.EDITOR, f"revert {path}")
+    if number == file.latest_version:
+        raise CvcError(f"v{number} is already the latest version of {path}", code="bad_version")
+    if not 1 <= number < file.latest_version:
+        raise CvcError(f"{path} has no version {number}", code="bad_version")
+    if file.checked_out_by is not None and file.checked_out_by != user.id:
+        lock = _lock_json(db, tree, file)
+        if not force:
+            raise Conflict(
+                f"{path} is checked out by {lock['user']} on {lock['host']}", code="checked_out", files=[lock]
+            )
+        access.require(file.folder_id, Role.LEAD, f"release {lock['user']}'s check-out of {path}")
+        _event(db, user, "break_lock", file=file, path=path, host=lock["host"], holder=lock["email"])
+
+    old = _version(db, file.id, number)
+    now = utcnow()
+    note = comment.strip()
+    record = Checkin(
+        user_id=user.id, host=host, comment=f"Reverted to v{number}" + (f": {note}" if note else ""), created_at=now
+    )
+    db.add(record)
+    db.flush()
+    file.latest_version += 1
+    version = Version(
+        file_id=file.id,
+        number=file.latest_version,
+        checkin_id=record.id,
+        blob_sha256=old.blob_sha256,
+        size=old.size,
+        created_at=now,
+        created_by=user.id,
+    )
+    db.add(version)
+    db.flush()
+    for ref in db.scalars(select(VersionRef).where(VersionRef.version_id == old.id)):
+        db.add(VersionRef(version_id=version.id, child_file_id=ref.child_file_id, child_version=ref.child_version))
+    _clear_lock(file)
+    file.change_seq = seq
+    _event(
+        db, user, "revert", file=file, version=version, path=path, number=version.number, reverted_to=number, host=host
+    )
+    db.commit()
+    return _views_by_id(db, tree, [file])[file.id]
 
 
 def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False) -> list[FileView]:

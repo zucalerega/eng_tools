@@ -132,6 +132,9 @@ keep working with older clients:
   strings, and never redirect to a URL a user supplied (`_safe_next`).
 - **Production settings:** production refuses dev sign-in and weak settings
   (`Settings.check()`). Never weaken that.
+- **CI supply chain:** third-party GitHub Actions are pinned to a full commit SHA,
+  with the version in a comment. GitHub's own `actions/*` may use a major-version tag.
+  CI jobs get the smallest `permissions` they need.
 
 ## Data safety
 

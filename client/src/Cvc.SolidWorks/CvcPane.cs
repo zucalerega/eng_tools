@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,10 +17,10 @@ using Timer = System.Windows.Forms.Timer;
 namespace Cvc.SolidWorks;
 
 /// <summary>
-/// The CVC task pane: sign-in, the active document's status and actions, and the workspace
-/// files that need attention. It runs on SolidWorks' main thread and awaits resume there, so
-/// SolidWorks calls after an await are safe. Workspace isn't thread-safe, so the gate lets one
-/// operation run at a time.
+/// The CVC task pane: sign-in, the active document's status and actions, the workspace files that
+/// need attention, and the whole vault to browse. It runs on SolidWorks' main thread and awaits
+/// resume there, so SolidWorks calls after an await are safe. Workspace isn't thread-safe, so the
+/// gate lets one operation run at a time.
 /// </summary>
 internal sealed class CvcPane : UserControl
 {
@@ -30,13 +32,16 @@ internal sealed class CvcPane : UserControl
     private readonly AddinSettings _settings = AddinSettings.Load();
     private readonly TokenStore _tokens = new TokenStore();
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
-    private readonly Timer _poll = new Timer { Interval = 60_000 };
+    private readonly Timer _poll = new Timer { Interval = 20_000 };
     private readonly Timer _debounce = new Timer { Interval = 400 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private Workspace? _workspace;
     private Account? _me;
+    private VaultTree? _vault;
     private Dictionary<string, FileStatus> _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
+    private string _shown = ""; // what the lists show, to redraw them only when it changes
     private bool _busy;
+    private bool _doubleClicking;
 
     private readonly TextBox _serverBox = new TextBox { Dock = DockStyle.Fill };
     private readonly TextBox _rootBox = new TextBox { Dock = DockStyle.Fill };
@@ -51,14 +56,16 @@ internal sealed class CvcPane : UserControl
     private readonly Button _undoButton;
     private readonly Button _getButton;
     private readonly Button _takeOverButton;
+    private readonly Button _drawingButton;
     private readonly ListView _changes = new ListView
     {
         View = View.Details,
         FullRowSelect = true,
         HideSelection = false,
         Dock = DockStyle.Fill,
-        MinimumSize = new Size(0, 140),
     };
+    private readonly TreeView _tree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
+    private readonly TabControl _views = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 180) };
     private readonly Control _workView;
     private readonly Label _message = new Label { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
 
@@ -85,22 +92,37 @@ internal sealed class CvcPane : UserControl
         _undoButton = MakeButton("Undo check-out", (_, _) => OnActiveDocument(UndoAsync));
         _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
         _takeOverButton = MakeButton("Take over...", (_, _) => OnActiveDocument(TakeOverAsync));
+        _drawingButton = MakeButton("Open drawing", (sender, _) => OnActiveDocument(path => OpenDrawingAsync(path, (Control)sender!)));
         _changes.Columns.Add("File");
         _changes.Columns.Add("State");
         _changes.Columns.Add("Checked out by");
         _changes.ClientSizeChanged += (_, _) => FitColumns();
-        _changes.DoubleClick += (_, _) => OpenSelected();
-        _changes.ContextMenuStrip = ListMenu();
+        _changes.DoubleClick += (_, _) => Safely(() => OpenAsync(SelectedPaths()));
+        _changes.ContextMenuStrip = ItemMenu();
+        _tree.BeforeExpand += (_, e) => Guarded(() => Expanding(e));
+        _tree.BeforeCollapse += (_, e) => e.Cancel = TakeDoubleClick();
+        _tree.MouseDown += (_, e) => Guarded(() => PointAt(e));
+        _tree.NodeMouseDoubleClick += (_, e) => Safely(() => OpenAsync(PathsOf(e.Node)));
+        _tree.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter && _tree.SelectedNode is { } node)
+            {
+                e.Handled = true;
+                Safely(() => OpenAsync(PathsOf(node)));
+            }
+        };
+        _tree.ContextMenuStrip = ItemMenu();
+        _views.TabPages.Add(Page("Needs attention", _changes));
+        _views.TabPages.Add(Page("Browse", _tree));
         _workView = Stack(
-            _changes,
+            _views,
             _account,
             Row(MakeButton("Open folder", (_, _) => OpenFolder()), MakeButton("Sign out", (_, _) => SignOut())),
             Heading("Active document"),
             _activeName,
             _activeState,
-            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton),
-            Heading("Needs attention"),
-            _changes,
+            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton, _drawingButton),
+            _views,
             Row(
                 MakeButton("Check in selected...", (_, _) => Safely(() => CheckInAsync(SelectedPaths()))),
                 MakeButton("Get latest (everything)", (_, _) => Safely(GetEverythingAsync)),
@@ -457,15 +479,18 @@ internal sealed class CvcPane : UserControl
         return result.BackedUp.Count > 0 ? $"Undone. Your changes were saved to {result.BackedUp[0]}." : $"Undid the check-out of {name}.";
     });
 
-    private Task GetLatestAsync(string path) => RunAsync("Getting the latest version", async workspace =>
+    private Task GetLatestAsync(string path) =>
+        RunAsync("Getting the latest version", async workspace => Summary(await GetLatestHereAsync(workspace, path)));
+
+    // The file and the parts it uses are updated in place, open or not.
+    private async Task<GetResult> GetLatestHereAsync(Workspace workspace, string path)
     {
-        // The file and the parts it uses are updated in place, open or not.
         var involved = new List<string> { path };
         involved.AddRange(_sw.AllReferences(path));
         var stale = (await CurrentStatusAsync(workspace, involved)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
         RefuseUnsaved(stale, "get the latest version");
-        return Summary(await ReplacingAsync(stale, () => workspace.GetLatestAsync(new[] { path })));
-    });
+        return await ReplacingAsync(stale, () => workspace.GetLatestAsync(new[] { path }));
+    }
 
     private Task GetEverythingAsync() =>
         RunAsync("Getting the latest versions", async workspace => Summary(await GetLatestUpdatingOpenAsync(workspace, null)));
@@ -537,14 +562,21 @@ internal sealed class CvcPane : UserControl
         try
         {
             var me = _me = await workspace.WhoAmIAsync();
-            var statuses = await workspace.StatusAsync();
+            var vault = _vault = await workspace.BrowseAsync();
             _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
-            foreach (var status in statuses)
+            foreach (var status in vault.Files)
             {
                 _statuses[VaultPaths.Key(status.VaultPath)] = status;
             }
             _account.Text = $"{me.Name} ({me.Email}) on {workspace.Host}\n{workspace.Server}\n{workspace.Root}";
-            ShowChanges(statuses);
+            // Redrawn only when something changed, so a refresh doesn't close what you had open in the tree.
+            var shown = Signature(vault);
+            if (shown != _shown)
+            {
+                _shown = shown;
+                ShowChanges(vault.Files);
+                ShowBrowse(vault);
+            }
             ShowActiveDocument();
         }
         catch (CvcApiException e) when (e.StatusCode == 401)
@@ -675,6 +707,20 @@ internal sealed class CvcPane : UserControl
         }
     }
 
+    // The same, for handlers that must finish before they return (a tree node about to open).
+    private void Guarded(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e)
+        {
+            Log.Error("A task pane action failed", e);
+            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Problem);
+        }
+    }
+
     private void OnActiveDocument(Func<string, Task> action)
     {
         var path = _sw.ActiveDocumentPath;
@@ -708,7 +754,10 @@ internal sealed class CvcPane : UserControl
         _rootBox.Text = root ?? _settings.WorkspaceRoot;
         _setupView.Visible = _workspace == null;
         _workView.Visible = _workspace != null;
+        _vault = null;
+        _shown = "";
         _changes.Items.Clear();
+        _tree.Nodes.Clear();
         ShowActiveDocument();
     }
 
@@ -753,8 +802,26 @@ internal sealed class CvcPane : UserControl
         }
     }
 
-    private List<string> SelectedPaths() =>
-        _changes.SelectedItems.Cast<ListViewItem>().Select(i => ((FileStatus)i.Tag).LocalPath).ToList();
+    // What's selected on the tab that's showing: files, or in Browse a file or a folder.
+    private List<string> SelectedPaths()
+    {
+        if (!BrowseShown)
+        {
+            return _changes.SelectedItems.Cast<ListViewItem>().Select(i => ((FileStatus)i.Tag).LocalPath).ToList();
+        }
+        return _tree.SelectedNode?.Tag switch
+        {
+            BrowseItem item => new List<string> { item.File.LocalPath },
+            TreeFolder folder when _workspace != null => new List<string> { _workspace.ToLocalPath(folder.VaultPath) },
+            _ => new List<string>(),
+        };
+    }
+
+    private List<FileStatus> SelectedStatuses() => BrowseShown
+        ? _tree.SelectedNode?.Tag is BrowseItem item ? new List<FileStatus> { item.File } : new List<FileStatus>()
+        : _changes.SelectedItems.Cast<ListViewItem>().Select(i => (FileStatus)i.Tag).ToList();
+
+    private bool BrowseShown => _views.SelectedTab?.Controls.Contains(_tree) == true;
 
     // --- showing ------------------------------------------------------------------------------
 
@@ -773,6 +840,8 @@ internal sealed class CvcPane : UserControl
         // Only where you may: most people never see it.
         _takeOverButton.Visible = status != null && _workspace?.CanTakeOver(status) == true;
         _takeOverButton.Enabled = !_busy;
+        _drawingButton.Visible = status != null && _vault?.Drawings(status).Count > 0;
+        _drawingButton.Enabled = !_busy;
     }
 
     private (string Text, Color Color) Describe(string? path, FileStatus? status)
@@ -811,6 +880,8 @@ internal sealed class CvcPane : UserControl
             .Where(s => s.Lock != null || s.State is FileState.New or FileState.Modified or FileState.Conflict or FileState.Outdated or FileState.DeletedInVault)
             .OrderBy(s => s.CheckedOutByMe ? 0 : s.State == FileState.New ? 1 : 2)
             .ThenBy(s => s.VaultPath, StringComparer.OrdinalIgnoreCase);
+        var selected = new HashSet<string>(
+            _changes.SelectedItems.Cast<ListViewItem>().Select(i => ((FileStatus)i.Tag).VaultPath), StringComparer.OrdinalIgnoreCase);
         _changes.BeginUpdate();
         _changes.Items.Clear();
         foreach (var status in attention)
@@ -822,6 +893,7 @@ internal sealed class CvcPane : UserControl
                 ForeColor = status.State is FileState.Conflict or FileState.DeletedInVault ? Problem
                     : status.State == FileState.Outdated || (status.Lock != null && !status.CheckedOutByMe) ? Attention
                     : _changes.ForeColor,
+                Selected = selected.Contains(status.VaultPath),
             });
         }
         _changes.EndUpdate();
@@ -868,7 +940,7 @@ internal sealed class CvcPane : UserControl
     {
         _busy = busy;
         UseWaitCursor = busy;
-        _changes.Enabled = !busy;
+        _views.Enabled = !busy;
         ShowActiveDocument();
     }
 
@@ -882,10 +954,19 @@ internal sealed class CvcPane : UserControl
 
     private DialogResult Ask(string question) => MessageBox.Show(this, question, "CVC", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
-    private void OpenSelected()
+    /// <summary>Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses.</summary>
+    private async Task OpenAsync(IReadOnlyList<string> paths)
     {
-        foreach (var path in SelectedPaths().Where(File.Exists))
+        foreach (var path in paths)
         {
+            if (!File.Exists(path) && StatusOf(path)?.FileId != null)
+            {
+                await GetLatestAsync(path);
+            }
+            if (!File.Exists(path))
+            {
+                continue;
+            }
             if (SolidWorksHost.IsSolidWorksFile(path))
             {
                 _sw.Open(path);
@@ -895,6 +976,28 @@ internal sealed class CvcPane : UserControl
                 Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             }
         }
+    }
+
+    // A part's or assembly's drawing: the one it has, or a choice of them, under the button.
+    private Task OpenDrawingAsync(string path, Control button)
+    {
+        var drawings = StatusOf(path) is { } status && _vault != null ? _vault.Drawings(status) : Array.Empty<FileStatus>();
+        if (drawings.Count == 1)
+        {
+            return OpenAsync(new[] { drawings[0].LocalPath });
+        }
+        if (drawings.Count > 1)
+        {
+            var choice = new ContextMenuStrip();
+            foreach (var drawing in drawings)
+            {
+                var local = drawing.LocalPath;
+                choice.Items.Add(NameOf(drawing.VaultPath), null, (_, _) => Safely(() => OpenAsync(new[] { local })));
+            }
+            choice.Closed += (_, _) => BeginInvoke(new Action(choice.Dispose));
+            choice.Show(button, new Point(0, button.Height));
+        }
+        return Task.CompletedTask;
     }
 
     private void OpenFolder()
@@ -915,16 +1018,311 @@ internal sealed class CvcPane : UserControl
     private static bool SameServer(Uri a, Uri b) =>
         string.Equals(a.AbsoluteUri.TrimEnd('/'), b.AbsoluteUri.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
-    private ContextMenuStrip ListMenu()
+    /// <summary>Right-click actions on what's selected in the list or the tree (a folder in the tree gets its own few).</summary>
+    private ContextMenuStrip ItemMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open", null, (_, _) => OpenSelected());
-        menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
-        menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
-        menu.Items.Add("Get latest", null, (_, _) => Safely(() => RunAsync("Getting the latest versions", async workspace =>
+        var open = menu.Items.Add("Open", null, (_, _) => Safely(() => OpenAsync(SelectedPaths())));
+        var drawing = new ToolStripMenuItem("Open drawing");
+        menu.Items.Add(drawing);
+        var checkOut = menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
+        var checkIn = menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
+        var undo = menu.Items.Add("Undo check-out", null, (_, _) => Safely(() => UndoAsync(SelectedPaths()[0])));
+        var get = menu.Items.Add("Get latest", null, (_, _) => Safely(() => RunAsync("Getting the latest versions", async workspace =>
             Summary(await GetLatestUpdatingOpenAsync(workspace, SelectedPaths())))));
+        var takeOver = menu.Items.Add("Take over...", null, (_, _) => Safely(() => TakeOverAsync(SelectedPaths()[0])));
+        var explorer = menu.Items.Add("Show in File Explorer", null, (_, _) => Guarded(() => ShowInExplorer(SelectedPaths())));
+        menu.Opening += (_, e) =>
+        {
+            var files = SelectedStatuses();
+            var folder = BrowseShown && _tree.SelectedNode?.Tag is TreeFolder;
+            if (files.Count == 0 && !folder)
+            {
+                e.Cancel = true;
+                return;
+            }
+            open.Available = checkOut.Available = undo.Available = takeOver.Available = !folder;
+            explorer.Available = folder;
+            open.Enabled = !_busy;
+            checkOut.Enabled = !_busy && files.Any(s => s.FileId != null && s.Lock == null
+                && s.State is FileState.UpToDate or FileState.Outdated or FileState.Modified or FileState.Missing);
+            checkIn.Enabled = !_busy && (folder || files.Any(s => s.State == FileState.New || s.CheckedOutByMe));
+            undo.Enabled = !_busy && files.Count == 1 && files[0].CheckedOutByMe;
+            get.Enabled = !_busy && (folder || files.Any(s => s.FileId != null));
+            takeOver.Available = takeOver.Available && files.Count == 1 && _workspace?.CanTakeOver(files[0]) == true;
+            takeOver.Enabled = !_busy;
+            drawing.DropDownItems.Clear();
+            foreach (var shows in files.Count == 1 && _vault != null ? _vault.Drawings(files[0]) : Array.Empty<FileStatus>())
+            {
+                var local = shows.LocalPath;
+                drawing.DropDownItems.Add(NameOf(shows.VaultPath), null, (_, _) => Safely(() => OpenAsync(new[] { local })));
+            }
+            drawing.Available = !folder && drawing.DropDownItems.Count > 0;
+            drawing.Enabled = !_busy;
+        };
         return menu;
     }
+
+    // A vault folder in File Explorer: made here first if it has nothing here yet, so new files can go in it.
+    private static void ShowInExplorer(IReadOnlyList<string> folders)
+    {
+        foreach (var folder in folders)
+        {
+            Directory.CreateDirectory(folder);
+            Process.Start("explorer.exe", "\"" + folder + "\"");
+        }
+    }
+
+    // --- browsing -----------------------------------------------------------------------------
+
+    /// <summary>A file in the Browse tree: in its folder, used by an assembly, or a model's drawing.</summary>
+    private sealed class BrowseItem
+    {
+        public BrowseItem(FileStatus file) => File = file;
+
+        public FileStatus File { get; }
+    }
+
+    // Stands in for what's under a tree node until it's opened.
+    private static readonly object Unfilled = new object();
+
+    /// <summary>
+    /// Draw the Browse tree from a refresh, with the same folders and assemblies open, the same node
+    /// selected, and the same place scrolled to. What's under a node is filled in when it's opened.
+    /// </summary>
+    private void ShowBrowse(VaultTree vault)
+    {
+        var open = new List<string>();
+        OpenKeys(_tree.Nodes, open);
+        var selected = _tree.SelectedNode?.Name;
+        var top = _tree.TopNode?.Name;
+        _tree.BeginUpdate();
+        try
+        {
+            _tree.Nodes.Clear();
+            AddFolderContents(_tree.Nodes, vault.Root);
+            foreach (var key in open)
+            {
+                NodeNamed(key)?.Expand();
+            }
+            if (selected != null && NodeNamed(selected) is { } node)
+            {
+                _tree.SelectedNode = node;
+            }
+            if (top != null && NodeNamed(top) is { } first)
+            {
+                _tree.TopNode = first;
+            }
+        }
+        finally
+        {
+            _tree.EndUpdate();
+        }
+    }
+
+    private static void OpenKeys(TreeNodeCollection nodes, List<string> keys)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (node.IsExpanded)
+            {
+                keys.Add(node.Name);
+                OpenKeys(node.Nodes, keys);
+            }
+        }
+    }
+
+    private TreeNode? NodeNamed(string key) => key.Length == 0 ? null : _tree.Nodes.Find(key, searchAllChildren: true).FirstOrDefault();
+
+    private void AddFolderContents(TreeNodeCollection nodes, TreeFolder folder)
+    {
+        foreach (var child in folder.Folders)
+        {
+            var node = nodes.Add("d:" + VaultPaths.Key(child.VaultPath), child.CheckedOut > 0 ? $"{child.Name}   ({child.CheckedOut} checked out)" : child.Name);
+            node.Tag = child;
+            node.ToolTipText = child.VaultPath;
+            if (child.Folders.Count + child.Files.Count > 0)
+            {
+                node.Nodes.Add(new TreeNode("...") { Tag = Unfilled });
+            }
+        }
+        foreach (var file in folder.Files)
+        {
+            nodes.Add(FileNode(file, "f:" + (file.FileId?.ToString(CultureInfo.InvariantCulture) ?? VaultPaths.Key(file.VaultPath))));
+        }
+    }
+
+    /// <summary>
+    /// A file's node, saying whether it's checked in. Under another file (user: the assembly that uses it, or
+    /// the model a drawing shows) it also says which version that one was checked in with, and where it's kept.
+    /// </summary>
+    private TreeNode FileNode(FileStatus file, string key, UsedStatus? used = null, FileStatus? user = null, bool drawing = false)
+    {
+        var text = new StringBuilder(drawing ? "Drawing: " : "").Append(NameOf(file.VaultPath));
+        if (user != null && FolderOf(file.VaultPath) != FolderOf(user.VaultPath))
+        {
+            text.Append("  (in ").Append(FolderOf(file.VaultPath)).Append(')');
+        }
+        var version = used == null
+            ? file.RemoteVersion is int latest ? $"v{latest}" : ""
+            : file.RemoteVersion is int now && now != used.Version ? $"v{used.Version} (now v{now})" : $"v{used.Version}";
+        text.Append("   ").Append(version.Length > 0 ? version + " · " : "").Append(BrowseState(file));
+        var node = new TreeNode(text.ToString()) { Name = key, Tag = new BrowseItem(file), ForeColor = ColorOf(file), ToolTipText = TipFor(file) };
+        // A drawing listed under its model is a link to it: what it shows is already there, above it.
+        if (!drawing && _vault != null && ((_vault.Uses(file)?.Count ?? 0) > 0 || _vault.Drawings(file).Count > 0))
+        {
+            node.Nodes.Add(new TreeNode("...") { Tag = Unfilled });
+        }
+        return node;
+    }
+
+    // Fill in what's under a node as it opens: a folder's folders and files, or what a file uses and its drawings.
+    private void Expanding(TreeViewCancelEventArgs e)
+    {
+        if (TakeDoubleClick())
+        {
+            e.Cancel = true;
+            return;
+        }
+        var node = e.Node;
+        if (_vault == null || node.Nodes.Count != 1 || node.Nodes[0].Tag != Unfilled)
+        {
+            return;
+        }
+        node.Nodes.Clear();
+        if (node.Tag is TreeFolder folder)
+        {
+            AddFolderContents(node.Nodes, folder);
+            return;
+        }
+        if (node.Tag is not BrowseItem item)
+        {
+            return;
+        }
+        // A file can't use itself, but a vault might say one does: don't follow a file already on the way here.
+        var trail = new HashSet<long>();
+        for (var up = node; up != null; up = up.Parent)
+        {
+            if (up.Tag is BrowseItem { File.FileId: long id })
+            {
+                trail.Add(id);
+            }
+        }
+        foreach (var used in _vault.Uses(item.File) ?? Array.Empty<UsedStatus>())
+        {
+            if (used.File == null)
+            {
+                node.Nodes.Add(new TreeNode("A file deleted from the vault") { Name = $"{node.Name}/{used.FileId}", ForeColor = SystemColors.GrayText });
+            }
+            else if (!trail.Contains(used.FileId))
+            {
+                node.Nodes.Add(FileNode(used.File, $"{node.Name}/{used.FileId}", used, item.File));
+            }
+        }
+        foreach (var shows in _vault.Drawings(item.File))
+        {
+            if (shows.FileId is long id && !trail.Contains(id))
+            {
+                node.Nodes.Add(FileNode(shows, $"{node.Name}/d{id}", user: item.File, drawing: true));
+            }
+        }
+    }
+
+    // Double-clicking a file opens it, rather than opening or closing it in the tree; right-clicking selects.
+    private void PointAt(MouseEventArgs e)
+    {
+        var node = _tree.GetNodeAt(e.Location);
+        _doubleClicking = e.Clicks > 1 && node?.Tag is BrowseItem;
+        if (e.Button == MouseButtons.Right && node != null)
+        {
+            _tree.SelectedNode = node;
+        }
+    }
+
+    private bool TakeDoubleClick()
+    {
+        var was = _doubleClicking;
+        _doubleClicking = false;
+        return was;
+    }
+
+    private IReadOnlyList<string> PathsOf(TreeNode node)
+    {
+        _doubleClicking = false;
+        return node.Tag is BrowseItem item ? new[] { item.File.LocalPath } : Array.Empty<string>();
+    }
+
+    private static string BrowseState(FileStatus file) => file switch
+    {
+        { State: FileState.New } => "new: not checked in yet",
+        { State: FileState.DeletedInVault } => "deleted in the vault",
+        { CheckedOutByMe: true, State: FileState.Modified } => "checked out to you, changed",
+        { CheckedOutByMe: true } => "checked out to you",
+        { Lock: { } other } => $"checked out by {other.User.Name} on {other.Host}",
+        { State: FileState.Outdated } => "checked in; a newer version is in the vault",
+        { State: FileState.Missing } => "checked in; not downloaded here",
+        { State: FileState.Modified } => "checked in; changed here",
+        { State: FileState.Conflict } => "checked in; conflict: changed here and in the vault",
+        _ => "checked in",
+    };
+
+    private Color ColorOf(FileStatus file) => file switch
+    {
+        { State: FileState.Conflict or FileState.DeletedInVault } => Problem,
+        { CheckedOutByMe: true } => Good,
+        { Lock: not null } or { State: FileState.New or FileState.Modified or FileState.Outdated } => Attention,
+        { State: FileState.Missing } => SystemColors.GrayText,
+        _ => _tree.ForeColor,
+    };
+
+    private string TipFor(FileStatus file)
+    {
+        var lines = new List<string> { file.VaultPath, BrowseState(file) };
+        if (_vault != null)
+        {
+            var usedIn = _vault.UsedBy(file).Where(f => !VaultTree.IsDrawing(f.VaultPath)).Select(f => NameOf(f.VaultPath)).ToList();
+            if (usedIn.Count > 0)
+            {
+                lines.Add("Used in: " + string.Join(", ", usedIn));
+            }
+            var drawings = _vault.Drawings(file).Select(f => NameOf(f.VaultPath)).ToList();
+            if (drawings.Count > 0)
+            {
+                lines.Add("Drawings: " + string.Join(", ", drawings));
+            }
+        }
+        return string.Join("\n", lines);
+    }
+
+    // Everything the lists show, to tell whether a refresh changed any of it.
+    private static string Signature(VaultTree vault)
+    {
+        var text = new StringBuilder();
+        void Folders(TreeFolder folder)
+        {
+            text.Append(folder.VaultPath).Append('\n');
+            foreach (var child in folder.Folders)
+            {
+                Folders(child);
+            }
+        }
+        Folders(vault.Root);
+        foreach (var file in vault.Files)
+        {
+            text.Append(file.VaultPath).Append('|').Append(file.State).Append('|').Append(file.LocalVersion).Append('|').Append(file.RemoteVersion)
+                .Append('|').Append(file.Lock?.User.Name).Append('|').Append(file.Lock?.Host).Append('|').Append(file.CheckedOutByMe);
+            foreach (var used in vault.Uses(file) ?? Array.Empty<UsedStatus>())
+            {
+                text.Append('|').Append(used.FileId).Append('v').Append(used.Version);
+            }
+            text.Append('\n');
+        }
+        return text.ToString();
+    }
+
+    private static string NameOf(string vaultPath) => vaultPath.Substring(vaultPath.LastIndexOf('/') + 1);
+
+    private static string FolderOf(string vaultPath) => vaultPath.LastIndexOf('/') is var slash and > 0 ? vaultPath.Substring(0, slash) : "the top folder";
 
     // --- layout -------------------------------------------------------------------------------
 
@@ -938,6 +1336,13 @@ internal sealed class CvcPane : UserControl
             table.Controls.Add(control);
         }
         return table;
+    }
+
+    private static TabPage Page(string title, Control content)
+    {
+        var page = new TabPage(title);
+        page.Controls.Add(content);
+        return page;
     }
 
     private static FlowLayoutPanel Row(params Control[] controls)

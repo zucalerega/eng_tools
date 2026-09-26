@@ -210,9 +210,12 @@ on top of it.
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.
-- **Local state.** `.cvc/state.json` records the sync cursor, the vault's files, and
-  each local copy's id, version, hash, size, and write time. A file is rehashed only
-  when its size or write time changes. From this state each file is one of:
+- **Local state.** `.cvc/state.json` records the sync cursor, the vault's files (with
+  what each uses) and folders (with your role in each), and each local copy's id,
+  version, hash, size, and write time. A file is rehashed only when its size or write
+  time changes. A workspace whose state is from an older client (`SyncFormat`), or that
+  synced while its server didn't say what files use yet, gets everything once more.
+  From this state each file is one of:
   - up to date
   - out of date
   - modified
@@ -256,7 +259,12 @@ against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework
 COM add-in, registered with `install.ps1` (RegAsm).
 
 - **Task pane.** Everything is in the CVC tab: sign-in, the active document's status
-  and actions, and a list of files that need attention.
+  and actions (including opening its drawing), and two views: the files that need
+  attention, and Browse, the whole vault as a tree (`Workspace.BrowseAsync`, a
+  `VaultTree`) in which every file says whether it's checked in, assemblies open up into
+  their parts, and parts and assemblies list their drawings. It refreshes every 20
+  seconds and after every action, and redraws only when something changed, so what you
+  opened in the tree stays open.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, CVC offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a

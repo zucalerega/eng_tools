@@ -29,6 +29,13 @@ public sealed class FileLock
     public DateTimeOffset Since { get; set; }
 }
 
+/// <summary>A file that another file's latest version uses (an assembly's part), and the version it was checked in with.</summary>
+public sealed class UsedFile
+{
+    public long FileId { get; set; }
+    public int Version { get; set; }
+}
+
 public sealed class VaultFile
 {
     public long Id { get; set; }
@@ -42,6 +49,9 @@ public sealed class VaultFile
     public UserRef ModifiedBy { get; set; } = new UserRef();
     public FileLock? CheckedOut { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+
+    /// <summary>What the latest version uses: files you can see, maybe deleted since. Null from servers older than this.</summary>
+    public List<UsedFile>? Uses { get; set; }
 }
 
 public sealed class VaultFolder

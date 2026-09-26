@@ -135,16 +135,17 @@ public sealed class Workspace : IDisposable
     public async Task RefreshAsync(CancellationToken ct = default)
     {
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
-        var sync = await Api.SyncAsync(_state.RolesSynced ? _state.Seq : 0, ct).ConfigureAwait(false);
+        var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
+        var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
         if (sync.Full)
         {
             _state.Remote.Clear();
-            _state.Roles.Clear();
-            _state.RolesSynced = true;
+            _state.Folders.Clear();
+            _state.SyncFormat = WorkspaceState.CurrentSyncFormat;
         }
         foreach (var folder in sync.Folders)
         {
-            _state.Roles[VaultPaths.Key(folder.Path)] = folder.Role;
+            _state.Folders[VaultPaths.Key(folder.Path)] = new FolderEntry { Path = folder.Path, Role = folder.Role };
         }
         foreach (var file in sync.Files)
         {
@@ -157,6 +158,13 @@ public sealed class Workspace : IDisposable
                 _state.Remote[file.Id] = RemoteEntry.From(file);
             }
         }
+        // Synced while the server didn't say what files use (it was older): now it does, so get it all again.
+        if (!sync.Full && sync.Files.Any(f => f.Uses != null) && _state.Remote.Values.Any(r => r.Uses == null))
+        {
+            _state.SyncFormat = 0;
+            await RefreshAsync(ct).ConfigureAwait(false);
+            return;
+        }
         _state.Seq = sync.Seq;
         SaveState();
     }
@@ -168,6 +176,17 @@ public sealed class Workspace : IDisposable
         var statuses = Compute(Scope(localPaths));
         SaveState();
         return statuses;
+    }
+
+    /// <summary>
+    /// Everything, for browsing: the vault's folders and this workspace's, each file's status, and what
+    /// each file uses and where it's used (see <see cref="VaultTree"/>).
+    /// </summary>
+    public async Task<VaultTree> BrowseAsync(CancellationToken ct = default)
+    {
+        var statuses = await StatusAsync(null, ct).ConfigureAwait(false);
+        var uses = _state.Remote.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<UsedFile>?)pair.Value.Uses);
+        return new VaultTree(statuses, _state.Folders.Values.Select(f => f.Path), uses);
     }
 
     public async Task<FileDetail> HistoryAsync(string localPath, CancellationToken ct = default)
@@ -602,12 +621,26 @@ public sealed class Workspace : IDisposable
     // Your role in the folder a vault file is in. The top of the vault isn't in the sync feed.
     private string? RoleIn(string vaultPath)
     {
+        var slash = vaultPath.LastIndexOf('/');
+        return RoleNear(slash > 0 ? vaultPath.Substring(0, slash) : "").Role;
+    }
+
+    // Your role in a vault folder, or in the nearest one above it that exists; known is false when that's
+    // the top of the vault, which isn't in the sync feed.
+    private (bool Known, string? Role) RoleNear(string vaultFolder)
+    {
         if (_me?.IsAdmin == true)
         {
-            return "admin";
+            return (true, "admin");
         }
-        var slash = vaultPath.LastIndexOf('/');
-        return slash > 0 && _state.Roles.TryGetValue(VaultPaths.Key(vaultPath.Substring(0, slash)), out var role) ? role : null;
+        for (var folder = vaultFolder; folder.Length > 0; folder = folder.Contains("/") ? folder.Substring(0, folder.LastIndexOf('/')) : "")
+        {
+            if (_state.Folders.TryGetValue(VaultPaths.Key(folder), out var entry))
+            {
+                return (true, entry.Role);
+            }
+        }
+        return (false, null);
     }
 
     private List<FileStatus> Compute(List<string> scope)
@@ -769,12 +802,18 @@ public sealed class Workspace : IDisposable
             {
                 continue; // STEP files and the like never reference other files
             }
-            var detail = await Api.FileAsync(id, ct).ConfigureAwait(false);
-            foreach (var reference in detail.Versions.FirstOrDefault()?.References ?? new List<VersionReference>())
+            var uses = remote.Uses?.Select(used => used.FileId);
+            if (uses == null)
             {
-                if (!reference.Deleted && seen.Add(reference.FileId))
+                // A server older than the sync feed's uses: ask for the latest version's references.
+                var detail = await Api.FileAsync(id, ct).ConfigureAwait(false);
+                uses = (detail.Versions.FirstOrDefault()?.References ?? new List<VersionReference>()).Where(r => !r.Deleted).Select(r => r.FileId);
+            }
+            foreach (var used in uses)
+            {
+                if (seen.Add(used))
                 {
-                    queue.Enqueue(reference.FileId);
+                    queue.Enqueue(used);
                 }
             }
         }

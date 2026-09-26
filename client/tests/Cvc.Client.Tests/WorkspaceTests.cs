@@ -1,4 +1,6 @@
 using System.Runtime.Versioning;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace Cvc.Client.Tests;
 
@@ -272,6 +274,58 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task BrowsingShowsFoldersFilesAndHowTheyFitTogether()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var can = Write(alice, "Fins/Fin Can.SLDASM", "can");
+        var drawing = Write(alice, "Fins/Fin.SLDDRW", "drawing");
+        var rocket = Write(alice, "Rocket.SLDASM", "rocket");
+        var uses = new Dictionary<string, string[]> { [rocket] = [can], [can] = [fin], [drawing] = [fin], [fin] = [] };
+        await alice.CheckinAsync([rocket, drawing], "the rocket", referencesOf: path => uses[path]);
+        Write(alice, "Fins/Bracket.SLDPRT", "not checked in yet");
+        await bob.CheckoutAsync([Local(bob, "Fins/Fin.SLDPRT")]);
+
+        var tree = await alice.BrowseAsync();
+        var top = Assert.Single(tree.Root.Folders, f => f.Name == _folder);
+        Assert.Equal(["Rocket.SLDASM"], top.Files.Select(Name));
+        var fins = Assert.Single(top.Folders);
+        Assert.Equal(["Bracket.SLDPRT", "Fin Can.SLDASM", "Fin.SLDDRW", "Fin.SLDPRT"], fins.Files.Select(Name));
+        Assert.Equal((FileState.New, 1, 1), (fins.Files[0].State, fins.CheckedOut, top.CheckedOut));
+        Assert.Empty(tree.Uses(fins.Files[0])!); // not in the vault
+
+        var assembly = Assert.Single(tree.Uses(top.Files[0])!);
+        Assert.Equal(("Fin Can.SLDASM", 1), (Name(assembly.File!), assembly.Version));
+        var part = Assert.Single(tree.Uses(assembly.File!)!).File!;
+        Assert.Equal(("Fin.SLDPRT", "BOB-PC"), (Name(part), part.Lock?.Host));
+        Assert.Equal(["Fin Can.SLDASM", "Fin.SLDDRW"], tree.UsedBy(part).Select(Name));
+        Assert.Equal(["Fin.SLDDRW"], tree.Drawings(part).Select(Name));
+    }
+
+    [Fact]
+    public async Task WorksWithAServerFromBeforeFilesSaidWhatTheyUse()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var older = new OlderServer();
+        var bob = await WorkspaceAsync("bob", older);
+        var can = Write(alice, "Fin Can.SLDASM", "can");
+        var fin = Write(alice, "Fin.SLDPRT", "fin");
+        await alice.CheckinAsync([can], "fin can", referencesOf: path => path == can ? [fin] : []);
+
+        await bob.GetLatestAsync([Local(bob, "Fin Can.SLDASM")]);
+        Assert.True(File.Exists(Local(bob, "Fin.SLDPRT"))); // its part came along all the same
+        var before = await bob.BrowseAsync();
+        Assert.Null(before.Uses(before.Files.Single(f => f.LocalPath == Local(bob, "Fin Can.SLDASM"))));
+
+        older.IsOlder = false; // the server is updated
+        await alice.CheckoutAsync([can]); // and something changes
+        var after = await bob.BrowseAsync();
+        var uses = after.Uses(after.Files.Single(f => f.LocalPath == Local(bob, "Fin Can.SLDASM")))!;
+        Assert.Equal(["Fin.SLDPRT"], uses.Select(used => Name(used.File!)));
+    }
+
+    [Fact]
     public async Task ReferencesOutsideTheWorkspaceAreRejected()
     {
         var alice = await WorkspaceAsync("alice");
@@ -335,13 +389,15 @@ public sealed class WorkspaceTests : IDisposable
         await Assert.ThrowsAsync<VaultPathException>(() => alice.CheckinAsync([bad], "bad name"));
     }
 
-    private async Task<Workspace> WorkspaceAsync(string person)
+    private async Task<Workspace> WorkspaceAsync(string person, HttpMessageHandler? handler = null)
     {
         var token = await _server.MemberTokenAsync($"{person}@rocketry.test");
-        var workspace = Workspace.Create(Path.Combine(_temp, person), _server.Url, token, host: person.ToUpperInvariant() + "-PC");
+        var workspace = Workspace.Create(Path.Combine(_temp, person), _server.Url, token, host: person.ToUpperInvariant() + "-PC", handler: handler);
         _workspaces.Add(workspace);
         return workspace;
     }
+
+    private static string Name(FileStatus status) => status.VaultPath.Substring(status.VaultPath.LastIndexOf('/') + 1);
 
     private string Folder(Workspace workspace) => Path.Combine(workspace.Root, _folder);
 
@@ -385,4 +441,46 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     private static void MakeWritable(string path) => File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
+
+    /// <summary>The server as the release before it said what files use: its answers without "uses".</summary>
+    private sealed class OlderServer : DelegatingHandler
+    {
+        public OlderServer()
+            : base(new HttpClientHandler())
+        {
+        }
+
+        public bool IsOlder { get; set; } = true;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = await base.SendAsync(request, cancellationToken);
+            if (IsOlder && response.Content.Headers.ContentType?.MediaType == "application/json")
+            {
+                var json = JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                WithoutUses(json);
+                response.Content = new StringContent(json?.ToJsonString() ?? "null", Encoding.UTF8, "application/json");
+            }
+            return response;
+        }
+
+        private static void WithoutUses(JsonNode? node)
+        {
+            if (node is JsonObject item)
+            {
+                item.Remove("uses");
+                foreach (var child in item.Select(pair => pair.Value).ToList())
+                {
+                    WithoutUses(child);
+                }
+            }
+            else if (node is JsonArray items)
+            {
+                foreach (var child in items)
+                {
+                    WithoutUses(child);
+                }
+            }
+        }
+    }
 }

@@ -1,14 +1,23 @@
 # CVC add-in for SolidWorks 2025
 
 Check files in and out without leaving SolidWorks. The add-in adds a **CVC** tab to the
-task pane with three parts:
+task pane with these parts:
 
 - **Active document:** its version and who has it checked out, with Check out,
-  Check in, Undo check-out and Get latest buttons.
+  Check in, Undo check-out and Get latest buttons, and Open drawing when it has one.
 - **Needs attention:** your new, changed, and checked-out files, plus files that are
   out of date or checked out by others. Right-click for actions; double-click to open.
+- **Browse:** the whole vault as a tree, folder by folder. Every file says whether it's
+  checked in, or who has it checked out and where; every folder how many of its files
+  are checked out. Assemblies open up to show their parts and sub-assemblies (with the
+  version each was checked in with), and parts and assemblies list their drawings. Hover
+  for where a file is used. Double-click to open: a file that isn't here yet is
+  downloaded first, with the parts it uses. Right-click for actions; on a folder, Get
+  latest, Check in, or Show in File Explorer.
 - **Sign-in and workspace:** set once. The workspace is `C:\CVC` on every computer, so
   assembly references resolve for everyone.
+
+The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
 
 While you work:
 - **Start editing a file you haven't checked out** and CVC offers to check it out.
@@ -95,6 +104,12 @@ these on SolidWorks 2025:
 13. In the web app, click Open in SolidWorks on an assembly that isn't downloaded here:
     SolidWorks comes to the front with it open, and its parts were downloaded too. Close
     SolidWorks and do it again: SolidWorks starts, then opens it.
+14. On the Browse tab, open folders down to an assembly, then open the assembly: its parts
+    are listed, each checked in or not, and a part with a drawing lists it. Check one of
+    the parts out as someone else (`cvc checkout`): within 20 seconds its line says who
+    has it, and the tree stays open where it was. Double-click a file that isn't
+    downloaded here: it's downloaded, and opens. With a part that has a drawing active,
+    Open drawing opens the drawing.
 
 ## When something goes wrong
 

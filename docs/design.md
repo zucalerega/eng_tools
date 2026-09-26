@@ -232,7 +232,11 @@ COM add-in, registered with `install.ps1` (RegAsm).
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, CVC offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a
-  file also offers a check-out, or cancels the save with the reason.
+  file offers the check-out too. The file is read-only, so SolidWorks turns Save into
+  Save As (without the `FileSaveNotify` event): before the dialog opens
+  (`FileSaveAsNotify2`), CVC checks the file out and saves it in place
+  (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
+  to save under another name.
 - **Open files.** They can't be replaced on disk. Get latest closes the files it
   updates and reopens the active one, and a check-out that needs the latest version
   does the same. Check-out and check-in switch open documents between read-only and

@@ -98,8 +98,16 @@ internal sealed class SolidWorksHost
         return document.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings);
     }
 
-    /// <summary>Switch an open document between read-only and editable, to match its file after a check-out or check-in.</summary>
-    public void SetReadOnly(string path, bool readOnly) => OpenDocument(path)?.SetReadOnlyState(readOnly);
+    /// <summary>
+    /// Switch an open document between read-only and editable, to match its file after a check-out or
+    /// check-in. False if SolidWorks couldn't (it makes a document editable only if its file is writable).
+    /// </summary>
+    public bool SetReadOnly(string path, bool readOnly) => OpenDocument(path)?.SetReadOnlyState(readOnly) ?? true;
+
+    public static bool IsReadOnly(ModelDoc2 document) => document.IsOpenedReadOnly();
+
+    /// <summary>In a Save As pre-notification: save to the document's own file instead of asking for a name.</summary>
+    public static void SaveToOwnFile(ModelDoc2 document, string path) => document.SetSaveAsFileName(path);
 
     /// <summary>Close a document without saving it.</summary>
     public void Close(string path) => _app.CloseDoc(path);

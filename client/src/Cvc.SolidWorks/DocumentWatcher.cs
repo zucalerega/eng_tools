@@ -53,16 +53,19 @@ internal sealed class DocumentWatcher : IDisposable
         {
             case PartDoc part:
                 DPartDocEvents_FileSaveNotifyEventHandler partSave = _ => BeforeSave(document);
+                DPartDocEvents_FileSaveAsNotify2EventHandler partSaveAs = _ => BeforeSaveAs(document);
                 DPartDocEvents_FileSavePostNotifyEventHandler partSaved = (_, _) => AfterSave();
                 DPartDocEvents_ModifyNotifyEventHandler partModified = () => Modified(document);
                 DPartDocEvents_DestroyNotify2EventHandler partDestroyed = type => Destroyed(document, type);
                 part.FileSaveNotify += partSave;
+                part.FileSaveAsNotify2 += partSaveAs;
                 part.FileSavePostNotify += partSaved;
                 part.ModifyNotify += partModified;
                 part.DestroyNotify2 += partDestroyed;
                 _unhook[document] = () =>
                 {
                     part.FileSaveNotify -= partSave;
+                    part.FileSaveAsNotify2 -= partSaveAs;
                     part.FileSavePostNotify -= partSaved;
                     part.ModifyNotify -= partModified;
                     part.DestroyNotify2 -= partDestroyed;
@@ -70,16 +73,19 @@ internal sealed class DocumentWatcher : IDisposable
                 break;
             case AssemblyDoc assembly:
                 DAssemblyDocEvents_FileSaveNotifyEventHandler assemblySave = _ => BeforeSave(document);
+                DAssemblyDocEvents_FileSaveAsNotify2EventHandler assemblySaveAs = _ => BeforeSaveAs(document);
                 DAssemblyDocEvents_FileSavePostNotifyEventHandler assemblySaved = (_, _) => AfterSave();
                 DAssemblyDocEvents_ModifyNotifyEventHandler assemblyModified = () => Modified(document);
                 DAssemblyDocEvents_DestroyNotify2EventHandler assemblyDestroyed = type => Destroyed(document, type);
                 assembly.FileSaveNotify += assemblySave;
+                assembly.FileSaveAsNotify2 += assemblySaveAs;
                 assembly.FileSavePostNotify += assemblySaved;
                 assembly.ModifyNotify += assemblyModified;
                 assembly.DestroyNotify2 += assemblyDestroyed;
                 _unhook[document] = () =>
                 {
                     assembly.FileSaveNotify -= assemblySave;
+                    assembly.FileSaveAsNotify2 -= assemblySaveAs;
                     assembly.FileSavePostNotify -= assemblySaved;
                     assembly.ModifyNotify -= assemblyModified;
                     assembly.DestroyNotify2 -= assemblyDestroyed;
@@ -87,16 +93,19 @@ internal sealed class DocumentWatcher : IDisposable
                 break;
             case DrawingDoc drawing:
                 DDrawingDocEvents_FileSaveNotifyEventHandler drawingSave = _ => BeforeSave(document);
+                DDrawingDocEvents_FileSaveAsNotify2EventHandler drawingSaveAs = _ => BeforeSaveAs(document);
                 DDrawingDocEvents_FileSavePostNotifyEventHandler drawingSaved = (_, _) => AfterSave();
                 DDrawingDocEvents_ModifyNotifyEventHandler drawingModified = () => Modified(document);
                 DDrawingDocEvents_DestroyNotify2EventHandler drawingDestroyed = type => Destroyed(document, type);
                 drawing.FileSaveNotify += drawingSave;
+                drawing.FileSaveAsNotify2 += drawingSaveAs;
                 drawing.FileSavePostNotify += drawingSaved;
                 drawing.ModifyNotify += drawingModified;
                 drawing.DestroyNotify2 += drawingDestroyed;
                 _unhook[document] = () =>
                 {
                     drawing.FileSaveNotify -= drawingSave;
+                    drawing.FileSaveAsNotify2 -= drawingSaveAs;
                     drawing.FileSavePostNotify -= drawingSaved;
                     drawing.ModifyNotify -= drawingModified;
                     drawing.DestroyNotify2 -= drawingDestroyed;
@@ -110,6 +119,27 @@ internal sealed class DocumentWatcher : IDisposable
     // SolidWorks pre-notifications cancel the operation when the handler returns nonzero.
     private int BeforeSave(ModelDoc2 document) =>
         Guard(() => SolidWorksHost.PathOf(document) is { } path && !_pane.AllowSave(path) ? 1 : 0);
+
+    // Save on a read-only document (a vault file that isn't checked out to you) opens Save As
+    // instead, without FileSaveNotify, so this is where CVC offers the check-out. Returning nonzero
+    // skips the dialog: it then saves to the name set here, or not at all.
+    private int BeforeSaveAs(ModelDoc2 document) => Guard(() =>
+    {
+        if (!SolidWorksHost.IsReadOnly(document) || SolidWorksHost.PathOf(document) is not { } path)
+        {
+            return 0; // an editable or new document: an ordinary Save As
+        }
+        switch (_pane.BeforeSaveAs(path))
+        {
+            case SaveAsChoice.SaveInPlace:
+                SolidWorksHost.SaveToOwnFile(document, path);
+                return 1;
+            case SaveAsChoice.Cancel:
+                return 1;
+            default:
+                return 0;
+        }
+    });
 
     private int AfterSave() => Guard(() =>
     {

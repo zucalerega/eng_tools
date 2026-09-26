@@ -12,8 +12,9 @@ task pane with three parts:
 
 While you work:
 - **Start editing a file you haven't checked out** and CVC offers to check it out.
-  Saving such a file also offers a check-out first, or explains why it can't be
-  saved (someone else has it, or there's a newer version).
+  Saving such a file also offers a check-out first, then saves it in place, or explains
+  why it can't be saved (someone else has it, or there's a newer version) and offers to
+  save your changes under another name.
 - **Check in an assembly** and the new parts it uses, and the parts you changed, go
   into the same check-in. Each is recorded with the version it used, and SolidWorks
   is asked what the assembly references.
@@ -60,7 +61,8 @@ these on SolidWorks 2025:
    and the part turns read-only in SolidWorks.
 4. Start editing it. CVC offers a check-out; accept, save, and check in: it's now v2.
 5. As a second person (another PC, or `cvc checkout` as someone else), check the part
-   out. The first PC shows who has it, and saving there is refused with that name.
+   out. The first PC shows who has it. Change the part there and save: CVC says who has
+   it, and offers to save your changes under another name.
 6. Make an assembly from a new part and an existing part, then check in the assembly.
    The new part goes in too, and `cvc history` on the assembly lists both references
    with their versions.
@@ -73,6 +75,9 @@ these on SolidWorks 2025:
    cut off, and the comment box is full size.
 10. Create a new part, save it into `C:\CVC\Test`, and check it in. Without switching
     windows, start editing it: CVC offers the check-out.
+11. Change a checked-in file, answer No when CVC offers the check-out, then save
+    (Ctrl+S). CVC offers the check-out again; Yes saves the file in place, with no Save
+    As dialog.
 
 ## When something goes wrong
 

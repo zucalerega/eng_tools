@@ -171,33 +171,50 @@ internal sealed class CvcPane : UserControl
             Warn($"{name} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
             return false;
         }
-        if (Ask($"{name} isn't checked out to you. Check it out now and save?") != DialogResult.Yes)
+        return Ask($"{name} isn't checked out to you. Check it out now and save?") == DialogResult.Yes
+            && CheckOutToSave(workspace, path);
+    }
+
+    /// <summary>
+    /// Called before SolidWorks' Save As dialog for a read-only document. That's what Save opens for
+    /// a vault file that isn't checked out to you (so AllowSave never sees it), and what File > Save As
+    /// opens too. Offers to check the file out and save it in place, or to save under another name.
+    /// </summary>
+    public SaveAsChoice BeforeSaveAs(string path)
+    {
+        var workspace = _workspace;
+        var status = StatusOf(path);
+        if (workspace == null || status?.FileId == null)
         {
-            return false;
+            return SaveAsChoice.ShowDialog; // not in the vault: an ordinary Save As
         }
-        if (!_gate.Wait(0))
+        var name = Path.GetFileName(path);
+        if (status.CheckedOutByMe)
         {
-            Warn("CVC is busy. Try saving again in a moment.");
-            return false;
+            // Checked out while it was open (with the CLI, say): it only needs to become editable.
+            return _sw.SetReadOnly(path, false) ? SaveAsChoice.SaveInPlace : SaveAsChoice.ShowDialog;
         }
-        try
+        var reason = status.Lock is { } other
+            ? $"{name} is checked out by {other.User.Name} on {other.Host}, so your changes can't be saved to it."
+            : status.State is not (FileState.UpToDate or FileState.Modified)
+                ? $"{name} can't be saved: a newer version is in the vault."
+                : null;
+        if (reason != null)
         {
-            // SolidWorks is waiting on this event, so check out synchronously (off this thread).
-            Task.Run(() => workspace.CheckoutAsync(new[] { path })).GetAwaiter().GetResult();
-            _sw.SetReadOnly(path, false);
-            return true;
+            return Ask(reason + " Save them under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
         }
-        catch (Exception e) when (IsExpected(e))
+        var answer = MessageBox.Show(
+            this,
+            $"{name} isn't checked out to you.\n\nYes: check it out and save it.\nNo: save your changes under another name.",
+            "CVC",
+            MessageBoxButtons.YesNoCancel,
+            MessageBoxIcon.Question);
+        return answer switch
         {
-            Log.Error("Check-out before saving failed", e);
-            Warn(e.Message);
-            return false;
-        }
-        finally
-        {
-            _gate.Release();
-            RefreshSoon();
-        }
+            DialogResult.Yes => CheckOutToSave(workspace, path) ? SaveAsChoice.SaveInPlace : SaveAsChoice.Cancel,
+            DialogResult.No => SaveAsChoice.ShowDialog,
+            _ => SaveAsChoice.Cancel,
+        };
     }
 
     /// <summary>The active document was changed: offer to check it out if it isn't yours (once per session).</summary>
@@ -495,6 +512,53 @@ internal sealed class CvcPane : UserControl
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Check out a file SolidWorks is about to save, and make its document editable. SolidWorks is
+    /// waiting on its save event, so this runs synchronously (off this thread).
+    /// </summary>
+    private bool CheckOutToSave(Workspace workspace, string path)
+    {
+        if (!_gate.Wait(0))
+        {
+            Warn("CVC is busy. Try saving again in a moment.");
+            return false;
+        }
+        try
+        {
+            // The last refresh can be a minute old: if a newer version was checked in since, checking out
+            // would replace the file under your unsaved changes.
+            var current = Task.Run(() => workspace.StatusAsync(new[] { path })).GetAwaiter().GetResult().FirstOrDefault();
+            if (current?.State is not (FileState.UpToDate or FileState.Modified))
+            {
+                Warn($"{Path.GetFileName(path)} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
+                return false;
+            }
+            var checkedOut = Task.Run(() => workspace.CheckoutAsync(new[] { path })).GetAwaiter().GetResult();
+            // SolidWorks asks AllowSave next, so it has to see the check-out now, not after the next refresh.
+            foreach (var status in checkedOut)
+            {
+                _statuses[VaultPaths.Key(status.VaultPath)] = status;
+            }
+            if (!_sw.SetReadOnly(path, false))
+            {
+                Warn($"{Path.GetFileName(path)} is checked out to you now, but SolidWorks kept it read-only. Close it, open it again, and save.");
+                return false;
+            }
+            return true;
+        }
+        catch (Exception e) when (IsExpected(e))
+        {
+            Log.Error("Check-out before saving failed", e);
+            Warn(e.Message);
+            return false;
+        }
+        finally
+        {
+            _gate.Release();
+            RefreshSoon();
         }
     }
 
@@ -805,4 +869,17 @@ internal sealed class CvcPane : UserControl
 
     private static Label Heading(string text) =>
         new Label { Text = text, AutoSize = true, Dock = DockStyle.Fill, Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Bold), Padding = new Padding(0, 8, 0, 2) };
+}
+
+/// <summary>What to do when SolidWorks is about to show Save As (see <see cref="CvcPane.BeforeSaveAs"/>).</summary>
+internal enum SaveAsChoice
+{
+    /// <summary>Let SolidWorks ask for a name, as usual.</summary>
+    ShowDialog,
+
+    /// <summary>Save to the document's own file, which is checked out to you now.</summary>
+    SaveInPlace,
+
+    /// <summary>Don't save.</summary>
+    Cancel,
 }

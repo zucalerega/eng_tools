@@ -11,7 +11,7 @@ roadmap. Read the design before changing behavior.
 | Path | What |
 |---|---|
 | `server/` | Python 3.13 FastAPI server. Start at `vault.py` (every vault operation, no HTTP). `access.py`: folder tree and permissions. `paths.py`: path rules. `auth.py`: accounts and tokens. `api/`: thin routes and request/response schemas. |
-| `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. Tests run against the real server. |
+| `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). Tests run against the real server. |
 | `docs/design.md` | Design, API, roadmap, open questions. |
 | `.github/workflows/ci.yml` | The checks every change must pass. |
 
@@ -29,6 +29,9 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
 - `cd server && CVC_DEV_AUTH=1 CVC_BOOTSTRAP_ADMINS=you@example.com uv run cvc-server`: local
   server at http://localhost:8000 (API docs at `/docs`).
 - `cd client && dotnet run --project src/Cvc.Cli -- <command>`: the CLI.
+- The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks 2025 on
+  Windows. CI uploads each build as the `cvc-solidworks-addin` artifact. Install and
+  manual-testing steps are in `client/src/Cvc.SolidWorks/README.md`.
 - `docker build -t cvc-server server/`: the production image.
 
 ## How changes are made
@@ -72,6 +75,9 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
 - Tests are offline, deterministic, and isolated: temporary folders, no sleeping to
   wait for timing, no state shared between tests.
 - `tests/test_database.py` fails if models and migrations disagree. Keep it green.
+- The add-in has no automated tests, because they would need SolidWorks. Keep its logic in
+  `Cvc.Client`, where it is tested, and keep the add-in a thin layer over SolidWorks. Before
+  releasing it, run the manual checks in its README on SolidWorks 2025.
 
 ## Invariants
 
@@ -97,6 +103,18 @@ Client:
   failed download leaves the old file untouched.
 - Every machine uses the same workspace root (default `C:\CVC`), because SolidWorks
   stores absolute paths to referenced files.
+
+SolidWorks add-in:
+- Call the SolidWorks API only on SolidWorks' main thread, and only through
+  `SolidWorksHost`. Awaits in the task pane resume on that thread; `Cvc.Client` code does
+  not, so compute SolidWorks data before calling into it (see `ReferenceMap`).
+- Nothing may throw into SolidWorks. Event handlers and UI handlers catch everything and
+  log to `%LOCALAPPDATA%\CVC\addin.log`.
+- One workspace operation at a time (the pane's gate), because `Workspace` isn't
+  thread-safe. Synchronous paths, such as the save hook, must never block waiting for the
+  gate.
+- Never close a document that has unsaved changes on the user's behalf.
+- The add-in's COM GUID (`AddIn.Id`) never changes; changing it orphans every install.
 
 ## API compatibility
 

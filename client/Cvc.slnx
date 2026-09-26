@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Cvc.Cli/Cvc.Cli.csproj" />
     <Project Path="src/Cvc.Client/Cvc.Client.csproj" />
+    <Project Path="src/Cvc.SolidWorks/Cvc.SolidWorks.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cvc.Client.Tests/Cvc.Client.Tests.csproj" />

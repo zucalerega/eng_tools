@@ -211,8 +211,10 @@ public sealed class Workspace : IDisposable
             {
                 case FileState.Missing:
                 case FileState.Outdated:
-                    await DownloadAsync(status, ct).ConfigureAwait(false);
-                    result.Downloaded.Add(status);
+                    if (await TryDownloadAsync(status, result, ct).ConfigureAwait(false))
+                    {
+                        result.Downloaded.Add(status);
+                    }
                     break;
                 case FileState.UpToDate:
                     SetReadOnly(status.LocalPath, !status.CheckedOutByMe);
@@ -225,8 +227,10 @@ public sealed class Workspace : IDisposable
                         break;
                     }
                     result.BackedUp.Add(Backup(status));
-                    await DownloadAsync(status, ct).ConfigureAwait(false);
-                    result.Downloaded.Add(status);
+                    if (await TryDownloadAsync(status, result, ct).ConfigureAwait(false))
+                    {
+                        result.Downloaded.Add(status);
+                    }
                     break;
                 case FileState.DeletedInVault:
                     var changed = IsModified(status.LocalPath, _state.Local[status.FileId!.Value]);
@@ -303,8 +307,17 @@ public sealed class Workspace : IDisposable
     /// Check in new files and your checked-out files under the given paths, as one check-in.
     /// Files stay read-only afterwards unless keepCheckedOut is set.
     /// </summary>
+    /// <param name="referencesOf">
+    /// The local paths of the files a file uses (from SolidWorks: an assembly's components, a
+    /// drawing's models). When given, referenced files that are new, or checked out to you with
+    /// changes, join the check-in, and every reference is recorded with the version used.
+    /// </param>
     public async Task<CheckinResult> CheckinAsync(
-        IEnumerable<string> localPaths, string comment, bool keepCheckedOut = false, CancellationToken ct = default)
+        IEnumerable<string> localPaths,
+        string comment,
+        bool keepCheckedOut = false,
+        Func<string, IEnumerable<string>>? referencesOf = null,
+        CancellationToken ct = default)
     {
         var scope = Scope(RequirePaths(localPaths, "check in"));
         await RefreshAsync(ct).ConfigureAwait(false);
@@ -336,6 +349,9 @@ public sealed class Workspace : IDisposable
         {
             throw new WorkspaceException("Nothing to check in: no new files, and nothing checked out to you on this computer");
         }
+        var references = referencesOf is null
+            ? new Dictionary<string, List<CheckinReference>>()
+            : CollectReferences(items, referencesOf);
         foreach (var status in items.Where(s => s.State == FileState.New))
         {
             VaultPaths.Split(status.VaultPath); // the server's name rules, before uploading anything
@@ -353,7 +369,13 @@ public sealed class Workspace : IDisposable
                 using var content = new FileStream(status.LocalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 await Api.UploadBlobAsync(entry.Sha256, content, ct).ConfigureAwait(false);
             }
-            request.Items.Add(new CheckinItem { Path = status.VaultPath, Sha256 = entry.Sha256, Size = entry.Size });
+            request.Items.Add(new CheckinItem
+            {
+                Path = status.VaultPath,
+                Sha256 = entry.Sha256,
+                Size = entry.Size,
+                References = references.TryGetValue(VaultPaths.Key(status.VaultPath), out var uses) ? uses : new List<CheckinReference>(),
+            });
         }
 
         var result = await Api.CheckinAsync(request, ct).ConfigureAwait(false);
@@ -429,6 +451,71 @@ public sealed class Workspace : IDisposable
             throw new WorkspaceException($"Say which files or folders to {action}");
         }
         return list;
+    }
+
+    /// <summary>
+    /// Each item's references as vault paths. Referenced files that are new, or checked out to
+    /// you with changes, are added to items (and their own references followed); the rest are
+    /// pinned to the version this workspace has, which is the one the item was built against.
+    /// </summary>
+    private Dictionary<string, List<CheckinReference>> CollectReferences(
+        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf)
+    {
+        var everything = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
+        foreach (var status in Compute(new List<string> { "" }))
+        {
+            everything[VaultPaths.Key(status.VaultPath)] = status;
+        }
+        var included = new HashSet<string>(items.Select(s => VaultPaths.Key(s.VaultPath)), StringComparer.Ordinal);
+        var result = new Dictionary<string, List<CheckinReference>>(StringComparer.Ordinal);
+        var queue = new Queue<FileStatus>(items);
+        while (queue.Count > 0)
+        {
+            var item = queue.Dequeue();
+            var uses = new List<CheckinReference>();
+            foreach (var localPath in referencesOf(item.LocalPath).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var vaultPath = ReferenceVaultPath(item, localPath);
+                var key = VaultPaths.Key(vaultPath);
+                if (!everything.TryGetValue(key, out var used))
+                {
+                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which is missing: it's neither in this workspace nor in the vault");
+                }
+                if (used.State is FileState.Conflict or FileState.DeletedInVault)
+                {
+                    var problem = used.State == FileState.Conflict ? "changed here after someone checked in a newer version" : "was deleted in the vault";
+                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which {problem}");
+                }
+                var joins = used.State == FileState.New || (used.CheckedOutByMe && used.State == FileState.Modified);
+                if (joins && included.Add(key))
+                {
+                    items.Add(used);
+                    queue.Enqueue(used);
+                }
+                uses.Add(new CheckinReference
+                {
+                    Path = used.VaultPath,
+                    // Files in this check-in get their new version; the server fills it in.
+                    Version = included.Contains(key) ? null : used.LocalVersion ?? used.RemoteVersion,
+                });
+            }
+            result[VaultPaths.Key(item.VaultPath)] = uses;
+        }
+        return result;
+    }
+
+    private string ReferenceVaultPath(FileStatus item, string localPath)
+    {
+        try
+        {
+            return ToVaultPath(localPath);
+        }
+        catch (WorkspaceException)
+        {
+            throw new WorkspaceException(
+                $"{item.VaultPath} uses {localPath}, which is outside the workspace. Move it into {Root} "
+                + "(for example with Pack and Go), then check in again.");
+        }
     }
 
     private bool IsMine(FileLock? fileLock) =>
@@ -604,6 +691,21 @@ public sealed class Workspace : IDisposable
         return seen;
     }
 
+    /// <summary>Download, or record why not (a file open in SolidWorks can't be replaced) and carry on.</summary>
+    private async Task<bool> TryDownloadAsync(FileStatus status, GetResult result, CancellationToken ct)
+    {
+        try
+        {
+            await DownloadAsync(status, ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (WorkspaceException e)
+        {
+            result.Failures.Add(e.Message);
+            return false;
+        }
+    }
+
     private async Task DownloadAsync(FileStatus status, CancellationToken ct)
     {
         var id = status.FileId!.Value;
@@ -622,6 +724,10 @@ public sealed class Workspace : IDisposable
                 throw new WorkspaceException($"The download of {remote.Path} was damaged; try again");
             }
             ReplaceWith(temp, localPath);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw new WorkspaceException($"Can't write {localPath}: {e.Message}", e);
         }
         finally
         {

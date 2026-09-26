@@ -12,7 +12,9 @@ from .errors import CvcError
 MAX_PATH = 200
 MAX_NAME = 255
 _INVALID = frozenset('<>:"/\\|?*')
-_RESERVED = frozenset(["CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))])
+_RESERVED = frozenset(
+    ["CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))]
+)
 
 
 class PathError(CvcError):

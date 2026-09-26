@@ -11,7 +11,22 @@ def test_valid_names(name):
 
 @pytest.mark.parametrize(
     "name",
-    ["", ".", "..", "a:b", "what?.step", 'quote".x', "con", "CON.txt", "Lpt1.sldprt", "dot.", "space ", " lead", "~$Fin.SLDPRT", "tab\there"],
+    [
+        "",
+        ".",
+        "..",
+        "a:b",
+        "what?.step",
+        'quote".x',
+        "con",
+        "CON.txt",
+        "Lpt1.sldprt",
+        "dot.",
+        "space ",
+        " lead",
+        "~$Fin.SLDPRT",
+        "tab\there",
+    ],
 )
 def test_names_windows_rejects(name):
     with pytest.raises(PathError):

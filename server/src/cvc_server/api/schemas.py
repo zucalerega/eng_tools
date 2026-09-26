@@ -161,7 +161,10 @@ class FileDetailOut(BaseModel):
                     comment=v.checkin.comment,
                     host=v.checkin.host,
                     checkin_id=v.checkin.id,
-                    references=[RefOut(file_id=r.file_id, path=r.path, version=r.version, deleted=r.deleted) for r in v.references],
+                    references=[
+                        RefOut(file_id=r.file_id, path=r.path, version=r.version, deleted=r.deleted)
+                        for r in v.references
+                    ],
                 )
                 for v in detail.versions
             ],
@@ -274,7 +277,9 @@ class GrantsOut(BaseModel):
     def of(cls, folder: vault.FolderView, grants: list[vault.GrantView]) -> "GrantsOut":
         return cls(
             folder=FolderOut.of(folder),
-            grants=[GrantOut(folder=g.folder, user=UserRef.of(g.user) if g.user else None, role=g.role) for g in grants],
+            grants=[
+                GrantOut(folder=g.folder, user=UserRef.of(g.user) if g.user else None, role=g.role) for g in grants
+            ],
         )
 
 

@@ -37,7 +37,10 @@ def test_new_accounts_wait_for_an_admin(client):
 
 def test_invited_people_are_active_from_their_first_sign_in(client):
     chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
-    assert client.post("/api/users", json={"email": "carol@x.test", "name": "Carol"}, headers=chief).json()["status"] == "invited"
+    assert (
+        client.post("/api/users", json={"email": "carol@x.test", "name": "Carol"}, headers=chief).json()["status"]
+        == "invited"
+    )
     carol = client.post("/auth/dev-token", json={"email": "carol@x.test"}).json()["user"]
     assert (carol["status"], carol["name"]) == ("active", "Carol")
 

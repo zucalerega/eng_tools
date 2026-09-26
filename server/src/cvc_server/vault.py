@@ -184,7 +184,9 @@ def _with_latest(db: Session, *where: Any) -> list[tuple[File, Version]]:
 def _file_views(db: Session, tree: Tree, rows: list[tuple[File, Version]]) -> list[FileView]:
     users = _users(db, {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows})
     return [
-        FileView(f, tree.file_path(f), v, users[v.created_by], users.get(f.checked_out_by) if f.checked_out_by else None)
+        FileView(
+            f, tree.file_path(f), v, users[v.created_by], users.get(f.checked_out_by) if f.checked_out_by else None
+        )
         for f, v in rows
     ]
 
@@ -286,9 +288,7 @@ def list_folder(db: Session, user: User, path: str = "", *, deleted: bool = Fals
     if access.can(folder.id, Role.VIEWER):
         state = File.deleted_at.is_not(None) if deleted else File.deleted_at.is_(None)
         files = _file_views(db, tree, _with_latest(db, File.folder_id == folder.id, state))
-    return Listing(
-        _folder_view(tree, access, folder), [_folder_view(tree, access, f) for f in subfolders], files
-    )
+    return Listing(_folder_view(tree, access, folder), [_folder_view(tree, access, f) for f in subfolders], files)
 
 
 def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
@@ -313,8 +313,7 @@ def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
             refs[ref.version_id].append(RefView(child.id, path, ref.child_version, child.deleted_at is not None))
     authors = _users(db, {v.created_by for v, _ in rows})
     versions = [
-        VersionView(v, c, authors[v.created_by], sorted(refs[v.id], key=lambda r: paths.key(r.path)))
-        for v, c in rows
+        VersionView(v, c, authors[v.created_by], sorted(refs[v.id], key=lambda r: paths.key(r.path))) for v, c in rows
     ]
     latest = next(view.version for view in versions if view.version.number == file.latest_version)
     parents = [(p, v, n) for p, v, n in _parents(db, file.id) if access.can(p.folder_id, Role.VIEWER)]

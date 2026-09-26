@@ -121,7 +121,9 @@ def test_missing_reference_rolls_back_the_whole_check_in(team):
         refs={"Avionics/Sled.SLDASM": ["Avionics/Battery.SLDPRT"]},
     )
     assert response.status_code == 400
-    assert response.json()["details"]["missing"] == [{"file": "Avionics/Sled.SLDASM", "reference": "Avionics/Battery.SLDPRT"}]
+    assert response.json()["details"]["missing"] == [
+        {"file": "Avionics/Sled.SLDASM", "reference": "Avionics/Battery.SLDPRT"}
+    ]
     assert [f["name"] for f in team.listing(chief)["folders"]] == []  # not even the folder was created
 
 

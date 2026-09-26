@@ -72,7 +72,9 @@ def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
         vault.CheckinItem(i.path, i.sha256, i.size, [vault.Reference(r.path, r.version) for r in i.references])
         for i in body.items
     ]
-    result = vault.checkin(db, user, items, comment=body.comment, host=body.host, keep_checked_out=body.keep_checked_out)
+    result = vault.checkin(
+        db, user, items, comment=body.comment, host=body.host, keep_checked_out=body.keep_checked_out
+    )
     return CheckinOut.of(result)
 
 
@@ -122,7 +124,9 @@ def head_blob(sha256: str, user: ActiveUser, db: DB) -> Response:
 
 
 @router.put("/blobs/{sha256}")
-async def put_blob(sha256: str, request: Request, user: ActiveUser, db: DB, store: Store, settings: Config) -> JSONResponse:
+async def put_blob(
+    sha256: str, request: Request, user: ActiveUser, db: DB, store: Store, settings: Config
+) -> JSONResponse:
     """Upload file contents as the raw request body. The server verifies the SHA-256."""
     _check_sha(sha256)
     if not await run_in_threadpool(vault.can_upload, db, user):
@@ -147,7 +151,9 @@ async def put_blob(sha256: str, request: Request, user: ActiveUser, db: DB, stor
                 digest.update(chunk)
                 out.write(chunk)
         if digest.hexdigest() != sha256:
-            raise CvcError("The upload doesn't match its SHA-256; it was damaged on the way, so try again", code="hash_mismatch")
+            raise CvcError(
+                "The upload doesn't match its SHA-256; it was damaged on the way, so try again", code="hash_mismatch"
+            )
         store.commit(sha256, temp)
     finally:
         temp.unlink(missing_ok=True)

@@ -29,7 +29,9 @@ def test_subteam_folders(team, client):
 def test_people_only_see_folders_they_have_access_to(team, client):
     chief = team.member("chief@x.test", admin=True)
     rec = team.member("rec@x.test")
-    team.checkin(chief, {"Recovery/Chutes/Main.SLDPRT": b"main", "Recovery/Plan.STEP": b"plan", "Payload/Cam.STEP": b"cam"})
+    team.checkin(
+        chief, {"Recovery/Chutes/Main.SLDPRT": b"main", "Recovery/Plan.STEP": b"plan", "Payload/Cam.STEP": b"cam"}
+    )
     team.grant(chief, "Recovery/Chutes", "rec@x.test", "viewer")
 
     root = team.listing(rec)
@@ -81,9 +83,14 @@ def test_only_admins_manage_accounts(team, client):
     alice = team.member("alice@x.test")
     assert client.post("/api/users", json={"email": "new@x.test"}, headers=alice).status_code == 403
     assert client.post("/api/users", json={"email": "new@x.test"}, headers=chief).status_code == 201
-    assert client.patch(f"/api/users/{team.ids['alice@x.test']}", json={"is_admin": True}, headers=alice).status_code == 403
+    assert (
+        client.patch(f"/api/users/{team.ids['alice@x.test']}", json={"is_admin": True}, headers=alice).status_code
+        == 403
+    )
     me = team.ids["chief@x.test"]
-    assert client.patch(f"/api/users/{me}", json={"status": "disabled"}, headers=chief).json()["error"] == "self_lockout"
+    assert (
+        client.patch(f"/api/users/{me}", json={"status": "disabled"}, headers=chief).json()["error"] == "self_lockout"
+    )
 
     disabled = client.patch(f"/api/users/{team.ids['alice@x.test']}", json={"status": "disabled"}, headers=chief)
     assert disabled.json()["status"] == "disabled"

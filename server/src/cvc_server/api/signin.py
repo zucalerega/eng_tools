@@ -189,7 +189,10 @@ def client_start(
         here = f"{request.url.path}?{request.url.query}"
         return RedirectResponse("/auth/login?" + urlencode({"next": here}), status_code=303)
     if user.status != UserStatus.ACTIVE:
-        return _page("Waiting for approval", f"<p>Signed in as {_esc(user.email)}. An admin needs to approve your account first.</p>")
+        return _page(
+            "Waiting for approval",
+            f"<p>Signed in as {_esc(user.email)}. An admin needs to approve your account first.</p>",
+        )
     name = name.strip()[:100] or "CVC client"
     approval = _approval_signer(settings).dumps({"u": user.id, "p": port, "s": state, "c": challenge})
     cancel = _client_callback(port, error="access_denied", state=state)

@@ -30,8 +30,9 @@ cd client && dotnet format --verify-no-changes && dotnet build && dotnet test
   server at http://localhost:8000 (API docs at `/docs`).
 - `cd client && dotnet run --project src/Cvc.Cli -- <command>`: the CLI.
 - The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks 2025 on
-  Windows. CI uploads each build as the `cvc-solidworks-addin` artifact. Install and
-  manual-testing steps are in `client/src/Cvc.SolidWorks/README.md`.
+  Windows. CI uploads each build as the `cvc-solidworks-addin` artifact, next to
+  `cvc-windows` (a self-contained `cvc.exe`). Install and manual-testing steps are in
+  `client/src/Cvc.SolidWorks/README.md`.
 - `docker build -t cvc-server server/`: the production image.
 
 ## How changes are made

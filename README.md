@@ -50,8 +50,10 @@ http://localhost:8000/docs. The local database and file contents go in
 
 ## Use the `cvc` command
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). With the server
-running, sign in through your browser, create a workspace, and work in it:
+On Windows, download `cvc.exe` (the `cvc-windows` artifact of any CI run). It runs
+without installing anything. Otherwise you need the
+[.NET 10 SDK](https://dotnet.microsoft.com/download). With the server running, sign in
+through your browser, create a workspace, and work in it:
 
 ```bash
 cd client && dotnet run --project src/Cvc.Cli -- login http://localhost:8000

@@ -5,6 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>cvc</AssemblyName>
     <RootNamespace>Cvc.Cli</RootNamespace>
+    <!-- Published for Windows as one self-contained cvc.exe (no .NET install needed); see CI. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

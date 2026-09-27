@@ -2,10 +2,13 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { folderUrl } from "../src/paths";
-import { renderApp, Team } from "./team";
+import { breadcrumbs, renderApp, table, Team } from "./team";
 import { makeZip } from "./zips";
 
 // New folders, uploads, moving, and renaming, from the web app, against the real server.
+
+/** Open a folder from the folder page's table (the folder tree beside it names it too). */
+const openFolder = async (name: string) => userEvent.click(await (await table()).findByRole("link", { name }));
 
 const file = (name: string, text: string, relative?: string) => {
     const made = new File([text], name);
@@ -23,7 +26,7 @@ test("a new folder, then files and a whole folder uploaded into it", async () =>
     await userEvent.click(screen.getByRole("menuitem", { name: "Folder…" }));
     await userEvent.type(within(screen.getByRole("dialog")).getByRole("textbox", { name: "Name" }), "Recovery");
     await userEvent.click(screen.getByRole("button", { name: "Create folder" }));
-    await userEvent.click(await screen.findByRole("link", { name: "Recovery" }));
+    await openFolder("Recovery");
 
     fireEvent.change(await screen.findByLabelText("Upload files"), {
         target: {
@@ -49,8 +52,8 @@ test("a new folder, then files and a whole folder uploaded into it", async () =>
     });
     dialog = screen.getByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Upload 1 file" }));
-    await userEvent.click(await screen.findByRole("link", { name: "Avionics" }));
-    await userEvent.click(await screen.findByRole("link", { name: "Boards" }));
+    await openFolder("Avionics");
+    await openFolder("Boards");
     expect(await screen.findByRole("link", { name: "Board.STEP" })).toBeTruthy();
 });
 
@@ -68,9 +71,9 @@ test("a zip goes up as what's in it, or as it is", async () => {
     });
     let dialog = screen.getByRole("dialog");
     await userEvent.click(await within(dialog).findByRole("button", { name: "Upload 2 files" }));
-    await userEvent.click(await screen.findByRole("link", { name: "Recovery" }));
+    await openFolder("Recovery");
     expect(await screen.findByRole("link", { name: "Chute.SLDPRT" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("link", { name: "Harness" }));
+    await openFolder("Harness");
     expect(await screen.findByRole("link", { name: "Strap.SLDPRT" })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Upload files"), { target: { files: [new File([zip], "Spare.zip")] } });
@@ -98,8 +101,8 @@ test("files and folders move and get new names, but not away from what uses them
     await userEvent.click(screen.getByRole("button", { name: `Move to ${team.folder}/Rocket` }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "Notes.txt" })).toBeNull());
 
-    await userEvent.click(screen.getByRole("link", { name: team.folder })); // up, in the breadcrumbs
-    await userEvent.click(await screen.findByRole("link", { name: "Rocket" }));
+    await userEvent.click((await breadcrumbs()).getByRole("link", { name: team.folder })); // up
+    await openFolder("Rocket");
     await userEvent.click(await screen.findByRole("checkbox", { name: "Select Notes.txt" }));
     await userEvent.click(screen.getByRole("button", { name: "Rename…" }));
     const name = screen.getByRole("textbox", { name: "New name" });
@@ -112,7 +115,7 @@ test("files and folders move and get new names, but not away from what uses them
     expect(await screen.findByRole("link", { name: "Rocket notes.txt" })).toBeTruthy();
 
     // The fin can't leave its assembly behind: the server says why.
-    await userEvent.click(screen.getByRole("link", { name: "Fins" }));
+    await openFolder("Fins");
     await userEvent.click(await screen.findByRole("checkbox", { name: "Select Fin.SLDPRT" }));
     await userEvent.click(screen.getByRole("button", { name: "Move to…" }));
     await userEvent.click(screen.getByRole("radio", { name: team.folder }));

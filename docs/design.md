@@ -158,7 +158,8 @@ everything again, like a move, and drop it.
 first, with comments, authors, and pinned references, plus the live files whose
 latest version uses this file. Every file the API returns, including in the sync
 feed, also lists what its latest version uses (`uses`: file ids, each with the version
-it was checked in with, limited to files you can see). So the web app and the add-in,
+it was checked in with, limited to files you can see), and who created it and when
+(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`). So the web app and the add-in,
 which keep a copy of the feed, know every assembly's parts and where each part is used,
 at every level, without asking for each file. References are by id, so renaming a file
 later won't touch the files that use it.
@@ -346,10 +347,16 @@ cookie, and sends `X-CVC-Request` on every request.
   while the page is visible, so browsing and searching need no more requests, and
   check-ins and check-outs on anyone's PC show up within seconds.
 - **Pages:**
-  - Files: browse and search. Every file says whether it's checked in, or who has it
-    checked out on which computer, and every folder how many files in it are checked
-    out. Assemblies (and drawings) open up to show what they use, level by level, each
-    with its own status; parts and assemblies link to their drawings.
+  - Files: a folder tree on the left (the way to the current folder opens by itself,
+    and each folder says how many files in it are checked out) beside the folder's
+    contents. Every file says whether it's checked in, or who has it checked out on which
+    computer, who created it and when, and who changed it last and when; every folder how
+    many files in it are checked out. Assemblies (and drawings) open up to show what they
+    use, level by level, each with its own status; parts and assemblies link to their
+    drawings. Search (by name, with `*` and `?` patterns, or by path with a `/`) and the
+    filters (kind, status, when it was last changed, and by whom) list matching files from
+    the folder and every folder in it, or from the whole vault (`browsing.ts`). The sort
+    (a dropdown, or the name, date, and size column headings) is remembered per browser.
   - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to

@@ -31,6 +31,13 @@ export function formatAgo(iso: string, now: number = Date.now()): string {
     return "just now";
 }
 
+/** "Sep 26", or "Sep 26, 2025" for another year: short, for tables. */
+export function formatDate(iso: string, now: number = Date.now()): string {
+    const date = new Date(iso);
+    const thisYear = date.getFullYear() === new Date(now).getFullYear();
+    return date.toLocaleDateString("en", { month: "short", day: "numeric", year: thisYear ? undefined : "numeric" });
+}
+
 /** "Sep 26, 2026, 4:49 PM", in this computer's time zone. */
 export function formatTime(iso: string): string {
     return new Date(iso).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });

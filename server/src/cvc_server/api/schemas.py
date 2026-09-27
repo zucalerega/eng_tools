@@ -64,7 +64,9 @@ class FileOut(BaseModel):
     version: int  # latest
     size: int
     sha256: str
-    modified_at: datetime
+    created_at: datetime  # when it was added (version 1), and by whom
+    created_by: UserRef | None
+    modified_at: datetime  # the latest version's: when and by whom it was last changed
     modified_by: UserRef
     checked_out: LockOut | None
     deleted_at: datetime | None
@@ -87,6 +89,8 @@ class FileOut(BaseModel):
             version=latest.number,
             size=latest.size,
             sha256=latest.blob_sha256,
+            created_at=file.created_at,
+            created_by=UserRef.of(view.created_by) if view.created_by else None,
             modified_at=latest.created_at,
             modified_by=UserRef.of(view.modified_by),
             checked_out=lock,

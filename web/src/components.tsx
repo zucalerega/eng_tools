@@ -35,9 +35,12 @@ export function VaultMark({ size = 30 }: { size?: number }) {
 export function FileIcon({ name }: { name: string }) {
     const kind = kindOf(name);
     return (
-        <span className={`file-icon file-icon-${kind}`} title={KIND_LABELS[kind]} aria-hidden="true">
-            {{ part: "P", assembly: "A", drawing: "D", model: "3D", file: "·" }[kind]}
-        </span>
+        <span
+            className={`file-icon file-icon-${kind}`}
+            title={KIND_LABELS[kind]}
+            aria-hidden="true"
+            data-letter={{ part: "P", assembly: "A", drawing: "D", model: "3D", file: "·" }[kind]}
+        />
     );
 }
 
@@ -92,13 +95,15 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
     if (!opensInSolidWorks(path)) {
         return null;
     }
+    // In a table's rows, just "Open": the column has no room for more, and its tooltip says the rest.
     return (
         <a
             className={compact ? "button button-small" : "button button-primary"}
             href={solidWorksLink("open", path)}
-            title="Needs the Vault add-in for SolidWorks on this computer: see SolidWorks, at the top"
+            aria-label="Open in SolidWorks"
+            title="Open in SolidWorks. Needs the Vault add-in on this computer: see SolidWorks, at the top"
         >
-            Open in SolidWorks
+            {compact ? "Open" : "Open in SolidWorks"}
         </a>
     );
 }

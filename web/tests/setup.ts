@@ -20,4 +20,5 @@ beforeAll(() => {
 afterEach(() => {
     cleanup();
     setAdminMode(false);
+    localStorage.clear(); // choices remembered in the browser, like the sort
 });

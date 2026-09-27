@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { createHash, randomUUID } from "node:crypto";
 import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
@@ -110,6 +110,18 @@ export class Team {
         return people.find((person) => person.email === email);
     }
 }
+
+// A folder's page names its folders twice: in its table, and in the folder tree beside it. These look
+// in one of them (or in the breadcrumbs), waiting for it as findBy does.
+
+/** The folder page's table of folders and files. */
+export const table = async () => within(await screen.findByRole("table", { name: "Files" }));
+
+/** The folder tree beside the table. */
+export const folderTree = async () => within(await screen.findByRole("navigation", { name: "Folder tree" }));
+
+/** The breadcrumbs above it: Vault / Team / Folder. */
+export const breadcrumbs = async () => within(await screen.findByRole("navigation", { name: "Folders" }));
 
 /** The web app at this page, as this person, talking to the test server. */
 export function renderApp(who: Member, page: string) {

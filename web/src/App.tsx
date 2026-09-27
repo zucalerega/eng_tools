@@ -1,5 +1,6 @@
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
 import { Notice, usePopover, VaultMark } from "./components";
+import { WithFolderTree } from "./folderTree";
 import { folderFromUrl } from "./paths";
 import { Activity } from "./pages/Activity";
 import { Admin } from "./pages/Admin";
@@ -27,6 +28,7 @@ export function App() {
         pathname === "/" || pathname.startsWith("/file") || pathname.startsWith("/trash")
             ? "files"
             : pathname.split("/")[1];
+    const withTree = pathname === "/" || pathname.startsWith("/files") || pathname.startsWith("/trash");
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -59,7 +61,7 @@ export function App() {
                     </button>
                 </div>
             )}
-            <main>
+            <main className={withTree ? "main-wide" : undefined}>
                 {vault.error && vault.status === "ready" && (
                     <Notice tone="warning">
                         Can't reach the Vault server ({vault.error}). Showing what was here; trying again.
@@ -154,13 +156,23 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
     if (file) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
     }
+    // A folder's pages share the folder tree, which stays as it was from one to the next. A new folder's
+    // page starts afresh: nothing selected, no search.
     if (pathname === "/" || pathname.startsWith("/files")) {
         const folder = folderFromUrl(pathname);
-        return <Browse key={folder} folder={folder} />; // a new folder starts with nothing selected
+        return (
+            <WithFolderTree folder={folder}>
+                <Browse key={folder} folder={folder} />
+            </WithFolderTree>
+        );
     }
     if (pathname === "/trash" || pathname.startsWith("/trash/")) {
         const folder = folderFromUrl(pathname);
-        return <Trash key={folder} folder={folder} />;
+        return (
+            <WithFolderTree folder={folder}>
+                <Trash key={folder} folder={folder} />
+            </WithFolderTree>
+        );
     }
     switch (pathname.replace(/\/$/, "")) {
         case "/assemblies":

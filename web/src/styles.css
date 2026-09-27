@@ -551,6 +551,54 @@ main {
     }
 }
 
+/* Wide tables scroll sideways inside the page, with room for their shadow. */
+.table-scroll {
+    overflow-x: auto;
+    padding: 1px 1px 4px;
+    margin: -1px -1px -4px;
+}
+
+.table th[aria-sort] {
+    color: var(--text);
+}
+
+.sort-button {
+    height: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+}
+
+.sort-button:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
+}
+
+th[aria-sort] .sort-button::after {
+    content: "↑";
+    margin-left: 0.3rem;
+    color: var(--accent);
+}
+
+th[aria-sort="descending"] .sort-button::after {
+    content: "↓";
+}
+
+/* A file's row stays one line: its name gets the room, and wraps if it must. */
+.files .name-cell {
+    min-width: 15rem;
+}
+
+.files .created,
+.files .changed,
+.files .lock {
+    white-space: nowrap;
+}
+
 /* --- file bits ------------------------------------------------------------------------------- */
 
 .file-icon {
@@ -565,6 +613,11 @@ main {
     font-weight: 700;
     color: #fff;
     background: #6e7781;
+}
+
+/* The kind's letter is drawn, not written, so it isn't part of the name when you copy it. */
+.file-icon::before {
+    content: attr(data-letter);
 }
 
 .file-icon-part {
@@ -769,6 +822,137 @@ a.tag:hover {
 .field-problem {
     color: var(--danger);
     margin: 0.25rem 0 0;
+}
+
+/* --- the files page: the folder tree beside the files, and the filters above them ------------- */
+
+main.main-wide {
+    max-width: 1520px;
+}
+
+.files-layout {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    gap: 1.75rem;
+    align-items: start;
+}
+
+.files-page {
+    min-width: 0;
+}
+
+.folder-tree {
+    position: sticky;
+    top: 4.75rem;
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
+    padding: 0.6rem 0.45rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow);
+    font-size: 0.88rem;
+}
+
+.folder-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.tree-heading {
+    margin: 0.1rem 0.5rem 0.45rem;
+    font-family: var(--font-brand);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.tree-node {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.tree-node a {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.22rem 0.45rem;
+    border-radius: var(--radius);
+    color: var(--text);
+}
+
+.tree-node a:hover {
+    background: var(--row-hover);
+    text-decoration: none;
+}
+
+.tree-node a[aria-current="page"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* How many files in a folder are checked out. */
+.tree-out {
+    margin: 0 0.35rem 0 0.2rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: -0.25rem 0 1rem;
+}
+
+.filter-bar .search {
+    flex: 1 1 12rem;
+    width: auto;
+    max-width: 22rem;
+}
+
+.filter-bar .search,
+.filter-bar select {
+    height: 2rem;
+    font-size: 0.85rem;
+}
+
+.filter-bar select {
+    max-width: 14rem;
+    padding: 0 0.4rem;
+}
+
+.filter-bar .sort {
+    margin-left: auto;
+}
+
+@media (max-width: 900px) {
+    .files-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .folder-tree {
+        display: none; /* the breadcrumbs lead the way instead */
+    }
 }
 
 /* --- organizing: selecting, moving, uploading ------------------------------------------------ */

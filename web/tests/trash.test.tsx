@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fileUrl, folderUrl } from "../src/paths";
-import { renderApp, Team } from "./team";
+import { renderApp, table, Team } from "./team";
 
 // Deleting files and folders from the web app, and bringing them back from the trash.
 
@@ -33,7 +33,7 @@ test("files and folders go to the trash, and come back from it", async () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Restore Motor" })).toBeNull());
     expect(screen.getByRole("link", { name: "Notes.txt" })).toBeTruthy(); // still in the trash
     await userEvent.click(screen.getByRole("link", { name: "Back to the folder" }));
-    await userEvent.click(await screen.findByRole("link", { name: "Motor" }));
+    await userEvent.click(await (await table()).findByRole("link", { name: "Motor" }));
     expect(await screen.findByRole("link", { name: "Grain.SLDPRT" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Case.SLDPRT" })).toBeTruthy();
 });

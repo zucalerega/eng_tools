@@ -58,8 +58,9 @@ export function SolidWorks() {
                         </a>
                     </p>
                     <p>
-                        SolidWorks starts with the Vault tab open, and your browser asks you to let it in. Your copies
-                        of vault files go in C:\VLT.
+                        SolidWorks starts with the Vault tab open, and your browser asks you to let it in. Then C:\VLT
+                        has a folder for each of the vault's folders: save new parts in the one they belong in, and
+                        check them in from the Vault tab.
                     </p>
                 </li>
             </ol>

@@ -190,7 +190,8 @@ internal sealed class SetupForm : Form
             });
             _text.Text = _uninstall
                 ? "Vault is removed from SolidWorks."
-                : "Vault is installed.\n\nNext, connect it to your team's vault: in the Vault web app, go to SolidWorks (at the top) "
+                : $"Vault is installed. Your vault's files will be in {Installer.VaultFolder}, in the vault's folders.\n\n"
+                    + "Next, connect it to your team's vault: in the Vault web app, go to SolidWorks (at the top) "
                     + "and click Connect SolidWorks. Or start SolidWorks, open the Vault tab in the task pane on the right, "
                     + "and sign in with the web app's address.";
             _status.Text = "";

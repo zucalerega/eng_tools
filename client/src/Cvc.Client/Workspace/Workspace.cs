@@ -137,6 +137,7 @@ public sealed class Workspace : IDisposable
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
         var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
         var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
+        var before = sync.Full ? _state.Folders.Values.Select(f => f.Path).ToList() : new List<string>();
         if (sync.Full)
         {
             _state.Remote.Clear();
@@ -167,13 +168,50 @@ public sealed class Workspace : IDisposable
         }
         _state.Seq = sync.Seq;
         FollowMoves();
+        MirrorFolders(sync.Folders.Select(f => f.Path), before);
         SaveState();
     }
 
     /// <summary>
+    /// Make the vault's folders here too, even with nothing downloaded in them yet: somewhere to save a new
+    /// part where it belongs. Folders gone from the vault (deleted, moved, renamed) go from here once nothing
+    /// is left in them; ones with files stay, so nothing of yours is lost.
+    /// </summary>
+    private void MirrorFolders(IEnumerable<string> vaultFolders, IEnumerable<string> before)
+    {
+        foreach (var path in vaultFolders)
+        {
+            try
+            {
+                Directory.CreateDirectory(ToLocalPath(path));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A file in the way, say: the folder's files still download into it once it's cleared.
+            }
+        }
+        foreach (var path in before.Where(p => !_state.Folders.ContainsKey(VaultPaths.Key(p))).OrderByDescending(p => p.Length))
+        {
+            var local = ToLocalPath(path);
+            try
+            {
+                if (Directory.Exists(local) && !Directory.EnumerateFiles(local, "*", SearchOption.AllDirectories).Any())
+                {
+                    Directory.Delete(local, recursive: true);
+                }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Open in Explorer, say: it goes next time.
+            }
+        }
+    }
+
+    /// <summary>
     /// Move copies here to where their files are in the vault now (moved or renamed, in the web app), and
-    /// tidy away folders that leaves empty. A copy that can't move yet (open in SolidWorks) stays where it
-    /// is until a later refresh; meanwhile it still counts as that file (see Compute).
+    /// tidy away folders that leaves empty, unless they're still folders in the vault. A copy that can't move
+    /// yet (open in SolidWorks) stays where it is until a later refresh; meanwhile it still counts as that
+    /// file (see Compute).
     /// </summary>
     private void FollowMoves()
     {
@@ -219,7 +257,8 @@ public sealed class Workspace : IDisposable
     }
 
     private bool IsEmptyFolderUnderRoot(string folder) =>
-        folder.Length > Root.TrimEnd(Path.DirectorySeparatorChar).Length && Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any();
+        folder.Length > Root.TrimEnd(Path.DirectorySeparatorChar).Length && Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()
+        && !_state.Folders.ContainsKey(VaultPaths.Key(ToVaultPath(folder)));
 
     /// <summary>The state of every file under the given local paths (default: the whole workspace).</summary>
     public async Task<IReadOnlyList<FileStatus>> StatusAsync(IEnumerable<string>? localPaths = null, CancellationToken ct = default)

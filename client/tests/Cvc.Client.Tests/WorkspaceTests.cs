@@ -390,7 +390,7 @@ public sealed class WorkspaceTests : IDisposable
             var statuses = await bob.StatusAsync([Folder(bob)]);
             Assert.True(File.Exists(Local(bob, "Structures/Fin.SLDPRT")));
             Assert.True(IsReadOnly(Local(bob, "Structures/Fin.SLDPRT")));
-            Assert.False(Directory.Exists(Path.GetDirectoryName(Local(bob, "Inbox/Fin.SLDPRT")))); // left empty, tidied away
+            Assert.True(Directory.Exists(Local(bob, "Inbox"))); // empty now, but still a folder in the vault
             var notes = Assert.Single(statuses, s => s.VaultPath == $"{_folder}/Documents/Notes.txt");
             Assert.Equal((FileState.UpToDate, held), (notes.State, notes.LocalPath)); // still that file, not a new one
             Assert.DoesNotContain(statuses, s => s.State == FileState.New);
@@ -398,6 +398,19 @@ public sealed class WorkspaceTests : IDisposable
         await bob.StatusAsync([Folder(bob)]);
         Assert.Equal("notes", File.ReadAllText(Local(bob, "Documents/Notes.txt")));
         Assert.False(File.Exists(held));
+        Assert.False(Directory.Exists(Local(bob, "Docs"))); // renamed in the vault: tidied away once it was empty
+    }
+
+    [Fact]
+    public async Task TheVaultsFoldersAreHereToSaveNewFilesIn()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync([Write(alice, "Structures/Fins/Fin.SLDPRT", "fin")], "add fin");
+
+        await bob.RefreshAsync();
+        Assert.True(Directory.Exists(Local(bob, "Structures/Fins")));
+        Assert.False(File.Exists(Local(bob, "Structures/Fins/Fin.SLDPRT"))); // and nothing downloaded into it
     }
 
     [Fact]

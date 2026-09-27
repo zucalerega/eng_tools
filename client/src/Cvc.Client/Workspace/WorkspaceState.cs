@@ -15,8 +15,11 @@ internal sealed class WorkspaceConfig
 /// <summary>.cvc/state.json: what this workspace knows about the vault and its own copies.</summary>
 internal sealed class WorkspaceState
 {
-    /// <summary>What a workspace keeps from the sync feed now. One kept less (an older client's) syncs everything again.</summary>
-    public const int CurrentSyncFormat = 1;
+    /// <summary>
+    /// What a workspace keeps from the sync feed now. One kept less (an older client's) syncs everything again.
+    /// 2: the vault's folders are made here too, which that first full sync does for all of them.
+    /// </summary>
+    public const int CurrentSyncFormat = 2;
 
     /// <summary>Sync cursor: the server's seq at the last refresh.</summary>
     public long Seq { get; set; }

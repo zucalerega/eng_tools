@@ -37,6 +37,13 @@ internal static class Installer
     public static string Folder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Product);
 
+    /// <summary>
+    /// Where the vault's files go, the same on every computer (Cvc.Client's Workspace.DefaultRoot). Setup makes it,
+    /// so it's there to save parts in; connecting SolidWorks to a vault fills it with the vault's folders. Removing
+    /// the add-in leaves it: what's in it is the user's.
+    /// </summary>
+    public const string VaultFolder = @"C:\VLT";
+
     public static string Version
     {
         get
@@ -87,6 +94,9 @@ internal static class Installer
 
         progress("Registering the add-in with SolidWorks");
         RegAsm("/codebase", Path.Combine(Folder, AddInDll));
+
+        progress("Making " + VaultFolder + ", for the vault's files");
+        Directory.CreateDirectory(VaultFolder);
 
         progress("Registering Vault links, for Open in SolidWorks");
         using (var link = Registry.LocalMachine.CreateSubKey(LinkKey))

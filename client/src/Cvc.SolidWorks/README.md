@@ -19,8 +19,9 @@ task pane with these parts:
   parts they've started to use, and nothing else. **Download everything...** gets every
   file you have access to, after saying how many files and how much space that is.
 - **Sign-in and workspace:** set once. The workspace is `C:\VLT` on every computer, so
-  assembly references resolve for everyone. It holds only the files you've opened,
-  checked out, or got: the rest of the vault stays on the server until you need it.
+  assembly references resolve for everyone (setup makes it). It has a folder for each of
+  the vault's folders, to save new parts in, but only the files you've opened, checked
+  out, or got: the rest of the vault stays on the server until you need it.
 
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
 

@@ -23,6 +23,9 @@ from .schemas import (
     FolderIn,
     FolderOut,
     ListingOut,
+    MovedOut,
+    MoveIn,
+    RenameIn,
     RevertIn,
     SyncOut,
 )
@@ -95,6 +98,18 @@ def post_delete(body: DeleteIn, user: ActiveUser, db: DB) -> FilesOut:
 @router.post("/files/{file_id}/restore")
 def post_restore(file_id: int, user: ActiveUser, db: DB) -> FileOut:
     return FileOut.of(vault.restore(db, user, file_id))
+
+
+@router.post("/move")
+def post_move(body: MoveIn, user: ActiveUser, db: DB) -> MovedOut:
+    """Move files and folders into a folder; what SolidWorks files use has to stay findable."""
+    return MovedOut.of(vault.move(db, user, files=body.files, folders=body.folders, to=body.to))
+
+
+@router.post("/rename")
+def post_rename(body: RenameIn, user: ActiveUser, db: DB) -> MovedOut:
+    """Rename a file (keeping its type) or a folder."""
+    return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name))
 
 
 @router.get("/checkouts")

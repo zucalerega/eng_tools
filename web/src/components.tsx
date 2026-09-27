@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useRef, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Account, Lock, VaultFile } from "./api";
 import { formatAgo, formatTime } from "./format";
 import { kindOf, opensInSolidWorks } from "./paths";
@@ -99,6 +99,74 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
     );
 }
 
+/** A menu's open state: it closes on a click outside the element the ref is on, or on Escape. */
+export function usePopover<T extends HTMLElement>(): [boolean, (open: boolean) => void, RefObject<T | null>] {
+    const [open, setOpen] = useState(false);
+    const within = useRef<T>(null);
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        const close = (event: MouseEvent | KeyboardEvent) => {
+            const outside = event instanceof MouseEvent && !within.current?.contains(event.target as Node);
+            if (outside || (event instanceof KeyboardEvent && event.key === "Escape")) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", close);
+        document.addEventListener("keydown", close);
+        return () => {
+            document.removeEventListener("mousedown", close);
+            document.removeEventListener("keydown", close);
+        };
+    }, [open]);
+    return [open, setOpen, within];
+}
+
+/** A button with a menu of actions under it. */
+export function MenuButton({
+    label,
+    items,
+    primary = false,
+}: {
+    label: string;
+    items: { label: string; onSelect: () => void }[];
+    primary?: boolean;
+}) {
+    const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    return (
+        <div className="popover" ref={within}>
+            <button
+                type="button"
+                className={`menu-button ${primary ? "button-primary" : ""}`}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+            >
+                {label}
+            </button>
+            {open && (
+                <div className="menu" role="menu" aria-label={label}>
+                    {items.map((item) => (
+                        <button
+                            key={item.label}
+                            type="button"
+                            role="menuitem"
+                            className="menu-item"
+                            onClick={() => {
+                                setOpen(false);
+                                item.onSelect();
+                            }}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function Notice({ tone = "info", children }: { tone?: "info" | "warning" | "error"; children: ReactNode }) {
     return (
         <div className={`notice notice-${tone}`} role={tone === "error" ? "alert" : "status"}>
@@ -108,8 +176,8 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warning" 
 }
 
 /**
- * A modal question: the page underneath waits until it's answered. With confirmHref, confirming follows
- * that link (a cvc: link for SolidWorks, say), also by pressing Enter; without one, it's disabled.
+ * A modal question: the page underneath waits until it's answered, and Enter confirms. With link, confirming
+ * follows confirmHref (a cvc: link for SolidWorks, say), and there's nothing to confirm without one.
  */
 export function Dialog({
     title,
@@ -119,6 +187,7 @@ export function Dialog({
     onCancel,
     busy = false,
     danger = false,
+    disabled = false,
     link = false,
     confirmHref,
 }: {
@@ -129,6 +198,7 @@ export function Dialog({
     onCancel: () => void;
     busy?: boolean;
     danger?: boolean;
+    disabled?: boolean;
     link?: boolean;
     confirmHref?: string;
 }) {
@@ -164,6 +234,8 @@ export function Dialog({
                     if (link && confirmHref) {
                         window.location.assign(confirmHref);
                         onConfirm();
+                    } else if (!link && !busy && !disabled) {
+                        onConfirm();
                     }
                 }}
             >
@@ -178,7 +250,12 @@ export function Dialog({
                             {confirm}
                         </a>
                     ) : (
-                        <button type="button" className={className} onClick={onConfirm} disabled={busy || link}>
+                        <button
+                            type="button"
+                            className={className}
+                            onClick={onConfirm}
+                            disabled={busy || disabled || link}
+                        >
                             {busy ? "Working…" : confirm}
                         </button>
                     )}

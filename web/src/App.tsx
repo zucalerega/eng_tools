@@ -1,5 +1,5 @@
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
-import { Notice, VaultMark } from "./components";
+import { Notice, usePopover, VaultMark } from "./components";
 import { folderFromUrl } from "./paths";
 import { Activity } from "./pages/Activity";
 import { Admin } from "./pages/Admin";
@@ -9,6 +9,13 @@ import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
 import { Link, usePathname } from "./router";
 import { useVault, type VaultState } from "./store";
+import { setTheme, useTheme, type Theme } from "./theme";
+
+const THEMES: [Theme, string][] = [
+    ["light", "Light"],
+    ["dark", "Dark"],
+    ["system", "System"],
+];
 
 export function App() {
     const vault = useVault();
@@ -35,30 +42,15 @@ export function App() {
                     {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
                 </nav>
                 <div className="topbar-end">
-                    {canUseAdminMode(vault) && (
-                        <label
-                            className="check admin-switch"
-                            title="Show overrides: release check-outs and force reverts"
-                        >
-                            <input
-                                type="checkbox"
-                                checked={adminMode}
-                                onChange={(event) => setAdminMode(event.target.checked)}
-                            />{" "}
-                            Admin mode
-                        </label>
-                    )}
-                    <span className="me">{vault.me?.name}</span>
-                    <form method="post" action="/auth/logout">
-                        <button type="submit" className="button-small">
-                            Sign out
-                        </button>
-                    </form>
+                    <AccountMenu vault={vault} />
                 </div>
             </header>
             {adminMode && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.
+                    <button type="button" className="button-small" onClick={() => setAdminMode(false)}>
+                        Turn off
+                    </button>
                 </div>
             )}
             <main>
@@ -70,6 +62,78 @@ export function App() {
                 <Page pathname={pathname} vault={vault} />
             </main>
         </>
+    );
+}
+
+/** You, in the top bar: a menu with the theme, admin mode (for admins and leads), and signing out. */
+function AccountMenu({ vault }: { vault: VaultState }) {
+    const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    const theme = useTheme();
+    const adminMode = useAdminMode(vault);
+    const me = vault.me;
+    const initials = (me?.name ?? "")
+        .split(/\s+/)
+        .filter((word) => word.length > 0)
+        .map((word) => word[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+    return (
+        <div className="popover" ref={within}>
+            <button
+                type="button"
+                className="account-button"
+                aria-haspopup="true"
+                aria-expanded={open}
+                aria-label={`Account: ${me?.name ?? ""}`}
+                onClick={() => setOpen(!open)}
+            >
+                <span className="avatar" aria-hidden="true">
+                    {initials || "?"}
+                </span>
+                <span className="me">{me?.name}</span>
+            </button>
+            {open && (
+                <div className="menu">
+                    <p className="menu-who">
+                        {me?.name}
+                        <span className="muted">{me?.email}</span>
+                    </p>
+                    <hr />
+                    <p className="menu-label" id="theme-label">
+                        Theme
+                    </p>
+                    <div className="segmented" role="group" aria-labelledby="theme-label">
+                        {THEMES.map(([value, label]) => (
+                            <button
+                                key={value}
+                                type="button"
+                                aria-pressed={theme === value}
+                                onClick={() => setTheme(value)}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {canUseAdminMode(vault) && (
+                        <label className="check" title="Show overrides: release check-outs and force reverts">
+                            <input
+                                type="checkbox"
+                                checked={adminMode}
+                                onChange={(event) => setAdminMode(event.target.checked)}
+                            />
+                            Admin mode
+                        </label>
+                    )}
+                    <hr />
+                    <form method="post" action="/auth/logout">
+                        <button type="submit" className="menu-item">
+                            Sign out
+                        </button>
+                    </form>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -85,7 +149,8 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
     }
     if (pathname === "/" || pathname.startsWith("/files")) {
-        return <Browse folder={folderFromUrl(pathname)} />;
+        const folder = folderFromUrl(pathname);
+        return <Browse key={folder} folder={folder} />; // a new folder starts with nothing selected
     }
     switch (pathname.replace(/\/$/, "")) {
         case "/assemblies":

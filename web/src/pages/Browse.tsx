@@ -1,20 +1,43 @@
-import { useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { api, type Folder, type Use, type VaultFile } from "../api";
-import { FileIcon, FolderIcon, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
+import { FileIcon, FolderIcon, MenuButton, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
+import { MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
 import { fileUrl, folderUrl, kindOf, parentOf, pathKey } from "../paths";
 import { Link } from "../router";
 import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
+import { droppedFiles, pickedFiles, type Picked } from "../upload";
 
 const MAX_RESULTS = 200;
+
+type Open =
+    | { dialog: "file"; kind: NewKind }
+    | { dialog: "folder" }
+    | { dialog: "upload"; picked: Picked[] }
+    | { dialog: "move" }
+    | { dialog: "rename" }
+    | null;
+
+/** Rows picked with their checkboxes: folders ("d:" and their path key) and files ("f:" and their id). */
+export interface Selection {
+    selected: ReadonlySet<string>;
+    set: (selected: ReadonlySet<string>) => void;
+}
+
+const folderKey = (folder: Folder) => "d:" + pathKey(folder.path);
+const fileKey = (file: VaultFile) => "f:" + file.id;
 
 export function Browse({ folder }: { folder: string }) {
     const vault = useVault();
     const [search, setSearch] = useState("");
-    const [creating, setCreating] = useState<NewKind | null>(null);
+    const [open, setOpen] = useState<Open>(null);
     const [started, setStarted] = useState<string | null>(null); // a new file's path, until it's in the vault
+    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+    const [dropping, setDropping] = useState(false);
+    const filesInput = useRef<HTMLInputElement | null>(null);
+    const folderInput = useRef<HTMLInputElement | null>(null);
     const here = folder === "" ? null : vault.folders.get(pathKey(folder));
     if (folder !== "" && !here) {
         return (
@@ -24,6 +47,7 @@ export function Browse({ folder }: { folder: string }) {
             </Notice>
         );
     }
+    const path = here?.path ?? "";
     const query = search.trim().toLowerCase();
     const found = query
         ? [...vault.files.values()]
@@ -32,19 +56,93 @@ export function Browse({ folder }: { folder: string }) {
         : null;
     const { folders, files } = contentsOf(vault, folder);
     const canAdd = atLeast(roleIn(vault, folder), "editor");
+    const pickedFolders = folders.filter((f) => selected.has(folderKey(f)));
+    const pickedFileList = files.filter((f) => selected.has(fileKey(f)));
+    const picked = pickedFolders.length + pickedFileList.length;
+    // Moving or renaming a folder takes a lead of it; the server checks, and this says so up front.
+    const foldersMovable = pickedFolders.every((f) => atLeast(f.role, "lead"));
+
+    function pick(list: FileList | null, input: HTMLInputElement) {
+        if (list && list.length > 0) {
+            setOpen({ dialog: "upload", picked: pickedFiles(list) });
+        }
+        input.value = ""; // so picking the same files again still counts
+    }
+
+    // Files or folders dragged in from the computer go up to this folder.
+    const drop = {
+        onDragOver: (event: DragEvent) => {
+            if (canAdd && event.dataTransfer.types.includes("Files")) {
+                event.preventDefault();
+                setDropping(true);
+            }
+        },
+        onDragLeave: (event: DragEvent) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDropping(false);
+            }
+        },
+        onDrop: (event: DragEvent) => {
+            if (!canAdd) {
+                return;
+            }
+            event.preventDefault();
+            setDropping(false);
+            void droppedFiles(event.dataTransfer.items).then(
+                (dropped) => dropped.length > 0 && setOpen({ dialog: "upload", picked: dropped }),
+            );
+        },
+    };
+
+    const close = () => {
+        setOpen(null);
+        setSelected(new Set());
+    };
+
     return (
-        <section>
+        <section className={dropping ? "drop-target" : undefined} {...drop}>
             <div className="page-head">
-                <Breadcrumbs path={here?.path ?? ""} />
+                <Breadcrumbs path={path} />
                 <div className="page-actions">
                     {canAdd && (
                         <>
-                            <button type="button" onClick={() => setCreating("part")}>
-                                New part
-                            </button>
-                            <button type="button" onClick={() => setCreating("assembly")}>
-                                New assembly
-                            </button>
+                            <MenuButton
+                                label="New"
+                                primary
+                                items={[
+                                    { label: "Folder…", onSelect: () => setOpen({ dialog: "folder" }) },
+                                    { label: "Part…", onSelect: () => setOpen({ dialog: "file", kind: "part" }) },
+                                    {
+                                        label: "Assembly…",
+                                        onSelect: () => setOpen({ dialog: "file", kind: "assembly" }),
+                                    },
+                                ]}
+                            />
+                            <MenuButton
+                                label="Upload"
+                                items={[
+                                    { label: "Files…", onSelect: () => filesInput.current?.click() },
+                                    { label: "A folder…", onSelect: () => folderInput.current?.click() },
+                                ]}
+                            />
+                            <input
+                                ref={filesInput}
+                                type="file"
+                                multiple
+                                hidden
+                                aria-label="Upload files"
+                                onChange={(event) => pick(event.target.files, event.target)}
+                            />
+                            <input
+                                ref={(input) => {
+                                    folderInput.current = input;
+                                    input?.setAttribute("webkitdirectory", ""); // pick a folder, with all that's in it
+                                }}
+                                type="file"
+                                hidden
+                                aria-label="Upload a folder"
+                                onChange={(event) => pick(event.target.files, event.target)}
+                            />
                         </>
                     )}
                     <input
@@ -57,7 +155,34 @@ export function Browse({ folder }: { folder: string }) {
                     />
                 </div>
             </div>
+            {dropping && (
+                <p className="drop-hint">Drop files or folders to upload them to {path || "the top folder"}</p>
+            )}
             {started && <StartedNotice path={started} onDismiss={() => setStarted(null)} />}
+            {picked > 0 && !found && (
+                <div className="selection-bar" role="toolbar" aria-label="Selected">
+                    <span>{picked} selected</span>
+                    <button
+                        type="button"
+                        onClick={() => setOpen({ dialog: "move" })}
+                        disabled={!foldersMovable}
+                        title={foldersMovable ? undefined : "Moving a folder takes a lead of it"}
+                    >
+                        Move to…
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setOpen({ dialog: "rename" })}
+                        disabled={picked !== 1 || !foldersMovable}
+                        title={picked !== 1 ? "Rename one at a time" : undefined}
+                    >
+                        Rename…
+                    </button>
+                    <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
+                        Clear
+                    </button>
+                </div>
+            )}
             {found ? (
                 <>
                     <p className="muted">
@@ -70,17 +195,34 @@ export function Browse({ folder }: { folder: string }) {
                     {found.length > 0 && <FileTable files={found.slice(0, MAX_RESULTS)} withPaths />}
                 </>
             ) : folders.length === 0 && files.length === 0 ? (
-                <p className="empty">{folder === "" ? "The vault is empty." : "This folder is empty."}</p>
+                <p className="empty">
+                    {folder === "" ? "The vault is empty." : "This folder is empty."}
+                    {canAdd && " Drop files or folders here to upload them."}
+                </p>
             ) : (
-                <FileTable key={folder} folders={folders} files={files} />
-            )}
-            {creating && (
-                <NewFileDialog
-                    kind={creating}
-                    folder={here?.path ?? ""}
-                    onCancel={() => setCreating(null)}
-                    onStart={(path) => (setCreating(null), setStarted(path))}
+                <FileTable
+                    folders={folders}
+                    files={files}
+                    selection={canAdd ? { selected, set: setSelected } : undefined}
                 />
+            )}
+            {open?.dialog === "file" && (
+                <NewFileDialog
+                    kind={open.kind}
+                    folder={path}
+                    onCancel={() => setOpen(null)}
+                    onStart={(started) => (setOpen(null), setStarted(started))}
+                />
+            )}
+            {open?.dialog === "folder" && <NewFolderDialog folder={path} onClose={() => setOpen(null)} />}
+            {open?.dialog === "upload" && (
+                <UploadDialog folder={path} picked={open.picked} onClose={() => setOpen(null)} />
+            )}
+            {open?.dialog === "move" && (
+                <MoveDialog from={path} files={pickedFileList} folders={pickedFolders} onClose={close} />
+            )}
+            {open?.dialog === "rename" && (
+                <RenameDialog file={pickedFileList[0]} folder={pickedFolders[0]} onClose={close} />
             )}
         </section>
     );
@@ -108,16 +250,19 @@ export function Breadcrumbs({ path }: { path: string }) {
 
 /**
  * Folders and files, with each file's version and whether it's checked in. Assemblies (and drawings) open
- * up to show what they use, level by level, each part with its own status.
+ * up to show what they use, level by level, each part with its own status. With a selection, the folders
+ * and files (not what they use) get checkboxes.
  */
 export function FileTable({
     folders = [],
     files,
     withPaths = false,
+    selection,
 }: {
     folders?: Folder[];
     files: VaultFile[];
     withPaths?: boolean;
+    selection?: Selection;
 }) {
     const vault = useVault();
     const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
@@ -129,6 +274,27 @@ export function FileTable({
             }
             return changed;
         });
+    const everything = [...folders.map(folderKey), ...files.map(fileKey)];
+    const all =
+        selection !== undefined && everything.length > 0 && everything.every((key) => selection.selected.has(key));
+    const pick = (key: string, label: string) =>
+        selection && (
+            <td className="select">
+                <input
+                    type="checkbox"
+                    aria-label={`Select ${label}`}
+                    checked={selection.selected.has(key)}
+                    onChange={() => {
+                        const changed = new Set(selection.selected);
+                        if (!changed.delete(key)) {
+                            changed.add(key);
+                        }
+                        selection.set(changed);
+                    }}
+                />
+            </td>
+        );
+    const columns = selection ? 7 : 6;
 
     // A file's row, then (when it's open) the rows of what it uses, indented under it.
     const rows = (file: VaultFile, key: string, depth: number, trail: number[], used?: Use, user?: VaultFile) => {
@@ -141,6 +307,7 @@ export function FileTable({
         const label = withPaths && depth === 0 ? file.path : file.name;
         const result = [
             <tr key={key} className={depth > 0 ? "used-row" : undefined}>
+                {depth === 0 ? pick(fileKey(file), label) : selection && <td className="select" />}
                 <td>
                     <span className="tree-row" style={{ paddingLeft: `${depth * 1.4}rem` }}>
                         {below.length > 0 ? (
@@ -197,7 +364,7 @@ export function FileTable({
                 } else {
                     result.push(
                         <tr key={childKey} className="used-row">
-                            <td colSpan={6}>
+                            <td colSpan={columns}>
                                 <span className="tree-row" style={{ paddingLeft: `${(depth + 1) * 1.4}rem` }}>
                                     <span className="disclosure-space" />
                                     <Link to={fileUrl(use.file_id)} className="muted">
@@ -217,6 +384,16 @@ export function FileTable({
         <table className="table files">
             <thead>
                 <tr>
+                    {selection && (
+                        <th className="select">
+                            <input
+                                type="checkbox"
+                                aria-label="Select everything here"
+                                checked={all}
+                                onChange={() => selection.set(new Set(all ? [] : everything))}
+                            />
+                        </th>
+                    )}
                     <th>Name</th>
                     <th>Version</th>
                     <th>Status</th>
@@ -232,6 +409,7 @@ export function FileTable({
                     const out = vault.checkedOut.get(pathKey(folder.path)) ?? 0;
                     return (
                         <tr key={`folder-${folder.id}`}>
+                            {pick(folderKey(folder), folder.name)}
                             <td colSpan={2}>
                                 <span className="tree-row">
                                     <span className="disclosure-space" />

@@ -274,6 +274,20 @@ def test_drawings_show_a_part_or_assembly_and_are_named_after_it(team, client):
     assert team.checkin(chief, {"Fins/Fin.SLDDRW": b"drawing"}).json()["files"][0]["status"] == "unchanged"
 
 
+def test_checking_an_uploaded_assembly_in_from_solidworks_records_its_parts(team):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"})  # as the web app uploads them
+    team.checkout(chief, "Fins/Can.SLDASM")
+    [entry] = team.checkin(chief, {"Fins/Can.SLDASM": b"can"}, refs={"Fins/Can.SLDASM": ["Fins/Fin.SLDPRT"]}).json()[
+        "files"
+    ]
+    assert (entry["status"], entry["file"]["version"], len(entry["file"]["uses"])) == ("updated", 2, 1)
+
+    team.checkout(chief, "Fins/Can.SLDASM")
+    again = team.checkin(chief, {"Fins/Can.SLDASM": b"can"}, refs={"Fins/Can.SLDASM": ["Fins/Fin.SLDPRT"]})
+    assert again.json()["files"][0]["status"] == "unchanged"  # already recorded
+
+
 def test_missing_reference_rolls_back_the_whole_check_in(team):
     chief = team.member("chief@x.test", admin=True)
     response = team.checkin(

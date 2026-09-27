@@ -595,7 +595,8 @@ def checkin(
     it uses (an assembly's parts, a drawing's model) by vault path; they must be
     in the vault already or in this check-in, and are pinned to the version used.
     A file whose contents didn't change gets no new version but is still
-    released, unless keep_checked_out is set.
+    released, unless keep_checked_out is set; if it had no references
+    recorded and now has some, it gets a version to record them.
     """
     host = _host(host)
     if not items:
@@ -660,7 +661,11 @@ def checkin(
         else:
             file = existing
             latest = _version(db, file.id, file.latest_version)
-            if latest.blob_sha256 == item.sha256:
+            # Same contents, same version; unless it's the first time SolidWorks says what it uses (it was
+            # uploaded in the web app, which can't tell), which is worth a version that records it.
+            recorded = db.scalar(select(VersionRef.version_id).where(VersionRef.version_id == latest.id).limit(1))
+            first_references = bool(item.references) and recorded is None
+            if latest.blob_sha256 == item.sha256 and not first_references:
                 status, version = "unchanged", latest
             else:
                 status = "updated"
@@ -861,6 +866,243 @@ def restore(db: Session, user: User, file_id: int) -> FileView:
         _event(db, user, "restore", file=file, path=path)
         db.commit()
     return _views_by_id(db, tree, access, [file])[file.id]
+
+
+# --- moving and renaming ------------------------------------------------------------------------
+
+
+@dataclass
+class Moved:
+    folders: list[FolderView]
+    files: list[FileView]
+
+
+def _folder_of(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _relative(start: str, target: str) -> tuple[str, ...]:
+    """How to get from one folder to another: '..' for each step up, then the names down (compared as keys)."""
+    here, there = [paths.key(n) for n in start.split("/") if n], [paths.key(n) for n in target.split("/") if n]
+    common = 0
+    while common < min(len(here), len(there)) and here[common] == there[common]:
+        common += 1
+    return ("..",) * (len(here) - common) + tuple(there[common:])
+
+
+def _still_found(old: str, new: str, user_old: str, user_new: str) -> bool:
+    """Whether SolidWorks still finds a file moved from old to new, from a file that uses it (at user_old, now user_new).
+
+    SolidWorks looks for a referenced file by name: in the referencing file's folder, and where it was relative
+    to that file. So the name must stay, and the file must end up in the user's folder or in the same place
+    relative to it (their folder moving together, say).
+    """
+    if paths.key(new.rsplit("/", 1)[-1]) != paths.key(old.rsplit("/", 1)[-1]):
+        return False
+    if paths.key(_folder_of(new)) == paths.key(_folder_of(user_new)):
+        return True
+    return _relative(_folder_of(user_old), _folder_of(old)) == _relative(_folder_of(user_new), _folder_of(new))
+
+
+def _check_moves(db: Session, tree: Tree, moves: dict[int, tuple[str, str]]) -> None:
+    """Refuse moves that would break SolidWorks references or strand a check-out; moves maps file ids to paths."""
+    for file_id in moves:
+        file = db.get(File, file_id)
+        assert file is not None
+        if file.checked_out_by is not None:
+            lock = _lock_json(db, tree, file)
+            raise Conflict(
+                f"{lock['path']} is checked out by {lock['user']} on {lock['host']}: move it once it's checked in",
+                code="checked_out",
+                files=[lock],
+            )
+    broken = []
+    for file_id, (old, new) in moves.items():
+        for user_file, _, _ in _parents(db, file_id):
+            user_old = tree.file_path(user_file)
+            user_new = moves.get(user_file.id, (user_old, user_old))[1]
+            if not _still_found(old, new, user_old, user_new):
+                broken.append({"path": old, "used_by": user_old})
+    if broken:
+        first = broken[0]
+        raise Conflict(
+            f"{first['used_by']} uses {first['path']}, and SolidWorks wouldn't find it after this. Keep a file where "
+            "the files that use it can find it: in their folder, or where it was next to them (move their folder "
+            "together). To rename it, rename it in SolidWorks, then check both in.",
+            code="in_use",
+            used_by=broken,
+        )
+
+
+def _subtree(tree: Tree, folder: Folder) -> list[Folder]:
+    """A folder and every folder under it."""
+    found, pending = [], [folder]
+    while pending:
+        current = pending.pop()
+        found.append(current)
+        pending.extend(tree.children[current.id].values())
+    return found
+
+
+def _files_under(db: Session, tree: Tree, folder: Folder) -> list[File]:
+    """Live files in a folder and every folder under it."""
+    ids = [f.id for f in _subtree(tree, folder)]
+    return list(db.scalars(select(File).where(File.folder_id.in_(ids), File.deleted_at.is_(None))))
+
+
+def _taken(db: Session, tree: Tree, parent: Folder, name: str, itself: File | Folder | None = None) -> bool:
+    """Whether a live file or a folder other than itself has this name in a folder."""
+    file = _live_file(db, parent, name)
+    folder = tree.children[parent.id].get(paths.key(name))
+    return (file is not None and file is not itself) or (folder is not None and folder is not itself)
+
+
+def _finish_move(db: Session, user: User, seq: int, files: list[File], folders: list[Folder]) -> Moved:
+    """Mark what moved as changed, down to everything in moved folders, and have every client sync everything
+    again: clients know folders by path, and where a file is decides who can see it (see sync)."""
+    tree = _context(db, user)[0]  # with the new paths
+    for folder in folders:
+        for inside in _subtree(tree, folder):
+            inside.change_seq = seq
+        for file in _files_under(db, tree, folder):
+            file.change_seq = seq
+    for file in files:
+        file.change_seq = seq
+    _bump_access(db, seq)
+    db.commit()
+    tree, access = _context(db, user)
+    views = _views_by_id(db, tree, access, files) if files else {}
+    return Moved([_folder_view(tree, access, f) for f in folders], [views[f.id] for f in files])
+
+
+def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], to: str) -> Moved:
+    """Move files and folders into a folder (made if it isn't there yet), all or nothing.
+
+    Checked-out files don't move, and neither does a file that the files using it wouldn't find
+    afterwards (see _still_found). Moving files takes editor access where they are and where they
+    go; moving a folder, which takes its permissions along, takes a lead of it.
+    """
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    moving_folders = []
+    for path in folders:
+        folder = tree.find(paths.split(path))
+        if folder is None or not access.visible(folder.id):
+            raise NotFound(f"There's no folder {path}")
+        if folder.parent_id is None:
+            raise CvcError("The top of the vault doesn't move", code="bad_move")
+        access.require(folder.id, Role.LEAD, f"move {tree.path(folder.id)}")
+        moving_folders.append(folder)
+    moving_files = _resolve_many(db, tree, access, files)
+    if not moving_folders and not moving_files:
+        raise CvcError("Say what to move", code="bad_move")
+    dest_names = paths.split(to)
+    deepest, _ = tree.deepest(dest_names)
+    for folder in moving_folders:
+        if folder.id in tree.ancestry(deepest.id):
+            raise CvcError(f"{tree.path(folder.id)} can't go inside itself", code="bad_move")
+    dest = _ensure_folders(db, tree, access, user, dest_names, seq)
+    access.require(dest.id, Role.EDITOR, f"move files into {tree.label(dest.id)}")
+
+    moves: dict[int, tuple[str, str]] = {}
+    names: set[str] = set()  # of what's moving into dest, so two things can't take one name
+    dest_path = tree.path(dest.id)
+    for folder in moving_folders:
+        if folder.parent_id == dest.id:
+            continue
+        if paths.key(folder.name) in names or _taken(db, tree, dest, folder.name):
+            raise Conflict(f"{paths.join(dest_path, folder.name)} is taken", code="exists")
+        names.add(paths.key(folder.name))
+        old_base, new_base = tree.path(folder.id), paths.join(dest_path, folder.name)
+        for file in _files_under(db, tree, folder):
+            old = tree.file_path(file)
+            moves[file.id] = (old, new_base + old[len(old_base) :])
+    for file in moving_files:
+        old = tree.file_path(file)
+        access.require(file.folder_id, Role.EDITOR, f"move {old}")
+        if file.id in moves:
+            raise CvcError(f"{old} is moving with its folder already", code="bad_move")
+        if file.folder_id == dest.id:
+            continue
+        if paths.key(file.name) in names or _taken(db, tree, dest, file.name):
+            raise Conflict(f"{paths.join(dest_path, file.name)} is taken", code="exists")
+        names.add(paths.key(file.name))
+        moves[file.id] = (old, paths.join(dest_path, file.name))
+    for _, new in moves.values():
+        paths.split(new)  # still within the length limit
+    _check_moves(db, tree, moves)
+
+    moved_folders = [f for f in moving_folders if f.parent_id != dest.id]
+    moved_files = [f for f in moving_files if f.folder_id != dest.id]
+    for folder in moved_folders:
+        _event(
+            db,
+            user,
+            "move_folder",
+            folder_id=folder.id,
+            path=paths.join(dest_path, folder.name),
+            moved_from=tree.path(folder.id),
+        )
+        folder.parent_id = dest.id
+    for file in moved_files:
+        _event(db, user, "move", file=file, path=moves[file.id][1], moved_from=moves[file.id][0])
+        file.folder_id = dest.id
+    db.flush()
+    return _finish_move(db, user, seq, moved_files, moved_folders)
+
+
+def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str | None = None, name: str) -> Moved:
+    """Rename a file (keeping its type) or a folder, where it is.
+
+    A file that other files use keeps its name, since SolidWorks finds it by name; so do folders
+    with such files in them, unless the files using them are inside too. Renaming a file takes
+    editor access to its folder; renaming a folder takes a lead of it.
+    """
+    new_name = paths.clean_name(name)
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    if (file is None) == (folder is None):
+        raise CvcError("Rename a file or a folder", code="bad_rename")
+    moves: dict[int, tuple[str, str]] = {}
+    if file is not None:
+        target = _resolve(db, tree, access, file)
+        old = tree.file_path(target)
+        access.require(target.folder_id, Role.EDITOR, f"rename {old}")
+        if paths.extension(new_name) != paths.extension(target.name):
+            raise CvcError(f"{new_name} would change what kind of file {target.name} is", code="bad_rename")
+        parent = tree.by_id[target.folder_id]
+        if _taken(db, tree, parent, new_name, target):
+            raise Conflict(f"{paths.join(tree.path(parent.id), new_name)} is taken", code="exists")
+        new = paths.join(tree.path(parent.id), new_name)
+        paths.split(new)
+        moves[target.id] = (old, new)
+        _check_moves(db, tree, moves)
+        _event(db, user, "rename", file=target, path=new, moved_from=old)
+        target.name, target.name_key = new_name, paths.key(new_name)
+        db.flush()
+        return _finish_move(db, user, seq, [target], [])
+
+    assert folder is not None
+    renamed = tree.find(paths.split(folder))
+    if renamed is None or not access.visible(renamed.id):
+        raise NotFound(f"There's no folder {folder}")
+    if renamed.parent_id is None:
+        raise CvcError("The top of the vault has no name", code="bad_rename")
+    access.require(renamed.id, Role.LEAD, f"rename {tree.path(renamed.id)}")
+    parent = tree.by_id[renamed.parent_id]
+    if _taken(db, tree, parent, new_name, renamed):
+        raise Conflict(f"{paths.join(tree.path(parent.id), new_name)} is taken", code="exists")
+    old_base, new_base = tree.path(renamed.id), paths.join(tree.path(parent.id), new_name)
+    for inside in _files_under(db, tree, renamed):
+        old = tree.file_path(inside)
+        moves[inside.id] = (old, new_base + old[len(old_base) :])
+    for _, new in moves.values():
+        paths.split(new)
+    _check_moves(db, tree, moves)
+    _event(db, user, "rename_folder", folder_id=renamed.id, path=new_base, moved_from=old_base)
+    renamed.name, renamed.name_key = new_name, paths.key(new_name)
+    db.flush()
+    return _finish_move(db, user, seq, [], [renamed])
 
 
 def can_upload(db: Session, user: User) -> bool:

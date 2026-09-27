@@ -139,11 +139,16 @@ export function signIn(): void {
     window.location.assign("/?next=" + encodeURIComponent(window.location.pathname + window.location.search));
 }
 
+/** Bytes to send as they are (a file's contents), rather than as JSON. */
+class Bytes {
+    constructor(readonly data: Uint8Array<ArrayBuffer>) {}
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     // The server refuses browser writes without this header, which other sites can't add (CSRF).
     const headers: Record<string, string> = { "X-CVC-Request": "1" };
     if (body !== undefined) {
-        headers["Content-Type"] = "application/json";
+        headers["Content-Type"] = body instanceof Bytes ? "application/octet-stream" : "application/json";
     }
     if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -151,7 +156,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const response = await fetch(apiUrl(path), {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : body instanceof Bytes ? body.data : JSON.stringify(body),
         credentials: "same-origin",
     });
     if (!response.ok) {
@@ -166,7 +171,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
         }
         throw new ApiError(response.status, code, message);
     }
-    return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+    return response.status === 204 || method === "HEAD" ? (undefined as T) : ((await response.json()) as T);
 }
 
 const query = (params: Record<string, string | number | boolean | undefined>) =>
@@ -199,4 +204,36 @@ export const api = {
         request<Grants>("PUT", "/api/grants", { path, user_id: userId, role }),
     downloadUrl: (fileId: number, version?: number) =>
         apiUrl(`/api/files/${fileId}/content` + (version === undefined ? "" : "?" + query({ version }))),
+    createFolder: (path: string) => request<Folder>("POST", "/api/folders", { path }),
+    move: (files: number[], folders: string[], to: string) =>
+        request<Moved>("POST", "/api/move", { files, folders, to }),
+    rename: (target: { file: number } | { folder: string }, name: string) =>
+        request<Moved>("POST", "/api/rename", { ...target, name }),
+    /** Whether the server has these contents already (so the upload can be skipped). */
+    hasBlob: async (sha256: string): Promise<boolean> => {
+        try {
+            await request<unknown>("HEAD", `/api/blobs/${sha256}`);
+            return true;
+        } catch (error) {
+            if (error instanceof ApiError && error.status === 404) {
+                return false;
+            }
+            throw error;
+        }
+    },
+    uploadBlob: (sha256: string, data: Uint8Array<ArrayBuffer>) =>
+        request<unknown>("PUT", `/api/blobs/${sha256}`, new Bytes(data)),
+    checkin: (body: CheckinRequest) =>
+        request<{ files: { status: string; file: VaultFile }[] }>("POST", "/api/checkin", body),
 };
+
+export interface Moved {
+    folders: Folder[];
+    files: VaultFile[];
+}
+
+export interface CheckinRequest {
+    comment: string;
+    host: string;
+    items: { path: string; sha256: string; size: number; references: { path: string }[] }[];
+}

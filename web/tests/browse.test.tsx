@@ -81,7 +81,8 @@ test("a new part is named here, then started in SolidWorks", async () => {
     await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
 
     renderApp(team.chief, folderUrl(`${team.folder}/Fins`));
-    await userEvent.click(await screen.findByRole("button", { name: "New part" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Part…" }));
     const dialog = screen.getByRole("dialog");
     const name = within(dialog).getByRole("textbox", { name: "Name" });
     await userEvent.type(name, "Fin");

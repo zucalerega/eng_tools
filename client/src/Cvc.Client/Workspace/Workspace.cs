@@ -166,8 +166,60 @@ public sealed class Workspace : IDisposable
             return;
         }
         _state.Seq = sync.Seq;
+        FollowMoves();
         SaveState();
     }
+
+    /// <summary>
+    /// Move copies here to where their files are in the vault now (moved or renamed, in the web app), and
+    /// tidy away folders that leaves empty. A copy that can't move yet (open in SolidWorks) stays where it
+    /// is until a later refresh; meanwhile it still counts as that file (see Compute).
+    /// </summary>
+    private void FollowMoves()
+    {
+        foreach (var pair in _state.Local)
+        {
+            if (!_state.Remote.TryGetValue(pair.Key, out var remote) || remote.Path == pair.Value.Path)
+            {
+                continue;
+            }
+            var from = ToLocalPath(pair.Value.Path);
+            var to = ToLocalPath(remote.Path);
+            var justTheCase = string.Equals(from, to, StringComparison.OrdinalIgnoreCase);
+            if (!File.Exists(from) || (!justTheCase && File.Exists(to)))
+            {
+                if (!File.Exists(from) && File.Exists(to))
+                {
+                    pair.Value.Path = remote.Path; // moved here already, by hand
+                }
+                continue; // otherwise gone, or something's in the way: the status says which
+            }
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Move(from, to);
+                pair.Value.Path = remote.Path;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                continue; // open somewhere: next time
+            }
+            for (var folder = Path.GetDirectoryName(from); folder != null && IsEmptyFolderUnderRoot(folder); folder = Path.GetDirectoryName(folder))
+            {
+                try
+                {
+                    Directory.Delete(folder);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private bool IsEmptyFolderUnderRoot(string folder) =>
+        folder.Length > Root.TrimEnd(Path.DirectorySeparatorChar).Length && Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any();
 
     /// <summary>The state of every file under the given local paths (default: the whole workspace).</summary>
     public async Task<IReadOnlyList<FileStatus>> StatusAsync(IEnumerable<string>? localPaths = null, CancellationToken ct = default)
@@ -701,13 +753,18 @@ public sealed class Workspace : IDisposable
                 CheckedOutByMe = IsMine(remote.Lock),
                 MyRole = RoleIn(remote.Path),
             };
-            if (!locals.TryGetValue(key, out var localPath))
+            var at = key;
+            if (!locals.ContainsKey(at) && _state.Local.TryGetValue(pair.Key, out var had) && locals.ContainsKey(VaultPaths.Key(had.Path)))
+            {
+                at = VaultPaths.Key(had.Path); // moved in the vault, but the copy here couldn't follow yet (FollowMoves)
+            }
+            if (!locals.TryGetValue(at, out var localPath))
             {
                 status.State = FileState.Missing;
             }
             else
             {
-                locals.Remove(key);
+                locals.Remove(at);
                 status.LocalPath = localPath;
                 status.State = LocalState(pair.Key, remote, localPath, status);
             }

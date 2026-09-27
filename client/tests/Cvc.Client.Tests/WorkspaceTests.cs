@@ -339,6 +339,33 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task CopiesFollowMovesAndRenamesInTheVault()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var chief = await WorkspaceAsync("chief"); // renaming a folder takes a lead
+        await alice.CheckinAsync([Write(alice, "Inbox/Fin.SLDPRT", "fin"), Write(alice, "Docs/Notes.txt", "notes")], "add");
+        await bob.GetLatestAsync([Folder(bob)]);
+
+        await chief.Api.MoveAsync([$"{_folder}/Inbox/Fin.SLDPRT"], [], $"{_folder}/Structures");
+        await chief.Api.RenameAsync(null, $"{_folder}/Docs", "Documents");
+        var held = Local(bob, "Docs/Notes.txt");
+        using (HoldOpen(held)) // as SolidWorks holds what it has open: this one can't move yet
+        {
+            var statuses = await bob.StatusAsync([Folder(bob)]);
+            Assert.True(File.Exists(Local(bob, "Structures/Fin.SLDPRT")));
+            Assert.True(IsReadOnly(Local(bob, "Structures/Fin.SLDPRT")));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(Local(bob, "Inbox/Fin.SLDPRT")))); // left empty, tidied away
+            var notes = Assert.Single(statuses, s => s.VaultPath == $"{_folder}/Documents/Notes.txt");
+            Assert.Equal((FileState.UpToDate, held), (notes.State, notes.LocalPath)); // still that file, not a new one
+            Assert.DoesNotContain(statuses, s => s.State == FileState.New);
+        }
+        await bob.StatusAsync([Folder(bob)]);
+        Assert.Equal("notes", File.ReadAllText(Local(bob, "Documents/Notes.txt")));
+        Assert.False(File.Exists(held));
+    }
+
+    [Fact]
     public async Task WorksWithAServerFromBeforeFilesSaidWhatTheyUse()
     {
         var alice = await WorkspaceAsync("alice");
@@ -454,8 +481,10 @@ public sealed class WorkspaceTests : IDisposable
     {
         if (OperatingSystem.IsWindows())
         {
-            // Like SolidWorks with a checked-out file: others can read it (so it can be backed up), not replace it.
-            return new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            // Like SolidWorks: others can read it (so it can be backed up), not replace or move it. It opens
+            // read-only files for reading.
+            var access = IsReadOnly(path) ? FileAccess.Read : FileAccess.ReadWrite;
+            return new FileStream(path, FileMode.Open, access, FileShare.Read);
         }
         return new ReadOnlyFolder(Path.GetDirectoryName(path)!);
     }

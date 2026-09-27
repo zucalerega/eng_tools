@@ -46,47 +46,90 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-# Vault's mark, as the web app draws it (VaultMark in web/src/components.tsx), and its favicon (web/index.html).
+# Vault's mark, as the web app draws it (VaultMark in web/src/components.tsx): a vault door, and a gold orbit
+# with a sliver of whatever's behind it around it. {door} and {gap} are colors.
+_DOOR = (
+    '<g fill="none" stroke="{door}"><polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 '
+    '41.2,9.8 54.2,22.8" stroke-width="5"/><circle cx="32" cy="32" r="12.5" stroke-width="3"/>'
+    '<path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" stroke-width="3"/></g><g fill="{door}">'
+    '<circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/><circle cx="16.8" cy="40.8" r="2.8"/>'
+    '<circle cx="47.2" cy="40.8" r="2.8"/></g>'
+    '<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="#e0a500" style="stroke:{gap}" stroke-width="2.5" paint-order="stroke"/>'
+)
 _MARK = (
-    '<svg class="mark" width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#fff">'
-    '<polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 41.2,9.8 54.2,22.8" stroke-width="5"/>'
-    '<circle cx="32" cy="32" r="12.5" stroke-width="3"/><path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" '
-    'stroke-width="3"/></g><g fill="#fff"><circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/>'
-    '<circle cx="16.8" cy="40.8" r="2.8"/><circle cx="47.2" cy="40.8" r="2.8"/></g>'
-    '<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="#e0a500" stroke="#05080f" stroke-width="2.5" paint-order="stroke"/>'
-    "</svg>"
+    '<svg width="56" height="56" viewBox="0 0 64 64" aria-hidden="true">'
+    + _DOOR.format(door="currentColor", gap="var(--surface)")
+    + "</svg>"
 )
 _FAVICON = "data:image/svg+xml," + quote(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b1b33"/>'
-    + _MARK.split(">", 1)[1].replace("#05080f", "#0b1b33")
+    + _DOOR.format(door="#fff", gap="#0b1b33")
+    + "</svg>"
+)
+# Light, or dark like the computer (or as chosen in the web app's account menu, which keeps it in localStorage).
+_DARK = """color-scheme: dark; --bg: #070b12; --surface: #0e1522; --text: #e5ebf4; --muted: #95a1b5;
+    --border: #1d2940; --accent: #7aa7ee; --primary: #2a5fb0; --primary-hover: #3469bd; --door: #fff;
+    --field: #111a29; --shadow: 0 18px 48px rgb(0 0 0 / 55%);"""
+_STYLE = f"""
+  :root {{ color-scheme: light; --bg: #eef1f6; --surface: #fff; --text: #0f1b2d; --muted: #5b677a;
+    --border: #dfe4ec; --accent: #1d4d94; --primary: #1c4b8f; --primary-hover: #163d75; --door: #0b1b33;
+    --field: #fff; --shadow: 0 18px 48px rgb(15 27 45 / 12%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }}
+  @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ {_DARK} }} }}
+  :root[data-theme="dark"] {{ {_DARK} }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+    border-top: 3px solid #e0a500; }}
+  .card {{ width: min(25rem, 100%); padding: 2.25rem 2rem 2rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }}
+  .brand {{ display: flex; flex-direction: column; align-items: center; gap: .55rem; margin-bottom: 1.75rem; }}
+  .brand svg {{ color: var(--door); }}
+  .wordmark, h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
+  .wordmark {{ font-size: 1.8rem; font-weight: 700; letter-spacing: .28em; margin-right: -.28em;
+    text-transform: uppercase; line-height: 1.1; }}
+  .org {{ margin: 0; font-size: .7rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); }}
+  h1 {{ font-size: 1.2rem; font-weight: 600; text-align: center; margin: 0 0 .75rem; }}
+  p {{ margin: .65rem 0; }}
+  .lead, .fine {{ text-align: center; color: var(--muted); }}
+  .lead {{ font-size: .92rem; margin-bottom: 1.4rem; }}
+  .fine {{ font-size: .8rem; }}
+  a {{ color: var(--accent); }}
+  .button, button {{ display: inline-flex; align-items: center; justify-content: center; width: 100%;
+    height: 2.7rem; padding: 0 1.1rem; font: inherit; font-weight: 600; border-radius: 8px;
+    border: 1px solid var(--primary); background: var(--primary); color: #fff; text-decoration: none;
+    cursor: pointer; white-space: nowrap; }}
+  .button:hover, button:hover {{ background: var(--primary-hover); }}
+  .secondary {{ background: transparent; color: var(--text); border-color: var(--border); }}
+  .secondary:hover {{ background: var(--bg); }}
+  .choices {{ display: flex; flex-direction: column; gap: .6rem; margin-top: 1.25rem; }}
+  input {{ font: inherit; width: 100%; height: 2.7rem; padding: 0 .8rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--field); color: var(--text); }}
+  .dev {{ margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px dashed var(--border); }}
+  .dev p {{ font-size: .8rem; color: var(--muted); margin-top: 0; }}
+  .dev .row {{ display: flex; gap: .5rem; }}
+  .dev button {{ width: auto; flex: none; }}
+  .foot {{ margin: 1.5rem 0 0; font-size: .78rem; color: var(--muted); text-align: center; }}
+"""
+_THEME = (
+    "<script>try{var t=localStorage.getItem('vault.theme');"
+    "if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>"
 )
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    """A sign-in page, branded like the web app's top bar. The title "Vault" is just the brand."""
+    """A sign-in page: a card with Vault's mark, like the web app's. The title "Vault" is just the brand."""
     heading = "" if title == "Vault" else f"<h1>{_esc(title)}</h1>"
     tab_title = title if title == "Vault" else f"{title} · Vault"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_esc(tab_title)}</title><link rel="icon" href="{_esc(_FAVICON)}">
-<style>
-  :root {{ color-scheme: dark; font-family: system-ui, sans-serif; line-height: 1.5;
-    background: #05080f; color: #e6ecf5; }}
-  body {{ max-width: 36rem; margin: 4rem auto; padding: 0 1rem; }}
-  .brand {{ display: flex; align-items: center; gap: .75rem; padding-bottom: 1.25rem; margin-bottom: 1.5rem;
-    border-bottom: 3px solid #e0a500; }}
-  .brand span, h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
-  .brand span {{ font-size: 1.6rem; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; }}
-  h1 {{ font-size: 1.3rem; font-weight: 600; }}
-  a {{ color: #6b9ae6; }}
-  .button, button {{ display: inline-block; font: inherit; padding: .45rem 1rem; border-radius: .4rem;
-    border: 1px solid #1c4b8f; background: #1c4b8f; color: #fff; text-decoration: none; cursor: pointer; }}
-  .secondary {{ background: transparent; color: inherit; border-color: #5a667a; }}
-  input {{ font: inherit; padding: .4rem; border-radius: .4rem; border: 1px solid #1d2940; background: #0c1422;
-    color: inherit; }}
-</style></head>
-<body><div class="brand">{_MARK}<span>Vault</span></div>{heading}{body}</body></html>""",
+<meta name="color-scheme" content="light dark"><title>{_esc(tab_title)}</title>
+<link rel="icon" href="{_esc(_FAVICON)}">{_THEME}<style>{_STYLE}</style></head>
+<body><main class="card"><div class="brand">{_MARK}<span class="wordmark">Vault</span>
+<p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
+<p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
     )
 
@@ -122,32 +165,37 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
         if (index := web.app_index(settings)) is not None:
             return web.index_response(index)
     if user is None:
-        parts = []
+        parts = [
+            '<p class="lead">The team\'s CAD vault: every part, assembly, and drawing, with its whole history.</p>'
+        ]
         if request.app.state.oauth is not None:
             query = urlencode({"next": _safe_next(next_path)})
-            parts.append(f'<p><a class="button" href="/auth/login?{query}">Sign in with Google</a></p>')
+            parts.append(f'<a class="button" href="/auth/login?{query}">Sign in with Google</a>')
+            parts.append('<p class="fine">First time here? Sign in, and an admin will approve your account.</p>')
         if settings.dev_auth and not settings.production:
             parts.append(
-                '<form method="get" action="/auth/dev-login"><p>Development sign-in (any email):</p>'
-                '<input name="email" type="email" placeholder="you@example.com" required> '
-                f'<input type="hidden" name="next" value="{_esc(_safe_next(next_path))}"><button>Sign in</button></form>'
+                '<form class="dev" method="get" action="/auth/dev-login"><p>Development sign-in, with any email</p>'
+                '<div class="row"><input name="email" type="email" placeholder="you@example.com" required '
+                'aria-label="Email">'
+                f'<input type="hidden" name="next" value="{_esc(_safe_next(next_path))}"><button>Sign in</button>'
+                "</div></form>"
             )
-        if not parts:
-            parts.append("<p>Sign-in isn't set up on this server yet.</p>")
+        if len(parts) == 1:
+            parts.append('<p class="fine">Sign-in isn\'t set up on this server yet.</p>')
         return _page("Sign in", "".join(parts))
 
-    body = f"<p>Signed in as <strong>{_esc(user.display_name)}</strong> ({_esc(user.email)}){', admin' if user.is_admin else ''}.</p>"
+    body = f'<p class="lead">Signed in as <strong>{_esc(user.display_name)}</strong><br>{_esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
-        body += "<p>An admin needs to approve your account before you can use Vault.</p>"
+        body += "<p>An admin needs to approve your account before you can use Vault. Check back soon.</p>"
     elif user.status == UserStatus.DISABLED:
-        body += "<p>This account is disabled.</p>"
+        body += "<p>This account is disabled. If that's a mistake, ask an admin.</p>"
     else:
         body += (
             "<p>The web app isn't built on this server (<code>npm run build</code> in <code>web/</code>). "
             'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
         )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
-    return _page("Vault", body)
+    return _page("Waiting for approval" if user.status == UserStatus.PENDING else "Vault", body)
 
 
 @router.get("/auth/login", include_in_schema=False)
@@ -230,10 +278,10 @@ def client_start(
     hidden = "".join(f'<input type="hidden" name="{k}" value="{_esc(v)}">' for k, v in fields.items())
     return _page(
         "Sign in to Vault",
-        f"""<p><strong>{_esc(name)}</strong> wants to use Vault as <strong>{_esc(user.email)}</strong>.
+        f"""<p class="lead"><strong>{_esc(name)}</strong> wants to use Vault as <strong>{_esc(user.email)}</strong>.
 It will be able to check files in and out with your permissions until you sign it out.</p>
-<form method="post" action="/auth/client/approve">{hidden}
-<button type="submit">Allow</button> <a class="button secondary" href="{_esc(cancel)}">Cancel</a></form>""",
+<form class="choices" method="post" action="/auth/client/approve">{hidden}
+<button type="submit">Allow</button><a class="button secondary" href="{_esc(cancel)}">Cancel</a></form>""",
     )
 
 

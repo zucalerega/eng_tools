@@ -334,6 +334,10 @@ cookie, and sends `X-CVC-Request` on every request.
   gold orbit, after the team's logo (`VaultMark`); the favicon, the server's sign-in
   pages, and the add-in's task pane icon draw the same shapes. The code, the `cvc`
   command, and the repository keep the name CVC.
+- **Light and dark:** light, dark, or the computer's setting, chosen in the account
+  menu (top right, with admin mode and signing out) and remembered per browser
+  (`theme.ts`, as `data-theme` on the page). The sign-in pages, a card with the mark,
+  follow the same choice.
 - **New files:** New part and New assembly in a folder you can edit, and New drawing on
   a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this

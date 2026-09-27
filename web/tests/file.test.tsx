@@ -82,12 +82,15 @@ test("admin mode releases someone's check-out and forces a revert", async () => 
     const asBob = renderApp(bob, fileUrl(tank!.id));
     expect(await screen.findByText(/Checked out by Alice on ALICE-PC/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Revert to v1" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: /Admin mode/ })).toBeNull();
     asBob.unmount();
 
     renderApp(team.chief, fileUrl(tank!.id));
     expect(await screen.findByText(/Checked out by Alice on ALICE-PC/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Release check-out" })).toBeNull(); // only in admin mode
+    await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
     await userEvent.click(screen.getByRole("checkbox", { name: /Admin mode/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Release check-out" }));
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Release check-out" }));

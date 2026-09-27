@@ -8,6 +8,9 @@ public enum LinkAction
 
     /// <summary>cvc://new: start a new part, assembly, or drawing (of a part or assembly) at a vault path.</summary>
     New,
+
+    /// <summary>cvc://connect: set SolidWorks up for a vault, signing in to its server if it isn't yet.</summary>
+    Connect,
 }
 
 /// <summary>A cvc:// link, checked: see <see cref="OpenLink.Parse"/>.</summary>
@@ -25,6 +28,7 @@ public sealed class LinkRequest
 
     public Uri Server { get; }
 
+    /// <summary>The file to open or start; "" for <see cref="LinkAction.Connect"/>.</summary>
     public string VaultPath { get; }
 
     /// <summary>For a new drawing: the vault path of the part or assembly it shows.</summary>
@@ -33,10 +37,10 @@ public sealed class LinkRequest
 
 /// <summary>
 /// Links that SolidWorks follows, like
-/// cvc://open?server=https%3A%2F%2Fcvc.example.org&amp;path=Structures%2FFin.SLDPRT (open a file) or
+/// cvc://open?server=https%3A%2F%2Fcvc.example.org&amp;path=Structures%2FFin.SLDPRT (open a file),
 /// cvc://new?server=...&amp;path=Structures%2FFin.SLDDRW&amp;model=Structures%2FFin.SLDPRT (start a drawing
-/// of a part). The web app makes them; on Windows the add-in's installer registers cvc-open.exe to
-/// follow them.
+/// of a part), or cvc://connect?server=... (sign in to that vault). The web app makes them; on Windows the
+/// add-in's installer registers cvc-open.exe to follow them.
 /// </summary>
 public static class OpenLink
 {
@@ -49,6 +53,9 @@ public static class OpenLink
     /// <summary>A link that starts a new part or assembly at vaultPath, or there a drawing of model.</summary>
     public static string ForNew(Uri server, string vaultPath, string? model = null) => Link("new", server, vaultPath, model);
 
+    /// <summary>A link that sets SolidWorks up for the vault at server.</summary>
+    public static string ForConnect(Uri server) => Scheme + "://connect?server=" + ServerText(server);
+
     /// <summary>What a link asks for. Anything else is a WorkspaceException, or a VaultPathException for a bad path.</summary>
     public static LinkRequest Parse(string link)
     {
@@ -56,13 +63,14 @@ public static class OpenLink
             || !string.Equals(uri.Scheme, Scheme, StringComparison.OrdinalIgnoreCase)
             || uri.AbsolutePath.Trim('/').Length > 0)
         {
-            throw new WorkspaceException("That isn't a Vault link to a file: " + link);
+            throw new WorkspaceException("That isn't a Vault link: " + link);
         }
         var action = uri.Host.ToLowerInvariant() switch
         {
             "open" => LinkAction.Open,
             "new" => LinkAction.New,
-            _ => throw new WorkspaceException("That isn't a Vault link to a file: " + link),
+            "connect" => LinkAction.Connect,
+            _ => throw new WorkspaceException("That isn't a Vault link: " + link),
         };
         var query = BrowserSignIn.ParseQuery(uri.Query);
         if (!query.TryGetValue("server", out var serverText)
@@ -70,6 +78,10 @@ public static class OpenLink
             || (server.Scheme != Uri.UriSchemeHttps && server.Scheme != Uri.UriSchemeHttp))
         {
             throw new WorkspaceException("The Vault link doesn't say which server it's from: " + link);
+        }
+        if (action == LinkAction.Connect)
+        {
+            return new LinkRequest(action, server, "", null);
         }
         var path = VaultPathIn(query, "path");
         if (path == null)
@@ -104,7 +116,10 @@ public static class OpenLink
     }
 
     private static string Link(string action, Uri server, string vaultPath, string? model) =>
-        Scheme + "://" + action + "?server=" + Uri.EscapeDataString(CvcApi.WithTrailingSlash(server).AbsoluteUri.TrimEnd('/'))
+        Scheme + "://" + action + "?server=" + ServerText(server)
         + "&path=" + Uri.EscapeDataString(vaultPath)
         + (model == null ? "" : "&model=" + Uri.EscapeDataString(model));
+
+    private static string ServerText(Uri server) =>
+        Uri.EscapeDataString(CvcApi.WithTrailingSlash(server).AbsoluteUri.TrimEnd('/'));
 }

@@ -43,7 +43,14 @@ jobs:
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
-      # Ready to install on a Windows PC with SolidWorks 2025 (see its README).
+      # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2025: put it in the server's
+      # CVC_DOWNLOADS_DIR, and the web app offers it to members.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vault-setup
+          path: client/src/Cvc.Setup/bin/Release/net48/Vault-Setup.exe
+          if-no-files-found: error
+      # The add-in's files as they are, to install by hand with install.ps1 (see its README).
       - uses: actions/upload-artifact@v7
         with:
           name: cvc-solidworks-addin

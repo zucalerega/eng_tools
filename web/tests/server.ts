@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -44,6 +44,10 @@ export default async function setup(project: TestProject): Promise<() => void> {
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
     const data = mkdtempSync(join(tmpdir(), "cvc-web-tests-"));
+    const downloads = join(data, "downloads"); // stand-ins for what the web app offers to download
+    mkdirSync(downloads);
+    writeFileSync(join(downloads, "Vault-Setup.exe"), "the add-in's installer");
+    writeFileSync(join(downloads, "cvc.exe"), "the command line");
     const server = spawn("uv", ["run", "--quiet", "cvc-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",
@@ -58,6 +62,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
             CVC_DATABASE_URL: "sqlite:///" + join(data, "cvc.db").replaceAll("\\", "/"),
             CVC_BLOB_DIR: join(data, "blobs"),
             CVC_WEB_DIR: join(data, "web"),
+            CVC_DOWNLOADS_DIR: downloads,
         },
     });
     let output = "";

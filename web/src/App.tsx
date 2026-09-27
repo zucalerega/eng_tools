@@ -7,6 +7,8 @@ import { Assemblies } from "./pages/Assemblies";
 import { Browse } from "./pages/Browse";
 import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
+import { SolidWorks } from "./pages/SolidWorks";
+import { Trash } from "./pages/Trash";
 import { Link, usePathname } from "./router";
 import { useVault, type VaultState } from "./store";
 import { setTheme, useTheme, type Theme } from "./theme";
@@ -21,7 +23,10 @@ export function App() {
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
-    const section = pathname === "/" || pathname.startsWith("/file") ? "files" : pathname.split("/")[1];
+    const section =
+        pathname === "/" || pathname.startsWith("/file") || pathname.startsWith("/trash")
+            ? "files"
+            : pathname.split("/")[1];
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -39,6 +44,7 @@ export function App() {
                     {nav("/assemblies", "assemblies", "Assemblies")}
                     {nav("/locks", "locks", "Checked out")}
                     {nav("/activity", "activity", "Activity")}
+                    {nav("/solidworks", "solidworks", "SolidWorks")}
                     {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
                 </nav>
                 <div className="topbar-end">
@@ -152,6 +158,10 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
         const folder = folderFromUrl(pathname);
         return <Browse key={folder} folder={folder} />; // a new folder starts with nothing selected
     }
+    if (pathname === "/trash" || pathname.startsWith("/trash/")) {
+        const folder = folderFromUrl(pathname);
+        return <Trash key={folder} folder={folder} />;
+    }
     switch (pathname.replace(/\/$/, "")) {
         case "/assemblies":
             return <Assemblies />;
@@ -159,6 +169,8 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
             return <Locks />;
         case "/activity":
             return <Activity />;
+        case "/solidworks":
+            return <SolidWorks />;
         case "/admin":
             return <Admin section="people" />;
         case "/admin/access":

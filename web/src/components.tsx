@@ -84,6 +84,10 @@ export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null 
 export const solidWorksLink = (action: "open" | "new", path: string, more: Record<string, string> = {}): string =>
     `cvc://${action}?` + new URLSearchParams({ server: window.location.origin, path, ...more }).toString();
 
+/** A link that sets the add-in up for this vault: SolidWorks starts, and the browser asks you to let it in. */
+export const connectLink = (): string =>
+    "cvc://connect?" + new URLSearchParams({ server: window.location.origin }).toString();
+
 export function OpenInSolidWorks({ path, compact = false }: { path: string; compact?: boolean }) {
     if (!opensInSolidWorks(path)) {
         return null;
@@ -92,7 +96,7 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
         <a
             className={compact ? "button button-small" : "button button-primary"}
             href={solidWorksLink("open", path)}
-            title="Needs the Vault add-in for SolidWorks on this computer"
+            title="Needs the Vault add-in for SolidWorks on this computer: see SolidWorks, at the top"
         >
             Open in SolidWorks
         </a>

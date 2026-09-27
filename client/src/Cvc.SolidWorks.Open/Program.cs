@@ -13,13 +13,15 @@ namespace Cvc.SolidWorks.Open;
 
 /// <summary>
 /// cvc-open.exe "cvc://open?server=...&amp;path=...": opens a vault file in SolidWorks, for the web app's
-/// "Open in SolidWorks", or (cvc://new) starts a new part, assembly, or drawing there. It hands the link
-/// to the CVC add-in, starting SolidWorks first if it isn't running; the add-in does the rest.
+/// "Open in SolidWorks", or (cvc://new) starts a new part, assembly, or drawing there, or (cvc://connect)
+/// signs SolidWorks in to that vault. It hands the link to the Vault add-in, starting SolidWorks first if
+/// it isn't running; the add-in does the rest.
 /// </summary>
 internal static class Program
 {
     private static readonly TimeSpan Answer = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan Startup = TimeSpan.FromMinutes(3); // SolidWorks, then its add-ins
+    private static readonly string[] Actions = { "open", "new", "connect" };
 
     [STAThread]
     private static int Main(string[] args)
@@ -28,11 +30,11 @@ internal static class Program
         try
         {
             var link = args.Length == 1 ? args[0] : "";
-            // Only CVC's links: anything else shouldn't start SolidWorks. The add-in checks the rest.
+            // Only Vault's links: anything else shouldn't start SolidWorks. The add-in checks the rest.
             if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != "cvc"
-                || !(uri.Host.Equals("open", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("new", StringComparison.OrdinalIgnoreCase)))
+                || !Actions.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
             {
-                return Fail("This follows links from the Vault web app (Open in SolidWorks, New part). It was given: " + (link.Length > 0 ? link : "nothing"));
+                return Fail("This follows links from the Vault web app (Open in SolidWorks, New part, Connect SolidWorks). It was given: " + (link.Length > 0 ? link : "nothing"));
             }
             var problem = HandToAddIn(link);
             return problem.Length == 0 ? 0 : Fail(problem);

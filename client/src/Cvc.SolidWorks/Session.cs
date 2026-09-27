@@ -21,6 +21,7 @@ internal sealed class Session : IDisposable
         _documents = new DocumentWatcher(host, _pane);
         _taskPane = app.CreateTaskpaneView3(Icons.Write(), "Vault: check files in and out");
         _taskPane.DisplayWindowFromHandlex64(_pane.Handle.ToInt64());
+        _pane.ShowTab = () => _taskPane.ShowView();
         app.ActiveDocChangeNotify += OnActiveDocumentChanged;
         app.FileOpenPostNotify += OnFileOpened;
         app.DocumentLoadNotify2 += OnDocumentLoaded;

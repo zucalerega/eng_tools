@@ -3,14 +3,15 @@ import { useAdminMode } from "../admin";
 import { api, type FileDetail, type VaultFile } from "../api";
 import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
+import { DeleteDialog } from "../manage";
 import { NewFileDialog, StartedNotice } from "../newFile";
-import { fileUrl, kindOf, parentOf } from "../paths";
+import { fileUrl, kindOf, parentOf, trashUrl } from "../paths";
 import { Link } from "../router";
-import { atLeast, roleIn, useStore, useVault } from "../store";
+import { atLeast, nearestFolder, roleIn, useStore, useVault } from "../store";
 import { parentsOf, StructureTree, UsedVersion } from "../structure";
 import { Breadcrumbs } from "./Browse";
 
-type Asking = { action: "release" } | { action: "revert"; version: number } | null;
+type Asking = { action: "release" } | { action: "revert"; version: number } | { action: "delete" } | null;
 
 export function FilePage({ id }: { id: number }) {
     const vault = useVault();
@@ -41,11 +42,13 @@ export function FilePage({ id }: { id: number }) {
     }
     const file = live ?? detail.file;
     const folder = parentOf(file.path);
-    const role = roleIn(vault, folder);
+    const shelf = nearestFolder(vault, folder); // its folder may be in the trash too
+    const role = roleIn(vault, shelf);
     const lock = file.checked_out;
     const holder = lock && lock.user.id !== vault.me?.id ? lock : null; // checked out by someone else
     const canLead = atLeast(role, "lead");
-    const canRevert = atLeast(role, "editor") && (!holder || (adminMode && canLead));
+    const canEdit = atLeast(role, "editor");
+    const canRevert = canEdit && !file.deleted_at && (!holder || (adminMode && canLead));
     const kind = kindOf(file.name);
 
     async function act(action: () => Promise<unknown>) {
@@ -75,14 +78,30 @@ export function FilePage({ id }: { id: number }) {
                     v{file.version} · {formatSize(file.size)} · changed <Time at={file.modified_at} /> by{" "}
                     {file.modified_by.name}
                 </p>
-                {file.deleted_at && <Notice tone="warning">This file was deleted from the vault.</Notice>}
+                {file.deleted_at && (
+                    <Notice tone="warning">
+                        <span className="notice-row">
+                            <span>
+                                This file was deleted from the vault <Time at={file.deleted_at} />
+                                {file.deleted_by && ` by ${file.deleted_by.name}`}. It's in the{" "}
+                                <Link to={trashUrl(shelf)}>trash of {shelf || "the top folder"}</Link>
+                                {shelf !== folder && ", with its folder"}.
+                            </span>
+                            {canEdit && (
+                                <button type="button" disabled={busy} onClick={() => act(() => api.restore(file.id))}>
+                                    Restore
+                                </button>
+                            )}
+                        </span>
+                    </Notice>
+                )}
                 {lock && (
                     <p>
                         <LockLabel lock={lock} me={vault.me} />
                     </p>
                 )}
                 <div className="actions">
-                    <OpenInSolidWorks path={file.path} />
+                    {!file.deleted_at && <OpenInSolidWorks path={file.path} />}
                     <a className="button" href={api.downloadUrl(file.id)} download>
                         Download
                     </a>
@@ -93,6 +112,11 @@ export function FilePage({ id }: { id: number }) {
                             onClick={() => setAsking({ action: "release" })}
                         >
                             Release check-out
+                        </button>
+                    )}
+                    {canEdit && !file.deleted_at && !holder && (
+                        <button type="button" onClick={() => setAsking({ action: "delete" })}>
+                            Delete…
                         </button>
                     )}
                 </div>
@@ -106,7 +130,7 @@ export function FilePage({ id }: { id: number }) {
                 </Notice>
             )}
 
-            {(kind === "part" || kind === "assembly") && <Drawings model={file} canAdd={atLeast(role, "editor")} />}
+            {(kind === "part" || kind === "assembly") && <Drawings model={file} canAdd={canEdit && !file.deleted_at} />}
             <div className="columns">
                 <section>
                     <h2>{kind === "assembly" ? "Contains" : kind === "drawing" ? "Shows" : "Uses"}</h2>
@@ -182,6 +206,9 @@ export function FilePage({ id }: { id: number }) {
                 </tbody>
             </table>
 
+            {asking?.action === "delete" && (
+                <DeleteDialog files={[file]} folders={[]} onClose={() => setAsking(null)} />
+            )}
             {asking?.action === "release" && holder && (
                 <Dialog
                     title={`Release ${holder.user.name}'s check-out?`}

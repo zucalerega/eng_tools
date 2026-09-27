@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { folderUrl } from "../src/paths";
 import { renderApp, Team } from "./team";
+import { makeZip } from "./zips";
 
 // New folders, uploads, moving, and renaming, from the web app, against the real server.
 
@@ -51,6 +52,32 @@ test("a new folder, then files and a whole folder uploaded into it", async () =>
     await userEvent.click(await screen.findByRole("link", { name: "Avionics" }));
     await userEvent.click(await screen.findByRole("link", { name: "Boards" }));
     expect(await screen.findByRole("link", { name: "Board.STEP" })).toBeTruthy();
+});
+
+test("a zip goes up as what's in it, or as it is", async () => {
+    const team = await Team.create();
+    const zip = makeZip([
+        { name: "Recovery/", contents: "" },
+        { name: "Recovery/Chute.SLDPRT", contents: "chute", deflate: true },
+        { name: "Recovery/Harness/Strap.SLDPRT", contents: "strap" },
+    ]);
+    renderApp(team.chief, folderUrl(team.folder));
+
+    fireEvent.change(await screen.findByLabelText("Upload files"), {
+        target: { files: [new File([zip], "Recovery.zip")] },
+    });
+    let dialog = screen.getByRole("dialog");
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Upload 2 files" }));
+    await userEvent.click(await screen.findByRole("link", { name: "Recovery" }));
+    expect(await screen.findByRole("link", { name: "Chute.SLDPRT" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("link", { name: "Harness" }));
+    expect(await screen.findByRole("link", { name: "Strap.SLDPRT" })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Upload files"), { target: { files: [new File([zip], "Spare.zip")] } });
+    dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /Unzip Spare.zip/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Upload 1 file" }));
+    expect(await screen.findByRole("link", { name: "Spare.zip" })).toBeTruthy();
 });
 
 test("files and folders move and get new names, but not away from what uses them", async () => {

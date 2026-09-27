@@ -69,6 +69,9 @@ internal sealed class CvcPane : UserControl
     private readonly Control _workView;
     private readonly Label _message = new Label { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
 
+    /// <summary>Brings the Vault tab to the front of SolidWorks' task pane; the session that made the tab sets it.</summary>
+    public Action? ShowTab { get; set; }
+
     public CvcPane(SolidWorksHost sw)
     {
         _sw = sw;
@@ -276,9 +279,15 @@ internal sealed class CvcPane : UserControl
         {
             return e.Message;
         }
+        if (request.Action == LinkAction.Connect)
+        {
+            return await ConnectAsync(request.Server);
+        }
         var workspace = _workspace;
         if (workspace == null)
         {
+            _serverBox.Text = request.Server.AbsoluteUri; // ready to sign in to that vault
+            ShowTab?.Invoke();
             return "Sign in to Vault in SolidWorks first: open the Vault tab in the task pane.";
         }
         if (!SameServer(workspace.Server, request.Server))
@@ -301,6 +310,37 @@ internal sealed class CvcPane : UserControl
         _sw.Open(path);
         SolidWorksHost.BringToFront();
         return "";
+    }
+
+    /// <summary>
+    /// For the web app's Connect SolidWorks: sign in to that vault, with the workspace folder shown (C:\CVC
+    /// unless you chose another). Already signed in to it, there's nothing to do; signed in to another
+    /// vault, it says so, since switching is yours to choose (sign out, then connect again).
+    /// </summary>
+    private async Task<string> ConnectAsync(Uri server)
+    {
+        SolidWorksHost.BringToFront();
+        ShowTab?.Invoke();
+        if (_workspace is { } workspace)
+        {
+            if (SameServer(workspace.Server, server))
+            {
+                ShowMessage("SolidWorks is connected to this vault.", Good);
+                return "";
+            }
+            return $"SolidWorks is connected to the vault at {workspace.Server}. To switch, sign out in the Vault tab, then connect again.";
+        }
+        _serverBox.Text = server.AbsoluteUri;
+        try
+        {
+            await SignInAsync();
+            return "";
+        }
+        catch (Exception e) when (IsExpected(e) || e is UriFormatException)
+        {
+            ShowMessage(e.Message, Problem);
+            return e.Message;
+        }
     }
 
     /// <summary>

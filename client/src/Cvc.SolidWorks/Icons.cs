@@ -10,13 +10,14 @@ namespace Cvc.SolidWorks;
 /// <summary>
 /// Task pane tab icons, drawn at startup (so the repository holds no image files): Vault's mark, a vault
 /// door crossed by a gold orbit, on navy, as the web app draws it (VaultMark in web/src/components.tsx).
+/// Vault-Setup.exe draws its window's icon with it too.
 /// </summary>
 internal static class Icons
 {
     // The sizes SolidWorks asks for in CreateTaskpaneView3, smallest first.
     private static readonly int[] Sizes = { 20, 32, 40, 64, 96, 128 };
-    private static readonly Color Navy = Color.FromArgb(11, 27, 51);
-    private static readonly Color Gold = Color.FromArgb(224, 165, 0);
+    public static readonly Color Navy = Color.FromArgb(11, 27, 51);
+    public static readonly Color Gold = Color.FromArgb(224, 165, 0);
 
     // The door, in the mark's 64-unit square.
     private static readonly PointF[] Octagon =
@@ -31,44 +32,51 @@ internal static class Icons
     {
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CVC", "icons");
         Directory.CreateDirectory(folder);
-        return Sizes.Select(size => Draw(size, Path.Combine(folder, $"vault-{size}.png"))).ToArray();
+        return Sizes.Select(size => Save(size, Path.Combine(folder, $"vault-{size}.png"))).ToArray();
     }
 
-    private static string Draw(int size, string path)
+    private static string Save(int size, string path)
     {
-        using (var bitmap = new Bitmap(size, size))
+        using (var bitmap = Draw(size))
         {
-            using (var graphics = Graphics.FromImage(bitmap))
-            using (var navy = new SolidBrush(Navy))
-            using (var gold = new SolidBrush(Gold))
-            using (var white = new Pen(Color.White, 5) { LineJoin = LineJoin.Miter })
-            using (var gap = new Pen(Navy, 2.5f))
-            using (var background = RoundedSquare(64, 14))
-            using (var orbit = Orbit())
-            {
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                graphics.Clear(Color.Transparent);
-                graphics.ScaleTransform(size / 64f, size / 64f);
-                graphics.FillPath(navy, background);
-                graphics.DrawPolygon(white, Octagon);
-                white.Width = 3;
-                graphics.DrawEllipse(white, 19.5f, 19.5f, 25, 25);
-                if (size >= 32)
-                {
-                    // The wheel's spokes and knobs: too fine to see at the smallest size.
-                    foreach (var knob in Knobs)
-                    {
-                        graphics.DrawLine(white, 32, 32, knob.X, knob.Y);
-                        graphics.FillEllipse(Brushes.White, knob.X - 2.8f, knob.Y - 2.8f, 5.6f, 5.6f);
-                    }
-                }
-                graphics.FillEllipse(Brushes.White, 27.5f, 27.5f, 9, 9);
-                graphics.DrawPath(gap, orbit); // a sliver of navy between the orbit and the door
-                graphics.FillPath(gold, orbit);
-            }
             bitmap.Save(path, ImageFormat.Png);
         }
         return path;
+    }
+
+    /// <summary>The mark, size pixels square.</summary>
+    public static Bitmap Draw(int size)
+    {
+        var bitmap = new Bitmap(size, size);
+        using (var graphics = Graphics.FromImage(bitmap))
+        using (var navy = new SolidBrush(Navy))
+        using (var gold = new SolidBrush(Gold))
+        using (var white = new Pen(Color.White, 5) { LineJoin = LineJoin.Miter })
+        using (var gap = new Pen(Navy, 2.5f))
+        using (var background = RoundedSquare(64, 14))
+        using (var orbit = Orbit())
+        {
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.Clear(Color.Transparent);
+            graphics.ScaleTransform(size / 64f, size / 64f);
+            graphics.FillPath(navy, background);
+            graphics.DrawPolygon(white, Octagon);
+            white.Width = 3;
+            graphics.DrawEllipse(white, 19.5f, 19.5f, 25, 25);
+            if (size >= 32)
+            {
+                // The wheel's spokes and knobs: too fine to see at the smallest size.
+                foreach (var knob in Knobs)
+                {
+                    graphics.DrawLine(white, 32, 32, knob.X, knob.Y);
+                    graphics.FillEllipse(Brushes.White, knob.X - 2.8f, knob.Y - 2.8f, 5.6f, 5.6f);
+                }
+            }
+            graphics.FillEllipse(Brushes.White, 27.5f, 27.5f, 9, 9);
+            graphics.DrawPath(gap, orbit); // a sliver of navy between the orbit and the door
+            graphics.FillPath(gold, orbit);
+        }
+        return bitmap;
     }
 
     private static GraphicsPath RoundedSquare(float side, float radius)

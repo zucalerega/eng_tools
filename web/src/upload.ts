@@ -1,9 +1,11 @@
 import { api } from "./api";
 import { kindOf, nameProblem, parentOf, pathKey } from "./paths";
 import { contentsOf, type VaultState } from "./store";
+import { readZip } from "./zip";
 
 // Uploading files and whole folders from the browser: each file's contents go up once (the server
-// skips contents it has), then they're all checked in together, as one version each.
+// skips contents it has), then they're all checked in together, as one version each. A .zip can go up
+// as the files in it, where it was, with the folders in it (like Windows' Extract Here).
 
 /** A file picked or dropped, with where it sits under what was picked (Folder/Sub/Part.SLDPRT). */
 export interface Picked {
@@ -11,23 +13,81 @@ export interface Picked {
     relative: string;
 }
 
+/** A file to upload: one picked or dropped, or one in a zip that was. */
+export interface Source {
+    relative: string;
+    size: number;
+    read: () => Promise<Uint8Array<ArrayBuffer>>;
+}
+
+export interface Skipped {
+    path: string;
+    reason: string;
+}
+
 export interface UploadPlan {
-    ready: { file: File; path: string }[];
-    skipped: { path: string; reason: string }[];
+    ready: { source: Source; path: string }[];
+    skipped: Skipped[];
     assemblies: number; // uploaded without their parts recorded (see the dialog)
 }
 
 // Like the CLI and the add-in: files that are never version-controlled.
 const IGNORED = /^(~\$.*|.*\.tmp|thumbs\.db|desktop\.ini|\.ds_store)$/i;
 
+export const isZip = (name: string): boolean => /\.zip$/i.test(name);
+
+/** Picked files, to upload as they are. */
+export const asTheyAre = (picked: Picked[]): Source[] =>
+    picked.map(({ file, relative }) => ({
+        relative,
+        size: file.size,
+        read: async () => new Uint8Array(await file.arrayBuffer()),
+    }));
+
+/**
+ * Picked files, with the files in each .zip in its place instead. Zips that can't be read, and files in
+ * them that can't, are left out, saying why. opening hears which zip is being read.
+ */
+export async function unzipped(
+    picked: Picked[],
+    opening: (relative: string) => void = () => {},
+): Promise<{ sources: Source[]; skipped: Skipped[] }> {
+    const sources: Source[] = [];
+    const skipped: Skipped[] = [];
+    for (const one of picked) {
+        if (!isZip(one.relative)) {
+            sources.push(...asTheyAre([one]));
+            continue;
+        }
+        opening(one.relative);
+        const folder = parentOf(one.relative);
+        const inside = (path: string) => (folder ? `${folder}/${path}` : path);
+        try {
+            const zip = await readZip(one.file, one.file.name);
+            for (const entry of zip.entries) {
+                sources.push({ relative: inside(entry.path), size: entry.size, read: entry.read });
+            }
+            skipped.push(...zip.skipped.map(({ path, reason }) => ({ path: inside(path), reason })));
+        } catch (error) {
+            skipped.push({ path: one.relative, reason: error instanceof Error ? error.message : String(error) });
+        }
+    }
+    return { sources, skipped };
+}
+
 /** What an upload into a folder would add, and what it leaves out, and why. */
-export function planUpload(vault: VaultState, folder: string, picked: Picked[]): UploadPlan {
-    const plan: UploadPlan = { ready: [], skipped: [], assemblies: 0 };
+export function planUpload(vault: VaultState, folder: string, sources: Source[], skipped: Skipped[] = []): UploadPlan {
+    const at = (relative: string) => [folder, ...relative.split("/")].filter((part) => part.length > 0).join("/");
+    const plan: UploadPlan = {
+        ready: [],
+        skipped: skipped.map(({ path, reason }) => ({ path: at(path), reason })),
+        assemblies: 0,
+    };
     const seen = new Set<string>();
-    for (const { file, relative } of picked) {
-        const names = relative.split("/").filter((name) => name.length > 0);
-        const path = [folder, ...names].filter((part) => part.length > 0).join("/");
-        const name = names[names.length - 1] ?? file.name;
+    for (const source of sources) {
+        const names = source.relative.split("/").filter((name) => name.length > 0);
+        const path = at(source.relative);
+        const name = names[names.length - 1] ?? "";
         if (IGNORED.test(name)) {
             continue; // temporary and system files: nobody wants these in the vault
         }
@@ -49,7 +109,7 @@ export function planUpload(vault: VaultState, folder: string, picked: Picked[]):
             continue;
         }
         seen.add(key);
-        plan.ready.push({ file, path });
+        plan.ready.push({ source, path });
         if (kindOf(name) === "assembly") {
             plan.assemblies += 1;
         }
@@ -108,9 +168,9 @@ export async function upload(
     progress: (done: number, current: string) => void,
 ): Promise<void> {
     const items = [];
-    for (const [index, { file, path }] of ready.entries()) {
+    for (const [index, { source, path }] of ready.entries()) {
         progress(index, path);
-        const data = new Uint8Array(await file.arrayBuffer());
+        const data = await source.read();
         const hash = await sha256(data);
         if (!(await api.hasBlob(hash))) {
             await api.uploadBlob(hash, data);

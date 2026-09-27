@@ -11,6 +11,18 @@ public sealed class OpenLinkTests
 
         var drawing = OpenLink.Parse(OpenLink.ForNew(new Uri("https://cvc.example.org/"), "Fins/Fin.SLDDRW", "Fins/Fin.SLDPRT"));
         Assert.Equal((LinkAction.New, "Fins/Fin.SLDDRW", "Fins/Fin.SLDPRT"), (drawing.Action, drawing.VaultPath, drawing.Model));
+
+        var connect = OpenLink.Parse(OpenLink.ForConnect(new Uri("https://cvc.example.org/")));
+        Assert.Equal((LinkAction.Connect, "https://cvc.example.org/", ""), (connect.Action, connect.Server.AbsoluteUri, connect.VaultPath));
+    }
+
+    [Fact]
+    public void ConnectLinksFromTheWebAppParse()
+    {
+        // As the SolidWorks page writes it: just the server, which is all it needs.
+        var parsed = OpenLink.Parse("cvc://connect?server=https%3A%2F%2Flucazerega.tail07089c.ts.net");
+        Assert.Equal((LinkAction.Connect, "https://lucazerega.tail07089c.ts.net/"), (parsed.Action, parsed.Server.AbsoluteUri));
+        Assert.Throws<WorkspaceException>(() => OpenLink.Parse("cvc://connect?path=A.SLDPRT")); // no server
     }
 
     [Theory]

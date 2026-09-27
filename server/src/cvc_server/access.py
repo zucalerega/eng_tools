@@ -14,6 +14,8 @@ ADMIN_RANK = 100
 
 
 class Tree:
+    """Every folder by id, deleted ones too (to restore them, and for their files' paths); only live ones by path."""
+
     def __init__(self, folders: Iterable[Folder]):
         self._paths: dict[int, str] = {}
         self.by_id: dict[int, Folder] = {}
@@ -33,7 +35,7 @@ class Tree:
         self.by_id[folder.id] = folder
         if folder.parent_id is None:
             self._root = folder
-        else:
+        elif folder.deleted_at is None:
             self.children[folder.parent_id][folder.name_key] = folder
 
     def path(self, folder_id: int) -> str:
@@ -87,7 +89,8 @@ class Access:
                 self._direct[grant.folder_id] = max(self._direct.get(grant.folder_id, 0), grant.role.rank)
         self._ranks: dict[int, int] = {}
         # Folders on the way down to a granted folder stay visible so people can navigate to it.
-        self._passage = {tree.root.id} | {f for granted in self._direct for f in tree.ancestry(granted)}
+        live = [granted for granted in self._direct if tree.by_id[granted].deleted_at is None]
+        self._passage = {tree.root.id} | {f for granted in live for f in tree.ancestry(granted)}
 
     def rank(self, folder_id: int) -> int:
         if self.user.is_admin:

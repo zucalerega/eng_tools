@@ -1,4 +1,4 @@
-"""Vault API: browse, history, download, check out/in, delete/restore, sync, and uploads."""
+"""Vault API: browse, history, download, check out/in, delete/restore, move/rename, sync, and uploads."""
 
 import hashlib
 
@@ -14,6 +14,7 @@ from .schemas import (
     CheckinIn,
     CheckinOut,
     CheckoutIn,
+    DeletedOut,
     DeleteIn,
     EventOut,
     FileDetailOut,
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/api", tags=["vault"])
 
 @router.get("/folders")
 def get_folder(user: ActiveUser, db: DB, path: str = "", deleted: bool = False) -> ListingOut:
-    """A folder's subfolders and files. deleted=true lists its trash instead."""
+    """A folder's subfolders and files. deleted=true lists its trash instead: the folders and files deleted from it."""
     return ListingOut.of(vault.list_folder(db, user, path, deleted=deleted))
 
 
@@ -91,13 +92,21 @@ def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
 
 
 @router.post("/delete")
-def post_delete(body: DeleteIn, user: ActiveUser, db: DB) -> FilesOut:
-    return FilesOut.of(vault.delete(db, user, body.files, force=body.force))
+def post_delete(body: DeleteIn, user: ActiveUser, db: DB) -> DeletedOut:
+    """Move files, and folders with everything in them, to the trash (GET /api/folders?deleted=true)."""
+    return DeletedOut.of(vault.delete(db, user, body.files, folders=body.folders, force=body.force))
 
 
 @router.post("/files/{file_id}/restore")
 def post_restore(file_id: int, user: ActiveUser, db: DB) -> FileOut:
+    """Bring a deleted file back (and its folder, if that was deleted too)."""
     return FileOut.of(vault.restore(db, user, file_id))
+
+
+@router.post("/folders/{folder_id}/restore")
+def post_restore_folder(folder_id: int, user: ActiveUser, db: DB) -> FolderOut:
+    """Bring a deleted folder back, with everything deleted along with it."""
+    return FolderOut.of(vault.restore_folder(db, user, folder_id))
 
 
 @router.post("/move")

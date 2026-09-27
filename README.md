@@ -30,9 +30,12 @@ command, and this repository keep the name CVC.
   is checked in; see each file's history and drawings and who has what checked out;
   download any version; follow the activity as it happens; start new parts,
   assemblies, and drawings, which SolidWorks makes on your computer; and organize the
-  vault: new folders, uploads (files or whole folders, by dropping them on the page), and
-  moving or renaming, which every computer's copies follow. Admins and folder leads can switch on admin mode to release someone's
-  check-out or revert a file they have checked out.
+  vault: new folders, uploads (files, whole folders, or what's in a zip, by dropping them
+  on the page), moving or renaming, which every computer's copies follow, and deleting,
+  to a trash each folder keeps. Admins and folder leads can switch on admin mode to
+  release someone's check-out or revert a file they have checked out.
+- **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
+  which installs the add-in, and a button that connects it to the vault.
 
 ## Layout
 
@@ -41,6 +44,7 @@ command, and this repository keep the name CVC.
 | `server/` | API server: Python, FastAPI, SQLAlchemy; Docker image | working |
 | `client/` | C# workspace library and `cvc` CLI | working |
 | `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | working |
+| `client/src/Cvc.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `web/` | Web app: TypeScript, React, Vite; served by the server | working |
 | `docs/` | Design and roadmap | |
 

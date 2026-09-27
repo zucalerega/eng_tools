@@ -35,7 +35,7 @@ While you work:
   stay on their computer, and Vault tells them who took it over if they try to check in.
 - **Open in SolidWorks** from the web app: Vault gets the latest version, and the parts it
   uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
-  `cvc-open.exe`, which install.ps1 registers for `cvc:` links.)
+  `cvc-open.exe`, which setup registers for `cvc:` links.)
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
@@ -43,21 +43,25 @@ While you work:
 
 ## Install
 
-1. Get the add-in folder: the `cvc-solidworks-addin` artifact from a CI run, or
-   `dotnet build -c Release client/src/Cvc.SolidWorks` (the output is
-   `bin/Release/net48`).
-2. Put it somewhere permanent, e.g. `C:\Program Files\CVC\addin`.
-3. In PowerShell **as administrator**, in that folder:
-   ```
-   powershell -ExecutionPolicy Bypass -File install.ps1
-   ```
-4. Start SolidWorks 2025. Open the Vault tab in the task pane, enter the server address,
-   and sign in. Your browser opens; confirm there.
+1. In the Vault web app, open **SolidWorks** (at the top) and download `Vault-Setup.exe`.
+   (It's the `vault-setup` artifact of a CI run; an admin puts it in the server's
+   `CVC_DOWNLOADS_DIR`.)
+2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
+   click **More info**, then **Run anyway**. It asks for administrator rights, then installs
+   the add-in in `C:\Program Files\Vault for SolidWorks`. Running a newer one updates it.
+3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
+   with the Vault tab open, and your browser asks you to confirm. (Or type the web app's
+   address into the Vault tab yourself, and sign in.)
 
 If the Vault tab doesn't appear, check **Tools > Add-ins** and tick Vault (both boxes, so it
-loads at startup). To remove the add-in, run `uninstall.ps1` the same way. To update it,
-close SolidWorks and replace the folder's files; run `install.ps1` again only if the new
-version's release notes say so.
+loads at startup). To remove the add-in, remove **Vault for SolidWorks** in Windows'
+Settings > Apps > Installed apps; your workspace and sign-in stay.
+
+By hand (for development): build it (`dotnet build -c Release client/src/Cvc.SolidWorks`,
+output in `bin/Release/net48`, or the `cvc-solidworks-addin` artifact), put the folder
+somewhere permanent, and run `powershell -ExecutionPolicy Bypass -File install.ps1` in it,
+as administrator (`uninstall.ps1` removes it). To update, close SolidWorks and replace the
+folder's files.
 
 ## Testing against a development server
 
@@ -118,6 +122,12 @@ these on SolidWorks 2025:
     part opens in SolidWorks, and within seconds the web app lists it as v1, checked out
     to you. On a part's page, click New drawing: a drawing named after the part opens,
     with a view of it, and the part's page lists the drawing.
+16. On a PC without the add-in, download Vault-Setup.exe from the web app's SolidWorks page
+    and run it: after Windows' warnings, it installs. Click Connect SolidWorks: SolidWorks
+    starts with the Vault tab, the browser asks to confirm, and the tab shows your name.
+    Click it again: the tab says it's connected already. Remove Vault for SolidWorks in
+    Settings > Apps: SolidWorks starts without it, and `C:\Program Files\Vault for
+    SolidWorks` is gone.
 
 ## When something goes wrong
 

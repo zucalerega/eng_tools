@@ -68,6 +68,7 @@ class FileOut(BaseModel):
     modified_by: UserRef
     checked_out: LockOut | None
     deleted_at: datetime | None
+    deleted_by: UserRef | None = None
     # What the latest version uses (an assembly's parts, a drawing's model), by id: the files you can
     # see, including any deleted since. Clients look them up in their copy of the sync feed.
     uses: list[UseOut]
@@ -90,6 +91,7 @@ class FileOut(BaseModel):
             modified_by=UserRef.of(view.modified_by),
             checked_out=lock,
             deleted_at=file.deleted_at,
+            deleted_by=UserRef.of(view.deleted_by) if view.deleted_by else None,
             uses=[UseOut(file_id=file_id, version=number) for file_id, number in view.uses],
         )
 
@@ -107,10 +109,19 @@ class FolderOut(BaseModel):
     path: str
     name: str
     role: str | None  # your role here: admin, lead, editor, viewer, or null (you can only pass through)
+    deleted_at: datetime | None = None  # in a trash listing: when it was deleted, and by whom
+    deleted_by: UserRef | None = None
 
     @classmethod
     def of(cls, view: vault.FolderView) -> "FolderOut":
-        return cls(id=view.id, path=view.path, name=view.name, role=view.role)
+        return cls(
+            id=view.id,
+            path=view.path,
+            name=view.name,
+            role=view.role,
+            deleted_at=view.deleted_at,
+            deleted_by=UserRef.of(view.deleted_by) if view.deleted_by else None,
+        )
 
 
 class ListingOut(BaseModel):
@@ -201,8 +212,19 @@ class RevertIn(BaseModel):
     force: bool = False  # even if someone else has it checked out (leads only): releases their check-out
 
 
-class DeleteIn(FilesIn):
+class DeleteIn(BaseModel):
+    files: list[int | str] = Field(default=[], max_length=5000)  # ids or vault paths
+    folders: list[str] = Field(default=[], max_length=500)  # vault paths; they go with everything in them
     force: bool = False  # delete even if other files still use these
+
+
+class DeletedOut(BaseModel):
+    folders: list[FolderOut]
+    files: list[FileOut]  # the files named, not those that went with their folders
+
+    @classmethod
+    def of(cls, deleted: vault.Deleted) -> "DeletedOut":
+        return cls(folders=[FolderOut.of(f) for f in deleted.folders], files=[FileOut.of(f) for f in deleted.files])
 
 
 class MoveIn(BaseModel):

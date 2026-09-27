@@ -60,6 +60,31 @@ public sealed class GetResult
     public List<string> Failures { get; } = new List<string>();
 }
 
+/// <summary>How much a get would download: files not here yet, newer versions of files that are, and their total size.</summary>
+public sealed class DownloadSize
+{
+    public int NewFiles { get; private set; }
+
+    public int UpdatedFiles { get; private set; }
+
+    public long Bytes { get; private set; }
+
+    public int Files => NewFiles + UpdatedFiles;
+
+    internal void Add(bool isNew, long bytes)
+    {
+        if (isNew)
+        {
+            NewFiles++;
+        }
+        else
+        {
+            UpdatedFiles++;
+        }
+        Bytes += bytes;
+    }
+}
+
 public sealed class UndoResult
 {
     public List<FileStatus> Released { get; } = new List<FileStatus>();

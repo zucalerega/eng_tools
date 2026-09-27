@@ -205,6 +205,41 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatingGetsNewVersionsOfWhatsHereAndNothingElse()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var can = Write(alice, "Fins/Fin Can.SLDASM", "can v1");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var uses = new Dictionary<string, string[]> { [can] = [fin], [fin] = [] };
+        await alice.CheckinAsync([can], "fin can", referencesOf: path => uses[path]);
+        await alice.CheckinAsync([Write(alice, "Motor/Grain.SLDPRT", "grain")], "grain");
+        await bob.GetLatestAsync([Local(bob, "Fins/Fin Can.SLDASM")]); // opened it: it brings its fin
+
+        // Alice adds a tab to the fin can, and changes the grain, which Bob never got.
+        var tab = Write(alice, "Fins/Tab.SLDPRT", "tab");
+        uses[can] = [fin, tab];
+        uses[tab] = [];
+        await alice.CheckoutAsync([can]);
+        File.WriteAllText(can, "can v2");
+        await alice.CheckinAsync([can], "tabs", referencesOf: path => uses[path]);
+        var grain = Local(alice, "Motor/Grain.SLDPRT");
+        await alice.CheckoutAsync([grain]);
+        File.WriteAllText(grain, "grain v2");
+        await alice.CheckinAsync([grain], "longer grain");
+
+        var everything = await bob.SizeOfGetAsync([Folder(bob)]);
+        // New: the tab (3 bytes) and the grain (8); newer: the can (6).
+        Assert.Equal((2, 1, 17L), (everything.NewFiles, everything.UpdatedFiles, everything.Bytes));
+
+        var updated = await bob.UpdateAsync([Folder(bob)]);
+        Assert.Equal(["Fin Can.SLDASM", "Tab.SLDPRT"], updated.Downloaded.Select(Name).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal("can v2", File.ReadAllText(Local(bob, "Fins/Fin Can.SLDASM")));
+        Assert.False(File.Exists(Local(bob, "Motor/Grain.SLDPRT"))); // still only in the vault
+        Assert.Equal(FileState.Missing, Assert.Single(await bob.StatusAsync([Local(bob, "Motor")])).State);
+    }
+
+    [Fact]
     public async Task DeletedFilesLeaveTheWorkspaceOnGet()
     {
         var alice = await WorkspaceAsync("alice");

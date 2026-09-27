@@ -20,7 +20,9 @@ internal static class Program
 
         Working
           status [paths]                 What's changed, out of date, or checked out (--all: everything)
-          get [paths]                    Get the latest versions (--force: replace your local changes; they're backed up)
+          get [paths]                    Get the latest versions of files and folders, downloading what isn't here;
+                                         with no paths, update just the files you have here (--force: replace
+                                         your local changes; they're backed up)
           checkout <paths>               Check files out to edit them (alias: co; --force: take over a check-out
                                          on another computer: yours, or anyone's if you're a lead there)
           checkin <paths> -m "what"      Check in changed and new files (alias: ci; --keep: stay checked out)
@@ -29,7 +31,8 @@ internal static class Program
           locks [--mine]                 Who has what checked out
 
         Paths are files or folders inside the workspace; a folder means everything in it.
-        With no paths, status and get use the current folder.
+        With no paths, status and get use the current folder: get updates the files you have in it,
+        and `get .` downloads everything in it.
         """;
 
     private static readonly TokenStore Tokens = new TokenStore();
@@ -108,7 +111,7 @@ internal static class Program
         var server = options.Server is null ? throw new UsageException("Usage: cvc init [<folder>] --server <url>") : ParseServer(options.Server);
         var token = Tokens.Load(server) ?? throw new WorkspaceException($"Sign in first: cvc login {server}");
         using var workspace = Workspace.Create(folder, server, token);
-        Console.WriteLine($"Created a CVC workspace at {workspace.Root}. Run `cvc get` there to download the vault.");
+        Console.WriteLine($"Created a CVC workspace at {workspace.Root}. In it, `cvc get <folder>` downloads a folder of the vault, and `cvc get .` all of it.");
         return 0;
     }
 
@@ -150,7 +153,10 @@ internal static class Program
     private static async Task<int> GetAsync(Options options)
     {
         using var workspace = OpenWorkspace();
-        var result = await workspace.GetLatestAsync(PathsOrHere(options), options.Force);
+        // Paths named are got whole; with none, only what's here is updated, so the vault never comes down by accident.
+        var result = options.Paths.Count > 0
+            ? await workspace.GetLatestAsync(options.Paths, options.Force)
+            : await workspace.UpdateAsync(PathsOrHere(options), options.Force);
         foreach (var status in result.Downloaded)
         {
             Console.WriteLine($"  got      v{status.LocalVersion}  {Show(status.LocalPath)}");

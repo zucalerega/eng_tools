@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace Cvc.Client;
 
 /// <summary>
-/// A local copy of the vault (default C:\CVC) and everything you do with it: status, get
+/// A local copy of the vault (default C:\VLT) and everything you do with it: status, get
 /// latest, check out, check in, undo. Every machine uses the same root, so the absolute paths
 /// SolidWorks stores for references resolve everywhere. Files you don't have checked out are
 /// read-only, so SolidWorks opens them read-only. Local changes are never overwritten without
@@ -41,8 +41,8 @@ public sealed class Workspace : IDisposable
     public CvcApi Api { get; }
 
     public static string DefaultRoot => RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-        ? @"C:\CVC"
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "CVC");
+        ? @"C:\VLT"
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "VLT");
 
     public void Dispose() => Api.Dispose();
 

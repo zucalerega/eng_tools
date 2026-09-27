@@ -10,7 +10,7 @@ internal sealed class AddinSettings
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CVC", "addin.json");
 
-    public string WorkspaceRoot { get; set; } = @"C:\CVC";
+    public string WorkspaceRoot { get; set; } = @"C:\VLT";
 
     public string? Server { get; set; }
 

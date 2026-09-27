@@ -15,7 +15,7 @@ internal static class Program
         Setting up
           login <server-url>             Sign in through your browser
           logout [<server-url>]          Forget the saved sign-in
-          init [<folder>] --server <url> Create a workspace (default C:\CVC, or ~/CVC on macOS)
+          init [<folder>] --server <url> Create a workspace (default C:\VLT, or ~/VLT on macOS)
           whoami                         Who you're signed in as, on which computer
 
         Working

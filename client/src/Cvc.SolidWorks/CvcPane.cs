@@ -314,7 +314,7 @@ internal sealed class CvcPane : UserControl
     }
 
     /// <summary>
-    /// For the web app's Connect SolidWorks: sign in to that vault, with the workspace folder shown (C:\CVC
+    /// For the web app's Connect SolidWorks: sign in to that vault, with the workspace folder shown (C:\VLT
     /// unless you chose another). Already signed in to it, there's nothing to do; signed in to another
     /// vault, it says so, since switching is yours to choose (sign out, then connect again).
     /// </summary>

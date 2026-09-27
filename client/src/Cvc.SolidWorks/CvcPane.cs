@@ -158,7 +158,7 @@ internal sealed class CvcPane : UserControl
         catch (Exception e) when (IsExpected(e))
         {
             Log.Error("Couldn't open the workspace", e);
-            ShowMessage(e.Message, Problem);
+            ShowMessage(Reason(e), Problem);
         }
         _poll.Start();
         ShowActiveDocument();
@@ -339,8 +339,9 @@ internal sealed class CvcPane : UserControl
         }
         catch (Exception e) when (IsExpected(e) || e is UriFormatException)
         {
-            ShowMessage(e.Message, Problem);
-            return e.Message;
+            Log.Error($"Connecting to {server} failed", e);
+            ShowMessage(Reason(e), Problem);
+            return Reason(e);
         }
     }
 
@@ -675,8 +676,8 @@ internal sealed class CvcPane : UserControl
         catch (Exception e) when (IsExpected(e))
         {
             Log.Error(doing + " failed", e);
-            ShowMessage(e.Message, Problem);
-            Warn(e.Message);
+            ShowMessage(Reason(e), Problem);
+            Warn(Reason(e));
         }
         catch (Exception e)
         {
@@ -818,7 +819,7 @@ internal sealed class CvcPane : UserControl
         catch (Exception e) when (IsExpected(e))
         {
             Log.Error("Check-out before saving failed", e);
-            Warn(e.Message);
+            Warn(Reason(e));
             return false;
         }
         finally
@@ -837,7 +838,8 @@ internal sealed class CvcPane : UserControl
         }
         catch (Exception e) when (IsExpected(e) || e is UriFormatException)
         {
-            ShowMessage(e.Message, Problem);
+            Log.Error("A task pane action failed", e);
+            ShowMessage(Reason(e), Problem);
         }
         catch (Exception e)
         {
@@ -867,6 +869,22 @@ internal sealed class CvcPane : UserControl
         {
             Safely(() => action(path));
         }
+    }
+
+    // What went wrong, in words. A request that never got an answer only says "An error occurred while sending the
+    // request"; why (the address can't be found, no secure connection could be made) is in the exception inside it.
+    private static string Reason(Exception e)
+    {
+        if (e is not HttpRequestException)
+        {
+            return e.Message;
+        }
+        var inner = e;
+        while (inner.InnerException != null)
+        {
+            inner = inner.InnerException;
+        }
+        return "Can't reach the Vault server: " + inner.Message;
     }
 
     private static bool IsExpected(Exception e) =>

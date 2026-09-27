@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -25,7 +26,14 @@ public sealed class AddIn : ISwAddin
 
     private IDisposable? _session;
 
-    static AddIn() => AssemblyLoading.Install();
+    static AddIn()
+    {
+        AssemblyLoading.Install();
+        // SolidWorks has no .config of its own, so .NET inside it offers servers only TLS 1.0, which current
+        // HTTPS servers (the team's vault among them) refuse. Allow TLS 1.2 as well: the setting is for the
+        // whole process, but adding to it only widens the choice, for any other add-in too.
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+    }
 
     public bool ConnectToSW(object ThisSW, int Cookie)
     {

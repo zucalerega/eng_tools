@@ -353,6 +353,14 @@ cookie, and sends `X-CVC-Request` on every request.
   menu (top right, with admin mode and signing out) and remembered per browser
   (`theme.ts`, as `data-theme` on the page). The sign-in pages, a card with the mark,
   follow the same choice.
+- **Organizing:** in a folder you can edit, New makes a folder (or a part or assembly,
+  below), and Upload (or dropping files and folders on the page) adds files and whole
+  folders: each file's contents go up once, hashed in the browser, then they're checked in
+  together as version 1 of each. Drawings are left out (they come from SolidWorks, which
+  links them), and so are temporary files; an assembly goes up without its parts recorded,
+  until someone checks it in once from SolidWorks. Checkboxes pick folders and files to
+  move to another folder or rename (see "Move and rename": the server says if SolidWorks
+  would lose a file).
 - **New files:** New part and New assembly in a folder you can edit, and New drawing on
   a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this

@@ -176,8 +176,8 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warning" 
 }
 
 /**
- * A modal question: the page underneath waits until it's answered. With confirmHref, confirming follows
- * that link (a cvc: link for SolidWorks, say), also by pressing Enter; without one, it's disabled.
+ * A modal question: the page underneath waits until it's answered, and Enter confirms. With link, confirming
+ * follows confirmHref (a cvc: link for SolidWorks, say), and there's nothing to confirm without one.
  */
 export function Dialog({
     title,
@@ -187,6 +187,7 @@ export function Dialog({
     onCancel,
     busy = false,
     danger = false,
+    disabled = false,
     link = false,
     confirmHref,
 }: {
@@ -197,6 +198,7 @@ export function Dialog({
     onCancel: () => void;
     busy?: boolean;
     danger?: boolean;
+    disabled?: boolean;
     link?: boolean;
     confirmHref?: string;
 }) {
@@ -232,6 +234,8 @@ export function Dialog({
                     if (link && confirmHref) {
                         window.location.assign(confirmHref);
                         onConfirm();
+                    } else if (!link && !busy && !disabled) {
+                        onConfirm();
                     }
                 }}
             >
@@ -246,7 +250,12 @@ export function Dialog({
                             {confirm}
                         </a>
                     ) : (
-                        <button type="button" className={className} onClick={onConfirm} disabled={busy || link}>
+                        <button
+                            type="button"
+                            className={className}
+                            onClick={onConfirm}
+                            disabled={busy || disabled || link}
+                        >
                             {busy ? "Working…" : confirm}
                         </button>
                     )}

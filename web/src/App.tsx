@@ -149,7 +149,8 @@ function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
     }
     if (pathname === "/" || pathname.startsWith("/files")) {
-        return <Browse folder={folderFromUrl(pathname)} />;
+        const folder = folderFromUrl(pathname);
+        return <Browse key={folder} folder={folder} />; // a new folder starts with nothing selected
     }
     switch (pathname.replace(/\/$/, "")) {
         case "/assemblies":

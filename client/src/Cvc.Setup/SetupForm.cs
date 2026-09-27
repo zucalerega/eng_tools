@@ -44,7 +44,7 @@ internal sealed class SetupForm : Form
         if (uninstall)
         {
             _text.Text = "This removes the Vault add-in from SolidWorks, and the Vault links from this computer. "
-                + "Your workspace (C:\\CVC), your files in it, and your sign-in stay.";
+                + "Your workspace folder (C:\\VLT, unless you chose another), the files in it, and your sign-in stay.";
             _go.Text = "Remove";
         }
         else

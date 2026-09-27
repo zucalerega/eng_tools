@@ -18,7 +18,7 @@ task pane with these parts:
 - **Update my files** gets the latest versions of the files on this computer, and any
   parts they've started to use, and nothing else. **Download everything...** gets every
   file you have access to, after saying how many files and how much space that is.
-- **Sign-in and workspace:** set once. The workspace is `C:\CVC` on every computer, so
+- **Sign-in and workspace:** set once. The workspace is `C:\VLT` on every computer, so
   assembly references resolve for everyone. It holds only the files you've opened,
   checked out, or got: the rest of the vault stays on the server until you need it.
 
@@ -87,8 +87,8 @@ these on SolidWorks 2025:
 1. After installing, SolidWorks starts with the Vault tab, and `addin.log` says the add-in
    started.
 2. Sign in: your browser opens, you confirm, and the tab shows your name and
-   `C:\CVC`.
-3. Save a new part into `C:\CVC\Test`. The tab says "New". Check it in with a comment,
+   `C:\VLT`.
+3. Save a new part into `C:\VLT\Test`. The tab says "New". Check it in with a comment,
    and the part turns read-only in SolidWorks.
 4. Start editing it. Vault offers a check-out; accept, save, and check in: it's now v2.
 5. As a second person (another PC, or `cvc checkout` as someone else), check the part
@@ -100,12 +100,12 @@ these on SolidWorks 2025:
 7. With a newer version checked in elsewhere, click Get latest on the open file. It
    updates in place, without closing.
 8. Undo a check-out that has changes. The file goes back to the vault's version, and
-   your copy is in `C:\CVC\.cvc\backup`. Do it again with the file saved just before the
+   your copy is in `C:\VLT\.cvc\backup`. Do it again with the file saved just before the
    undo, and with an open assembly that uses the file: both work the same way.
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
    the Vault tab and the Check in dialog look as they do at 100%, only larger: no text is
    cut off, and the comment box is full size.
-10. Create a new part, save it into `C:\CVC\Test`, and check it in. Without switching
+10. Create a new part, save it into `C:\VLT\Test`, and check it in. Without switching
     windows, start editing it: Vault offers the check-out.
 11. Change a checked-in file, answer No when Vault offers the check-out, then save
     (Ctrl+S). Vault offers the check-out again; Yes saves the file in place, with no Save
@@ -144,4 +144,4 @@ these on SolidWorks 2025:
 The add-in logs to `%LOCALAPPDATA%\CVC\addin.log`. Settings are in
 `%APPDATA%\CVC\addin.json`, and saved sign-ins (encrypted) are in
 `%APPDATA%\CVC\tokens.json`. The `cvc` CLI uses the same workspace and sign-in, so
-`cvc status` in `C:\CVC` is a good second opinion.
+`cvc status` in `C:\VLT` is a good second opinion.

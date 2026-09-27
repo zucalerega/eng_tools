@@ -68,7 +68,7 @@ and the CLI share it, and it can be developed and tested on a Mac through the CL
 - **Vault**: the one tree of folders and files on the server.
 - **Path**: `Propulsion/Injector/Faceplate.SLDPRT`. Paths are case-insensitive and
   case-preserving, like Windows. Every name must be legal on Windows, and a path
-  can be at most 200 characters, so `C:\CVC\` plus the path stays under Windows'
+  can be at most 200 characters, so `C:\VLT\` plus the path stays under Windows'
   260-character limit, which SolidWorks doesn't lift.
 - **Version**: the contents of a file at one check-in, numbered 1, 2, 3… per file.
   Versions never change.
@@ -78,7 +78,7 @@ and the CLI share it, and it can be developed and tested on a Mac through the CL
   file, or the same STEP file in two folders, takes no extra space.
 - **Lock (check-out)**: a file checked out by one person on one computer.
 - **Workspace**: your local copy of the vault, at the same path on every machine
-  (default `C:\CVC`).
+  (default `C:\VLT`).
 
 ## How it works
 
@@ -236,7 +236,7 @@ These rules keep the data consistent. The code relies on them, so keep them true
 `Cvc.Client` implements the workspace. The `cvc` CLI and the add-in are thin layers
 on top of it.
 
-- **Same root everywhere.** Every machine uses `C:\CVC` by default. SolidWorks stores
+- **Same root everywhere.** Every machine uses `C:\VLT` by default. SolidWorks stores
   absolute paths to referenced files, so with the same root, references resolve on
   every machine.
 - **Read-only unless checked out.** Files you don't have checked out are read-only

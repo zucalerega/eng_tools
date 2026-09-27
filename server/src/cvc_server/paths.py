@@ -8,7 +8,7 @@ import unicodedata
 
 from .errors import CvcError
 
-# C:\CVC\ plus 200 characters stays under Windows' 260-character limit, which SolidWorks doesn't lift.
+# C:\VLT\ plus 200 characters stays under Windows' 260-character limit, which SolidWorks doesn't lift.
 MAX_PATH = 200
 MAX_NAME = 255
 _INVALID = frozenset('<>:"/\\|?*')

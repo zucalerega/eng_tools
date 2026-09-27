@@ -8,7 +8,7 @@ namespace Cvc.Client;
 /// </summary>
 public static class VaultPaths
 {
-    /// <summary>C:\CVC\ plus 200 characters stays under Windows' 260-character limit.</summary>
+    /// <summary>C:\VLT\ plus 200 characters stays under Windows' 260-character limit.</summary>
     public const int MaxPath = 200;
     public const int MaxName = 255;
 

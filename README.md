@@ -89,10 +89,10 @@ cd client && dotnet run --project src/Cvc.Cli -- login http://localhost:8000
 ```
 
 ```bash
-cd client && dotnet run --project src/Cvc.Cli -- init ~/CVC --server http://localhost:8000
+cd client && dotnet run --project src/Cvc.Cli -- init ~/VLT --server http://localhost:8000
 ```
 
-In the workspace (`C:\CVC` on Windows):
+In the workspace (`C:\VLT` on Windows):
 
 | Command | What it does |
 |---|---|

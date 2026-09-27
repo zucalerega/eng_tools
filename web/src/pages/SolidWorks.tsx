@@ -59,7 +59,7 @@ export function SolidWorks() {
                     </p>
                     <p>
                         SolidWorks starts with the Vault tab open, and your browser asks you to let it in. Your copies
-                        of vault files go in C:\CVC.
+                        of vault files go in C:\VLT.
                     </p>
                 </li>
             </ol>
@@ -105,7 +105,7 @@ export function SolidWorks() {
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like
-                        C:\CVC-2), then connect again.
+                        C:\VLT-2), then connect again.
                     </p>
                 </details>
                 <details>

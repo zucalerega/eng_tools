@@ -113,7 +113,7 @@ Client:
   `.cvc/backup/`.
 - Downloads are verified against their SHA-256 and then moved into place, so a
   failed download leaves the old file untouched.
-- Every machine uses the same workspace root (default `C:\CVC`), because SolidWorks
+- Every machine uses the same workspace root (default `C:\VLT`), because SolidWorks
   stores absolute paths to referenced files.
 
 SolidWorks add-in:

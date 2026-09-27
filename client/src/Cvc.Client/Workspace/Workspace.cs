@@ -291,11 +291,57 @@ public sealed class Workspace : IDisposable
     // --- changing files ---------------------------------------------------------------------
 
     /// <summary>
-    /// Download the latest versions of files under the given paths (default: everything).
-    /// Named files bring the files they reference along. Files changed locally are skipped
-    /// unless force is set, in which case they're backed up first.
+    /// Download the latest versions of files under the given paths (default: everything you can see),
+    /// including files not here yet. Named files bring the files they reference along. Files changed
+    /// locally are skipped unless force is set, in which case they're backed up first. To update only
+    /// what's here, see UpdateAsync.
     /// </summary>
-    public async Task<GetResult> GetLatestAsync(IEnumerable<string>? localPaths = null, bool force = false, CancellationToken ct = default)
+    public async Task<GetResult> GetLatestAsync(IEnumerable<string>? localPaths = null, bool force = false, CancellationToken ct = default) =>
+        await GetAsync(await PlanGetAsync(localPaths, ct).ConfigureAwait(false), force, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Update the files that are here, under the given paths (default: the whole workspace), to their
+    /// latest versions, and get the files they use that aren't here (a part an assembly started using),
+    /// so they still open. Nothing else comes down: the rest of the vault stays there. Files deleted in
+    /// the vault go from here, and local changes are kept (unless force), as with GetLatestAsync.
+    /// </summary>
+    public async Task<GetResult> UpdateAsync(IEnumerable<string>? localPaths = null, bool force = false, CancellationToken ct = default)
+    {
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var statuses = Compute(Scope(localPaths)).Where(s => s.State != FileState.Missing).ToList();
+        var here = statuses.Where(s => s.FileId != null && s.State != FileState.DeletedInVault).Select(s => s.FileId!.Value);
+        var listed = new HashSet<string>(statuses.Select(s => VaultPaths.Key(s.VaultPath)), StringComparer.Ordinal);
+        var used = (await ReferencedFilesAsync(here, ct).ConfigureAwait(false))
+            .Where(id => _state.Remote.ContainsKey(id))
+            .Select(id => VaultPaths.Key(_state.Remote[id].Path))
+            .Where(key => !listed.Contains(key))
+            .ToList();
+        if (used.Count > 0)
+        {
+            statuses.AddRange(Compute(used));
+        }
+        return await GetAsync(statuses, force, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// What GetLatestAsync would download for these paths (default: everything you can see): files not
+    /// here yet, and newer versions of the ones that are. To ask before a big download.
+    /// </summary>
+    public async Task<DownloadSize> SizeOfGetAsync(IEnumerable<string>? localPaths = null, CancellationToken ct = default)
+    {
+        var size = new DownloadSize();
+        foreach (var status in await PlanGetAsync(localPaths, ct).ConfigureAwait(false))
+        {
+            if (status.State is FileState.Missing or FileState.Outdated)
+            {
+                size.Add(status.State == FileState.Missing, _state.Remote[status.FileId!.Value].Size);
+            }
+        }
+        return size;
+    }
+
+    // What getting these paths involves: the files under them, and the files the ones named use.
+    private async Task<List<FileStatus>> PlanGetAsync(IEnumerable<string>? localPaths, CancellationToken ct)
     {
         await RefreshAsync(ct).ConfigureAwait(false);
         var scope = Scope(localPaths);
@@ -310,7 +356,12 @@ public sealed class Workspace : IDisposable
         {
             statuses.AddRange(Compute(references));
         }
+        return statuses;
+    }
 
+    // Bring these files up to date: download what's missing or outdated, remove what was deleted in the vault.
+    private async Task<GetResult> GetAsync(List<FileStatus> statuses, bool force, CancellationToken ct)
+    {
         var result = new GetResult();
         foreach (var status in statuses)
         {

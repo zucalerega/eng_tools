@@ -13,9 +13,14 @@ task pane with these parts:
   version each was checked in with), and parts and assemblies list their drawings. Hover
   for where a file is used. Double-click to open: a file that isn't here yet is
   downloaded first, with the parts it uses. Right-click for actions; on a folder, Get
-  latest, Check in, or Show in File Explorer.
+  latest (it says how many files that downloads, and how big, first), Check in, or Show
+  in File Explorer.
+- **Update my files** gets the latest versions of the files on this computer, and any
+  parts they've started to use, and nothing else. **Download everything...** gets every
+  file you have access to, after saying how many files and how much space that is.
 - **Sign-in and workspace:** set once. The workspace is `C:\CVC` on every computer, so
-  assembly references resolve for everyone.
+  assembly references resolve for everyone. It holds only the files you've opened,
+  checked out, or got: the rest of the vault stays on the server until you need it.
 
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
 
@@ -128,6 +133,11 @@ these on SolidWorks 2025:
     Click it again: the tab says it's connected already. Remove Vault for SolidWorks in
     Settings > Apps: SolidWorks starts without it, and `C:\Program Files\Vault for
     SolidWorks` is gone.
+17. With a part and an assembly downloaded here, and newer versions of both checked in
+    elsewhere (the assembly now using a new part), click Update my files: both update, the
+    new part comes down, and nothing else does. Click Download everything...: it says how
+    many files and how big, and No downloads nothing. Right-click a folder that isn't here
+    in Browse and choose Get latest: it asks first too.
 
 ## When something goes wrong
 

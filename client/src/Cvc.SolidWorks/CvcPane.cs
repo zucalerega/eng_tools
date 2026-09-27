@@ -128,7 +128,8 @@ internal sealed class CvcPane : UserControl
             _views,
             Row(
                 MakeButton("Check in selected...", (_, _) => Safely(() => CheckInAsync(SelectedPaths()))),
-                MakeButton("Get latest (everything)", (_, _) => Safely(GetEverythingAsync)),
+                MakeButton("Update my files", (_, _) => Safely(UpdateMineAsync)),
+                MakeButton("Download everything...", (_, _) => Safely(DownloadEverythingAsync)),
                 MakeButton("Refresh", (_, _) => RefreshSoon())));
 
         Controls.Add(_workView);
@@ -568,19 +569,81 @@ internal sealed class CvcPane : UserControl
         return await ReplacingAsync(stale, () => workspace.GetLatestAsync(new[] { path }));
     }
 
-    private Task GetEverythingAsync() =>
-        RunAsync("Getting the latest versions", async workspace => Summary(await GetLatestUpdatingOpenAsync(workspace, null)));
+    // The files here, at their latest versions (with any new parts they use): nothing else comes down.
+    private Task UpdateMineAsync() =>
+        RunAsync("Updating your files", async workspace =>
+        {
+            var result = await GetUpdatingOpenAsync(workspace, () => workspace.UpdateAsync());
+            var quiet = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count == 0;
+            return quiet ? "Your files are up to date." : Summary(result);
+        });
+
+    // Every file you have access to: only after saying how much that is, and how much room there is.
+    private Task DownloadEverythingAsync() =>
+        RunAsync("Getting everything", async workspace =>
+        {
+            var size = await workspace.SizeOfGetAsync();
+            if (size.Files == 0)
+            {
+                return "You have the latest of everything already.";
+            }
+            var updates = size.UpdatedFiles > 0 ? $", and newer versions of {Count(size.UpdatedFiles, "file")} that are" : "";
+            var question = $"Download every file in the vault you have access to? That's {Count(size.NewFiles, "file")} not on "
+                + $"this computer yet{updates}: {FormatSize(size.Bytes)}.{RoomLeft(workspace.Root)}\n\nTo get just what you "
+                + "work on, open it (the parts it uses come along), or right-click its folder in Browse and choose Get latest.";
+            return Ask(question) == DialogResult.Yes ? Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync())) : null;
+        });
+
+    // Get latest on what's selected. A folder's files that aren't here yet come down after saying how much they are.
+    private Task GetSelectedAsync(IReadOnlyList<string> paths, bool folder) =>
+        RunAsync("Getting the latest versions", async workspace =>
+        {
+            if (folder && await workspace.SizeOfGetAsync(paths) is { NewFiles: > 0 } size
+                && Ask($"Get {Count(size.NewFiles, "file")} from {Path.GetFileName(paths[0].TrimEnd('\\'))} that aren't on this computer yet "
+                    + $"({FormatSize(size.Bytes)})?{RoomLeft(workspace.Root)}") != DialogResult.Yes)
+            {
+                return null;
+            }
+            return Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync(paths)));
+        });
 
     /// <summary>
-    /// Get the latest versions of these files (or everything), updating open documents in place. Open
-    /// documents with unsaved changes are left alone and show up as files that couldn't be updated.
+    /// Get files (get does it), updating open documents in place. Open documents with unsaved changes are
+    /// left alone and show up as files that couldn't be updated.
     /// </summary>
-    private async Task<GetResult> GetLatestUpdatingOpenAsync(Workspace workspace, IReadOnlyList<string>? paths)
+    private async Task<GetResult> GetUpdatingOpenAsync(Workspace workspace, Func<Task<GetResult>> get)
     {
         var open = _sw.OpenDocuments().Select(SolidWorksHost.PathOf).Where(p => p != null).Cast<string>();
         var stale = (await CurrentStatusAsync(workspace, open))
             .Where(s => s.State == FileState.Outdated && !_sw.HasUnsavedChanges(s.LocalPath)).Select(s => s.LocalPath).ToList();
-        return await ReplacingAsync(stale, () => workspace.GetLatestAsync(paths));
+        return await ReplacingAsync(stale, get);
+    }
+
+    // " C: has 120 GB free.", or nothing if Windows won't say.
+    private static string RoomLeft(string root)
+    {
+        try
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(root));
+            return $" {drive.Name.TrimEnd('\\')} has {FormatSize(drive.AvailableFreeSpace)} free.";
+        }
+        catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return "";
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        string[] units = { "bytes", "KB", "MB", "GB", "TB" };
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{bytes} bytes" : value.ToString(value < 10 ? "0.0" : "0", CultureInfo.InvariantCulture) + " " + units[unit];
     }
 
     // --- plumbing -----------------------------------------------------------------------------
@@ -999,6 +1062,10 @@ internal sealed class CvcPane : UserControl
     private static string Summary(GetResult result)
     {
         var parts = new List<string> { $"Got {Count(result.Downloaded.Count, "file")}." };
+        if (result.Removed.Count > 0)
+        {
+            parts.Add($"Removed {Count(result.Removed.Count, "file")} deleted from the vault.");
+        }
         if (result.Skipped.Count > 0)
         {
             parts.Add($"Skipped {Count(result.Skipped.Count, "file")} changed here (use the CLI's get --force to replace them).");
@@ -1010,7 +1077,8 @@ internal sealed class CvcPane : UserControl
         return string.Join(" ", parts);
     }
 
-    private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+    private static string Count(int count, string noun) =>
+        count == 1 ? $"1 {noun}" : count.ToString("N0", CultureInfo.InvariantCulture) + $" {noun}s";
 
     private void SetBusy(bool busy)
     {
@@ -1104,8 +1172,8 @@ internal sealed class CvcPane : UserControl
         var checkOut = menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
         var checkIn = menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
         var undo = menu.Items.Add("Undo check-out", null, (_, _) => Safely(() => UndoAsync(SelectedPaths()[0])));
-        var get = menu.Items.Add("Get latest", null, (_, _) => Safely(() => RunAsync("Getting the latest versions", async workspace =>
-            Summary(await GetLatestUpdatingOpenAsync(workspace, SelectedPaths())))));
+        var get = menu.Items.Add("Get latest", null, (_, _) => Safely(() =>
+            GetSelectedAsync(SelectedPaths(), BrowseShown && _tree.SelectedNode?.Tag is TreeFolder)));
         var takeOver = menu.Items.Add("Take over...", null, (_, _) => Safely(() => TakeOverAsync(SelectedPaths()[0])));
         var explorer = menu.Items.Add("Show in File Explorer", null, (_, _) => Guarded(() => ShowInExplorer(SelectedPaths())));
         menu.Opening += (_, e) =>

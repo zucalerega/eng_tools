@@ -166,7 +166,13 @@ later won't touch the files that use it.
 
 **Get latest** (client). The client asks `GET /api/sync?since=<seq>` for what
 changed since its last sync. It downloads only the files you open or ask for (an
-assembly brings its references along), not the whole vault.
+assembly brings its references along), not the whole vault. Each workspace holds the
+whole vault's index, but only the files someone there has opened, checked out, or asked
+for, at their latest versions; history stays on the server. Updating
+(`Workspace.UpdateAsync`: the add-in's Update my files, `cvc get` with no paths) brings
+the files that are here up to date, with any parts they've started to use, and nothing
+else. Downloading everything, or a folder's files that aren't here yet, is its own
+step, and the add-in says how many files and how much space first (`SizeOfGetAsync`).
 
 ## Permissions
 

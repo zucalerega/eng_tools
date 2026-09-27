@@ -132,7 +132,7 @@ public static class BrowserSignIn
                 var query = ParseQuery(target);
                 var signedIn = query.ContainsKey("code") && !query.ContainsKey("error");
                 Respond(stream, "200 OK", signedIn
-                    ? "<h1>Signed in to CVC</h1><p>You can close this tab.</p>"
+                    ? "<h1>Signed in to Vault</h1><p>You can close this tab.</p>"
                     : "<h1>Sign-in cancelled</h1><p>You can close this tab.</p>");
                 result.TrySetResult(query);
             }
@@ -170,7 +170,7 @@ public static class BrowserSignIn
     private static void Respond(NetworkStream stream, string status, string body)
     {
         var html = Encoding.UTF8.GetBytes(
-            "<!doctype html><meta charset=\"utf-8\"><title>CVC</title>"
+            "<!doctype html><meta charset=\"utf-8\"><title>Vault</title>"
             + "<body style=\"font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto\">" + body + "</body>");
         var head = Encoding.ASCII.GetBytes(
             "HTTP/1.1 " + status + "\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: "

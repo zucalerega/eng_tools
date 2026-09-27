@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { renderApp, Team } from "./team";
 
@@ -11,4 +12,11 @@ test("the SolidWorks page has the add-in's installer, and connects SolidWorks to
     const connect = screen.getByRole("link", { name: "Connect SolidWorks" });
     expect(connect.getAttribute("href")).toBe("cvc://connect?server=" + encodeURIComponent(window.location.origin));
     expect(screen.getByRole("link", { name: "cvc.exe" })).toBeTruthy(); // the other downloads
+
+    // What to do when the tab doesn't show up, and the rest, open when asked.
+    const missing = screen.getByText("There's no Vault tab in SolidWorks").closest("details")!;
+    expect(missing.open).toBe(false);
+    await userEvent.click(within(missing).getByText("There's no Vault tab in SolidWorks"));
+    expect(missing.open).toBe(true);
+    expect(missing.textContent).toContain("Tools > Add-ins");
 });

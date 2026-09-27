@@ -56,8 +56,8 @@ internal static class Installer
         }
     }
 
-    /// <summary>SolidWorks has the add-in loaded while it runs, so its files can't be replaced or removed.</summary>
-    public static bool SolidWorksRunning => Process.GetProcessesByName("SLDWORKS").Length > 0;
+    /// <summary>SolidWorks, running: it has the add-in loaded, so its files can't be replaced or removed.</summary>
+    public static Process[] SolidWorks() => Process.GetProcessesByName("SLDWORKS");
 
     public static void Install(Action<string> progress)
     {

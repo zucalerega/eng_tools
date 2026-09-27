@@ -11,7 +11,7 @@ roadmap. Read the design before changing behavior.
 | Path | What |
 |---|---|
 | `server/` | Python 3.13 FastAPI server. Start at `vault.py` (every vault operation, no HTTP). `access.py`: folder tree and permissions. `paths.py`: path rules. `auth.py`: accounts and tokens. `api/`: thin routes and request/response schemas. |
-| `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). `Cvc.SolidWorks.Open`: `cvc-open.exe`, which follows the web app's `cvc://` links into the add-in. Tests run against the real server. |
+| `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). `Cvc.SolidWorks.Open`: `cvc-open.exe`, which follows the web app's `cvc://` links into the add-in. `Cvc.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
 | `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). Start at `store.ts`: the vault index, kept current through the sync feed. `api.ts`: the server's API. `pages/`: one file per page. Tests run against the real server. |
 | `docs/design.md` | Design, API, roadmap, open questions. |
 | `.github/workflows/ci.yml` | The checks every change must pass. |
@@ -35,9 +35,10 @@ cd web && npm ci && npm run check && npm test && npm run build
   http://localhost:8000. `npm run dev` serves it at http://localhost:5173 and reloads as you
   edit (sign in at http://localhost:8000 first). `npm run format`: format the TypeScript.
 - The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks 2025 on
-  Windows. CI uploads each build as the `cvc-solidworks-addin` artifact, next to
-  `cvc-windows` (a self-contained `cvc.exe`). Install and manual-testing steps are in
-  `client/src/Cvc.SolidWorks/README.md`.
+  Windows. CI uploads each build as the `vault-setup` artifact (`Vault-Setup.exe`, which
+  installs it; the server offers it from `CVC_DOWNLOADS_DIR`), the `cvc-solidworks-addin`
+  artifact (its files, for install.ps1), and `cvc-windows` (a self-contained `cvc.exe`).
+  Install and manual-testing steps are in `client/src/Cvc.SolidWorks/README.md`.
 - `docker build -f server/Dockerfile -t cvc-server .`: the production image, server and web app.
 
 ## How changes are made
@@ -144,7 +145,10 @@ keep working with older clients:
   backfilling existing data, SQLite batch mode. Never trust autogenerate blindly.
 - Never edit a migration once it has been merged; fix forward with a new one.
 - Migrations must work on SQLite and Postgres, and on databases that already have
-  data. A new non-null column needs a default or a backfill.
+  data. A new non-null column needs a default or a backfill. SQLite changes a table by
+  copying it and dropping the old one, which only works with foreign keys off (`db.migrate`
+  does that): test a migration like that on a database with rows that point at the table,
+  as `test_upgrades_keep_the_vault` does.
 - The server migrates itself at startup, so a release that contains a migration
   needs a fresh backup before it is deployed.
 

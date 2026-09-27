@@ -4,14 +4,22 @@ export const pathKey = (path: string): string => path.normalize("NFC").toLowerCa
 
 export const parentOf = (path: string): string => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 
+const encoded = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+
 /** The page for a folder: /files/Structures/Fins, or / for the top of the vault. */
 export function folderUrl(path: string): string {
-    return path ? "/files/" + path.split("/").map(encodeURIComponent).join("/") : "/";
+    return path ? "/files/" + encoded(path) : "/";
 }
 
+/** The page for a folder's trash: /trash/Structures/Fins, or /trash for the top of the vault's. */
+export function trashUrl(path: string): string {
+    return path ? "/trash/" + encoded(path) : "/trash";
+}
+
+/** The folder a folder's page (/files/...) or its trash's page (/trash/...) is for. */
 export function folderFromUrl(pathname: string): string {
     return pathname
-        .replace(/^\/files\/?/, "")
+        .replace(/^\/(files|trash)\/?/, "")
         .split("/")
         .filter((part) => part.length > 0)
         .map(decodeURIComponent)

@@ -93,7 +93,17 @@ class VaultState(Base):
 
 class Folder(Base):
     __tablename__ = "folders"
-    __table_args__ = (UniqueConstraint("parent_id", "name_key"),)
+    __table_args__ = (
+        # One live folder per name in a folder; deleted folders keep their names and places, to come back to.
+        Index(
+            "uq_folders_live_name",
+            "parent_id",
+            "name_key",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("folders.id"))  # None for the root
@@ -102,6 +112,9 @@ class Folder(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     change_seq: Mapped[int] = mapped_column(BigInteger, default=0)
+    # In the trash, with the folders and files in it: everything deleted in one go shares deleted_at.
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
 class File(Base):

@@ -8,6 +8,7 @@ function starts with begin_write(); read its docstring before adding one.
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal
 
 from sqlalchemy import and_, or_, select, update
@@ -92,6 +93,8 @@ class FolderView:
     path: str
     name: str
     role: str | None  # the user's effective role; None if the folder is only a way through
+    deleted_at: datetime | None = None
+    deleted_by: User | None = None  # in the trash listing
 
 
 @dataclass
@@ -103,6 +106,7 @@ class FileView:
     locked_by: User | None
     # What the latest version uses that the user can see (an assembly's parts): (file id, version used).
     uses: list[tuple[int, int]] = field(default_factory=list)
+    deleted_by: User | None = None
 
 
 @dataclass
@@ -163,8 +167,10 @@ class GrantView:
     role: Role
 
 
-def _folder_view(tree: Tree, access: Access, folder: Folder) -> FolderView:
-    return FolderView(folder.id, tree.path(folder.id), folder.name, access.role(folder.id))
+def _folder_view(tree: Tree, access: Access, folder: Folder, deleted_by: User | None = None) -> FolderView:
+    return FolderView(
+        folder.id, tree.path(folder.id), folder.name, access.role(folder.id), folder.deleted_at, deleted_by
+    )
 
 
 def _users(db: Session, ids: set[int | None]) -> dict[int, User]:
@@ -185,7 +191,8 @@ def _with_latest(db: Session, *where: Any) -> list[tuple[File, Version]]:
 
 
 def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, Version]]) -> list[FileView]:
-    users = _users(db, {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows})
+    people = {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows} | {f.deleted_by for f, _ in rows}
+    users = _users(db, people)
     uses = _uses(db, access, [v.id for _, v in rows])
     return [
         FileView(
@@ -195,6 +202,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
             users[v.created_by],
             users.get(f.checked_out_by) if f.checked_out_by else None,
             uses.get(v.id, []),
+            users.get(f.deleted_by) if f.deleted_by else None,
         )
         for f, v in rows
     ]
@@ -307,19 +315,26 @@ def _clear_lock(file: File) -> None:
 
 
 def list_folder(db: Session, user: User, path: str = "", *, deleted: bool = False) -> Listing:
-    """A folder's subfolders and files (or, with deleted=True, its deleted files)."""
+    """A folder's subfolders and files; with deleted=True, its trash: the folders and files deleted from it."""
     tree, access = _context(db, user)
     folder = tree.find(paths.split(path))
     if folder is None or not access.visible(folder.id):
         raise NotFound(f"{path} not found")
-    subfolders = sorted(
-        (f for f in tree.children[folder.id].values() if access.visible(f.id)), key=lambda f: f.name_key
-    )
+    if deleted:
+        inside = [f for f in tree.by_id.values() if f.parent_id == folder.id and f.deleted_at is not None]
+    else:
+        inside = list(tree.children[folder.id].values())
+    subfolders = sorted((f for f in inside if access.visible(f.id)), key=lambda f: f.name_key)
+    deleters = _users(db, {f.deleted_by for f in subfolders})
     files: list[FileView] = []
     if access.can(folder.id, Role.VIEWER):
         state = File.deleted_at.is_not(None) if deleted else File.deleted_at.is_(None)
         files = _file_views(db, tree, access, _with_latest(db, File.folder_id == folder.id, state))
-    return Listing(_folder_view(tree, access, folder), [_folder_view(tree, access, f) for f in subfolders], files)
+    return Listing(
+        _folder_view(tree, access, folder),
+        [_folder_view(tree, access, f, deleters.get(f.deleted_by) if f.deleted_by else None) for f in subfolders],
+        files,
+    )
 
 
 def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
@@ -381,7 +396,8 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     Returns every visible live folder and file when since is 0, unknown, or
     older than the last permission change (full=True); otherwise only folders
     and files changed after it, including deleted files. Pass the returned seq
-    as `since` next time.
+    as `since` next time. (Deleting a folder counts as a permission change:
+    clients know folders by path, and drop what a full sync doesn't list.)
     """
     # Read the cursor before the rows: every change up to seq has committed by then (see begin_write).
     seq, access_seq = db.execute(select(VaultState.seq, VaultState.access_seq)).one()
@@ -390,7 +406,7 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     folders = [
         _folder_view(tree, access, f)
         for f in tree.by_id.values()
-        if f.parent_id is not None and access.visible(f.id) and (full or f.change_seq > since)
+        if f.parent_id is not None and f.deleted_at is None and access.visible(f.id) and (full or f.change_seq > since)
     ]
     changed = File.deleted_at.is_(None) if full else File.change_seq > since
     rows = [(f, v) for f, v in _with_latest(db, changed) if access.can(f.folder_id, Role.VIEWER)]
@@ -818,40 +834,97 @@ def revert(
     return _views_by_id(db, tree, access, [file])[file.id]
 
 
-def delete(db: Session, user: User, refs: list[FileRef], *, force: bool = False) -> list[FileView]:
-    """Move files to the trash (restorable). Refuses files other files still use, unless force."""
+@dataclass
+class Deleted:
+    folders: list[FolderView]
+    files: list[FileView]  # the files named; not the ones that went with their folders
+
+
+def delete(
+    db: Session, user: User, refs: list[FileRef], *, folders: list[str] | None = None, force: bool = False
+) -> Deleted:
+    """Move files, and folders with everything in them, to the trash, all or nothing; they can be restored.
+
+    Refuses files someone else has checked out, and files that files staying behind still use (SolidWorks
+    would miss them), unless force. Deleting files takes editor access; a folder takes a lead of it, as
+    moving one does. Everything deleted in one go shares its deleted_at, so a folder comes back with what
+    went with it (see restore_folder).
+    """
     seq = begin_write(db)
     tree, access = _context(db, user)
-    files = _resolve_many(db, tree, access, refs)
-    for file in files:
+    chosen = []
+    for path in folders or []:
+        folder = tree.find(paths.split(path))
+        if folder is None or not access.visible(folder.id):
+            raise NotFound(f"There's no folder {path}")
+        if folder.parent_id is None:
+            raise CvcError("The top of the vault can't be deleted", code="bad_delete")
+        access.require(folder.id, Role.LEAD, f"delete {tree.path(folder.id)}")
+        chosen.append(folder)
+    named = _resolve_many(db, tree, access, refs)
+    if not chosen and not named:
+        raise CvcError("Say what to delete", code="bad_delete")
+    for file in named:
         access.require(file.folder_id, Role.EDITOR, f"delete {tree.file_path(file)}")
+    # A folder inside another one being deleted goes with that one.
+    ids = {f.id for f in chosen}
+    tops = [f for f in chosen if not ids.intersection(tree.ancestry(f.id)[1:])]
+    inside = {top.id: _files_under(db, tree, top) for top in tops}
+    files = {f.id: f for f in named} | {f.id: f for found in inside.values() for f in found}
+
+    for file in files.values():
         if file.checked_out_by not in (None, user.id):
             lock = _lock_json(db, tree, file)
             raise Conflict(f"{lock['path']} is checked out by {lock['user']}", code="checked_out", files=[lock])
     if not force:
-        deleting = {f.id for f in files}
         in_use = [
             {"path": tree.file_path(file), "used_by": tree.file_path(parent)}
-            for file in files
+            for file in files.values()
             for parent, _, _ in _parents(db, file.id)
-            if parent.id not in deleting
+            if parent.id not in files
         ]
         if in_use:
             parents = ", ".join(sorted({u["used_by"] for u in in_use}))
             raise Conflict(f"Still used by {parents}", code="in_use", used_by=in_use)
+
     now = utcnow()
-    for file in files:
+    for top in tops:
+        for folder in _subtree(tree, top):
+            folder.deleted_at, folder.deleted_by, folder.change_seq = now, user.id, seq
+        _event(db, user, "delete_folder", folder_id=top.id, path=tree.path(top.id), files=len(inside[top.id]))
+    with_folders = {f.id for found in inside.values() for f in found}
+    for file in files.values():
         file.deleted_at, file.deleted_by = now, user.id
         _clear_lock(file)
         file.change_seq = seq
-        _event(db, user, "delete", file=file, path=tree.file_path(file))
+        if file.id not in with_folders:
+            _event(db, user, "delete", file=file, path=tree.file_path(file))
+    if tops:
+        _bump_access(db, seq)  # clients know folders by path: they sync everything again, without these
     db.commit()
-    views = _views_by_id(db, tree, access, files)
-    return [views[f.id] for f in files]
+    views = _views_by_id(db, tree, access, named)
+    return Deleted([_folder_view(tree, access, f, user) for f in tops], [views[f.id] for f in named])
+
+
+def _revive(db: Session, tree: Tree, folder: Folder, seq: int) -> None:
+    """Bring a folder back from the trash, and any deleted folders above it, top down: where something in
+    it is restored to. Refuses if a folder or file has taken one's name since."""
+    chain = [tree.by_id[i] for i in reversed(tree.ancestry(folder.id))]
+    for dead in chain:
+        if dead.deleted_at is None:
+            continue
+        assert dead.parent_id is not None  # the top of the vault is never deleted
+        if _taken(db, tree, tree.by_id[dead.parent_id], dead.name):
+            raise Conflict(
+                f"Something else is at {tree.path(dead.id)} now; move it out of the way first", code="exists"
+            )
+        dead.deleted_at = dead.deleted_by = None
+        dead.change_seq = seq
+        tree.add(dead)
 
 
 def restore(db: Session, user: User, file_id: int) -> FileView:
-    """Bring a deleted file back, with its full history."""
+    """Bring a deleted file back, with its full history; and its folder, if that was deleted too."""
     seq = begin_write(db)
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
@@ -859,13 +932,55 @@ def restore(db: Session, user: User, file_id: int) -> FileView:
     access.require(file.folder_id, Role.EDITOR, f"restore {path}")
     if file.deleted_at is not None:
         folder = tree.by_id[file.folder_id]
-        if _live_file(db, folder, file.name) is not None or file.name_key in tree.children[folder.id]:
+        _revive(db, tree, folder, seq)
+        if _taken(db, tree, folder, file.name):
             raise Conflict(f"Something else is at {path} now; move it out of the way first", code="exists")
         file.deleted_at = file.deleted_by = None
         file.change_seq = seq
         _event(db, user, "restore", file=file, path=path)
         db.commit()
     return _views_by_id(db, tree, access, [file])[file.id]
+
+
+def _deleted_with(tree: Tree, folder: Folder) -> list[Folder]:
+    """A deleted folder and the folders under it that were deleted along with it (not before)."""
+    under: dict[int, list[Folder]] = defaultdict(list)
+    for other in tree.by_id.values():
+        if other.parent_id is not None and other.deleted_at is not None:
+            under[other.parent_id].append(other)
+    found, pending = [], [folder]
+    while pending:
+        current = pending.pop()
+        found.append(current)
+        pending.extend(f for f in under[current.id] if f.deleted_at == folder.deleted_at)
+    return found
+
+
+def restore_folder(db: Session, user: User, folder_id: int) -> FolderView:
+    """Bring a deleted folder back with everything deleted along with it, and the folders above it if they
+    were deleted too. What was deleted from it before stays in its trash. Takes a lead of it, like deleting it."""
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    folder = tree.by_id.get(folder_id)
+    if folder is None or folder.parent_id is None or not access.visible(folder.id):
+        raise NotFound(f"Folder {folder_id} not found")
+    access.require(folder.id, Role.LEAD, f"restore {tree.path(folder.id)}")
+    if folder.deleted_at is not None:
+        when = folder.deleted_at
+        folders = _deleted_with(tree, folder)
+        _revive(db, tree, folder, seq)
+        for inside in folders[1:]:
+            inside.deleted_at = inside.deleted_by = None
+            inside.change_seq = seq
+            tree.add(inside)
+        ids = [f.id for f in folders]
+        files = db.scalars(select(File).where(File.folder_id.in_(ids), File.deleted_at == when)).all()
+        for file in files:
+            file.deleted_at = file.deleted_by = None
+            file.change_seq = seq
+        _event(db, user, "restore_folder", folder_id=folder.id, path=tree.path(folder.id), files=len(files))
+        db.commit()
+    return _folder_view(tree, access, folder)
 
 
 # --- moving and renaming ------------------------------------------------------------------------

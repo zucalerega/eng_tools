@@ -228,6 +228,15 @@ export function roleIn(vault: VaultState, folderPath: string): Role | null {
     return folderPath === "" ? vault.rootRole : (vault.folders.get(pathKey(folderPath))?.role ?? null);
 }
 
+/** The folder at a path, or, if it isn't in the vault (it's in the trash), the nearest one above it that is. */
+export function nearestFolder(vault: VaultState, folderPath: string): string {
+    let path = folderPath;
+    while (path !== "" && !vault.folders.has(pathKey(path))) {
+        path = parentOf(path);
+    }
+    return path;
+}
+
 const RANK: Record<Role, number> = { viewer: 1, editor: 2, lead: 3, admin: 4 };
 
 export const atLeast = (role: Role | null, needed: Role): boolean => role !== null && RANK[role] >= RANK[needed];

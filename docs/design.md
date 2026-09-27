@@ -141,8 +141,18 @@ open moves at a later refresh, and counts as that file meanwhile.
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. CVC refuses to delete a file that the
 latest version of another file still uses, unless you force it or delete both
-together. A new file can reuse a deleted file's name. Restoring the old file then
-needs the name freed up first.
+together, and a file someone else has checked out. A new file can reuse a deleted
+file's name. Restoring the old file then needs the name freed up first.
+
+A folder goes to the trash with everything in it, which takes a lead of it (as moving
+it does), under the same rules for the files inside. Deleted folders keep their place
+(`Tree.by_id`) but not their name (`uq_folders_live_name` covers live folders only), so
+a new folder can take it. Everything deleted in one go shares its `deleted_at`: restoring
+a folder brings back what went with it, but not what was deleted from it before, which
+stays in its trash. Restoring a file whose folder is in the trash brings the folder
+back too (empty but for it). A folder's trash (`GET /api/folders?deleted=true`) lists
+the folders and files deleted from it. Deleting a folder has every client sync
+everything again, like a move, and drop it.
 
 **History and where-used.** `GET /api/files/{id}` returns every version, newest
 first, with comments, authors, and pinned references, plus the live files whose
@@ -271,7 +281,17 @@ on top of it.
 
 `client/src/Cvc.SolidWorks` targets SolidWorks 2025 (API version 33) and is built
 against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework 4.8
-COM add-in, registered with `install.ps1` (RegAsm).
+COM add-in, registered with RegAsm.
+
+- **Installing.** `Vault-Setup.exe` (`client/src/Cvc.Setup`, built by CI) is the one
+  download: it carries the add-in's files, and after Windows asks for administrator
+  rights, puts them in `C:\Program Files\Vault for SolidWorks`, registers the add-in
+  (RegAsm, which runs its own registration with SolidWorks) and `cvc://` links, and
+  lists itself in Windows' installed apps to remove all that again. It isn't signed yet,
+  so Windows' SmartScreen warns about it once. The server offers it to members from
+  `CVC_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
+  Connect SolidWorks button (`cvc://connect?server=…`) has the add-in sign in to that
+  vault. `install.ps1` does the same by hand, from wherever the add-in is (for development).
 
 - **Task pane.** Everything is in the Vault tab: sign-in, the active document's status
   and actions (including opening its drawing), and two views: the files that need
@@ -334,6 +354,9 @@ cookie, and sends `X-CVC-Request` on every request.
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
     the top-level ones, its drawings, and its history, with downloads.
+  - A folder's trash, with a Restore for each folder and file deleted from it.
+  - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
+    add-in").
   - Checked out (who has what), activity, and admin (people for admins; access for
     admins and folder leads).
 
@@ -358,9 +381,12 @@ cookie, and sends `X-CVC-Request` on every request.
   folders: each file's contents go up once, hashed in the browser, then they're checked in
   together as version 1 of each. Drawings are left out (they come from SolidWorks, which
   links them), and so are temporary files; an assembly goes up without its parts recorded,
-  until someone checks it in once from SolidWorks. Checkboxes pick folders and files to
-  move to another folder or rename (see "Move and rename": the server says if SolidWorks
-  would lose a file).
+  until someone checks it in once from SolidWorks. A zip goes up as the files in it, with
+  its folders, where the zip was (unless you say to upload the zip itself): the browser
+  reads the zip's directory, then inflates each file (`DecompressionStream`) and checks
+  its CRC as it goes up (`zip.ts`). Checkboxes pick folders and files to move to another
+  folder, rename (see "Move and rename": the server says if SolidWorks would lose a
+  file), or delete (to the trash; files that others use get a warning and a second yes).
 - **New files:** New part and New assembly in a folder you can edit, and New drawing on
   a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this
@@ -384,7 +410,8 @@ are at `/docs`.
 | `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
 | `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
-| `POST /api/delete`, `POST /api/files/{id}/restore` | trash and restore |
+| `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
+| `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
@@ -392,6 +419,7 @@ are at `/docs`.
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
+| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `CVC_DOWNLOADS_DIR` |
 
 ## Deploying
 
@@ -410,6 +438,8 @@ rollback rules are in CLAUDE.md, under "Deployment". Setup:
 3. Keep `CVC_DATABASE_URL` (SQLite by default) and `CVC_BLOB_DIR` on a persistent
    disk, and back both up. An S3/R2 blob store (Cloudflare R2: 10 GB free, no
    download fees) is planned.
+4. Put CI's `Vault-Setup.exe` (and `cvc.exe`, if you like) in a folder and point
+   `CVC_DOWNLOADS_DIR` at it: members get them from the web app's SolidWorks page.
 
 We still need to decide where to host it: Render (about $7/month plus disk), a
 ~$5/month VPS, or a machine on campus. The image runs on any of them.

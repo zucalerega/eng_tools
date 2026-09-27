@@ -56,13 +56,28 @@ def _sqlite_pragmas(dbapi_connection, _record) -> None:
     cursor.close()
 
 
-def migrate(engine: Engine) -> None:
+def migrate(engine: Engine, revision: str = "head") -> None:
     """Bring the schema up to date (alembic upgrade head). Runs at server startup."""
     from alembic import command
     from alembic.config import Config
 
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    with engine.begin() as connection:
-        config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+    sqlite = engine.dialect.name == "sqlite"
+    with engine.connect() as connection:
+        if sqlite:
+            # SQLite changes a table by copying it into a new one and dropping the old (render_as_batch in
+            # env.py), which other tables' foreign keys to it would stop. The check can only be turned off
+            # outside a transaction; foreign_key_check then makes sure nothing was left dangling.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+        try:
+            with connection.begin():
+                config.attributes["connection"] = connection
+                command.upgrade(config, revision)
+                if sqlite and connection.exec_driver_sql("PRAGMA foreign_key_check").first() is not None:
+                    raise RuntimeError("Upgrading the database left references to missing rows")
+        finally:
+            if sqlite:
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()

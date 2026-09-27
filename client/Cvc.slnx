@@ -4,6 +4,7 @@
     <Project Path="src/Cvc.Client/Cvc.Client.csproj" />
     <Project Path="src/Cvc.SolidWorks/Cvc.SolidWorks.csproj" />
     <Project Path="src/Cvc.SolidWorks.Open/Cvc.SolidWorks.Open.csproj" />
+    <Project Path="src/Cvc.Setup/Cvc.Setup.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cvc.Client.Tests/Cvc.Client.Tests.csproj" />

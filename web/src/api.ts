@@ -20,6 +20,8 @@ export interface Folder {
     path: string;
     name: string;
     role: Role | null; // yours here; null: you can only pass through to a folder below
+    deleted_at?: string | null; // in a folder's trash: when it was deleted, and by whom
+    deleted_by?: UserRef | null;
 }
 
 export interface Lock {
@@ -46,6 +48,7 @@ export interface VaultFile {
     modified_by: UserRef;
     checked_out: Lock | null;
     deleted_at: string | null;
+    deleted_by?: UserRef | null;
     uses: Use[]; // an assembly's parts, a drawing's model: files you can see, maybe deleted since
 }
 
@@ -115,9 +118,17 @@ export class ApiError extends Error {
         readonly status: number,
         readonly code: string,
         message: string,
+        readonly details: Record<string, unknown> = {}, // what the problem was about, like the files in use
     ) {
         super(message);
     }
+}
+
+/** A file the server offers for download, like the add-in's installer. */
+export interface Download {
+    name: string;
+    size: number;
+    modified_at: string;
 }
 
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
@@ -162,14 +173,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (!response.ok) {
         let code = "error";
         let message = `The server said ${response.status} ${response.statusText}`;
+        let details = {};
         try {
-            const error = (await response.json()) as { error?: string; message?: string };
+            const error = (await response.json()) as {
+                error?: string;
+                message?: string;
+                details?: Record<string, unknown>;
+            };
             code = error.error ?? code;
             message = error.message ?? message;
+            details = error.details ?? details;
         } catch {
             // not a JSON error: keep the status line
         }
-        throw new ApiError(response.status, code, message);
+        throw new ApiError(response.status, code, message, details);
     }
     return response.status === 204 || method === "HEAD" ? (undefined as T) : ((await response.json()) as T);
 }
@@ -184,6 +201,8 @@ const query = (params: Record<string, string | number | boolean | undefined>) =>
 export const api = {
     me: () => request<Account>("GET", "/api/me"),
     folder: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path })),
+    /** A folder's trash: the folders and files deleted from it. */
+    trash: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path, deleted: true })),
     sync: (since: number) => request<Sync>("GET", "/api/sync?" + query({ since })),
     file: (id: number) => request<FileDetail>("GET", `/api/files/${id}`),
     activity: (options: { before?: number; fileId?: number; limit?: number } = {}) =>
@@ -209,6 +228,13 @@ export const api = {
         request<Moved>("POST", "/api/move", { files, folders, to }),
     rename: (target: { file: number } | { folder: string }, name: string) =>
         request<Moved>("POST", "/api/rename", { ...target, name }),
+    /** To the trash: files, and folders with everything in them. force: even if files elsewhere use them. */
+    delete: (files: number[], folders: string[], force: boolean) =>
+        request<Deleted>("POST", "/api/delete", { files, folders, force }),
+    restore: (fileId: number) => request<VaultFile>("POST", `/api/files/${fileId}/restore`),
+    restoreFolder: (folderId: number) => request<Folder>("POST", `/api/folders/${folderId}/restore`),
+    downloads: () => request<Download[]>("GET", "/api/downloads"),
+    downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** Whether the server has these contents already (so the upload can be skipped). */
     hasBlob: async (sha256: string): Promise<boolean> => {
         try {
@@ -231,6 +257,9 @@ export interface Moved {
     folders: Folder[];
     files: VaultFile[];
 }
+
+/** What a delete did: the folders it deleted, and the files it was given. */
+export type Deleted = Moved;
 
 export interface CheckinRequest {
     comment: string;

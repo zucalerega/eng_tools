@@ -2,9 +2,9 @@ import { useRef, useState, type DragEvent } from "react";
 import { api, type Folder, type Use, type VaultFile } from "../api";
 import { FileIcon, FolderIcon, MenuButton, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
-import { MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
+import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
-import { fileUrl, folderUrl, kindOf, parentOf, pathKey } from "../paths";
+import { fileUrl, folderUrl, kindOf, parentOf, pathKey, trashUrl } from "../paths";
 import { Link } from "../router";
 import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
@@ -18,6 +18,7 @@ type Open =
     | { dialog: "upload"; picked: Picked[] }
     | { dialog: "move" }
     | { dialog: "rename" }
+    | { dialog: "delete" }
     | null;
 
 /** Rows picked with their checkboxes: folders ("d:" and their path key) and files ("f:" and their id). */
@@ -59,7 +60,7 @@ export function Browse({ folder }: { folder: string }) {
     const pickedFolders = folders.filter((f) => selected.has(folderKey(f)));
     const pickedFileList = files.filter((f) => selected.has(fileKey(f)));
     const picked = pickedFolders.length + pickedFileList.length;
-    // Moving or renaming a folder takes a lead of it; the server checks, and this says so up front.
+    // Moving, renaming, or deleting a folder takes a lead of it; the server checks, and this says so up front.
     const foldersMovable = pickedFolders.every((f) => atLeast(f.role, "lead"));
 
     function pick(list: FileList | null, input: HTMLInputElement) {
@@ -145,6 +146,9 @@ export function Browse({ folder }: { folder: string }) {
                             />
                         </>
                     )}
+                    <Link className="button" to={trashUrl(path)} title="What was deleted from this folder">
+                        Trash
+                    </Link>
                     <input
                         type="search"
                         className="search"
@@ -177,6 +181,15 @@ export function Browse({ folder }: { folder: string }) {
                         title={picked !== 1 ? "Rename one at a time" : undefined}
                     >
                         Rename…
+                    </button>
+                    <button
+                        type="button"
+                        className="button-danger"
+                        onClick={() => setOpen({ dialog: "delete" })}
+                        disabled={!foldersMovable}
+                        title={foldersMovable ? "To this folder's trash" : "Deleting a folder takes a lead of it"}
+                    >
+                        Delete…
                     </button>
                     <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
                         Clear
@@ -224,11 +237,15 @@ export function Browse({ folder }: { folder: string }) {
             {open?.dialog === "rename" && (
                 <RenameDialog file={pickedFileList[0]} folder={pickedFolders[0]} onClose={close} />
             )}
+            {open?.dialog === "delete" && (
+                <DeleteDialog files={pickedFileList} folders={pickedFolders} onClose={close} />
+            )}
         </section>
     );
 }
 
-export function Breadcrumbs({ path }: { path: string }) {
+/** Vault / Structures / Fins, each a link to its folder; then here, if the page is something in the last one. */
+export function Breadcrumbs({ path, here }: { path: string; here?: string }) {
     const parts = path ? path.split("/") : [];
     return (
         <nav className="breadcrumbs" aria-label="Folders">
@@ -244,6 +261,14 @@ export function Breadcrumbs({ path }: { path: string }) {
                     </span>
                 );
             })}
+            {here && (
+                <span>
+                    <span className="separator" aria-hidden="true">
+                        /
+                    </span>
+                    <span className="crumb-here">{here}</span>
+                </span>
+            )}
         </nav>
     );
 }

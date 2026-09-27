@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, type VaultEvent } from "../api";
 import { Notice, Time } from "../components";
 import { formatDay } from "../format";
-import { fileUrl, folderUrl } from "../paths";
+import { fileUrl, folderUrl, parentOf, trashUrl } from "../paths";
 import { Link } from "../router";
 import { useVault } from "../store";
 
@@ -143,6 +143,45 @@ function describe(event: VaultEvent): ReactNode {
             return (
                 <>
                     {who} restored {file}
+                </>
+            );
+        case "delete_folder": {
+            const count = Number(detail.files ?? 0);
+            return (
+                <>
+                    {who} deleted the folder <Link to={trashUrl(parentOf(path))}>{path}</Link>
+                    {count > 0 && (count === 1 ? " and the file in it" : ` and the ${count} files in it`)}
+                </>
+            );
+        }
+        case "restore_folder":
+            return (
+                <>
+                    {who} restored the folder {place}
+                </>
+            );
+        case "move":
+            return (
+                <>
+                    {who} moved {text("moved_from")} to {file}
+                </>
+            );
+        case "rename":
+            return (
+                <>
+                    {who} renamed {text("moved_from")} to {file}
+                </>
+            );
+        case "move_folder":
+            return (
+                <>
+                    {who} moved the folder {text("moved_from")} to {place}
+                </>
+            );
+        case "rename_folder":
+            return (
+                <>
+                    {who} renamed the folder {text("moved_from")} to {place}
                 </>
             );
         case "create_folder":

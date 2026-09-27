@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     max_upload_mb: int = 2048
     # The web app's build (`npm run build` in web/). The default is the build in this repository.
     web_dir: Path = Path(__file__).resolve().parents[3] / "web" / "dist"
+    # Software members can download from the web app: put Vault-Setup.exe (the SolidWorks add-in's
+    # installer, from CI) and cvc.exe here. Unset: the web app says to ask an admin.
+    downloads_dir: Path | None = None
 
     @property
     def production(self) -> bool:

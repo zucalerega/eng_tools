@@ -1,15 +1,26 @@
-import { useState } from "react";
-import { api, type Folder, type VaultFile } from "./api";
+import { useEffect, useEffectEvent, useState } from "react";
+import { api, ApiError, type Folder, type VaultFile } from "./api";
 import { Dialog, Notice } from "./components";
 import { formatSize } from "./format";
 import { fileAt } from "./newFile";
 import { nameProblem, parentOf, pathKey } from "./paths";
 import { atLeast, roleIn, useStore, useVault } from "./store";
-import { planUpload, upload, type Picked } from "./upload";
+import {
+    asTheyAre,
+    isZip,
+    planUpload,
+    unzipped,
+    upload,
+    type Picked,
+    type Skipped,
+    type Source,
+    type UploadPlan,
+} from "./upload";
 
-// Organizing the vault from the web app: new folders, uploads, moving, and renaming. The server checks
-// every one (who may, and that SolidWorks still finds what assemblies use); these dialogs catch what
-// they can first, and say what the server said otherwise. Every client picks the change up by syncing.
+// Organizing the vault from the web app: new folders, uploads, moving, renaming, and deleting. The
+// server checks every one (who may, and that SolidWorks still finds what assemblies use); these dialogs
+// catch what they can first, and say what the server said otherwise. Every client picks the change up
+// by syncing.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -72,39 +83,94 @@ export function NewFolderDialog({ folder, onClose }: { folder: string; onClose: 
 
 /**
  * What an upload will add (and leave out, and why), a comment for the history, and progress while the
- * files go up. They're checked in together, as version 1 of each.
+ * files go up. They're checked in together, as version 1 of each. A zip goes up as the files in it,
+ * where it is, unless you say to upload the zip itself.
  */
 export function UploadDialog({ folder, picked, onClose }: { folder: string; picked: Picked[]; onClose: () => void }) {
     const vault = useVault();
-    const [plan] = useState(() => planUpload(vault, folder, picked)); // as it was when the files were picked
+    const zips = picked.filter(({ relative }) => isZip(relative));
+    const [unzip, setUnzip] = useState(true);
+    // Planned against the vault as it was when the files were picked: as they are, and unzipped (once
+    // the zips have been read).
+    const [asIs] = useState(() => planUpload(vault, folder, asTheyAre(picked)));
+    const [opened, setOpened] = useState<UploadPlan | null>(null);
+    const [opening, setOpening] = useState<string | null>(null);
     const [comment, setComment] = useState("");
     const [progress, setProgress] = useState<{ done: number; current: string } | null>(null);
     const { busy, problem, run } = useChange(onClose);
-    const count = plan.ready.length;
-    const size = plan.ready.reduce((total, { file }) => total + file.size, 0);
+    const planned = useEffectEvent((sources: Source[], skipped: Skipped[]) =>
+        planUpload(vault, folder, sources, skipped),
+    );
+    useEffect(() => {
+        if (!picked.some(({ relative }) => isZip(relative))) {
+            return;
+        }
+        let current = true;
+        void unzipped(picked, (relative) => current && setOpening(relative)).then(({ sources, skipped }) => {
+            if (current) {
+                setOpened(planned(sources, skipped));
+                setOpening(null);
+            }
+        });
+        return () => {
+            current = false;
+        };
+    }, [picked]);
+    const plan = zips.length > 0 && unzip ? opened : asIs;
+    const count = plan?.ready.length ?? 0;
+    const size = plan?.ready.reduce((total, { source }) => total + source.size, 0) ?? 0;
     return (
         <Dialog
             title={`Upload to ${folder || "the top folder"}`}
             confirm={count === 1 ? "Upload 1 file" : `Upload ${count} files`}
             busy={busy}
             disabled={count === 0}
-            onConfirm={() => run(() => upload(plan.ready, comment, (done, current) => setProgress({ done, current })))}
+            onConfirm={() =>
+                plan && run(() => upload(plan.ready, comment, (done, current) => setProgress({ done, current })))
+            }
             onCancel={onClose}
         >
-            {count > 0 ? (
+            {zips.length > 0 && (
+                <label className="check">
+                    <input
+                        type="checkbox"
+                        checked={unzip}
+                        disabled={busy}
+                        onChange={(event) => setUnzip(event.target.checked)}
+                    />
+                    {zips.length === 1
+                        ? `Unzip ${zips[0]!.file.name} and upload what's in it`
+                        : `Unzip the ${zips.length} zip files and upload what's in them`}
+                </label>
+            )}
+            {!plan ? (
+                <p className="muted" role="status">
+                    Opening {opening ?? "the zip"}…
+                </p>
+            ) : count > 0 ? (
                 <p>
                     {count === 1 ? "1 file" : `${count} files`}, {formatSize(size)}, each checked in as version 1.
                 </p>
             ) : (
                 <p>There's nothing here that can be uploaded.</p>
             )}
-            {plan.assemblies > 0 && (
+            {plan && count > 0 && (
+                <details className="skipped">
+                    <summary>Where they go</summary>
+                    <ul className="plain upload-list">
+                        {plan.ready.map(({ path }) => (
+                            <li key={path}>{path}</li>
+                        ))}
+                    </ul>
+                </details>
+            )}
+            {plan && plan.assemblies > 0 && (
                 <Notice tone="warning">
                     The web app can't read which parts an assembly uses. Check each one in once from SolidWorks (check
                     it out, then in), and Vault records its parts.
                 </Notice>
             )}
-            {plan.skipped.length > 0 && (
+            {plan && plan.skipped.length > 0 && (
                 <details className="skipped">
                     <summary>
                         {plan.skipped.length === 1 ? "1 file left out" : `${plan.skipped.length} files left out`}
@@ -260,6 +326,96 @@ export function RenameDialog({ file, folder, onClose }: { file?: VaultFile; fold
                     SolidWorks.
                 </p>
             )}
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
+const MAX_LISTED = 5;
+
+/**
+ * Delete files, and folders with everything in them. They go to the trash of the folder they were in,
+ * where anyone who can edit there can bring them back, history and all. If files that stay still use
+ * some of them (SolidWorks would miss those), it says so first, and deleting them takes a second yes.
+ */
+export function DeleteDialog({
+    files,
+    folders,
+    onClose,
+}: {
+    files: VaultFile[];
+    folders: Folder[];
+    onClose: () => void;
+}) {
+    const vault = useVault();
+    const [force, setForce] = useState(false);
+    const { busy, problem, run } = useChange(onClose);
+    const home = parentOf((files[0] ?? folders[0])?.path ?? "");
+    const under = folders.map((folder) => pathKey(folder.path) + "/");
+    const inFolders = [...vault.files.values()].filter((file) =>
+        under.some((prefix) => pathKey(file.path).startsWith(prefix)),
+    );
+    const going = new Map([...files, ...inFolders].map((file) => [file.id, file]));
+    const inUse = [...going.values()].flatMap((file) =>
+        (vault.usedBy.get(file.id) ?? []).filter((user) => !going.has(user.id)).map((user) => ({ file, user })),
+    );
+    const taken = [...going.values()].filter((file) => file.checked_out && file.checked_out.user.id !== vault.me?.id);
+    const anyway = force || inUse.length > 0;
+    const one = files.length + folders.length === 1;
+    const what = one ? (files[0]?.name ?? folders[0]!.name) : `${files.length + folders.length} items`;
+    return (
+        <Dialog
+            title={`Delete ${what}?`}
+            confirm={anyway ? "Delete anyway" : "Delete"}
+            danger
+            busy={busy}
+            disabled={taken.length > 0}
+            onConfirm={() =>
+                run(async () => {
+                    try {
+                        await api.delete(
+                            files.map((file) => file.id),
+                            folders.map((folder) => folder.path),
+                            anyway,
+                        );
+                    } catch (error) {
+                        if (error instanceof ApiError && error.code === "in_use") {
+                            setForce(true); // used by files this page hadn't heard of yet: now it's a second yes
+                        }
+                        throw error;
+                    }
+                })
+            }
+            onCancel={onClose}
+        >
+            <p>
+                {one ? "It goes" : "They go"} to the trash in {home || "the top folder"}, where anyone who can edit
+                there can bring {one ? "it" : "them"} back, history and all.
+                {inFolders.length > 0 &&
+                    (inFolders.length === 1
+                        ? ` The file in ${folders.length === 1 ? "the folder" : "these folders"} goes too.`
+                        : ` The ${inFolders.length} files in ${folders.length === 1 ? "the folder" : "these folders"} go too.`)}
+            </p>
+            {inUse.length > 0 && (
+                <Notice tone="warning">
+                    Files that stay use {inUse.length === 1 ? "one of these" : "some of these"}, and SolidWorks would
+                    miss {inUse.length === 1 ? "it" : "them"}:
+                    <ul className="plain in-use">
+                        {inUse.slice(0, MAX_LISTED).map(({ file, user }) => (
+                            <li key={`${file.id}/${user.id}`}>
+                                {file.name} is used by {user.path}
+                            </li>
+                        ))}
+                        {inUse.length > MAX_LISTED && <li>and {inUse.length - MAX_LISTED} more</li>}
+                    </ul>
+                </Notice>
+            )}
+            {taken.map((file) => (
+                <Notice key={file.id} tone="error">
+                    {file.checked_out!.user.name} has {file.path} checked out on {file.checked_out!.host}: it can't be
+                    deleted until it's checked in.
+                </Notice>
+            ))}
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );

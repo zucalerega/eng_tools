@@ -205,6 +205,27 @@ class DeleteIn(FilesIn):
     force: bool = False  # delete even if other files still use these
 
 
+class MoveIn(BaseModel):
+    files: list[int | str] = Field(default=[], max_length=5000)  # ids or vault paths
+    folders: list[str] = Field(default=[], max_length=500)  # vault paths
+    to: str  # the folder they go into, made if it isn't there; "" is the top of the vault
+
+
+class RenameIn(BaseModel):
+    file: int | str | None = None  # a file (id or vault path), or
+    folder: str | None = None  # a folder (vault path)
+    name: str
+
+
+class MovedOut(BaseModel):
+    folders: list[FolderOut]
+    files: list[FileOut]
+
+    @classmethod
+    def of(cls, moved: vault.Moved) -> "MovedOut":
+        return cls(folders=[FolderOut.of(f) for f in moved.folders], files=[FileOut.of(f) for f in moved.files])
+
+
 class ReferenceIn(BaseModel):
     path: str
     version: int | None = Field(default=None, ge=1)  # default: latest, or the one in this check-in

@@ -96,6 +96,14 @@ public sealed class CvcApi : IDisposable
     public async Task<List<VaultFile>> DeleteAsync(IEnumerable<string> paths, bool force = false, CancellationToken ct = default) =>
         (await PostAsync<FileList>("api/delete", new { files = paths.ToList(), force }, ct).ConfigureAwait(false)).Files;
 
+    /// <summary>Move files and folders (vault paths) into a folder, made if it isn't there.</summary>
+    public Task<Moved> MoveAsync(IEnumerable<string> files, IEnumerable<string> folders, string to, CancellationToken ct = default) =>
+        PostAsync<Moved>("api/move", new { files = files.ToList(), folders = folders.ToList(), to }, ct);
+
+    /// <summary>Rename a file (keeping its type) or a folder, by vault path: give one of them.</summary>
+    public Task<Moved> RenameAsync(string? file, string? folder, string name, CancellationToken ct = default) =>
+        PostAsync<Moved>("api/rename", new { file, folder, name }, ct);
+
     /// <summary>The last step of browser sign-in (see BrowserSignIn).</summary>
     public Task<IssuedToken> RedeemSignInCodeAsync(string code, string verifier, CancellationToken ct = default) =>
         PostAsync<IssuedToken>("auth/client/token", new { code, verifier }, ct);

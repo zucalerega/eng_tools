@@ -144,6 +144,13 @@ public sealed class CheckinResult
     public List<CheckedInFile> Files { get; set; } = new List<CheckedInFile>();
 }
 
+/// <summary>What a move or rename moved, where it is now.</summary>
+public sealed class Moved
+{
+    public List<VaultFolder> Folders { get; set; } = new List<VaultFolder>();
+    public List<VaultFile> Files { get; set; } = new List<VaultFile>();
+}
+
 public sealed class SyncResult
 {
     public long Seq { get; set; }

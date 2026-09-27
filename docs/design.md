@@ -123,6 +123,21 @@ version's contents and pinned references, recorded as a check-in ("Reverted to v
 someone else; a lead can force it, which releases their check-out. Your own check-out
 ends, as with a check-in.
 
+A check-in of unchanged contents that brings references for a version that had none (an
+assembly uploaded in the web app, which can't read SolidWorks files, then checked in from
+SolidWorks) makes a new version, with the same contents, to record them.
+
+**Move and rename.** Files and folders move into another folder (made if it isn't there)
+or get a new name (a file keeps its type), all or nothing, and never while checked out.
+SolidWorks finds a file that an assembly or drawing uses by its name, in the assembly's
+folder or where it was relative to the assembly. So a move that would lose a file from
+the files using it is refused (`_still_found`): move a part into its assembly's folder,
+or their whole folder together, and rename used files in SolidWorks. Moving or renaming
+a folder, which takes its permissions along, takes a lead of it. Afterwards every client
+syncs everything again (clients know folders by path, and where a file is decides who
+can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
+open moves at a later refresh, and counts as that file meanwhile.
+
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. CVC refuses to delete a file that the
 latest version of another file still uses, unless you force it or delete both
@@ -362,6 +377,7 @@ are at `/docs`.
 | `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete`, `POST /api/files/{id}/restore` | trash and restore |
+| `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |

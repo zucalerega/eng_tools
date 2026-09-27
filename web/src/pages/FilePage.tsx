@@ -76,7 +76,8 @@ export function FilePage({ id }: { id: number }) {
                 </h1>
                 <p className="muted">
                     v{file.version} · {formatSize(file.size)} · changed <Time at={file.modified_at} /> by{" "}
-                    {file.modified_by.name}
+                    {file.modified_by.name} · created <Time at={file.created_at} />
+                    {file.created_by && ` by ${file.created_by.name}`}
                 </p>
                 {file.deleted_at && (
                     <Notice tone="warning">

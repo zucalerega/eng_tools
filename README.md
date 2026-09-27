@@ -25,9 +25,11 @@ command, and this repository keep the name CVC.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
 - **Sign in with Google.** An admin approves new accounts.
-- **See everything on the web:** browse and search the vault; see what each assembly
-  contains and which assemblies each part is in, at every level, and whether each file
-  is checked in; see each file's history and drawings and who has what checked out;
+- **See everything on the web:** browse the vault with a folder tree beside the files;
+  search by name and filter by kind, status, date, and person, and sort by name, date,
+  or size; see what each assembly contains and which assemblies each part is in, at every
+  level, and whether each file is checked in, who created it, and who changed it last;
+  see each file's history and drawings and who has what checked out;
   download any version; follow the activity as it happens; start new parts,
   assemblies, and drawings, which SolidWorks makes on your computer; and organize the
   vault: new folders, uploads (files, whole folders, or what's in a zip, by dropping them

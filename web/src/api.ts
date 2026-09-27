@@ -44,7 +44,9 @@ export interface VaultFile {
     version: number;
     size: number;
     sha256: string;
-    modified_at: string;
+    created_at: string; // when it was added (its version 1), and by whom
+    created_by: UserRef | null;
+    modified_at: string; // its latest version's: when it was last changed, and by whom
     modified_by: UserRef;
     checked_out: Lock | null;
     deleted_at: string | null;

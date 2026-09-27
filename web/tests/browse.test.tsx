@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { folderUrl } from "../src/paths";
-import { renderApp, Team } from "./team";
+import { breadcrumbs, folderTree, renderApp, table, Team } from "./team";
 
 test("browsing shows folders, files, and whether each is checked in", async () => {
     const team = await Team.create();
@@ -13,9 +13,9 @@ test("browsing shows folders, files, and whether each is checked in", async () =
     renderApp(team.chief, folderUrl(team.folder));
     const nosecone = (await screen.findByRole("link", { name: "Nosecone.SLDASM" })).closest("tr")!;
     expect(within(nosecone).getByText("Checked in")).toBeTruthy();
-    const fins = screen.getByRole("link", { name: "Fins" }).closest("tr")!;
-    expect(within(fins).getByText("1 checked out")).toBeTruthy();
-    await userEvent.click(screen.getByRole("link", { name: "Fins" }));
+    const fins = (await table()).getByRole("link", { name: "Fins" });
+    expect(within(fins.closest("tr")!).getByText("1 checked out")).toBeTruthy();
+    await userEvent.click(fins);
 
     const row = (await screen.findByRole("link", { name: "Fin.SLDPRT" })).closest("tr")!;
     expect(within(row).getByText("v1")).toBeTruthy();
@@ -105,9 +105,84 @@ test("search finds files anywhere in the vault", async () => {
     await team.checkin(team.chief, { "Recovery/Drogue/Chute.SLDPRT": "chute", "Recovery/Harness.SLDPRT": "harness" });
 
     renderApp(team.chief, "/");
-    await userEvent.type(await screen.findByRole("searchbox", { name: "Search all files" }), "drogue/chu");
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Search files" }), "drogue/chu");
     expect(await screen.findByRole("link", { name: `${team.folder}/Recovery/Drogue/Chute.SLDPRT` })).toBeTruthy();
     expect(screen.queryByText(/Harness/)).toBeNull();
+});
+
+test("the folder tree beside the files opens the way to where you are", async () => {
+    const team = await Team.create();
+    await team.checkin(team.chief, {
+        "Fins/Fin.SLDPRT": "fin",
+        "Fins/Tabs/Tab.SLDPRT": "tab",
+        "Motor/Grain.SLDPRT": "grain",
+    });
+
+    renderApp(team.chief, folderUrl(`${team.folder}/Fins/Tabs`));
+    let tree = await folderTree();
+    expect(tree.getByRole("link", { name: "Tabs" }).getAttribute("aria-current")).toBe("page");
+    expect(tree.getByRole("link", { name: "Motor" })).toBeTruthy(); // the way down opened, and what's next to it
+
+    await userEvent.click(tree.getByRole("link", { name: "Fins" }));
+    expect(await (await table()).findByRole("link", { name: "Fin.SLDPRT" })).toBeTruthy();
+    tree = await folderTree();
+    await userEvent.click(tree.getByRole("button", { name: "Hide the folders in Fins" }));
+    expect(tree.queryByRole("link", { name: "Tabs" })).toBeNull();
+    await userEvent.click(tree.getByRole("button", { name: "Show the folders in Fins" }));
+    expect(tree.getByRole("link", { name: "Tabs" })).toBeTruthy();
+    expect((await breadcrumbs()).getByRole("link", { name: "Fins" })).toBeTruthy();
+});
+
+test("files say who created them, who changed them last and when, and who has them", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const bob = await team.member("Bob");
+    await team.checkin(alice, { "Valve.SLDPRT": "valve v1" });
+    await team.checkout(bob, "Valve.SLDPRT", "BOB-PC");
+    await team.checkin(bob, { "Valve.SLDPRT": "valve v2" }, { host: "BOB-PC" });
+    await team.checkout(alice, "Valve.SLDPRT", "ALICE-PC");
+
+    renderApp(team.chief, folderUrl(team.folder));
+    const row = (await screen.findByRole("link", { name: "Valve.SLDPRT" })).closest("tr")!;
+    const [, , , status, created, changed] = [...row.querySelectorAll("td")].map((cell) => cell.textContent);
+    expect(status).toBe("Checked out by Alice on ALICE-PC");
+    expect(created).toMatch(/ by Alice$/);
+    expect(changed).toMatch(/ by Bob$/);
+});
+
+test("filters narrow the files down, from every folder in this one, and columns sort them", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin", "Rocket.SLDASM": "a rocket, the biggest file" });
+    await team.checkin(alice, { "Motor/Grain.SLDPRT": "grain", "Motor/Motor.SLDASM": "motor" });
+    await team.checkout(team.chief, "Fins/Fin.SLDPRT", "CHIEF-PC");
+
+    renderApp(team.chief, folderUrl(team.folder));
+    // The files listed, by their paths (not the rows' Open in SolidWorks and Download links).
+    const listed = (found: Awaited<ReturnType<typeof table>>) =>
+        found
+            .getAllByRole("link")
+            .map((link) => link.textContent)
+            .filter((text) => text?.startsWith(team.folder));
+    const bar = within(await screen.findByRole("search", { name: "Find files" }));
+    await userEvent.selectOptions(bar.getByRole("combobox", { name: "Status" }), "Checked out to you");
+    expect(await (await table()).findByRole("link", { name: `${team.folder}/Fins/Fin.SLDPRT` })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe(`1 file in ${team.folder} and the folders in it.`);
+
+    await userEvent.selectOptions(bar.getByRole("combobox", { name: "Status" }), "Any status");
+    await userEvent.selectOptions(bar.getByRole("combobox", { name: "Kind" }), "Assemblies");
+    await userEvent.selectOptions(bar.getByRole("combobox", { name: "Changed by" }), "Changed by Alice");
+    expect(listed(await table())).toEqual([`${team.folder}/Motor/Motor.SLDASM`]);
+
+    await userEvent.selectOptions(bar.getByRole("combobox", { name: "Last changed" }), "Unchanged for a year");
+    expect(await screen.findByText(`Nothing matches in ${team.folder} and the folders in it.`)).toBeTruthy();
+    await userEvent.click(bar.getByRole("button", { name: "Clear" }));
+    await userEvent.type(bar.getByRole("searchbox", { name: "Search files" }), "*.sldasm");
+    const sized = await table();
+    await userEvent.click(sized.getByRole("button", { name: "Size" })); // largest first
+    expect(listed(sized)).toEqual([`${team.folder}/Rocket.SLDASM`, `${team.folder}/Motor/Motor.SLDASM`]);
+    await userEvent.click(sized.getByRole("button", { name: "Size" })); // and turned around
+    expect(listed(sized)).toEqual([`${team.folder}/Motor/Motor.SLDASM`, `${team.folder}/Rocket.SLDASM`]);
 });
 
 test("a folder that isn't there says so", async () => {

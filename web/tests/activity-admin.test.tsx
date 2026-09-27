@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { renderApp, Team } from "./team";
+import { renderApp, table, Team } from "./team";
 
 test("the activity feed says what each check-in was for", async () => {
     const team = await Team.create();
@@ -28,6 +28,6 @@ test("people who aren't admins or leads don't get the admin pages", async () => 
     const team = await Team.create();
     const bob = await team.member("Bob");
     renderApp(bob, "/");
-    await screen.findByRole("link", { name: team.folder });
+    await (await table()).findByRole("link", { name: team.folder });
     expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
 });

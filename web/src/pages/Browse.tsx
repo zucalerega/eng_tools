@@ -1,10 +1,32 @@
 import { useRef, useState, type DragEvent } from "react";
 import { api, type Folder, type Use, type VaultFile } from "../api";
+import {
+    CHANGED,
+    compareNames,
+    fileMatcher,
+    firstSort,
+    isFiltering,
+    KINDS,
+    NO_FILTERS,
+    onlySearching,
+    savedSort,
+    saveSort,
+    searchMatcher,
+    sortFiles,
+    sortId,
+    SORTS,
+    STATUSES,
+    type ChangedFilter,
+    type Filters,
+    type Sort,
+    type SortKey,
+    type StatusFilter,
+} from "../browsing";
 import { FileIcon, FolderIcon, MenuButton, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
-import { formatSize } from "../format";
+import { formatDate, formatSize, formatTime } from "../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
-import { fileUrl, folderUrl, kindOf, parentOf, pathKey, trashUrl } from "../paths";
+import { fileUrl, folderUrl, kindOf, parentOf, pathKey, trashUrl, type Kind } from "../paths";
 import { Link } from "../router";
 import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
@@ -30,9 +52,15 @@ export interface Selection {
 const folderKey = (folder: Folder) => "d:" + pathKey(folder.path);
 const fileKey = (file: VaultFile) => "f:" + file.id;
 
+/**
+ * A folder: its folders and files, sorted as you like; or, while you search or filter, the files that match
+ * in it and every folder in it (or in the whole vault), wherever they are.
+ */
 export function Browse({ folder }: { folder: string }) {
     const vault = useVault();
-    const [search, setSearch] = useState("");
+    const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+    const [everywhere, setEverywhere] = useState(false);
+    const [sort, setSort] = useState<Sort>(savedSort);
     const [open, setOpen] = useState<Open>(null);
     const [started, setStarted] = useState<string | null>(null); // a new file's path, until it's in the vault
     const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -49,13 +77,27 @@ export function Browse({ folder }: { folder: string }) {
         );
     }
     const path = here?.path ?? "";
-    const query = search.trim().toLowerCase();
-    const found = query
-        ? [...vault.files.values()]
-              .filter((file) => file.path.toLowerCase().includes(query))
+    const sortBy = (chosen: Sort) => {
+        setSort(chosen);
+        saveSort(chosen);
+    };
+    const narrow = (change: Partial<Filters>) => setFilters((current) => ({ ...current, ...change }));
+    const filtering = isFiltering(filters);
+    // Searching and filtering look in this folder and every folder in it, or in the whole vault.
+    const within = everywhere || path === "" ? null : pathKey(path) + "/";
+    const inScope = (item: { path: string }) => within === null || pathKey(item.path).startsWith(within);
+    const scope = [...vault.files.values()].filter(inScope);
+    const people = new Map(scope.map((file) => [file.modified_by.id, file.modified_by.name]));
+    const found = filtering ? sortFiles(scope.filter(fileMatcher(filters, vault.me)), sort) : null;
+    const searched = searchMatcher(filters.search);
+    const foundFolders = onlySearching(filters)
+        ? [...vault.folders.values()]
+              .filter((candidate) => inScope(candidate) && searched(candidate))
               .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }))
-        : null;
-    const { folders, files } = contentsOf(vault, folder);
+        : [];
+    const contents = contentsOf(vault, folder);
+    const folders = sort.key === "name" && sort.descending ? [...contents.folders].reverse() : contents.folders;
+    const files = sortFiles(contents.files, sort);
     const canAdd = atLeast(roleIn(vault, folder), "editor");
     const pickedFolders = folders.filter((f) => selected.has(folderKey(f)));
     const pickedFileList = files.filter((f) => selected.has(fileKey(f)));
@@ -149,15 +191,94 @@ export function Browse({ folder }: { folder: string }) {
                     <Link className="button" to={trashUrl(path)} title="What was deleted from this folder">
                         Trash
                     </Link>
-                    <input
-                        type="search"
-                        className="search"
-                        placeholder={`Search ${vault.files.size} files`}
-                        aria-label="Search all files"
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                    />
                 </div>
+            </div>
+            <div className="filter-bar" role="search" aria-label="Find files">
+                <input
+                    type="search"
+                    className="search"
+                    placeholder="Search by name, like fin or *.SLDASM"
+                    aria-label="Search files"
+                    value={filters.search}
+                    onChange={(event) => narrow({ search: event.target.value })}
+                />
+                {here && (
+                    <select
+                        aria-label="Where to look"
+                        value={everywhere ? "all" : "here"}
+                        onChange={(event) => setEverywhere(event.target.value === "all")}
+                    >
+                        <option value="here">In {here.name}</option>
+                        <option value="all">In the whole vault</option>
+                    </select>
+                )}
+                <select
+                    aria-label="Kind"
+                    value={filters.kind}
+                    onChange={(event) => narrow({ kind: event.target.value as Kind | "" })}
+                >
+                    <option value="">All kinds</option>
+                    {KINDS.map(([value, label]) => (
+                        <option key={value} value={value}>
+                            {label}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    aria-label="Status"
+                    value={filters.status}
+                    onChange={(event) => narrow({ status: event.target.value as StatusFilter })}
+                >
+                    <option value="">Any status</option>
+                    {STATUSES.map(([value, label]) => (
+                        <option key={value} value={value}>
+                            {label}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    aria-label="Last changed"
+                    value={filters.changed}
+                    onChange={(event) => narrow({ changed: event.target.value as ChangedFilter })}
+                >
+                    <option value="">Changed any time</option>
+                    {CHANGED.map(([value, label]) => (
+                        <option key={value} value={value}>
+                            {label}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    aria-label="Changed by"
+                    value={filters.by ?? ""}
+                    onChange={(event) => narrow({ by: event.target.value ? Number(event.target.value) : null })}
+                >
+                    <option value="">Changed by anyone</option>
+                    {[...people]
+                        .sort((a, b) => compareNames({ name: a[1] }, { name: b[1] }))
+                        .map(([id, name]) => (
+                            <option key={id} value={id}>
+                                Changed by {id === vault.me?.id ? "you" : name}
+                            </option>
+                        ))}
+                </select>
+                <select
+                    aria-label="Sort"
+                    className="sort"
+                    value={sortId(sort)}
+                    onChange={(event) => sortBy(SORTS.find((each) => sortId(each.sort) === event.target.value)!.sort)}
+                >
+                    {SORTS.map((each) => (
+                        <option key={sortId(each.sort)} value={sortId(each.sort)}>
+                            {each.label}
+                        </option>
+                    ))}
+                </select>
+                {filtering && (
+                    <button type="button" className="button-small" onClick={() => setFilters(NO_FILTERS)}>
+                        Clear
+                    </button>
+                )}
             </div>
             {dropping && (
                 <p className="drop-hint">Drop files or folders to upload them to {path || "the top folder"}</p>
@@ -198,14 +319,18 @@ export function Browse({ folder }: { folder: string }) {
             )}
             {found ? (
                 <>
-                    <p className="muted">
-                        {found.length === 0
-                            ? "No files match."
-                            : found.length > MAX_RESULTS
-                              ? `Showing ${MAX_RESULTS} of ${found.length} matches.`
-                              : `${found.length} ${found.length === 1 ? "match" : "matches"}.`}
+                    <p className="muted" role="status">
+                        {matchSummary(foundFolders.length, found.length, within === null ? "" : path)}
                     </p>
-                    {found.length > 0 && <FileTable files={found.slice(0, MAX_RESULTS)} withPaths />}
+                    {foundFolders.length + found.length > 0 && (
+                        <FileTable
+                            folders={foundFolders}
+                            files={found.slice(0, MAX_RESULTS)}
+                            withPaths
+                            sort={sort}
+                            onSort={sortBy}
+                        />
+                    )}
                 </>
             ) : folders.length === 0 && files.length === 0 ? (
                 <p className="empty">
@@ -217,6 +342,8 @@ export function Browse({ folder }: { folder: string }) {
                     folders={folders}
                     files={files}
                     selection={canAdd ? { selected, set: setSelected } : undefined}
+                    sort={sort}
+                    onSort={sortBy}
                 />
             )}
             {open?.dialog === "file" && (
@@ -242,6 +369,20 @@ export function Browse({ folder }: { folder: string }) {
             )}
         </section>
     );
+}
+
+/** "3 folders and 12 files in Motor and the folders in it", or "Nothing matches in the whole vault". */
+function matchSummary(folders: number, files: number, within: string): string {
+    const where = within ? ` in ${within} and the folders in it` : " in the whole vault";
+    const counts = [
+        folders > 0 ? `${folders} ${folders === 1 ? "folder" : "folders"}` : "",
+        files > 0 ? `${files} ${files === 1 ? "file" : "files"}` : "",
+    ].filter((count) => count !== "");
+    if (counts.length === 0) {
+        return `Nothing matches${where}.`;
+    }
+    const more = files > MAX_RESULTS ? ` Showing the first ${MAX_RESULTS} files.` : "";
+    return `${counts.join(" and ")}${where}.${more}`;
 }
 
 /** Vault / Structures / Fins, each a link to its folder; then here, if the page is something in the last one. */
@@ -274,20 +415,25 @@ export function Breadcrumbs({ path, here }: { path: string; here?: string }) {
 }
 
 /**
- * Folders and files, with each file's version and whether it's checked in. Assemblies (and drawings) open
- * up to show what they use, level by level, each part with its own status. With a selection, the folders
- * and files (not what they use) get checkboxes.
+ * Folders and files, with each file's version, whether it's checked in (or who has it), who created it, and
+ * who changed it last and when. Assemblies (and drawings) open up to show what they use, level by level,
+ * each part with its own status. With a selection, the folders and files (not what they use) get
+ * checkboxes; with a sort, the name, date, and size columns sort the table when clicked.
  */
 export function FileTable({
     folders = [],
     files,
     withPaths = false,
     selection,
+    sort,
+    onSort,
 }: {
     folders?: Folder[];
     files: VaultFile[];
     withPaths?: boolean;
     selection?: Selection;
+    sort?: Sort;
+    onSort?: (sort: Sort) => void;
 }) {
     const vault = useVault();
     const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
@@ -319,7 +465,25 @@ export function FileTable({
                 />
             </td>
         );
-    const columns = selection ? 7 : 6;
+    const columns = selection ? 8 : 7;
+    // A column that sorts the table: click once to sort by it, again to turn the order around.
+    const heading = (label: string, key: SortKey, className?: string) => {
+        if (!sort || !onSort) {
+            return <th className={className}>{label}</th>;
+        }
+        const on = sort.key === key;
+        return (
+            <th className={className} aria-sort={on ? (sort.descending ? "descending" : "ascending") : undefined}>
+                <button
+                    type="button"
+                    className="sort-button"
+                    onClick={() => onSort(on ? { key, descending: !sort.descending } : firstSort(key))}
+                >
+                    {label}
+                </button>
+            </th>
+        );
+    };
 
     // A file's row, then (when it's open) the rows of what it uses, indented under it.
     const rows = (file: VaultFile, key: string, depth: number, trail: number[], used?: Use, user?: VaultFile) => {
@@ -333,7 +497,7 @@ export function FileTable({
         const result = [
             <tr key={key} className={depth > 0 ? "used-row" : undefined}>
                 {depth === 0 ? pick(fileKey(file), label) : selection && <td className="select" />}
-                <td>
+                <td className="name-cell">
                     <span className="tree-row" style={{ paddingLeft: `${depth * 1.4}rem` }}>
                         {below.length > 0 ? (
                             <button
@@ -369,7 +533,13 @@ export function FileTable({
                 <td>
                     <StatusLabel file={file} me={vault.me} />
                 </td>
-                <td>
+                <td className="created">
+                    <time dateTime={file.created_at} title={formatTime(file.created_at)}>
+                        {formatDate(file.created_at)}
+                    </time>
+                    {file.created_by && ` by ${file.created_by.name}`}
+                </td>
+                <td className="changed">
                     <Time at={file.modified_at} /> by {file.modified_by.name}
                 </td>
                 <td className="numeric">{formatSize(file.size)}</td>
@@ -406,50 +576,54 @@ export function FileTable({
     };
 
     return (
-        <table className="table files">
-            <thead>
-                <tr>
-                    {selection && (
-                        <th className="select">
-                            <input
-                                type="checkbox"
-                                aria-label="Select everything here"
-                                checked={all}
-                                onChange={() => selection.set(new Set(all ? [] : everything))}
-                            />
+        <div className="table-scroll">
+            <table className="table files" aria-label="Files">
+                <thead>
+                    <tr>
+                        {selection && (
+                            <th className="select">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Select everything here"
+                                    checked={all}
+                                    onChange={() => selection.set(new Set(all ? [] : everything))}
+                                />
+                            </th>
+                        )}
+                        {heading("Name", "name")}
+                        <th>Version</th>
+                        <th>Status</th>
+                        {heading("Created", "created", "created")}
+                        {heading("Last changed", "changed")}
+                        {heading("Size", "size", "numeric")}
+                        <th>
+                            <span className="visually-hidden">Actions</span>
                         </th>
-                    )}
-                    <th>Name</th>
-                    <th>Version</th>
-                    <th>Status</th>
-                    <th>Last change</th>
-                    <th className="numeric">Size</th>
-                    <th>
-                        <span className="visually-hidden">Actions</span>
-                    </th>
-                </tr>
-            </thead>
-            <tbody>
-                {folders.map((folder) => {
-                    const out = vault.checkedOut.get(pathKey(folder.path)) ?? 0;
-                    return (
-                        <tr key={`folder-${folder.id}`}>
-                            {pick(folderKey(folder), folder.name)}
-                            <td colSpan={2}>
-                                <span className="tree-row">
-                                    <span className="disclosure-space" />
-                                    <Link to={folderUrl(folder.path)} className="name">
-                                        <FolderIcon />
-                                        {folder.name}
-                                    </Link>
-                                </span>
-                            </td>
-                            <td colSpan={4}>{out > 0 && <span className="lock">{out} checked out</span>}</td>
-                        </tr>
-                    );
-                })}
-                {files.flatMap((file) => rows(file, String(file.id), 0, []))}
-            </tbody>
-        </table>
+                    </tr>
+                </thead>
+                <tbody>
+                    {folders.map((folder) => {
+                        const out = vault.checkedOut.get(pathKey(folder.path)) ?? 0;
+                        const label = withPaths ? folder.path : folder.name;
+                        return (
+                            <tr key={`folder-${folder.id}`}>
+                                {pick(folderKey(folder), label)}
+                                <td colSpan={2}>
+                                    <span className="tree-row">
+                                        <span className="disclosure-space" />
+                                        <Link to={folderUrl(folder.path)} className="name">
+                                            <FolderIcon />
+                                            {label}
+                                        </Link>
+                                    </span>
+                                </td>
+                                <td colSpan={5}>{out > 0 && <span className="lock">{out} checked out</span>}</td>
+                            </tr>
+                        );
+                    })}
+                    {files.flatMap((file) => rows(file, String(file.id), 0, []))}
+                </tbody>
+            </table>
+        </div>
     );
 }

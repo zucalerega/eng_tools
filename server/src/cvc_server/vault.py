@@ -107,6 +107,7 @@ class FileView:
     # What the latest version uses that the user can see (an assembly's parts): (file id, version used).
     uses: list[tuple[int, int]] = field(default_factory=list)
     deleted_by: User | None = None
+    created_by: User | None = None  # who added it: its version 1
 
 
 @dataclass
@@ -191,7 +192,9 @@ def _with_latest(db: Session, *where: Any) -> list[tuple[File, Version]]:
 
 
 def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, Version]]) -> list[FileView]:
-    people = {v.created_by for _, v in rows} | {f.checked_out_by for f, _ in rows} | {f.deleted_by for f, _ in rows}
+    people: set[int | None] = {v.created_by for _, v in rows}
+    for f, _ in rows:
+        people |= {f.created_by, f.checked_out_by, f.deleted_by}
     users = _users(db, people)
     uses = _uses(db, access, [v.id for _, v in rows])
     return [
@@ -203,6 +206,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
             users.get(f.checked_out_by) if f.checked_out_by else None,
             uses.get(v.id, []),
             users.get(f.deleted_by) if f.deleted_by else None,
+            users.get(f.created_by),
         )
         for f, v in rows
     ]

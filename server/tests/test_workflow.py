@@ -1,6 +1,7 @@
 """Check-in/check-out, history, references, trash, uploads, and the sync feed."""
 
 import hashlib
+from datetime import datetime
 
 
 def test_add_check_out_check_in_and_history(team, client):
@@ -60,6 +61,19 @@ def test_one_editor_at_a_time(team):
     events = team.client.get("/api/activity", headers=chief).json()
     assert events[0]["action"] == "break_lock"
     assert events[0]["detail"]["holder"] == "alice@x.test"
+
+
+def test_files_say_who_added_them_and_who_changed_them_last(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    team.grant(chief, "", None, "editor")
+    team.checkin(alice, {"Nosecone.SLDPRT": b"v1"})
+    team.checkout(chief, "Nosecone.SLDPRT")
+    team.checkin(chief, {"Nosecone.SLDPRT": b"v2"})
+
+    [nosecone] = team.listing(chief)["files"]
+    assert (nosecone["created_by"]["email"], nosecone["modified_by"]["email"]) == ("alice@x.test", "chief@x.test")
+    assert datetime.fromisoformat(nosecone["created_at"]) < datetime.fromisoformat(nosecone["modified_at"])
 
 
 def test_leads_can_take_over_a_check_out(team, client):

@@ -1,5 +1,8 @@
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Cvc.SolidWorks;
@@ -103,6 +106,61 @@ internal sealed class SetupForm : Form
         return header;
     }
 
+    /// <summary>
+    /// Wait for SolidWorks to close, which has the add-in loaded. A SolidWorks you can see, you close. One running
+    /// with no window of its own (stuck behind a message you can't see, or not closed all the way) setup offers
+    /// to end: but not someone else's, signed in to this computer too. False: stop.
+    /// </summary>
+    private bool SolidWorksClosed()
+    {
+        var session = Process.GetCurrentProcess().SessionId;
+        for (var running = Installer.SolidWorks(); running.Length > 0; running = Installer.SolidWorks())
+        {
+            string message;
+            if (running.Any(p => p.SessionId != session))
+            {
+                message = "Someone else signed in to this computer has SolidWorks open: it has the add-in loaded. "
+                    + "When they've closed it, click Retry.";
+            }
+            else if (running.Any(p => p.MainWindowHandle != IntPtr.Zero))
+            {
+                message = "Close SolidWorks first: it has the add-in loaded. Then click Retry.";
+            }
+            else
+            {
+                var end = MessageBox.Show(
+                    this,
+                    "SolidWorks is still running in the background, without a window: it may be waiting on a message "
+                        + "you can't see, or not have closed all the way. End it now? Anything unsaved in it is lost.",
+                    Text,
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                if (end != DialogResult.Yes)
+                {
+                    return false;
+                }
+                foreach (var process in running)
+                {
+                    try
+                    {
+                        process.Kill();
+                        process.WaitForExit(15_000);
+                    }
+                    catch (Exception e) when (e is InvalidOperationException or Win32Exception)
+                    {
+                        // Gone already, or it won't go: the next look says so.
+                    }
+                }
+                continue;
+            }
+            if (MessageBox.Show(this, message, Text, MessageBoxButtons.RetryCancel, MessageBoxIcon.Information) != DialogResult.Retry)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private async Task RunAsync()
     {
         if (_done)
@@ -110,18 +168,9 @@ internal sealed class SetupForm : Form
             Close();
             return;
         }
-        while (Installer.SolidWorksRunning)
+        if (!SolidWorksClosed())
         {
-            var answer = MessageBox.Show(
-                this,
-                "Close SolidWorks first: it has the add-in loaded. Then click Retry.",
-                Text,
-                MessageBoxButtons.RetryCancel,
-                MessageBoxIcon.Information);
-            if (answer != DialogResult.Retry)
-            {
-                return;
-            }
+            return;
         }
         _go.Enabled = _close.Enabled = false;
         _progress.Visible = true;

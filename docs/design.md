@@ -431,25 +431,27 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   server, when it's uploaded, about 15 MB of CSV a second. The first 512 KB say how it's
   laid out: the encoding (UTF-8, UTF-16, or Windows' cp1252), the delimiter (comma, tab,
   semicolon, pipe, or spaces; decimal commas with semicolons or tabs), where the data
-  starts (after notes, LabVIEW's header blocks, and the names), a row of units if there's
-  one, and which column is time: one named like it (`Time`, `t_ms`, `Timestamp`,
-  `X_Value`...), else the first if it only goes up. Its format comes from its name, unit,
-  and values: seconds, milliseconds, microseconds, or nanoseconds; Unix time (by size:
-  1.7e9 is seconds, 1.7e12 milliseconds...); or dates and times (ISO 8601, American and
-  European dates, AM/PM, times of day that pass midnight). Then the whole file streams
-  through a block of rows at a time, one file per column, so memory doesn't limit it.
-  Rows without a readable time are left out, rows out of time order are put in order, and
-  cells that aren't numbers are left empty; each is said once, with a row number, in the
-  dataset's warnings. A column empty in at least half the rows (a slower sensor in the
-  same file) keeps only its samples, with their own times. A text column is a state,
-  numbered as its values first appear, or, if it's in fewer than 5% of rows, events (a
-  sequence's steps), shown as markers. A switch's states (a valve's, a command's: any
-  that say on or off, however a log mixes words and digits, like closed, 1, fault, open)
-  are numbered again once the column's read: off (closed, 0, false...) is 0, on (open, 1,
-  true...) is 1, named in the file's words, and anything else (fault, disconnected)
-  comes after them. A column of only those words and 0 and 1 is a switch, whichever the
-  first rows say more of. Anyone who can change
-  a dataset can read it again with other options (the time column and format, where the
+  starts (after notes, LabVIEW's header blocks, and the names), a row of units if
+  there's one (else a unit in brackets after a name, PT-1 (psi); written with every
+  value, as some loggers do, 23.958 V; or a name's last word, Upstream Pressure PSI, if
+  it's a unit of more than one letter), and which column is time: one named like it
+  (`Time`, `t_ms`, `Timestamp`, `X_Value`...), else the first if it only goes up. Its
+  format comes from its name, unit, and values: seconds, milliseconds, microseconds, or
+  nanoseconds; Unix time (by size: 1.7e9 is seconds, 1.7e12 milliseconds...); or dates
+  and times (ISO 8601, American and European dates, AM/PM, times of day that pass
+  midnight). Then the whole file streams through a block of rows at a time, one file per
+  column, so memory doesn't limit it. Rows without a readable time are left out, rows
+  out of time order are put in order, and cells that aren't numbers are left empty; each
+  is said once, with a row number, in the dataset's warnings. A column empty in at least
+  half the rows (a slower sensor in the same file) keeps only its samples, with their
+  own times. A text column is a state, numbered as its values first appear, or, if it's
+  in fewer than 5% of rows, events (a sequence's steps), shown as markers. A switch's
+  states (a valve's, a command's: any that say on or off, however a log mixes words and
+  digits, like closed, 1, fault, open) are numbered again once the column's read: off
+  (closed, 0, false...) is 0, on (open, 1, true...) is 1, named in the file's words, and
+  anything else (fault, disconnected) comes after them. A column of only those words and
+  0 and 1 is a switch, whichever the first rows say more of. Anyone who can change a
+  dataset can read it again with other options (the time column and format, where the
   names are, the delimiter); a read that fails leaves the last one standing.
 - **Arrays.** A read writes little-endian float64 arrays (times in seconds, and values,
   NaN where missing) to `datasets/<id>/<version>/`, a new folder each read. Their URLs

@@ -49,7 +49,8 @@ together on one time axis.
 - **Upload a file** (Upload data, or drop it on the page): a column of times and a
   column per channel (PTs, TCs, load cells, valve states). Yorg works out the rest: the
   delimiter (comma, tab, semicolon, spaces; decimal commas too), notes above the column
-  names, units (`PT-1 (psi)`, `PT-1 [psi]`, or a row of units under the names), and
+  names, units (`PT-1 (psi)`, `PT-1 [psi]`, a row of units under the names, units written
+  with every value like `23.958 V`, or a name ending in one, `Pressure PSI`), and
   which column is time and in what format (seconds, milliseconds, Unix time, or dates
   and times). Channels logged at a slower rate in the same file keep their own times; a
   text column becomes a state (CLOSED/OPEN, a mode; a valve logged as closed, 1, fault,

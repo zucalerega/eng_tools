@@ -1,4 +1,13 @@
-import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+    useEffect,
+    useEffectEvent,
+    useId,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type ReactNode,
+    type RefObject,
+} from "react";
 import type { Account, Lock, VaultFile } from "./api";
 import { formatAgo, formatTime } from "./format";
 import { kindOf, opensInSolidWorks } from "./paths";
@@ -108,7 +117,45 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
     );
 }
 
-/** A menu's open state: it closes on a click outside the element the ref is on, or on Escape. */
+const EDGE = 8; // how close a menu comes to the window's edges
+
+/**
+ * Put a menu by the element it opens from, all of it in the window: under it (or over it, if there's more room
+ * there, and scrolling if neither is enough), lined up with its right edge (or its left, for .menu-left) unless that
+ * runs off a side. Fixed to the window, so a scrolling area around the button doesn't cut it off.
+ */
+export function placeMenu(menu: HTMLElement, from: HTMLElement): void {
+    const anchor = from.getBoundingClientRect();
+    Object.assign(menu.style, { position: "fixed", right: "auto", bottom: "auto", maxHeight: "", overflowY: "" });
+    const { width, height } = menu.getBoundingClientRect();
+    const gap = 6;
+    let left = menu.classList.contains("menu-left") ? anchor.left : anchor.right - width;
+    left = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - width));
+    const below = window.innerHeight - EDGE - (anchor.bottom + gap);
+    const above = anchor.top - gap - EDGE;
+    let top = anchor.bottom + gap;
+    if (height > below && above > below) {
+        top = Math.max(EDGE, anchor.top - gap - height);
+    }
+    const room = top === anchor.bottom + gap ? below : above;
+    if (height > room) {
+        Object.assign(menu.style, { maxHeight: `${Math.max(room, 120)}px`, overflowY: "auto" });
+    }
+    Object.assign(menu.style, { left: `${left}px`, top: `${top}px` });
+}
+
+/** Put a menu at a point (where a right-click was), all of it in the window. */
+export function placeMenuAt(menu: HTMLElement, x: number, y: number): void {
+    const { width, height } = menu.getBoundingClientRect();
+    const left = Math.max(EDGE, Math.min(x, window.innerWidth - EDGE - width));
+    const top = y + height > window.innerHeight - EDGE ? Math.max(EDGE, y - height) : y;
+    Object.assign(menu.style, { position: "fixed", left: `${left}px`, top: `${top}px` });
+}
+
+/**
+ * A menu's open state: it closes on a click outside the element the ref is on, or on Escape. While it's open, the
+ * .menu inside that element stays on screen (placeMenu), as it grows and as the page scrolls or resizes.
+ */
 export function usePopover<T extends HTMLElement>(): [boolean, (open: boolean) => void, RefObject<T | null>] {
     const [open, setOpen] = useState(false);
     const within = useRef<T>(null);
@@ -127,6 +174,24 @@ export function usePopover<T extends HTMLElement>(): [boolean, (open: boolean) =
         return () => {
             document.removeEventListener("mousedown", close);
             document.removeEventListener("keydown", close);
+        };
+    }, [open]);
+    useLayoutEffect(() => {
+        const wrapper = within.current;
+        const menu = wrapper?.querySelector<HTMLElement>(":scope > .menu");
+        if (!open || !wrapper || !menu) {
+            return;
+        }
+        const place = () => placeMenu(menu, wrapper);
+        place();
+        window.addEventListener("resize", place);
+        document.addEventListener("scroll", place, true);
+        const growing = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+        growing?.observe(menu);
+        return () => {
+            window.removeEventListener("resize", place);
+            document.removeEventListener("scroll", place, true);
+            growing?.disconnect();
         };
     }, [open]);
     return [open, setOpen, within];

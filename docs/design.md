@@ -58,6 +58,7 @@ Web app (React) ─────────────────────�
 | CLI (`cvc`) | `client/src/Cvc.Cli` (.NET 10) | working |
 | SolidWorks 2025 add-in | `client/src/Cvc.SolidWorks` (.NET Framework 4.8) | built; untested in SolidWorks |
 | Web app | `web/` (TypeScript, React + Vite), served by the server | working |
+| Yorg, the test data app (see "Yorg") | `server/src/cvc_server/yorg`, `web/src/yorg` | working |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework
 COM components. The workspace logic lives in a netstandard2.0 library so the add-in
@@ -407,6 +408,62 @@ cookie, and sends `X-CVC-Request` on every request.
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this
   computer makes it. It shows up in the vault a few seconds later, checked out to you.
 
+## Yorg (test data)
+
+Yorg is a second app on the same server: the team's test data (hotfires, cold flows),
+plotted, in the spirit of SpaceX's Borg or Sift. It shares the server, the database,
+sign-in, and the web app's frame with the vault, and nothing else: its own tables
+(`yorg_*`), its own folder of files (`CVC_YORG_DIR`), its own API (`/api/yorg`), and its
+own pages (`/yorg`), with the app switcher in the top bar between the two. The name is a
+placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx`).
+
+- **Datasets.** An upload is a dataset: its file, kept as it came (`datasets/<id>/source`),
+  and what was read from it: one time base, and a channel per column. Everyone signed in
+  (and approved) sees every dataset and can add them; only the person who added one, or
+  an admin, renames it, reads it again, or deletes it. Deleting hides it with everything
+  kept, so it can be restored.
+- **Reading a file** (`yorg/ingest.py`, pure Python, no numpy) happens once, on the
+  server, when it's uploaded, about 15 MB of CSV a second. The first 512 KB say how it's
+  laid out: the encoding (UTF-8, UTF-16, or Windows' cp1252), the delimiter (comma, tab,
+  semicolon, pipe, or spaces; decimal commas with semicolons or tabs), where the data
+  starts (after notes, LabVIEW's header blocks, and the names), a row of units if there's
+  one, and which column is time: one named like it (`Time`, `t_ms`, `Timestamp`,
+  `X_Value`...), else the first if it only goes up. Its format comes from its name, unit,
+  and values: seconds, milliseconds, microseconds, or nanoseconds; Unix time (by size:
+  1.7e9 is seconds, 1.7e12 milliseconds...); or dates and times (ISO 8601, American and
+  European dates, AM/PM, times of day that pass midnight). Then the whole file streams
+  through a block of rows at a time, one file per column, so memory doesn't limit it.
+  Rows without a readable time are left out, rows out of time order are put in order, and
+  cells that aren't numbers are left empty; each is said once, with a row number, in the
+  dataset's warnings. A column empty in at least half the rows (a slower sensor in the
+  same file) keeps only its samples, with their own times. A text column is a state,
+  numbered as its values first appear (on/off words as 0 and 1), or, if it's in fewer
+  than 5% of rows, events (a sequence's steps), shown as markers. Anyone who can change
+  a dataset can read it again with other options (the time column and format, where the
+  names are, the delimiter); a read that fails leaves the last one standing.
+- **Arrays.** A read writes little-endian float64 arrays (times in seconds, and values,
+  NaN where missing) to `datasets/<id>/<version>/`, a new folder each read. Their URLs
+  name the version, so browsers keep them forever (`Cache-Control: immutable`), and the
+  previous read's folder is deleted once the new one is in the database. Times are
+  "relative" (as the file had them), "absolute" (seconds after `start_epoch`, the first
+  row's Unix time), or "clock" (times of day).
+- **Plotting** (`web/src/yorg`) happens in the browser, on a canvas, with no plotting
+  library. A channel's arrays are fetched once and shared by every plot. What's drawn is
+  a screen's worth of points however long the file: with more samples in view than
+  pixels, each pixel column gets its first, lowest, highest, and last value, which draws
+  what drawing every sample would, and a min/max index (blocks of 32 samples, blocks of
+  those, and so on) finds any run's extremes without looking at each sample, so zooming
+  and panning stay smooth on millions of samples (`samples.ts`). Samples further apart
+  than 20 times the usual step aren't joined (a pause in logging).
+- **The workspace**: channels on the left (grouped by prefix: PT, TC, LC...); panels
+  stacked on one time axis, each with a left and right axis and a legend that reads each
+  channel's value at the shared cursor; a channel's scale, offset, unit, color, axis, and
+  lines or steps; T0 (at the cursor, or at an event); markers; datasets compared, each
+  shifted in time (lined up by clock time when both have dates); and exports (a PNG of
+  the plots, a CSV of the samples in view). Its layout is plain JSON (`layout.ts`): each
+  browser keeps its layout per dataset, and a saved view keeps one for everyone. Views
+  name channels by name, so a view opens with another test's data.
+
 ## API
 
 Every endpoint needs sign-in except `/auth/*` and `/healthz`. Errors look like
@@ -435,6 +492,12 @@ are at `/docs`.
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `CVC_DOWNLOADS_DIR` |
+| `GET /api/yorg/datasets?deleted=` | Yorg's datasets, newest first (or the deleted ones) |
+| `POST /api/yorg/datasets?filename=&name=&description=` | upload a file of test data (the raw body) and read it; one that can't be read comes back `failed`, with why |
+| `GET`/`PATCH`/`DELETE /api/yorg/datasets/{id}` | a dataset with its channels, events, and how it was read; rename it; delete it (restorable) |
+| `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
+| `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
+| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, description, datasets, config}` |
 
 ## Deploying
 
@@ -450,9 +513,9 @@ rollback rules are in CLAUDE.md, under "Deployment". Setup:
 2. Set `CVC_ENV=production`, `CVC_PUBLIC_URL`, `CVC_SECRET_KEY`,
    `CVC_GOOGLE_CLIENT_ID`/`_SECRET`, and `CVC_BOOTSTRAP_ADMINS` (see
    `server/.env.example`).
-3. Keep `CVC_DATABASE_URL` (SQLite by default) and `CVC_BLOB_DIR` on a persistent
-   disk, and back both up. An S3/R2 blob store (Cloudflare R2: 10 GB free, no
-   download fees) is planned.
+3. Keep `CVC_DATABASE_URL` (SQLite by default), `CVC_BLOB_DIR`, and `CVC_YORG_DIR`
+   (Yorg's uploads and arrays) on a persistent disk, and back them up. An S3/R2 blob
+   store (Cloudflare R2: 10 GB free, no download fees) is planned.
 4. Put CI's `Vault-Setup.exe` (and `cvc.exe`, if you like) in a folder and point
    `CVC_DOWNLOADS_DIR` at it: members get them from the web app's SolidWorks page.
 
@@ -477,6 +540,10 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
+7. **Yorg** (first version done, September 2026): upload, read, plot, compare, views,
+   exports. Next: channels calculated from others (thrust from two load cells, O/F),
+   statistics over a selected span, reading while the file is still uploading for very
+   big files, and data streamed live from the test stand.
 
 ## Open questions
 

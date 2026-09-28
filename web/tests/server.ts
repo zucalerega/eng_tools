@@ -63,6 +63,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
             CVC_BLOB_DIR: join(data, "blobs"),
             CVC_WEB_DIR: join(data, "web"),
             CVC_DOWNLOADS_DIR: downloads,
+            CVC_YORG_DIR: join(data, "yorg"),
         },
     });
     let output = "";

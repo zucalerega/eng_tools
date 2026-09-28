@@ -1,0 +1,419 @@
+"""Yorg: a file of test data becomes channels on one time base; datasets and views belong to the team."""
+
+import math
+import struct
+from datetime import UTC, datetime
+
+import pytest
+from fastapi.testclient import TestClient
+
+from cvc_server.app import create_app
+from cvc_server.models import UserStatus
+from cvc_server.yorg import ingest
+from cvc_server.yorg.models import Dataset
+
+
+def upload(team, who, text: str | bytes, filename: str = "run.csv", **params) -> dict:
+    data = text.encode() if isinstance(text, str) else text
+    response = team.client.post(
+        "/api/yorg/datasets", params={"filename": filename, **params}, content=data, headers=who
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def channel(dataset: dict, name: str) -> dict:
+    return next(c for c in dataset["channels"] if c["name"] == name)
+
+
+def fetch(team, who, dataset: dict, file: str) -> list[float | None]:
+    """An array of the dataset's latest read (None for NaN)."""
+    url = f"/api/yorg/datasets/{dataset['id']}/data/{dataset['data_version']}/{file}"
+    response = team.client.get(url, headers=who)
+    assert response.status_code == 200, response.text
+    assert "immutable" in response.headers["cache-control"]
+    values = struct.unpack(f"<{len(response.content) // 8}d", response.content)
+    return [None if math.isnan(value) else value for value in values]
+
+
+def samples(team, who, dataset: dict, name: str) -> list[tuple[float, float | None]]:
+    found = channel(dataset, name)
+    return list(zip(fetch(team, who, dataset, found["time"]), fetch(team, who, dataset, found["values"]), strict=True))
+
+
+# --- reading files ------------------------------------------------------------------------------------------------
+
+
+def test_a_csv_becomes_channels_on_one_time_base(team):
+    chief = team.member("chief@x.test", admin=True)
+    csv = "Time (s),PT-OX-01 [psi],TC-02 (degC),LC-01\n0.000,14.7,21.5,0\n0.001,15.25,21.5,12\n0.002,16.125,21.6,30\n"
+    dataset = upload(team, chief, csv, filename="Hotfire 3.csv")
+
+    assert (dataset["status"], dataset["name"], dataset["filename"]) == ("ready", "Hotfire 3", "Hotfire 3.csv")
+    assert (dataset["rows"], dataset["channel_count"], dataset["size"]) == (3, 3, len(csv))
+    assert (dataset["time_kind"], dataset["start_epoch"]) == ("relative", None)
+    assert (dataset["t_min"], dataset["t_max"]) == (0.0, 0.002)
+    assert dataset["sample_rate"] == pytest.approx(1000)
+    assert [(c["name"], c["unit"], c["column"]) for c in dataset["channels"]] == [
+        ("PT-OX-01", "psi", 2),
+        ("TC-02", "degC", 3),
+        ("LC-01", "", 4),
+    ]
+    pt = channel(dataset, "PT-OX-01")
+    assert (pt["kind"], pt["decimals"], pt["count"], pt["min"], pt["max"]) == ("number", 3, 3, 14.7, 16.125)
+    assert pt["mean"] == pytest.approx((14.7 + 15.25 + 16.125) / 3)
+    assert (pt["t_min"], pt["t_max"], pt["time"]) == (0.0, 0.002, "time.f64")
+    assert samples(team, chief, dataset, "PT-OX-01") == [(0.0, 14.7), (0.001, 15.25), (0.002, 16.125)]
+    assert samples(team, chief, dataset, "LC-01") == [(0.0, 0.0), (0.001, 12.0), (0.002, 30.0)]
+    assert dataset["read_info"]["time_column"] == "Time"
+    assert dataset["read_info"]["time_format"] == "seconds"
+    assert (dataset["read_info"]["delimiter"], dataset["read_info"]["header_row"]) == ("comma", 1)
+    assert dataset["warnings"] == [] and dataset["events"] == []
+    assert dataset["created_by"]["email"] == "chief@x.test"
+
+    # The file as it was uploaded.
+    source = team.client.get(f"/api/yorg/datasets/{dataset['id']}/source", headers=chief)
+    assert source.content == csv.encode()
+    assert source.headers["content-disposition"] == "attachment; filename*=utf-8''Hotfire%203.csv"
+
+
+def test_notes_above_the_names_and_a_row_of_units_under_them(team):
+    chief = team.member("chief@x.test", admin=True)
+    csv = "Test: Hotfire 3\nOperator: Sam\n\nTime,PT-1,TC-1\ns,psi,K\n0,1,300\n0.5,2,301\n"
+    dataset = upload(team, chief, csv)
+    assert [(c["name"], c["unit"]) for c in dataset["channels"]] == [("PT-1", "psi"), ("TC-1", "K")]
+    info = dataset["read_info"]
+    assert (info["header_row"], info["units_row"], info["first_data_row"]) == (4, 5, 6)
+    assert samples(team, chief, dataset, "TC-1") == [(0.0, 300.0), (0.5, 301.0)]
+
+
+def test_labview_measurement_files(team):
+    chief = team.member("chief@x.test", admin=True)
+    lvm = (
+        "LabVIEW Measurement\t\nWriter_Version\t2\n***End_of_Header***\t\n\n"
+        "Channels\t2\t\nSamples\t3\t3\n***End_of_Header***\t\t\n"
+        "X_Value\tPT1\tPT2\tComment\n0.000\t1\t2\n0.001\t3\t4\n0.002\t5\t6\n"
+    )
+    dataset = upload(team, chief, lvm, filename="test.lvm")
+    assert [c["name"] for c in dataset["channels"]] == ["PT1", "PT2"]
+    assert dataset["read_info"]["time_column"] == "X_Value"
+    assert samples(team, chief, dataset, "PT2") == [(0.0, 2.0), (0.001, 4.0), (0.002, 6.0)]
+    assert dataset["warnings"] == ["Left out Comment: it has no values."]
+
+
+@pytest.mark.parametrize(
+    ("text", "delimiter"),
+    [
+        ("Time;Pressure (bar);Temp (°C)\n0,000;1,013;20,5\n0,010;1,250;20,6\n", "semicolon"),
+        ("Time\tPressure (bar)\tTemp (°C)\n0.000\t1.013\t20.5\n0.010\t1.250\t20.6\n", "tab"),
+        ("Time  Pressure(bar)  Temp(°C)\n0.000  1.013  20.5\n0.010  1.250  20.6\n", "spaces"),
+    ],
+)
+def test_other_delimiters_and_decimal_commas(team, text, delimiter):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, text)
+    assert dataset["read_info"]["delimiter"] == delimiter
+    assert dataset["read_info"]["decimal_comma"] == (delimiter == "semicolon")
+    assert [(c["name"], c["unit"]) for c in dataset["channels"]] == [("Pressure", "bar"), ("Temp", "°C")]
+    assert samples(team, chief, dataset, "Pressure") == [(0.0, 1.013), (0.01, 1.25)]
+
+
+def test_windows_encodings(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Time,T (\xb0C)\n0,20\n1,21\n".encode("cp1252"))
+    assert channel(dataset, "T")["unit"] == "°C"
+    dataset = upload(team, chief, "Time,T (\xb0C)\n0,20\n1,21\n".encode("utf-16"))
+    assert channel(dataset, "T")["unit"] == "°C"
+    assert samples(team, chief, dataset, "T") == [(0.0, 20.0), (1.0, 21.0)]
+
+
+def test_dates_and_times_of_day(team):
+    chief = team.member("chief@x.test", admin=True)
+    iso = "Timestamp,PT\n2026-09-20T14:32:01.000-04:00,1\n2026-09-20T14:32:01.500-04:00,2\n2026-09-20T14:32:02.250-04:00,3\n"
+    dataset = upload(team, chief, iso)
+    assert dataset["time_kind"] == "absolute"
+    assert dataset["start_epoch"] == datetime(2026, 9, 20, 18, 32, 1, tzinfo=UTC).timestamp()
+    assert dataset["read_info"]["utc_offset"] == -4 * 3600
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == [0.0, 0.5, 1.25]
+
+    # LabVIEW's and Excel's American dates, with AM and PM.
+    us = "Date/Time,PT\n09/20/2026 02:32:01.000 PM,1\n09/20/2026 02:32:01.100 PM,2\n"
+    dataset = upload(team, chief, us)
+    assert dataset["start_epoch"] == datetime(2026, 9, 20, 14, 32, 1, tzinfo=UTC).timestamp()
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == pytest.approx([0.0, 0.1])
+
+    # Only times of day: seconds after midnight, past midnight too.
+    clock = "Time,PT\n23:59:59.5,1\n23:59:59.9,2\n00:00:00.3,3\n"
+    dataset = upload(team, chief, clock)
+    assert (dataset["time_kind"], dataset["start_epoch"]) == ("clock", 86399.5)
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == pytest.approx([0.0, 0.4, 0.8])
+
+
+def test_unix_times_and_other_units(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "time_ms,PT\n1790000000000,1\n1790000000250,2\n")
+    assert (dataset["time_kind"], dataset["start_epoch"]) == ("absolute", 1790000000.0)
+    assert dataset["read_info"]["time_format"] == "unix_milliseconds"
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == [0.0, 0.25]
+
+    # Nanoseconds since 1970 are more digits than a float holds: they're counted from the first row exactly.
+    dataset = upload(team, chief, "t_ns,PT\n1790000000000000001,1\n1790000000000000501,2\n")
+    assert dataset["read_info"]["time_format"] == "unix_nanoseconds"
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == [0.0, 5e-7]
+
+    dataset = upload(team, chief, "Time (ms),PT\n0,1\n10,2\n20,3\n")
+    assert (dataset["time_kind"], dataset["read_info"]["time_format"]) == ("relative", "milliseconds")
+    assert [t for t, _ in samples(team, chief, dataset, "PT")] == pytest.approx([0.0, 0.01, 0.02])
+
+
+def test_rows_out_of_order_are_put_in_order(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Time,A,B\n0.2,3,c\n0.0,1,a\n0.1,2,b\n")
+    assert samples(team, chief, dataset, "A") == [(0.0, 1.0), (0.1, 2.0), (0.2, 3.0)]
+    assert channel(dataset, "B")["labels"] == ["c", "a", "b"]  # numbered as they came
+    assert samples(team, chief, dataset, "B") == [(0.0, 1.0), (0.1, 2.0), (0.2, 0.0)]
+    assert dataset["warnings"] == ["The rows weren't in time order, so they were put in order."]
+
+
+def test_a_slower_sensor_keeps_its_own_times(team):
+    chief = team.member("chief@x.test", admin=True)
+    lines = ["Time,Fast,Slow,Dropout"]
+    for i in range(20):
+        lines.append(f"{i / 10},{i},{i if i % 5 == 0 else ''},{'' if i == 7 else i}")
+    dataset = upload(team, chief, "\n".join(lines) + "\n")
+
+    slow = channel(dataset, "Slow")
+    assert (slow["time"], slow["count"], slow["t_min"], slow["t_max"]) == ("c2.t.f64", 4, 0.0, 1.5)
+    assert samples(team, chief, dataset, "Slow") == [(0.0, 0.0), (0.5, 5.0), (1.0, 10.0), (1.5, 15.0)]
+    # One missing sample doesn't make a channel slow: it stays on the file's times, with a gap.
+    dropout = channel(dataset, "Dropout")
+    assert (dropout["time"], dropout["count"]) == ("time.f64", 19)
+    assert samples(team, chief, dataset, "Dropout")[6:9] == [(0.6, 6.0), (0.7, None), (0.8, 8.0)]
+    assert channel(dataset, "Fast")["time"] == "time.f64"
+
+
+def test_text_columns_become_states_or_events(team):
+    chief = team.member("chief@x.test", admin=True)
+    lines = ["Time,Valve,Mode,Sequence,PT"]
+    for i in range(40):
+        step = {10: "IGNITION", 30: "SHUTDOWN"}.get(i, "")
+        lines.append(f"{i},{'OPEN' if 10 <= i < 30 else 'CLOSED'},{['IDLE', 'FIRE', 'SAFE'][i // 15]},{step},{i * 2}")
+    dataset = upload(team, chief, "\n".join(lines) + "\n")
+
+    valve = channel(dataset, "Valve")
+    assert (valve["kind"], valve["labels"]) == ("state", ["CLOSED", "OPEN"])  # on and off are 1 and 0
+    assert samples(team, chief, dataset, "Valve")[9:11] == [(9.0, 0.0), (10.0, 1.0)]
+    mode = channel(dataset, "Mode")
+    assert (mode["kind"], mode["labels"]) == ("state", ["IDLE", "FIRE", "SAFE"])
+    # A text column that's mostly empty is events, shown as markers, not a channel.
+    assert "Sequence" not in [c["name"] for c in dataset["channels"]]
+    assert dataset["events"] == [
+        {"t": 10.0, "label": "IGNITION", "channel": "Sequence"},
+        {"t": 30.0, "label": "SHUTDOWN", "channel": "Sequence"},
+    ]
+
+
+def test_a_text_column_can_start_empty(team):
+    """Which columns are text is worked out from the first rows; a sequence's first step can come long after."""
+    chief = team.member("chief@x.test", admin=True)
+    lines = ["Time,PT,Sequence"]
+    for i in range(3000):
+        lines.append(f"{i / 100},{i},{'IGNITION' if i == 2500 else ''}")
+    dataset = upload(team, chief, "\n".join(lines) + "\n")
+    assert dataset["events"] == [{"t": 25.0, "label": "IGNITION", "channel": "Sequence"}]
+    assert dataset["warnings"] == []
+
+
+def test_free_text_is_left_out(team, monkeypatch):
+    monkeypatch.setattr(ingest, "MAX_LABELS", 3)
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Time,Note,PT\n0,a,1\n1,b,2\n2,c,3\n3,d,4\n")
+    assert [c["name"] for c in dataset["channels"]] == ["PT"]
+    assert dataset["warnings"] == ["Left out Note: it's text with more than 3 different values, not a signal."]
+
+
+def test_cells_that_arent_numbers_and_rows_without_a_time(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Time,PT\n0,1\n1,ERR\nabc,5\n\n3,3\n,\n")
+    assert samples(team, chief, dataset, "PT") == [(0.0, 1.0), (1.0, None), (3.0, 3.0)]
+    assert dataset["warnings"] == [
+        "Left out 1 row whose time couldn't be read (row 4: 'abc').",
+        "PT: 1 cell wasn't a number (row 3: 'ERR'), so it was left empty.",
+    ]
+
+
+def test_names_that_repeat_and_columns_without_names(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Time,PT,PT,\n0,1,2,3\n1,1,2,3\n")
+    assert [c["name"] for c in dataset["channels"]] == ["PT", "PT (2)", "Column 4"]
+
+
+def test_without_a_time_column_time_is_the_row_until_you_choose_one(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "A,B\n5,1\n3,2\n")
+    assert dataset["read_info"]["time_format"] == "rows"
+    assert samples(team, chief, dataset, "A") == [(0.0, 5.0), (1.0, 3.0)]
+    assert dataset["warnings"] == [
+        "No column looks like time, so time is the row number. To use a column, choose it in Read settings."
+    ]
+    first_version = dataset["data_version"]
+
+    response = team.client.post(f"/api/yorg/datasets/{dataset['id']}/read", json={"time_column": "B"}, headers=chief)
+    assert response.status_code == 200, response.text
+    dataset = response.json()
+    assert [c["name"] for c in dataset["channels"]] == ["A"]
+    assert samples(team, chief, dataset, "A") == [(1.0, 5.0), (2.0, 3.0)]
+    assert dataset["read_options"] == {"time_column": "B"}
+    # The last read's arrays are gone, and asking for them says to load the dataset again.
+    stale = team.client.get(f"/api/yorg/datasets/{dataset['id']}/data/{first_version}/time.f64", headers=chief)
+    assert (stale.status_code, stale.json()["error"]) == (404, "stale")
+
+    # A way of reading it that doesn't work leaves the last read as it was.
+    response = team.client.post(f"/api/yorg/datasets/{dataset['id']}/read", json={"time_column": "C"}, headers=chief)
+    assert (response.status_code, response.json()["error"]) == (422, "unreadable")
+    assert response.json()["message"] == "There's no column called C. The columns are A, B."
+    again = team.client.get(f"/api/yorg/datasets/{dataset['id']}", headers=chief).json()
+    assert (again["data_version"], again["read_options"]) == (dataset["data_version"], {"time_column": "B"})
+
+    # Row numbers at a sample rate.
+    response = team.client.post(
+        f"/api/yorg/datasets/{dataset['id']}/read", json={"time_format": "rows", "sample_rate": 100}, headers=chief
+    )
+    assert samples(team, chief, response.json(), "B") == [(0.0, 1.0), (0.01, 2.0)]
+
+
+def test_the_first_column_is_time_when_nothing_is_named_like_it(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "Zeit,Druck\n0.0,1\n0.5,2\n1.0,3\n")
+    assert dataset["read_info"]["time_column"] == "Zeit"
+    assert [c["name"] for c in dataset["channels"]] == ["Druck"]
+    assert dataset["warnings"] == [
+        "No column is named like time, so the first one, Zeit, is. If that's wrong, choose the time column in "
+        "Read settings."
+    ]
+
+
+def test_a_file_that_cant_be_read_is_kept_to_read_another_way(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, "hello\nworld\n", filename="notes.txt")
+    assert dataset["status"] == "failed"
+    assert dataset["error"] == "Couldn't find rows of numbers in this file. Is it a CSV file of test data?"
+    assert (dataset["channels"], dataset["data_version"]) == ([], None)
+
+    dataset = upload(team, chief, "Time,PT\nsoon,1\nlater,2\n")
+    assert dataset["status"] == "failed"
+    assert dataset["error"].startswith("Couldn't read the times in Time (like 'soon')")
+    response = team.client.post(f"/api/yorg/datasets/{dataset['id']}/read", json={"time_format": "rows"}, headers=chief)
+    assert response.json()["status"] == "ready"
+    assert response.json()["error"] is None
+
+
+def test_empty_uploads_are_refused(team):
+    chief = team.member("chief@x.test", admin=True)
+    response = team.client.post("/api/yorg/datasets", params={"filename": "x.csv"}, content=b"", headers=chief)
+    assert (response.status_code, response.json()["error"]) == (400, "empty")
+
+
+def test_a_wide_file(team):
+    chief = team.member("chief@x.test", admin=True)
+    header = "Time," + ",".join(f"CH{j}" for j in range(300))
+    rows = [f"{i}," + ",".join(str(i * j) for j in range(300)) for i in range(50)]
+    dataset = upload(team, chief, "\n".join([header, *rows]) + "\n")
+    assert dataset["channel_count"] == 300
+    assert samples(team, chief, dataset, "CH299")[2] == (2.0, 598.0)
+
+
+# --- datasets and views belong to the team -------------------------------------------------------------------------
+
+
+def test_everyone_sees_datasets_and_only_their_owner_or_an_admin_changes_them(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    first = upload(team, alice, "Time,PT\n0,1\n1,2\n", filename="cold flow.csv")
+    second = upload(team, bob, "Time,PT\n0,1\n1,2\n", filename="hotfire.csv")
+
+    listed = team.client.get("/api/yorg/datasets", headers=alice).json()
+    assert [(d["name"], d["can_change"]) for d in listed] == [("hotfire", False), ("cold flow", True)]
+    assert team.client.get(f"/api/yorg/datasets/{second['id']}", headers=alice).json()["channel_count"] == 1
+
+    url = f"/api/yorg/datasets/{first['id']}"
+    refused = team.client.patch(url, json={"name": "mine now"}, headers=bob)
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert team.client.post(url + "/read", json={}, headers=bob).status_code == 403
+    assert team.client.delete(url, headers=bob).status_code == 403
+    renamed = team.client.patch(url, json={"name": "Cold flow 1", "description": "LOX side"}, headers=alice).json()
+    assert (renamed["name"], renamed["description"]) == ("Cold flow 1", "LOX side")
+    assert team.client.patch(url, json={"name": "Cold flow #1"}, headers=chief).json()["name"] == "Cold flow #1"
+
+
+def test_deleted_datasets_come_back(team):
+    alice = team.member("alice@x.test")
+    dataset = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    url = f"/api/yorg/datasets/{dataset['id']}"
+    deleted = team.client.delete(url, headers=alice).json()
+    assert deleted["deleted_by"]["email"] == "alice@x.test"
+    assert team.client.get("/api/yorg/datasets", headers=alice).json() == []
+    assert [d["id"] for d in team.client.get("/api/yorg/datasets?deleted=true", headers=alice).json()] == [
+        dataset["id"]
+    ]
+    data = team.client.get(f"{url}/data/{dataset['data_version']}/time.f64", headers=alice)
+    assert data.status_code == 404
+    assert team.client.post(url + "/read", json={}, headers=alice).status_code == 409
+
+    restored = team.client.post(url + "/restore", headers=alice).json()
+    assert (restored["deleted_at"], restored["deleted_by"]) == (None, None)
+    assert fetch(team, alice, dataset, "time.f64") == [0.0, 1.0]
+
+
+def test_views_are_saved_for_everyone_and_changed_by_their_owner(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    dataset = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    body = {"name": "Tank pressures", "datasets": [dataset["id"]], "config": {"panels": [{"series": ["PT"]}]}}
+    created = team.client.post("/api/yorg/views", json=body, headers=alice)
+    assert created.status_code == 201, created.text
+    view = created.json()
+    assert (view["name"], view["datasets"], view["config"]) == ("Tank pressures", [dataset["id"]], body["config"])
+    assert view["created_by"]["email"] == "alice@x.test"
+
+    listed = team.client.get("/api/yorg/views", headers=bob).json()
+    assert [(v["name"], v["can_change"]) for v in listed] == [("Tank pressures", False)]
+    url = f"/api/yorg/views/{view['id']}"
+    assert team.client.put(url, json={**body, "name": "Mine"}, headers=bob).status_code == 403
+    assert team.client.delete(url, headers=bob).status_code == 403
+
+    changed = team.client.put(url, json={**body, "name": "Tanks", "config": {"panels": []}}, headers=alice).json()
+    assert (changed["name"], changed["config"], changed["updated_by"]["email"]) == (
+        "Tanks",
+        {"panels": []},
+        "alice@x.test",
+    )
+    too_big = team.client.put(url, json={**body, "config": {"x": "y" * 600_000}}, headers=alice)
+    assert too_big.status_code == 413
+    assert team.client.delete(url, headers=alice).status_code == 204
+    assert team.client.get(url, headers=alice).status_code == 404
+
+
+def test_yorg_is_for_approved_members(team):
+    waiting = team.member("new@x.test", status=UserStatus.PENDING)
+    assert team.client.get("/api/yorg/datasets", headers=waiting).status_code == 403
+    response = team.client.post(
+        "/api/yorg/datasets", params={"filename": "x.csv"}, content=b"t,a\n0,1\n", headers=waiting
+    )
+    assert response.status_code == 403
+
+
+def test_a_read_the_server_didnt_finish_can_be_read_again(settings, team):
+    alice = team.member("alice@x.test")
+    dataset = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    with team.app.state.sessionmaker() as db:
+        db.get(Dataset, dataset["id"]).status = "reading"  # as if the server stopped in the middle
+        db.commit()
+
+    with TestClient(create_app(settings)) as restarted:
+        found = restarted.get(f"/api/yorg/datasets/{dataset['id']}", headers=alice).json()
+    assert (found["status"], found["error"]) == (
+        "failed",
+        "The server stopped while it was reading this file. Read it again.",
+    )

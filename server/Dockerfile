@@ -35,6 +35,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     CVC_PORT=8000 \
     CVC_DATABASE_URL=sqlite:////data/cvc.db \
     CVC_BLOB_DIR=/data/blobs \
+    CVC_YORG_DIR=/data/yorg \
     CVC_WEB_DIR=/app/web
 VOLUME /data
 EXPOSE 8000

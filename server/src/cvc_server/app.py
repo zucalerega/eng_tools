@@ -14,6 +14,9 @@ from .db import make_engine, migrate
 from .errors import CvcError
 from .storage import BlobStore
 from .vault import init_vault
+from .yorg import api as yorg_api
+from .yorg.datasets import recover as recover_yorg
+from .yorg.files import DataFiles
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -27,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         migrate(engine)
         with sessions() as db:
             init_vault(db)
+            recover_yorg(db)
         yield
         engine.dispose()
 
@@ -34,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.sessionmaker = sessions
     app.state.store = BlobStore(settings.blob_dir)
+    app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.oauth = signin.make_oauth(settings)
     # Carries Google sign-in state between the redirect to Google and the callback.
     app.add_middleware(
@@ -60,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(downloads.router)
     app.include_router(admin.router)
     app.include_router(signin.router)
+    app.include_router(yorg_api.router)
     web.mount_assets(app, settings)
     app.include_router(web.router)  # last: it takes every path nothing else did
     return app

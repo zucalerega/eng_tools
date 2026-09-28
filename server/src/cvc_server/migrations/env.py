@@ -10,6 +10,7 @@ from alembic import context
 
 from cvc_server import models  # noqa: F401  (registers the tables)
 from cvc_server.db import Base, UTCDateTime, make_engine
+from cvc_server.yorg import models as yorg_models  # noqa: F401  (and Yorg's)
 
 
 def render_item(type_, obj, autogen_context):

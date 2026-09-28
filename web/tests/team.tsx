@@ -4,6 +4,7 @@ import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
 import { configureApi, type Account, type VaultFile } from "../src/api";
 import { StoreContext, VaultStore } from "../src/store";
+import type { DatasetDetail } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
 // Drives the real server the way the add-in and the CLI do, to set up what a test looks at.
@@ -108,6 +109,12 @@ export class Team {
     async account(email: string): Promise<Account | undefined> {
         const people = await call<Account[]>("GET", "/api/users", this.chief.token);
         return people.find((person) => person.email === email);
+    }
+
+    /** A file of test data, uploaded to Yorg (named to be unique to this test). */
+    async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
+        const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });
+        return call<DatasetDetail>("POST", `/api/yorg/datasets?${params}`, who.token, new TextEncoder().encode(csv));
     }
 }
 

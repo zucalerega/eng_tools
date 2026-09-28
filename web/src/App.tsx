@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
 import { Notice, usePopover, VaultMark } from "./components";
 import { WithFolderTree } from "./folderTree";
@@ -13,6 +14,7 @@ import { Trash } from "./pages/Trash";
 import { Link, usePathname } from "./router";
 import { useVault, type VaultState } from "./store";
 import { setTheme, useTheme, type Theme } from "./theme";
+import { inYorg, isWorkspace, YORG, YorgMark, YorgPage, yorgSection } from "./yorg";
 
 const THEMES: [Theme, string][] = [
     ["light", "Light"],
@@ -24,10 +26,16 @@ export function App() {
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
-    const section =
-        pathname === "/" || pathname.startsWith("/file") || pathname.startsWith("/trash")
-            ? "files"
-            : pathname.split("/")[1];
+    // Two apps share the site and its sign-in: the vault, and Yorg (test data, under /yorg).
+    const yorg = inYorg(pathname);
+    useEffect(() => {
+        document.title = yorg ? YORG : "Vault";
+    }, [yorg]);
+    const section = yorg
+        ? yorgSection(pathname)
+        : pathname === "/" || pathname.startsWith("/file") || pathname.startsWith("/trash")
+          ? "files"
+          : pathname.split("/")[1];
     const withTree = pathname === "/" || pathname.startsWith("/files") || pathname.startsWith("/trash");
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
@@ -36,24 +44,40 @@ export function App() {
     );
     return (
         <>
-            <header className={`topbar ${adminMode ? "topbar-admin" : ""}`}>
-                <Link to="/" className="brand">
-                    <VaultMark />
-                    <span className="wordmark">Vault</span>
+            <header className={`topbar ${adminMode && !yorg ? "topbar-admin" : ""}`}>
+                <Link to={yorg ? "/yorg" : "/"} className="brand" aria-label={yorg ? YORG : "Vault"}>
+                    {yorg ? <YorgMark /> : <VaultMark />}
                 </Link>
+                <nav className="apps" aria-label="Apps">
+                    <Link to="/" className="wordmark" aria-current={yorg ? undefined : "page"}>
+                        Vault
+                    </Link>
+                    <Link to="/yorg" className="wordmark" aria-current={yorg ? "page" : undefined}>
+                        {YORG}
+                    </Link>
+                </nav>
                 <nav className="nav" aria-label="Main">
-                    {nav("/", "files", "Files")}
-                    {nav("/assemblies", "assemblies", "Assemblies")}
-                    {nav("/locks", "locks", "Checked out")}
-                    {nav("/activity", "activity", "Activity")}
-                    {nav("/solidworks", "solidworks", "SolidWorks")}
-                    {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
+                    {yorg ? (
+                        <>
+                            {nav("/yorg", "data", "Datasets")}
+                            {nav("/yorg/views", "views", "Views")}
+                        </>
+                    ) : (
+                        <>
+                            {nav("/", "files", "Files")}
+                            {nav("/assemblies", "assemblies", "Assemblies")}
+                            {nav("/locks", "locks", "Checked out")}
+                            {nav("/activity", "activity", "Activity")}
+                            {nav("/solidworks", "solidworks", "SolidWorks")}
+                            {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
+                        </>
+                    )}
                 </nav>
                 <div className="topbar-end">
                     <AccountMenu vault={vault} />
                 </div>
             </header>
-            {adminMode && (
+            {adminMode && !yorg && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.
                     <button type="button" className="button-small" onClick={() => setAdminMode(false)}>
@@ -61,14 +85,20 @@ export function App() {
                     </button>
                 </div>
             )}
-            <main className={withTree ? "main-wide" : undefined}>
-                {vault.error && vault.status === "ready" && (
-                    <Notice tone="warning">
-                        Can't reach the Vault server ({vault.error}). Showing what was here; trying again.
-                    </Notice>
-                )}
-                <Page pathname={pathname} vault={vault} />
-            </main>
+            {yorg ? (
+                <main className={isWorkspace(pathname) ? "main-full" : undefined}>
+                    <YorgPage pathname={pathname} />
+                </main>
+            ) : (
+                <main className={withTree ? "main-wide" : undefined}>
+                    {vault.error && vault.status === "ready" && (
+                        <Notice tone="warning">
+                            Can't reach the Vault server ({vault.error}). Showing what was here; trying again.
+                        </Notice>
+                    )}
+                    <Page pathname={pathname} vault={vault} />
+                </main>
+            )}
         </>
     );
 }

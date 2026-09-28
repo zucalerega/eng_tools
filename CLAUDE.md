@@ -10,9 +10,9 @@ roadmap. Read the design before changing behavior.
 
 | Path | What |
 |---|---|
-| `server/` | Python 3.13 FastAPI server. Start at `vault.py` (every vault operation, no HTTP). `access.py`: folder tree and permissions. `paths.py`: path rules. `auth.py`: accounts and tokens. `api/`: thin routes and request/response schemas. |
+| `server/` | Python 3.13 FastAPI server. Start at `vault.py` (every vault operation, no HTTP). `access.py`: folder tree and permissions. `paths.py`: path rules. `auth.py`: accounts and tokens. `api/`: thin routes and request/response schemas. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). |
 | `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). `Cvc.SolidWorks.Open`: `cvc-open.exe`, which follows the web app's `cvc://` links into the add-in. `Cvc.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
-| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). Start at `store.ts`: the vault index, kept current through the sync feed. `api.ts`: the server's API. `pages/`: one file per page. Tests run against the real server. |
+| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). Start at `store.ts`: the vault index, kept current through the sync feed. `api.ts`: the server's API. `pages/`: one file per page. `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). Tests run against the real server. |
 | `docs/design.md` | Design, API, roadmap, open questions. |
 | `.github/workflows/ci.yml` | The checks every change must pass. |
 
@@ -204,8 +204,9 @@ a host yet (docs/design.md, "Deploying").
 - **Rolling back:** redeploy the previous tag. If the release ran a migration, also
   restore the database backup taken before the deploy. Blobs are append-only, so they
   never need restoring.
-- **Backups:** every night, copy the database and the blob folder off the host. Blobs
-  never change, so blob backups are incremental. Test a restore every semester.
+- **Backups:** every night, copy the database, the blob folder, and the Yorg folder
+  (`CVC_YORG_DIR`) off the host. Blobs never change, so blob backups are incremental.
+  Test a restore every semester.
 - **Configuration:** production runs with `CVC_ENV=production`, and every setting
   comes from the environment.
 - **Clients:** each CLI and add-in release must work with both the current and the

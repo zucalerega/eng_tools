@@ -240,6 +240,10 @@ public sealed class Workspace : IDisposable
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                if (!justTheCase)
+                {
+                    UndoHalfMove(from, to);
+                }
                 continue; // open somewhere: next time
             }
             for (var folder = Path.GetDirectoryName(from); folder != null && IsEmptyFolderUnderRoot(folder); folder = Path.GetDirectoryName(folder))
@@ -253,6 +257,29 @@ public sealed class Workspace : IDisposable
                     break;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// On Linux and macOS, File.Move puts the file in its new place before taking it out of the old one, so a
+    /// move that fails there (the old folder can't change) leaves it in both, and the one left behind would
+    /// look like a new file. Take the new one away again, so the copy stays where it was until a later
+    /// refresh, as on Windows. Only a file with the same contents goes, so nothing can be lost, even if
+    /// something else put a file there meanwhile. Not for a move that only changes case: that's one file.
+    /// </summary>
+    private static void UndoHalfMove(string from, string to)
+    {
+        try
+        {
+            if (File.Exists(from) && File.Exists(to) && new FileInfo(from).Length == new FileInfo(to).Length
+                && Hashing.Sha256File(from) == Hashing.Sha256File(to))
+            {
+                File.Delete(to);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left as it is: the status shows both, and nothing is lost.
         }
     }
 

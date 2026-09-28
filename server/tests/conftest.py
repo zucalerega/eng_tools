@@ -52,6 +52,11 @@ class Team:
             secret = auth.issue_token(db, user, kind=auth.CLIENT, name="test")
         return {"Authorization": f"Bearer {secret}"}
 
+    def whitelist(self, as_: dict[str, str], on: bool) -> None:
+        """Turn the whitelist on or off, as an admin does in the web app (Admin > People)."""
+        response = self.client.patch("/api/settings", json={"whitelist": on}, headers=as_)
+        assert (response.status_code, response.json()) == (200, {"whitelist": on}), response.text
+
     def grant(self, as_: dict[str, str], path: str, email: str | None, role: str | None) -> None:
         body = {"path": path, "user_id": self.ids[email] if email else None, "role": role}
         response = self.client.put("/api/grants", json=body, headers=as_)

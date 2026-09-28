@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .db import utcnow
 from .errors import Forbidden, NotFound
-from .models import ClientAuthCode, Token, User, UserStatus
+from .models import ClientAuthCode, SiteSettings, Token, User, UserStatus
 
 SESSION = "session"  # browser cookie
 CLIENT = "client"  # CLI or SolidWorks add-in, sent as "Authorization: Bearer ..."
@@ -24,11 +24,18 @@ def _digest(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
+def whitelist_on(db: Session) -> bool:
+    """Whether new people need an admin's invite or approval to join (Admin > People in the web app)."""
+    return db.get_one(SiteSettings, 1).whitelist
+
+
 def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: str, email_verified: bool) -> User:
     """Find or create the account for a Google identity.
 
-    A new account waits for an admin (pending) unless an admin invited the email
-    or it's in CVC_BOOTSTRAP_ADMINS.
+    Anyone joins at once, unless an admin has turned the whitelist on: then a new
+    account waits for an admin (pending) unless an admin invited the email.
+    Emails in CVC_BOOTSTRAP_ADMINS are always active admins. A disabled account
+    stays disabled.
     """
     if not email_verified:
         raise Forbidden("Your Google account's email address isn't verified", code="unverified_email")
@@ -45,7 +52,7 @@ def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: 
     user.name = user.name or name.strip()
     if email in settings.admin_emails:
         user.status, user.is_admin = UserStatus.ACTIVE, True
-    elif user.status == UserStatus.INVITED:
+    elif user.status == UserStatus.INVITED or (user.status == UserStatus.PENDING and not whitelist_on(db)):
         user.status = UserStatus.ACTIVE
     user.last_login_at = utcnow()
     db.commit()

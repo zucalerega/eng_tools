@@ -1347,6 +1347,21 @@ input[type="checkbox"] {
     cursor: pointer;
 }
 
+/* A choice for everyone, like the whitelist: a checkbox, and what it means under it. */
+.setting {
+    margin: 0 0 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.setting .check {
+    font-weight: 600;
+}
+
+.setting p {
+    margin: 0.2rem 0 0;
+}
+
 .tabs {
     display: flex;
     gap: 0.25rem;

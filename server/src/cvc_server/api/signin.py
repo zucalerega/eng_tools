@@ -171,7 +171,10 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
         if request.app.state.oauth is not None:
             query = urlencode({"next": _safe_next(next_path)})
             parts.append(f'<a class="button" href="/auth/login?{query}">Sign in with Google</a>')
-            parts.append('<p class="fine">First time here? Sign in, and an admin will approve your account.</p>')
+            if auth.whitelist_on(db):
+                parts.append('<p class="fine">First time here? Sign in, and an admin will approve your account.</p>')
+            else:
+                parts.append('<p class="fine">First time here? Sign in with your Google account to join.</p>')
         if settings.dev_auth and not settings.production:
             parts.append(
                 '<form class="dev" method="get" action="/auth/dev-login"><p>Development sign-in, with any email</p>'

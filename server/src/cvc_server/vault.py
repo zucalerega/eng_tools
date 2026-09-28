@@ -19,7 +19,21 @@ from . import paths
 from .access import Access, Tree
 from .db import utcnow
 from .errors import Conflict, CvcError, Forbidden, NotFound
-from .models import Blob, Checkin, Event, File, Folder, Grant, Role, User, UserStatus, VaultState, Version, VersionRef
+from .models import (
+    Blob,
+    Checkin,
+    Event,
+    File,
+    Folder,
+    Grant,
+    Role,
+    SiteSettings,
+    User,
+    UserStatus,
+    VaultState,
+    Version,
+    VersionRef,
+)
 
 FileRef = int | str  # a file id, or a vault path
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -29,9 +43,11 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def init_vault(db: Session) -> None:
-    """Create the vault_state row and the root folder if they don't exist yet."""
+    """Create the vault_state and site_settings rows and the root folder if they don't exist yet."""
     if db.get(VaultState, 1) is None:
         db.add(VaultState(id=1, seq=0, access_seq=0))
+    if db.get(SiteSettings, 1) is None:
+        db.add(SiteSettings(id=1, whitelist=False))
     if db.scalar(select(Folder.id).where(Folder.parent_id.is_(None))) is None:
         db.add(Folder(parent_id=None, name="", name_key="", change_seq=0))
     db.commit()
@@ -1314,6 +1330,34 @@ def update_user(
         _event(db, admin, "update_user", email=user.email, **changes)
     db.commit()
     return user
+
+
+def site_settings(db: Session, user: User) -> SiteSettings:
+    """What admins decide for everyone: whether new people need an invite or approval to join (the whitelist)."""
+    _require_admin(user)
+    return db.get_one(SiteSettings, 1)
+
+
+def update_site_settings(db: Session, admin: User, *, whitelist: bool | None = None) -> SiteSettings:
+    """Turn the whitelist on or off.
+
+    Accounts that already exist keep their status either way. Off, anyone who signs in joins at once
+    (auth.sign_in), so the people waiting for approval are approved now: they could sign in again to join.
+    """
+    _require_admin(admin)
+    seq = begin_write(db)
+    site = db.get_one(SiteSettings, 1)
+    if whitelist is not None and whitelist != site.whitelist:
+        site.whitelist = whitelist
+        _event(db, admin, "update_settings", whitelist=whitelist)
+        waiting = [] if whitelist else list(db.scalars(select(User).where(User.status == UserStatus.PENDING)))
+        for user in waiting:
+            user.status = UserStatus.ACTIVE
+            _event(db, admin, "update_user", email=user.email, status=user.status.value)
+        if waiting:
+            _bump_access(db, seq)
+    db.commit()
+    return site
 
 
 def folder_grants(db: Session, user: User, path: str) -> tuple[FolderView, list[GrantView]]:

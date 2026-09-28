@@ -7,6 +7,9 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
+    <!-- Restore for win-x64 on every OS: Windows infers it for a 64-bit .NET Framework exe, and others don't,
+         so without this packages.lock.json matches only one of them and CI's locked restore fails. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <AssemblyName>Vault-Setup</AssemblyName>
     <RootNamespace>Cvc.Setup</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>

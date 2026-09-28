@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Dialog, Notice } from "../components";
 import { yorg, type DatasetDetail, type Formula } from "./api";
 import { calculateFor, reloadFormulas } from "./data";
@@ -92,12 +93,11 @@ export function FormulaDialog({
         const [start, end] = field
             ? [field.selectionStart, field.selectionEnd]
             : [expression.length, expression.length];
-        const next = expression.slice(0, start) + text + expression.slice(end);
-        setExpression(next);
-        requestAnimationFrame(() => {
-            field?.focus();
-            field?.setSelectionRange(start + text.length, start + text.length);
-        });
+        // The new text in the field now, and the cursor after it: waiting a frame to move the cursor let keys
+        // typed meanwhile land where it was.
+        flushSync(() => setExpression(expression.slice(0, start) + text + expression.slice(end)));
+        field?.focus();
+        field?.setSelectionRange(start + text.length, start + text.length);
     }
 
     async function save() {

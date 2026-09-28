@@ -25,7 +25,8 @@ command, and this repository keep the name CVC. The same server also runs
   Check drawings in from SolidWorks: the `cvc` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
-- **Sign in with Google.** An admin approves new accounts.
+- **Sign in with Google.** Anyone can join, unless an admin turns on the whitelist
+  (Admin > People): then only people an admin invites or approves can.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every

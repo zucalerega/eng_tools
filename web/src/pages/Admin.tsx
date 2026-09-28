@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Account, type Grants, type Role } from "../api";
-import { Notice, Time } from "../components";
+import { api, type Account, type Grants, type Role, type SiteSettings } from "../api";
+import { Dialog, Notice, Time } from "../components";
 import { Link } from "../router";
 import { atLeast, useVault, type VaultState } from "../store";
 
@@ -53,10 +53,16 @@ const STATUS_ORDER = { pending: 0, invited: 1, active: 2, disabled: 3 };
 function People() {
     const vault = useVault();
     const [people, setPeople] = useState<Account[] | null>(null);
-    const reload = useCallback(async () => setPeople(await api.users()), []);
+    const [site, setSite] = useState<SiteSettings | null>(null);
+    const reload = useCallback(async () => {
+        const [accounts, settings] = await Promise.all([api.users(), api.settings()]);
+        setPeople(accounts);
+        setSite(settings);
+    }, []);
     const { problem, busy, run, setProblem } = useAction(reload);
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
+    const [opening, setOpening] = useState(false); // asking before the whitelist goes off
 
     useEffect(() => {
         reload().catch((error: Error) => setProblem(error.message));
@@ -74,9 +80,63 @@ function People() {
     const sorted = [...(people ?? [])].sort(
         (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name),
     );
+    const waiting = sorted.filter((person) => person.status === "pending").length;
     return (
         <>
             {problem && <Notice tone="error">{problem}</Notice>}
+            {site && (
+                <div className="setting">
+                    <label className="check">
+                        <input
+                            type="checkbox"
+                            checked={site.whitelist}
+                            disabled={busy}
+                            onChange={(event) => {
+                                if (event.target.checked) {
+                                    void run(() => api.updateSettings({ whitelist: true }));
+                                } else {
+                                    setOpening(true);
+                                }
+                            }}
+                        />
+                        Whitelist
+                    </label>
+                    {site.whitelist ? (
+                        <p className="muted">
+                            On: only people invited here can join. Anyone else who signs in waits for an admin to
+                            approve them.
+                        </p>
+                    ) : (
+                        <p className="muted">
+                            Off: anyone who signs in with Google joins right away. They get what Everyone has on the
+                            Access tab, and Yorg's test data.
+                        </p>
+                    )}
+                </div>
+            )}
+            {opening && (
+                <Dialog
+                    title="Turn the whitelist off?"
+                    confirm="Turn it off"
+                    danger
+                    busy={busy}
+                    onCancel={() => setOpening(false)}
+                    onConfirm={() =>
+                        void run(() => api.updateSettings({ whitelist: false })).then(() => setOpening(false))
+                    }
+                >
+                    <p>
+                        Anyone with a Google account will be able to sign in and join right away. They'll get what
+                        Everyone has on the Access tab, and Yorg's test data.
+                    </p>
+                    {waiting > 0 && (
+                        <p>
+                            {waiting === 1 ? "The person" : `The ${waiting} people`} waiting for approval will be
+                            approved now.
+                        </p>
+                    )}
+                </Dialog>
+            )}
             <form className="inline-form" onSubmit={invite}>
                 <label className="field">
                     Invite by email
@@ -91,7 +151,7 @@ function People() {
                 </button>
             </form>
             <p className="muted">
-                Invited people are active from their first sign-in. Others wait for an admin to approve them.
+                Invited people are active from their first sign-in, and can be given access before then.
             </p>
             {people === null ? (
                 <p className="muted">Loading…</p>

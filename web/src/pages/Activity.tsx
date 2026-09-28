@@ -214,6 +214,12 @@ function describe(event: VaultEvent): ReactNode {
                     {detail.is_admin === true ? " (made admin)" : detail.is_admin === false ? " (admin removed)" : ""}
                 </>
             );
+        case "update_settings":
+            return (
+                <>
+                    {who} turned the whitelist {detail.whitelist ? "on" : "off"}
+                </>
+            );
         default:
             return (
                 <>

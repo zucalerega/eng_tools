@@ -1,11 +1,11 @@
-"""People and permissions API: your account, users, folder grants, and sign-in tokens."""
+"""People and permissions API: your account, users, sign-up, folder grants, and sign-in tokens."""
 
 from fastapi import APIRouter
 
 from .. import auth, vault
 from ..models import UserStatus
 from .deps import DB, ActiveUser, AnyUser
-from .schemas import GrantIn, GrantsOut, InviteIn, TokenOut, UserOut, UserPatch
+from .schemas import GrantIn, GrantsOut, InviteIn, SiteSettingsOut, SiteSettingsPatch, TokenOut, UserOut, UserPatch
 
 router = APIRouter(prefix="/api", tags=["people"])
 
@@ -33,6 +33,18 @@ def patch_user(user_id: int, body: UserPatch, user: ActiveUser, db: DB) -> UserO
     """Approve (status=active) or disable an account, or change admin rights (admins)."""
     status = UserStatus(body.status) if body.status else None
     return UserOut.of(vault.update_user(db, user, user_id, status=status, is_admin=body.is_admin, name=body.name))
+
+
+@router.get("/settings")
+def get_site_settings(user: ActiveUser, db: DB) -> SiteSettingsOut:
+    """Whether new people need an invite or an admin's approval to join: the whitelist (admins)."""
+    return SiteSettingsOut.of(vault.site_settings(db, user))
+
+
+@router.patch("/settings")
+def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB) -> SiteSettingsOut:
+    """Turn the whitelist on or off (admins). Off, anyone can join, so it approves everyone waiting too."""
+    return SiteSettingsOut.of(vault.update_site_settings(db, user, whitelist=body.whitelist))
 
 
 @router.get("/grants")

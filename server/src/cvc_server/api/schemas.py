@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 from .. import vault
-from ..models import Role, Token, User
+from ..models import Role, SiteSettings, Token, User
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 # A file id, or a vault path such as "Structures/Fins/Fin.SLDPRT".
@@ -367,6 +367,18 @@ class UserPatch(BaseModel):
     status: Literal["active", "disabled"] | None = None
     is_admin: bool | None = None
     name: str | None = None
+
+
+class SiteSettingsOut(BaseModel):
+    whitelist: bool  # on: only invited people join, and anyone else who signs in waits for an admin's approval
+
+    @classmethod
+    def of(cls, site: SiteSettings) -> "SiteSettingsOut":
+        return cls(whitelist=site.whitelist)
+
+
+class SiteSettingsPatch(BaseModel):
+    whitelist: bool | None = None  # turning it off approves everyone waiting
 
 
 class TokenOut(BaseModel):

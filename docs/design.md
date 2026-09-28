@@ -488,10 +488,34 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   the times of the channel with the most samples, reading the others between their
   samples (states hold) and leaving gaps outside them and where a division is by zero.
   Besides arithmetic, comparisons, and math functions, it has what test data needs:
-  `where`/`if`, `min`/`max`/`avg` that skip missing samples (redundant sensors),
+  `where`/`if`, `and`/`or`/`not`/`between` for tests (missing only where a missing
+  sample would decide it), `min`/`max`/`avg` that skip missing samples (redundant sensors),
   `ddt` (per second), `integral` (total impulse), and `smooth(x, seconds)`. The editor
   checks an expression as it's typed and tries it on the dataset, showing its range.
   Whoever made one (or an admin) changes or deletes it.
+- **Masks** belong to a layout: a name, a color, and a test written like a calculated
+  channel (`[MOV-OX] == 1`, `[PT-CHAMBER] > 450`, `and(...)`, `between(x, low, high)`),
+  which holds where it isn't 0 and isn't missing. The editor puts a test together from a
+  channel, a comparison, and a value (a state's by its name), and says how often and how
+  long it holds. Its runs (`masks.ts`: from the first sample that holds to the last, ended
+  by a pause in logging) are worked out once per dataset and test, like a calculated
+  channel. A mask can shade the plots where it holds (the first dataset's runs, under the
+  data) and hide data where it doesn't: each series keeps only its samples inside its own
+  dataset's runs (so compared tests are masked by their own valves), which the axes fit,
+  the cursor reads, and the CSV export writes. Views keep masks by channel name, so a view
+  masks another test's data the same way.
+- **Splitting a file into its tests** makes a dataset of each test in it. The browser
+  finds them: where a mask holds (runs closer than a gap joined into one test, runs
+  shorter than a minimum left out, each padded by seconds before and after), and cut at
+  times typed or at the markers; each counts its time from where its mask starts holding
+  in it (the valve opening), from its start, or as in the file. The server
+  (`yorg/pieces.py`) copies each span's samples out of the file's arrays, with times from
+  that zero (a dated file's start moves with it, so clock times stay), into new datasets:
+  channels without a sample in the span are left out (and said so), events come along,
+  and statistics are worked out again. All or none: a span with no samples makes nothing.
+  A piece says where it came from (`read_info.split_from`), and, having no file of its
+  own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
+  to the file (or another folder), and are whoever split them's.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
@@ -530,6 +554,7 @@ are at `/docs`.
 | `GET`/`POST /api/yorg/folders`, `PATCH`/`DELETE /api/yorg/folders/{id}` | folders of datasets `{name, parent_id}`; rename or move one; delete an empty one |
 | `GET`/`PATCH`/`DELETE /api/yorg/datasets/{id}` | a dataset with its channels, events, and how it was read; rename it; delete it (restorable) |
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
+| `POST /api/yorg/datasets/{id}/split` | make datasets of spans of it `{pieces: [{name, start, end, zero}], folder_id}`, all or none (422 if a span has no samples) |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
 | `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, description, datasets, config}` |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
@@ -576,9 +601,10 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
 7. **Yorg** (first version done, September 2026): upload, read, plot, compare, views,
-   exports, calculated channels, folders, and labels. Next: statistics over a selected
-   span, reading while the file is still uploading for very big files, and data streamed
-   live from the test stand.
+   exports, calculated channels, folders, labels, masks, and splitting files into their
+   tests. Next: statistics over a selected span (and over each test, from its mask),
+   reading while the file is still uploading for very big files, and data streamed live
+   from the test stand.
 
 ## Open questions
 

@@ -260,6 +260,7 @@ export function Dialog({
     confirm,
     onConfirm,
     onCancel,
+    cancel = "Cancel",
     busy = false,
     danger = false,
     disabled = false,
@@ -271,6 +272,7 @@ export function Dialog({
     confirm: string;
     onConfirm: () => void;
     onCancel: () => void;
+    cancel?: string; // "Close", when it's done
     busy?: boolean;
     danger?: boolean;
     disabled?: boolean;
@@ -279,7 +281,7 @@ export function Dialog({
 }) {
     const heading = useId();
     const dialog = useRef<HTMLFormElement>(null);
-    const cancel = useRef<HTMLButtonElement>(null);
+    const cancelButton = useRef<HTMLButtonElement>(null);
     const escape = useEffectEvent((event: KeyboardEvent) => {
         if (event.key === "Escape" && !busy) {
             onCancel();
@@ -289,7 +291,7 @@ export function Dialog({
     // pull focus out of its fields.
     useEffect(() => {
         if (!dialog.current?.contains(document.activeElement)) {
-            cancel.current?.focus();
+            cancelButton.current?.focus();
         }
         const listener = (event: KeyboardEvent) => escape(event);
         window.addEventListener("keydown", listener);
@@ -317,8 +319,8 @@ export function Dialog({
                 <h2 id={heading}>{title}</h2>
                 <div className="dialog-body">{children}</div>
                 <div className="dialog-actions">
-                    <button type="button" ref={cancel} onClick={onCancel} disabled={busy}>
-                        Cancel
+                    <button type="button" ref={cancelButton} onClick={onCancel} disabled={busy}>
+                        {cancel}
                     </button>
                     {link && confirmHref ? (
                         <a className={`button ${className}`} href={confirmHref} onClick={onConfirm}>

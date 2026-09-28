@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { yorg, type Channel, type DatasetDetail, type Formula } from "./api";
 import { calculate, channelsOf, findChannel, FormulaError, readFormula, type Input } from "./formula";
+import { intersect, runsOf, within, type Runs } from "./masks";
 import { Samples } from "./samples";
 
 // Datasets and channels' samples, each loaded once and shared by every plot on the page. Samples can be big (a
@@ -201,10 +202,42 @@ export function calculated(detail: DatasetDetail, formula: Formula): Loaded<Samp
     return sampleStore.get(key, () => calculateFor(detail, formula.expression));
 }
 
+// --- masks --------------------------------------------------------------------------------------------------------
+
+const runStore = new Store<Runs>((runs) => runs.byteLength);
+
+/** Where every one of the tests holds in a dataset (its latest read): runs of its own time, worked out once. */
+export function maskRuns(detail: DatasetDetail, expressions: readonly string[]): Loaded<Runs> {
+    return runStore.get(`${detail.id}/${detail.data_version}/mask/${expressions.join("\n")}`, async () => {
+        const each = await Promise.all(
+            expressions.map(async (expression) => runsOf(await calculateFor(detail, expression))),
+        );
+        return each.reduce((all, runs) => intersect(all, runs));
+    });
+}
+
+const maskedStore = new WeakMap<Samples, WeakMap<Runs, Samples>>();
+
+/** Samples with those outside the runs missing: each channel masked once for each mask. */
+export function masked(samples: Samples, runs: Runs): Samples {
+    let byRuns = maskedStore.get(samples);
+    if (!byRuns) {
+        byRuns = new WeakMap();
+        maskedStore.set(samples, byRuns);
+    }
+    let found = byRuns.get(runs);
+    if (!found) {
+        found = within(samples, runs);
+        byRuns.set(runs, found);
+    }
+    return found;
+}
+
 /** Re-render when anything loads. The number goes up each time, for memos that depend on what's loaded. */
 export function useLoaded(): number {
     const datasets = useSyncExternalStore(datasetStore.subscribe, datasetStore.snapshot);
     const loadedSamples = useSyncExternalStore(sampleStore.subscribe, sampleStore.snapshot);
     const loadedFormulas = useSyncExternalStore(formulaStore.subscribe, formulaStore.snapshot);
-    return datasets + loadedSamples + loadedFormulas;
+    const loadedRuns = useSyncExternalStore(runStore.subscribe, runStore.snapshot);
+    return datasets + loadedSamples + loadedFormulas + loadedRuns;
 }

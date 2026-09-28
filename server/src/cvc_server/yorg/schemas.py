@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from ..api.schemas import UserRef
 from ..models import User
@@ -146,6 +146,26 @@ class DatasetChangeIn(BaseModel):
 class MoveIn(BaseModel):
     datasets: list[int] = Field(min_length=1, max_length=1000)
     folder_id: int | None  # None: to the top
+
+
+class PieceIn(BaseModel):
+    """A span of a dataset to make a dataset of, in the dataset's own seconds."""
+
+    name: Name
+    start: float = Field(allow_inf_nan=False)
+    end: float = Field(allow_inf_nan=False)
+    zero: float | None = Field(None, allow_inf_nan=False)  # the time that becomes 0 (a valve opening); None: as is
+
+    @model_validator(mode="after")
+    def _ends_after_it_starts(self) -> "PieceIn":
+        if not self.end > self.start:
+            raise ValueError(f"{self.name} has to end after it starts")
+        return self
+
+
+class SplitIn(BaseModel):
+    pieces: list[PieceIn] = Field(min_length=1, max_length=200)
+    folder_id: int | None = None  # the folder they go in; None: the top
 
 
 class FolderIn(BaseModel):

@@ -381,3 +381,63 @@ test("a saved view shows on its dataset's pages for everyone, and anyone can sav
     await userEvent.click(screen.getByRole("button", { name: "Save as a new view" }));
     expect(await screen.findByRole("dialog", { name: "Save this view" })).toBeTruthy();
 });
+
+test("a mask holds where a valve's open, and splits a file of two tests into two datasets", async () => {
+    const team = await Team.create();
+    // Two cold flows in one file: the valve opens at 1 s, and again at 3.5 s, for a second each time.
+    const open = (i: number) => (i >= 10 && i < 20) || (i >= 35 && i < 45);
+    const csv = [
+        "Time (s),PT-OX-01 (psi),Valve",
+        ...Array.from({ length: 60 }, (_, i) => [i / 10, 300 + i, open(i) ? "OPEN" : "CLOSED"].join(",")),
+    ].join("\n");
+    const data = await team.data(team.chief, "Cold flows", csv);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
+
+    // Put together from the valve and its state's name, and tried on the dataset.
+    await userEvent.click(await screen.findByRole("button", { name: "Mask" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "New mask" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Channel"), "Valve");
+    await userEvent.selectOptions(dialog.getByLabelText("Comparison"), "is");
+    await userEvent.selectOptions(dialog.getByLabelText("Value"), "OPEN");
+    await userEvent.click(dialog.getByRole("button", { name: "Add" }));
+    expect((dialog.getByLabelText("Test") as HTMLTextAreaElement).value).toBe("[Valve] == 1");
+    expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe("Valve is OPEN");
+    expect(await dialog.findByText(`In ${data.name}, it holds 2 times: 1.8 s in all of 5.9 s.`)).toBeTruthy();
+    await userEvent.click(dialog.getByRole("button", { name: "Add the mask" }));
+
+    const masks = within(await screen.findByRole("region", { name: "Masks" }));
+    expect(await masks.findByText("Holds 2 times, 1.8 s in all")).toBeTruthy();
+    const shade = masks.getByRole("button", { name: "Shade where Valve is OPEN holds" });
+    expect(shade.getAttribute("aria-pressed")).toBe("true");
+    const hide = masks.getByRole("button", { name: "Hide data where Valve is OPEN doesn't hold" });
+    await userEvent.click(hide);
+    expect(hide.getAttribute("aria-pressed")).toBe("true");
+
+    // Split where it holds: from a second before each opening to two seconds after it (inside the file).
+    await userEvent.click(screen.getByRole("button", { name: "Split" }));
+    const split = within(await screen.findByRole("dialog", { name: `Split ${data.name} into tests` }));
+    const tests = within(await split.findByRole("table", { name: "Tests" }));
+    expect(
+        tests
+            .getAllByRole("row")
+            .slice(1)
+            .map((row) => [...row.querySelectorAll("td")].slice(1).map((cell) => cell.textContent)),
+    ).toEqual([
+        [`${data.name} test 1`, "0 s", "3.9 s", "3.9 s"],
+        [`${data.name} test 2`, "2.5 s", "5.9 s", "3.4 s"],
+    ]);
+    await userEvent.click(split.getByRole("button", { name: "Make 2 datasets" }));
+    const done = within(await screen.findByRole("dialog", { name: "Made 2 datasets" }));
+    await userEvent.click(done.getByRole("button", { name: "Open the folder" }));
+
+    // In a new folder beside it, each timed from its valve's opening.
+    expect(await screen.findByRole("heading", { name: `${data.name} tests` })).toBeTruthy();
+    const table = within(await screen.findByRole("table", { name: "Datasets" }));
+    const first = (await table.findByRole("link", { name: `${data.name} test 1` })).closest("tr")!;
+    expect(first.textContent).toContain("3.9 s");
+    expect(table.getByRole("link", { name: `${data.name} test 2` })).toBeTruthy();
+    await userEvent.click(within(first).getByRole("link", { name: "About" }));
+    expect(await screen.findByText("Split from")).toBeTruthy();
+    expect(screen.getByRole("link", { name: data.name })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /^Download/ })).toBeNull();
+});

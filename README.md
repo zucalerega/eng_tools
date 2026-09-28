@@ -75,6 +75,16 @@ together on one time axis.
   steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers (drag them,
   or T0, to move them), and fix an axis's range. Compare with another dataset to overlay
   two tests, shifted in time to line them up.
+- **Masks:** Mask makes a test on channels, like the main valve open or a pressure over
+  its redline: pick a channel, a comparison, and a value (a valve's OPEN, by name), or
+  write one like a calculated channel (`and([MOV-OX] == 1, [PT-CHAMBER] > 450)`). A mask
+  shades the plots where it holds, and can hide data everywhere else (Hide, in the list
+  on the left); a compared test is masked by its own channels.
+- **Split a file into its tests:** Split makes a dataset of each test in a file of
+  several: where a mask holds (from a second before each valve opening to two after, say,
+  with chatter joined and blips left out), cut at times you type or at your markers. Each
+  test's time can start where its valve opened. They go in a new folder next to the file,
+  which stays as it was.
 - **Labels:** Label (or L), then click a plot: a label with an arrow to the data there.
   Drag the label to move it, or the arrow's tip to point it somewhere else; double-click
   it to change the words, or right-click it for more.

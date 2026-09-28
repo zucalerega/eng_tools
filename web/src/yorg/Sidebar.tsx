@@ -1,14 +1,15 @@
 import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { yorg, type Channel, type Dataset, type DatasetDetail, type Formula } from "./api";
-import { fits, dataset as loadDataset, formulas as loadFormulas } from "./data";
+import { fits, dataset as loadDataset, formulas as loadFormulas, maskRuns } from "./data";
 import { FormulaDialog } from "./Formulas";
-import { isPlotted, type Action, type Layout, type PanelSpec } from "./layout";
-import { formatValue } from "./scale";
+import { isPlotted, type Action, type Layout, type Mask, type PanelSpec } from "./layout";
+import { measure } from "./masks";
+import { formatDuration, formatValue } from "./scale";
 import type { Resolved } from "./Workspace";
 import { CHANNEL_TYPE } from "./Workspace";
 
 // The workspace's left side: its datasets (and how each lines up in time), their channels and calculated channels to
-// plot, and the markers. A channel's dot says it's plotted: clicking it again takes it off.
+// plot, the masks, and the markers. A channel's dot says it's plotted: clicking it again takes it off.
 
 /** What the channel list offers to plot: a channel, or a calculated channel (formula). */
 interface Pick {
@@ -53,6 +54,7 @@ export function Sidebar({
     plotted,
     view,
     time,
+    onEditMask,
 }: {
     layout: Layout;
     dispatch: (action: Action) => void;
@@ -60,6 +62,7 @@ export function Sidebar({
     plotted: Resolved[];
     view: [number, number];
     time: { at: (x: number) => string };
+    onEditMask: (mask: Mask) => void;
 }) {
     const [filter, setFilter] = useState("");
     const [editing, setEditing] = useState<{ formula: Formula | null; detail: DatasetDetail } | null>(null);
@@ -117,6 +120,7 @@ export function Sidebar({
                 );
             })}
             <AddDataset layout={layout} dispatch={dispatch} />
+            <Masks layout={layout} dispatch={dispatch} onEdit={onEditMask} />
             <Markers layout={layout} dispatch={dispatch} view={view} time={time} />
             {editing && (
                 <FormulaDialog
@@ -397,6 +401,107 @@ function AddDataset({ layout, dispatch }: { layout: Layout; dispatch: (action: A
                 ))}
             </select>
         </label>
+    );
+}
+
+/**
+ * The masks: each one's color and name (to change it), how it holds in the first dataset, and whether it shades the
+ * plots and hides data. A dataset it can't be worked out for (it hasn't a channel the test uses) is said.
+ */
+function Masks({
+    layout,
+    dispatch,
+    onEdit,
+}: {
+    layout: Layout;
+    dispatch: (action: Action) => void;
+    onEdit: (mask: Mask) => void;
+}) {
+    if (layout.masks.length === 0) {
+        return null;
+    }
+    const details = layout.datasets.flatMap((ref) => {
+        const loaded = loadDataset(ref.id);
+        return loaded.status === "ready" ? [loaded.value] : [];
+    });
+    return (
+        <section className="yorg-masks" aria-label="Masks">
+            <h2>Masks</h2>
+            <ul>
+                {layout.masks.map((mask) => {
+                    const first = details[0] ? maskRuns(details[0], [mask.expression]) : null;
+                    const held = first?.status === "ready" ? measure(first.value) : null;
+                    // Where it's used: every dataset when it hides data, the first one's when it only shades.
+                    const failures = (mask.hide ? details : details.slice(0, 1)).flatMap((detail) => {
+                        const runs = maskRuns(detail, [mask.expression]);
+                        return runs.status === "failed" ? [`Not in ${detail.name}: ${runs.error}`] : [];
+                    });
+                    const toggle = (change: { shade?: boolean; hide?: boolean }) =>
+                        dispatch({ type: "changeMask", mask: mask.id, change });
+                    return (
+                        <li key={mask.id}>
+                            <div className="yorg-mask-row">
+                                <button
+                                    type="button"
+                                    className="yorg-mask-name"
+                                    title={`${mask.expression}\nClick to change it`}
+                                    onClick={() => onEdit(mask)}
+                                >
+                                    <span
+                                        className="yorg-swatch"
+                                        style={{ background: mask.color }}
+                                        aria-hidden="true"
+                                    />
+                                    {mask.name}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="button-small"
+                                    aria-pressed={mask.shade}
+                                    aria-label={`Shade where ${mask.name} holds`}
+                                    title="Shade the plots where it holds"
+                                    onClick={() => toggle({ shade: !mask.shade })}
+                                >
+                                    Shade
+                                </button>
+                                <button
+                                    type="button"
+                                    className="button-small"
+                                    aria-pressed={mask.hide}
+                                    aria-label={`Hide data where ${mask.name} doesn't hold`}
+                                    title="Hide data where it doesn't hold"
+                                    onClick={() => toggle({ hide: !mask.hide })}
+                                >
+                                    Hide
+                                </button>
+                                <button
+                                    type="button"
+                                    className="button-small"
+                                    aria-label={`Remove the mask ${mask.name}`}
+                                    onClick={() => dispatch({ type: "removeMask", mask: mask.id })}
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <p className="yorg-mask-held muted">
+                                {held
+                                    ? held.count === 0
+                                        ? "Never holds"
+                                        : `Holds ${held.count === 1 ? "once" : `${held.count} times`}, ${formatDuration(held.total)} in all`
+                                    : first?.status === "loading"
+                                      ? "Working it out…"
+                                      : ""}
+                            </p>
+                            {failures.map((failure) => (
+                                <p key={failure} className="field-problem">
+                                    {failure}
+                                </p>
+                            ))}
+                        </li>
+                    );
+                })}
+            </ul>
+        </section>
     );
 }
 

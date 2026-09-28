@@ -8,7 +8,7 @@ import json
 import logging
 import secrets
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from ..models import User
 from .files import DataFiles
 from .ingest import ReadError, ReadOptions, read_csv
 from .models import Channel, DataFolder, Dataset, DatasetStatus, Formula, View
+from .pieces import Cutter
 
 log = logging.getLogger(__name__)
 MAX_VIEW_BYTES = 512 * 1024
@@ -29,6 +30,11 @@ MAX_VIEW_BYTES = 512 * 1024
 class Unreadable(CvcError):
     status = 422
     code = "unreadable"
+
+
+class EmptyPiece(CvcError):
+    status = 422
+    code = "empty_piece"
 
 
 def can_change(user: User, created_by: int | None) -> bool:
@@ -99,6 +105,12 @@ def read(db: Session, user: User, files: DataFiles, dataset_id: int, options: Re
     _check_can_change(user, found.created_by, "dataset")
     if found.deleted_at is not None:
         raise Conflict(f"{found.name} is deleted: restore it first")
+    if split_from := found.read_info.get("split_from"):
+        raise Conflict(
+            f"{found.name} was split from {split_from['name']}, and has no file of its own:"
+            f" read {split_from['name']} again, and split it again",
+            code="split",
+        )
     return _read(db, files, dataset_id, options)
 
 
@@ -183,6 +195,100 @@ def restore(db: Session, user: User, dataset_id: int) -> Dataset:
     found.deleter = None
     db.commit()
     return found
+
+
+@dataclass
+class PieceSpec:
+    """A span of a dataset to make a dataset of: its name, its first and last times, and the time to count from."""
+
+    name: str
+    start: float
+    end: float
+    zero: float | None  # None: times as they are
+
+
+def split(
+    db: Session, user: User, files: DataFiles, dataset_id: int, pieces: Sequence[PieceSpec], *, folder_id: int | None
+) -> list[Dataset]:
+    """Datasets from spans of one (the tests in a file of several): all of them, or none if a span has no samples.
+
+    Each copies its span's samples, with times counted from its zero, and says where it came from (its read_info's
+    split_from). The dataset they come from doesn't change. They're whoever split them's, like an upload.
+    """
+    found = dataset(db, dataset_id)
+    if found.deleted_at is not None:
+        raise Conflict(f"{found.name} is deleted: restore it first")
+    if found.status != DatasetStatus.READY or not found.data_version:
+        raise Conflict(f"{found.name} hasn't been read, so there's nothing to split", code="not_read")
+    if folder_id is not None:
+        folder(db, folder_id)
+    cutter = Cutter(files.data(found.id, found.data_version), channels(db, found.id), found.events)
+    for piece in pieces:
+        if cutter.rows(piece.start, piece.end) == 0:
+            raise EmptyPiece(
+                f"{piece.name} would be empty: {found.name} has no samples from {piece.start:g} to {piece.end:g} s"
+            )
+    db.commit()  # hold nothing in the database while the arrays are copied: a long test takes a while
+    works: list[Path] = []
+    try:
+        cuts = []
+        for piece in pieces:
+            works.append(files.work_folder())
+            cuts.append(cutter.cut(works[-1], piece.start, piece.end, piece.zero or 0.0))
+    except BaseException:
+        for work in works:
+            files.drop(work)
+        raise
+    made: list[Dataset] = []
+    placed: list[Path] = []  # their folders, once their arrays are in them
+    try:
+        for piece, cut, work in zip(pieces, cuts, works, strict=True):
+            zero = piece.zero or 0.0
+            version = secrets.token_hex(8)
+            new = Dataset(
+                folder_id=folder_id,
+                name=piece.name,
+                description="",
+                filename=found.filename,
+                size=cut.size,
+                sha256=cut.sha256,
+                status=DatasetStatus.READY,
+                creator=user,
+                data_version=version,
+                rows=cut.rows,
+                channel_count=len(cut.channels),
+                time_kind=found.time_kind,
+                start_epoch=None if found.start_epoch is None else found.start_epoch + zero,
+                t_min=cut.t_min,
+                t_max=cut.t_max,
+                sample_rate=found.sample_rate,
+                read_options={},
+                read_info={
+                    **found.read_info,
+                    "split_from": {
+                        "dataset": found.id,
+                        "name": found.name,
+                        "start": piece.start,
+                        "end": piece.end,
+                        "zero": piece.zero,
+                    },
+                },
+                warnings=[f"Left out {name}: it has no samples in this span." for name in cut.left_out],
+                events=cut.events,
+            )
+            db.add(new)
+            db.flush()
+            made.append(new)
+            placed.append(files.folder(new.id))
+            files.keep_data(new.id, work, version)
+            db.add_all(Channel(dataset_id=new.id, **asdict(channel)) for channel in cut.channels)
+        db.commit()
+    except BaseException:
+        db.rollback()
+        for path in placed + works:  # a work folder that was moved into place is gone already
+            files.drop(path)
+        raise
+    return made
 
 
 def recover(db: Session) -> None:

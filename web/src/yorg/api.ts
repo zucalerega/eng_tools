@@ -94,6 +94,24 @@ export interface ReadInfo {
     time_column?: string | null;
     time_format?: TimeFormat;
     utc_offset?: number | null;
+    split_from?: SplitFrom; // a piece of another dataset (a test, out of a file of several): it has no file of its own
+}
+
+/** Where a piece of a dataset came from: that dataset, and the span of its times, counted from zero. */
+export interface SplitFrom {
+    dataset: number;
+    name: string;
+    start: number;
+    end: number;
+    zero: number | null;
+}
+
+/** A span of a dataset to make a dataset of: in its own seconds, with zero's time as 0 (null: times as they are). */
+export interface PieceBody {
+    name: string;
+    start: number;
+    end: number;
+    zero: number | null;
 }
 
 export interface DatasetDetail extends Dataset {
@@ -187,6 +205,9 @@ export const yorg = {
         request<Dataset>("PATCH", datasetPath(id), change),
     /** Read the file again another way. If that doesn't work, this fails, and the last read stays. */
     read: (id: number, options: ReadOptions) => request<DatasetDetail>("POST", datasetPath(id) + "/read", options),
+    /** Make datasets of spans of one (its tests), in a folder: all of them, or none if a span has no samples. */
+    split: (id: number, pieces: PieceBody[], folder: number | null) =>
+        request<Dataset[]>("POST", datasetPath(id) + "/split", { pieces, folder_id: folder }),
     remove: (id: number) => request<Dataset>("DELETE", datasetPath(id)),
     restore: (id: number) => request<Dataset>("POST", datasetPath(id) + "/restore"),
     sourceUrl: (id: number) => apiUrl(datasetPath(id) + "/source"),

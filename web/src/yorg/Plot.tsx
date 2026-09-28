@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { AxisSpec, Note, Side } from "./layout";
+import type { Runs } from "./masks";
 import { sampleAt, trace, visibleRange, type Placement, type Samples } from "./samples";
 import { formatDuration, formatTick, ticks } from "./scale";
 
@@ -35,6 +36,13 @@ export interface PlotMark {
     label: string;
     kind: "marker" | "event" | "t0";
     id?: string; // a marker you can drag
+}
+
+/** Where a mask holds, shaded: its runs (in its dataset's time: shift puts them on the time axis), in its color. */
+export interface Shading {
+    runs: Runs;
+    shift: number;
+    color: string;
 }
 
 /** A place in a plot's data: a time, and a value on one of its axes. */
@@ -125,6 +133,7 @@ interface Props {
     window: [number, number];
     time: TimeAxis;
     marks: PlotMark[];
+    shading: Shading[];
     cursor: number | null;
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
     rightGutter: boolean; // every plot keeps room for a right axis if any has one, so their time axes line up
@@ -305,6 +314,39 @@ function draw(
     context.fillRect(g.left, g.top, plotWidth, plotHeight);
     context.font = `11px ${colors.font}`;
     context.lineWidth = 1;
+
+    // Where masks hold, under everything: runs closer than a pixel are one band, so a test that flickers stays quick.
+    context.save();
+    context.globalAlpha = 0.16;
+    for (const { runs, shift, color } of props.shading) {
+        context.fillStyle = color;
+        let low = 0;
+        let high = runs.length / 2;
+        while (low < high) {
+            const middle = (low + high) >>> 1;
+            if (runs[middle * 2 + 1]! + shift < view[0]) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        let [open, close] = [NaN, NaN];
+        for (let r = low * 2; r < runs.length && runs[r]! + shift <= view[1]; r += 2) {
+            const [from, to] = [Math.max(g.left, toX(runs[r]! + shift)), Math.min(g.right, toX(runs[r + 1]! + shift))];
+            if (from <= close + 1) {
+                close = Math.max(close, to);
+                continue;
+            }
+            if (!Number.isNaN(open)) {
+                context.fillRect(open, g.top, Math.max(1, close - open), plotHeight);
+            }
+            [open, close] = [from, to];
+        }
+        if (!Number.isNaN(open)) {
+            context.fillRect(open, g.top, Math.max(1, close - open), plotHeight);
+        }
+    }
+    context.restore();
 
     // Time: grid lines, and their labels under the plot.
     const timeTicks = time.ticks(view[0], view[1], Math.max(2, Math.floor(plotWidth / 110)));
@@ -614,6 +656,7 @@ export function Plot(props: Props) {
         props.series,
         props.window,
         props.marks,
+        props.shading,
         props.notes,
         props.time,
         props.colors,

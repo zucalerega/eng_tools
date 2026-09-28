@@ -100,6 +100,25 @@ describe("working them out", () => {
         expect(run("min([P1], [P2], 2)", { P1: one, P2: two })).toEqual([1, 2, 2, 2, 2]);
     });
 
+    test("and, or, not, and between, for masks: unknown only where the missing value would decide it", () => {
+        const ox = channel(times, [0, 1, 1, NaN, 1]);
+        const fu = channel(times, [0, 0, 1, 1, NaN]);
+        expect(run("and([OX] == 1, [FU] == 1)", { OX: ox, FU: fu })).toEqual([0, 0, 1, null, null]);
+        expect(run("or([OX] == 1, [FU] == 1)", { OX: ox, FU: fu })).toEqual([0, 1, 1, 1, 1]);
+        // A missing one doesn't matter when another decides: or with one open, and with one closed.
+        expect(run("and([FU] == 1, [OX] == 1)", { OX: ox, FU: channel(times, [0, 0, 1, 0, NaN]) })).toEqual([
+            0,
+            0,
+            1,
+            0,
+            null,
+        ]);
+        expect(run("not([OX])", { OX: ox })).toEqual([1, 0, 0, null, 0]);
+        expect(run("between([A], 2, 4)", { A: a })).toEqual([0, 1, 1, 1, 0]);
+        expect(problem("between([A], 2)")).toBe("between(value, low, high) takes 3 values");
+        expect(problem("and([A])")).toBe("and(…) takes 2 or more values");
+    });
+
     test("rates of change, integrals, and smoothing, in seconds", () => {
         const square = channel(times, [0, 1, 4, 9, 16]);
         expect(run("ddt([Q])", { Q: square })).toEqual([1, 2, 4, 6, 7]);

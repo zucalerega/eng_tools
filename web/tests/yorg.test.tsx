@@ -26,7 +26,19 @@ test("the app switcher goes between the vault and Yorg", async () => {
         within(nav)
             .getAllByRole("link")
             .map((link) => link.textContent),
-    ).toEqual(["Datasets", "Views"]);
+    ).toEqual(["Datasets", "Views", "Help"]);
+});
+
+test("Help says what Yorg does, and how", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/yorg");
+    const nav = within(await screen.findByRole("navigation", { name: "Main" }));
+    await userEvent.click(nav.getByRole("link", { name: "Help" }));
+    expect(await screen.findByRole("heading", { name: "How Yorg works" })).toBeTruthy();
+    expect(nav.getByRole("link", { name: "Help" }).getAttribute("aria-current")).toBe("page");
+    for (const card of ["Getting data in", "Plotting", "Moving around", "Time and T0", "Calculated channels"]) {
+        expect(screen.getByRole("region", { name: card })).toBeTruthy();
+    }
 });
 
 test("uploading a file of test data opens its channels, ready to plot", async () => {

@@ -1,6 +1,7 @@
 import { Notice } from "../components";
 import { Link } from "../router";
 import { DatasetsPage } from "./Datasets";
+import { HelpPage } from "./Help";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
 
@@ -35,7 +36,7 @@ export const YORG_ICON =
 
 /** Which of Yorg's sections a path is in, for the top bar. */
 export function yorgSection(pathname: string): string {
-    return pathname.startsWith("/yorg/views") ? "views" : "data";
+    return pathname.startsWith("/yorg/views") ? "views" : pathname.startsWith("/yorg/help") ? "help" : "data";
 }
 
 /** Whether a page is a workspace of plots, which takes the whole window. */
@@ -68,6 +69,8 @@ export function YorgPage({ pathname }: { pathname: string }) {
             return <ViewsPage />;
         case "/yorg/deleted":
             return <DeletedPage />;
+        case "/yorg/help":
+            return <HelpPage />;
         default:
             return (
                 <Notice tone="error">

@@ -12,7 +12,7 @@ import {
 } from "../src/yorg/layout";
 import { cutAt, edgeOf, intersect, measure, readTimes, runsOf, testsOf, within } from "../src/yorg/masks";
 import { arrowStart, placeNotes } from "../src/yorg/Plot";
-import { timeLabels } from "../src/yorg/Workspace";
+import { measureLines, timeLabels } from "../src/yorg/Workspace";
 import { lowerBound, MinMax, sampleAt, Samples, trace, upperBound, visibleRange } from "../src/yorg/samples";
 import {
     clockTicks,
@@ -480,5 +480,17 @@ describe("time", () => {
         expect(fromT0.absolute(1)).toBe("14:13:21.000 UTC");
         // Or time of day anyway, if that's what's chosen.
         expect(labels({ t0: 1, time: "utc" }, unix).title).toBe("Time of day (UTC)");
+    });
+});
+
+describe("measuring", () => {
+    test("says the time between two points, and on one axis the change and the slope", () => {
+        const at = (t: number, y: number, axis = "left") => ({ t, y, axis });
+        expect(measureLines(at(2, 100), at(3.5, 400), "psi")).toEqual(["Δt 1.5 s", "Δ +300 psi", "slope 200 psi/s"]);
+        // Either way round: from the earlier point to the later.
+        expect(measureLines(at(3.5, 400), at(2, 100), "psi")).toEqual(["Δt 1.5 s", "Δ +300 psi", "slope 200 psi/s"]);
+        expect(measureLines(at(0, 5), at(0.25, 4), "")).toEqual(["Δt 250 ms", "Δ −1", "slope −4 /s"]);
+        // On different axes (psi and lbf), only the time between them means anything.
+        expect(measureLines(at(1, 5), at(2, 7, "right"), "psi")).toEqual(["Δt 1 s"]);
     });
 });

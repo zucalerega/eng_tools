@@ -12,7 +12,8 @@ import { formatDuration, formatTick, ticks } from "./scale";
 //   wheel: zoom time around the pointer (on an axis: zoom it); shift-wheel or sideways: pan
 //   double-click: show everything; right-click: a menu (marker, label, T0)
 //   drag a marker (its line or label) to move it; drag a label to move it, or its arrow's tip to point elsewhere;
-//   double-click a label to change it. While placing a label, a click puts one there.
+//   double-click a label to change it. While placing a label (or T0, or a measurement's points), a click puts it
+//   there.
 
 export interface PlotSeries {
     id: string;
@@ -51,6 +52,14 @@ export interface Anchor {
     t: number;
     y: number;
     axis: string;
+}
+
+/** A measurement between two points: where they are (the second, once it's clicked), and what it says. */
+export interface Measurement {
+    a: Anchor;
+    b: Anchor | null;
+    lines: string[];
+    color: string;
 }
 
 /** What a right-click was on: a place (if the plot has an axis to say what value), and maybe a label or marker. */
@@ -144,7 +153,8 @@ interface Props {
     onMenu: (x: number, clientX: number, clientY: number, target: MenuTarget) => void;
     notes: Note[];
     placing: boolean; // a click puts a label there
-    onPlace: (anchor: Anchor, clientX: number, clientY: number) => void;
+    onPlace: (anchor: Anchor, clientX: number, clientY: number, series: string | null) => void; // series: on one
+    measure: Measurement | null;
     onNote: (id: string, change: Partial<Omit<Note, "id">>) => void;
     onEditNote: (id: string, clientX: number, clientY: number) => void;
     onMoveMark: (id: string, x: number) => void;
@@ -260,6 +270,71 @@ export function arrowStart(box: Box, tip: { x: number; y: number }): { x: number
     const [dx, dy] = [tip.x - center.x, tip.y - center.y];
     const share = Math.min(dx ? Math.abs(box.w / 2 / dx) : Infinity, dy ? Math.abs(box.h / 2 / dy) : Infinity);
     return share >= 1 ? null : { x: center.x + dx * share, y: center.y + dy * share };
+}
+
+/** A measurement: its two points, a line between them, and what it says, by the line (kept inside the plot). */
+function drawMeasurement(
+    context: CanvasRenderingContext2D,
+    measure: Measurement,
+    g: Geometry,
+    ranges: Ranges,
+    view: [number, number],
+    colors: PlotColors,
+): void {
+    const at = (point: Anchor) => {
+        const range = ranges.get(point.axis); // none once nothing's on that axis: the measurement goes with it
+        return range
+            ? {
+                  x: g.left + ((point.t - view[0]) / (view[1] - view[0])) * (g.right - g.left),
+                  y: g.bottom - ((point.y - range[0]) / (range[1] - range[0])) * (g.bottom - g.top),
+              }
+            : null;
+    };
+    const a = at(measure.a);
+    if (!a) {
+        return;
+    }
+    const b = measure.b ? at(measure.b) : null;
+    context.strokeStyle = measure.color;
+    context.fillStyle = measure.color;
+    context.lineWidth = 1.5;
+    if (b) {
+        context.setLineDash([5, 4]);
+        context.beginPath();
+        context.moveTo(a.x, a.y);
+        context.lineTo(b.x, b.y);
+        context.stroke();
+        context.setLineDash([]);
+    }
+    for (const point of [a, b]) {
+        if (point) {
+            context.beginPath();
+            context.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+            context.fill();
+        }
+    }
+    const by = b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a;
+    if (measure.lines.length === 0) {
+        return;
+    }
+    context.font = `12px ${colors.font}`;
+    const w = Math.max(...measure.lines.map((line) => context.measureText(line).width)) + 14;
+    const h = measure.lines.length * NOTE_LINE + 8;
+    const x = Math.min(Math.max(by.x + 12, g.left + 1), g.right - 1 - w);
+    const y = Math.min(Math.max(by.y - h - 12, g.top + 1), g.bottom - 1 - h);
+    context.fillStyle = colors.plot;
+    context.beginPath();
+    if (context.roundRect) {
+        context.roundRect(x, y, w, h, 4);
+    } else {
+        context.rect(x, y, w, h);
+    }
+    context.fill();
+    context.stroke();
+    context.fillStyle = colors.cursor;
+    context.textAlign = "left";
+    context.textBaseline = "top";
+    measure.lines.forEach((line, index) => context.fillText(line, x + 7, y + 5 + index * NOTE_LINE));
 }
 
 function drawNote(context: CanvasRenderingContext2D, hit: NoteHit, note: Note, colors: PlotColors): void {
@@ -546,6 +621,9 @@ function draw(canvas: HTMLCanvasElement, g: Geometry, props: Props, ranges: Rang
             colors,
         );
     }
+    if (props.measure) {
+        drawMeasurement(context, props.measure, g, ranges, view, colors);
+    }
     context.restore();
     context.lineWidth = 1;
     context.strokeStyle = colors.frame;
@@ -681,6 +759,7 @@ export function Plot(props: Props) {
         props.marks,
         props.shading,
         props.notes,
+        props.measure,
         props.time,
         props.colors,
     ]);
@@ -765,10 +844,10 @@ export function Plot(props: Props) {
         return null;
     }
 
-    /** The place in the data at the pointer: on the nearest channel if it's close, else on an axis. */
-    function anchorAt(px: number, py: number): Anchor | null {
+    /** The place in the data at the pointer: on the nearest channel if it's close (and which), else on an axis. */
+    function anchorAt(px: number, py: number): { anchor: Anchor; series: string | null } | null {
         const t = timeAt(px);
-        let best: { distance: number; anchor: Anchor } | null = null;
+        let best: { distance: number; anchor: Anchor; series: string } | null = null;
         for (const one of props.series) {
             const range = ranges.get(one.axis);
             const point = one.samples && range ? sampleAt(one.samples, t, one.placement) : null;
@@ -779,14 +858,14 @@ export function Plot(props: Props) {
                 geometry.bottom - ((point.y - range[0]) / (range[1] - range[0])) * (geometry.bottom - geometry.top);
             const distance = Math.abs(y - py);
             if (distance <= 14 && (!best || distance < best.distance)) {
-                best = { distance, anchor: { t: point.x, y: point.y, axis: one.axis } };
+                best = { distance, anchor: { t: point.x, y: point.y, axis: one.axis }, series: one.id };
             }
         }
         if (best) {
-            return best.anchor;
+            return { anchor: best.anchor, series: best.series };
         }
         const [first] = ranges; // else on the first axis
-        return first ? { t, y: valueAt(first[1], py), axis: first[0] } : null;
+        return first ? { anchor: { t, y: valueAt(first[1], py), axis: first[0] }, series: null } : null;
     }
 
     function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -799,9 +878,9 @@ export function Plot(props: Props) {
             return;
         }
         if (props.placing && !pan && !beside) {
-            const anchor = anchorAt(px, py);
-            if (anchor) {
-                props.onPlace(anchor, event.clientX, event.clientY);
+            const found = anchorAt(px, py);
+            if (found) {
+                props.onPlace(found.anchor, event.clientX, event.clientY, found.series);
             }
             return;
         }
@@ -867,7 +946,7 @@ export function Plot(props: Props) {
                 dy: current.offset.dy + py - current.y0,
             });
         } else if (current.mode === "tip" && current.target) {
-            const anchor = anchorAt(px, py);
+            const anchor = anchorAt(px, py)?.anchor;
             const range = anchor ? ranges.get(anchor.axis) : undefined;
             if (anchor && range) {
                 // The label stays put: its offset from the new tip is where its box was.
@@ -925,7 +1004,7 @@ export function Plot(props: Props) {
         ) {
             const hit = hitAt(px, py);
             props.onMenu(timeAt(px), event.clientX, event.clientY, {
-                anchor: anchorAt(px, py),
+                anchor: anchorAt(px, py)?.anchor ?? null,
                 note: hit && hit.kind !== "mark" ? hit.id : null,
                 marker: hit?.kind === "mark" ? hit.id : null,
             });

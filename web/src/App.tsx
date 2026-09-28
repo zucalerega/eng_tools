@@ -68,6 +68,7 @@ export function App() {
                         <>
                             {nav("/yorg", "data", "Datasets")}
                             {nav("/yorg/views", "views", "Views")}
+                            {nav("/yorg/help", "help", "Help")}
                         </>
                     ) : (
                         <>

@@ -104,6 +104,27 @@ export interface DatasetDetail extends Dataset {
     read_info: ReadInfo;
 }
 
+/** A calculated channel, for the whole team: an expression over channels, by name (formula.ts reads it). */
+export interface Formula {
+    id: number;
+    name: string;
+    expression: string;
+    unit: string;
+    description: string;
+    created_at: string;
+    created_by: UserRef | null;
+    updated_at: string;
+    updated_by: UserRef | null;
+    can_change: boolean;
+}
+
+export interface FormulaBody {
+    name: string;
+    expression: string;
+    unit: string;
+    description: string;
+}
+
 export interface SavedView {
     id: number;
     name: string;
@@ -146,6 +167,10 @@ export const yorg = {
     /** One of a read's arrays (a channel's time or values): little-endian float64, which browsers keep. */
     array: async (dataset: DatasetDetail, file: string): Promise<Float64Array> =>
         new Float64Array(await requestBytes(`${datasetPath(dataset.id)}/data/${dataset.data_version}/${file}`)),
+    formulas: () => request<Formula[]>("GET", "/api/yorg/formulas"),
+    addFormula: (body: FormulaBody) => request<Formula>("POST", "/api/yorg/formulas", body),
+    updateFormula: (id: number, body: FormulaBody) => request<Formula>("PUT", `/api/yorg/formulas/${id}`, body),
+    removeFormula: (id: number) => request<void>("DELETE", `/api/yorg/formulas/${id}`),
     views: () => request<SavedView[]>("GET", "/api/yorg/views"),
     view: (id: number) => request<SavedView>("GET", `/api/yorg/views/${id}`),
     saveView: (body: ViewBody) => request<SavedView>("POST", "/api/yorg/views", body),

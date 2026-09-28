@@ -82,6 +82,31 @@ class Channel(Base):
     value_file: Mapped[str] = mapped_column(String(64))
 
 
+class Formula(Base):
+    """A calculated channel, for the whole team: an expression over channels by name ("[LC-1] + [LC-2]").
+
+    The web app reads and calculates it (web/src/yorg/formula.ts), for any dataset that has the channels it names;
+    the server keeps it.
+    """
+
+    __tablename__ = "yorg_formulas"
+    __table_args__ = (UniqueConstraint("name_key", name="uq_yorg_formulas_name_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200))  # lowercased: two can't differ only in case
+    expression: Mapped[str] = mapped_column(Text)
+    unit: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
+
+
 class View(Base):
     """A saved plot: its panels, channels, scales, time window, and markers, as the web app lays them out."""
 

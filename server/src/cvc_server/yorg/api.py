@@ -15,7 +15,16 @@ from ..models import User
 from . import datasets
 from .files import DataFiles
 from .models import Dataset
-from .schemas import DatasetChangeIn, DatasetDetailOut, DatasetOut, ReadOptionsIn, ViewIn, ViewOut
+from .schemas import (
+    DatasetChangeIn,
+    DatasetDetailOut,
+    DatasetOut,
+    FormulaIn,
+    FormulaOut,
+    ReadOptionsIn,
+    ViewIn,
+    ViewOut,
+)
 
 router = APIRouter(prefix="/api/yorg", tags=["yorg"])
 
@@ -139,6 +148,40 @@ def get_array(dataset_id: int, version: str, name: str, user: ActiveUser, db: DB
     if not _ARRAY.match(name) or not path.is_file():
         raise NotFound(f"{dataset.name} has no array {name}")
     return FileResponse(path, media_type="application/octet-stream", headers=_FOREVER)
+
+
+@router.get("/formulas")
+def get_formulas(user: ActiveUser, db: DB) -> list[FormulaOut]:
+    """Calculated channels, by name."""
+    return [FormulaOut.of(formula, user) for formula in datasets.formulas(db)]
+
+
+@router.post("/formulas", status_code=201)
+def post_formula(body: FormulaIn, user: ActiveUser, db: DB) -> FormulaOut:
+    new = datasets.add_formula(
+        db, user, name=body.name, expression=body.expression, unit=body.unit.strip(), description=body.description
+    )
+    return FormulaOut.of(new, user)
+
+
+@router.put("/formulas/{formula_id}")
+def put_formula(formula_id: int, body: FormulaIn, user: ActiveUser, db: DB) -> FormulaOut:
+    changed = datasets.update_formula(
+        db,
+        user,
+        formula_id,
+        name=body.name,
+        expression=body.expression,
+        unit=body.unit.strip(),
+        description=body.description,
+    )
+    return FormulaOut.of(changed, user)
+
+
+@router.delete("/formulas/{formula_id}", status_code=204)
+def delete_formula(formula_id: int, user: ActiveUser, db: DB) -> Response:
+    datasets.remove_formula(db, user, formula_id)
+    return Response(status_code=204)
 
 
 @router.get("/views")

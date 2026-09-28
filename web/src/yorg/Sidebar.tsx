@@ -1,12 +1,26 @@
-import { useEffect, useState, type MouseEvent } from "react";
-import { yorg, type Channel, type Dataset, type DatasetDetail } from "./api";
-import { dataset as loadDataset } from "./data";
-import type { Action, Layout, PanelSpec } from "./layout";
+import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
+import { yorg, type Channel, type Dataset, type DatasetDetail, type Formula } from "./api";
+import { fits, dataset as loadDataset, formulas as loadFormulas } from "./data";
+import { FormulaDialog } from "./Formulas";
+import { isPlotted, type Action, type Layout, type PanelSpec } from "./layout";
 import { formatValue } from "./scale";
 import type { Resolved } from "./Workspace";
 import { CHANNEL_TYPE } from "./Workspace";
 
-// The workspace's left side: its datasets (and how each lines up in time), their channels to plot, and the markers.
+// The workspace's left side: its datasets (and how each lines up in time), their channels and calculated channels to
+// plot, and the markers. A channel's dot says it's plotted: clicking it again takes it off.
+
+/** What the channel list offers to plot: a channel, or a calculated channel (formula). */
+interface Pick {
+    dataset: number;
+    channel: string;
+    formula: number | null;
+}
+
+const dragPick = (event: DragEvent, pick: Pick) => {
+    event.dataTransfer.setData(CHANNEL_TYPE, JSON.stringify(pick));
+    event.dataTransfer.effectAllowed = "copy";
+};
 
 /** Channels in groups by what they start with (PT, TC, LC...), when there are enough to need it. */
 function groups(channels: Channel[]): [string, Channel[]][] {
@@ -48,8 +62,20 @@ export function Sidebar({
     time: { at: (x: number) => string };
 }) {
     const [filter, setFilter] = useState("");
+    const [editing, setEditing] = useState<{ formula: Formula | null; detail: DatasetDetail } | null>(null);
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
     const several = layout.datasets.length > 1;
+    // A click plots a channel on the selected plot, or takes it off if it's plotted; shift-click: a plot of its own.
+    const pick = (what: Pick, newPanel: boolean) => {
+        if (!newPanel && isPlotted(layout, what)) {
+            dispatch({ type: "unplot", ...what });
+        } else {
+            dispatch({ type: "addSeries", panel: newPanel ? null : (activePanel?.id ?? null), ...what });
+        }
+    };
+    const colors = new Map(
+        plotted.map((series) => [pickKey(series.spec), series.spec.color] as const).reverse(), // the first one's color
+    );
     return (
         <aside className="yorg-sidebar" aria-label="Channels">
             <input
@@ -76,26 +102,111 @@ export function Sidebar({
                         {loaded.status === "loading" && <p className="muted">Loading…</p>}
                         {loaded.status === "failed" && <p className="field-problem">{loaded.error}</p>}
                         {loaded.status === "ready" && (
-                            <ChannelList
-                                detail={loaded.value}
-                                words={words}
-                                plotted={plotted}
-                                onAdd={(channel, newPanel) =>
-                                    dispatch({
-                                        type: "addSeries",
-                                        panel: newPanel ? null : (activePanel?.id ?? null),
-                                        dataset: ref.id,
-                                        channel: channel.name,
-                                    })
-                                }
-                            />
+                            <>
+                                <ChannelList detail={loaded.value} words={words} colors={colors} onPick={pick} />
+                                <Calculated
+                                    detail={loaded.value}
+                                    words={words}
+                                    colors={colors}
+                                    onPick={pick}
+                                    onEdit={(formula) => setEditing({ formula, detail: loaded.value })}
+                                />
+                            </>
                         )}
                     </section>
                 );
             })}
             <AddDataset layout={layout} dispatch={dispatch} />
             <Markers layout={layout} dispatch={dispatch} view={view} time={time} />
+            {editing && (
+                <FormulaDialog
+                    formula={editing.formula}
+                    detail={editing.detail}
+                    onClose={() => setEditing(null)}
+                    onSaved={(saved, created) => {
+                        const detail = editing.detail;
+                        setEditing(null);
+                        const what = { dataset: detail.id, channel: saved.name, formula: saved.id };
+                        if (created && fits(saved.expression, detail) && !isPlotted(layout, what)) {
+                            pick(what, false);
+                        }
+                    }}
+                />
+            )}
         </aside>
+    );
+}
+
+const pickKey = (what: Pick): string =>
+    what.formula === null ? `${what.dataset}/channel/${what.channel}` : `${what.dataset}/formula/${what.formula}`;
+
+/** A dataset's calculated channels: the team's, where this dataset has every channel they use. */
+function Calculated({
+    detail,
+    words,
+    colors,
+    onPick,
+    onEdit,
+}: {
+    detail: DatasetDetail;
+    words: string[];
+    colors: ReadonlyMap<string, string>;
+    onPick: (what: Pick, newPanel: boolean) => void;
+    onEdit: (formula: Formula | null) => void;
+}) {
+    const loaded = loadFormulas();
+    const list = loaded.status === "ready" ? loaded.value.filter((formula) => fits(formula.expression, detail)) : [];
+    const shown = list.filter((formula) =>
+        words.every((word) => `${formula.name} ${formula.unit} ${formula.expression}`.toLowerCase().includes(word)),
+    );
+    if (words.length > 0 && shown.length === 0) {
+        return null;
+    }
+    return (
+        <details className="yorg-group yorg-calculated" open>
+            <summary>
+                Calculated <span className="muted">{list.length}</span>
+            </summary>
+            {loaded.status === "failed" && <p className="field-problem">{loaded.error}</p>}
+            <ul className="yorg-channels">
+                {shown.map((formula) => {
+                    const what = { dataset: detail.id, channel: formula.name, formula: formula.id };
+                    return (
+                        <li key={formula.id} className="yorg-calculated-row">
+                            <button
+                                type="button"
+                                className="yorg-channel"
+                                draggable
+                                aria-pressed={colors.has(pickKey(what))}
+                                title={`${formula.name} = ${formula.expression}${formula.description ? `\n${formula.description}` : ""}`}
+                                onDragStart={(event) => dragPick(event, what)}
+                                onClick={(event: MouseEvent) => onPick(what, event.shiftKey)}
+                            >
+                                <span
+                                    className="yorg-dot"
+                                    style={{ background: colors.get(pickKey(what)) ?? "transparent" }}
+                                    aria-hidden="true"
+                                />
+                                <span className="yorg-channel-name">{formula.name}</span>
+                                <span className="yorg-channel-unit">{formula.unit}</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="yorg-edit"
+                                aria-label={`${formula.can_change ? "Change" : "About"} ${formula.name}`}
+                                title={formula.can_change ? "Change it" : "What it is"}
+                                onClick={() => onEdit(formula)}
+                            >
+                                {formula.can_change ? "✎" : "i"}
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
+            <button type="button" className="button-small yorg-new-calculated" onClick={() => onEdit(null)}>
+                New calculated channel
+            </button>
+        </details>
     );
 }
 
@@ -147,13 +258,13 @@ function DatasetHead({
 function ChannelList({
     detail,
     words,
-    plotted,
-    onAdd,
+    colors,
+    onPick,
 }: {
     detail: DatasetDetail;
     words: string[];
-    plotted: Resolved[];
-    onAdd: (channel: Channel, newPanel: boolean) => void;
+    colors: ReadonlyMap<string, string>;
+    onPick: (what: Pick, newPanel: boolean) => void;
 }) {
     const [closed, setClosed] = useState<Set<string>>(new Set());
     const shown = detail.channels.filter((channel) => matches(channel, words));
@@ -163,49 +274,43 @@ function ChannelList({
     if (shown.length === 0) {
         return <p className="muted">No channels match.</p>;
     }
-    const colors = new Map(
-        plotted
-            .filter((series) => series.spec.dataset === detail.id)
-            .map((series) => [series.spec.channel, series.spec.color] as const),
-    );
     return (
         <>
             {groups(shown).map(([group, channels]) => {
                 const open = words.length > 0 || !closed.has(group);
                 const list = (
                     <ul className="yorg-channels">
-                        {channels.map((channel) => (
-                            <li key={channel.name}>
-                                <button
-                                    type="button"
-                                    className="yorg-channel"
-                                    draggable
-                                    title={`${channel.name}${channel.unit ? ` (${channel.unit})` : ""}: ${channel.count.toLocaleString()} samples${
-                                        channel.min !== null && channel.max !== null
-                                            ? `, ${formatValue(channel.min)} to ${formatValue(channel.max)}`
-                                            : ""
-                                    }. Click to plot it; shift-click for a plot of its own.`}
-                                    onDragStart={(event) => {
-                                        event.dataTransfer.setData(
-                                            CHANNEL_TYPE,
-                                            JSON.stringify({ dataset: detail.id, channel: channel.name }),
-                                        );
-                                        event.dataTransfer.effectAllowed = "copy";
-                                    }}
-                                    onClick={(event: MouseEvent) => onAdd(channel, event.shiftKey)}
-                                >
-                                    <span
-                                        className="yorg-dot"
-                                        style={{ background: colors.get(channel.name) ?? "transparent" }}
-                                        aria-hidden="true"
-                                    />
-                                    <span className="yorg-channel-name">{channel.name}</span>
-                                    <span className="yorg-channel-unit">
-                                        {channel.kind === "state" ? "state" : channel.unit}
-                                    </span>
-                                </button>
-                            </li>
-                        ))}
+                        {channels.map((channel) => {
+                            const what = { dataset: detail.id, channel: channel.name, formula: null };
+                            const color = colors.get(pickKey(what));
+                            return (
+                                <li key={channel.name}>
+                                    <button
+                                        type="button"
+                                        className="yorg-channel"
+                                        draggable
+                                        aria-pressed={color !== undefined}
+                                        title={`${channel.name}${channel.unit ? ` (${channel.unit})` : ""}: ${channel.count.toLocaleString()} samples${
+                                            channel.min !== null && channel.max !== null
+                                                ? `, ${formatValue(channel.min)} to ${formatValue(channel.max)}`
+                                                : ""
+                                        }. ${color ? "Click to take it off the plots" : "Click to plot it"}; shift-click for a plot of its own.`}
+                                        onDragStart={(event) => dragPick(event, what)}
+                                        onClick={(event: MouseEvent) => onPick(what, event.shiftKey)}
+                                    >
+                                        <span
+                                            className="yorg-dot"
+                                            style={{ background: color ?? "transparent" }}
+                                            aria-hidden="true"
+                                        />
+                                        <span className="yorg-channel-name">{channel.name}</span>
+                                        <span className="yorg-channel-unit">
+                                            {channel.kind === "state" ? "state" : channel.unit}
+                                        </span>
+                                    </button>
+                                </li>
+                            );
+                        })}
                     </ul>
                 );
                 if (!group) {

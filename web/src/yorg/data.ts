@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { yorg, type Channel, type DatasetDetail } from "./api";
+import { yorg, type Channel, type DatasetDetail, type Formula } from "./api";
+import { calculate, channelsOf, findChannel, FormulaError, readFormula, type Input } from "./formula";
 import { Samples } from "./samples";
 
 // Datasets and channels' samples, each loaded once and shared by every plot on the page. Samples can be big (a
@@ -154,9 +155,56 @@ export function showDataset(detail: DatasetDetail): void {
     datasetStore.put(String(detail.id), detail);
 }
 
+// --- calculated channels ------------------------------------------------------------------------------------------
+
+const formulaStore = new Store<Formula[]>();
+
+/** The team's calculated channels. */
+export function formulas(): Loaded<Formula[]> {
+    return formulaStore.get("all", () => yorg.formulas());
+}
+
+/** Load the calculated channels again, after one was added, changed, or deleted. */
+export function reloadFormulas(): Promise<void> {
+    return formulaStore.refresh("all", () => yorg.formulas());
+}
+
+/** Whether a dataset has every channel an expression uses (and so can have the calculated channel). */
+export function fits(expression: string, detail: DatasetDetail): boolean {
+    const tree = readFormula(expression);
+    return !(tree instanceof FormulaError) && channelsOf(tree).every((name) => findChannel(detail.channels, name));
+}
+
+/** An expression worked out for a dataset: for a calculated channel, or to try one out before saving it. */
+export async function calculateFor(detail: DatasetDetail, expression: string): Promise<Samples> {
+    const tree = readFormula(expression);
+    if (tree instanceof FormulaError) {
+        throw tree;
+    }
+    const inputs = new Map<string, Input>();
+    await Promise.all(
+        channelsOf(tree).map(async (name) => {
+            const channel = findChannel(detail.channels, name);
+            if (!channel) {
+                throw new FormulaError(`${detail.name} has no channel called ${name}`, 0);
+            }
+            const [times, values] = await Promise.all([array(detail, channel.time), array(detail, channel.values)]);
+            inputs.set(name, { samples: new Samples(times, values), step: channel.kind === "state" });
+        }),
+    );
+    return calculate(tree, inputs);
+}
+
+/** A calculated channel's samples, for a dataset's latest read (worked out again if its expression changes). */
+export function calculated(detail: DatasetDetail, formula: Formula): Loaded<Samples> {
+    const key = `${detail.id}/${detail.data_version}/formula/${formula.id}/${formula.expression}`;
+    return sampleStore.get(key, () => calculateFor(detail, formula.expression));
+}
+
 /** Re-render when anything loads. The number goes up each time, for memos that depend on what's loaded. */
 export function useLoaded(): number {
     const datasets = useSyncExternalStore(datasetStore.subscribe, datasetStore.snapshot);
     const loadedSamples = useSyncExternalStore(sampleStore.subscribe, sampleStore.snapshot);
-    return datasets + loadedSamples;
+    const loadedFormulas = useSyncExternalStore(formulaStore.subscribe, formulaStore.snapshot);
+    return datasets + loadedSamples + loadedFormulas;
 }

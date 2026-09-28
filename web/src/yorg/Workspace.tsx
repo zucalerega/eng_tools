@@ -1,6 +1,7 @@
 import {
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -8,10 +9,17 @@ import {
     type PointerEvent as ReactPointerEvent,
     type ReactNode,
 } from "react";
-import { MenuButton, Notice, usePopover } from "../components";
-import type { Channel, DatasetDetail } from "./api";
+import { MenuButton, Notice, placeMenuAt, usePopover } from "../components";
+import type { Channel, DatasetDetail, Formula } from "./api";
 import { usePlotColors } from "./colors";
-import { dataset as loadDataset, samples as loadSamples, useLoaded, type Loaded } from "./data";
+import {
+    calculated,
+    formulas as loadFormulas,
+    dataset as loadDataset,
+    samples as loadSamples,
+    useLoaded,
+    type Loaded,
+} from "./data";
 import { exportCsv, exportImage } from "./export";
 import {
     PALETTE,
@@ -31,12 +39,13 @@ import { Sidebar } from "./Sidebar";
 // A page of plots: the channels on the left, and panels stacked on one time axis, each with its legend. Every
 // panel shows the same time window and the same cursor.
 
-/** A series with what it draws: its dataset, channel, and samples (or why they're missing). */
+/** A series with what it draws: its dataset, channel (or calculated channel), and samples (or why they're missing). */
 export interface Resolved {
     spec: SeriesSpec;
     panel: string;
     detail: DatasetDetail | null;
     channel: Channel | null;
+    formula: Formula | null;
     samples: Samples | null;
     placement: Placement;
     name: string;
@@ -46,50 +55,87 @@ export interface Resolved {
     loading: boolean;
 }
 
-export const CHANNEL_TYPE = "application/x-yorg-channel";
+export const CHANNEL_TYPE = "application/x-yorg-channel"; // {dataset, channel, formula}, from the channel list
+export const SERIES_TYPE = "application/x-yorg-series"; // {panel, series}, from a legend
 
-function resolve(layout: Layout, panel: PanelSpec, spec: SeriesSpec, several: boolean): Resolved {
-    const placement = { shift: shiftOf(layout, spec.dataset), scale: spec.scale, offset: spec.offset };
-    const base = { spec, panel: panel.id, placement, name: spec.label || spec.channel, unit: spec.unit ?? "" };
+function resolve(
+    layout: Layout,
+    panel: PanelSpec,
+    spec: SeriesSpec,
+    several: boolean,
+    formulaList: Loaded<Formula[]>,
+): Resolved {
+    const base: Resolved = {
+        spec,
+        panel: panel.id,
+        detail: null,
+        channel: null,
+        formula: null,
+        samples: null,
+        placement: { shift: shiftOf(layout, spec.dataset), scale: spec.scale, offset: spec.offset },
+        name: spec.label || spec.channel,
+        unit: spec.unit ?? "",
+        step: spec.step ?? false,
+        problem: null,
+        loading: false,
+    };
     const loaded = loadDataset(spec.dataset);
     if (loaded.status !== "ready") {
         return {
             ...base,
-            detail: null,
-            channel: null,
-            samples: null,
-            step: spec.step ?? false,
             problem: loaded.status === "failed" ? `Couldn't load its dataset: ${loaded.error}` : null,
             loading: loaded.status === "loading",
         };
     }
     const detail = loaded.value;
-    const channel = detail.channels.find((one) => one.name === spec.channel) ?? null;
-    const name = (spec.label || spec.channel) + (several && !spec.label ? ` · ${detail.name}` : "");
-    const unit = spec.unit ?? channel?.unit ?? "";
-    const step = spec.step ?? channel?.kind === "state";
-    if (!channel) {
+    const tag = several && !spec.label ? ` · ${detail.name}` : "";
+    if (spec.formula !== null) {
+        if (formulaList.status !== "ready") {
+            return {
+                ...base,
+                detail,
+                problem:
+                    formulaList.status === "failed"
+                        ? `Couldn't load the calculated channels: ${formulaList.error}`
+                        : null,
+                loading: formulaList.status === "loading",
+            };
+        }
+        const formula = formulaList.value.find((one) => one.id === spec.formula) ?? null;
+        const named = {
+            detail,
+            name: (spec.label || formula?.name || spec.channel) + tag,
+            unit: spec.unit ?? formula?.unit ?? "",
+        };
+        if (!formula) {
+            return { ...base, ...named, problem: `The calculated channel ${spec.channel} was deleted` };
+        }
+        const found = calculated(detail, formula);
         return {
             ...base,
-            name,
-            unit,
-            detail,
-            channel,
-            samples: null,
-            step,
-            problem: `${detail.name} has no channel called ${spec.channel}`,
-            loading: false,
+            ...named,
+            formula,
+            samples: found.status === "ready" ? found.value : null,
+            problem: found.status === "failed" ? `Couldn't work it out: ${found.error}` : null,
+            loading: found.status === "loading",
         };
+    }
+    const channel = detail.channels.find((one) => one.name === spec.channel) ?? null;
+    const named = {
+        detail,
+        channel,
+        name: (spec.label || spec.channel) + tag,
+        unit: spec.unit ?? channel?.unit ?? "",
+        step: spec.step ?? channel?.kind === "state",
+    };
+    if (!channel) {
+        return { ...base, ...named, problem: `${detail.name} has no channel called ${spec.channel}` };
     }
     const found: Loaded<Samples> = loadSamples(detail, channel);
     return {
         ...base,
-        name,
-        unit,
-        detail,
-        channel,
+        ...named,
         samples: found.status === "ready" ? found.value : null,
-        step,
         problem: found.status === "failed" ? `Couldn't load it: ${found.error}` : null,
         loading: found.status === "loading",
     };
@@ -178,12 +224,13 @@ export function Workspace({
     const several = layout.datasets.length > 1;
 
     // These depend on what's loaded as well as on the layout: version counts loads.
+    const formulaList = loadFormulas();
     const resolved = useMemo(() => {
         const byPanel = new Map<string, Resolved[]>();
         for (const panel of layout.panels) {
             byPanel.set(
                 panel.id,
-                panel.series.map((spec) => resolve(layout, panel, spec, several)),
+                panel.series.map((spec) => resolve(layout, panel, spec, several, formulaList)),
             );
         }
         return byPanel;
@@ -494,12 +541,8 @@ export function Workspace({
                         type="button"
                         className="yorg-add-panel"
                         onClick={() => dispatch({ type: "addPanel" })}
-                        onDragOver={(event) => acceptChannel(event)}
-                        onDrop={(event) =>
-                            dropChannel(event, (dataset, channel) =>
-                                dispatch({ type: "addSeries", panel: null, dataset, channel }),
-                            )
-                        }
+                        onDragOver={(event) => void allowDrop(event)}
+                        onDrop={(event) => drop(event, null, "left", dispatch)}
                     >
                         Add a plot
                     </button>
@@ -526,21 +569,39 @@ export function Workspace({
     );
 }
 
-function acceptChannel(event: DragEvent<HTMLElement>) {
-    if (event.dataTransfer.types.includes(CHANNEL_TYPE)) {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
+/** Whether what's dragged can go on a plot (a channel from the list, or a series from a legend): if so, it may. */
+function allowDrop(event: DragEvent<HTMLElement>): boolean {
+    const types = event.dataTransfer.types;
+    if (!types.includes(CHANNEL_TYPE) && !types.includes(SERIES_TYPE)) {
+        return false;
     }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = types.includes(SERIES_TYPE) ? "move" : "copy";
+    return true;
 }
 
-function dropChannel(event: DragEvent<HTMLElement>, add: (dataset: number, channel: string) => void) {
-    const data = event.dataTransfer.getData(CHANNEL_TYPE);
-    if (!data) {
+/** Put what was dropped on a plot (null: a new plot), on the left or right axis. */
+function drop(event: DragEvent<HTMLElement>, panel: string | null, axis: Side, dispatch: (action: Action) => void) {
+    const channel = event.dataTransfer.getData(CHANNEL_TYPE);
+    const series = event.dataTransfer.getData(SERIES_TYPE);
+    if (!channel && !series) {
         return;
     }
     event.preventDefault();
-    const { dataset, channel } = JSON.parse(data) as { dataset: number; channel: string };
-    add(dataset, channel);
+    if (channel) {
+        const found = JSON.parse(channel) as { dataset: number; channel: string; formula: number | null };
+        dispatch({
+            type: "addSeries",
+            panel,
+            dataset: found.dataset,
+            channel: found.channel,
+            formula: found.formula,
+            axis,
+        });
+    } else {
+        const found = JSON.parse(series) as { panel: string; series: string };
+        dispatch({ type: "moveSeries", panel: found.panel, series: found.series, to: panel, axis });
+    }
 }
 
 /** The window's start and end, typed: seconds (from T0, if it's set). */
@@ -684,6 +745,11 @@ function PlotMenu({
     onClose: () => void;
 }) {
     const menu = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+        if (menu.current) {
+            placeMenuAt(menu.current, at.left, at.top);
+        }
+    }, [at]);
     useEffect(() => {
         const close = (event: MouseEvent | KeyboardEvent) => {
             const outside = event instanceof MouseEvent && !menu.current?.contains(event.target as Node);
@@ -699,7 +765,7 @@ function PlotMenu({
         };
     }, [onClose]);
     return (
-        <div className="menu yorg-plot-menu" role="menu" ref={menu} style={{ left: at.left, top: at.top }}>
+        <div className="menu yorg-plot-menu" role="menu" ref={menu}>
             {items.map((item) => (
                 <button
                     key={item.label}
@@ -755,7 +821,17 @@ function PanelView({
     plot: PlotBits;
 }) {
     const name = panel.title || `Plot ${index + 1}`;
-    const [dropping, setDropping] = useState(false);
+    // While something's dragged over the plot: which axis it would go on, by which half (or legend group) it's over.
+    const [dropSide, setDropSide] = useState<Side | null>(null);
+    const plotArea = useRef<HTMLDivElement>(null);
+    const sideAt = (event: DragEvent<HTMLElement>): Side => {
+        const marked = (event.target as Element).closest?.("[data-side]")?.getAttribute("data-side");
+        if (marked === "left" || marked === "right") {
+            return marked;
+        }
+        const area = plotArea.current?.getBoundingClientRect();
+        return area && area.width > 0 && event.clientX > area.left + area.width / 2 ? "right" : "left";
+    };
     const setAxis = useCallback(
         (side: Side, range: [number, number] | null) =>
             dispatch({
@@ -786,20 +862,24 @@ function PanelView({
     const loading = series.filter((one) => one.loading).length;
     return (
         <section
-            className={`yorg-panel${active ? " yorg-panel-active" : ""}${dropping ? " yorg-panel-drop" : ""}`}
+            className={`yorg-panel${active ? " yorg-panel-active" : ""}${dropSide ? " yorg-panel-drop" : ""}`}
             aria-label={name}
             onPointerDown={onActivate}
             onFocus={onActivate}
             onDragOver={(event) => {
-                acceptChannel(event);
-                setDropping(event.dataTransfer.types.includes(CHANNEL_TYPE));
+                if (allowDrop(event)) {
+                    setDropSide(sideAt(event));
+                }
             }}
-            onDragLeave={() => setDropping(false)}
+            onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setDropSide(null);
+                }
+            }}
             onDrop={(event) => {
-                setDropping(false);
-                dropChannel(event, (dataset, channel) =>
-                    dispatch({ type: "addSeries", panel: panel.id, dataset, channel }),
-                );
+                const side = sideAt(event);
+                setDropSide(null);
+                drop(event, panel.id, side, dispatch);
             }}
         >
             <header className="yorg-panel-head">
@@ -846,30 +926,46 @@ function PanelView({
                 </div>
             </header>
             <div className="yorg-panel-body">
-                <Plot
-                    label={`${name}: ${series.map((one) => one.name).join(", ") || "empty"}`}
-                    series={plotSeries}
-                    left={panel.left}
-                    right={panel.right}
-                    height={panel.height}
-                    window={plot.window}
-                    time={plot.time}
-                    marks={plot.marks}
-                    cursor={plot.cursor}
-                    readouts={plot.readouts}
-                    rightGutter={plot.rightGutter}
-                    colors={plot.colors}
-                    onCursor={plot.onCursor}
-                    onWindow={plot.onWindow}
-                    onAxis={setAxis}
-                    onMenu={plot.onMenu}
-                />
+                <div className="yorg-plot-area" ref={plotArea}>
+                    <Plot
+                        label={`${name}: ${series.map((one) => one.name).join(", ") || "empty"}`}
+                        series={plotSeries}
+                        left={panel.left}
+                        right={panel.right}
+                        height={panel.height}
+                        window={plot.window}
+                        time={plot.time}
+                        marks={plot.marks}
+                        cursor={plot.cursor}
+                        readouts={plot.readouts}
+                        rightGutter={plot.rightGutter}
+                        colors={plot.colors}
+                        onCursor={plot.onCursor}
+                        onWindow={plot.onWindow}
+                        onAxis={setAxis}
+                        onMenu={plot.onMenu}
+                    />
+                    {dropSide && (
+                        <div className="yorg-drop" aria-hidden="true">
+                            {(["left", "right"] as const).map((side) => (
+                                <span
+                                    key={side}
+                                    data-side={side}
+                                    className={dropSide === side ? "yorg-drop-here" : undefined}
+                                >
+                                    {side === "left" ? "Left axis" : "Right axis"}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 <Legend
                     name={name}
                     panel={panel}
                     series={series}
                     others={others}
                     readouts={plot.readouts}
+                    dropSide={dropSide}
                     dispatch={dispatch}
                 />
             </div>
@@ -890,6 +986,7 @@ function Legend({
     series,
     others,
     readouts,
+    dropSide,
     dispatch,
 }: {
     name: string;
@@ -897,47 +994,103 @@ function Legend({
     series: Resolved[];
     others: PanelSpec[];
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
+    dropSide: Side | null;
     dispatch: (action: Action) => void;
 }) {
-    if (series.length === 0) {
+    if (series.length === 0 && dropSide === null) {
         return <p className="yorg-legend-empty muted">No channels yet: pick some on the left, or drag them here.</p>;
     }
+    const bySide = {
+        left: series.filter((one) => one.spec.axis === "left"),
+        right: series.filter((one) => one.spec.axis === "right"),
+    };
+    // One list while everything's on the left; a group per axis once something's on the right, or being dragged.
+    const both = bySide.right.length > 0 || dropSide !== null;
     return (
-        <ul className="yorg-legend" aria-label={`${name}: channels`}>
-            {series.map((one) => {
-                const point = readouts.get(one.spec.id);
-                const value = point && !Number.isNaN(point.y) ? reading(one, point.y) : "";
-                return (
-                    <li key={one.spec.id} className={one.spec.hidden ? "yorg-legend-hidden" : undefined}>
-                        <button
-                            type="button"
-                            className="yorg-swatch"
-                            style={{
-                                background: one.spec.hidden ? "transparent" : one.spec.color,
-                                borderColor: one.spec.color,
-                            }}
-                            aria-pressed={!one.spec.hidden}
-                            aria-label={`Show ${one.name}`}
-                            title={one.spec.hidden ? "Show it" : "Hide it"}
-                            onClick={() =>
-                                dispatch({
-                                    type: "changeSeries",
-                                    panel: panel.id,
-                                    series: one.spec.id,
-                                    change: { hidden: !one.spec.hidden },
-                                })
-                            }
-                        />
-                        <SeriesButton series={one} panel={panel} others={others} dispatch={dispatch} />
-                        <span className="yorg-value" title={one.problem ?? undefined}>
-                            {one.problem ? "⚠" : one.loading ? "…" : value}
-                        </span>
-                        <span className="yorg-unit">{one.unit}</span>
-                        {one.problem && <span className="yorg-problem visually-hidden">{one.problem}</span>}
-                    </li>
-                );
-            })}
-        </ul>
+        <div className="yorg-legend" role="group" aria-label={`${name}: channels`}>
+            {(["left", "right"] as const)
+                .filter((side) => both || bySide[side].length > 0)
+                .map((side) => {
+                    const title = side === "left" ? "Left axis" : "Right axis";
+                    return (
+                        <div
+                            key={side}
+                            data-side={side}
+                            className={`yorg-legend-side${dropSide === side ? " yorg-legend-drop" : ""}`}
+                        >
+                            {both && <p className="yorg-legend-title">{title}</p>}
+                            <ul aria-label={title}>
+                                {bySide[side].map((one) => (
+                                    <LegendRow
+                                        key={one.spec.id}
+                                        series={one}
+                                        panel={panel}
+                                        others={others}
+                                        point={readouts.get(one.spec.id) ?? null}
+                                        dispatch={dispatch}
+                                    />
+                                ))}
+                                {bySide[side].length === 0 && (
+                                    <li className="yorg-legend-hint muted">Drop a channel here</li>
+                                )}
+                            </ul>
+                        </div>
+                    );
+                })}
+        </div>
+    );
+}
+
+function LegendRow({
+    series,
+    panel,
+    others,
+    point,
+    dispatch,
+}: {
+    series: Resolved;
+    panel: PanelSpec;
+    others: PanelSpec[];
+    point: { x: number; y: number } | null;
+    dispatch: (action: Action) => void;
+}) {
+    const value = point && !Number.isNaN(point.y) ? reading(series, point.y) : "";
+    const { spec } = series;
+    return (
+        <li
+            className={spec.hidden ? "yorg-legend-hidden" : undefined}
+            draggable
+            onDragStart={(event) => {
+                event.dataTransfer.setData(SERIES_TYPE, JSON.stringify({ panel: panel.id, series: spec.id }));
+                event.dataTransfer.effectAllowed = "move";
+            }}
+        >
+            <span className="yorg-grip" aria-hidden="true" title="Drag to the other axis, or onto another plot">
+                ⠿
+            </span>
+            <button
+                type="button"
+                className="yorg-swatch"
+                style={{ background: spec.hidden ? "transparent" : spec.color, borderColor: spec.color }}
+                aria-pressed={!spec.hidden}
+                aria-label={`Show ${series.name}`}
+                title={spec.hidden ? "Show it" : "Hide it"}
+                onClick={() =>
+                    dispatch({
+                        type: "changeSeries",
+                        panel: panel.id,
+                        series: spec.id,
+                        change: { hidden: !spec.hidden },
+                    })
+                }
+            />
+            <SeriesButton series={series} panel={panel} others={others} dispatch={dispatch} />
+            <span className="yorg-value" title={series.problem ?? undefined}>
+                {series.problem ? "⚠" : series.loading ? "…" : value}
+            </span>
+            <span className="yorg-unit">{series.unit}</span>
+            {series.problem && <span className="yorg-problem visually-hidden">{series.problem}</span>}
+        </li>
     );
 }
 
@@ -1071,6 +1224,11 @@ function SeriesButton({
                             </select>
                         </label>
                     </div>
+                    {series.formula && (
+                        <p className="muted yorg-channel-facts">
+                            Calculated: <code>{series.formula.expression}</code>
+                        </p>
+                    )}
                     {series.channel && (
                         <p className="muted yorg-channel-facts">
                             {series.channel.name} in {series.detail?.name}: {series.channel.count.toLocaleString()}{" "}

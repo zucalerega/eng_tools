@@ -476,20 +476,195 @@ main.main-full {
 }
 
 .yorg-legend {
-    list-style: none;
-    margin: 0;
     padding: 0.25rem 0.5rem 0.5rem;
     border-left: 1px solid var(--border);
     overflow: auto;
     font-size: 0.85rem;
 }
 
+.yorg-legend ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
 .yorg-legend li {
     display: grid;
-    grid-template-columns: 0.8rem minmax(0, 1fr) auto auto;
+    grid-template-columns: 0.6rem 0.8rem minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
     min-height: 1.8rem;
+}
+
+.yorg-legend li[draggable="true"]:hover .yorg-grip {
+    opacity: 1;
+}
+
+.yorg-grip {
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: grab;
+    opacity: 0.45;
+    user-select: none;
+}
+
+.yorg-legend-side {
+    border-radius: var(--radius);
+}
+
+.yorg-legend-side + .yorg-legend-side {
+    margin-top: 0.4rem;
+}
+
+.yorg-legend-title {
+    margin: 0.2rem 0 0.1rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.yorg-legend-drop {
+    outline: 2px dashed var(--accent);
+    outline-offset: 1px;
+    background: var(--accent-soft);
+}
+
+.yorg-legend li.yorg-legend-hint {
+    display: block;
+    padding: 0.25rem 0;
+    font-size: 0.8rem;
+}
+
+/* While a channel is dragged over a plot: which axis it would go on, by the half it's over. */
+.yorg-plot-area {
+    position: relative;
+    min-width: 0;
+}
+
+.yorg-drop {
+    position: absolute;
+    inset: 8px 14px 24px 70px;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.yorg-drop span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius);
+    background: rgb(128 128 128 / 6%);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.yorg-drop span.yorg-drop-here {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+/* Calculated channels: the team's, in each dataset that has what they use. */
+.yorg-calculated-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+}
+
+.yorg-edit {
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.yorg-calculated-row:hover .yorg-edit {
+    border-color: var(--border-strong);
+}
+
+.yorg-new-calculated {
+    margin: 0.2rem 0 0.4rem 0.4rem;
+}
+
+.dialog:has(.yorg-formula) {
+    width: min(44rem, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+}
+
+.yorg-formula .field {
+    margin: 0.6rem 0;
+}
+
+.yorg-formula-unit {
+    flex: 0 0 8rem !important;
+}
+
+.yorg-expression {
+    width: 100%;
+    height: 4.5rem;
+    padding: 0.45rem 0.65rem;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+.yorg-expression[aria-invalid="true"] {
+    border-color: var(--danger);
+}
+
+.yorg-formula-check {
+    margin: -0.25rem 0 0.5rem;
+    font-size: 0.85rem;
+}
+
+.yorg-formula-channels input {
+    width: 100%;
+    margin-bottom: 0.4rem;
+}
+
+.yorg-formula-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    max-height: 7.5rem;
+    overflow: auto;
+}
+
+.yorg-formula-help {
+    margin: 0.75rem 0;
+    font-size: 0.85rem;
+}
+
+.yorg-formula-help summary {
+    cursor: pointer;
+    color: var(--accent);
+}
+
+.yorg-formula-help code,
+.yorg-channel-facts code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85em;
+}
+
+.yorg-formula-delete {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
 }
 
 .yorg-legend-hidden .yorg-series-name,

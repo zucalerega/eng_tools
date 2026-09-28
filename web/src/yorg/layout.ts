@@ -21,6 +21,7 @@ export interface SeriesSpec {
     id: string;
     dataset: number;
     channel: string; // by name, so a layout works for another test with the same channels
+    formula: number | null; // a calculated channel (by id; channel is its name when it was added)
     label: string; // "": the channel's name
     color: string;
     scale: number; // shown value = value * scale + offset
@@ -105,11 +106,32 @@ export function nextColor(layout: Layout): string {
 export const shiftOf = (layout: Layout, dataset: number): number =>
     layout.datasets.find((ref) => ref.id === dataset)?.shift ?? 0;
 
+/** Whether a series draws this channel (or calculated channel) of this dataset. */
+export const isOf = (series: SeriesSpec, what: { dataset: number; channel: string; formula: number | null }): boolean =>
+    series.dataset === what.dataset &&
+    (what.formula === null
+        ? series.formula === null && series.channel === what.channel
+        : series.formula === what.formula);
+
+/** Whether a channel (or calculated channel) of this dataset is on any plot. */
+export const isPlotted = (
+    layout: Layout,
+    what: { dataset: number; channel: string; formula: number | null },
+): boolean => layout.panels.some((panel) => panel.series.some((series) => isOf(series, what)));
+
 export type Action =
-    | { type: "addSeries"; panel: string | null; dataset: number; channel: string; axis?: Side } // null: a new panel
+    | {
+          type: "addSeries";
+          panel: string | null; // null: a new panel
+          dataset: number;
+          channel: string;
+          formula?: number | null;
+          axis?: Side;
+      }
     | { type: "removeSeries"; panel: string; series: string }
+    | { type: "unplot"; dataset: number; channel: string; formula: number | null } // wherever it's plotted
     | { type: "changeSeries"; panel: string; series: string; change: Partial<SeriesSpec> }
-    | { type: "moveSeries"; panel: string; series: string; to: string | null } // null: a new panel
+    | { type: "moveSeries"; panel: string; series: string; to: string | null; axis?: Side } // null: a new panel
     | { type: "addPanel" }
     | { type: "removePanel"; panel: string }
     | { type: "movePanel"; panel: string; by: -1 | 1 }
@@ -137,6 +159,7 @@ export function reduce(layout: Layout, action: Action): Layout {
                 id: newId(),
                 dataset: action.dataset,
                 channel: action.channel,
+                formula: action.formula ?? null,
                 label: "",
                 color: nextColor(layout),
                 scale: 1,
@@ -158,6 +181,14 @@ export function reduce(layout: Layout, action: Action): Layout {
                 ...panel,
                 series: panel.series.filter((series) => series.id !== action.series),
             }));
+        case "unplot":
+            return {
+                ...layout,
+                panels: layout.panels.map((panel) => ({
+                    ...panel,
+                    series: panel.series.filter((series) => !isOf(series, action)),
+                })),
+            };
         case "changeSeries":
             return mapPanel(layout, action.panel, (panel) => ({
                 ...panel,
@@ -166,11 +197,15 @@ export function reduce(layout: Layout, action: Action): Layout {
                 ),
             }));
         case "moveSeries": {
-            const moving = layout.panels
+            const found = layout.panels
                 .find((panel) => panel.id === action.panel)
                 ?.series.find((series) => series.id === action.series);
-            if (!moving || action.to === action.panel) {
+            if (!found) {
                 return layout;
+            }
+            const moving = action.axis ? { ...found, axis: action.axis } : found;
+            if (action.to === action.panel) {
+                return reduce(layout, { type: "changeSeries", panel: action.panel, series: found.id, change: moving });
             }
             const without = reduce(layout, { type: "removeSeries", panel: action.panel, series: action.series });
             const target = without.panels.find((panel) => panel.id === action.to);
@@ -278,6 +313,7 @@ function series(value: unknown, dataset: number): SeriesSpec | null {
         id: str(value.id) || newId(),
         dataset: num(value.dataset, dataset),
         channel: value.channel,
+        formula: typeof value.formula === "number" && Number.isInteger(value.formula) ? value.formula : null,
         label: str(value.label),
         color: /^#[0-9a-fA-F]{6}$/.test(str(value.color)) ? str(value.color) : PALETTE[0]!,
         scale: num(value.scale, 1),

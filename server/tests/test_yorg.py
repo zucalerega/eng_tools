@@ -395,6 +395,37 @@ def test_views_are_saved_for_everyone_and_changed_by_their_owner(team):
     assert team.client.get(url, headers=alice).status_code == 404
 
 
+def test_calculated_channels_are_the_teams_and_changed_by_their_owner(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    chief = team.member("chief@x.test", admin=True)
+    body = {"name": "Thrust", "expression": "[LC-1] + [LC-2]", "unit": "lbf", "description": "Both load cells"}
+    created = team.client.post("/api/yorg/formulas", json=body, headers=alice)
+    assert created.status_code == 201, created.text
+    thrust = created.json()
+    assert (thrust["name"], thrust["expression"], thrust["unit"]) == ("Thrust", "[LC-1] + [LC-2]", "lbf")
+    team.client.post("/api/yorg/formulas", json={"name": "O/F", "expression": "[FM-OX] / [FM-FU]"}, headers=bob)
+
+    listed = team.client.get("/api/yorg/formulas", headers=bob).json()
+    assert [(f["name"], f["can_change"]) for f in listed] == [("O/F", True), ("Thrust", False)]
+    # Names are for everyone, whatever their case.
+    taken = team.client.post("/api/yorg/formulas", json={**body, "name": "THRUST"}, headers=bob)
+    assert (taken.status_code, taken.json()["error"]) == (409, "name_taken")
+    assert taken.json()["message"] == "There's already a calculated channel called Thrust"
+
+    url = f"/api/yorg/formulas/{thrust['id']}"
+    assert team.client.put(url, json={**body, "expression": "[LC-1]"}, headers=bob).status_code == 403
+    assert team.client.delete(url, headers=bob).status_code == 403
+    changed = team.client.put(url, json={**body, "expression": "[LC-1] + [LC-2] + [LC-3]"}, headers=alice).json()
+    assert changed["expression"] == "[LC-1] + [LC-2] + [LC-3]"
+    renamed = team.client.put(url, json={**body, "name": "Total thrust"}, headers=chief).json()
+    assert (renamed["name"], renamed["updated_by"]["email"]) == ("Total thrust", "chief@x.test")
+    empty = team.client.post("/api/yorg/formulas", json={"name": "Nothing", "expression": "  "}, headers=alice)
+    assert empty.status_code == 422
+    assert team.client.delete(url, headers=alice).status_code == 204
+    assert [f["name"] for f in team.client.get("/api/yorg/formulas", headers=alice).json()] == ["O/F"]
+
+
 def test_yorg_is_for_approved_members(team):
     waiting = team.member("new@x.test", status=UserStatus.PENDING)
     assert team.client.get("/api/yorg/datasets", headers=waiting).status_code == 403

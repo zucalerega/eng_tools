@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Software members can download from the web app: put Vault-Setup.exe (the SolidWorks add-in's
     # installer, from CI) and cvc.exe here. Unset: the web app says to ask an admin.
     downloads_dir: Path | None = None
+    # Yorg (test data): each dataset's uploaded file, and the arrays read from it. Back it up with the database.
+    yorg_dir: Path = Path("data/yorg")
 
     @property
     def production(self) -> bool:

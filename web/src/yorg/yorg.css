@@ -1202,3 +1202,67 @@ main.main-full {
     padding-bottom: 0.3rem;
     font-size: 0.85rem;
 }
+
+/* Help: what Yorg does, and how, in cards. */
+.yorg-help-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(23rem, 100%), 1fr));
+    gap: 1rem;
+    align-items: start;
+    margin-bottom: 2rem;
+}
+
+.yorg-help-grid section {
+    padding: 0.9rem 1.1rem 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+}
+
+.yorg-help-grid h2 {
+    margin: 0 0 0.5rem;
+}
+
+.yorg-help-grid ul {
+    margin: 0 0 0.5rem;
+    padding-left: 1.1rem;
+}
+
+.yorg-help-grid li {
+    margin: 0.3rem 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.yorg-help code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85em;
+}
+
+.yorg-help kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font: 600 0.78rem / 1.5 inherit;
+    text-align: center;
+}
+
+.yorg-help-keys {
+    margin: 0 0 0.6rem;
+    font-size: 0.9rem;
+}
+
+.yorg-help-keys div {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.2rem 0;
+}
+
+.yorg-help-keys dd {
+    margin: 0;
+    color: var(--muted);
+}

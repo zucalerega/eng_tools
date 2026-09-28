@@ -500,6 +500,11 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   zoom. Dragging the box moves it; dragging the arrow's tip points it elsewhere, leaving
   the box where it is. They're drawn on the plot's canvas, so the PNG has them, and the
   plot remembers where it drew them to know what a click or a drag is on.
+- **Measuring** is two clicks on a plot: each point snaps to the nearest channel where it
+  was clicked, and the second, if the first was on a channel, to that channel at its
+  time. It reads the time between them and, when both are on one axis, the change and
+  the slope per second, drawn on the plot's canvas like a label (so the PNG has it).
+  Layouts and views don't keep it.
 - **Calculated channels** (`yorg_formulas`) are the team's: a name, a unit, and an
   expression over channels by name, like `[LC-1] + [LC-2]` or
   `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` (O/F while fuel flows). Each shows in every
@@ -621,8 +626,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
 7. **Yorg** (first version done, September 2026): upload, read, plot (an axis per
-   unit), compare, views, exports, calculated channels, folders, labels, masks,
-   splitting files into their tests, and time from T0 or of day (UTC or local). Next:
+   unit), compare, views, exports, calculated channels, folders, labels, measuring,
+   masks, splitting files into their tests, time from T0 or of day (UTC or local), and a
+   Help page (`Help.tsx`, `/yorg/help`: keep it in step with the features). Next:
    statistics over a selected span (and over each test, from its mask),
    reading while the file is still uploading for very big files, and data streamed live
    from the test stand.

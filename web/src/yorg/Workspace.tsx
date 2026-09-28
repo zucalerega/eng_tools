@@ -10,6 +10,7 @@ import {
     type ReactNode,
 } from "react";
 import { MenuButton, Notice, placeMenuAt, usePopover } from "../components";
+import { Link } from "../router";
 import type { Channel, DatasetDetail, Formula } from "./api";
 import { usePlotColors } from "./colors";
 import {
@@ -43,6 +44,7 @@ import { MaskDialog } from "./MaskDialog";
 import {
     Plot,
     type Anchor,
+    type Measurement,
     type MenuTarget,
     type PlotMark,
     type PlotSeries,
@@ -196,6 +198,27 @@ export function reading(series: Resolved, value: number): string {
     return formatValue(value, plain ? (series.channel?.decimals ?? null) : null);
 }
 
+/**
+ * What a measurement between two points says: the time between them and, when they're on one axis, the change from
+ * the first to the second and the slope (per second).
+ */
+export function measureLines(a: Anchor, b: Anchor, unit: string): string[] {
+    const [first, second] = a.t <= b.t ? [a, b] : [b, a];
+    const dt = second.t - first.t;
+    const lines = [`Δt ${formatDuration(dt)}`];
+    if (a.axis === b.axis) {
+        const change = second.y - first.y;
+        const signed = (value: number, plus: string) => `${value < 0 ? MINUS : plus}${formatValue(Math.abs(value))}`;
+        lines.push(`Δ ${signed(change, "+")}${unit ? ` ${unit}` : ""}`);
+        if (dt > 0) {
+            lines.push(`slope ${signed(change / dt, "")}${unit ? ` ${unit}/s` : " /s"}`);
+        }
+    }
+    return lines;
+}
+
+const MINUS = "\u2212";
+
 /** How times read: on the time axis, at the cursor, and in the window's inputs (and how what's typed there reads). */
 export interface TimeLabels {
     axis: TimeAxis;
@@ -211,8 +234,6 @@ export interface TimeLabels {
     dated: boolean; // and dates (Unix times and the like), so it can be read in UTC or this computer's zone
     here: string; // this computer's zone, as it's called when the data starts (EDT)
 }
-
-const MINUS = "\u2212";
 
 /** A zone's name at a moment, as this computer names it (EDT; a UTC offset where the zone has no name). */
 function zoneName(unix: number): string {
@@ -604,8 +625,34 @@ export function Workspace({
         panel: string;
         target: MenuTarget;
     } | null>(null);
-    // Placing a label (or T0): the next click on a plot puts it there. Changing a label: its editor, where it was.
-    const [placing, setPlacing] = useState<"label" | "t0" | null>(null);
+    // Placing a label, T0, or a measurement's points: the next click on a plot puts it there. Changing a label: its
+    // editor, where it was.
+    const [placing, setPlacing] = useState<"label" | "t0" | "measure" | null>(null);
+    // A measurement: its first point (on a channel, if it was clicked on one), then its second.
+    const [measure, setMeasure] = useState<{
+        panel: string;
+        a: Anchor;
+        series: string | null;
+        b: Anchor | null;
+    } | null>(null);
+    const measured = useMemo((): Measurement | null => {
+        if (!measure) {
+            return null;
+        }
+        const onPanel = resolved.get(measure.panel) ?? [];
+        const on = onPanel.find((one) => one.spec.id === measure.series);
+        const unit = (on ?? onPanel.find((one) => one.spec.axis === measure.a.axis))?.unit ?? "";
+        return {
+            a: measure.a,
+            b: measure.b,
+            lines: measure.b ? measureLines(measure.a, measure.b, unit) : ["Click the second point"],
+            color: on?.spec.color ?? colors.cursor,
+        };
+    }, [measure, resolved, colors]);
+    const startMeasuring = () => {
+        setMeasure(null);
+        setPlacing(placing === "measure" ? null : "measure");
+    };
     const [editing, setEditing] = useState<{ panel: string; note: string; left: number; top: number } | null>(null);
     const addNote = (panel: string, anchor: Anchor, left: number, top: number) => {
         const note: Note = { id: newId(), ...anchor, text: "", dx: 48, dy: -40, arrow: true };
@@ -613,9 +660,20 @@ export function Workspace({
         setPlacing(null);
         setEditing({ panel, note: note.id, left, top });
     };
-    const place = (panel: string, anchor: Anchor, left: number, top: number) => {
+    const place = (panel: string, anchor: Anchor, left: number, top: number, series: string | null) => {
         if (placing === "t0") {
             dispatch({ type: "t0", t0: anchor.t });
+            setPlacing(null);
+        } else if (placing === "measure") {
+            if (!measure || measure.b || measure.panel !== panel) {
+                setMeasure({ panel, a: anchor, series, b: null });
+                return;
+            }
+            // The second point: on the first's channel (where the click was), if the first was on one.
+            const on = (resolved.get(panel) ?? []).find((one) => one.spec.id === measure.series);
+            const point = on?.samples ? sampleAt(on.samples, anchor.t, on.placement) : null;
+            const b = point && !Number.isNaN(point.y) ? { t: point.x, y: point.y, axis: measure.a.axis } : anchor;
+            setMeasure({ ...measure, b });
             setPlacing(null);
         } else {
             addNote(panel, anchor, left, top);
@@ -674,9 +732,13 @@ export function Workspace({
             case "l":
                 setPlacing(placing === "label" ? null : "label");
                 return handled();
+            case "d":
+                startMeasuring();
+                return handled();
             case "Escape":
-                if (placing) {
+                if (placing || measure) {
                     setPlacing(null);
+                    setMeasure(null);
                     return handled();
                 }
         }
@@ -748,6 +810,18 @@ export function Workspace({
                         </button>
                         <button
                             type="button"
+                            aria-pressed={placing === "measure"}
+                            onClick={startMeasuring}
+                            title="Click two points on a plot: the time between them, the change, and the slope (D). Esc clears it."
+                        >
+                            {placing !== "measure"
+                                ? "Measure"
+                                : measure && !measure.b
+                                  ? "Click the second point…"
+                                  : "Click the first point…"}
+                        </button>
+                        <button
+                            type="button"
                             disabled={!primary}
                             onClick={() => setMaskEditing({ mask: null })}
                             title="Where a test on channels holds, like a valve open or a pressure over its redline: shade the plots there, or hide data everywhere else"
@@ -795,6 +869,7 @@ export function Workspace({
                             count={layout.panels.length}
                             height={heightOf(panel)}
                             placeFor={placeFor}
+                            measure={measure?.panel === panel.id ? measured : null}
                             series={resolved.get(panel.id) ?? []}
                             plotSeries={plotted.get(panel.id) ?? []}
                             others={layout.panels.filter((other) => other.id !== panel.id)}
@@ -814,7 +889,7 @@ export function Workspace({
                                 onWindow: setWindow,
                                 onMenu: (x, left, top, target) => setMenu({ x, left, top, target, panel: panel.id }),
                                 placing: placing !== null,
-                                onPlace: (anchor, left, top) => place(panel.id, anchor, left, top),
+                                onPlace: (anchor, left, top, series) => place(panel.id, anchor, left, top, series),
                                 onEditNote: (note, left, top) => setEditing({ panel: panel.id, note, left, top }),
                                 onMoveMark: (marker, x) =>
                                     dispatch(
@@ -885,6 +960,7 @@ export function Workspace({
                                   },
                               ]
                             : []),
+                        ...(measure ? [{ label: "Remove the measurement", onSelect: () => setMeasure(null) }] : []),
                         { label: "Add a marker here", onSelect: () => addMarker(menu.x) },
                         { label: "Set T0 here", onSelect: () => dispatch({ type: "t0", t0: menu.x }) },
                         { label: "Zoom out", onSelect: () => zoom(2) },
@@ -1211,7 +1287,9 @@ function OptionsMenu({
                         Show events ({events})
                     </label>
                     <hr />
-                    <p className="menu-label">Keys</p>
+                    <p className="menu-label">
+                        Keys <Link to="/yorg/help">(everything Yorg does: Help)</Link>
+                    </p>
                     <dl className="yorg-keys">
                         <dt>Drag</dt>
                         <dd>zoom to a time</dd>
@@ -1229,6 +1307,8 @@ function OptionsMenu({
                         <dd>marker, T0 at the cursor</dd>
                         <dt>L</dt>
                         <dd>place a label: click where it points</dd>
+                        <dt>D</dt>
+                        <dd>measure: click two points (Esc clears it)</dd>
                         <dt>Drag</dt>
                         <dd>a marker, a label, or its arrow's tip, to move it</dd>
                     </dl>
@@ -1387,7 +1467,7 @@ interface PlotBits {
     onWindow: (window: [number, number] | null, remember: boolean) => void;
     onMenu: (x: number, left: number, top: number, target: MenuTarget) => void;
     placing: boolean;
-    onPlace: (anchor: Anchor, left: number, top: number) => void;
+    onPlace: (anchor: Anchor, left: number, top: number, series: string | null) => void;
     onEditNote: (note: string, left: number, top: number) => void;
     onMoveMark: (marker: string, x: number) => void;
 }
@@ -1422,12 +1502,14 @@ function PanelView({
     onActivate,
     dispatch,
     placeFor,
+    measure,
     plot,
 }: {
     panel: PanelSpec;
     index: number;
     count: number;
     height: number;
+    measure: Measurement | null;
     series: Resolved[];
     plotSeries: PlotSeries[];
     others: PanelSpec[];
@@ -1562,6 +1644,7 @@ function PanelView({
                         onNote={(note, change) => dispatch({ type: "changeNote", panel: panel.id, note, change })}
                         onEditNote={plot.onEditNote}
                         onMoveMark={plot.onMoveMark}
+                        measure={measure}
                     />
                     {dropTarget === "auto" && (
                         <div className="yorg-drop" aria-hidden="true">

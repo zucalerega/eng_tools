@@ -44,7 +44,8 @@ command, and this repository keep the name CVC. The same server also runs
 
 The same site has a second app, **Yorg** (the switcher is at the top left), for the
 team's test data: upload a CSV from a hotfire or cold flow, and plot its channels
-together on one time axis.
+together on one time axis. Help, in Yorg's top bar, has all of this on one page, with
+the keys.
 
 - **Upload a file** (Upload data, or drop it on the page): a column of times and a
   column per channel (PTs, TCs, load cells, valve states). Yorg works out the rest: the
@@ -93,6 +94,9 @@ together on one time axis.
 - **Labels:** Label (or L), then click a plot: a label with an arrow to the data there.
   Drag the label to move it, or the arrow's tip to point it somewhere else; double-click
   it to change the words, or right-click it for more.
+- **Measure:** Measure (or D), then click two points on a plot: the time between them,
+  the change, and the slope (per second). Click on a channel and the second point stays
+  on it; Esc clears the measurement.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Export the plots

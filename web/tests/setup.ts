@@ -6,6 +6,10 @@ import { setAdminMode } from "../src/admin";
 // computer (SolidWorks or MATLAB running alongside), an upload and its check-in can take a few seconds.
 configure({ asyncUtilTimeout: 10_000 });
 
+// jsdom has no canvas to draw on, and says so every time something asks for one. Yorg's plots draw nothing
+// without one; what they show is tested through the numbers behind them (yorg-math.test.ts).
+HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+
 // The app updates itself from the server in the background (the sync feed), so React reports
 // those updates as "not wrapped in act(...)". The tests wait for what they expect to see instead.
 beforeAll(() => {

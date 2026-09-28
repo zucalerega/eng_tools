@@ -203,6 +203,29 @@ main {
     text-transform: uppercase;
 }
 
+/* The site's two apps, the vault and Yorg (test data): the one you're in bright, the other a click away. */
+.apps {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-left: -1.35rem;
+}
+
+.apps .wordmark {
+    color: rgb(255 255 255 / 45%);
+    font-size: 1.05rem;
+    transition: color 0.12s;
+}
+
+.apps .wordmark:hover {
+    color: rgb(255 255 255 / 85%);
+    text-decoration: none;
+}
+
+.apps .wordmark[aria-current="page"] {
+    color: #fff;
+}
+
 .nav {
     display: flex;
     align-self: stretch;
@@ -1412,6 +1435,10 @@ input[type="checkbox"] {
         height: auto;
         flex-wrap: wrap;
         padding: 0.5rem 1rem;
+    }
+
+    .apps {
+        margin-left: 0;
     }
 
     .me {

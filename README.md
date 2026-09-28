@@ -4,7 +4,8 @@ CAD version control for the team's SolidWorks and STEP files: check out, check i
 version history, and per-folder permissions, from SolidWorks, the command line, or
 the web. It replaces Kenesto. People know it as **Vault**: that's its name in the web
 app and in SolidWorks, in the Yellow Jacket Space Program's colors. The code, the `cvc`
-command, and this repository keep the name CVC.
+command, and this repository keep the name CVC. The same server also runs
+[Yorg](#yorg-test-data), which plots the team's test data.
 
 > **Status:** early development. The server, the `cvc` command-line tool, and the web
 > app work and are tested. The SolidWorks 2025 add-in had its first run in SolidWorks in
@@ -39,6 +40,35 @@ command, and this repository keep the name CVC.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
   which installs the add-in, and a button that connects it to the vault.
 
+## Yorg: test data
+
+The same site has a second app, **Yorg** (the switcher is at the top left), for the
+team's test data: upload a CSV from a hotfire or cold flow, and plot its channels
+together on one time axis.
+
+- **Upload a file** (Upload data, or drop it on the page): a column of times and a
+  column per channel (PTs, TCs, load cells, valve states). Yorg works out the rest: the
+  delimiter (comma, tab, semicolon, spaces; decimal commas too), notes above the column
+  names, units (`PT-1 (psi)`, `PT-1 [psi]`, or a row of units under the names), and
+  which column is time and in what format (seconds, milliseconds, Unix time, or dates
+  and times). Channels logged at a slower rate in the same file keep their own times; a
+  text column becomes a state (CLOSED/OPEN, a mode) or, if it's mostly empty, events,
+  like a sequence's IGNITION, which show as markers. If it guessed wrong, change how it's
+  read on the dataset's About page: the file is kept as it was uploaded.
+- **Plot:** click a channel to add it to the selected plot, shift-click for a plot of its
+  own, or drag it onto one. Plots share the time window and the cursor, and each has an
+  axis on either side. Drag across a plot to zoom to that time (shift-drag: a box),
+  right-drag to pan, scroll to zoom; arrow keys, Home (everything), and Backspace (back)
+  work too. The legend reads each channel's value at the cursor.
+- **Scale, label, and line up:** a channel's settings rename it and set its color, a
+  scale and offset (volts to psi, psi to bar) with its unit, its axis, and lines or
+  steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers, and fix
+  an axis's range. Compare with another dataset to overlay two tests, shifted in time to
+  line them up.
+- **Save a view** for everyone, and open it with another test's data: the same plots,
+  with that test's channels of the same names. Export the plots as an image, or the
+  samples in view as CSV.
+
 ## Layout
 
 | Path | What | Status |
@@ -48,6 +78,7 @@ command, and this repository keep the name CVC.
 | `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | working |
 | `client/src/Cvc.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `web/` | Web app: TypeScript, React, Vite; served by the server | working |
+| `server/src/cvc_server/yorg`, `web/src/yorg` | Yorg, the test data app | working |
 | `docs/` | Design and roadmap | |
 
 ## Run the server locally

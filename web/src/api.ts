@@ -157,14 +157,36 @@ class Bytes {
     constructor(readonly data: Uint8Array<ArrayBuffer>) {}
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** What every request carries: the header the server wants on browser writes, and (in tests) a client token. */
+function baseHeaders(): Record<string, string> {
     // The server refuses browser writes without this header, which other sites can't add (CSRF).
     const headers: Record<string, string> = { "X-CVC-Request": "1" };
-    if (body !== undefined) {
-        headers["Content-Type"] = body instanceof Bytes ? "application/octet-stream" : "application/json";
-    }
     if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+    }
+    return headers;
+}
+
+/** The server's error, from its JSON body: {"error": code, "message": ..., "details": {...}}. */
+function apiError(status: number, statusText: string, text: string): ApiError {
+    let code = "error";
+    let message = `The server said ${status} ${statusText}`;
+    let details = {};
+    try {
+        const error = JSON.parse(text) as { error?: string; message?: string; details?: Record<string, unknown> };
+        code = error.error ?? code;
+        message = error.message ?? message;
+        details = error.details ?? details;
+    } catch {
+        // not a JSON error: keep the status line
+    }
+    return new ApiError(status, code, message, details);
+}
+
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers = baseHeaders();
+    if (body !== undefined) {
+        headers["Content-Type"] = body instanceof Bytes ? "application/octet-stream" : "application/json";
     }
     const response = await fetch(apiUrl(path), {
         method,
@@ -173,24 +195,55 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
         credentials: "same-origin",
     });
     if (!response.ok) {
-        let code = "error";
-        let message = `The server said ${response.status} ${response.statusText}`;
-        let details = {};
-        try {
-            const error = (await response.json()) as {
-                error?: string;
-                message?: string;
-                details?: Record<string, unknown>;
-            };
-            code = error.error ?? code;
-            message = error.message ?? message;
-            details = error.details ?? details;
-        } catch {
-            // not a JSON error: keep the status line
-        }
-        throw new ApiError(response.status, code, message, details);
+        throw apiError(response.status, response.statusText, await response.text());
     }
     return response.status === 204 || method === "HEAD" ? (undefined as T) : ((await response.json()) as T);
+}
+
+/** A binary answer, like an array of samples. */
+export async function requestBytes(path: string): Promise<ArrayBuffer> {
+    const response = await fetch(apiUrl(path), { headers: baseHeaders(), credentials: "same-origin" });
+    if (!response.ok) {
+        throw apiError(response.status, response.statusText, await response.text());
+    }
+    return response.arrayBuffer();
+}
+
+/**
+ * Send a file as the request body, saying how much has gone as it goes. Only XMLHttpRequest reports an upload's
+ * progress, and only to its own server; elsewhere (the tests' server) fetch sends it, read into memory first.
+ */
+export function uploadFile<T>(path: string, file: Blob, onProgress: (sent: number) => void): Promise<T> {
+    const url = apiUrl(path);
+    if (new URL(url).origin !== window.location.origin) {
+        return file.arrayBuffer().then(async (contents) => {
+            const body = new Uint8Array(contents);
+            const response = await fetch(url, { method: "POST", headers: baseHeaders(), body });
+            const text = await response.text();
+            if (!response.ok) {
+                throw apiError(response.status, response.statusText, text);
+            }
+            onProgress(file.size);
+            return JSON.parse(text) as T;
+        });
+    }
+    return new Promise<T>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url);
+        for (const [name, value] of Object.entries(baseHeaders())) {
+            xhr.setRequestHeader(name, value);
+        }
+        xhr.upload.onprogress = (event) => onProgress(event.loaded);
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(JSON.parse(xhr.responseText) as T);
+            } else {
+                reject(apiError(xhr.status, xhr.statusText, xhr.responseText));
+            }
+        };
+        xhr.onerror = () => reject(new ApiError(0, "network", "The upload didn't reach the server; try again"));
+        xhr.send(file);
+    });
 }
 
 const query = (params: Record<string, string | number | boolean | undefined>) =>

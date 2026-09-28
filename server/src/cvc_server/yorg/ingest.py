@@ -17,6 +17,7 @@ import itertools
 import math
 import operator
 import re
+import string
 import sys
 from array import array
 from collections import Counter
@@ -117,6 +118,9 @@ _DOT_NUMBER = re.compile(r"^[-+]?\d*\.\d+(?:[eE][-+]?\d+)?$")
 # A date or a time of day: 2026-09-20, 09/20/2026 14:32, 14:32:01.5.
 _DATE_LIKE = re.compile(r"^\d{1,4}[-/.:]\d{1,2}(?:[-/.:T ]+\d{1,4})*")
 _NAME_UNIT = re.compile(r"^(?P<name>.*?)\s*[(\[{](?P<unit>[^()\[\]{}]{1,24})[)\]}]\s*$")
+# A value written with its unit after it, as some loggers write every cell: 23.958 V, -151.273 psi, 12.5%, 300 °C.
+_UNIT_VALUE = re.compile(r"^([-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][-+]?\d+)?)\s*([A-Za-z%°ºµμ][^\s]{0,15})$")
+_UNIT_TAIL = string.ascii_letters + " %°ºµμ"  # what's after a number when its unit's written with it
 _TIME_NAME = re.compile(
     r"^(?:t|time|times|timestamp|time[ _]?stamp|date[ _/]?time|elapsed(?:[ _]?time)?|epoch|unix(?:[ _]?time)?"
     r"|x_value|clock|utc|ts|gps[ _]?time|rel(?:ative)?[ _]?time|sample[ _]?time|daq[ _]?time|seconds|secs?|millis|micros)"
@@ -141,6 +145,11 @@ _UNITS = {
     *["m", "mm", "cm", "km", "in", "ft", "mil", "m/s", "ft/s", "m/s2", "m/s^2", "g's", "gs", "mph", "kph"],
     *["%", "pct", "percent", "count", "counts", "bool", "state", "raw", "adc", "bits"],
     *["l/s", "l/min", "lpm", "gpm", "scfm", "slpm", "sccm", "kg/s", "g/s", "lb/s", "lbm/s", "cc", "ml", "l", "gal"],
+}
+# Units a name can end with, as its last word (Upstream Pressure PSI, PT1_psi, Output %): not one letter (Pump A is a
+# pump), nor words that are as often just part of a name (a valve's state, a count, flow in).
+_NAME_UNITS = {unit for unit in _UNITS if len(unit) > 1 or not unit.isalpha()} - {
+    *["state", "bool", "raw", "adc", "bits", "count", "counts", "in", "us", "pa", "deg", "degrees", "rad", "mil"],
 }
 # Values that mean on and off: a column of only these is a state with them in this order.
 _BOOLEANS = {
@@ -209,9 +218,21 @@ def _is_number(text: str, decimal_comma: bool = False) -> bool:
     return True
 
 
+def _unit_value(text: str, decimal_comma: bool) -> tuple[str, str] | None:
+    """A value written with its unit (23.958 V, 12.5%): its number, as written, and its unit. None if it isn't one."""
+    match = _UNIT_VALUE.match(text.strip())
+    if match is None or match[2] in ("e", "E") or not _is_number(match[1], decimal_comma):
+        return None
+    return match[1], match[2]
+
+
 def _value_like(cell: str, decimal_comma: bool) -> bool:
     text = cell.strip()
-    return bool(text) and (_is_number(text, decimal_comma) or _DATE_LIKE.match(text) is not None)
+    return bool(text) and (
+        _is_number(text, decimal_comma)
+        or _DATE_LIKE.match(text) is not None
+        or _unit_value(text, decimal_comma) is not None
+    )
 
 
 class _Shape:
@@ -313,6 +334,12 @@ def _split_unit(name: str) -> tuple[str, str]:
     return name, ""
 
 
+def _name_unit(name: str) -> str:
+    """A unit a name ends with, as a word (Upstream Pressure PSI, PT1_psi), as it's written; else ""."""
+    words = re.split(r"[\s_]+", name.strip())
+    return words[-1] if len(words) > 1 and words[-1].lower() in _NAME_UNITS else ""
+
+
 def _decimals(text: str, decimal_comma: bool) -> int | None:
     text = text.strip()
     if "e" in text or "E" in text:
@@ -372,7 +399,7 @@ def _layout(source: Path, options: ReadOptions) -> _Layout:
         raise ReadError(f"This file has {width} columns; Yorg reads up to {MAX_COLUMNS}. Split it into smaller files.")
     samples = [(row + [""] * (width - len(row)))[:width] for row in samples]
 
-    names, units_of, named = [], [], []
+    names, units_of, named, word_units = [], [], [], []
     header_cells = rows[header] if header is not None else []
     unit_cells = rows[units] if units is not None else []
     seen: Counter[str] = Counter()
@@ -382,16 +409,29 @@ def _layout(source: Path, options: ReadOptions) -> _Layout:
         if j < len(unit_cells) and unit_cells[j].strip():
             unit = unit_cells[j].strip().strip("()[]{}").strip()
         named.append(bool(name))
+        word_units.append(_name_unit(name))
         name = name or f"Column {j + 1}"
         seen[name] += 1
         names.append(name if seen[name] == 1 else f"{name} ({seen[name]})")
         units_of.append(unit[:64])
 
-    kinds, decimals = [], []
+    kinds, decimals, value_units = [], [], []
     for j in range(width):
         cells = [row[j].strip() for row in samples if row[j].strip()]
-        numbers = [cell for cell in cells if _is_number(cell, decimal_comma)]
-        if len(numbers) < len(cells) and all(_switch_value(cell) is not None for cell in cells):
+        # Numbers, and values written with their unit (23.958 V): numbers too, in that unit, when they share one that's
+        # a unit (or that's on every row of a busy column), unlike a sequence's "1 ARM", "2 FIRE".
+        numbers, written_units = [], Counter[str]()
+        for cell in cells:
+            if _is_number(cell, decimal_comma):
+                numbers.append(cell)
+            elif (written := _unit_value(cell, decimal_comma)) is not None:
+                numbers.append(written[0])
+                written_units[written[1]] += 1
+        unit = next(iter(written_units)) if len(written_units) == 1 else ""
+        if written_units and not (unit.lower() in _UNITS or written_units[unit] >= 20):
+            numbers = [cell for cell in cells if _is_number(cell, decimal_comma)]
+            unit = ""
+        if not written_units and len(numbers) < len(cells) and all(_switch_value(cell) is not None for cell in cells):
             # A switch however it's written (closed, 1, open, 0): a state, whichever the first rows say more.
             kinds.append("bool")
             decimals.append(None)
@@ -402,6 +442,13 @@ def _layout(source: Path, options: ReadOptions) -> _Layout:
         else:
             kinds.append("bool" if all(cell.lower() in _BOOLEANS for cell in cells) else "text")
             decimals.append(None)
+            unit = ""
+        value_units.append(unit)
+    # Where the names (and a row of units) don't say, the unit written with the values, or the name's last word.
+    units_of = [
+        (said or with_values or word)[:64]
+        for said, with_values, word in zip(units_of, value_units, word_units, strict=True)
+    ]
     return _Layout(
         encoding, delimiter, decimal_comma, header, units, data, width, names, units_of, named, kinds, decimals, samples
     )
@@ -644,11 +691,21 @@ def _times(layout: _Layout, column: int | None, options: ReadOptions) -> _Times:
 
 
 def _numbers(cells: tuple[str, ...], decimal_comma: bool) -> tuple[array, int, str | None]:
-    """The cells as numbers: NaN for empty ones and for anything else (counted, with the first as an example)."""
+    """The cells as numbers: NaN for empty ones and for anything else (counted, with the first as an example).
+
+    A value written with its unit (23.958 V) is its number; on and off words are 1 and 0.
+    """
     try:
         if decimal_comma:
             return array("d", map(float, (cell.replace(",", ".") for cell in cells))), 0, None
         return array("d", map(float, cells)), 0, None
+    except ValueError:
+        pass
+    try:  # every value with its unit: quicker to take the units off them all at once
+        without = (cell.rstrip(_UNIT_TAIL) for cell in cells)
+        if decimal_comma:
+            return array("d", map(float, (cell.replace(",", ".") for cell in without))), 0, None
+        return array("d", map(float, without)), 0, None
     except ValueError:
         pass
     out, bad, example = array("d"), 0, None
@@ -657,15 +714,18 @@ def _numbers(cells: tuple[str, ...], decimal_comma: bool) -> tuple[array, int, s
             out.append(float(cell.replace(",", ".") if decimal_comma else cell))
         except ValueError:
             text = cell.strip()
-            if text:
-                value = _BOOLEANS.get(text.lower())
-                if value is None:
-                    bad += 1
-                    example = example or text
-                    out.append(_NAN)
-                else:
-                    out.append(float(value))
+            if not text:
+                out.append(_NAN)
+                continue
+            value = _BOOLEANS.get(text.lower())
+            written = None if value is not None else _unit_value(text, decimal_comma)
+            if value is not None:
+                out.append(float(value))
+            elif written is not None:
+                out.append(_number(written[0], decimal_comma))
             else:
+                bad += 1
+                example = example or text
                 out.append(_NAN)
     return out, bad, example
 

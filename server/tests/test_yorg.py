@@ -239,6 +239,48 @@ def test_valves_read_as_valves_however_a_log_says_so(team):
     assert (prvnt["min"], prvnt["max"], prvnt["mean"]) == (0, 3, 1)
 
 
+def test_values_written_with_their_units(team):
+    """Some loggers write each value with its unit (23.958 V): they're its numbers, and it's the channel's unit."""
+    chief = team.member("chief@x.test", admin=True)
+    lines = ["timestamp,PRPT2,OTLC1,PUF_I,OBV_V,Sequence"]
+    for i in range(40):
+        current = "-0.000" if i == 0 else f"{i / 100:.3f}"
+        step = {10: "1 ARM", 30: "2 FIRE"}.get(i, "")
+        lines.append(f"{1712514960 + i / 50},{1233.368 + i:.3f} psi,{83.367 + i:.3f}lbf,{current} A,23.860 V,{step}")
+    dataset = upload(team, chief, "\n".join(lines) + "\n")
+
+    assert [(c["name"], c["kind"], c["unit"]) for c in dataset["channels"]] == [
+        ("PRPT2", "number", "psi"),
+        ("OTLC1", "number", "lbf"),
+        ("PUF_I", "number", "A"),
+        ("OBV_V", "number", "V"),
+    ]
+    pt = channel(dataset, "PRPT2")
+    assert (pt["count"], pt["decimals"], pt["min"], pt["max"]) == (40, 3, 1233.368, 1272.368)
+    assert samples(team, chief, dataset, "OTLC1")[:2] == [(0.0, 83.367), (pytest.approx(0.02), 84.367)]
+    assert [value for _, value in samples(team, chief, dataset, "PUF_I")][:3] == [0.0, 0.01, 0.02]
+    # A sequence's steps are still its steps, though "1 ARM" starts with a number.
+    assert [event["label"] for event in dataset["events"]] == ["1 ARM", "2 FIRE"]
+    assert dataset["warnings"] == []
+
+
+def test_units_written_as_a_names_last_word(team):
+    """Upstream Pressure PSI, or PT1_psi: the unit, and the name as it's written. Not Pump A, or Valve State."""
+    chief = team.member("chief@x.test", admin=True)
+    names = "Timestamp ms,Upstream Pressure PSI,Motor Applied Output %,Motor RPM,PT1_psi,Pump A,Valve State,PT2 [bar]"
+    dataset = upload(team, chief, f"{names}\n0,426.47,0,0,14.7,1,0,1.01\n10,427.1,5,100,14.8,2,1,1.02\n")
+    assert [(c["name"], c["unit"]) for c in dataset["channels"]] == [
+        ("Upstream Pressure PSI", "PSI"),
+        ("Motor Applied Output %", "%"),
+        ("Motor RPM", "RPM"),
+        ("PT1_psi", "psi"),
+        ("Pump A", ""),
+        ("Valve State", ""),
+        ("PT2", "bar"),  # in brackets: the name without it, as before
+    ]
+    assert dataset["read_info"]["time_format"] == "milliseconds"
+
+
 def test_a_text_column_can_start_empty(team):
     """Which columns are text is worked out from the first rows; a sequence's first step can come long after."""
     chief = team.member("chief@x.test", admin=True)

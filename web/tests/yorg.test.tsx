@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { formatSize } from "../src/format";
 import { renderApp, Team } from "./team";
 
 // Yorg, through the app: upload test data, plot its channels, save views, and look after datasets.
@@ -319,4 +320,64 @@ test("only whoever added a dataset, or an admin, can change it", async () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(screen.queryByRole("form", { name: "Read settings" })).toBeNull();
     expect(screen.queryByLabelText("Name")).toBeNull();
+});
+
+test("folders: made, moved into, browsed, and searched across; and each dataset's size", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Foldered", HOTFIRE);
+    renderApp(team.chief, "/yorg");
+    let table = within(await screen.findByRole("table", { name: "Datasets" }));
+    const row = (await table.findByRole("link", { name: data.name })).closest("tr")!;
+    expect(within(row).getByText(formatSize(data.size))).toBeTruthy();
+
+    const folder = `Campaign ${team.folder}`;
+    await userEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const made = within(await screen.findByRole("dialog", { name: "New folder" }));
+    await userEvent.type(made.getByLabelText("Name"), folder);
+    await userEvent.click(made.getByRole("button", { name: "Make it" }));
+    expect(await table.findByRole("link", { name: folder })).toBeTruthy();
+
+    // Chosen, and moved to the folder.
+    await userEvent.click(within(row).getByRole("checkbox", { name: `Choose ${data.name}` }));
+    await userEvent.click(screen.getByRole("button", { name: "Move to…" }));
+    const move = within(await screen.findByRole("dialog", { name: "Move a dataset" }));
+    await userEvent.click(move.getByRole("radio", { name: folder }));
+    await userEvent.click(move.getByRole("button", { name: "Move" }));
+    await waitFor(() => expect(table.queryByRole("link", { name: data.name })).toBeNull());
+    const folderRow = table.getByRole("link", { name: folder }).closest("tr")!;
+    expect(within(folderRow).getByText("1 dataset")).toBeTruthy();
+
+    // In the folder: the dataset, and the way back up.
+    await userEvent.click(within(folderRow).getByRole("link", { name: folder }));
+    expect(await screen.findByRole("heading", { name: folder })).toBeTruthy();
+    table = within(await screen.findByRole("table", { name: "Datasets" }));
+    expect(await table.findByRole("link", { name: data.name })).toBeTruthy();
+    await userEvent.click(
+        within(screen.getByRole("navigation", { name: "Folders" })).getByRole("link", { name: "Test data" }),
+    );
+
+    // A search looks in every folder, and says where each dataset is.
+    await userEvent.type(await screen.findByLabelText("Find datasets"), data.name);
+    expect(await screen.findByText(`in ${folder}`)).toBeTruthy();
+});
+
+test("a saved view shows on its dataset's pages for everyone, and anyone can save it as their own", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const data = await team.data(team.chief, "Viewed", HOTFIRE);
+    const view = await team.view(team.chief, `Tanks ${team.folder}`, data.id, "PT-OX-01");
+    renderApp(alice, `/yorg/datasets/${data.id}`);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Saved views (1)" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: `${view.name}, by chief` }));
+    expect(await screen.findByRole("heading", { name: view.name })).toBeTruthy();
+    expect(
+        within(await screen.findByRole("group", { name: "Plot 1: channels" })).getByRole("button", {
+            name: "PT-OX-01",
+        }),
+    ).toBeTruthy();
+    // It's the chief's: Alice keeps hers as a new view.
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Save as a new view" }));
+    expect(await screen.findByRole("dialog", { name: "Save this view" })).toBeTruthy();
 });

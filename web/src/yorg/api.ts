@@ -30,6 +30,7 @@ export type TimeKind = "relative" | "absolute" | "clock";
 
 export interface Dataset {
     id: number;
+    folder_id: number | null; // the folder it's in; null: at the top
     name: string;
     description: string;
     filename: string;
@@ -104,6 +105,16 @@ export interface DatasetDetail extends Dataset {
     read_info: ReadInfo;
 }
 
+/** A folder of datasets (a test campaign, say): in another folder, or at the top (parent_id null). */
+export interface DataFolder {
+    id: number;
+    parent_id: number | null;
+    name: string;
+    created_at: string;
+    created_by: UserRef | null;
+    can_change: boolean; // yours, or you're an admin: rename it, move it, delete it (if it's empty)
+}
+
 /** A calculated channel, for the whole team: an expression over channels, by name (formula.ts reads it). */
 export interface Formula {
     id: number;
@@ -151,12 +162,27 @@ export const yorg = {
     datasets: (deleted = false) => request<Dataset[]>("GET", "/api/yorg/datasets" + (deleted ? "?deleted=true" : "")),
     dataset: (id: number) => request<DatasetDetail>("GET", datasetPath(id)),
     /** Upload a file and read it. One that can't be read comes back with status "failed" and error. */
-    upload: (file: File, onProgress: (sent: number) => void, name?: string) =>
+    upload: (file: File, onProgress: (sent: number) => void, name?: string, folder: number | null = null) =>
         uploadFile<DatasetDetail>(
-            "/api/yorg/datasets?" + new URLSearchParams({ filename: file.name, ...(name ? { name } : {}) }).toString(),
+            "/api/yorg/datasets?" +
+                new URLSearchParams({
+                    filename: file.name,
+                    ...(name ? { name } : {}),
+                    ...(folder === null ? {} : { folder: String(folder) }),
+                }).toString(),
             file,
             onProgress,
         ),
+    /** Put datasets in a folder (null: the top): all of them, or none if any isn't yours to move. */
+    move: (datasets: number[], folder: number | null) =>
+        request<Dataset[]>("POST", "/api/yorg/datasets/move", { datasets, folder_id: folder }),
+    folders: () => request<DataFolder[]>("GET", "/api/yorg/folders"),
+    addFolder: (name: string, parent: number | null) =>
+        request<DataFolder>("POST", "/api/yorg/folders", { name, parent_id: parent }),
+    renameFolder: (id: number, name: string) => request<DataFolder>("PATCH", `/api/yorg/folders/${id}`, { name }),
+    moveFolder: (id: number, parent: number | null) =>
+        request<DataFolder>("PATCH", `/api/yorg/folders/${id}`, { parent_id: parent }),
+    removeFolder: (id: number) => request<void>("DELETE", `/api/yorg/folders/${id}`),
     update: (id: number, change: { name?: string; description?: string }) =>
         request<Dataset>("PATCH", datasetPath(id), change),
     /** Read the file again another way. If that doesn't work, this fails, and the last read stays. */

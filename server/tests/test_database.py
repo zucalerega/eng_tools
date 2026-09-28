@@ -66,6 +66,32 @@ def test_upgrades_keep_the_vault(tmp_path):
         _folder(db, 4, 1, "MOTOR")
 
 
+def test_upgrades_keep_yorgs_data(tmp_path):
+    """Datasets got folders by copying their table (on SQLite), which channels point at."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0004")
+    when = "'2026-09-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when})"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO yorg_datasets (id, name, description, filename, size, sha256, status, rows, channel_count, "
+            "read_options, read_info, warnings, events, created_at, created_by, updated_at) VALUES (1, 'Hotfire 3', '', "
+            f"'hotfire.csv', 10, 'ab', 'ready', 5, 1, '{{}}', '{{}}', '[]', '[]', {when}, 1, {when})"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO yorg_channels (id, dataset_id, position, name, unit, kind, labels, count, time_file, value_file) "
+            "VALUES (1, 1, 1, 'PT-1', 'psi', 'number', '[]', 5, 'time.f64', 'c1.f64')"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        joined = "SELECT d.name, d.folder_id, c.name FROM yorg_channels c JOIN yorg_datasets d ON d.id = c.dataset_id"
+        assert db.exec_driver_sql(joined).one() == ("Hotfire 3", None, "PT-1")
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

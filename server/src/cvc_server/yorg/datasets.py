@@ -20,7 +20,7 @@ from ..errors import Conflict, CvcError, Forbidden, NotFound, TooLarge
 from ..models import User
 from .files import DataFiles
 from .ingest import ReadError, ReadOptions, read_csv
-from .models import Channel, Dataset, DatasetStatus, Formula, View
+from .models import Channel, DataFolder, Dataset, DatasetStatus, Formula, View
 
 log = logging.getLogger(__name__)
 MAX_VIEW_BYTES = 512 * 1024
@@ -71,9 +71,13 @@ def add(
     description: str,
     size: int,
     sha256: str,
+    folder_id: int | None = None,
 ) -> Dataset:
     """A dataset from an uploaded file, read as the file itself suggests (read again to change that)."""
+    if folder_id is not None:
+        folder(db, folder_id)
     new = Dataset(
+        folder_id=folder_id,
         name=name,
         description=description,
         filename=filename,
@@ -187,6 +191,93 @@ def recover(db: Session) -> None:
         found.status = DatasetStatus.FAILED
         found.error = "The server stopped while it was reading this file. Read it again."
     db.commit()
+
+
+# --- folders ------------------------------------------------------------------------------------------------------
+
+
+def folders(db: Session) -> Sequence[DataFolder]:
+    return db.scalars(select(DataFolder).order_by(DataFolder.name_key, DataFolder.id)).all()
+
+
+def folder(db: Session, folder_id: int) -> DataFolder:
+    found = db.get(DataFolder, folder_id, populate_existing=True)
+    if found is None:
+        raise NotFound(f"There's no folder {folder_id}")
+    return found
+
+
+def _check_folder_name(db: Session, name: str, parent_id: int | None, folder_id: int | None = None) -> None:
+    taken = db.scalar(
+        select(DataFolder).where(
+            DataFolder.parent_id.is_(None) if parent_id is None else DataFolder.parent_id == parent_id,
+            DataFolder.name_key == name.lower(),
+            DataFolder.id != (folder_id or 0),
+        )
+    )
+    if taken is not None:
+        raise Conflict(f"There's already a folder called {taken.name} there", code="name_taken")
+
+
+def add_folder(db: Session, user: User, *, name: str, parent_id: int | None) -> DataFolder:
+    if parent_id is not None:
+        folder(db, parent_id)
+    _check_folder_name(db, name, parent_id)
+    new = DataFolder(name=name, name_key=name.lower(), parent_id=parent_id, creator=user)
+    db.add(new)
+    db.commit()
+    return new
+
+
+def change_folder(
+    db: Session, user: User, folder_id: int, *, name: str | None = None, parent_id: int | None, move: bool
+) -> DataFolder:
+    """Rename a folder, or (move) put it in another folder, or at the top (parent_id None)."""
+    found = folder(db, folder_id)
+    _check_can_change(user, found.created_by, "folder")
+    parent = parent_id if move else found.parent_id
+    if move and parent is not None:
+        above: int | None = parent
+        while above is not None:  # up from the new place: this folder mustn't be there
+            if above == found.id:
+                raise Conflict(f"{found.name} can't go inside itself", code="cycle")
+            above = folder(db, above).parent_id
+    new_name = name if name is not None else found.name
+    _check_folder_name(db, new_name, parent, found.id)
+    found.name, found.name_key, found.parent_id = new_name, new_name.lower(), parent
+    db.commit()
+    return found
+
+
+def remove_folder(db: Session, user: User, folder_id: int) -> None:
+    """Delete an empty folder. Deleted datasets that were in it go to its folder, to be restored there."""
+    found = folder(db, folder_id)
+    _check_can_change(user, found.created_by, "folder")
+    inside = db.scalar(select(DataFolder.id).where(DataFolder.parent_id == found.id).limit(1)) is not None
+    inside = (
+        inside
+        or db.scalar(select(Dataset.id).where(Dataset.folder_id == found.id, Dataset.deleted_at.is_(None)).limit(1))
+        is not None
+    )
+    if inside:
+        raise Conflict(f"{found.name} isn't empty: move what's in it out first", code="not_empty")
+    for gone in db.scalars(select(Dataset).where(Dataset.folder_id == found.id)):
+        gone.folder_id = found.parent_id
+    db.delete(found)
+    db.commit()
+
+
+def move(db: Session, user: User, dataset_ids: list[int], folder_id: int | None) -> Sequence[Dataset]:
+    """Put datasets in a folder (or at the top): all of them, or none if any isn't yours to move."""
+    if folder_id is not None:
+        folder(db, folder_id)
+    moving = [dataset(db, dataset_id) for dataset_id in dataset_ids]
+    for found in moving:
+        _check_can_change(user, found.created_by, "dataset")
+    for found in moving:
+        found.folder_id = folder_id
+    db.commit()
+    return moving
 
 
 # --- calculated channels ------------------------------------------------------------------------------------------

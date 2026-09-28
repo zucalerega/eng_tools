@@ -146,6 +146,7 @@ export function placeMenu(menu: HTMLElement, from: HTMLElement): void {
 
 /** Put a menu at a point (where a right-click was), all of it in the window. */
 export function placeMenuAt(menu: HTMLElement, x: number, y: number): void {
+    Object.assign(menu.style, { position: "fixed", right: "auto", bottom: "auto", left: "0px", top: "0px" });
     const { width, height } = menu.getBoundingClientRect();
     const left = Math.max(EDGE, Math.min(x, window.innerWidth - EDGE - width));
     const top = y + height > window.innerHeight - EDGE ? Math.max(EDGE, y - height) : y;

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -17,10 +17,9 @@ import {
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
-import { DATA_FILES, UploadDialog } from "./Upload";
 import { Workspace } from "./Workspace";
 
-// Yorg's pages: the datasets, a dataset's plots and its details, saved views, and deleted datasets.
+// Yorg's pages: a dataset's plots and its details, saved views, and deleted datasets (the datasets: Datasets.tsx).
 
 export const datasetUrl = (id: number): string => `/yorg/datasets/${id}`;
 export const aboutUrl = (id: number): string => `/yorg/datasets/${id}/about`;
@@ -64,175 +63,7 @@ function startOf(dataset: Dataset, utcOffset: number | null = null): string {
     return `${date} ${formatClock(dataset.start_epoch + (utcOffset ?? 0), 0.001)}${utcOffset === null ? " UTC" : ""}`;
 }
 
-function useDrop(onFiles: (files: File[]) => void) {
-    const [dropping, setDropping] = useState(false);
-    const files = (event: DragEvent) => event.dataTransfer.types.includes("Files");
-    return {
-        dropping,
-        handlers: {
-            onDragOver: (event: DragEvent) => {
-                if (files(event)) {
-                    event.preventDefault();
-                    setDropping(true);
-                }
-            },
-            onDragLeave: () => setDropping(false),
-            onDrop: (event: DragEvent) => {
-                if (files(event)) {
-                    event.preventDefault();
-                    setDropping(false);
-                    onFiles([...event.dataTransfer.files]);
-                }
-            },
-        },
-    };
-}
-
-// --- the datasets -------------------------------------------------------------------------------------------------
-
-export function DatasetsPage() {
-    const [datasets, setDatasets] = useState<Dataset[] | null>(null);
-    const [problem, setProblem] = useState<string | null>(null);
-    const [filter, setFilter] = useState("");
-    const [uploading, setUploading] = useState<File[] | null>(null);
-    const picker = useRef<HTMLInputElement>(null);
-    const load = () => yorg.datasets().then(setDatasets, (error: unknown) => setProblem(message(error)));
-    useEffect(() => {
-        void load();
-    }, []);
-    const drop = useDrop(setUploading);
-    const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = (datasets ?? []).filter((dataset) =>
-        words.every((word) =>
-            `${dataset.name} ${dataset.filename} ${dataset.description}`.toLowerCase().includes(word),
-        ),
-    );
-    return (
-        <section className={`yorg-page${drop.dropping ? " drop-target" : ""}`} {...drop.handlers}>
-            <div className="page-head">
-                <h1>Test data</h1>
-                <div className="page-actions">
-                    <Link className="button" to="/yorg/views">
-                        Saved views
-                    </Link>
-                    <button type="button" className="button-primary" onClick={() => picker.current?.click()}>
-                        Upload data
-                    </button>
-                    <input
-                        ref={picker}
-                        type="file"
-                        accept={DATA_FILES}
-                        multiple
-                        hidden
-                        aria-label="Files to upload"
-                        onChange={(event) => {
-                            const picked = [...(event.target.files ?? [])];
-                            event.target.value = "";
-                            if (picked.length > 0) {
-                                setUploading(picked);
-                            }
-                        }}
-                    />
-                </div>
-            </div>
-            <p className="lead muted">
-                Upload a CSV from a test (pressures, temperatures, loads, valve states: a column each, and a column of
-                times) and plot its channels together on one time axis. Drop files anywhere on this page, too.
-            </p>
-            {problem && <Notice tone="error">{problem}</Notice>}
-            {datasets === null && !problem && <p className="muted">Loading…</p>}
-            {datasets !== null && datasets.length === 0 && (
-                <div className="empty">No test data yet. Upload a CSV file to start.</div>
-            )}
-            {datasets !== null && datasets.length > 0 && (
-                <>
-                    <input
-                        type="search"
-                        className="search"
-                        placeholder="Find datasets"
-                        aria-label="Find datasets"
-                        value={filter}
-                        onChange={(event) => setFilter(event.target.value)}
-                    />
-                    <div className="table-scroll">
-                        <table className="table yorg-datasets" aria-label="Datasets">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th className="numeric">Channels</th>
-                                    <th className="numeric">Length</th>
-                                    <th className="numeric">Rate</th>
-                                    <th>Added</th>
-                                    <th />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {shown.map((dataset) => (
-                                    <tr key={dataset.id}>
-                                        <td>
-                                            <Link to={datasetUrl(dataset.id)} className="name">
-                                                {dataset.name}
-                                            </Link>
-                                            {dataset.status === "failed" && (
-                                                <span className="tag tag-warning" title={dataset.error ?? undefined}>
-                                                    Couldn't be read
-                                                </span>
-                                            )}
-                                            {dataset.status === "reading" && <span className="tag">Reading</span>}
-                                            {dataset.description && (
-                                                <p className="muted yorg-description">{dataset.description}</p>
-                                            )}
-                                        </td>
-                                        <td className="numeric">{dataset.channel_count}</td>
-                                        <td className="numeric">
-                                            {dataset.t_min !== null && dataset.t_max !== null
-                                                ? formatDuration(dataset.t_max - dataset.t_min)
-                                                : "—"}
-                                        </td>
-                                        <td className="numeric">{formatRate(dataset.sample_rate)}</td>
-                                        <td>
-                                            {dataset.created_by?.name ?? "—"}
-                                            <span className="muted">
-                                                {" · "}
-                                                <Time at={dataset.created_at} />
-                                            </span>
-                                        </td>
-                                        <td className="row-actions">
-                                            <Link className="button button-small" to={aboutUrl(dataset.id)}>
-                                                About
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {shown.length === 0 && <p className="muted">No datasets match.</p>}
-                </>
-            )}
-            <p className="muted yorg-foot">
-                <Link to="/yorg/deleted">Deleted datasets</Link>
-            </p>
-            {uploading && (
-                <UploadDialog
-                    files={uploading}
-                    onClose={() => {
-                        setUploading(null);
-                        void load();
-                    }}
-                    onDone={(done) => {
-                        setUploading(null);
-                        if (done.length === 1 && done[0]!.status === "ready") {
-                            navigate(datasetUrl(done[0]!.id));
-                        } else {
-                            void load();
-                        }
-                    }}
-                />
-            )}
-        </section>
-    );
-}
+// --- the deleted datasets --------------------------------------------------------------------------------------
 
 export function DeletedPage() {
     const [datasets, setDatasets] = useState<Dataset[] | null>(null);
@@ -348,10 +179,23 @@ export function DatasetPage({ id }: { id: number }) {
     return <DatasetWorkspace key={`${id}/${detail.data_version}`} detail={detail} />;
 }
 
+/** The views saved (by anyone) that plot a dataset, newest first. */
+function useViewsOf(dataset: number): SavedView[] {
+    const [views, setViews] = useState<SavedView[]>([]);
+    useEffect(() => {
+        yorg.views().then(
+            (all) => setViews(all.filter((view) => view.datasets.includes(dataset))),
+            () => setViews([]),
+        );
+    }, [dataset]);
+    return views;
+}
+
 function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
     const [layout, dispatch] = useReducer(reduce, detail.id, storedLayout);
     useEffect(() => storeLayout(detail.id, layout), [detail.id, layout]);
     const [saving, setSaving] = useState(false);
+    const views = useViewsOf(detail.id);
     return (
         <>
             <Workspace
@@ -367,6 +211,15 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                 }
                 actions={
                     <>
+                        {views.length > 0 && (
+                            <MenuButton
+                                label={`Saved views (${views.length})`}
+                                items={views.map((view) => ({
+                                    label: `${view.name}, by ${view.created_by?.name ?? "someone"}`,
+                                    onSelect: () => navigate(viewUrl(view.id)),
+                                }))}
+                            />
+                        )}
                         <button type="button" onClick={() => setSaving(true)}>
                             Save view
                         </button>
@@ -610,6 +463,7 @@ function About({ detail }: { detail: DatasetDetail }) {
                     </div>
                 </>
             )}
+            <ViewsOf dataset={detail.id} />
             {detail.events.length > 0 && (
                 <>
                     <h2>Events</h2>
@@ -641,6 +495,28 @@ function About({ detail }: { detail: DatasetDetail }) {
                 </Dialog>
             )}
         </section>
+    );
+}
+
+function ViewsOf({ dataset }: { dataset: number }) {
+    const views = useViewsOf(dataset);
+    if (views.length === 0) {
+        return null;
+    }
+    return (
+        <>
+            <h2>Saved views</h2>
+            <ul className="plain">
+                {views.map((view) => (
+                    <li key={view.id}>
+                        <Link to={viewUrl(view.id)}>{view.name}</Link>{" "}
+                        <span className="muted">
+                            by {view.created_by?.name ?? "someone"}, <Time at={view.updated_at} />
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </>
     );
 }
 
@@ -923,9 +799,13 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
                 notice={problem ? <Notice tone="error">{problem}</Notice> : undefined}
                 actions={
                     <>
-                        {view.can_change && (
+                        {view.can_change ? (
                             <button type="button" disabled={!changed} onClick={() => void save()}>
                                 Save
+                            </button>
+                        ) : (
+                            <button type="button" onClick={() => setDialog("copy")}>
+                                Save as a new view
                             </button>
                         )}
                         <MoreViewActions

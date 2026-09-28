@@ -93,7 +93,7 @@ export function formatClock(seconds: number, step = 1): string {
     return decimals > 0 ? `${clock}.${(rounded - whole).toFixed(decimals).slice(2)}` : clock;
 }
 
-/** 850 ms, 12.5 s, 3 min 20 s, 1 h 5 min. */
+/** 850 ms, 12.5 s, 3 min 20 s, 1 h 5 min: rounded as a whole, so 119.97 s is 2 min, not 1 min 60 s. */
 export function formatDuration(seconds: number): string {
     if (!Number.isFinite(seconds)) {
         return "—";
@@ -102,17 +102,18 @@ export function formatDuration(seconds: number): string {
     if (size < 1) {
         return `${formatValue(seconds * 1000)} ms`;
     }
-    if (size < 60) {
-        return `${formatValue(Number(seconds.toPrecision(4)))} s`;
+    const short = Number(size.toPrecision(4));
+    if (short < 60) {
+        return `${formatValue(short)} s`;
     }
-    if (size < 3600) {
-        const minutes = Math.floor(size / 60);
-        const rest = Math.round(size - minutes * 60);
-        return `${minutes} min${rest ? ` ${rest} s` : ""}`;
+    const whole = Math.round(size);
+    if (whole < 3600) {
+        const rest = whole % 60;
+        return `${Math.floor(whole / 60)} min${rest ? ` ${rest} s` : ""}`;
     }
-    const hours = Math.floor(size / 3600);
-    const minutes = Math.round((size - hours * 3600) / 60);
-    return `${hours} h${minutes ? ` ${minutes} min` : ""}`;
+    const minutes = Math.round(size / 60);
+    const rest = minutes % 60;
+    return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ""}`;
 }
 
 /** 1 kHz, 100 Hz, 12.5 Hz, 0.2 Hz. */

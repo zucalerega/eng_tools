@@ -1,6 +1,7 @@
 import { Notice } from "../components";
 import { Link } from "../router";
-import { AboutPage, DatasetPage, DatasetsPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
+import { DatasetsPage } from "./Datasets";
+import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
 
 // Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and the vault.
@@ -42,13 +43,17 @@ export function YorgPage({ pathname }: { pathname: string }) {
     if (match) {
         return <AboutPage key={match[1]} id={Number(match[1])} />;
     }
+    match = /^\/yorg\/folders\/(\d+)$/.exec(path);
+    if (match) {
+        return <DatasetsPage key={match[1]} folder={Number(match[1])} />;
+    }
     match = /^\/yorg\/views\/(\d+)$/.exec(path);
     if (match) {
         return <ViewPage key={match[1]} id={Number(match[1])} />;
     }
     switch (path) {
         case "/yorg":
-            return <DatasetsPage />;
+            return <DatasetsPage key="top" folder={null} />;
         case "/yorg/views":
             return <ViewsPage />;
         case "/yorg/deleted":

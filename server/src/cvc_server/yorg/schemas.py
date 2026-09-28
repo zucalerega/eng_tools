@@ -9,7 +9,7 @@ from ..api.schemas import UserRef
 from ..models import User
 from .datasets import can_change
 from .ingest import Delimiter, ReadOptions, TimeFormat
-from .models import Channel, Dataset, Formula, View
+from .models import Channel, DataFolder, Dataset, Formula, View
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -63,6 +63,7 @@ class EventOut(BaseModel):
 
 class DatasetOut(BaseModel):
     id: int
+    folder_id: int | None  # the folder it's in (GET /api/yorg/folders); None: at the top
     name: str
     description: str
     filename: str
@@ -89,6 +90,7 @@ class DatasetOut(BaseModel):
     def fields(cls, dataset: Dataset, user: User) -> dict[str, Any]:
         return {
             "id": dataset.id,
+            "folder_id": dataset.folder_id,
             "name": dataset.name,
             "description": dataset.description,
             "filename": dataset.filename,
@@ -139,6 +141,43 @@ class DatasetDetailOut(DatasetOut):
 class DatasetChangeIn(BaseModel):
     name: Name | None = None
     description: str | None = Field(None, max_length=5000)
+
+
+class MoveIn(BaseModel):
+    datasets: list[int] = Field(min_length=1, max_length=1000)
+    folder_id: int | None  # None: to the top
+
+
+class FolderIn(BaseModel):
+    name: Name
+    parent_id: int | None = None  # None: at the top
+
+
+class FolderChangeIn(BaseModel):
+    """A new name, or a new place (parent_id; null: the top). Leave out what doesn't change."""
+
+    name: Name | None = None
+    parent_id: int | None = None
+
+
+class FolderOut(BaseModel):
+    id: int
+    parent_id: int | None
+    name: str
+    created_at: datetime
+    created_by: UserRef | None
+    can_change: bool  # yours (or you're an admin): rename, move, or delete it
+
+    @classmethod
+    def of(cls, folder: DataFolder, user: User) -> "FolderOut":
+        return cls(
+            id=folder.id,
+            parent_id=folder.parent_id,
+            name=folder.name,
+            created_at=folder.created_at,
+            created_by=_ref(folder.creator),
+            can_change=can_change(user, folder.created_by),
+        )
 
 
 class ReadOptionsIn(BaseModel):

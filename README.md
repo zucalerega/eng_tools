@@ -55,11 +55,18 @@ together on one time axis.
   text column becomes a state (CLOSED/OPEN, a mode) or, if it's mostly empty, events,
   like a sequence's IGNITION, which show as markers. If it guessed wrong, change how it's
   read on the dataset's About page: the file is kept as it was uploaded.
-- **Plot:** click a channel to add it to the selected plot, shift-click for a plot of its
-  own, or drag it onto one. Plots share the time window and the cursor, and each has an
-  axis on either side. Drag across a plot to zoom to that time (shift-drag: a box),
-  right-drag to pan, scroll to zoom; arrow keys, Home (everything), and Backspace (back)
-  work too. The legend reads each channel's value at the cursor.
+- **Plot:** click a channel to add it to the selected plot (click it again to take it
+  off), shift-click for a plot of its own, or drag it onto one: onto the right half of a
+  plot for its right axis. Plots share the time window and the cursor, and each has an
+  axis on either side; drag a channel in a legend to the other axis, or to another plot.
+  Drag across a plot to zoom to that time (shift-drag: a box), right-drag to pan, scroll
+  to zoom; arrow keys, Home (everything), and Backspace (back) work too. The legend reads
+  each channel's value at the cursor.
+- **Calculated channels:** New calculated channel (under a dataset's channels) makes one
+  for the whole team from an expression, like `[LC-1] + [LC-2]` for total thrust or
+  `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` for O/F while fuel flows; `ddt`,
+  `integral`, `smooth`, `avg`, and the usual math are there too. It shows in every
+  dataset that has the channels it uses, and plots like any channel.
 - **Scale, label, and line up:** a channel's settings rename it and set its color, a
   scale and offset (volts to psi, psi to bar) with its unit, its axis, and lines or
   steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers, and fix

@@ -1,7 +1,7 @@
 """Yorg's rules: reading a dataset's file into channels, and who may change datasets and views.
 
-Everyone signed in (and approved) sees every dataset and view, and can add them. Only the person who added one,
-or an admin, can change or delete it. Deleting keeps everything, so a dataset can come back.
+Everyone signed in (and approved) sees every dataset, view, and calculated channel, and can add them. Only the person
+who added one, or an admin, can change or delete it. Deleting a dataset keeps everything, so it can come back.
 """
 
 import json
@@ -20,7 +20,7 @@ from ..errors import Conflict, CvcError, Forbidden, NotFound, TooLarge
 from ..models import User
 from .files import DataFiles
 from .ingest import ReadError, ReadOptions, read_csv
-from .models import Channel, Dataset, DatasetStatus, View
+from .models import Channel, Dataset, DatasetStatus, Formula, View
 
 log = logging.getLogger(__name__)
 MAX_VIEW_BYTES = 512 * 1024
@@ -186,6 +186,67 @@ def recover(db: Session) -> None:
     for found in db.scalars(select(Dataset).where(Dataset.status == DatasetStatus.READING)):
         found.status = DatasetStatus.FAILED
         found.error = "The server stopped while it was reading this file. Read it again."
+    db.commit()
+
+
+# --- calculated channels ------------------------------------------------------------------------------------------
+
+
+def formulas(db: Session) -> Sequence[Formula]:
+    """By name."""
+    return db.scalars(select(Formula).order_by(Formula.name_key)).all()
+
+
+def formula(db: Session, formula_id: int) -> Formula:
+    found = db.get(Formula, formula_id, populate_existing=True)
+    if found is None:
+        raise NotFound(f"There's no calculated channel {formula_id}")
+    return found
+
+
+def _check_name_free(db: Session, name: str, formula_id: int | None = None) -> None:
+    taken = db.scalar(select(Formula).where(Formula.name_key == name.lower(), Formula.id != (formula_id or 0)))
+    if taken is not None:
+        raise Conflict(f"There's already a calculated channel called {taken.name}", code="name_taken")
+
+
+def add_formula(db: Session, user: User, *, name: str, expression: str, unit: str, description: str) -> Formula:
+    _check_name_free(db, name)
+    new = Formula(
+        name=name,
+        name_key=name.lower(),
+        expression=expression,
+        unit=unit,
+        description=description,
+        creator=user,
+        editor=user,
+    )
+    db.add(new)
+    db.commit()
+    return new
+
+
+def update_formula(
+    db: Session, user: User, formula_id: int, *, name: str, expression: str, unit: str, description: str
+) -> Formula:
+    found = formula(db, formula_id)
+    _check_can_change(user, found.created_by, "calculated channel")
+    _check_name_free(db, name, formula_id)
+    found.name = name
+    found.name_key = name.lower()
+    found.expression = expression
+    found.unit = unit
+    found.description = description
+    found.updated_at = utcnow()
+    found.editor = user
+    db.commit()
+    return found
+
+
+def remove_formula(db: Session, user: User, formula_id: int) -> None:
+    found = formula(db, formula_id)
+    _check_can_change(user, found.created_by, "calculated channel")
+    db.delete(found)
     db.commit()
 
 

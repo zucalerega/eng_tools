@@ -9,7 +9,7 @@ from ..api.schemas import UserRef
 from ..models import User
 from .datasets import can_change
 from .ingest import Delimiter, ReadOptions, TimeFormat
-from .models import Channel, Dataset, View
+from .models import Channel, Dataset, Formula, View
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -152,6 +152,43 @@ class ReadOptionsIn(BaseModel):
 
     def options(self) -> ReadOptions:
         return ReadOptions(**self.model_dump())
+
+
+class FormulaIn(BaseModel):
+    """A calculated channel: an expression over channels, which the web app reads (web/src/yorg/formula.ts)."""
+
+    name: Name
+    expression: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    unit: str = Field("", max_length=64)
+    description: str = Field("", max_length=2000)
+
+
+class FormulaOut(BaseModel):
+    id: int
+    name: str
+    expression: str
+    unit: str
+    description: str
+    created_at: datetime
+    created_by: UserRef | None
+    updated_at: datetime
+    updated_by: UserRef | None
+    can_change: bool
+
+    @classmethod
+    def of(cls, formula: Formula, user: User) -> "FormulaOut":
+        return cls(
+            id=formula.id,
+            name=formula.name,
+            expression=formula.expression,
+            unit=formula.unit,
+            description=formula.description,
+            created_at=formula.created_at,
+            created_by=_ref(formula.creator),
+            updated_at=formula.updated_at,
+            updated_by=_ref(formula.editor),
+            can_change=can_change(user, formula.created_by),
+        )
 
 
 class ViewIn(BaseModel):

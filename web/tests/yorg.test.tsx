@@ -47,14 +47,124 @@ test("uploading a file of test data opens its channels, ready to plot", async ()
     expect(screen.getByText(/Pick channels on the left/)).toBeTruthy();
 
     await userEvent.click(pt);
-    const legend = within(await screen.findByRole("list", { name: "Plot 1: channels" }));
+    const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
     expect(legend.getByRole("button", { name: "PT-OX-01" })).toBeTruthy();
     expect(legend.getByText("psi")).toBeTruthy();
     expect(screen.getByRole("img", { name: "Plot 1: PT-OX-01" })).toBeTruthy();
 
     // Shift-click: a plot of its own.
     fireEvent.click(channels.getByRole("button", { name: /TC-NOZ-01\s*K/ }), { shiftKey: true });
-    expect(await screen.findByRole("list", { name: "Plot 2: channels" })).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Plot 2: channels" })).toBeTruthy();
+});
+
+test("clicking a plotted channel takes it off the plots", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Toggle", HOTFIRE);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
+    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    const pt = await channels.findByRole("button", { name: /PT-OX-01/ });
+    expect(pt.getAttribute("aria-pressed")).toBe("false");
+
+    await userEvent.click(pt);
+    const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
+    expect(legend.getByRole("button", { name: "PT-OX-01" })).toBeTruthy();
+    expect(pt.getAttribute("aria-pressed")).toBe("true");
+
+    await userEvent.click(pt); // plotted: off it comes, rather than a second copy
+    expect(await screen.findByText(/No channels yet/)).toBeTruthy();
+    expect(pt.getAttribute("aria-pressed")).toBe("false");
+
+    // Shift-click is still how to plot one again, on a plot of its own.
+    await userEvent.click(pt);
+    fireEvent.click(pt, { shiftKey: true });
+    expect(await screen.findByRole("group", { name: "Plot 2: channels" })).toBeTruthy();
+    await userEvent.click(pt); // and a click takes it off every plot
+    expect(await screen.findAllByText(/No channels yet/)).toHaveLength(2);
+});
+
+/** What a drag carries, as a browser would (jsdom has none). */
+function dataTransfer() {
+    const data: Record<string, string> = {};
+    const types: string[] = [];
+    return {
+        types,
+        dropEffect: "none",
+        effectAllowed: "all",
+        setData(type: string, value: string) {
+            data[type] = value;
+            types.push(type);
+        },
+        getData: (type: string) => data[type] ?? "",
+    };
+}
+
+test("dragging channels to a plot's right axis, from its legend or the channel list", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Axes", HOTFIRE);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
+    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    await userEvent.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
+    await userEvent.click(channels.getByRole("button", { name: /TC-NOZ-01/ }));
+    const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
+    expect(legend.queryByText("Right axis")).toBeNull(); // everything's on the left: one list
+
+    // A legend's row onto its right axis.
+    const panel = screen.getByRole("region", { name: "Plot 1" });
+    let transfer = dataTransfer();
+    fireEvent.dragStart(legend.getByRole("button", { name: "TC-NOZ-01" }).closest("li")!, { dataTransfer: transfer });
+    fireEvent.dragOver(panel, { dataTransfer: transfer });
+    const right = await legend.findByRole("list", { name: "Right axis" });
+    fireEvent.drop(within(right).getByText("Drop a channel here"), { dataTransfer: transfer });
+    await waitFor(() => expect(within(right).getByRole("button", { name: "TC-NOZ-01" })).toBeTruthy());
+    expect(
+        within(legend.getByRole("list", { name: "Left axis" })).getByRole("button", { name: "PT-OX-01" }),
+    ).toBeTruthy();
+
+    // A channel from the list, onto the right half of the plot.
+    transfer = dataTransfer();
+    fireEvent.dragStart(channels.getByRole("button", { name: /PT-FU-01/ }), { dataTransfer: transfer });
+    fireEvent.dragOver(panel, { dataTransfer: transfer });
+    fireEvent.drop(panel.querySelector('.yorg-drop [data-side="right"]')!, { dataTransfer: transfer });
+    await waitFor(() => expect(within(right).getByRole("button", { name: "PT-FU-01" })).toBeTruthy());
+});
+
+test("a calculated channel, made from the dataset's channels, plots like one", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Calculated", HOTFIRE);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
+    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    await userEvent.click(await channels.findByRole("button", { name: "New calculated channel" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "New calculated channel" }));
+    const name = `Tanks ${team.folder}`;
+    await userEvent.type(dialog.getByLabelText("Name"), name);
+    await userEvent.type(dialog.getByLabelText("Unit"), "psi");
+    const expression = dialog.getByLabelText("Expression") as HTMLTextAreaElement;
+    await userEvent.click(dialog.getByRole("button", { name: "PT-OX-01" }));
+    await userEvent.type(expression, " + ");
+    await userEvent.click(dialog.getByRole("button", { name: "PT-FU-01" }));
+    expect(expression.value).toBe("[PT-OX-01] + [PT-FU-01]");
+    // Tried out on the dataset as it's written.
+    expect(await dialog.findByText(`In ${data.name}: 580 to 653.5 psi`)).toBeTruthy();
+
+    await userEvent.type(expression, " +");
+    expect(await dialog.findByText("Expected a value at the end (at character 26)")).toBeTruthy();
+    expect((dialog.getByRole("button", { name: "Save and plot" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(expression, " 1");
+    await userEvent.click(dialog.getByRole("button", { name: "Save and plot" }));
+
+    // Plotted on the selected plot, and in the list of calculated channels.
+    const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
+    expect(await legend.findByRole("button", { name })).toBeTruthy();
+    expect(legend.getByText("psi")).toBeTruthy();
+    const calculated = await channels.findByRole("button", { name: `Change ${name}` });
+
+    // Changing it changes it everywhere it's plotted.
+    await userEvent.click(calculated);
+    const change = within(await screen.findByRole("dialog", { name: `Change ${name}` }));
+    await userEvent.clear(change.getByLabelText("Name"));
+    await userEvent.type(change.getByLabelText("Name"), `Both tanks ${team.folder}`);
+    await userEvent.click(change.getByRole("button", { name: "Save" }));
+    expect(await legend.findByRole("button", { name: `Both tanks ${team.folder}` })).toBeTruthy();
 });
 
 test("a channel's settings rename it, scale it, and remove it", async () => {
@@ -63,7 +173,7 @@ test("a channel's settings rename it, scale it, and remove it", async () => {
     renderApp(team.chief, `/yorg/datasets/${data.id}`);
     const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
     await userEvent.click(await channels.findByRole("button", { name: /PT-FU-01/ }));
-    const legend = within(await screen.findByRole("list", { name: "Plot 1: channels" }));
+    const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
 
     await userEvent.click(legend.getByRole("button", { name: "PT-FU-01" }));
     const settings = within(await screen.findByRole("dialog", { name: "PT-FU-01: settings" }));
@@ -126,7 +236,9 @@ test("a saved view opens for everyone, and works with another test's data", asyn
     await userEvent.click(dialog.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("heading", { name: `Tanks ${team.folder}` })).toBeTruthy();
     expect(
-        within(await screen.findByRole("list", { name: "Plot 1: channels" })).getByRole("button", { name: "PT-OX-01" }),
+        within(await screen.findByRole("group", { name: "Plot 1: channels" })).getByRole("button", {
+            name: "PT-OX-01",
+        }),
     ).toBeTruthy();
     expect(window.location.pathname).toMatch(/^\/yorg\/views\/\d+$/);
 
@@ -140,7 +252,9 @@ test("a saved view opens for everyone, and works with another test's data", asyn
     await userEvent.click(other.getByRole("button", { name: "Open" }));
     expect(await screen.findByRole("heading", { name: second.name })).toBeTruthy();
     expect(
-        within(await screen.findByRole("list", { name: "Plot 1: channels" })).getByRole("button", { name: "PT-OX-01" }),
+        within(await screen.findByRole("group", { name: "Plot 1: channels" })).getByRole("button", {
+            name: "PT-OX-01",
+        }),
     ).toBeTruthy();
     expect(window.location.pathname).toBe(`/yorg/datasets/${second.id}`);
 });

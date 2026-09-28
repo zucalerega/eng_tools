@@ -455,14 +455,33 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   those, and so on) finds any run's extremes without looking at each sample, so zooming
   and panning stay smooth on millions of samples (`samples.ts`). Samples further apart
   than 20 times the usual step aren't joined (a pause in logging).
-- **The workspace**: channels on the left (grouped by prefix: PT, TC, LC...); panels
-  stacked on one time axis, each with a left and right axis and a legend that reads each
-  channel's value at the shared cursor; a channel's scale, offset, unit, color, axis, and
-  lines or steps; T0 (at the cursor, or at an event); markers; datasets compared, each
-  shifted in time (lined up by clock time when both have dates); and exports (a PNG of
-  the plots, a CSV of the samples in view). Its layout is plain JSON (`layout.ts`): each
-  browser keeps its layout per dataset, and a saved view keeps one for everyone. Views
-  name channels by name, so a view opens with another test's data.
+- **The workspace**: channels on the left (grouped by prefix: PT, TC, LC...), each a
+  toggle: a click plots it on the selected panel, or takes it off every panel if it's
+  plotted (shift-click: a panel of its own). Panels stack on one time axis, each with a
+  left and right axis and a legend that reads each channel's value at the shared cursor;
+  a channel goes on either axis by dropping it (from the list, or dragged from a legend,
+  even another panel's) on that half of a plot or that group of the legend. A channel's
+  settings set its scale, offset, unit, color, axis, and lines or steps; there's T0 (at
+  the cursor, or exactly at an event), markers, datasets compared, each shifted in time
+  (lined up by clock time when both have dates), and exports (a PNG of the plots, a CSV
+  of the samples in view). Its layout is plain JSON (`layout.ts`): each browser keeps its
+  layout per dataset, and a saved view keeps one for everyone. Views name channels by
+  name, so a view opens with another test's data.
+- **Calculated channels** (`yorg_formulas`) are the team's: a name, a unit, and an
+  expression over channels by name, like `[LC-1] + [LC-2]` or
+  `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` (O/F while fuel flows). Each shows in every
+  dataset that has the channels it uses, and plots like a channel. The server keeps the
+  text; the browser reads and works it out (`formula.ts`) from the channels' arrays, on
+  the times of the channel with the most samples, reading the others between their
+  samples (states hold) and leaving gaps outside them and where a division is by zero.
+  Besides arithmetic, comparisons, and math functions, it has what test data needs:
+  `where`/`if`, `min`/`max`/`avg` that skip missing samples (redundant sensors),
+  `ddt` (per second), `integral` (total impulse), and `smooth(x, seconds)`. The editor
+  checks an expression as it's typed and tries it on the dataset, showing its range.
+  Whoever made one (or an admin) changes or deletes it.
+- **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
+  button is, and moved or flipped to stay whole on screen, so neither a window edge nor
+  a scrolling area cuts them off.
 
 ## API
 
@@ -498,6 +517,7 @@ are at `/docs`.
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
 | `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, description, datasets, config}` |
+| `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
 
 ## Deploying
 
@@ -541,9 +561,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
 7. **Yorg** (first version done, September 2026): upload, read, plot, compare, views,
-   exports. Next: channels calculated from others (thrust from two load cells, O/F),
-   statistics over a selected span, reading while the file is still uploading for very
-   big files, and data streamed live from the test stand.
+   exports, and calculated channels. Next: statistics over a selected span, reading while
+   the file is still uploading for very big files, and data streamed live from the test
+   stand.
 
 ## Open questions
 

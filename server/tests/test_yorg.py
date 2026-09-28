@@ -213,6 +213,32 @@ def test_text_columns_become_states_or_events(team):
     ]
 
 
+def test_valves_read_as_valves_however_a_log_says_so(team):
+    """Off is 0 and on is 1, in words where the file has them; anything else (fault) comes after them."""
+    chief = team.member("chief@x.test", admin=True)
+    columns = {
+        "PRVNT": ["closed", "1", "1", "fault", "open", "0", "closed", "disconnected"],
+        "GRISO3": ["closed", "1", "closed", "1", "1", "closed", "1", "closed"],
+        "OQD": ["0", "open", "0", "open", "open", "0", "0", "open"],
+        "FSWV": ["OPEN", "fault", "OPEN", "OPEN", "fault", "OPEN", "OPEN", "OPEN"],
+        "IGNITER": ["undetermined"] * 8,
+    }
+    lines = ["Time," + ",".join(columns)]
+    lines += [",".join([str(i), *(values[i] for values in columns.values())]) for i in range(8)]
+    dataset = upload(team, chief, "\n".join(lines) + "\n")
+
+    def states(name: str) -> tuple[list[str], list[float | None]]:
+        return channel(dataset, name)["labels"], [value for _, value in samples(team, chief, dataset, name)]
+
+    assert states("PRVNT") == (["closed", "open", "fault", "disconnected"], [0, 1, 1, 2, 1, 0, 0, 3])
+    assert states("GRISO3") == (["closed", "open"], [0, 1, 0, 1, 1, 0, 1, 0])  # 1 is open
+    assert states("OQD") == (["closed", "open"], [0, 1, 0, 1, 1, 0, 0, 1])  # 0 is closed
+    assert states("FSWV") == (["CLOSED", "OPEN", "fault"], [1, 2, 1, 1, 2, 1, 1, 1])  # never closed
+    assert states("IGNITER") == (["undetermined"], [0] * 8)  # not a switch: as it came
+    prvnt = channel(dataset, "PRVNT")
+    assert (prvnt["min"], prvnt["max"], prvnt["mean"]) == (0, 3, 1)
+
+
 def test_a_text_column_can_start_empty(team):
     """Which columns are text is worked out from the first rows; a sequence's first step can come long after."""
     chief = team.member("chief@x.test", admin=True)

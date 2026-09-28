@@ -23,6 +23,16 @@ export function YorgMark({ size = 30 }: { size?: number }) {
     );
 }
 
+/** Yorg's mark as the browser tab's icon: on the top bar's navy, like the vault's (index.html). */
+export const YORG_ICON =
+    "data:image/svg+xml," +
+    encodeURIComponent(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#0b1b33'/>" +
+            "<g fill='none' stroke='#fff' stroke-linecap='round' stroke-linejoin='round'>" +
+            "<path d='M9 7v48h48' stroke-width='5'/><path d='M17 45l8-13 8 7 9-20 7 10 6-5' stroke-width='4'/></g>" +
+            "<circle cx='42' cy='19' r='5.5' fill='#e0a500'/></svg>",
+    );
+
 /** Which of Yorg's sections a path is in, for the top bar. */
 export function yorgSection(pathname: string): string {
     return pathname.startsWith("/yorg/views") ? "views" : "data";

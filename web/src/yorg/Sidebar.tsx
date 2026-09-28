@@ -2,20 +2,21 @@ import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { yorg, type Channel, type Dataset, type DatasetDetail, type Formula } from "./api";
 import { fits, dataset as loadDataset, formulas as loadFormulas, maskRuns } from "./data";
 import { FormulaDialog } from "./Formulas";
-import { isPlotted, type Action, type Layout, type Mask, type PanelSpec } from "./layout";
+import { isPlotted, type Action, type AxisTarget, type Layout, type Mask, type PanelSpec } from "./layout";
 import { measure } from "./masks";
 import { formatDuration, formatValue } from "./scale";
 import type { Resolved } from "./Workspace";
-import { CHANNEL_TYPE } from "./Workspace";
+import { CHANNEL_TYPE, quantityOf } from "./Workspace";
 
 // The workspace's left side: its datasets (and how each lines up in time), their channels and calculated channels to
 // plot, the masks, and the markers. A channel's dot says it's plotted: clicking it again takes it off.
 
-/** What the channel list offers to plot: a channel, or a calculated channel (formula). */
+/** What the channel list offers to plot: a channel, or a calculated channel (formula), and what its values are. */
 interface Pick {
     dataset: number;
     channel: string;
     formula: number | null;
+    quantity: string; // its unit, or "state": it goes on the axis with others like it
 }
 
 const dragPick = (event: DragEvent, pick: Pick) => {
@@ -54,6 +55,7 @@ export function Sidebar({
     plotted,
     view,
     time,
+    placeFor,
     onEditMask,
 }: {
     layout: Layout;
@@ -61,19 +63,22 @@ export function Sidebar({
     activePanel: PanelSpec | null;
     plotted: Resolved[];
     view: [number, number];
-    time: { at: (x: number) => string };
+    time: { at: (x: number) => string; absolute: (x: number) => string };
+    placeFor: (panel: string | null, quantity: string) => AxisTarget | undefined;
     onEditMask: (mask: Mask) => void;
 }) {
     const [filter, setFilter] = useState("");
     const [editing, setEditing] = useState<{ formula: Formula | null; detail: DatasetDetail } | null>(null);
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
     const several = layout.datasets.length > 1;
-    // A click plots a channel on the selected plot, or takes it off if it's plotted; shift-click: a plot of its own.
-    const pick = (what: Pick, newPanel: boolean) => {
+    // A click plots a channel on the selected plot (on the axis for its unit), or takes it off if it's plotted;
+    // shift-click: a plot of its own.
+    const pick = ({ quantity, ...what }: Pick, newPanel: boolean) => {
         if (!newPanel && isPlotted(layout, what)) {
             dispatch({ type: "unplot", ...what });
         } else {
-            dispatch({ type: "addSeries", panel: newPanel ? null : (activePanel?.id ?? null), ...what });
+            const panel = newPanel ? null : (activePanel?.id ?? null);
+            dispatch({ type: "addSeries", panel, ...what, axis: placeFor(panel, quantity) });
         }
     };
     const colors = new Map(
@@ -130,7 +135,12 @@ export function Sidebar({
                     onSaved={(saved, created) => {
                         const detail = editing.detail;
                         setEditing(null);
-                        const what = { dataset: detail.id, channel: saved.name, formula: saved.id };
+                        const what = {
+                            dataset: detail.id,
+                            channel: saved.name,
+                            formula: saved.id,
+                            quantity: quantityOf({ channel: null, unit: saved.unit }),
+                        };
                         if (created && fits(saved.expression, detail) && !isPlotted(layout, what)) {
                             pick(what, false);
                         }
@@ -141,7 +151,7 @@ export function Sidebar({
     );
 }
 
-const pickKey = (what: Pick): string =>
+const pickKey = (what: { dataset: number; channel: string; formula: number | null }): string =>
     what.formula === null ? `${what.dataset}/channel/${what.channel}` : `${what.dataset}/formula/${what.formula}`;
 
 /** A dataset's calculated channels: the team's, where this dataset has every channel they use. */
@@ -174,7 +184,12 @@ function Calculated({
             {loaded.status === "failed" && <p className="field-problem">{loaded.error}</p>}
             <ul className="yorg-channels">
                 {shown.map((formula) => {
-                    const what = { dataset: detail.id, channel: formula.name, formula: formula.id };
+                    const what = {
+                        dataset: detail.id,
+                        channel: formula.name,
+                        formula: formula.id,
+                        quantity: quantityOf({ channel: null, unit: formula.unit }),
+                    };
                     return (
                         <li key={formula.id} className="yorg-calculated-row">
                             <button
@@ -285,7 +300,12 @@ function ChannelList({
                 const list = (
                     <ul className="yorg-channels">
                         {channels.map((channel) => {
-                            const what = { dataset: detail.id, channel: channel.name, formula: null };
+                            const what = {
+                                dataset: detail.id,
+                                channel: channel.name,
+                                formula: null,
+                                quantity: quantityOf({ channel, unit: channel.unit }),
+                            };
                             const color = colors.get(pickKey(what));
                             return (
                                 <li key={channel.name}>
@@ -514,7 +534,7 @@ function Markers({
     layout: Layout;
     dispatch: (action: Action) => void;
     view: [number, number];
-    time: { at: (x: number) => string };
+    time: { at: (x: number) => string; absolute: (x: number) => string };
 }) {
     if (layout.markers.length === 0 && layout.t0 === null) {
         return null;
@@ -529,24 +549,21 @@ function Markers({
             <ul>
                 {layout.t0 !== null && (
                     <li>
-                        <button type="button" className="yorg-marker-time" onClick={() => goTo(layout.t0!)}>
+                        <button
+                            type="button"
+                            className="yorg-marker-time"
+                            aria-label="Go to T0"
+                            title="Go to it"
+                            onClick={() => goTo(layout.t0!)}
+                        >
                             T0
                         </button>
-                        <input
-                            type="number"
-                            step="any"
-                            aria-label="T0: time in the file (s)"
-                            title="Where time reads 0, in the first dataset's own time"
-                            key={layout.t0}
-                            defaultValue={Number(layout.t0.toPrecision(10))}
-                            onBlur={(event) => {
-                                const value = Number(event.target.value);
-                                if (event.target.value.trim() !== "" && Number.isFinite(value)) {
-                                    dispatch({ type: "t0", t0: value });
-                                }
-                            }}
-                            onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
-                        />
+                        <span
+                            className="yorg-t0-at"
+                            title="Where time reads 0. Set it with T0, over the plots, or drag its line."
+                        >
+                            {time.absolute(layout.t0)}
+                        </span>
                         <button
                             type="button"
                             className="button-small"

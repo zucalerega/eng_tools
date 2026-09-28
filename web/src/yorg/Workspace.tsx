@@ -24,17 +24,20 @@ import {
 } from "./data";
 import { exportCsv, exportImage } from "./export";
 import {
+    newAxisSide,
     newId,
     PALETTE,
     shiftOf,
     type Action,
     type AxisSpec,
+    type AxisTarget,
     type Layout,
     type Mask,
     type Note,
     type PanelSpec,
     type SeriesSpec,
     type Side,
+    type TimeMode,
 } from "./layout";
 import { MaskDialog } from "./MaskDialog";
 import {
@@ -70,8 +73,19 @@ export interface Resolved {
     loading: boolean;
 }
 
-export const CHANNEL_TYPE = "application/x-yorg-channel"; // {dataset, channel, formula}, from the channel list
-export const SERIES_TYPE = "application/x-yorg-series"; // {panel, series}, from a legend
+export const CHANNEL_TYPE = "application/x-yorg-channel"; // {dataset, channel, formula, quantity}, from the list
+export const SERIES_TYPE = "application/x-yorg-series"; // {panel, series, quantity}, from a legend
+
+/** What a channel's values are, to put it on an axis with others like it: its unit, or "state" (valves, modes). */
+export const quantityOf = (one: { channel: Channel | null; unit: string }): string =>
+    one.channel?.kind === "state" ? "state" : one.unit.trim().toLowerCase();
+
+// Plots share the window's height (each at least MIN_PLOT), less what's around each plot (its title bar, border, and
+// the gap under it) and the room kept for "Add a plot" under them.
+const MIN_PLOT = 220;
+const PANEL_CHROME = 52;
+const ADD_PLOT_ROOM = 60;
+const NARROW_PLOT = 300; // on a narrow screen, where each plot's legend is under it
 const T0_MARK = "t0"; // T0's line, dragged like a marker (whose ids are newId's, never this)
 
 /**
@@ -182,29 +196,133 @@ export function reading(series: Resolved, value: number): string {
     return formatValue(value, plain ? (series.channel?.decimals ?? null) : null);
 }
 
-interface TimeLabels {
+/** How times read: on the time axis, at the cursor, and in the window's inputs (and how what's typed there reads). */
+export interface TimeLabels {
     axis: TimeAxis;
     title: string;
-    at: (x: number) => string; // the cursor's time
-    number: (x: number) => number; // what the window's inputs show for a time
-    fromNumber: (value: number) => number;
-    clockable: boolean;
+    at: (x: number) => string; // the cursor's time, or a marker's: T+1.5 s, or 21:15:03.250 UTC
+    clockAt: ((x: number) => string) | null; // its time of day as well, when the axis reads from T0 and there's one
+    absolute: (x: number) => string; // where a time is, whatever T0 is: its time of day, or seconds in the file
+    text: (x: number, span: number) => string; // for the window's inputs, to span's precision: T-7.48, 21:15:03.25
+    // What's typed: T-10, T0, 21:15:03, a Unix or ISO time, or seconds (from T0, or from the file's start).
+    parse: (text: string, plain?: "t0" | "file") => number | null;
+    number: (x: number) => number; // seconds from T0 (or the start), for exports
+    clockable: boolean; // the data has times of day
+    dated: boolean; // and dates (Unix times and the like), so it can be read in UTC or this computer's zone
+    here: string; // this computer's zone, as it's called when the data starts (EDT)
 }
 
-function timeLabels(layout: Layout, primary: DatasetDetail | null): TimeLabels {
-    const base =
-        primary?.start_epoch === null || primary?.start_epoch === undefined
-            ? null
-            : primary.start_epoch + (primary.time_kind === "absolute" ? (primary.read_info.utc_offset ?? 0) : 0);
+const MINUS = "\u2212";
+
+/** A zone's name at a moment, as this computer names it (EDT; a UTC offset where the zone has no name). */
+function zoneName(unix: number): string {
+    try {
+        const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(
+            new Date(unix * 1000),
+        );
+        return parts.find((part) => part.type === "timeZoneName")?.value ?? "local";
+    } catch {
+        return "local";
+    }
+}
+
+/** A time of day typed (21:15, 21:15:03.25): seconds after midnight. */
+function readClock(text: string): number | null {
+    const match = /^(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d*)?))?$/.exec(text);
+    if (!match) {
+        return null;
+    }
+    const [hours, minutes, seconds] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+    return hours < 24 && minutes < 60 && seconds < 60 ? hours * 3600 + minutes * 60 + seconds : null;
+}
+
+export function timeLabels(layout: Layout, primary: DatasetDetail | null): TimeLabels {
+    const epoch = primary?.start_epoch ?? null;
+    const dated = primary?.time_kind === "absolute" && epoch !== null;
+    const clockable = epoch !== null && (primary?.time_kind === "absolute" || primary?.time_kind === "clock");
+    const here = dated ? zoneName(epoch) : "local";
     const zero = layout.t0 ?? 0;
-    const relative = {
-        number: (x: number) => x - zero,
-        fromNumber: (value: number) => value + zero,
-        clockable: base !== null,
+    const mode: TimeMode = layout.time;
+    const clock = clockable && (mode === "utc" || mode === "local" || (mode === "auto" && layout.t0 === null));
+    // The zone times of day are in: UTC or this computer's for dates, as chosen (or the file's own, if it gave
+    // dates with an offset); a file of times of day alone is in its own.
+    const fileOffset = primary?.read_info.utc_offset ?? null;
+    const offset = !dated
+        ? 0
+        : mode === "local"
+          ? -new Date(epoch * 1000).getTimezoneOffset() * 60
+          : mode === "utc"
+            ? 0
+            : (fileOffset ?? 0);
+    const zone = !dated
+        ? ""
+        : mode === "local"
+          ? here
+          : mode === "utc" || fileOffset === null
+            ? "UTC"
+            : `UTC${fileOffset < 0 ? MINUS : "+"}${formatClock(Math.abs(fileOffset), 60).slice(0, 5)}`;
+    const base = (epoch ?? 0) + offset; // a time plus base: seconds on the clock
+    const ofDay = (x: number) => {
+        const text = formatClock(x + base, 0.001);
+        return zone ? `${text} ${zone}` : text;
     };
-    if (layout.clock && base !== null) {
+    const fromT0 = (value: number, write: (size: number) => string): string =>
+        Math.abs(value) < 1e-9 ? "T0" : `T${value < 0 ? MINUS : "+"}${write(Math.abs(value))}`;
+    const middle = primary?.t_min != null && primary.t_max != null ? (primary.t_min + primary.t_max) / 2 : zero;
+
+    const parse = (typed: string, plain: "t0" | "file" = "t0"): number | null => {
+        const text = typed.trim().replace(/\u2212/g, "-");
+        const t = /^t\s*([+-])?\s*(\d*\.?\d+(?:e[+-]?\d+)?)?\s*s?$/i.exec(text);
+        if (t) {
+            const size = t[2] === undefined ? 0 : Number(t[2]);
+            return (layout.t0 ?? 0) + (t[1] === "-" ? -size : size);
+        }
+        if (/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?\s*s?$/i.test(text)) {
+            const value = Number(text.replace(/\s*s$/i, ""));
+            if (dated && Math.abs(value) >= 1e8) {
+                return (Math.abs(value) >= 1e11 ? value / 1000 : value) - epoch; // Unix seconds, or milliseconds
+            }
+            return plain === "file" ? value : value + zero;
+        }
+        const seconds = readClock(text);
+        if (seconds !== null && clockable) {
+            // That time on the day of the data's middle, or the day before or after (a test past midnight).
+            const day = Math.floor((middle + base) / 86400) * 86400;
+            const found = [-86400, 0, 86400].map((shift) => day + shift + seconds - base);
+            return found.reduce((best, x) => (Math.abs(x - middle) < Math.abs(best - middle) ? x : best));
+        }
+        if (dated && /^\d{4}-\d{2}-\d{2}[t ]\d/i.test(text)) {
+            const at = Date.parse(text);
+            return Number.isNaN(at) ? null : at / 1000 - epoch;
+        }
+        return null;
+    };
+    const text = (x: number, span: number): string => {
+        const decimals = Math.min(6, Math.max(0, Math.ceil(-Math.log10(Math.max(span, 1e-9) / 2000))));
+        if (clock) {
+            const written = formatClock(x + base, 10 ** -decimals);
+            return written.includes(".") ? written.replace(/0+$/, "").replace(/\.$/, "") : written;
+        }
+        const value = Number((x - zero).toFixed(decimals));
+        const fixed = (size: number) => String(Number(size.toFixed(decimals)));
+        return layout.t0 === null
+            ? fixed(value)
+            : value === 0
+              ? "T0"
+              : `T${value < 0 ? "-" : "+"}${fixed(Math.abs(value))}`;
+    };
+    const common = {
+        clockable,
+        dated,
+        here,
+        text,
+        parse,
+        number: (x: number) => x - zero,
+        absolute: (x: number) => (clockable ? ofDay(x) : `${formatValue(x)} s in the file`),
+    };
+    if (clock) {
         return {
-            ...relative,
+            ...common,
             axis: {
                 ticks: (from, to, count) => {
                     const found = clockTicks(from + base, to + base, count);
@@ -212,24 +330,29 @@ function timeLabels(layout: Layout, primary: DatasetDetail | null): TimeLabels {
                 },
                 label: (x, step) => formatClock(x + base, step),
             },
-            title: "Time of day",
-            at: (x) => formatClock(x + base, 0.001),
+            title: zone ? `Time of day (${zone})` : "Time of day",
+            at: ofDay,
+            clockAt: null,
         };
     }
     return {
-        ...relative,
+        ...common,
         axis: {
             ticks: (from, to, count) => {
                 const found = ticks(from - zero, to - zero, count);
                 return { values: found.values.map((value) => value + zero), step: found.step };
             },
-            label: (x, step) => formatTick(x - zero, step),
+            label: (x, step) =>
+                layout.t0 === null ? formatTick(x - zero, step) : fromT0(x - zero, (size) => formatTick(size, step)),
         },
         title: layout.t0 === null ? "Time (s)" : "Time from T0 (s)",
-        at: (x) => {
-            const value = formatValue(x - zero);
-            return layout.t0 === null ? `${value} s` : `T${x - zero < 0 ? "" : "+"}${value} s`;
-        },
+        at: (x) =>
+            layout.t0 === null
+                ? `${formatValue(x - zero)} s`
+                : Math.abs(x - zero) < 1e-9
+                  ? "T0"
+                  : `${fromT0(x - zero, (size) => formatValue(size))} s`,
+        clockAt: clockable ? ofDay : null,
     };
 }
 
@@ -346,7 +469,7 @@ export function Workspace({
     }, []);
     useEffect(() => () => cancelAnimationFrame?.(frame.current), []);
 
-    const time = useMemo(() => timeLabels(layout, primary), [layout.t0, layout.clock, primary]);
+    const time = useMemo(() => timeLabels(layout, primary), [layout.t0, layout.time, primary]);
 
     const marks = useMemo(() => {
         const found: PlotMark[] = layout.markers.map((marker) => ({
@@ -418,7 +541,62 @@ export function Workspace({
         return found;
     }, [cursor, resolved]);
 
-    const rightGutter = layout.panels.some((panel) => panel.series.some((series) => series.axis === "right"));
+    // Room on each side of every plot for as many axes as any plot has there, so their time axes line up.
+    const gutters = useMemo(() => {
+        const most = { left: 0, right: 0 };
+        for (const panel of layout.panels) {
+            const left = panel.axes.filter((axis) => axis.side === "left").length;
+            most.left = Math.max(most.left, left);
+            most.right = Math.max(most.right, panel.axes.length - left);
+        }
+        return most;
+    }, [layout.panels]);
+
+    // Where a channel goes on a plot: onto the axis of others like it (the same unit; states), else a new axis.
+    const placeFor = (panelId: string | null, quantity: string): AxisTarget | undefined => {
+        const panel = layout.panels.find((one) => one.id === panelId);
+        if (!panel || panel.axes.length === 0) {
+            return undefined;
+        }
+        const like = (resolved.get(panel.id) ?? []).find((one) => quantityOf(one) === quantity);
+        return like ? like.spec.axis : { new: newAxisSide(panel) };
+    };
+
+    // Plots share the height the window has for them, unless one's been given its own.
+    const main = useRef<HTMLElement>(null);
+    const panelList = useRef<HTMLDivElement>(null);
+    const [room, setRoom] = useState<number | null>(null); // null: a narrow screen, or not measured yet
+    const nothingYet = [...resolved.values()].every((list) => list.length === 0);
+    useLayoutEffect(() => {
+        const measure = () => {
+            const box = main.current;
+            const list = panelList.current;
+            if (!box || !list || window.innerWidth <= 900) {
+                setRoom(null);
+                return;
+            }
+            const top = list.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+            setRoom(Math.max(0, box.clientHeight - top - ADD_PLOT_ROOM));
+        };
+        measure();
+        window.addEventListener("resize", measure);
+        return () => window.removeEventListener("resize", measure);
+    }, [layout.panels.length, nothingYet, notice !== undefined]);
+    const heightOf = (panel: PanelSpec): number => {
+        if (panel.height !== null) {
+            return panel.height;
+        }
+        if (room === null) {
+            return NARROW_PLOT;
+        }
+        const fixed = layout.panels.reduce(
+            (total, one) => total + (one.height === null ? 0 : one.height + PANEL_CHROME),
+            0,
+        );
+        const sharing = layout.panels.filter((one) => one.height === null).length;
+        return Math.max(MIN_PLOT, Math.floor((room - fixed) / Math.max(1, sharing)) - PANEL_CHROME);
+    };
+
     const [menu, setMenu] = useState<{
         x: number;
         left: number;
@@ -426,14 +604,22 @@ export function Workspace({
         panel: string;
         target: MenuTarget;
     } | null>(null);
-    // Placing a label: the next click on a plot puts one there. Changing one: its editor, where it was clicked.
-    const [placing, setPlacing] = useState(false);
+    // Placing a label (or T0): the next click on a plot puts it there. Changing a label: its editor, where it was.
+    const [placing, setPlacing] = useState<"label" | "t0" | null>(null);
     const [editing, setEditing] = useState<{ panel: string; note: string; left: number; top: number } | null>(null);
     const addNote = (panel: string, anchor: Anchor, left: number, top: number) => {
         const note: Note = { id: newId(), ...anchor, text: "", dx: 48, dy: -40, arrow: true };
         dispatch({ type: "addNote", panel, note });
-        setPlacing(false);
+        setPlacing(null);
         setEditing({ panel, note: note.id, left, top });
+    };
+    const place = (panel: string, anchor: Anchor, left: number, top: number) => {
+        if (placing === "t0") {
+            dispatch({ type: "t0", t0: anchor.t });
+            setPlacing(null);
+        } else {
+            addNote(panel, anchor, left, top);
+        }
     };
 
     const addMarker = (at: number) =>
@@ -486,11 +672,11 @@ export function Workspace({
                 dispatch({ type: "t0", t0: lastCursor.current ?? (view[0] + view[1]) / 2 });
                 return handled();
             case "l":
-                setPlacing(!placing);
+                setPlacing(placing === "label" ? null : "label");
                 return handled();
             case "Escape":
                 if (placing) {
-                    setPlacing(false);
+                    setPlacing(null);
                     return handled();
                 }
         }
@@ -513,9 +699,10 @@ export function Workspace({
                 plotted={everyResolved}
                 view={view}
                 time={time}
+                placeFor={placeFor}
                 onEditMask={(mask) => setMaskEditing({ mask })}
             />
-            <section className="yorg-main" aria-label="Plots">
+            <section className="yorg-main" aria-label="Plots" ref={main}>
                 <div className="yorg-toolbar">
                     <div className="yorg-title">{title}</div>
                     <WindowInputs view={view} time={time} onChange={(next) => setWindow(next, true)} />
@@ -531,27 +718,18 @@ export function Workspace({
                         </button>
                     </div>
                     <div className="yorg-tools">
-                        <MenuButton
-                            label="T0"
-                            items={[
-                                {
-                                    label: "Set T0 at the last cursor",
-                                    onSelect: () =>
-                                        dispatch({ type: "t0", t0: lastCursor.current ?? (view[0] + view[1]) / 2 }),
-                                },
-                                {
-                                    label: "Set T0 at the start of the window",
-                                    onSelect: () => dispatch({ type: "t0", t0: view[0] }),
-                                },
-                                ...(primary?.events ?? []).slice(0, 12).map((event) => ({
-                                    label: `Set T0 at ${event.label} (${formatValue(event.t)} s)`,
-                                    onSelect: () =>
-                                        dispatch({ type: "t0", t0: event.t + shiftOf(layout, primary!.id) }),
-                                })),
-                                ...(layout.t0 === null
-                                    ? []
-                                    : [{ label: "Clear T0", onSelect: () => dispatch({ type: "t0", t0: null }) }]),
-                            ]}
+                        <T0Menu
+                            layout={layout}
+                            time={time}
+                            events={(primary?.events ?? []).map((event) => ({
+                                label: event.label,
+                                t: event.t + shiftOf(layout, primary!.id),
+                            }))}
+                            cursor={lastCursor.current ?? (view[0] + view[1]) / 2}
+                            view={view}
+                            placing={placing === "t0"}
+                            onSet={(t0) => dispatch({ type: "t0", t0 })}
+                            onPlace={() => setPlacing(placing === "t0" ? null : "t0")}
                         />
                         <button
                             type="button"
@@ -562,11 +740,11 @@ export function Workspace({
                         </button>
                         <button
                             type="button"
-                            aria-pressed={placing}
-                            onClick={() => setPlacing(!placing)}
+                            aria-pressed={placing === "label"}
+                            onClick={() => setPlacing(placing === "label" ? null : "label")}
                             title="Click a plot to put a label there, with an arrow to the data (L). Drag labels to move them."
                         >
-                            {placing ? "Click a plot…" : "Label"}
+                            {placing === "label" ? "Click a plot…" : "Label"}
                         </button>
                         <button
                             type="button"
@@ -584,7 +762,7 @@ export function Workspace({
                         >
                             Split
                         </button>
-                        <OptionsMenu layout={layout} dispatch={dispatch} time={time} primary={primary} />
+                        <OptionsMenu layout={layout} dispatch={dispatch} time={time} />
                         <MenuButton
                             label="Export"
                             items={[
@@ -608,13 +786,15 @@ export function Workspace({
                         plot of its own, or drag one onto a plot. Drag across a plot to zoom in; the wheel zooms too.
                     </p>
                 )}
-                <div className="yorg-panels">
+                <div className="yorg-panels" ref={panelList}>
                     {layout.panels.map((panel, index) => (
                         <PanelView
                             key={panel.id}
                             panel={panel}
                             index={index}
                             count={layout.panels.length}
+                            height={heightOf(panel)}
+                            placeFor={placeFor}
                             series={resolved.get(panel.id) ?? []}
                             plotSeries={plotted.get(panel.id) ?? []}
                             others={layout.panels.filter((other) => other.id !== panel.id)}
@@ -628,13 +808,13 @@ export function Workspace({
                                 shading,
                                 cursor,
                                 readouts,
-                                rightGutter,
+                                gutters,
                                 colors,
                                 onCursor,
                                 onWindow: setWindow,
                                 onMenu: (x, left, top, target) => setMenu({ x, left, top, target, panel: panel.id }),
-                                placing,
-                                onPlace: (anchor, left, top) => addNote(panel.id, anchor, left, top),
+                                placing: placing !== null,
+                                onPlace: (anchor, left, top) => place(panel.id, anchor, left, top),
                                 onEditNote: (note, left, top) => setEditing({ panel: panel.id, note, left, top }),
                                 onMoveMark: (marker, x) =>
                                     dispatch(
@@ -650,7 +830,7 @@ export function Workspace({
                         className="yorg-add-panel"
                         onClick={() => dispatch({ type: "addPanel" })}
                         onDragOver={(event) => void allowDrop(event)}
-                        onDrop={(event) => drop(event, null, "left", dispatch)}
+                        onDrop={(event) => drop(event, null, "auto", dispatch, placeFor)}
                     >
                         Add a plot
                     </button>
@@ -658,6 +838,7 @@ export function Workspace({
                 {cursor !== null && (
                     <p className="yorg-cursor" aria-live="off">
                         {time.at(cursor)}
+                        {time.clockAt && <span className="muted"> · {time.clockAt(cursor)}</span>}
                     </p>
                 )}
             </section>
@@ -769,31 +950,50 @@ function allowDrop(event: DragEvent<HTMLElement>): boolean {
     return true;
 }
 
-/** Put what was dropped on a plot (null: a new plot), on the left or right axis. */
-function drop(event: DragEvent<HTMLElement>, panel: string | null, axis: Side, dispatch: (action: Action) => void) {
+/**
+ * Put what was dropped on a plot (null: a new plot): onto an axis (by id), a new one ("new"), or ("auto", anywhere
+ * else on the plot) the axis of others like it.
+ */
+function drop(
+    event: DragEvent<HTMLElement>,
+    panel: PanelSpec | null,
+    target: string,
+    dispatch: (action: Action) => void,
+    placeFor: (panel: string | null, quantity: string) => AxisTarget | undefined,
+) {
     const channel = event.dataTransfer.getData(CHANNEL_TYPE);
     const series = event.dataTransfer.getData(SERIES_TYPE);
     if (!channel && !series) {
         return;
     }
     event.preventDefault();
+    const found = JSON.parse(channel || series) as {
+        dataset: number;
+        channel: string;
+        formula: number | null;
+        panel: string;
+        series: string;
+        quantity?: string;
+    };
+    if (series && target === "auto" && found.panel === panel?.id) {
+        return; // onto its own plot: it stays on its axis
+    }
+    const axis: AxisTarget | undefined = !panel
+        ? undefined
+        : target === "new"
+          ? { new: newAxisSide(panel) }
+          : target === "auto"
+            ? placeFor(panel.id, found.quantity ?? "")
+            : target;
     if (channel) {
-        const found = JSON.parse(channel) as { dataset: number; channel: string; formula: number | null };
-        dispatch({
-            type: "addSeries",
-            panel,
-            dataset: found.dataset,
-            channel: found.channel,
-            formula: found.formula,
-            axis,
-        });
+        const { dataset, formula } = found;
+        dispatch({ type: "addSeries", panel: panel?.id ?? null, dataset, channel: found.channel, formula, axis });
     } else {
-        const found = JSON.parse(series) as { panel: string; series: string };
-        dispatch({ type: "moveSeries", panel: found.panel, series: found.series, to: panel, axis });
+        dispatch({ type: "moveSeries", panel: found.panel, series: found.series, to: panel?.id ?? null, axis });
     }
 }
 
-/** The window's start and end, typed: seconds (from T0, if it's set). */
+/** The window's start and end, as the time axis reads them (T-7.48, 21:15:03.25), and typed any way it reads. */
 function WindowInputs({
     view,
     time,
@@ -803,23 +1003,24 @@ function WindowInputs({
     time: TimeLabels;
     onChange: (window: [number, number]) => void;
 }) {
-    const shown = (x: number) => String(Number(time.number(x).toPrecision(8)));
+    const span = view[1] - view[0];
     const [draft, setDraft] = useState<[string, string] | null>(null);
-    const values = draft ?? [shown(view[0]), shown(view[1])];
+    const values = draft ?? [time.text(view[0], span), time.text(view[1], span)];
     const apply = () => {
         if (!draft) {
             return;
         }
-        const [start, end] = draft.map(Number) as [number, number];
+        const [start, end] = draft.map((text) => time.parse(text));
         setDraft(null);
-        if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-            onChange([time.fromNumber(start), time.fromNumber(end)]);
+        if (start !== null && start !== undefined && end !== null && end !== undefined && end > start) {
+            onChange([start, end]);
         }
     };
     const field = (index: 0 | 1, label: string) => (
         <input
-            type="number"
-            step="any"
+            type="text"
+            spellCheck={false}
+            title="A time as the axis reads it: T-10, T+15, 21:15:03, or seconds"
             aria-label={label}
             value={values[index]}
             onChange={(event) => {
@@ -840,10 +1041,112 @@ function WindowInputs({
     return (
         <div className="yorg-window">
             <span className="muted">{time.title.replace(" (s)", "")}</span>
-            {field(0, "Window start (s)")}
+            {field(0, "Window start")}
             <span className="muted">to</span>
-            {field(1, "Window end (s)")}
-            <span className="muted">s · {formatDuration(view[1] - view[0])} in view</span>
+            {field(1, "Window end")}
+            <span className="muted">· {formatDuration(span)} in view</span>
+        </div>
+    );
+}
+
+/**
+ * T0: typed (a time of day, a Unix time, T+12 from the T0 there is, or seconds), put where the next click on a plot
+ * is, at the cursor or the window's start, or at one of the file's events. Its line can be dragged too.
+ */
+function T0Menu({
+    layout,
+    time,
+    events,
+    cursor,
+    view,
+    placing,
+    onSet,
+    onPlace,
+}: {
+    layout: Layout;
+    time: TimeLabels;
+    events: { label: string; t: number }[];
+    cursor: number;
+    view: [number, number];
+    placing: boolean;
+    onSet: (t0: number | null) => void;
+    onPlace: () => void;
+}) {
+    const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    const [typed, setTyped] = useState("");
+    const [problem, setProblem] = useState<string | null>(null);
+    const set = (t0: number | null) => {
+        onSet(t0);
+        setOpen(false);
+        setTyped("");
+        setProblem(null);
+    };
+    const item = (label: string, onSelect: () => void) => (
+        <button key={label} type="button" role="menuitem" className="menu-item" onClick={onSelect}>
+            {label}
+        </button>
+    );
+    return (
+        <div className="popover" ref={within}>
+            <button
+                type="button"
+                className="menu-button"
+                aria-haspopup="true"
+                aria-expanded={open}
+                aria-pressed={placing || undefined}
+                onClick={() => setOpen(!open)}
+            >
+                {placing ? "Click a plot…" : "T0"}
+            </button>
+            {open && (
+                <div className="menu yorg-t0-menu">
+                    <form
+                        className="yorg-t0-form"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            const at = time.parse(typed, "file");
+                            if (at === null) {
+                                setProblem(
+                                    time.clockable
+                                        ? "Write a time of day (21:15:03.25), a Unix time, T+12 from the T0 there is, or seconds in the file."
+                                        : "Write seconds in the file, or T+12 from the T0 there is.",
+                                );
+                            } else {
+                                set(at);
+                            }
+                        }}
+                    >
+                        <label className="field">
+                            T0 at
+                            <input
+                                autoFocus
+                                value={typed}
+                                spellCheck={false}
+                                placeholder={time.clockable ? "21:15:03.25, or a Unix time" : "12.5 (s)"}
+                                onChange={(event) => setTyped(event.target.value)}
+                            />
+                        </label>
+                        <button type="submit" className="button-small button-primary" disabled={!typed.trim()}>
+                            Set
+                        </button>
+                    </form>
+                    {problem && <p className="field-problem">{problem}</p>}
+                    <div role="menu" aria-label="T0">
+                        {item("Set T0 by clicking a plot", () => {
+                            setOpen(false);
+                            onPlace();
+                        })}
+                        {item("Set T0 at the last cursor", () => set(cursor))}
+                        {item("Set T0 at the start of the window", () => set(view[0]))}
+                        {events
+                            .slice(0, 12)
+                            .map((event) =>
+                                item(`Set T0 at ${event.label} (${time.absolute(event.t)})`, () => set(event.t)),
+                            )}
+                        {layout.t0 !== null && item("Clear T0", () => set(null))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -852,12 +1155,10 @@ function OptionsMenu({
     layout,
     dispatch,
     time,
-    primary,
 }: {
     layout: Layout;
     dispatch: (action: Action) => void;
     time: TimeLabels;
-    primary: DatasetDetail | null;
 }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
     const events = layout.datasets.reduce((total, ref) => {
@@ -877,17 +1178,27 @@ function OptionsMenu({
             </button>
             {open && (
                 <div className="menu yorg-options">
-                    <label className="check" title={time.clockable ? "" : "This data's times aren't times of day"}>
-                        <input
-                            type="checkbox"
-                            checked={layout.clock && time.clockable}
-                            disabled={!time.clockable}
-                            onChange={(event) => dispatch({ type: "options", change: { clock: event.target.checked } })}
-                        />
-                        Time of day
-                        {primary?.time_kind === "absolute" && (primary.read_info.utc_offset ?? null) === null
-                            ? " (UTC: the file doesn't say its time zone)"
-                            : ""}
+                    <label className="field">
+                        Time reads
+                        <select
+                            value={layout.time}
+                            onChange={(event) =>
+                                dispatch({ type: "options", change: { time: event.target.value as TimeMode } })
+                            }
+                        >
+                            <option value="auto">
+                                {time.clockable ? "As time of day until there's a T0, then from it" : "From T0"}
+                            </option>
+                            <option value="t0">
+                                From T0: T{MINUS}10, T0, T+15 (seconds from the start without one)
+                            </option>
+                            <option value="utc" disabled={!time.clockable}>
+                                {time.dated ? "As time of day, UTC" : "As time of day"}
+                            </option>
+                            <option value="local" disabled={!time.dated}>
+                                As time of day, {time.here} (this computer's)
+                            </option>
+                        </select>
                     </label>
                     <label className="check">
                         <input
@@ -1070,7 +1381,7 @@ interface PlotBits {
     shading: Shading[];
     cursor: number | null;
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
-    rightGutter: boolean;
+    gutters: { left: number; right: number };
     colors: ReturnType<typeof usePlotColors>;
     onCursor: (x: number | null) => void;
     onWindow: (window: [number, number] | null, remember: boolean) => void;
@@ -1081,60 +1392,77 @@ interface PlotBits {
     onMoveMark: (marker: string, x: number) => void;
 }
 
+type Place = (panel: string | null, quantity: string) => AxisTarget | undefined;
+
+/** An axis's name: its title, or its channels' units (or States), and where it is: psi · left, lbf · right 2. */
+function axisName(axis: AxisSpec, series: Resolved[], axes: AxisSpec[]): string {
+    const on = series.filter((one) => one.spec.axis === axis.id);
+    const units = [...new Set(on.map((one) => one.unit).filter(Boolean))].join(", ");
+    const states = on.length > 0 && on.every((one) => one.channel?.kind === "state");
+    const out = axes.filter((other) => other.side === axis.side).indexOf(axis); // from the plot
+    const place = out > 0 ? ` ${out + 1}` : "";
+    return `${axis.label || units || (states ? "States" : "Values")} · ${axis.side}${place}`;
+}
+
+/** A panel's axes as the legend and menus list them: the left's from the plot out, then the right's. */
+const inOrder = (axes: AxisSpec[]): AxisSpec[] => [
+    ...axes.filter((axis) => axis.side === "left"),
+    ...axes.filter((axis) => axis.side === "right"),
+];
+
 function PanelView({
     panel,
     index,
     count,
+    height,
     series,
     plotSeries,
     others,
     active,
     onActivate,
     dispatch,
+    placeFor,
     plot,
 }: {
     panel: PanelSpec;
     index: number;
     count: number;
+    height: number;
     series: Resolved[];
     plotSeries: PlotSeries[];
     others: PanelSpec[];
     active: boolean;
     onActivate: () => void;
     dispatch: (action: Action) => void;
+    placeFor: Place;
     plot: PlotBits;
 }) {
     const name = panel.title || `Plot ${index + 1}`;
-    // While something's dragged over the plot: which axis it would go on, by which half (or legend group) it's over.
-    const [dropSide, setDropSide] = useState<Side | null>(null);
-    const plotArea = useRef<HTMLDivElement>(null);
-    const sideAt = (event: DragEvent<HTMLElement>): Side => {
-        const marked = (event.target as Element).closest?.("[data-side]")?.getAttribute("data-side");
-        if (marked === "left" || marked === "right") {
-            return marked;
-        }
-        const area = plotArea.current?.getBoundingClientRect();
-        return area && area.width > 0 && event.clientX > area.left + area.width / 2 ? "right" : "left";
-    };
+    // While something's dragged over the plot: where it would go (an axis in the legend, "new", or "auto": the axis
+    // for its unit).
+    const [dropTarget, setDropTarget] = useState<string | null>(null);
+    const targetAt = (event: DragEvent<HTMLElement>): string =>
+        (event.target as Element).closest?.("[data-axis]")?.getAttribute("data-axis") ?? "auto";
     const setAxis = useCallback(
-        (side: Side, range: [number, number] | null) =>
+        (axis: string, range: [number, number] | null) =>
             dispatch({
-                type: "changePanel",
+                type: "changeAxis",
                 panel: panel.id,
-                change: { [side]: { ...panel[side], min: range?.[0] ?? null, max: range?.[1] ?? null } },
+                axis,
+                change: { min: range?.[0] ?? null, max: range?.[1] ?? null },
             }),
-        [dispatch, panel],
+        [dispatch, panel.id],
     );
     const resize = (event: ReactPointerEvent<HTMLDivElement>) => {
         const startY = event.clientY;
-        const startHeight = panel.height;
+        const startHeight = height;
         const target = event.currentTarget;
         target.setPointerCapture?.(event.pointerId);
         const move = (moving: PointerEvent) =>
             dispatch({
                 type: "changePanel",
                 panel: panel.id,
-                change: { height: Math.min(1200, Math.max(120, startHeight + moving.clientY - startY)) },
+                change: { height: Math.min(2400, Math.max(120, Math.round(startHeight + moving.clientY - startY))) },
             });
         const up = () => {
             target.removeEventListener("pointermove", move);
@@ -1146,24 +1474,24 @@ function PanelView({
     const loading = series.filter((one) => one.loading).length;
     return (
         <section
-            className={`yorg-panel${active ? " yorg-panel-active" : ""}${dropSide ? " yorg-panel-drop" : ""}`}
+            className={`yorg-panel${active ? " yorg-panel-active" : ""}${dropTarget ? " yorg-panel-drop" : ""}`}
             aria-label={name}
             onPointerDown={onActivate}
             onFocus={onActivate}
             onDragOver={(event) => {
                 if (allowDrop(event)) {
-                    setDropSide(sideAt(event));
+                    setDropTarget(targetAt(event));
                 }
             }}
             onDragLeave={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                    setDropSide(null);
+                    setDropTarget(null);
                 }
             }}
             onDrop={(event) => {
-                const side = sideAt(event);
-                setDropSide(null);
-                drop(event, panel.id, side, dispatch);
+                const target = targetAt(event);
+                setDropTarget(null);
+                drop(event, panel, target, dispatch, placeFor);
             }}
         >
             <header className="yorg-panel-head">
@@ -1180,7 +1508,7 @@ function PanelView({
                     <span className="muted">Loading {loading === 1 ? "a channel" : `${loading} channels`}…</span>
                 )}
                 <div className="yorg-panel-tools">
-                    <AxesButton panel={panel} dispatch={dispatch} />
+                    <AxesButton panel={panel} series={series} dispatch={dispatch} />
                     <button
                         type="button"
                         className="button-small"
@@ -1210,20 +1538,19 @@ function PanelView({
                 </div>
             </header>
             <div className="yorg-panel-body">
-                <div className="yorg-plot-area" ref={plotArea}>
+                <div className="yorg-plot-area">
                     <Plot
                         label={`${name}: ${series.map((one) => one.name).join(", ") || "empty"}`}
                         series={plotSeries}
-                        left={panel.left}
-                        right={panel.right}
-                        height={panel.height}
+                        axes={panel.axes}
+                        height={height}
                         window={plot.window}
                         time={plot.time}
                         marks={plot.marks}
                         shading={plot.shading}
                         cursor={plot.cursor}
                         readouts={plot.readouts}
-                        rightGutter={plot.rightGutter}
+                        gutters={plot.gutters}
                         colors={plot.colors}
                         onCursor={plot.onCursor}
                         onWindow={plot.onWindow}
@@ -1236,17 +1563,9 @@ function PanelView({
                         onEditNote={plot.onEditNote}
                         onMoveMark={plot.onMoveMark}
                     />
-                    {dropSide && (
+                    {dropTarget === "auto" && (
                         <div className="yorg-drop" aria-hidden="true">
-                            {(["left", "right"] as const).map((side) => (
-                                <span
-                                    key={side}
-                                    data-side={side}
-                                    className={dropSide === side ? "yorg-drop-here" : undefined}
-                                >
-                                    {side === "left" ? "Left axis" : "Right axis"}
-                                </span>
-                            ))}
+                            <span>Onto the axis for its unit (or an axis in the list, or a new one)</span>
                         </div>
                     )}
                 </div>
@@ -1256,8 +1575,9 @@ function PanelView({
                     series={series}
                     others={others}
                     readouts={plot.readouts}
-                    dropSide={dropSide}
+                    dropTarget={dropTarget}
                     dispatch={dispatch}
+                    placeFor={placeFor}
                 />
             </div>
             <div
@@ -1265,7 +1585,13 @@ function PanelView({
                 role="separator"
                 aria-orientation="horizontal"
                 aria-label={`Resize ${name}`}
+                title={
+                    panel.height === null
+                        ? "Drag to give this plot a height of its own"
+                        : "Drag to resize it; double-click to share the window's height with the others again"
+                }
                 onPointerDown={resize}
+                onDoubleClick={() => dispatch({ type: "changePanel", panel: panel.id, change: { height: null } })}
             />
         </section>
     );
@@ -1277,73 +1603,83 @@ function Legend({
     series,
     others,
     readouts,
-    dropSide,
+    dropTarget,
     dispatch,
+    placeFor,
 }: {
     name: string;
     panel: PanelSpec;
     series: Resolved[];
     others: PanelSpec[];
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
-    dropSide: Side | null;
+    dropTarget: string | null;
     dispatch: (action: Action) => void;
+    placeFor: Place;
 }) {
-    if (series.length === 0 && dropSide === null) {
+    if (series.length === 0 && dropTarget === null) {
         return <p className="yorg-legend-empty muted">No channels yet: pick some on the left, or drag them here.</p>;
     }
-    const bySide = {
-        left: series.filter((one) => one.spec.axis === "left"),
-        right: series.filter((one) => one.spec.axis === "right"),
-    };
-    // One list while everything's on the left; a group per axis once something's on the right, or being dragged.
-    const both = bySide.right.length > 0 || dropSide !== null;
+    // One list while there's one axis; a group for each once there are more, or while something's dragged.
+    const titled = panel.axes.length > 1 || dropTarget !== null;
     return (
         <div className="yorg-legend" role="group" aria-label={`${name}: channels`}>
-            {(["left", "right"] as const)
-                .filter((side) => both || bySide[side].length > 0)
-                .map((side) => {
-                    const title = side === "left" ? "Left axis" : "Right axis";
-                    return (
-                        <div
-                            key={side}
-                            data-side={side}
-                            className={`yorg-legend-side${dropSide === side ? " yorg-legend-drop" : ""}`}
-                        >
-                            {both && <p className="yorg-legend-title">{title}</p>}
-                            <ul aria-label={title}>
-                                {bySide[side].map((one) => (
+            {inOrder(panel.axes).map((axis) => {
+                const title = axisName(axis, series, panel.axes);
+                return (
+                    <div
+                        key={axis.id}
+                        data-axis={axis.id}
+                        className={`yorg-legend-side${dropTarget === axis.id ? " yorg-legend-drop" : ""}`}
+                    >
+                        {titled && <p className="yorg-legend-title">{title}</p>}
+                        <ul aria-label={title}>
+                            {series
+                                .filter((one) => one.spec.axis === axis.id)
+                                .map((one) => (
                                     <LegendRow
                                         key={one.spec.id}
                                         series={one}
+                                        siblings={series}
                                         panel={panel}
                                         others={others}
                                         point={readouts.get(one.spec.id) ?? null}
                                         dispatch={dispatch}
+                                        placeFor={placeFor}
                                     />
                                 ))}
-                                {bySide[side].length === 0 && (
-                                    <li className="yorg-legend-hint muted">Drop a channel here</li>
-                                )}
-                            </ul>
-                        </div>
-                    );
-                })}
+                        </ul>
+                    </div>
+                );
+            })}
+            {dropTarget !== null && (
+                <div
+                    data-axis="new"
+                    className={`yorg-legend-side yorg-legend-new${dropTarget === "new" ? " yorg-legend-drop" : ""}`}
+                >
+                    <p className="yorg-legend-title">A new axis</p>
+                    <p className="yorg-legend-hint muted">Drop here for an axis of its own</p>
+                </div>
+            )}
         </div>
     );
 }
 
 function LegendRow({
     series,
+    siblings,
     panel,
     others,
     point,
     dispatch,
+    placeFor,
 }: {
     series: Resolved;
+    siblings: Resolved[]; // its plot's series, which name its axes
     panel: PanelSpec;
     others: PanelSpec[];
     point: { x: number; y: number } | null;
     dispatch: (action: Action) => void;
+    placeFor: Place;
 }) {
     const value = point && !Number.isNaN(point.y) ? reading(series, point.y) : "";
     const { spec } = series;
@@ -1352,11 +1688,12 @@ function LegendRow({
             className={spec.hidden ? "yorg-legend-hidden" : undefined}
             draggable
             onDragStart={(event) => {
-                event.dataTransfer.setData(SERIES_TYPE, JSON.stringify({ panel: panel.id, series: spec.id }));
+                const payload = { panel: panel.id, series: spec.id, quantity: quantityOf(series) };
+                event.dataTransfer.setData(SERIES_TYPE, JSON.stringify(payload));
                 event.dataTransfer.effectAllowed = "move";
             }}
         >
-            <span className="yorg-grip" aria-hidden="true" title="Drag to the other axis, or onto another plot">
+            <span className="yorg-grip" aria-hidden="true" title="Drag to another axis, or onto another plot">
                 ⠿
             </span>
             <button
@@ -1375,7 +1712,14 @@ function LegendRow({
                     })
                 }
             />
-            <SeriesButton series={series} panel={panel} others={others} dispatch={dispatch} />
+            <SeriesButton
+                series={series}
+                siblings={siblings}
+                panel={panel}
+                others={others}
+                dispatch={dispatch}
+                placeFor={placeFor}
+            />
             <span className="yorg-value" title={series.problem ?? undefined}>
                 {series.problem ? "⚠" : series.loading ? "…" : value}
             </span>
@@ -1388,14 +1732,18 @@ function LegendRow({
 /** A series' name in the legend, which opens its settings: name, color, scale and offset, axis, and so on. */
 function SeriesButton({
     series,
+    siblings,
     panel,
     others,
     dispatch,
+    placeFor,
 }: {
     series: Resolved;
+    siblings: Resolved[];
     panel: PanelSpec;
     others: PanelSpec[];
     dispatch: (action: Action) => void;
+    placeFor: Place;
 }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
     const { spec } = series;
@@ -1485,10 +1833,27 @@ function SeriesButton({
                             Axis
                             <select
                                 value={spec.axis}
-                                onChange={(event) => change({ axis: event.target.value as Side })}
+                                onChange={(event) => {
+                                    const value = event.target.value;
+                                    dispatch({
+                                        type: "moveSeries",
+                                        panel: panel.id,
+                                        series: spec.id,
+                                        to: panel.id,
+                                        axis:
+                                            value === "new-left" || value === "new-right"
+                                                ? { new: value === "new-left" ? "left" : "right" }
+                                                : value,
+                                    });
+                                }}
                             >
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
+                                {inOrder(panel.axes).map((axis) => (
+                                    <option key={axis.id} value={axis.id}>
+                                        {axisName(axis, siblings, panel.axes)}
+                                    </option>
+                                ))}
+                                <option value="new-left">A new axis, on the left</option>
+                                <option value="new-right">A new axis, on the right</option>
                             </select>
                         </label>
                         <label className="field">
@@ -1535,11 +1900,13 @@ function SeriesButton({
                             value=""
                             onChange={(event) => {
                                 setOpen(false);
+                                const to = event.target.value === "new" ? null : event.target.value;
                                 dispatch({
                                     type: "moveSeries",
                                     panel: panel.id,
                                     series: spec.id,
-                                    to: event.target.value === "new" ? null : event.target.value,
+                                    to,
+                                    axis: placeFor(to, quantityOf(series)),
                                 });
                             }}
                         >
@@ -1570,28 +1937,32 @@ function SeriesButton({
     );
 }
 
-/** A plot's axes: fixed ranges (or fitting what's in view), and titles. */
-function AxesButton({ panel, dispatch }: { panel: PanelSpec; dispatch: (action: Action) => void }) {
+/** A plot's axes: each one's title, range (fixed, or fitting what's in view), and side. */
+function AxesButton({
+    panel,
+    series,
+    dispatch,
+}: {
+    panel: PanelSpec;
+    series: Resolved[];
+    dispatch: (action: Action) => void;
+}) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
-    const sides: [Side, string][] = [
-        ["left", "Left axis"],
-        ["right", "Right axis"],
-    ];
-    const change = (side: Side, next: Partial<AxisSpec>) =>
-        dispatch({ type: "changePanel", panel: panel.id, change: { [side]: { ...panel[side], ...next } } });
-    const bound = (side: Side, which: "min" | "max", label: string) => (
+    const change = (axis: string, next: Partial<Omit<AxisSpec, "id">>) =>
+        dispatch({ type: "changeAxis", panel: panel.id, axis, change: next });
+    const bound = (axis: AxisSpec, which: "min" | "max", label: string) => (
         <label className="field">
             {label}
             <input
                 type="number"
                 step="any"
                 placeholder="fit"
-                key={`${which}-${panel[side][which]}`}
-                defaultValue={panel[side][which] ?? ""}
+                key={`${which}-${axis[which]}`}
+                defaultValue={axis[which] ?? ""}
                 onBlur={(event) => {
                     const text = event.target.value.trim();
                     const value = Number(text);
-                    change(side, { [which]: text === "" || !Number.isFinite(value) ? null : value });
+                    change(axis.id, { [which]: text === "" || !Number.isFinite(value) ? null : value });
                 }}
                 onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
             />
@@ -1599,29 +1970,45 @@ function AxesButton({ panel, dispatch }: { panel: PanelSpec; dispatch: (action: 
     );
     return (
         <div className="popover" ref={within}>
-            <button type="button" className="button-small" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <button
+                type="button"
+                className="button-small"
+                aria-expanded={open}
+                disabled={panel.axes.length === 0}
+                onClick={() => setOpen(!open)}
+            >
                 Axes
             </button>
             {open && (
                 <div className="menu menu-left yorg-axes-menu" role="dialog" aria-label="Axes">
-                    {sides.map(([side, label]) => (
-                        <fieldset key={side}>
-                            <legend>{label}</legend>
+                    {inOrder(panel.axes).map((axis) => (
+                        <fieldset key={axis.id}>
+                            <legend>{axisName(axis, series, panel.axes)}</legend>
                             <label className="field">
                                 Title
                                 <input
-                                    defaultValue={panel[side].label}
+                                    defaultValue={axis.label}
                                     placeholder="the channels' units"
-                                    onBlur={(event) => change(side, { label: event.target.value })}
+                                    onBlur={(event) => change(axis.id, { label: event.target.value })}
                                 />
                             </label>
                             <div className="yorg-row">
-                                {bound(side, "min", "From")}
-                                {bound(side, "max", "To")}
+                                {bound(axis, "min", "From")}
+                                {bound(axis, "max", "To")}
+                                <label className="field">
+                                    Side
+                                    <select
+                                        value={axis.side}
+                                        onChange={(event) => change(axis.id, { side: event.target.value as Side })}
+                                    >
+                                        <option value="left">Left</option>
+                                        <option value="right">Right</option>
+                                    </select>
+                                </label>
                                 <button
                                     type="button"
                                     className="button-small"
-                                    onClick={() => change(side, { min: null, max: null })}
+                                    onClick={() => change(axis.id, { min: null, max: null })}
                                 >
                                     Fit
                                 </button>

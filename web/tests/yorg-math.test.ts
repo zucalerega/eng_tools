@@ -1,7 +1,18 @@
 import { describe, expect, test } from "vitest";
-import { forDataset, newLayout, readLayout, reduce, type Layout, type Note } from "../src/yorg/layout";
+import type { DatasetDetail } from "../src/yorg/api";
+import {
+    forDataset,
+    newAxisSide,
+    newLayout,
+    readLayout,
+    reduce,
+    type AxisTarget,
+    type Layout,
+    type Note,
+} from "../src/yorg/layout";
 import { cutAt, edgeOf, intersect, measure, readTimes, runsOf, testsOf, within } from "../src/yorg/masks";
 import { arrowStart, placeNotes } from "../src/yorg/Plot";
+import { timeLabels } from "../src/yorg/Workspace";
 import { lowerBound, MinMax, sampleAt, Samples, trace, upperBound, visibleRange } from "../src/yorg/samples";
 import {
     clockTicks,
@@ -173,7 +184,9 @@ describe("layouts", () => {
         expect(odd.datasets).toEqual([{ id: 9, shift: 0 }]);
         expect(odd.window).toBeNull();
         expect(odd.panels[0]!.series).toHaveLength(1);
-        expect(odd.panels[0]!.series[0]).toMatchObject({ channel: "PT-1", dataset: 9, scale: 1, axis: "left" });
+        expect(odd.panels[0]!.series[0]).toMatchObject({ channel: "PT-1", dataset: 9, scale: 1, axis: "up" });
+        // A series on an axis the plot doesn't list gets one.
+        expect(odd.panels[0]!.axes).toEqual([{ id: "up", side: "left", label: "", min: null, max: null }]);
         expect(readLayout("nonsense", 4)).toMatchObject({ datasets: [{ id: 4, shift: 0 }], window: null });
     });
 
@@ -205,7 +218,7 @@ describe("labels on plots", () => {
 
     test("sit their offset from the point they're about, inside the plot, with the arrow leaving the box's edge", () => {
         const g = { width: 600, height: 300, left: 70, right: 586, top: 8, bottom: 276 };
-        const ranges = { left: [0, 100] as [number, number], right: null };
+        const ranges = new Map([["left", [0, 100] as [number, number]]]);
         const measure = (text: string) => text.length * 7;
         const [hit] = placeNotes([note], measure, g, ranges, [0, 10]);
         // t 5 of 0..10 is halfway across; 50 of 0..100 halfway up.
@@ -323,5 +336,149 @@ describe("masks", () => {
             { name: "Mask 2", expression: "[PT] > 5", color: "#2ca25f", shade: true, hide: false },
         ]);
         expect(reduce(layout, { type: "removeMask", mask: "m1" }).masks).toEqual([]);
+    });
+});
+
+describe("axes", () => {
+    const axisOf = (layout: Layout, series: number) => {
+        const [panel] = layout.panels;
+        return panel!.axes.findIndex((axis) => axis.id === panel!.series[series]!.axis);
+    };
+
+    test("a plot's first channel makes its first axis, and new ones go on the side with fewer", () => {
+        let layout = newLayout(1);
+        const panel = () => layout.panels[0]!;
+        const add = (channel: string, axis?: AxisTarget) =>
+            (layout = reduce(layout, { type: "addSeries", panel: panel().id, dataset: 1, channel, axis }));
+        add("PT-1");
+        add("LC-1", { new: newAxisSide(panel()) });
+        add("PT-2", panel().series[0]!.axis);
+        add("MOV", { new: newAxisSide(panel()) });
+        expect(panel().axes.map((axis) => axis.side)).toEqual(["left", "right", "left"]);
+        expect([0, 1, 2, 3].map((index) => axisOf(layout, index))).toEqual([0, 1, 0, 2]);
+    });
+
+    test("series move onto new axes and back, and an axis with nothing on it goes", () => {
+        let layout = newLayout(1);
+        const panel = () => layout.panels[0]!;
+        layout = reduce(layout, { type: "addSeries", panel: panel().id, dataset: 1, channel: "PT-1" });
+        layout = reduce(layout, { type: "addSeries", panel: panel().id, dataset: 1, channel: "PT-2" });
+        const [first, second] = panel().series;
+        const move = (axis: AxisTarget) =>
+            (layout = reduce(layout, {
+                type: "moveSeries",
+                panel: panel().id,
+                series: second!.id,
+                to: panel().id,
+                axis,
+            }));
+        move({ new: "right" });
+        expect(panel().axes.map((axis) => axis.side)).toEqual(["left", "right"]);
+        move(first!.axis);
+        expect(panel().axes).toHaveLength(1);
+        // An axis's range and side: one moved to the other side goes outside the axes there.
+        move({ new: "left" });
+        const outer = panel().axes[1]!.id;
+        layout = reduce(layout, {
+            type: "changeAxis",
+            panel: panel().id,
+            axis: first!.axis,
+            change: { side: "right", min: 0, max: 600 },
+        });
+        expect(panel().axes.map((axis) => [axis.id === outer, axis.side, axis.max])).toEqual([
+            [true, "left", null],
+            [false, "right", 600],
+        ]);
+        layout = reduce(layout, { type: "removeSeries", panel: panel().id, series: first!.id });
+        expect(panel().axes.map((axis) => axis.id)).toEqual([outer]);
+    });
+
+    test("an older layout's left and right axes, heights, and time of day read as they meant", () => {
+        const read = readLayout(
+            {
+                clock: true,
+                panels: [
+                    {
+                        height: 260,
+                        left: { label: "Pressure", min: 0, max: 600 },
+                        right: { label: "", min: null, max: null },
+                        series: [
+                            { channel: "PT", axis: "left" },
+                            { channel: "LC", axis: "right" },
+                        ],
+                    },
+                    { height: 400, series: [{ channel: "TC" }] },
+                ],
+            },
+            7,
+        );
+        expect(read.time).toBe("utc");
+        const [first, second] = read.panels;
+        expect(first!.height).toBeNull(); // the old default: it shares the window now
+        expect(first!.axes).toEqual([
+            { id: "left", side: "left", label: "Pressure", min: 0, max: 600 },
+            { id: "right", side: "right", label: "", min: null, max: null },
+        ]);
+        expect(second!.height).toBe(400);
+        expect(second!.axes.map((axis) => axis.id)).toEqual(["left"]); // its right axis had nothing on it
+        expect(readLayout({ clock: false }, 1).time).toBe("t0");
+        expect(readLayout({}, 1).time).toBe("auto");
+        // A layout as it's saved now reads back the same.
+        expect(readLayout(JSON.parse(JSON.stringify(read)), 7)).toEqual(read);
+    });
+});
+
+describe("time", () => {
+    const relative = { start_epoch: null, time_kind: "relative", read_info: {}, t_min: 0, t_max: 60 };
+    const unix = {
+        start_epoch: 1790000000,
+        time_kind: "absolute",
+        read_info: { utc_offset: null },
+        t_min: 0,
+        t_max: 4.9,
+    };
+    const labels = (layout: Partial<Layout>, detail: object) =>
+        timeLabels({ ...newLayout(1), ...layout }, detail as unknown as DatasetDetail);
+    const minus = "−";
+
+    test("from T0: T-10, T0, T+15 on the axis, at the cursor, and in the window's inputs", () => {
+        const time = labels({ t0: 30 }, relative);
+        expect(time.title).toBe("Time from T0 (s)");
+        expect([20, 30, 45].map((x) => time.axis.label(x, 5))).toEqual([`T${minus}10`, "T0", "T+15"]);
+        expect([time.at(31.5), time.at(30)]).toEqual(["T+1.5 s", "T0"]);
+        expect(time.text(22.51634, 46)).toBe("T-7.48");
+        expect(time.parse("T-7.48")).toBeCloseTo(22.52);
+        expect(time.parse(`T${minus}10`)).toBe(20); // a minus sign, as the axis writes it
+        expect(time.parse("T0")).toBe(30);
+        expect(time.parse("5")).toBe(35); // from T0, in the window's inputs
+        expect(time.parse("5", "file")).toBe(5); // or in the file, for T0 itself
+        expect(time.parse("12:00")).toBeNull(); // this data has no times of day
+        expect(time.clockAt).toBeNull();
+        // Without T0: seconds from the start.
+        const plain = labels({}, relative);
+        expect([plain.title, plain.axis.label(10, 5), plain.at(2.5), plain.text(2.5, 10)]).toEqual([
+            "Time (s)",
+            "10",
+            "2.5 s",
+            "2.5",
+        ]);
+    });
+
+    test("dated data reads as time of day, in UTC, until there's a T0; times of day are typed as they read", () => {
+        const time = labels({}, unix); // 1790000000 is 14:13:20 UTC
+        expect(time.title).toBe("Time of day (UTC)");
+        expect(time.at(1.5)).toBe("14:13:21.500 UTC");
+        expect(time.text(1.5, 4.9)).toBe("14:13:21.5");
+        expect(time.parse("14:13:21.5")).toBeCloseTo(1.5);
+        expect(time.parse("1790000002")).toBeCloseTo(2); // Unix seconds
+        expect(time.parse("1790000002500")).toBeCloseTo(2.5); // or milliseconds
+        expect(time.parse("2026-09-21T14:13:23Z")).toBeCloseTo(3);
+        // With a T0, time's from it, and the cursor says the time of day too.
+        const fromT0 = labels({ t0: 1 }, unix);
+        expect([fromT0.title, fromT0.at(2)]).toEqual(["Time from T0 (s)", "T+1 s"]);
+        expect(fromT0.clockAt!(2)).toBe("14:13:22.000 UTC");
+        expect(fromT0.absolute(1)).toBe("14:13:21.000 UTC");
+        // Or time of day anyway, if that's what's chosen.
+        expect(labels({ t0: 1, time: "utc" }, unix).title).toBe("Time of day (UTC)");
     });
 });

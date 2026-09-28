@@ -95,3 +95,18 @@ def test_only_admins_manage_accounts(team, client):
     disabled = client.patch(f"/api/users/{team.ids['alice@x.test']}", json={"status": "disabled"}, headers=chief)
     assert disabled.json()["status"] == "disabled"
     assert client.get("/api/folders", headers=alice).json()["error"] == "disabled"
+
+
+def test_only_admins_see_or_change_the_whitelist(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    for response in (
+        client.get("/api/settings", headers=alice),
+        client.patch("/api/settings", json={"whitelist": True}, headers=alice),
+    ):
+        assert (response.status_code, response.json()["error"]) == (403, "admin_only")
+    assert client.get("/api/settings", headers=chief).json() == {"whitelist": False}
+    # Admin events, like account changes, aren't in anyone else's activity feed.
+    team.whitelist(chief, True)
+    assert "update_settings" in [e["action"] for e in client.get("/api/activity", headers=chief).json()]
+    assert "update_settings" not in [e["action"] for e in client.get("/api/activity", headers=alice).json()]

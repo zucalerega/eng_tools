@@ -13,6 +13,11 @@ export interface Account extends UserRef {
     last_login_at: string | null;
 }
 
+/** What admins decide for everyone. */
+export interface SiteSettings {
+    whitelist: boolean; // on: only invited people join; anyone else who signs in waits for an admin's approval
+}
+
 export type Role = "admin" | "lead" | "editor" | "viewer";
 
 export interface Folder {
@@ -273,6 +278,9 @@ export const api = {
     invite: (email: string, name: string) => request<Account>("POST", "/api/users", { email, name }),
     updateUser: (id: number, change: { status?: "active" | "disabled"; is_admin?: boolean }) =>
         request<Account>("PATCH", `/api/users/${id}`, change),
+    settings: () => request<SiteSettings>("GET", "/api/settings"),
+    /** Turning the whitelist off approves everyone waiting too: anyone can join then. */
+    updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),
     grants: (path: string) => request<Grants>("GET", "/api/grants?" + query({ path })),
     setGrant: (path: string, userId: number | null, role: Role | null) =>
         request<Grants>("PUT", "/api/grants", { path, user_id: userId, role }),

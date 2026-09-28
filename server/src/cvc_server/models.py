@@ -91,6 +91,20 @@ class VaultState(Base):
     access_seq: Mapped[int] = mapped_column(BigInteger, default=0)  # seq of the last permission change
 
 
+class SiteSettings(Base):
+    """A single row (id 1): what admins decide for everyone, in the web app.
+
+    The server's own settings come from the environment instead (config.Settings).
+    """
+
+    __tablename__ = "site_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # On: only people an admin invited join; anyone else who signs in waits for an admin to approve them.
+    # Off: anyone who signs in with Google joins at once (auth.sign_in).
+    whitelist: Mapped[bool] = mapped_column(default=False)
+
+
 class Folder(Base):
     __tablename__ = "folders"
     __table_args__ = (

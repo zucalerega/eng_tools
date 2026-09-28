@@ -24,6 +24,34 @@ test("admins approve people waiting for it", async () => {
     await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
 });
 
+test("admins turn the whitelist off, which approves everyone waiting, and on again", async () => {
+    const team = await Team.create();
+    const newbie = await team.stranger(); // with the whitelist on
+
+    renderApp(team.chief, "/admin");
+    const whitelist = await screen.findByRole<HTMLInputElement>("checkbox", { name: "Whitelist" });
+    expect(whitelist.checked).toBe(true);
+    await userEvent.click(whitelist);
+    const dialog = within(await screen.findByRole("dialog", { name: "Turn the whitelist off?" }));
+    expect(dialog.getByText(/waiting for approval will be approved now/)).toBeTruthy();
+    await userEvent.click(dialog.getByRole("button", { name: "Turn it off" }));
+    await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
+    expect((await team.settings()).whitelist).toBe(false);
+    await screen.findByText(/Off: anyone who signs in with Google joins right away/);
+
+    await userEvent.click(whitelist); // on again: nothing to ask
+    await waitFor(async () => expect((await team.settings()).whitelist).toBe(true));
+    await waitFor(() => expect(whitelist.checked).toBe(true));
+});
+
+test("the activity feed says who turned the whitelist on", async () => {
+    const team = await Team.create();
+    await team.whitelist(true);
+
+    renderApp(team.chief, "/activity");
+    expect(await screen.findAllByText("chief turned the whitelist on")).not.toHaveLength(0);
+});
+
 test("people who aren't admins or leads don't get the admin pages", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

@@ -184,7 +184,7 @@ step, and the add-in says how many files and how much space first (`SizeOfGetAsy
 | Viewer | browse, download, see history |
 | Editor | + check out, check in, add files and folders, delete and restore, revert |
 | Lead | + undo or take over other people's check-outs, force a revert, and change who has access to the folder |
-| Admin (a flag on the account) | everything, everywhere, plus approving and disabling accounts |
+| Admin (a flag on the account) | everything, everywhere, plus approving and disabling accounts, and the whitelist |
 
 A role is granted on a folder, for one person or for *everyone* (all active
 accounts), and covers everything below that folder. If several grants apply, the
@@ -200,9 +200,14 @@ down to one you do have access to, so you can navigate there.
 
 ## Sign-in
 
-- **People** sign in with Google. A first sign-in creates a *pending* account that
-  an admin approves, unless an admin invited that email beforehand or it's listed
-  in `CVC_BOOTSTRAP_ADMINS`.
+- **People** sign in with Google, and anyone who does joins at once (decided September
+  2026, for now), unless an admin has turned on the *whitelist* (Admin > People in the web
+  app, `site_settings`). With it on, a first sign-in creates a *pending* account that an
+  admin approves, unless an admin invited that email beforehand. Emails listed in
+  `CVC_BOOTSTRAP_ADMINS` are always active admins, and a disabled account stays disabled
+  however it signs in. Turning the whitelist off approves everyone waiting, since they
+  could sign in again to join; turning it on changes no one who already has an account.
+  While it's off, anyone with a Google account gets what *everyone* is granted, and Yorg.
 - **The browser** keeps an HttpOnly session cookie. Requests that change something
   must also send an `X-CVC-Request` header, which cross-site pages can't add
   (CSRF protection).
@@ -373,8 +378,8 @@ cookie, and sends `X-CVC-Request` on every request.
   - A folder's trash, with a Restore for each folder and file deleted from it.
   - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
     add-in").
-  - Checked out (who has what), activity, and admin (people for admins; access for
-    admins and folder leads).
+  - Checked out (who has what), activity, and admin (people and the whitelist for admins;
+    access for admins and folder leads).
 
   All of it comes from the sync feed's `uses`, so a check-in anywhere shows up in every
   tree within seconds.
@@ -571,6 +576,7 @@ are at `/docs`.
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins) |
+| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `CVC_DOWNLOADS_DIR` |
 | `GET /api/yorg/datasets?deleted=` | Yorg's datasets, newest first (or the deleted ones) |
@@ -597,7 +603,8 @@ rollback rules are in CLAUDE.md, under "Deployment". Setup:
    for `openid email profile`, so Google doesn't need to verify the app.
 2. Set `CVC_ENV=production`, `CVC_PUBLIC_URL`, `CVC_SECRET_KEY`,
    `CVC_GOOGLE_CLIENT_ID`/`_SECRET`, and `CVC_BOOTSTRAP_ADMINS` (see
-   `server/.env.example`).
+   `server/.env.example`). Sign-up starts open: anyone with a Google account can join
+   until an admin turns on the whitelist (Admin > People).
 3. Keep `CVC_DATABASE_URL` (SQLite by default), `CVC_BLOB_DIR`, and `CVC_YORG_DIR`
    (Yorg's uploads and arrays) on a persistent disk, and back them up. An S3/R2 blob
    store (Cloudflare R2: 10 GB free, no download fees) is planned.
@@ -636,6 +643,8 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 ## Open questions
 
 - Hosting: Render, a VPS, or a campus machine (decide at deploy time).
+- Sign-up: open to any Google account for now (September 2026). Later: turn the whitelist
+  on, or let in only the school's Google accounts?
 - SolidWorks version: 2025 (decided September 2026). The add-in targets API version 33.
 - Kenesto: the plan is to import the current files from a synced Kenesto folder
   and keep Kenesto read-only as the archive of old history.

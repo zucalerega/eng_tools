@@ -18,16 +18,30 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_new_accounts_wait_for_an_admin(client):
+def test_anyone_can_join_while_the_whitelist_is_off(client):
+    newbie = client.post("/auth/dev-token", json={"email": "Newbie@X.test"}).json()
+    assert (newbie["user"]["email"], newbie["user"]["status"]) == ("newbie@x.test", "active")
+    assert client.get("/api/folders", headers=bearer(newbie["token"])).status_code == 200
+
+    # Someone an admin disabled stays out: signing in again doesn't let them back in.
+    chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
+    client.patch(f"/api/users/{newbie['user']['id']}", json={"status": "disabled"}, headers=chief)
+    again = client.post("/auth/dev-token", json={"email": "newbie@x.test"}).json()
+    assert again["user"]["status"] == "disabled"
+    assert client.get("/api/folders", headers=bearer(again["token"])).json()["error"] == "disabled"
+
+
+def test_with_the_whitelist_on_new_accounts_wait_for_an_admin(client, team):
+    chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
+    me = client.get("/api/me", headers=chief).json()
+    assert (me["status"], me["is_admin"]) == ("active", True)
+    team.whitelist(chief, True)
+
     newbie = client.post("/auth/dev-token", json={"email": "Newbie@X.test"}).json()
     assert (newbie["user"]["email"], newbie["user"]["status"]) == ("newbie@x.test", "pending")
     headers = bearer(newbie["token"])
     assert client.get("/api/me", headers=headers).json()["status"] == "pending"
     assert client.get("/api/folders", headers=headers).json()["error"] == "pending_approval"
-
-    chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
-    me = client.get("/api/me", headers=chief).json()
-    assert (me["status"], me["is_admin"]) == ("active", True)
     waiting = [u for u in client.get("/api/users", headers=chief).json() if u["status"] == "pending"]
     assert [u["email"] for u in waiting] == ["newbie@x.test"]
 
@@ -35,8 +49,37 @@ def test_new_accounts_wait_for_an_admin(client):
     assert client.get("/api/folders", headers=headers).status_code == 200
 
 
-def test_invited_people_are_active_from_their_first_sign_in(client):
+def test_turning_the_whitelist_off_approves_everyone_waiting(client, team):
     chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
+    team.whitelist(chief, True)
+    waiting = client.post("/auth/dev-token", json={"email": "waiting@x.test"}).json()
+    blocked = client.post("/auth/dev-token", json={"email": "blocked@x.test"}).json()
+    client.patch(f"/api/users/{blocked['user']['id']}", json={"status": "disabled"}, headers=chief)
+
+    team.whitelist(chief, False)
+    statuses = {u["email"]: u["status"] for u in client.get("/api/users", headers=chief).json()}
+    assert (statuses["waiting@x.test"], statuses["blocked@x.test"]) == ("active", "disabled")
+    assert client.get("/api/folders", headers=bearer(waiting["token"])).status_code == 200
+    log = [(e["action"], e["detail"]) for e in client.get("/api/activity", headers=chief).json()]
+    assert log[:2] == [
+        ("update_user", {"email": "waiting@x.test", "status": "active"}),
+        ("update_settings", {"whitelist": False}),
+    ]
+
+
+def test_the_sign_in_page_says_what_happens_the_first_time(settings):
+    # Google sign-in set up: nothing asks Google anything until someone clicks the button.
+    settings.google_client_id, settings.google_client_secret = "id.apps.googleusercontent.com", "secret"
+    with TestClient(create_app(settings)) as client:
+        assert "Sign in with your Google account to join" in client.get("/").text
+        chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
+        client.patch("/api/settings", json={"whitelist": True}, headers=chief)
+        assert "an admin will approve your account" in client.get("/").text
+
+
+def test_invited_people_are_active_from_their_first_sign_in(client, team):
+    chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
+    team.whitelist(chief, True)
     assert (
         client.post("/api/users", json={"email": "carol@x.test", "name": "Carol"}, headers=chief).json()["status"]
         == "invited"

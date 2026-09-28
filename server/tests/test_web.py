@@ -41,7 +41,8 @@ def test_pages_ask_for_sign_in_first_and_come_back(built, client):
     assert (onward.status_code, onward.headers["location"]) == (303, "/file/12")
 
 
-def test_people_waiting_for_approval_see_the_home_page(built, client):
+def test_people_waiting_for_approval_see_the_home_page(built, client, team):
+    team.whitelist(team.member("chief@x.test", admin=True), True)
     sign_in(client, "newbie@x.test")
     assert client.get("/activity", follow_redirects=False).status_code == 303
     assert "An admin needs to approve your account" in client.get("/").text

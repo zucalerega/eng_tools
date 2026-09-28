@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { createHash, randomUUID } from "node:crypto";
 import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
-import { configureApi, type Account, type VaultFile } from "../src/api";
+import { configureApi, type Account, type SiteSettings, type VaultFile } from "../src/api";
 import { StoreContext, VaultStore } from "../src/store";
 import type { DatasetDetail } from "../src/yorg/api";
 import { CHIEF } from "./server";
@@ -66,9 +66,25 @@ export class Team {
         return signIn(email);
     }
 
-    /** Someone who signed in without an invitation: waiting for approval. */
+    /** Someone who signed in without an invitation, with the whitelist on: waiting for approval. */
     async stranger(): Promise<Member> {
+        await this.whitelist(true);
         return signIn(`someone-${randomUUID().slice(0, 8)}@example.test`);
+    }
+
+    /**
+     * Turn the whitelist on or off, as an admin does on the People tab. Every test starts with it off, as a new
+     * server has it, so it goes off again when the test finishes (approving anyone the test left waiting).
+     */
+    async whitelist(on: boolean): Promise<void> {
+        onTestFinished(async () => {
+            await call("PATCH", "/api/settings", this.chief.token, { whitelist: false });
+        });
+        await call("PATCH", "/api/settings", this.chief.token, { whitelist: on });
+    }
+
+    async settings(): Promise<SiteSettings> {
+        return call<SiteSettings>("GET", "/api/settings", this.chief.token);
     }
 
     async grant(path: string, userId: number | null, role: string | null): Promise<void> {

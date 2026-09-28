@@ -27,24 +27,30 @@ export interface SeriesSpec {
     scale: number; // shown value = value * scale + offset
     offset: number;
     unit: string | null; // null: the channel's own
-    axis: Side;
+    axis: string; // its axis's id (in its panel's axes)
     hidden: boolean;
     width: number; // line width, in pixels
     step: boolean | null; // null: steps for states, lines for numbers
 }
 
+/** One of a plot's value axes (psi, lbf, a valve's states), on its left or right: each side's first is next to it. */
 export interface AxisSpec {
+    id: string;
+    side: Side;
     label: string; // "": the units of its channels
     min: number | null; // null: fit what's in view
     max: number | null;
 }
+
+/** Where a series goes: onto an axis (by id), or onto a new one on a side. */
+export type AxisTarget = string | { new: Side };
 
 /** A label on a plot, pointing at a place in its data: a time, and a value on one of its axes. */
 export interface Note {
     id: string;
     t: number;
     y: number;
-    axis: Side;
+    axis: string; // the axis y is on
     text: string;
     dx: number; // where the label sits, in pixels from the point, so it reads the same at any zoom
     dy: number;
@@ -54,10 +60,9 @@ export interface Note {
 export interface PanelSpec {
     id: string;
     title: string;
-    height: number;
+    height: number | null; // the plot's, in pixels; null: the plots share the window's height
     series: SeriesSpec[];
-    left: AxisSpec;
-    right: AxisSpec;
+    axes: AxisSpec[]; // the left's from the plot out, then the right's
     notes: Note[];
 }
 
@@ -86,6 +91,12 @@ export interface DatasetRef {
     shift: number;
 }
 
+/**
+ * How the time axis reads: from T0 (T-10, T0, T+15; from the start without one), or as time of day, in UTC or this
+ * computer's time zone. auto: time of day for dated data until there's a T0, then from it.
+ */
+export type TimeMode = "auto" | "t0" | "utc" | "local";
+
 export interface Layout {
     version: 1;
     datasets: DatasetRef[]; // the first one's times are the time axis's
@@ -95,27 +106,51 @@ export interface Layout {
     markers: Marker[];
     masks: Mask[];
     events: boolean; // show the datasets' events (a sequence's steps) as markers
-    clock: boolean; // label time as time of day, for datasets that have one
+    time: TimeMode;
 }
 
-export const PANEL_HEIGHT = 260;
+const OLD_PANEL_HEIGHT = 260; // every plot's height before plots filled the window: read as filling it
 
 let counter = 0;
 export const newId = (): string =>
     `${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-const AUTO: AxisSpec = { label: "", min: null, max: null };
-
 export function newPanel(): PanelSpec {
-    return {
-        id: newId(),
-        title: "",
-        height: PANEL_HEIGHT,
-        series: [],
-        left: { ...AUTO },
-        right: { ...AUTO },
-        notes: [],
-    };
+    return { id: newId(), title: "", height: null, series: [], axes: [], notes: [] };
+}
+
+/** The side a panel's next axis goes on: the left first, then whichever has fewer. */
+export function newAxisSide(panel: PanelSpec): Side {
+    const left = panel.axes.filter((axis) => axis.side === "left").length;
+    return left <= panel.axes.length - left ? "left" : "right";
+}
+
+/** The axis a target means in a panel, made if it's new (or named but missing: an old layout's "right"). */
+function axisFor(panel: PanelSpec, target: AxisTarget | undefined): [PanelSpec, string] {
+    if (typeof target === "string" && panel.axes.some((axis) => axis.id === target)) {
+        return [panel, target];
+    }
+    if (target === undefined && panel.axes[0]) {
+        return [panel, panel.axes[0].id];
+    }
+    const side: Side =
+        typeof target === "object" ? target.new : target === "left" || target === "right" ? target : newAxisSide(panel);
+    const axis: AxisSpec = { id: typeof target === "string" ? target : newId(), side, label: "", min: null, max: null };
+    return [{ ...panel, axes: [...panel.axes, axis] }, axis.id];
+}
+
+/** A panel's axes, tidied: each series' axis is there (made if it's missing), and those with no series go. */
+function tidyAxes(panel: PanelSpec): PanelSpec {
+    const used = new Set(panel.series.map((series) => series.axis));
+    let axes = panel.axes.filter((axis) => used.has(axis.id));
+    for (const id of used) {
+        if (!axes.some((axis) => axis.id === id)) {
+            axes = [...axes, { id, side: id === "right" ? "right" : "left", label: "", min: null, max: null }];
+        }
+    }
+    return axes.length === panel.axes.length && axes.every((axis, index) => axis === panel.axes[index])
+        ? panel
+        : { ...panel, axes };
 }
 
 export function newLayout(dataset: number): Layout {
@@ -128,7 +163,7 @@ export function newLayout(dataset: number): Layout {
         markers: [],
         masks: [],
         events: true,
-        clock: false,
+        time: "auto",
     };
 }
 
@@ -162,16 +197,17 @@ export type Action =
           dataset: number;
           channel: string;
           formula?: number | null;
-          axis?: Side;
+          axis?: AxisTarget; // none: the panel's first axis
       }
     | { type: "removeSeries"; panel: string; series: string }
     | { type: "unplot"; dataset: number; channel: string; formula: number | null } // wherever it's plotted
     | { type: "changeSeries"; panel: string; series: string; change: Partial<SeriesSpec> }
-    | { type: "moveSeries"; panel: string; series: string; to: string | null; axis?: Side } // null: a new panel
+    | { type: "moveSeries"; panel: string; series: string; to: string | null; axis?: AxisTarget } // null: a new panel
     | { type: "addPanel" }
     | { type: "removePanel"; panel: string }
     | { type: "movePanel"; panel: string; by: -1 | 1 }
-    | { type: "changePanel"; panel: string; change: Partial<Pick<PanelSpec, "title" | "height" | "left" | "right">> }
+    | { type: "changePanel"; panel: string; change: Partial<Pick<PanelSpec, "title" | "height">> }
+    | { type: "changeAxis"; panel: string; axis: string; change: Partial<Omit<AxisSpec, "id">> }
     | { type: "addNote"; panel: string; note: Note }
     | { type: "changeNote"; panel: string; note: string; change: Partial<Omit<Note, "id">> }
     | { type: "removeNote"; panel: string; note: string }
@@ -186,13 +222,19 @@ export type Action =
     | { type: "addDataset"; dataset: number; shift: number }
     | { type: "removeDataset"; dataset: number }
     | { type: "shiftDataset"; dataset: number; shift: number }
-    | { type: "options"; change: Partial<Pick<Layout, "events" | "clock">> }
+    | { type: "options"; change: Partial<Pick<Layout, "events" | "time">> }
     | { type: "replace"; layout: Layout };
 
 const mapPanel = (layout: Layout, id: string, change: (panel: PanelSpec) => PanelSpec): Layout => ({
     ...layout,
     panels: layout.panels.map((panel) => (panel.id === id ? change(panel) : panel)),
 });
+
+/** A panel with a series added, on the axis the target means. */
+function withSeries(panel: PanelSpec, series: SeriesSpec, target: AxisTarget | undefined): PanelSpec {
+    const [withAxis, axis] = axisFor(panel, target);
+    return { ...withAxis, series: [...withAxis.series, { ...series, axis }] };
+}
 
 export function reduce(layout: Layout, action: Action): Layout {
     switch (action.type) {
@@ -207,29 +249,27 @@ export function reduce(layout: Layout, action: Action): Layout {
                 scale: 1,
                 offset: 0,
                 unit: null,
-                axis: action.axis ?? "left",
+                axis: "",
                 hidden: false,
                 width: 1.5,
                 step: null,
             };
             const target = layout.panels.find((panel) => panel.id === action.panel);
             if (!target) {
-                return { ...layout, panels: [...layout.panels, { ...newPanel(), series: [series] }] };
+                return { ...layout, panels: [...layout.panels, withSeries(newPanel(), series, action.axis)] };
             }
-            return mapPanel(layout, target.id, (panel) => ({ ...panel, series: [...panel.series, series] }));
+            return mapPanel(layout, target.id, (panel) => withSeries(panel, series, action.axis));
         }
         case "removeSeries":
-            return mapPanel(layout, action.panel, (panel) => ({
-                ...panel,
-                series: panel.series.filter((series) => series.id !== action.series),
-            }));
+            return mapPanel(layout, action.panel, (panel) =>
+                tidyAxes({ ...panel, series: panel.series.filter((series) => series.id !== action.series) }),
+            );
         case "unplot":
             return {
                 ...layout,
-                panels: layout.panels.map((panel) => ({
-                    ...panel,
-                    series: panel.series.filter((series) => !isOf(series, action)),
-                })),
+                panels: layout.panels.map((panel) =>
+                    tidyAxes({ ...panel, series: panel.series.filter((series) => !isOf(series, action)) }),
+                ),
             };
         case "changeSeries":
             return mapPanel(layout, action.panel, (panel) => ({
@@ -245,16 +285,24 @@ export function reduce(layout: Layout, action: Action): Layout {
             if (!found) {
                 return layout;
             }
-            const moving = action.axis ? { ...found, axis: action.axis } : found;
             if (action.to === action.panel) {
-                return reduce(layout, { type: "changeSeries", panel: action.panel, series: found.id, change: moving });
+                // Onto another axis of its plot (or a new one).
+                return mapPanel(layout, action.panel, (panel) => {
+                    const [withAxis, axis] = axisFor(panel, action.axis ?? found.axis);
+                    return tidyAxes({
+                        ...withAxis,
+                        series: withAxis.series.map((series) =>
+                            series.id === found.id ? { ...series, axis } : series,
+                        ),
+                    });
+                });
             }
             const without = reduce(layout, { type: "removeSeries", panel: action.panel, series: action.series });
             const target = without.panels.find((panel) => panel.id === action.to);
             if (!target) {
-                return { ...without, panels: [...without.panels, { ...newPanel(), series: [moving] }] };
+                return { ...without, panels: [...without.panels, withSeries(newPanel(), found, action.axis)] };
             }
-            return mapPanel(without, target.id, (panel) => ({ ...panel, series: [...panel.series, moving] }));
+            return mapPanel(without, target.id, (panel) => withSeries(panel, found, action.axis));
         }
         case "addPanel":
             return { ...layout, panels: [...layout.panels, newPanel()] };
@@ -272,6 +320,13 @@ export function reduce(layout: Layout, action: Action): Layout {
         }
         case "changePanel":
             return mapPanel(layout, action.panel, (panel) => ({ ...panel, ...action.change }));
+        case "changeAxis":
+            return mapPanel(layout, action.panel, (panel) => {
+                const axes = panel.axes.map((axis) => (axis.id === action.axis ? { ...axis, ...action.change } : axis));
+                const moved = action.change.side && axes.find((axis) => axis.id === action.axis);
+                // An axis moved to the other side goes outside the axes there.
+                return { ...panel, axes: moved ? [...axes.filter((axis) => axis !== moved), moved] : axes };
+            });
         case "addNote":
             return mapPanel(layout, action.panel, (panel) => ({ ...panel, notes: [...panel.notes, action.note] }));
         case "changeNote":
@@ -317,10 +372,9 @@ export function reduce(layout: Layout, action: Action): Layout {
             return {
                 ...layout,
                 datasets: layout.datasets.filter((ref) => ref.id !== action.dataset),
-                panels: layout.panels.map((panel) => ({
-                    ...panel,
-                    series: panel.series.filter((series) => series.dataset !== action.dataset),
-                })),
+                panels: layout.panels.map((panel) =>
+                    tidyAxes({ ...panel, series: panel.series.filter((series) => series.dataset !== action.dataset) }),
+                ),
             };
         case "shiftDataset":
             return {
@@ -363,9 +417,34 @@ const numOrNull = (value: unknown): number | null =>
 const str = (value: unknown, fallback = ""): string => (typeof value === "string" ? value : fallback);
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-function axis(value: unknown): AxisSpec {
+function axis(value: unknown, id: string, side: Side): AxisSpec {
     const found = isObject(value) ? value : {};
-    return { label: str(found.label), min: numOrNull(found.min), max: numOrNull(found.max) };
+    return {
+        id: str(found.id) || id,
+        side: found.side === "right" || found.side === "left" ? found.side : side,
+        label: str(found.label),
+        min: numOrNull(found.min),
+        max: numOrNull(found.max),
+    };
+}
+
+/** A panel's axes: as saved, or an older layout's left and right. */
+function axes(panel: Loose): AxisSpec[] {
+    if (Array.isArray(panel.axes)) {
+        const found = panel.axes.filter(isObject).map((entry) => axis(entry, newId(), "left"));
+        return found.filter((one, index) => found.findIndex((other) => other.id === one.id) === index);
+    }
+    return [axis(panel.left, "left", "left"), axis(panel.right, "right", "right")];
+}
+
+const TIME_MODES: TimeMode[] = ["auto", "t0", "utc", "local"];
+
+/** The time axis's mode, or an older layout's: time of day (then only in the file's zone, UTC for Unix times). */
+function timeMode(found: Loose): TimeMode {
+    if (TIME_MODES.includes(found.time as TimeMode)) {
+        return found.time as TimeMode;
+    }
+    return found.clock === true ? "utc" : found.clock === false ? "t0" : "auto";
 }
 
 function note(value: unknown): Note | null {
@@ -376,7 +455,7 @@ function note(value: unknown): Note | null {
         id: str(value.id) || newId(),
         t: num(value.t, 0),
         y: num(value.y, 0),
-        axis: value.axis === "right" ? "right" : "left",
+        axis: str(value.axis) || "left",
         text: str(value.text).slice(0, 500),
         dx: Math.min(2000, Math.max(-2000, num(value.dx, 40))),
         dy: Math.min(2000, Math.max(-2000, num(value.dy, -36))),
@@ -412,7 +491,7 @@ function series(value: unknown, dataset: number): SeriesSpec | null {
         scale: num(value.scale, 1),
         offset: num(value.offset, 0),
         unit: typeof value.unit === "string" ? value.unit : null,
-        axis: value.axis === "right" ? "right" : "left",
+        axis: str(value.axis) || "left",
         hidden: value.hidden === true,
         width: Math.min(6, Math.max(0.5, num(value.width, 1.5))),
         step: typeof value.step === "boolean" ? value.step : null,
@@ -428,19 +507,21 @@ export function readLayout(value: unknown, dataset: number): Layout {
         .filter((ref) => Number.isInteger(ref.id));
     const panels = list(found.panels)
         .filter(isObject)
-        .map((panel) => ({
-            id: str(panel.id) || newId(),
-            title: str(panel.title),
-            height: Math.min(1200, Math.max(120, num(panel.height, PANEL_HEIGHT))),
-            series: list(panel.series)
-                .map((entry) => series(entry, datasets[0]?.id ?? dataset))
-                .filter((entry) => entry !== null),
-            left: axis(panel.left),
-            right: axis(panel.right),
-            notes: list(panel.notes)
-                .map(note)
-                .filter((entry) => entry !== null),
-        }));
+        .map((panel) => {
+            const height = numOrNull(panel.height);
+            return tidyAxes({
+                id: str(panel.id) || newId(),
+                title: str(panel.title),
+                height: height === null || height === OLD_PANEL_HEIGHT ? null : Math.min(2400, Math.max(120, height)),
+                series: list(panel.series)
+                    .map((entry) => series(entry, datasets[0]?.id ?? dataset))
+                    .filter((entry) => entry !== null),
+                axes: axes(panel),
+                notes: list(panel.notes)
+                    .map(note)
+                    .filter((entry) => entry !== null),
+            });
+        });
     const window = list(found.window);
     const [start, end] = [numOrNull(window[0]), numOrNull(window[1])];
     return {
@@ -457,6 +538,6 @@ export function readLayout(value: unknown, dataset: number): Layout {
             .map(mask)
             .filter((entry) => entry !== null),
         events: found.events !== false,
-        clock: found.clock === true,
+        time: timeMode(found),
     };
 }

@@ -14,7 +14,9 @@ import { Trash } from "./pages/Trash";
 import { Link, usePathname } from "./router";
 import { useVault, type VaultState } from "./store";
 import { setTheme, useTheme, type Theme } from "./theme";
-import { inYorg, isWorkspace, YORG, YorgMark, YorgPage, yorgSection } from "./yorg";
+import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
+
+let vaultIcon: string | null = null; // the tab's icon from index.html, put back on leaving Yorg
 
 const THEMES: [Theme, string][] = [
     ["light", "Light"],
@@ -30,6 +32,11 @@ export function App() {
     const yorg = inYorg(pathname);
     useEffect(() => {
         document.title = yorg ? YORG : "Vault";
+        const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+        if (icon) {
+            vaultIcon ??= icon.getAttribute("href");
+            icon.setAttribute("href", yorg ? YORG_ICON : (vaultIcon ?? ""));
+        }
     }, [yorg]);
     const section = yorg
         ? yorgSection(pathname)

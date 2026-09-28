@@ -351,7 +351,7 @@ main.main-full {
 }
 
 .yorg-window input {
-    width: 7.5rem;
+    width: 8.5rem;
     font-variant-numeric: tabular-nums;
 }
 
@@ -544,32 +544,62 @@ main.main-full {
     min-width: 0;
 }
 
+/* Something dragged over a plot goes onto the axis for its unit (a legend's groups take it onto theirs). */
 .yorg-drop {
     position: absolute;
-    inset: 8px 14px 24px 70px;
+    inset: 8px 14px 24px 66px;
     z-index: 2;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    pointer-events: auto;
-}
-
-.yorg-drop span {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px dashed var(--border-strong);
+    border: 2px dashed var(--accent);
     border-radius: var(--radius);
     background: rgb(128 128 128 / 6%);
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 0.85rem;
+    pointer-events: none;
 }
 
-.yorg-drop span.yorg-drop-here {
-    border-color: var(--accent);
-    background: var(--accent-soft);
+.yorg-drop span {
+    padding: 0 1rem;
     color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.yorg-legend-new .yorg-legend-hint {
+    margin: 0.15rem 0 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* T0: typed, or set where a plot's clicked. */
+.yorg-t0-menu {
+    width: min(21rem, calc(100vw - 16px));
+    padding: 0.6rem 0.75rem 0.4rem;
+}
+
+.yorg-t0-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+}
+
+.yorg-t0-form .field {
+    flex: 1;
+    margin: 0;
+}
+
+.yorg-t0-form input,
+.yorg-t0-at {
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+}
+
+.yorg-t0-at {
+    overflow: hidden;
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Calculated channels: the team's, in each dataset that has what they use. */

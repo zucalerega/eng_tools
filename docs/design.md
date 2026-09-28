@@ -442,8 +442,13 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   cells that aren't numbers are left empty; each is said once, with a row number, in the
   dataset's warnings. A column empty in at least half the rows (a slower sensor in the
   same file) keeps only its samples, with their own times. A text column is a state,
-  numbered as its values first appear (on/off words as 0 and 1), or, if it's in fewer
-  than 5% of rows, events (a sequence's steps), shown as markers. Anyone who can change
+  numbered as its values first appear, or, if it's in fewer than 5% of rows, events (a
+  sequence's steps), shown as markers. A switch's states (a valve's, a command's: any
+  that say on or off, however a log mixes words and digits, like closed, 1, fault, open)
+  are numbered again once the column's read: off (closed, 0, false...) is 0, on (open, 1,
+  true...) is 1, named in the file's words, and anything else (fault, disconnected)
+  comes after them. A column of only those words and 0 and 1 is a switch, whichever the
+  first rows say more of. Anyone who can change
   a dataset can read it again with other options (the time column and format, where the
   names are, the delimiter); a read that fails leaves the last one standing.
 - **Arrays.** A read writes little-endian float64 arrays (times in seconds, and values,
@@ -462,14 +467,27 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   than 20 times the usual step aren't joined (a pause in logging).
 - **The workspace**: channels on the left (grouped by prefix: PT, TC, LC...), each a
   toggle: a click plots it on the selected panel, or takes it off every panel if it's
-  plotted (shift-click: a panel of its own). Panels stack on one time axis, each with a
-  left and right axis and a legend that reads each channel's value at the shared cursor;
-  a channel goes on either axis by dropping it (from the list, or dragged from a legend,
-  even another panel's) on that half of a plot or that group of the legend. A channel's
-  settings set its scale, offset, unit, color, axis, and lines or steps; there's T0 (at
-  the cursor, or exactly at an event), markers (T0 and markers are dragged to move them),
-  datasets compared, each shifted in time (lined up by clock time when both have dates),
-  and exports (a PNG of the plots, a CSV of the samples in view). Its layout is plain
+  plotted (shift-click: a panel of its own). Panels stack on one time axis, sharing the
+  window's height (at least 220 px each; one dragged to a height keeps it), each with a
+  legend that reads each channel's value at the shared cursor. A panel has an axis for
+  each kind of value: a channel goes on the axis with others of its unit (states share
+  one), else on a new axis, on the side with fewer (each side's axes go out from the
+  plot, and every plot keeps room for the most any has, so their time axes line up).
+  With more than one, each axis is in its first channel's color. A channel moves to
+  another axis, or a new one, by dropping it (from the list, or from a legend, even
+  another panel's) on that group of the legend, or with its settings; dropped anywhere
+  else on a plot, it goes on the axis for its unit. Axes nothing's on go. A channel's
+  settings set its scale, offset, unit, color, axis, and lines or steps; there's T0,
+  markers (T0 and markers are dragged to move them), datasets compared, each shifted in
+  time (lined up by clock time when both have dates), and exports (a PNG of the plots, a
+  CSV of the samples in view).
+- **Time** reads from T0 (T−10, T0, T+15 on the axis, at the cursor, and in the window's
+  inputs; seconds from the start without a T0), or as time of day, in UTC or this
+  computer's zone: dated data (Unix times) reads as time of day until there's a T0, and
+  from it after, with the cursor giving the time of day too. T0 is typed (a time of day,
+  a Unix or ISO time, T+12 from the T0 there is, or seconds in the file), put where the
+  next click on a plot is, set at the cursor, the window's start, or an event, or its
+  line dragged. The window's inputs take the same, as the axis reads. Its layout is plain
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
@@ -600,9 +618,10 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
-7. **Yorg** (first version done, September 2026): upload, read, plot, compare, views,
-   exports, calculated channels, folders, labels, masks, and splitting files into their
-   tests. Next: statistics over a selected span (and over each test, from its mask),
+7. **Yorg** (first version done, September 2026): upload, read, plot (an axis per
+   unit), compare, views, exports, calculated channels, folders, labels, masks,
+   splitting files into their tests, and time from T0 or of day (UTC or local). Next:
+   statistics over a selected span (and over each test, from its mask),
    reading while the file is still uploading for very big files, and data streamed live
    from the test stand.
 

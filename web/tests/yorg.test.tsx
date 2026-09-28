@@ -99,34 +99,46 @@ function dataTransfer() {
     };
 }
 
-test("dragging channels to a plot's right axis, from its legend or the channel list", async () => {
+test("each unit gets an axis of its own, and channels move between axes", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Axes", HOTFIRE);
     renderApp(team.chief, `/yorg/datasets/${data.id}`);
     const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
     await userEvent.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
-    await userEvent.click(channels.getByRole("button", { name: /TC-NOZ-01/ }));
     const legend = within(await screen.findByRole("group", { name: "Plot 1: channels" }));
-    expect(legend.queryByText("Right axis")).toBeNull(); // everything's on the left: one list
+    expect(legend.queryByText("psi · left")).toBeNull(); // one axis: one list
 
-    // A legend's row onto its right axis.
+    // Another unit, and a valve: an axis each, on alternate sides; the same unit joins its axis.
+    await userEvent.click(channels.getByRole("button", { name: /TC-NOZ-01/ }));
+    await userEvent.click(channels.getByRole("button", { name: /PT-FU-01/ }));
+    await userEvent.click(channels.getByRole("button", { name: /Valve/ }));
+    const on = (axis: string) =>
+        within(legend.getByRole("list", { name: axis }))
+            .getAllByRole("button", { name: /^(PT|TC|Valve)/ })
+            .map((button) => button.textContent);
+    expect(on("psi · left")).toEqual(["PT-OX-01", "PT-FU-01"]);
+    expect(on("K · right")).toEqual(["TC-NOZ-01"]);
+    expect(on("States · left 2")).toEqual(["Valve"]);
+
+    // A legend's row onto an axis of its own, and back with its settings; the axis left empty goes.
     const panel = screen.getByRole("region", { name: "Plot 1" });
     let transfer = dataTransfer();
-    fireEvent.dragStart(legend.getByRole("button", { name: "TC-NOZ-01" }).closest("li")!, { dataTransfer: transfer });
+    fireEvent.dragStart(legend.getByRole("button", { name: "PT-FU-01" }).closest("li")!, { dataTransfer: transfer });
     fireEvent.dragOver(panel, { dataTransfer: transfer });
-    const right = await legend.findByRole("list", { name: "Right axis" });
-    fireEvent.drop(within(right).getByText("Drop a channel here"), { dataTransfer: transfer });
-    await waitFor(() => expect(within(right).getByRole("button", { name: "TC-NOZ-01" })).toBeTruthy());
-    expect(
-        within(legend.getByRole("list", { name: "Left axis" })).getByRole("button", { name: "PT-OX-01" }),
-    ).toBeTruthy();
+    fireEvent.drop(await legend.findByText("Drop here for an axis of its own"), { dataTransfer: transfer });
+    await waitFor(() => expect(on("psi · right 2")).toEqual(["PT-FU-01"]));
+    await userEvent.click(legend.getByRole("button", { name: "PT-FU-01" }));
+    const settings = within(await screen.findByRole("dialog", { name: "PT-FU-01: settings" }));
+    await userEvent.selectOptions(settings.getByLabelText("Axis"), "psi · left");
+    await waitFor(() => expect(on("psi · left")).toEqual(["PT-OX-01", "PT-FU-01"]));
+    expect(legend.queryByRole("list", { name: "psi · right 2" })).toBeNull();
 
-    // A channel from the list, onto the right half of the plot.
+    // A channel from the list, dropped anywhere on the plot: onto the axis for its unit.
     transfer = dataTransfer();
-    fireEvent.dragStart(channels.getByRole("button", { name: /PT-FU-01/ }), { dataTransfer: transfer });
+    fireEvent.dragStart(channels.getByRole("button", { name: /TC-NOZ-01/ }), { dataTransfer: transfer });
     fireEvent.dragOver(panel, { dataTransfer: transfer });
-    fireEvent.drop(panel.querySelector('.yorg-drop [data-side="right"]')!, { dataTransfer: transfer });
-    await waitFor(() => expect(within(right).getByRole("button", { name: "PT-FU-01" })).toBeTruthy());
+    fireEvent.drop(screen.getByRole("img", { name: /^Plot 1:/ }), { dataTransfer: transfer });
+    await waitFor(() => expect(on("K · right")).toEqual(["TC-NOZ-01", "TC-NOZ-01"]));
 });
 
 test("a calculated channel, made from the dataset's channels, plots like one", async () => {
@@ -204,8 +216,8 @@ test("the time window can be typed, and T0 set", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Window", HOTFIRE);
     renderApp(team.chief, `/yorg/datasets/${data.id}`);
-    const start = (await screen.findByLabelText("Window start (s)")) as HTMLInputElement;
-    const end = screen.getByLabelText("Window end (s)") as HTMLInputElement;
+    const start = (await screen.findByLabelText("Window start")) as HTMLInputElement;
+    const end = screen.getByLabelText("Window end") as HTMLInputElement;
     expect([start.value, end.value]).toEqual(["0", "0.49"]);
 
     await userEvent.clear(start);
@@ -215,12 +227,25 @@ test("the time window can be typed, and T0 set", async () => {
     await waitFor(() => expect([start.value, end.value]).toEqual(["0.1", "0.3"]));
     expect(screen.getByText(/200 ms in view/)).toBeTruthy();
 
+    // With T0, times read from it: T-, T0, T+.
     await userEvent.click(screen.getByRole("button", { name: "T0" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Set T0 at the start of the window" }));
-    await waitFor(() => expect([start.value, end.value]).toEqual(["0", "0.2"]));
-    expect(within(screen.getByRole("region", { name: "Markers" })).getByText(/T0/)).toBeTruthy();
+    await waitFor(() => expect([start.value, end.value]).toEqual(["T0", "T+0.2"]));
+    const markers = within(screen.getByRole("region", { name: "Markers" }));
+    expect(markers.getByText("0.1 s in the file")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    await waitFor(() => expect(end.value).toBe("0.39")); // the whole file again, from T0 at 0.1
+    await waitFor(() => expect([start.value, end.value]).toEqual(["T-0.1", "T+0.39"])); // the whole file again
+
+    // T0 typed: seconds in the file; the window's inputs take times from T0.
+    await userEvent.click(screen.getByRole("button", { name: "T0" }));
+    await userEvent.type(screen.getByLabelText("T0 at"), "0.25{Enter}");
+    expect(await markers.findByText("0.25 s in the file")).toBeTruthy();
+    await userEvent.clear(start);
+    await userEvent.type(start, "T-0.05");
+    await userEvent.clear(end);
+    await userEvent.type(end, "T+0.05{Enter}");
+    await waitFor(() => expect([start.value, end.value]).toEqual(["T-0.05", "T+0.05"]));
+    expect(screen.getByText(/100 ms in view/)).toBeTruthy();
 });
 
 test("a saved view opens for everyone, and works with another test's data", async () => {

@@ -52,19 +52,21 @@ together on one time axis.
   names, units (`PT-1 (psi)`, `PT-1 [psi]`, or a row of units under the names), and
   which column is time and in what format (seconds, milliseconds, Unix time, or dates
   and times). Channels logged at a slower rate in the same file keep their own times; a
-  text column becomes a state (CLOSED/OPEN, a mode) or, if it's mostly empty, events,
+  text column becomes a state (CLOSED/OPEN, a mode; a valve logged as closed, 1, fault,
+  open reads closed = 0, open = 1, fault = 2) or, if it's mostly empty, events,
   like a sequence's IGNITION, which show as markers. If it guessed wrong, change how it's
   read on the dataset's About page: the file is kept as it was uploaded.
 - **Folders:** New folder makes one (a test campaign, a day of cold flows). Drag datasets
   onto a folder, or onto a folder above in the path at the top, or check some and Move
   to…. The list shows each dataset's size, and Find datasets looks in every folder.
 - **Plot:** click a channel to add it to the selected plot (click it again to take it
-  off), shift-click for a plot of its own, or drag it onto one: onto the right half of a
-  plot for its right axis. Plots share the time window and the cursor, and each has an
-  axis on either side; drag a channel in a legend to the other axis, or to another plot.
-  Drag across a plot to zoom to that time (shift-drag: a box), right-drag to pan, scroll
-  to zoom; arrow keys, Home (everything), and Backspace (back) work too. The legend reads
-  each channel's value at the cursor.
+  off), shift-click for a plot of its own, or drag it onto one. Each unit gets an axis
+  of its own, so thrust, pressures, and valves share a plot, each on its scale (psi on
+  the left, lbf on the right, the valves further out); drag a channel in a legend onto
+  another axis, a new one, or another plot. Plots share the window's height, the time
+  window, and the cursor. Drag across a plot to zoom to that time (shift-drag: a box),
+  right-drag to pan, scroll to zoom; arrow keys, Home (everything), and Backspace (back)
+  work too. The legend reads each channel's value at the cursor.
 - **Calculated channels:** New calculated channel (under a dataset's channels) makes one
   for the whole team from an expression, like `[LC-1] + [LC-2]` for total thrust or
   `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` for O/F while fuel flows; `ddt`,
@@ -72,9 +74,11 @@ together on one time axis.
   dataset that has the channels it uses, and plots like any channel.
 - **Scale, label, and line up:** a channel's settings rename it and set its color, a
   scale and offset (volts to psi, psi to bar) with its unit, its axis, and lines or
-  steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers (drag them,
-  or T0, to move them), and fix an axis's range. Compare with another dataset to overlay
-  two tests, shifted in time to line them up.
+  steps. Set T0 (type a time of day or a Unix time, click the plot, or pick an event like
+  MOV OPEN) and time reads T−10, T0, T+15; drag its line to move it. Unix-time data reads
+  as time of day in UTC (or your computer's zone, in Options) until then. Add markers
+  (drag them to move them) and fix an axis's range. Compare with another dataset to
+  overlay two tests, shifted in time to line them up.
 - **Masks:** Mask makes a test on channels, like the main valve open or a pressure over
   its redline: pick a channel, a comparison, and a value (a valve's OPEN, by name), or
   write one like a calculated channel (`and([MOV-OX] == 1, [PT-CHAMBER] > 450)`). A mask

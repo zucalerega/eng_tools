@@ -391,7 +391,11 @@ def _layout(source: Path, options: ReadOptions) -> _Layout:
     for j in range(width):
         cells = [row[j].strip() for row in samples if row[j].strip()]
         numbers = [cell for cell in cells if _is_number(cell, decimal_comma)]
-        if len(numbers) * 2 >= len(cells):
+        if len(numbers) < len(cells) and all(_switch_value(cell) is not None for cell in cells):
+            # A switch however it's written (closed, 1, open, 0): a state, whichever the first rows say more.
+            kinds.append("bool")
+            decimals.append(None)
+        elif len(numbers) * 2 >= len(cells):
             kinds.append("number")
             places = [_decimals(cell, decimal_comma) for cell in numbers]
             decimals.append(None if None in places else min(max(places, default=0), 12))
@@ -666,37 +670,108 @@ def _numbers(cells: tuple[str, ...], decimal_comma: bool) -> tuple[array, int, s
     return out, bad, example
 
 
-class _States:
-    """A text column's values, numbered in the order they first appear (on and off: 1 and 0)."""
+# Each on and off word's opposite, to name the one a file never uses (a valve that was only ever closed).
+_OPPOSITES = {
+    "open": "closed",
+    "opened": "closed",
+    "closed": "open",
+    "close": "open",
+    "on": "off",
+    "off": "on",
+    "true": "false",
+    "false": "true",
+    "yes": "no",
+    "no": "yes",
+    "high": "low",
+    "low": "high",
+    "armed": "disarmed",
+    "disarmed": "armed",
+    "enabled": "disabled",
+    "disabled": "enabled",
+    "1": "0",
+    "0": "1",
+}
 
-    def __init__(self, booleans: bool):
+
+def _switch_value(name: str) -> int | None:
+    """What a state's name says a switch is: 0 for off (closed, 0, false...), 1 for on (open, 1, true...), else None."""
+    text = name.strip().lower()
+    if text in _BOOLEANS:
+        return _BOOLEANS[text]
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return int(number) if number in (0, 1) else None
+
+
+def _opposite(name: str) -> str:
+    """The other state's name (open for closed), written the same way (CLOSED: OPEN)."""
+    other = _OPPOSITES.get(name.strip().lower(), "")
+    return other.upper() if name.isupper() else other.capitalize() if name[:1].isupper() else other
+
+
+class _States:
+    """A text column's values, numbered in the order they first appear.
+
+    A switch's (a valve's, a command's: any of its values says on or off, however it's written) are numbered again
+    once the whole column is read (final): off is 0 (closed, 0, false...), on is 1 (open, 1, true...), and anything
+    else (fault, disconnected) comes after them, in the order it appeared. Logs that say closed, 1, fault, and open
+    then read as a valve should.
+    """
+
+    def __init__(self) -> None:
         self.numbers: dict[str, float] = {}
         self.labels: list[str] = []
-        self.booleans = booleans
-        if booleans:
-            self.labels = ["", ""]  # filled in with the file's own spelling of each
 
     def number(self, cell: str) -> float:
         text = cell.strip()
         if not text:
             return _NAN
         found = self.numbers.get(text)
-        if found is not None:
-            return found
-        if self.booleans and text.lower() in _BOOLEANS:
-            found = float(_BOOLEANS[text.lower()])
-            if not self.labels[int(found)]:
-                self.labels[int(found)] = text
-        else:
-            if self.booleans:  # not only on and off after all: number the rest after them
-                self.booleans = False
-            found = float(len(self.labels))
+        if found is None:
+            found = self.numbers[text] = float(len(self.labels))
             self.labels.append(text)
-        self.numbers[text] = found
         return found
 
     def read(self, cells: tuple[str, ...]) -> array:
         return array("d", map(self.number, cells))
+
+    @property
+    def switch(self) -> bool:
+        return any(_switch_value(label) is not None for label in self.labels)
+
+    def final(self) -> tuple[list[str], list[float] | None]:
+        """The states' names by number, and each first number's final one (None: numbered as they appeared)."""
+        if not self.switch:
+            return self.labels, None
+        meaning = [_switch_value(label) for label in self.labels]
+        rest = [label for label, value in zip(self.labels, meaning, strict=True) if value is None]
+
+        def word(value: int) -> str | None:
+            """The file's word for it, if it has one (closed), rather than a digit (0)."""
+            return next(
+                (
+                    label
+                    for label, v in zip(self.labels, meaning, strict=True)
+                    if v == value and label.strip().lower() in _BOOLEANS
+                ),
+                None,
+            )
+
+        def name(value: int) -> str:
+            # Its own word; else the other's word turned around (a log of closed and 1: closed and open); else a digit.
+            own, other = word(value), word(1 - value)
+            if own or other:
+                return own or _opposite(other or "")
+            return str(value)
+
+        labels = [name(0), name(1), *rest]
+        renumber = [
+            float(value) if value is not None else 2.0 + rest.index(label)
+            for label, value in zip(self.labels, meaning, strict=True)
+        ]
+        return labels, renumber
 
 
 class _Summary:
@@ -771,7 +846,7 @@ def read_csv(source: Path, out: Path, options: ReadOptions | None = None) -> Rea
         )
 
     summaries = {j: _Summary() for j in columns}
-    states = {j: _States(layout.kinds[j] == "bool") for j in columns if layout.kinds[j] != "number"}
+    states = {j: _States() for j in columns if layout.kinds[j] != "number"}
     notes: set[int] = set()  # text columns with too many different values to plot
     rows = unreadable_times = long_rows = 0
     unreadable_example: tuple[int, str] | None = None
@@ -842,8 +917,7 @@ def read_csv(source: Path, out: Path, options: ReadOptions | None = None) -> Rea
                         if bad and summary.count == 0 and not any(map(math.isfinite, values)):
                             # Empty until here, then text: a text column after all (a sequence's steps, which
                             # start after the start of the file).
-                            filled = [cell.strip().lower() for cell in cells[j] if cell.strip()]
-                            states[j] = _States(all(cell in _BOOLEANS for cell in filled))
+                            states[j] = _States()
                             values, bad = states[j].read(cells[j]), 0
                         if bad:
                             if summary.bad == 0:
@@ -906,13 +980,20 @@ def read_csv(source: Path, out: Path, options: ReadOptions | None = None) -> Rea
         if order is not None:
             values = array("d", map(values.__getitem__, order))
         state = states.get(j)
-        if state is not None and not state.booleans and summary.count <= min(rows * EVENT_SHARE, MAX_EVENTS):
+        if state is not None and not state.switch and summary.count <= min(rows * EVENT_SHARE, MAX_EVENTS):
             events.extend(
                 {"t": time_values[i], "label": state.labels[int(value)], "channel": name}
                 for i, value in enumerate(values)
                 if value == value  # not NaN
             )
             continue
+        labels = state.labels if state is not None else []
+        if state is not None:
+            labels, renumber = state.final()
+            if renumber is not None:
+                values = array("d", (renumber[int(value)] if value == value else value for value in values))
+                known = [value for value in values if value == value]
+                summary.low, summary.high, summary.total = min(known), max(known), sum(known)
         if summary.count <= rows * SPARSE_SHARE:  # mostly empty: keep only its own samples, with their times
             has_value = list(map(math.isfinite, values))
             own_times = array("d", itertools.compress(time_values, has_value))
@@ -933,7 +1014,7 @@ def read_csv(source: Path, out: Path, options: ReadOptions | None = None) -> Rea
                 name=name,
                 unit=layout.units_of[j],
                 kind="number" if state is None else "state",
-                labels=[] if state is None else [label or str(i) for i, label in enumerate(state.labels)],
+                labels=[label or str(i) for i, label in enumerate(labels)],
                 decimals=layout.decimals[j],
                 count=summary.count,
                 min=summary.low,

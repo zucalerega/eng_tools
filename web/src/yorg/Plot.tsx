@@ -7,7 +7,8 @@ import { formatDuration, formatTick, ticks } from "./scale";
 // One plot: channels drawn over a time window on a canvas, with a y axis on either side. Everything that changes the
 // view goes up to the workspace (which gives every plot the same window and cursor):
 //   drag: zoom to the time you drag across; shift-drag: zoom to a box (time and values)
-//   right-drag, middle-drag, or ctrl-drag: pan; drag on an axis: move it
+//   right-drag, middle-drag, or ctrl-drag: pan; drag on an axis: move it (a plot has an axis for each unit, or as
+//   many as it's given, from the plot out on either side)
 //   wheel: zoom time around the pointer (on an axis: zoom it); shift-wheel or sideways: pan
 //   double-click: show everything; right-click: a menu (marker, label, T0)
 //   drag a marker (its line or label) to move it; drag a label to move it, or its arrow's tip to point elsewhere;
@@ -18,7 +19,7 @@ export interface PlotSeries {
     color: string;
     width: number;
     step: boolean;
-    axis: Side;
+    axis: string; // its value axis's id
     samples: Samples | null; // still loading
     placement: Placement;
     unit: string;
@@ -49,7 +50,7 @@ export interface Shading {
 export interface Anchor {
     t: number;
     y: number;
-    axis: Side;
+    axis: string;
 }
 
 /** What a right-click was on: a place (if the plot has an axis to say what value), and maybe a label or marker. */
@@ -92,8 +93,7 @@ export interface PlotColors {
     font: string;
 }
 
-export const LEFT_GUTTER = 70;
-const RIGHT_GUTTER = 70;
+export const AXIS_WIDTH = 66; // each value axis's room beside the plot: its numbers, and its title
 const EDGE = 14;
 const TOP = 8;
 const BOTTOM = 24;
@@ -107,14 +107,14 @@ interface Geometry {
     bottom: number;
 }
 
-type Ranges = Record<Side, [number, number] | null>;
+type Ranges = ReadonlyMap<string, [number, number]>; // by axis: those with something to show
 
 interface Drag {
     mode: "zoom" | "box" | "pan" | "axis" | "note" | "tip" | "mark";
     target: string | null; // the label or marker being moved
     offset: { dx: number; dy: number }; // a label's, when it was picked up
     center: { x: number; y: number } | null; // its box's, when its arrow's tip was picked up
-    side: Side;
+    axis: string | null; // the value axis being moved
     x0: number;
     y0: number;
     x: number;
@@ -127,8 +127,7 @@ interface Drag {
 interface Props {
     label: string;
     series: PlotSeries[];
-    left: AxisSpec;
-    right: AxisSpec;
+    axes: AxisSpec[];
     height: number;
     window: [number, number];
     time: TimeAxis;
@@ -136,11 +135,12 @@ interface Props {
     shading: Shading[];
     cursor: number | null;
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
-    rightGutter: boolean; // every plot keeps room for a right axis if any has one, so their time axes line up
+    // Every plot keeps room for as many axes on each side as any has, so their time axes line up.
+    gutters: { left: number; right: number };
     colors: PlotColors;
     onCursor: (x: number | null) => void;
     onWindow: (window: [number, number] | null, remember: boolean) => void;
-    onAxis: (side: Side, range: [number, number] | null) => void;
+    onAxis: (axis: string, range: [number, number] | null) => void;
     onMenu: (x: number, clientX: number, clientY: number, target: MenuTarget) => void;
     notes: Note[];
     placing: boolean; // a click puts a label there
@@ -181,15 +181,17 @@ function axisRange(spec: AxisSpec, series: PlotSeries[], window: [number, number
     return [spec.min ?? low - room, spec.max ?? high + room];
 }
 
-/** An axis's ticks: a state's names at whole numbers, when every channel on it is that state; else round numbers. */
+/**
+ * An axis's ticks: states' names at whole numbers when every channel on it is a state (each name where they agree on
+ * it: valves' closed and open), else round numbers.
+ */
 function valueTicks(range: [number, number], series: PlotSeries[], count: number): { value: number; label: string }[] {
-    const labels = series[0]?.labels;
-    const sameStates = labels && series.every((one) => one.labels?.join("\n") === labels.join("\n"));
     const whole = Math.floor(range[1]) - Math.ceil(range[0]) + 1;
-    if (sameStates && whole > 0 && whole <= Math.max(count, 2) * 2) {
+    if (series.length > 0 && series.every((one) => one.labels) && whole > 0 && whole <= Math.max(count, 2) * 2) {
         const found = [];
         for (let value = Math.ceil(range[0]); value <= range[1]; value++) {
-            found.push({ value, label: labels[value] ?? String(value) });
+            const names = new Set(series.map((one) => one.labels![value] ?? String(value)));
+            found.push({ value, label: names.size === 1 ? [...names][0]! : String(value) });
         }
         return found;
     }
@@ -202,6 +204,22 @@ const markColor = (mark: PlotMark, colors: PlotColors): string =>
 
 const unitsOf = (series: PlotSeries[]): string =>
     [...new Set(series.map((one) => one.unit).filter(Boolean))].join(", ");
+
+/** How far out from the plot each axis is, on its side (0: next to it). */
+function axisSlots(axes: AxisSpec[]): Map<string, number> {
+    const count = { left: 0, right: 0 };
+    return new Map(axes.map((axis) => [axis.id, count[axis.side]++]));
+}
+
+/** The axis whose room beside the plot x is in, if there's one there. */
+function axisAt(axes: AxisSpec[], g: Geometry, px: number): AxisSpec | null {
+    const side: Side | null = px < g.left ? "left" : px > g.right ? "right" : null;
+    if (!side) {
+        return null;
+    }
+    const slot = Math.floor((side === "left" ? g.left - px : px - g.right) / AXIS_WIDTH);
+    return axes.filter((axis) => axis.side === side)[slot] ?? null;
+}
 
 const NOTE_LINE = 15;
 
@@ -218,7 +236,7 @@ export function placeNotes(
 ): NoteHit[] {
     const found: NoteHit[] = [];
     for (const note of notes) {
-        const range = ranges[note.axis] ?? ranges.left ?? ranges.right;
+        const range = ranges.get(note.axis) ?? ranges.values().next().value;
         if (!range || note.t < view[0] || note.t > view[1]) {
             continue;
         }
@@ -289,13 +307,7 @@ function pointerAt(canvas: HTMLElement, event: { clientX: number; clientY: numbe
     return { px: (event.clientX - rect.left) * scaleX, py: (event.clientY - rect.top) * scaleY };
 }
 
-function draw(
-    canvas: HTMLCanvasElement,
-    g: Geometry,
-    props: Props,
-    ranges: Ranges,
-    titles: Record<Side, string>,
-): Hits {
+function draw(canvas: HTMLCanvasElement, g: Geometry, props: Props, ranges: Ranges): Hits {
     const hits: Hits = { notes: [], marks: [] };
     const context = canvas.getContext("2d");
     if (!context || g.width <= 0) {
@@ -365,20 +377,21 @@ function draw(
         context.fillText(time.label(x, timeTicks.step), toX(x), g.bottom + 6);
     }
 
-    // Values: the left axis draws the grid (or the right, if it's alone); each labels its own side.
-    const gridSide: Side = ranges.left ? "left" : "right";
-    for (const side of ["left", "right"] as const) {
-        const range = ranges[side];
+    // Values: an axis for each unit (or as it's set), from the plot out on each side; the first draws the grid. When
+    // there's more than one, each is in its first channel's color, to say whose it is.
+    const slots = axisSlots(props.axes);
+    const several = props.axes.length > 1;
+    let gridded = false;
+    for (const axis of props.axes) {
+        const range = ranges.get(axis.id);
         if (!range) {
             continue;
         }
+        const on = props.series.filter((one) => one.axis === axis.id);
         const toY = (y: number) => g.bottom - ((y - range[0]) / (range[1] - range[0])) * plotHeight;
-        const marks = valueTicks(
-            range,
-            props.series.filter((one) => one.axis === side),
-            Math.max(2, Math.floor(plotHeight / 40)),
-        );
-        if (side === gridSide) {
+        const marks = valueTicks(range, on, Math.max(2, Math.floor(plotHeight / 40)));
+        if (!gridded) {
+            gridded = true;
             context.strokeStyle = colors.grid;
             context.beginPath();
             for (const { value } of marks) {
@@ -388,19 +401,35 @@ function draw(
             }
             context.stroke();
         }
-        context.fillStyle = colors.text;
-        context.textAlign = side === "left" ? "right" : "left";
+        const left = axis.side === "left";
+        const slot = slots.get(axis.id) ?? 0;
+        const x = left ? g.left - slot * AXIS_WIDTH : g.right + slot * AXIS_WIDTH;
+        const color = several ? (on[0]?.color ?? colors.text) : colors.text;
+        if (slot > 0) {
+            // An axis out from the plot gets its own line.
+            const at = Math.round(x) + 0.5;
+            context.strokeStyle = color;
+            context.globalAlpha = 0.6;
+            context.beginPath();
+            context.moveTo(at, g.top);
+            context.lineTo(at, g.bottom);
+            context.stroke();
+            context.globalAlpha = 1;
+        }
+        context.fillStyle = color;
+        context.textAlign = left ? "right" : "left";
         context.textBaseline = "middle";
         for (const { value, label } of marks) {
-            context.fillText(label, side === "left" ? g.left - 6 : g.right + 6, toY(value), LEFT_GUTTER - 20);
+            context.fillText(label, left ? x - 6 : x + 6, toY(value), AXIS_WIDTH - 24);
         }
-        if (titles[side]) {
+        const title = axis.label || unitsOf(on) || (on.length > 0 && on.every((one) => one.labels) ? "state" : "");
+        if (title) {
             context.save();
-            context.translate(side === "left" ? 9 : g.width - 9, (g.top + g.bottom) / 2);
-            context.rotate(side === "left" ? -Math.PI / 2 : Math.PI / 2);
+            context.translate(left ? x - AXIS_WIDTH + 9 : x + AXIS_WIDTH - 9, (g.top + g.bottom) / 2);
+            context.rotate(left ? -Math.PI / 2 : Math.PI / 2);
             context.textAlign = "center";
             context.textBaseline = "middle";
-            context.fillText(titles[side], 0, 0, plotHeight);
+            context.fillText(title, 0, 0, plotHeight);
             context.restore();
         }
     }
@@ -456,7 +485,7 @@ function draw(
 
     // The data.
     for (const one of props.series) {
-        const range = ranges[one.axis];
+        const range = ranges.get(one.axis) ?? ranges.values().next().value;
         if (!one.samples || !range) {
             continue;
         }
@@ -568,7 +597,7 @@ function drawOverlay(canvas: HTMLCanvasElement, g: Geometry, props: Props, range
     context.stroke();
     for (const one of props.series) {
         const point = props.readouts.get(one.id);
-        const range = ranges[one.axis];
+        const range = ranges.get(one.axis) ?? ranges.values().next().value;
         if (!point || !range || Number.isNaN(point.y)) {
             continue;
         }
@@ -616,29 +645,24 @@ export function Plot(props: Props) {
         () => ({
             width,
             height: props.height,
-            left: LEFT_GUTTER,
-            right: width - (props.rightGutter ? RIGHT_GUTTER : EDGE),
+            left: Math.max(1, props.gutters.left) * AXIS_WIDTH,
+            right: width - (props.gutters.right > 0 ? props.gutters.right * AXIS_WIDTH : EDGE),
             top: TOP,
             bottom: props.height - BOTTOM,
         }),
-        [width, props.height, props.rightGutter],
+        [width, props.height, props.gutters.left, props.gutters.right],
     );
-    const bySide = useMemo(
-        () => ({
-            left: props.series.filter((one) => one.axis === "left"),
-            right: props.series.filter((one) => one.axis === "right"),
-        }),
-        [props.series],
-    );
-    const ranges: Ranges = useMemo(
-        () => ({
-            left: axisRange(props.left, bySide.left, props.window),
-            right: axisRange(props.right, bySide.right, props.window),
-        }),
-        [props.left, props.right, bySide, props.window],
-    );
-    const leftTitle = props.left.label || unitsOf(bySide.left);
-    const rightTitle = props.right.label || unitsOf(bySide.right);
+    const ranges: Ranges = useMemo(() => {
+        const found = new Map<string, [number, number]>();
+        for (const axis of props.axes) {
+            const on = props.series.filter((one) => one.axis === axis.id);
+            const range = axisRange(axis, on, props.window);
+            if (range) {
+                found.set(axis.id, range);
+            }
+        }
+        return found;
+    }, [props.axes, props.series, props.window]);
     const geometryRef = useRef(geometry);
     geometryRef.current = geometry;
     const rangesRef = useRef(ranges);
@@ -646,13 +670,12 @@ export function Plot(props: Props) {
 
     useEffect(() => {
         if (base.current) {
-            hits.current = draw(base.current, geometry, latest.current, ranges, { left: leftTitle, right: rightTitle });
+            hits.current = draw(base.current, geometry, latest.current, ranges);
         }
     }, [
         geometry,
         ranges,
-        leftTitle,
-        rightTitle,
+        props.axes,
         props.series,
         props.window,
         props.marks,
@@ -684,12 +707,15 @@ export function Plot(props: Props) {
             event.preventDefault();
             const [start, end] = current.window;
             const span = end - start;
-            const onAxis: Side | null = px < g.left ? "left" : px > g.right ? "right" : null;
-            const range = onAxis ? rangesRef.current[onAxis] : null;
+            const onAxis = axisAt(current.axes, g, px);
+            const range = onAxis ? rangesRef.current.get(onAxis.id) : undefined;
             if (onAxis && range) {
                 const factor = Math.exp(dy * 0.002);
                 const anchor = range[0] + ((g.bottom - py) / (g.bottom - g.top)) * (range[1] - range[0]);
-                current.onAxis(onAxis, [anchor - (anchor - range[0]) * factor, anchor + (range[1] - anchor) * factor]);
+                current.onAxis(onAxis.id, [
+                    anchor - (anchor - range[0]) * factor,
+                    anchor + (range[1] - anchor) * factor,
+                ]);
             } else if (event.shiftKey || Math.abs(dx) > Math.abs(dy)) {
                 const shift = ((event.shiftKey ? dy || dx : dx) / (g.right - g.left)) * span;
                 current.onWindow([start + shift, end + shift], true);
@@ -744,7 +770,7 @@ export function Plot(props: Props) {
         const t = timeAt(px);
         let best: { distance: number; anchor: Anchor } | null = null;
         for (const one of props.series) {
-            const range = ranges[one.axis];
+            const range = ranges.get(one.axis);
             const point = one.samples && range ? sampleAt(one.samples, t, one.placement) : null;
             if (!point || !range || Number.isNaN(point.y)) {
                 continue;
@@ -759,31 +785,32 @@ export function Plot(props: Props) {
         if (best) {
             return best.anchor;
         }
-        const side: Side | null = ranges.left ? "left" : ranges.right ? "right" : null;
-        return side ? { t, y: valueAt(ranges[side]!, py), axis: side } : null;
+        const [first] = ranges; // else on the first axis
+        return first ? { t, y: valueAt(first[1], py), axis: first[0] } : null;
     }
 
     function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
         const { px, py } = place(event);
-        const onAxis: Side | null = px < geometry.left ? "left" : px > geometry.right ? "right" : null;
+        const beside = px < geometry.left || px > geometry.right; // where the axes are
+        const onAxis = axisAt(props.axes, geometry, px);
         const pan =
             event.button === 1 || event.button === 2 || (event.button === 0 && (event.ctrlKey || event.metaKey));
         if (!pan && event.button !== 0) {
             return;
         }
-        if (props.placing && !pan && !onAxis) {
+        if (props.placing && !pan && !beside) {
             const anchor = anchorAt(px, py);
             if (anchor) {
                 props.onPlace(anchor, event.clientX, event.clientY);
             }
             return;
         }
-        const hit = pan || onAxis ? null : hitAt(px, py);
+        const hit = pan || beside ? null : hitAt(px, py);
         const note = hit ? props.notes.find((one) => one.id === hit.id) : undefined;
         const box = hit?.kind === "tip" ? hits.current.notes.find((one) => one.id === hit.id)?.box : undefined;
         const mode: Drag["mode"] = hit
             ? hit.kind
-            : onAxis && ranges[onAxis]
+            : onAxis && ranges.has(onAxis.id)
               ? "axis"
               : pan
                 ? "pan"
@@ -795,13 +822,13 @@ export function Plot(props: Props) {
             target: hit?.id ?? null,
             offset: { dx: note?.dx ?? 0, dy: note?.dy ?? 0 },
             center: box ? { x: box.x + box.w / 2, y: box.y + box.h / 2 } : null,
-            side: onAxis ?? "left",
+            axis: onAxis?.id ?? null,
             x0: px,
             y0: py,
             x: px,
             y: py,
             window: props.window,
-            range: onAxis ? ranges[onAxis] : null,
+            range: onAxis ? (ranges.get(onAxis.id) ?? null) : null,
             moved: false,
         };
         event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -841,7 +868,7 @@ export function Plot(props: Props) {
             });
         } else if (current.mode === "tip" && current.target) {
             const anchor = anchorAt(px, py);
-            const range = anchor ? ranges[anchor.axis] : null;
+            const range = anchor ? ranges.get(anchor.axis) : undefined;
             if (anchor && range) {
                 // The label stays put: its offset from the new tip is where its box was.
                 const [start, end] = props.window;
@@ -860,10 +887,10 @@ export function Plot(props: Props) {
             const shift =
                 (-(px - current.x0) / (geometry.right - geometry.left)) * (current.window[1] - current.window[0]);
             props.onWindow([current.window[0] + shift, current.window[1] + shift], false);
-        } else if (current.mode === "axis" && current.range) {
+        } else if (current.mode === "axis" && current.range && current.axis) {
             const [low, high] = current.range;
             const shift = ((py - current.y0) / (geometry.bottom - geometry.top)) * (high - low);
-            props.onAxis(current.side, [low + shift, high + shift]);
+            props.onAxis(current.axis, [low + shift, high + shift]);
         } else {
             props.onCursor(timeAt(px));
             redrawOverlay();
@@ -881,12 +908,9 @@ export function Plot(props: Props) {
             const [a, b] = [timeAt(current.x0), timeAt(px)];
             props.onWindow([Math.min(a, b), Math.max(a, b)], true);
             if (current.mode === "box" && Math.abs(py - current.y0) > 4) {
-                for (const side of ["left", "right"] as const) {
-                    const range = ranges[side];
-                    if (range) {
-                        const [c, d] = [valueAt(range, current.y0), valueAt(range, py)];
-                        props.onAxis(side, [Math.min(c, d), Math.max(c, d)]);
-                    }
+                for (const [axis, range] of ranges) {
+                    const [c, d] = [valueAt(range, current.y0), valueAt(range, py)];
+                    props.onAxis(axis, [Math.min(c, d), Math.max(c, d)]);
                 }
             }
         }
@@ -938,8 +962,7 @@ export function Plot(props: Props) {
                         return;
                     }
                     props.onWindow(null, true);
-                    props.onAxis("left", null);
-                    props.onAxis("right", null);
+                    props.axes.forEach((axis) => props.onAxis(axis.id, null));
                 }}
                 onContextMenu={(event) => event.preventDefault()}
             />

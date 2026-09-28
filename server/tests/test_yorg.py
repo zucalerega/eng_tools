@@ -450,6 +450,111 @@ def test_folders_keep_datasets_in_order(team):
     assert team.client.get(f"/api/yorg/datasets/{mine['id']}", headers=alice).json()["folder_id"] is None
 
 
+def two_tests() -> str:
+    """Six seconds of a file with two tests in it: the valve opens from 1 s to 2 s, and from 3.5 s to 4.5 s."""
+    lines = ["Time,Valve,PT,Slow,Sequence,Late"]
+    for i in range(60):
+        valve = "OPEN" if 10 <= i < 20 or 35 <= i < 45 else "CLOSED"
+        step = {10: "IGNITION", 20: "SHUTDOWN"}.get(i, "")
+        lines.append(f"{i / 10},{valve},{i},{i if i % 10 == 0 else ''},{step},{i if i >= 50 else ''}")
+    return "\n".join(lines) + "\n"
+
+
+def test_a_file_of_several_tests_splits_into_datasets(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    source = upload(team, alice, two_tests(), filename="cold flows.csv")
+    folder = team.client.post("/api/yorg/folders", json={"name": "Cold flows"}, headers=bob).json()
+    pieces = [
+        {"name": "Cold flow 1", "start": 0.8, "end": 2.3, "zero": 1.0},  # T0 where the valve opens
+        {"name": "Cold flow 2", "start": 3.3, "end": 4.8, "zero": 3.5},
+    ]
+    url = f"/api/yorg/datasets/{source['id']}/split"
+    made = team.client.post(url, json={"pieces": pieces, "folder_id": folder["id"]}, headers=bob)
+    assert made.status_code == 201, made.text
+    # Anyone can split a dataset: the pieces are theirs, like an upload, and the dataset split doesn't change.
+    assert [(d["name"], d["folder_id"], d["created_by"]["email"]) for d in made.json()] == [
+        ("Cold flow 1", folder["id"], "bob@x.test"),
+        ("Cold flow 2", folder["id"], "bob@x.test"),
+    ]
+    first = team.client.get(f"/api/yorg/datasets/{made.json()[0]['id']}", headers=bob).json()
+    assert (first["rows"], first["filename"], first["time_kind"], first["start_epoch"]) == (
+        16,
+        "cold flows.csv",
+        "relative",
+        None,
+    )
+    assert (first["t_min"], first["t_max"]) == pytest.approx((-0.2, 1.3))
+    assert first["read_info"]["split_from"] == {
+        "dataset": source["id"],
+        "name": "cold flows",
+        "start": 0.8,
+        "end": 2.3,
+        "zero": 1.0,
+    }
+    assert first["size"] == (16 * 3 + 2 * 2) * 8  # its arrays: times, Valve, PT, and Slow's times and values
+
+    # Its samples, from its zero: states keep their names, a slower sensor its own times, and events come along.
+    pt = channel(first, "PT")
+    assert (pt["count"], pt["min"], pt["max"], pt["mean"]) == (16, 8.0, 23.0, 15.5)
+    assert (pt["t_min"], pt["t_max"]) == pytest.approx((-0.2, 1.3))
+    assert samples(team, bob, first, "PT")[:3] == [(pytest.approx(-0.2), 8.0), (pytest.approx(-0.1), 9.0), (0.0, 10.0)]
+    valve = channel(first, "Valve")
+    assert (valve["kind"], valve["labels"]) == ("state", ["CLOSED", "OPEN"])
+    assert [value for _, value in samples(team, bob, first, "Valve")] == [0.0] * 2 + [1.0] * 10 + [0.0] * 4
+    assert samples(team, bob, first, "Slow") == [(0.0, 10.0), (pytest.approx(1.0), 20.0)]
+    assert channel(first, "Slow")["time"] == "c3.t.f64"
+    assert first["events"] == [
+        {"t": 0.0, "label": "IGNITION", "channel": "Sequence"},
+        {"t": pytest.approx(1.0), "label": "SHUTDOWN", "channel": "Sequence"},
+    ]
+    # A channel without a sample in the span is left out, and said so.
+    assert [c["name"] for c in first["channels"]] == ["Valve", "PT", "Slow"]
+    assert first["warnings"] == ["Left out Late: it has no samples in this span."]
+    second = team.client.get(f"/api/yorg/datasets/{made.json()[1]['id']}", headers=bob).json()
+    assert (second["events"], samples(team, bob, second, "Slow")) == ([], [(pytest.approx(0.5), 40.0)])
+    assert team.client.get(f"/api/yorg/datasets/{source['id']}", headers=bob).json()["rows"] == 60
+
+    # A piece has no file of its own to read again: its dataset's is read again, and split again.
+    again = team.client.post(f"/api/yorg/datasets/{first['id']}/read", json={}, headers=bob)
+    assert (again.status_code, again.json()["error"]) == (409, "split")
+    assert team.client.get(f"/api/yorg/datasets/{first['id']}/source", headers=bob).status_code == 404
+    assert team.client.get(f"/api/yorg/datasets/{source['id']}/source", headers=bob).status_code == 200
+
+    # All or none: a span without samples makes nothing. And spans that end before they start aren't spans.
+    before = len(team.client.get("/api/yorg/datasets", headers=bob).json())
+    empty = team.client.post(url, json={"pieces": [pieces[0], {"name": "Nothing", "start": 7, "end": 8}]}, headers=bob)
+    assert (empty.status_code, empty.json()["error"]) == (422, "empty_piece")
+    assert "Nothing" in empty.json()["message"]
+    backwards = team.client.post(url, json={"pieces": [{"name": "Back", "start": 2, "end": 1}]}, headers=bob)
+    assert backwards.status_code == 422
+    assert team.client.post(url, json={"pieces": []}, headers=bob).status_code == 422
+    assert team.client.post(url, json={"pieces": pieces, "folder_id": 999}, headers=bob).status_code == 404
+    assert len(team.client.get("/api/yorg/datasets", headers=bob).json()) == before
+
+    # A deleted dataset isn't split until it's restored.
+    team.client.delete(f"/api/yorg/datasets/{source['id']}", headers=alice)
+    assert team.client.post(url, json={"pieces": pieces}, headers=bob).status_code == 409
+
+
+def test_a_dated_piece_keeps_its_times_of_day(team):
+    alice = team.member("alice@x.test")
+    rows = [f"2026-09-20T14:32:{i // 2:02d}.{5 * (i % 2)}00-04:00,{i}" for i in range(10)]
+    source = upload(team, alice, "Timestamp,PT\n" + "\n".join(rows) + "\n")
+    url = f"/api/yorg/datasets/{source['id']}/split"
+
+    def split(piece: dict) -> dict:
+        [made] = team.client.post(url, json={"pieces": [piece]}, headers=alice).json()
+        return team.client.get(f"/api/yorg/datasets/{made['id']}", headers=alice).json()
+
+    piece = split({"name": "Test", "start": 1, "end": 3, "zero": 2})
+    assert (piece["time_kind"], piece["start_epoch"]) == ("absolute", source["start_epoch"] + 2)
+    assert samples(team, alice, piece, "PT") == [(-1.0, 2.0), (-0.5, 3.0), (0.0, 4.0), (0.5, 5.0), (1.0, 6.0)]
+    # Without a zero, times are as they were.
+    same = split({"name": "As is", "start": 1, "end": 1.5})
+    assert (same["start_epoch"], same["t_min"], same["t_max"]) == (source["start_epoch"], 1.0, 1.5)
+
+
 def test_calculated_channels_are_the_teams_and_changed_by_their_owner(team):
     alice = team.member("alice@x.test")
     bob = team.member("bob@x.test")

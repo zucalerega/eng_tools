@@ -936,3 +936,239 @@ main.main-full {
     background: var(--accent-soft);
     color: var(--accent);
 }
+
+/* Masks: where a test on channels holds. In the channel list, each with its color, how it holds, and its toggles. */
+.yorg-masks {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+
+.yorg-masks h2 {
+    margin: 0.25rem 0 0.4rem;
+}
+
+.yorg-masks ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.yorg-masks li {
+    margin-bottom: 0.45rem;
+    font-size: 0.82rem;
+}
+
+.yorg-mask-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.yorg-mask-name {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 0.15rem 0.3rem;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 0.82rem;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yorg-mask-name:hover {
+    background: var(--row-hover);
+}
+
+.yorg-mask-row .button-small[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.yorg-swatch {
+    display: inline-block;
+    flex: none;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 3px;
+}
+
+.yorg-mask-held {
+    margin: 0.1rem 0 0 1.5rem;
+    font-size: 0.78rem;
+}
+
+.yorg-masks .field-problem {
+    margin: 0.15rem 0 0 1.5rem;
+    font-size: 0.78rem;
+}
+
+/* Making a mask: a test put together from a channel, a comparison, and a value; its color. */
+.yorg-test-builder,
+.yorg-mask-color {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.6rem 0;
+    padding: 0.5rem 0.65rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.yorg-test-builder legend,
+.yorg-mask-color legend {
+    padding: 0 0.3rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.yorg-test-builder select,
+.yorg-test-builder input {
+    min-width: 0;
+    max-width: 14rem;
+}
+
+.yorg-test-builder input {
+    width: 7rem;
+}
+
+.yorg-swatch-choice {
+    display: inline-flex;
+    padding: 0.2rem;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.yorg-swatch-choice input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.yorg-swatch-choice .yorg-swatch {
+    width: 1.3rem;
+    height: 1.3rem;
+}
+
+.yorg-swatch-choice:has(input:checked) {
+    outline: 2px solid var(--accent);
+}
+
+.yorg-swatch-choice:has(input:focus-visible) {
+    outline: 2px dashed var(--accent);
+}
+
+.yorg-mask-dialog > .check {
+    display: flex;
+    margin: 0.35rem 0;
+}
+
+/* Splitting a file into its tests: how to find them, where they go, and a look at them first. */
+.dialog:has(.yorg-split) {
+    width: min(48rem, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+}
+
+.yorg-split fieldset {
+    margin: 0 0 0.6rem;
+    padding: 0.5rem 0.75rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.yorg-split legend {
+    padding: 0 0.3rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.yorg-split .check {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.3rem 0;
+}
+
+.yorg-split .field {
+    margin: 0.5rem 0;
+}
+
+.yorg-split-finding {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1rem;
+    margin: 0.2rem 0 0.5rem 1.6rem;
+    font-size: 0.85rem;
+}
+
+.yorg-seconds {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.yorg-seconds input {
+    width: 4rem;
+    height: 1.8rem;
+}
+
+.yorg-split-timeline {
+    position: relative;
+    height: 2.4rem;
+    margin: 0.75rem 0 0.4rem;
+    border-radius: var(--radius);
+    background: var(--row-hover);
+    overflow: hidden;
+}
+
+.yorg-split-run {
+    position: absolute;
+    bottom: 0;
+    height: 0.35rem;
+    opacity: 0.8;
+}
+
+.yorg-split-piece {
+    position: absolute;
+    top: 0.3rem;
+    bottom: 0.55rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    overflow: hidden;
+}
+
+.yorg-split-skipped {
+    border-style: dashed;
+    background: none;
+    opacity: 0.5;
+}
+
+.yorg-split-list {
+    max-height: 16rem;
+    overflow: auto;
+}
+
+.yorg-split-list td,
+.yorg-split-list th {
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
+    font-size: 0.85rem;
+}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { forDataset, newLayout, readLayout, reduce, type Layout, type Note } from "../src/yorg/layout";
+import { cutAt, edgeOf, intersect, measure, readTimes, runsOf, testsOf, within } from "../src/yorg/masks";
 import { arrowStart, placeNotes } from "../src/yorg/Plot";
 import { lowerBound, MinMax, sampleAt, Samples, trace, upperBound, visibleRange } from "../src/yorg/samples";
 import {
@@ -218,5 +219,109 @@ describe("labels on plots", () => {
         expect(placeNotes([{ ...note, t: 20 }], measure, g, ranges, [0, 10])).toEqual([]);
         // An arrow to a point inside its box isn't drawn.
         expect(arrowStart({ x: 0, y: 0, w: 100, h: 20 }, { x: 50, y: 10 })).toBeNull();
+    });
+});
+
+describe("masks", () => {
+    const samples = (times: number[], values: number[]) =>
+        new Samples(new Float64Array(times), new Float64Array(values));
+    const pairs = (runs: Float64Array) =>
+        Array.from({ length: runs.length / 2 }, (_, r) => [runs[2 * r], runs[2 * r + 1]]);
+
+    test("hold where a test isn't 0 and isn't missing, from the first sample that holds to the last", () => {
+        const valve = samples([0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 1, 0, 1, NaN, 1, 1]);
+        expect(pairs(runsOf(valve))).toEqual([
+            [1, 2],
+            [4, 4],
+            [6, 7],
+        ]);
+        // A pause in logging ends a run: samples every 0.1 s, then nothing for 5 s.
+        const times = [...Array.from({ length: 30 }, (_, i) => i / 10), 8, 8.1, 8.2];
+        const paused = runsOf(
+            samples(
+                times,
+                times.map(() => 1),
+            ),
+        );
+        expect(pairs(paused).map(([start, end]) => [start, Number(end!.toFixed(6))])).toEqual([
+            [0, 2.9],
+            [8, 8.2],
+        ]);
+        expect(measure(runsOf(valve))).toEqual({ count: 3, total: 2 });
+    });
+
+    test("go together, and hide what's outside them", () => {
+        const a = Float64Array.from([0, 4, 6, 10]);
+        const b = Float64Array.from([2, 7, 9, 12]);
+        expect(pairs(intersect(a, b))).toEqual([
+            [2, 4],
+            [6, 7],
+            [9, 10],
+        ]);
+        const kept = within(samples([0, 1, 2, 3, 4, 5, 6, 7], [10, 11, 12, 13, 14, 15, 16, 17]), b);
+        expect([...kept.values].map((value) => (Number.isNaN(value) ? null : value))).toEqual([
+            null,
+            null,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+        ]);
+        // The axes fit what's left.
+        expect(kept.index.range(0, 8)).toEqual([12, 17]);
+    });
+
+    test("find a file's tests: joined when close, blips left out, padded, and inside the file", () => {
+        const runs = Float64Array.from([1, 2, 2.3, 3, 10, 10.05, 20, 25]);
+        const finding = { before: 1, after: 2, join: 0.5, shortest: 0.1 };
+        expect(testsOf(runs, [0, 26], finding)).toEqual([
+            { start: 0, end: 5, run: [1, 3] }, // two runs 0.3 s apart are one test
+            { start: 19, end: 26, run: [20, 25] }, // padded only to the file's end
+        ]);
+        expect(testsOf(runs, [0, 26], { ...finding, join: 0, shortest: 0 })).toHaveLength(4);
+    });
+
+    test("cut at times, counting each piece's time from where its mask starts holding in it", () => {
+        const [test] = testsOf(Float64Array.from([10, 20]), [0, 100], { before: 2, after: 2, join: 0, shortest: 0 });
+        const pieces = cutAt([test!], [15, 5, 15, 30]); // outside, repeated, and out of order
+        expect(pieces.map((piece) => [piece.start, piece.end, edgeOf(piece)])).toEqual([
+            [8, 15, 10],
+            [15, 22, 15], // it holds from its start
+        ]);
+        // Before the run starts, it never holds in the piece.
+        expect(edgeOf({ start: 8, end: 9, run: [10, 20] })).toBeNull();
+        expect(edgeOf({ start: 0, end: 50, run: null })).toBeNull();
+        // The whole file, cut at times typed.
+        expect(cutAt([{ start: 0, end: 10, run: null }], readTimes("2.5, 6") as number[])).toEqual([
+            { start: 0, end: 2.5, run: null },
+            { start: 2.5, end: 6, run: null },
+            { start: 6, end: 10, run: null },
+        ]);
+        expect(readTimes("1; 2 3,4")).toEqual([1, 2, 3, 4]);
+        expect(readTimes("1, two")).toBe("two isn't a time: write seconds, like 12.5, 30");
+    });
+
+    test("are kept in the layout, and read back from it", () => {
+        let layout = newLayout(1);
+        const mask = {
+            id: "m1",
+            name: "Valve open",
+            expression: "[MOV-OX] == 1",
+            color: "#2ca25f",
+            shade: true,
+            hide: false,
+        };
+        layout = reduce(layout, { type: "addMask", mask });
+        layout = reduce(layout, { type: "changeMask", mask: "m1", change: { hide: true, name: "Main valve open" } });
+        expect(layout.masks).toEqual([{ ...mask, hide: true, name: "Main valve open" }]);
+        expect(readLayout(JSON.parse(JSON.stringify(layout)), 1).masks).toEqual(layout.masks);
+        // One without a test is left out; the rest get what they're missing.
+        const read = readLayout({ masks: [{ name: "Nothing" }, { expression: "[PT] > 5", color: "red" }] }, 1).masks;
+        expect(read.map(({ id: _, ...rest }) => rest)).toEqual([
+            { name: "Mask 2", expression: "[PT] > 5", color: "#2ca25f", shade: true, hide: false },
+        ]);
+        expect(reduce(layout, { type: "removeMask", mask: "m1" }).masks).toEqual([]);
     });
 });

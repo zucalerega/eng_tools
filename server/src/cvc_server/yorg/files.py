@@ -3,7 +3,22 @@
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
+
+
+def _move(source: Path, target: Path) -> None:
+    """os.replace, trying again for a few seconds on Windows, which won't move a file (or a folder with one in it) while
+    something has it open: a virus scanner, or the search indexer, looking at what was just written."""
+    for pause in (0.05, 0.1, 0.2, 0.4, 0.8, 1.6):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(pause)
+    os.replace(source, target)
 
 
 class DataFiles:
@@ -35,10 +50,11 @@ class DataFiles:
 
     def keep_source(self, dataset_id: int, upload: Path) -> None:
         self.folder(dataset_id).mkdir(parents=True, exist_ok=True)
-        os.replace(upload, self.source(dataset_id))
+        _move(upload, self.source(dataset_id))
 
     def keep_data(self, dataset_id: int, work: Path, version: str) -> None:
-        os.replace(work, self.data(dataset_id, version))
+        self.folder(dataset_id).mkdir(parents=True, exist_ok=True)  # a piece of another dataset has no upload
+        _move(work, self.data(dataset_id, version))
 
     def drop(self, folder: Path) -> None:
         """Delete a read's arrays (replaced by a newer read, or from a read that failed). The upload stays."""

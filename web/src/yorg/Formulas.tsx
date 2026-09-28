@@ -233,9 +233,11 @@ export function FormulaDialog({
                     <p>
                         Functions: <code>abs sqrt exp ln log10 sin cos tan round floor ceil</code>;{" "}
                         <code>min max avg</code> of any number of values; <code>if(test, value, otherwise)</code>;{" "}
-                        <code>where(test, value)</code> (nothing where the test fails); <code>ddt(x)</code>, the rate of
-                        change per second; <code>integral(x)</code>; <code>smooth(x, seconds)</code>. <code>t</code> is
-                        the time, and <code>pi</code>, <code>e</code>, and <code>g0</code> (9.80665) are there too.
+                        <code>where(test, value)</code> (nothing where the test fails); <code>and(a, b, …)</code>,{" "}
+                        <code>or(a, b, …)</code>, <code>not(test)</code>, and <code>between(x, low, high)</code> for
+                        tests; <code>ddt(x)</code>, the rate of change per second; <code>integral(x)</code>;{" "}
+                        <code>smooth(x, seconds)</code>. <code>t</code> is the time, and <code>pi</code>, <code>e</code>
+                        , and <code>g0</code> (9.80665) are there too.
                     </p>
                     <ul className="plain">
                         {EXAMPLES.map(([example, meaning]) => (

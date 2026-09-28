@@ -320,6 +320,7 @@ function About({ detail }: { detail: DatasetDetail }) {
     const [problem, setProblem] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
     const info = detail.read_info;
+    const piece = info.split_from ?? null; // a test split out of another dataset: it has no file of its own
     const change = async (work: () => Promise<unknown>) => {
         setProblem(null);
         try {
@@ -339,9 +340,11 @@ function About({ detail }: { detail: DatasetDetail }) {
                             Plot it
                         </Link>
                     )}
-                    <a className="button" href={yorg.sourceUrl(detail.id)} download>
-                        Download {detail.filename}
-                    </a>
+                    {!piece && (
+                        <a className="button" href={yorg.sourceUrl(detail.id)} download>
+                            Download {detail.filename}
+                        </a>
+                    )}
                     {detail.can_change &&
                         (detail.deleted_at ? (
                             <button type="button" onClick={() => void change(() => yorg.restore(detail.id))}>
@@ -366,9 +369,18 @@ function About({ detail }: { detail: DatasetDetail }) {
             )}
             {!detail.can_change && detail.description && <p className="yorg-description">{detail.description}</p>}
             <dl className="yorg-facts">
-                <Fact label="File">
-                    {detail.filename} <span className="muted">({formatSize(detail.size)})</span>
-                </Fact>
+                {piece ? (
+                    <Fact label="Split from">
+                        <Link to={aboutUrl(piece.dataset)}>{piece.name}</Link>: {formatValue(piece.start)} s to{" "}
+                        {formatValue(piece.end)} s
+                        {piece.zero !== null ? `, with time from ${formatValue(piece.zero)} s` : ""}{" "}
+                        <span className="muted">({formatSize(detail.size)})</span>
+                    </Fact>
+                ) : (
+                    <Fact label="File">
+                        {detail.filename} <span className="muted">({formatSize(detail.size)})</span>
+                    </Fact>
+                )}
                 <Fact label="Added">
                     {detail.created_by?.name ?? "—"} on {formatTime(detail.created_at)}
                 </Fact>
@@ -399,7 +411,7 @@ function About({ detail }: { detail: DatasetDetail }) {
             </dl>
             {detail.warnings.length > 0 && (
                 <>
-                    <h2>While reading it</h2>
+                    <h2>{piece ? "While splitting it" : "While reading it"}</h2>
                     <ul className="yorg-warning-list">
                         {detail.warnings.map((warning) => (
                             <li key={warning}>{warning}</li>
@@ -407,7 +419,7 @@ function About({ detail }: { detail: DatasetDetail }) {
                     </ul>
                 </>
             )}
-            {detail.can_change && !detail.deleted_at && <ReadSettings detail={detail} />}
+            {detail.can_change && !detail.deleted_at && !piece && <ReadSettings detail={detail} />}
             {detail.channels.length > 0 && (
                 <>
                     <h2>Channels</h2>

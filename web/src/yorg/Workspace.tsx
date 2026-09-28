@@ -17,6 +17,8 @@ import {
     formulas as loadFormulas,
     dataset as loadDataset,
     samples as loadSamples,
+    masked,
+    maskRuns,
     useLoaded,
     type Loaded,
 } from "./data";
@@ -28,15 +30,26 @@ import {
     type Action,
     type AxisSpec,
     type Layout,
+    type Mask,
     type Note,
     type PanelSpec,
     type SeriesSpec,
     type Side,
 } from "./layout";
-import { Plot, type Anchor, type MenuTarget, type PlotMark, type PlotSeries, type TimeAxis } from "./Plot";
+import { MaskDialog } from "./MaskDialog";
+import {
+    Plot,
+    type Anchor,
+    type MenuTarget,
+    type PlotMark,
+    type PlotSeries,
+    type Shading,
+    type TimeAxis,
+} from "./Plot";
 import { sampleAt, type Placement, type Samples } from "./samples";
 import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "./scale";
 import { Sidebar } from "./Sidebar";
+import { SplitDialog } from "./Split";
 
 // A page of plots: the channels on the left, and panels stacked on one time axis, each with its legend. Every
 // panel shows the same time window and the same cursor.
@@ -60,6 +73,22 @@ export interface Resolved {
 export const CHANNEL_TYPE = "application/x-yorg-channel"; // {dataset, channel, formula}, from the channel list
 export const SERIES_TYPE = "application/x-yorg-series"; // {panel, series}, from a legend
 const T0_MARK = "t0"; // T0's line, dragged like a marker (whose ids are newId's, never this)
+
+/**
+ * A series with its samples outside the hiding masks left out (where they don't hold in its own dataset). Until the
+ * masks are worked out it has none, rather than everything and then less; where they can't be (its dataset hasn't a
+ * channel they use), it's whole, and the masks' list says why.
+ */
+function hideOutside(one: Resolved, hide: readonly string[]): Resolved {
+    if (hide.length === 0 || !one.samples || !one.detail) {
+        return one;
+    }
+    const runs = maskRuns(one.detail, hide);
+    if (runs.status === "ready") {
+        return { ...one, samples: masked(one.samples, runs.value) };
+    }
+    return runs.status === "loading" ? { ...one, samples: null, loading: true } : one;
+}
 
 function resolve(
     layout: Layout,
@@ -228,16 +257,18 @@ export function Workspace({
 
     // These depend on what's loaded as well as on the layout: version counts loads.
     const formulaList = loadFormulas();
+    const hide = layout.masks.filter((mask) => mask.hide).map((mask) => mask.expression);
+    const hideKey = hide.join("\n");
     const resolved = useMemo(() => {
         const byPanel = new Map<string, Resolved[]>();
         for (const panel of layout.panels) {
             byPanel.set(
                 panel.id,
-                panel.series.map((spec) => resolve(layout, panel, spec, several, formulaList)),
+                panel.series.map((spec) => hideOutside(resolve(layout, panel, spec, several, formulaList), hide)),
             );
         }
         return byPanel;
-    }, [layout.panels, layout.datasets, several, version]);
+    }, [layout.panels, layout.datasets, several, version, hideKey]);
 
     const full = useMemo((): [number, number] => {
         let start = Infinity;
@@ -336,6 +367,18 @@ export function Workspace({
         return found;
     }, [layout.markers, layout.events, layout.t0, layout.datasets, primary]);
 
+    // Where the masks hold, shaded: in the first dataset (another's, compared with it, would cover the same tests).
+    const shading = useMemo(() => {
+        const found: Shading[] = [];
+        for (const mask of layout.masks) {
+            const runs = mask.shade && primary ? maskRuns(primary, [mask.expression]) : null;
+            if (runs?.status === "ready") {
+                found.push({ runs: runs.value, shift: shiftOf(layout, primary!.id), color: mask.color });
+            }
+        }
+        return found;
+    }, [layout.masks, layout.datasets, primary, version]);
+
     const plotted = useMemo(() => {
         const byPanel = new Map<string, PlotSeries[]>();
         for (const [panel, list] of resolved) {
@@ -395,6 +438,9 @@ export function Workspace({
 
     const addMarker = (at: number) =>
         dispatch({ type: "addMarker", t: at, label: `Marker ${layout.markers.length + 1}` });
+    // A mask being made (mask null) or changed, and splitting the file into its tests.
+    const [maskEditing, setMaskEditing] = useState<{ mask: Mask | null } | null>(null);
+    const [splitting, setSplitting] = useState(false);
 
     // Keys, when you're not typing: arrows pan and zoom, and so on (the Keys button lists them).
     const keys = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -467,6 +513,7 @@ export function Workspace({
                 plotted={everyResolved}
                 view={view}
                 time={time}
+                onEditMask={(mask) => setMaskEditing({ mask })}
             />
             <section className="yorg-main" aria-label="Plots">
                 <div className="yorg-toolbar">
@@ -521,6 +568,22 @@ export function Workspace({
                         >
                             {placing ? "Click a plot…" : "Label"}
                         </button>
+                        <button
+                            type="button"
+                            disabled={!primary}
+                            onClick={() => setMaskEditing({ mask: null })}
+                            title="Where a test on channels holds, like a valve open or a pressure over its redline: shade the plots there, or hide data everywhere else"
+                        >
+                            Mask
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!primary}
+                            onClick={() => setSplitting(true)}
+                            title="Make a dataset of each test in this file: where a mask holds, or between times you choose"
+                        >
+                            Split
+                        </button>
                         <OptionsMenu layout={layout} dispatch={dispatch} time={time} primary={primary} />
                         <MenuButton
                             label="Export"
@@ -562,6 +625,7 @@ export function Workspace({
                                 window: view,
                                 time: time.axis,
                                 marks,
+                                shading,
                                 cursor,
                                 readouts,
                                 rightGutter,
@@ -646,6 +710,31 @@ export function Workspace({
                         { label: "Show all", onSelect: () => setWindow(null, true) },
                     ]}
                 />
+            )}
+            {maskEditing && primary && (
+                <MaskDialog
+                    mask={maskEditing.mask}
+                    detail={primary}
+                    count={layout.masks.length}
+                    onSave={(mask) => {
+                        dispatch(
+                            maskEditing.mask
+                                ? { type: "changeMask", mask: mask.id, change: mask }
+                                : { type: "addMask", mask },
+                        );
+                        setMaskEditing(null);
+                    }}
+                    onRemove={() => {
+                        if (maskEditing.mask) {
+                            dispatch({ type: "removeMask", mask: maskEditing.mask.id });
+                        }
+                        setMaskEditing(null);
+                    }}
+                    onClose={() => setMaskEditing(null)}
+                />
+            )}
+            {splitting && primary && (
+                <SplitDialog detail={primary} layout={layout} at={time.at} onClose={() => setSplitting(false)} />
             )}
             {editing && (
                 <NoteEditor
@@ -978,6 +1067,7 @@ interface PlotBits {
     window: [number, number];
     time: TimeAxis;
     marks: PlotMark[];
+    shading: Shading[];
     cursor: number | null;
     readouts: ReadonlyMap<string, { x: number; y: number } | null>;
     rightGutter: boolean;
@@ -1130,6 +1220,7 @@ function PanelView({
                         window={plot.window}
                         time={plot.time}
                         marks={plot.marks}
+                        shading={plot.shading}
                         cursor={plot.cursor}
                         readouts={plot.readouts}
                         rightGutter={plot.rightGutter}

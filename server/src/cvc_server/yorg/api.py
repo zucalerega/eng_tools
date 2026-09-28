@@ -26,6 +26,7 @@ from .schemas import (
     FormulaOut,
     MoveIn,
     ReadOptionsIn,
+    SplitIn,
     ViewIn,
     ViewOut,
 )
@@ -156,6 +157,19 @@ def post_read(dataset_id: int, body: ReadOptionsIn, user: ActiveUser, db: DB, fi
     return _detail(db, datasets.read(db, user, files, dataset_id, body.options()), user)
 
 
+@router.post("/datasets/{dataset_id}/split", status_code=201)
+def post_split(dataset_id: int, body: SplitIn, user: ActiveUser, db: DB, files: Files) -> list[DatasetOut]:
+    """Make datasets of spans of this one (the tests in a file of several): each span's samples, counted from its zero.
+
+    All of them, or none (422) if a span has no samples. The dataset split doesn't change.
+    """
+    pieces = [
+        datasets.PieceSpec(name=piece.name, start=piece.start, end=piece.end, zero=piece.zero) for piece in body.pieces
+    ]
+    made = datasets.split(db, user, files, dataset_id, pieces, folder_id=body.folder_id)
+    return [DatasetOut.of(new, user) for new in made]
+
+
 @router.delete("/datasets/{dataset_id}")
 def delete_dataset(dataset_id: int, user: ActiveUser, db: DB) -> DatasetOut:
     """Delete a dataset. Its file and arrays are kept, so it can be restored."""
@@ -171,6 +185,8 @@ def post_restore(dataset_id: int, user: ActiveUser, db: DB) -> DatasetOut:
 def get_source(dataset_id: int, user: ActiveUser, db: DB, files: Files) -> FileResponse:
     """The file as it was uploaded."""
     dataset = datasets.dataset(db, dataset_id)
+    if split_from := dataset.read_info.get("split_from"):
+        raise NotFound(f"{dataset.name} was split from {split_from['name']}, and has no file of its own", code="split")
     return FileResponse(files.source(dataset.id), filename=dataset.filename, media_type="application/octet-stream")
 
 

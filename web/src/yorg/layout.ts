@@ -1,6 +1,6 @@
 // A plot layout: the datasets it draws from, its panels (stacked plots sharing one time axis), the channels in each,
-// and the time window, T0, and markers. It's plain JSON: saved views keep it as it is, and so does this browser for
-// each dataset you look at.
+// and the time window, T0, markers, and masks. It's plain JSON: saved views keep it as it is, and so does this browser
+// for each dataset you look at.
 
 export const PALETTE = [
     "#2f7ed8",
@@ -67,6 +67,19 @@ export interface Marker {
     label: string;
 }
 
+/**
+ * Where a test on channels holds, by their names (so it works for another test's data too): a valve open, a pressure
+ * over its redline. It can shade the plots where it holds, and hide data where it doesn't.
+ */
+export interface Mask {
+    id: string;
+    name: string;
+    expression: string; // like a calculated channel's: [MOV-OX] == 1, [PT-CHAMBER] > 450
+    color: string;
+    shade: boolean;
+    hide: boolean;
+}
+
 /** A dataset in the layout, and how far its times move along the time axis (to line up tests, say). */
 export interface DatasetRef {
     id: number;
@@ -80,6 +93,7 @@ export interface Layout {
     window: [number, number] | null; // what's in view; null: everything
     t0: number | null; // where the time axis reads 0 (ignition, say)
     markers: Marker[];
+    masks: Mask[];
     events: boolean; // show the datasets' events (a sequence's steps) as markers
     clock: boolean; // label time as time of day, for datasets that have one
 }
@@ -112,6 +126,7 @@ export function newLayout(dataset: number): Layout {
         window: null,
         t0: null,
         markers: [],
+        masks: [],
         events: true,
         clock: false,
     };
@@ -165,6 +180,9 @@ export type Action =
     | { type: "addMarker"; t: number; label: string }
     | { type: "changeMarker"; marker: string; change: Partial<Omit<Marker, "id">> }
     | { type: "removeMarker"; marker: string }
+    | { type: "addMask"; mask: Mask }
+    | { type: "changeMask"; mask: string; change: Partial<Omit<Mask, "id">> }
+    | { type: "removeMask"; mask: string }
     | { type: "addDataset"; dataset: number; shift: number }
     | { type: "removeDataset"; dataset: number }
     | { type: "shiftDataset"; dataset: number; shift: number }
@@ -281,6 +299,15 @@ export function reduce(layout: Layout, action: Action): Layout {
             };
         case "removeMarker":
             return { ...layout, markers: layout.markers.filter((marker) => marker.id !== action.marker) };
+        case "addMask":
+            return { ...layout, masks: [...layout.masks, action.mask] };
+        case "changeMask":
+            return {
+                ...layout,
+                masks: layout.masks.map((mask) => (mask.id === action.mask ? { ...mask, ...action.change } : mask)),
+            };
+        case "removeMask":
+            return { ...layout, masks: layout.masks.filter((mask) => mask.id !== action.mask) };
         case "addDataset":
             if (layout.datasets.some((ref) => ref.id === action.dataset)) {
                 return layout;
@@ -357,6 +384,20 @@ function note(value: unknown): Note | null {
     };
 }
 
+function mask(value: unknown, index: number): Mask | null {
+    if (!isObject(value) || !str(value.expression).trim()) {
+        return null;
+    }
+    return {
+        id: str(value.id) || newId(),
+        name: str(value.name).slice(0, 200) || `Mask ${index + 1}`,
+        expression: str(value.expression).slice(0, 2000),
+        color: /^#[0-9a-fA-F]{6}$/.test(str(value.color)) ? str(value.color) : PALETTE[3]!,
+        shade: value.shade !== false,
+        hide: value.hide === true,
+    };
+}
+
 function series(value: unknown, dataset: number): SeriesSpec | null {
     if (!isObject(value) || typeof value.channel !== "string") {
         return null;
@@ -412,6 +453,9 @@ export function readLayout(value: unknown, dataset: number): Layout {
             .filter(isObject)
             .filter((marker) => numOrNull(marker.t) !== null)
             .map((marker) => ({ id: str(marker.id) || newId(), t: num(marker.t, 0), label: str(marker.label) })),
+        masks: list(found.masks)
+            .map(mask)
+            .filter((entry) => entry !== null),
         events: found.events !== false,
         clock: found.clock === true,
     };

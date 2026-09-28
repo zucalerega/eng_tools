@@ -75,7 +75,7 @@ export function exportImage(
     image.toBlob((blob) => blob && download(blob, "yorg-plots.png"), "image/png");
 }
 
-/** Every sample in view of the plotted channels: a row for each time any of them has a sample. */
+/** Every sample in view of the plotted channels: a row for each time any of them has one (masks hide the rest). */
 export function exportCsv(
     layout: Layout,
     series: Resolved[],
@@ -112,14 +112,19 @@ export function exportCsv(
             break;
         }
         const row = [String(time.number(x))];
+        let any = false;
         for (const run of runs) {
             if (run.next < run.end && run.times[run.next]! + run.shift === x) {
                 const value = run.values[run.next]!;
                 row.push(Number.isNaN(value) ? "" : String(value * run.scale + run.offset));
+                any ||= !Number.isNaN(value);
                 run.next += 1;
             } else {
                 row.push("");
             }
+        }
+        if (!any) {
+            continue; // nothing here: every channel's missing, or hidden by a mask
         }
         chunk.push(row.join(","));
         if (chunk.length === 10_000) {

@@ -8,8 +8,9 @@ import { lowerBound, Samples } from "./samples";
 //
 // + - * / ^ and ( ), and comparisons (< > <= >= == !=), which give 1 or 0. Functions: abs sqrt exp ln log10 sin cos tan
 // round floor ceil; min max avg, of any number of values; if(test, a, b) and where(test, x) (x where test holds, else
-// nothing); ddt(x), the rate of change per second; integral(x), from the first sample; smooth(x, seconds), the average
-// over that long around each sample. Constants: pi, e, and g0 (9.80665). t is each sample's time, in seconds.
+// nothing); and(...), or(...), not(test), and between(x, low, high), for tests (masks: a valve open, a redline);
+// ddt(x), the rate of change per second; integral(x), from the first sample; smooth(x, seconds), the average over that
+// long around each sample. Constants: pi, e, and g0 (9.80665). t is each sample's time, in seconds.
 //
 // The channels are lined up on the times of the one with the most samples. The others are read between their samples
 // (on a straight line; states hold their value), and are missing outside their samples or across a pause in logging.
@@ -58,6 +59,10 @@ const ARGUMENTS: Record<string, [number, number]> = {
     avg: [1, 50],
     if: [3, 3],
     where: [2, 2],
+    and: [2, 50],
+    or: [2, 50],
+    not: [1, 1],
+    between: [3, 3],
     ddt: [1, 1],
     integral: [1, 1],
     smooth: [2, 2],
@@ -67,6 +72,8 @@ const USAGE: Record<string, string> = {
     if: "if(test, value, otherwise)",
     where: "where(test, value)",
     smooth: "smooth(value, seconds)",
+    not: "not(test)",
+    between: "between(value, low, high)",
 };
 
 // --- reading an expression ----------------------------------------------------------------------------------------
@@ -468,6 +475,29 @@ function combine(values: Value[], length: number, how: "min" | "max" | "avg"): V
     return out;
 }
 
+/**
+ * Whether every test holds (and) or any does (or), sample by sample: 1 or 0, or missing where that turns on a missing
+ * one (one that doesn't hold decides an and, whatever the others are; one that does, an or).
+ */
+function logic(tests: Value[], length: number, how: "and" | "or"): Float64Array {
+    const decides = how === "and" ? 0 : 1;
+    const out = new Float64Array(length);
+    for (let i = 0; i < length; i++) {
+        let result = 1 - decides;
+        for (const test of tests) {
+            const x = at(test, i);
+            if (Number.isNaN(x)) {
+                result = NaN;
+            } else if ((x ? 1 : 0) === decides) {
+                result = decides;
+                break;
+            }
+        }
+        out[i] = result;
+    }
+    return out;
+}
+
 function run(node: Node, times: Float64Array, inputs: ReadonlyMap<string, Float64Array>): Value {
     switch (node.kind) {
         case "number":
@@ -501,6 +531,20 @@ function run(node: Node, times: Float64Array, inputs: ReadonlyMap<string, Float6
                               : node.name === "if"
                                 ? at(third, i)
                                 : NaN;
+                    }
+                    return out;
+                }
+                case "and":
+                case "or":
+                    return logic(args, times.length, node.name);
+                case "not":
+                    return map1(first, (x) => (Number.isNaN(x) ? NaN : x ? 0 : 1));
+                case "between": {
+                    const out = new Float64Array(times.length);
+                    for (let i = 0; i < out.length; i++) {
+                        const [x, low, high] = [at(first, i), at(second, i), at(third, i)];
+                        const unknown = Number.isNaN(x) || Number.isNaN(low) || Number.isNaN(high);
+                        out[i] = unknown ? NaN : x >= low && x <= high ? 1 : 0;
                     }
                     return out;
                 }

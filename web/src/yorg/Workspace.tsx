@@ -22,16 +22,18 @@ import {
 } from "./data";
 import { exportCsv, exportImage } from "./export";
 import {
+    newId,
     PALETTE,
     shiftOf,
     type Action,
     type AxisSpec,
     type Layout,
+    type Note,
     type PanelSpec,
     type SeriesSpec,
     type Side,
 } from "./layout";
-import { Plot, type PlotMark, type PlotSeries, type TimeAxis } from "./Plot";
+import { Plot, type Anchor, type MenuTarget, type PlotMark, type PlotSeries, type TimeAxis } from "./Plot";
 import { sampleAt, type Placement, type Samples } from "./samples";
 import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "./scale";
 import { Sidebar } from "./Sidebar";
@@ -57,6 +59,7 @@ export interface Resolved {
 
 export const CHANNEL_TYPE = "application/x-yorg-channel"; // {dataset, channel, formula}, from the channel list
 export const SERIES_TYPE = "application/x-yorg-series"; // {panel, series}, from a legend
+const T0_MARK = "t0"; // T0's line, dragged like a marker (whose ids are newId's, never this)
 
 function resolve(
     layout: Layout,
@@ -316,6 +319,7 @@ export function Workspace({
 
     const marks = useMemo(() => {
         const found: PlotMark[] = layout.markers.map((marker) => ({
+            id: marker.id,
             x: marker.t,
             label: marker.label,
             kind: "marker",
@@ -327,7 +331,7 @@ export function Workspace({
             }
         }
         if (layout.t0 !== null) {
-            found.push({ x: layout.t0, label: "T0", kind: "t0" });
+            found.push({ id: T0_MARK, x: layout.t0, label: "T0", kind: "t0" });
         }
         return found;
     }, [layout.markers, layout.events, layout.t0, layout.datasets, primary]);
@@ -372,7 +376,22 @@ export function Workspace({
     }, [cursor, resolved]);
 
     const rightGutter = layout.panels.some((panel) => panel.series.some((series) => series.axis === "right"));
-    const [menu, setMenu] = useState<{ x: number; left: number; top: number } | null>(null);
+    const [menu, setMenu] = useState<{
+        x: number;
+        left: number;
+        top: number;
+        panel: string;
+        target: MenuTarget;
+    } | null>(null);
+    // Placing a label: the next click on a plot puts one there. Changing one: its editor, where it was clicked.
+    const [placing, setPlacing] = useState(false);
+    const [editing, setEditing] = useState<{ panel: string; note: string; left: number; top: number } | null>(null);
+    const addNote = (panel: string, anchor: Anchor, left: number, top: number) => {
+        const note: Note = { id: newId(), ...anchor, text: "", dx: 48, dy: -40, arrow: true };
+        dispatch({ type: "addNote", panel, note });
+        setPlacing(false);
+        setEditing({ panel, note: note.id, left, top });
+    };
 
     const addMarker = (at: number) =>
         dispatch({ type: "addMarker", t: at, label: `Marker ${layout.markers.length + 1}` });
@@ -420,6 +439,14 @@ export function Workspace({
             case "t":
                 dispatch({ type: "t0", t0: lastCursor.current ?? (view[0] + view[1]) / 2 });
                 return handled();
+            case "l":
+                setPlacing(!placing);
+                return handled();
+            case "Escape":
+                if (placing) {
+                    setPlacing(false);
+                    return handled();
+                }
         }
     };
     useEffect(() => {
@@ -482,9 +509,17 @@ export function Workspace({
                         <button
                             type="button"
                             onClick={() => addMarker(lastCursor.current ?? (view[0] + view[1]) / 2)}
-                            title="Add a marker at the last cursor (M)"
+                            title="Add a marker at the last cursor (M). Drag a marker to move it."
                         >
                             Marker
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={placing}
+                            onClick={() => setPlacing(!placing)}
+                            title="Click a plot to put a label there, with an arrow to the data (L). Drag labels to move them."
+                        >
+                            {placing ? "Click a plot…" : "Label"}
                         </button>
                         <OptionsMenu layout={layout} dispatch={dispatch} time={time} primary={primary} />
                         <MenuButton
@@ -533,7 +568,16 @@ export function Workspace({
                                 colors,
                                 onCursor,
                                 onWindow: setWindow,
-                                onMenu: (x, left, top) => setMenu({ x, left, top }),
+                                onMenu: (x, left, top, target) => setMenu({ x, left, top, target, panel: panel.id }),
+                                placing,
+                                onPlace: (anchor, left, top) => addNote(panel.id, anchor, left, top),
+                                onEditNote: (note, left, top) => setEditing({ panel: panel.id, note, left, top }),
+                                onMoveMark: (marker, x) =>
+                                    dispatch(
+                                        marker === T0_MARK
+                                            ? { type: "t0", t0: x }
+                                            : { type: "changeMarker", marker, change: { t: x } },
+                                    ),
                             }}
                         />
                     ))}
@@ -558,11 +602,67 @@ export function Workspace({
                     at={menu}
                     onClose={() => setMenu(null)}
                     items={[
+                        ...(menu.target.note
+                            ? [
+                                  {
+                                      label: "Change this label…",
+                                      onSelect: () =>
+                                          setEditing({
+                                              panel: menu.panel,
+                                              note: menu.target.note!,
+                                              left: menu.left,
+                                              top: menu.top,
+                                          }),
+                                  },
+                                  {
+                                      label: "Remove this label",
+                                      onSelect: () =>
+                                          dispatch({ type: "removeNote", panel: menu.panel, note: menu.target.note! }),
+                                  },
+                              ]
+                            : []),
+                        ...(menu.target.marker
+                            ? [
+                                  menu.target.marker === T0_MARK
+                                      ? { label: "Clear T0", onSelect: () => dispatch({ type: "t0", t0: null }) }
+                                      : {
+                                            label: "Remove this marker",
+                                            onSelect: () =>
+                                                dispatch({ type: "removeMarker", marker: menu.target.marker! }),
+                                        },
+                              ]
+                            : []),
+                        ...(menu.target.anchor
+                            ? [
+                                  {
+                                      label: "Add a label here",
+                                      onSelect: () => addNote(menu.panel, menu.target.anchor!, menu.left, menu.top),
+                                  },
+                              ]
+                            : []),
                         { label: "Add a marker here", onSelect: () => addMarker(menu.x) },
                         { label: "Set T0 here", onSelect: () => dispatch({ type: "t0", t0: menu.x }) },
                         { label: "Zoom out", onSelect: () => zoom(2) },
                         { label: "Show all", onSelect: () => setWindow(null, true) },
                     ]}
+                />
+            )}
+            {editing && (
+                <NoteEditor
+                    at={editing}
+                    note={
+                        layout.panels
+                            .find((panel) => panel.id === editing.panel)
+                            ?.notes.find((note) => note.id === editing.note) ?? null
+                    }
+                    onChange={(change) =>
+                        dispatch({ type: "changeNote", panel: editing.panel, note: editing.note, change })
+                    }
+                    onRemove={() => {
+                        dispatch({ type: "removeNote", panel: editing.panel, note: editing.note });
+                        setEditing(null);
+                    }}
+                    onClose={() => setEditing(null)}
                 />
             )}
         </div>
@@ -727,9 +827,99 @@ function OptionsMenu({
                         <dd>show all; Backspace: back</dd>
                         <dt>M, T</dt>
                         <dd>marker, T0 at the cursor</dd>
+                        <dt>L</dt>
+                        <dd>place a label: click where it points</dd>
+                        <dt>Drag</dt>
+                        <dd>a marker, a label, or its arrow's tip, to move it</dd>
                     </dl>
                 </div>
             )}
+        </div>
+    );
+}
+
+/** Changing a label: its words (Enter for a new line with Shift), its arrow, or taking it away. Empty, it goes. */
+function NoteEditor({
+    at,
+    note,
+    onChange,
+    onRemove,
+    onClose,
+}: {
+    at: { left: number; top: number };
+    note: Note | null;
+    onChange: (change: Partial<Omit<Note, "id">>) => void;
+    onRemove: () => void;
+    onClose: () => void;
+}) {
+    const box = useRef<HTMLDivElement>(null);
+    const latest = useRef({ note, onRemove, onClose });
+    latest.current = { note, onRemove, onClose };
+    useLayoutEffect(() => {
+        if (box.current) {
+            placeMenuAt(box.current, at.left + 8, at.top + 8);
+        }
+    }, [at]);
+    useEffect(() => {
+        const done = () => (latest.current.note?.text.trim() ? latest.current.onClose() : latest.current.onRemove());
+        const close = (event: MouseEvent | KeyboardEvent) => {
+            const outside = event instanceof MouseEvent && !box.current?.contains(event.target as Node);
+            if (outside || (event instanceof KeyboardEvent && event.key === "Escape")) {
+                done();
+            }
+        };
+        document.addEventListener("mousedown", close);
+        document.addEventListener("keydown", close);
+        return () => {
+            document.removeEventListener("mousedown", close);
+            document.removeEventListener("keydown", close);
+        };
+    }, []);
+    if (!note) {
+        return null;
+    }
+    return (
+        <div className="menu yorg-note-editor" role="dialog" aria-label="Label" ref={box}>
+            <label className="field">
+                Label
+                <textarea
+                    autoFocus
+                    value={note.text}
+                    placeholder="What's here: ignition, a spike…"
+                    onChange={(event) => onChange({ text: event.target.value })}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            if (note.text.trim()) {
+                                onClose();
+                            } else {
+                                onRemove();
+                            }
+                        }
+                    }}
+                />
+            </label>
+            <div className="yorg-note-tools">
+                <label className="check">
+                    <input
+                        type="checkbox"
+                        checked={note.arrow}
+                        onChange={(event) => onChange({ arrow: event.target.checked })}
+                    />
+                    Arrow to the data
+                </label>
+                <button type="button" className="button-small" onClick={onRemove}>
+                    Remove
+                </button>
+                <button
+                    type="button"
+                    className="button-small button-primary"
+                    disabled={!note.text.trim()}
+                    onClick={onClose}
+                >
+                    Done
+                </button>
+            </div>
         </div>
     );
 }
@@ -794,7 +984,11 @@ interface PlotBits {
     colors: ReturnType<typeof usePlotColors>;
     onCursor: (x: number | null) => void;
     onWindow: (window: [number, number] | null, remember: boolean) => void;
-    onMenu: (x: number, left: number, top: number) => void;
+    onMenu: (x: number, left: number, top: number, target: MenuTarget) => void;
+    placing: boolean;
+    onPlace: (anchor: Anchor, left: number, top: number) => void;
+    onEditNote: (note: string, left: number, top: number) => void;
+    onMoveMark: (marker: string, x: number) => void;
 }
 
 function PanelView({
@@ -944,6 +1138,12 @@ function PanelView({
                         onWindow={plot.onWindow}
                         onAxis={setAxis}
                         onMenu={plot.onMenu}
+                        notes={panel.notes}
+                        placing={plot.placing}
+                        onPlace={plot.onPlace}
+                        onNote={(note, change) => dispatch({ type: "changeNote", panel: panel.id, note, change })}
+                        onEditNote={plot.onEditNote}
+                        onMoveMark={plot.onMoveMark}
                     />
                     {dropSide && (
                         <div className="yorg-drop" aria-hidden="true">

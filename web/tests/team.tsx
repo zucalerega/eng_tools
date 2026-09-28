@@ -111,6 +111,12 @@ export class Team {
         return people.find((person) => person.email === email);
     }
 
+    /** A saved view of a dataset, with one plot of one channel. */
+    async view(who: Member, name: string, dataset: number, channel: string): Promise<{ id: number; name: string }> {
+        const config = { datasets: [{ id: dataset, shift: 0 }], panels: [{ series: [{ dataset, channel }] }] };
+        return call("POST", "/api/yorg/views", who.token, { name, datasets: [dataset], config });
+    }
+
     /** A file of test data, uploaded to Yorg (named to be unique to this test). */
     async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
         const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });

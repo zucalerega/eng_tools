@@ -395,6 +395,61 @@ def test_views_are_saved_for_everyone_and_changed_by_their_owner(team):
     assert team.client.get(url, headers=alice).status_code == 404
 
 
+def test_folders_keep_datasets_in_order(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+
+    def add(who, name, parent=None):
+        return team.client.post("/api/yorg/folders", json={"name": name, "parent_id": parent}, headers=who)
+
+    hotfires = add(alice, "Hotfires").json()
+    april = add(alice, "April", hotfires["id"]).json()
+    taken = add(bob, "hotfires")
+    assert (taken.status_code, taken.json()["error"]) == (409, "name_taken")
+    assert add(bob, "April").status_code == 201  # the same name, in another folder
+    listed = team.client.get("/api/yorg/folders", headers=bob).json()
+    assert [(f["name"], f["parent_id"], f["can_change"]) for f in listed] == [
+        ("April", hotfires["id"], False),
+        ("April", None, True),
+        ("Hotfires", None, False),
+    ]
+
+    # Uploading into a folder, and moving datasets: your own, or any if you're an admin, all or none.
+    mine = upload(team, alice, "Time,PT\n0,1\n1,2\n", folder=april["id"])
+    assert mine["folder_id"] == april["id"]
+    theirs = upload(team, bob, "Time,PT\n0,1\n1,2\n")
+    assert theirs["folder_id"] is None
+
+    def move(who, ids, folder):
+        return team.client.post("/api/yorg/datasets/move", json={"datasets": ids, "folder_id": folder}, headers=who)
+
+    assert [d["folder_id"] for d in move(alice, [mine["id"]], hotfires["id"]).json()] == [hotfires["id"]]
+    assert move(alice, [mine["id"], theirs["id"]], None).status_code == 403
+    assert team.client.get(f"/api/yorg/datasets/{mine['id']}", headers=alice).json()["folder_id"] == hotfires["id"]
+    assert [d["folder_id"] for d in move(chief, [mine["id"], theirs["id"]], april["id"]).json()] == [april["id"]] * 2
+
+    # Renaming and moving folders: by whoever made them, not into themselves, and not onto a name that's taken.
+    url = f"/api/yorg/folders/{hotfires['id']}"
+    assert team.client.patch(url, json={"name": "Hot fires"}, headers=bob).status_code == 403
+    assert team.client.patch(url, json={"name": "Hot fires"}, headers=alice).json()["name"] == "Hot fires"
+    inside = team.client.patch(url, json={"parent_id": april["id"]}, headers=alice)
+    assert (inside.status_code, inside.json()["error"]) == (409, "cycle")
+    clash = team.client.patch(f"/api/yorg/folders/{april['id']}", json={"parent_id": None}, headers=alice)
+    assert (clash.status_code, clash.json()["error"]) == (409, "name_taken")
+
+    # Only empty folders go; deleted datasets in one move up to its folder, to be restored there.
+    april_url = f"/api/yorg/folders/{april['id']}"
+    full = team.client.delete(april_url, headers=alice)
+    assert (full.status_code, full.json()["error"]) == (409, "not_empty")
+    move(chief, [theirs["id"]], None)
+    team.client.delete(f"/api/yorg/datasets/{mine['id']}", headers=alice)
+    assert team.client.delete(april_url, headers=alice).status_code == 204
+    assert team.client.get(f"/api/yorg/datasets/{mine['id']}", headers=alice).json()["folder_id"] == hotfires["id"]
+    assert team.client.delete(url, headers=alice).status_code == 204  # now empty: the deleted dataset goes to the top
+    assert team.client.get(f"/api/yorg/datasets/{mine['id']}", headers=alice).json()["folder_id"] is None
+
+
 def test_calculated_channels_are_the_teams_and_changed_by_their_owner(team):
     alice = team.member("alice@x.test")
     bob = team.member("bob@x.test")

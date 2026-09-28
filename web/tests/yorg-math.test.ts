@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { forDataset, newLayout, readLayout, reduce, type Layout } from "../src/yorg/layout";
+import { forDataset, newLayout, readLayout, reduce, type Layout, type Note } from "../src/yorg/layout";
+import { arrowStart, placeNotes } from "../src/yorg/Plot";
 import { lowerBound, MinMax, sampleAt, Samples, trace, upperBound, visibleRange } from "../src/yorg/samples";
 import {
     clockTicks,
@@ -120,6 +121,11 @@ describe("scales", () => {
         expect(formatDuration(12.5)).toBe("12.5 s");
         expect(formatDuration(200)).toBe("3 min 20 s");
         expect(formatDuration(3900)).toBe("1 h 5 min");
+        // Rounded as a whole: never "1 min 60 s".
+        expect(formatDuration(119.97)).toBe("2 min");
+        expect(formatDuration(299.9)).toBe("5 min");
+        expect(formatDuration(59.999)).toBe("1 min");
+        expect(formatDuration(3599.9)).toBe("1 h");
         expect(formatRate(1000)).toBe("1 kHz");
         expect(formatRate(12.5)).toBe("12.5 Hz");
         expect(formatRate(null)).toBe("—");
@@ -176,5 +182,41 @@ describe("layouts", () => {
         expect(other.datasets).toEqual([{ id: 7, shift: 0 }]);
         expect(other.panels[0]!.series[0]).toMatchObject({ dataset: 7, channel: "PT-1" });
         expect(other.window).toBeNull();
+    });
+});
+
+describe("labels on plots", () => {
+    const note: Note = { id: "n1", t: 5, y: 50, axis: "left", text: "Ignition", dx: 40, dy: -30, arrow: true };
+
+    test("are added to a plot, changed, moved, and taken away", () => {
+        let layout = newLayout(1);
+        const panel = layout.panels[0]!.id;
+        layout = reduce(layout, { type: "addNote", panel, note });
+        layout = reduce(layout, { type: "changeNote", panel, note: "n1", change: { text: "Hard start", dx: 60 } });
+        expect(layout.panels[0]!.notes).toEqual([{ ...note, text: "Hard start", dx: 60 }]);
+        expect(readLayout(JSON.parse(JSON.stringify(layout)), 1).panels[0]!.notes).toEqual(layout.panels[0]!.notes);
+        layout = reduce(layout, { type: "removeNote", panel, note: "n1" });
+        expect(layout.panels[0]!.notes).toEqual([]);
+        // A saved label that doesn't say where it points is left out.
+        const read = readLayout({ panels: [{ notes: [{ text: "where?" }, { ...note, arrow: "yes" }] }] }, 1);
+        expect(read.panels[0]!.notes).toEqual([note]);
+    });
+
+    test("sit their offset from the point they're about, inside the plot, with the arrow leaving the box's edge", () => {
+        const g = { width: 600, height: 300, left: 70, right: 586, top: 8, bottom: 276 };
+        const ranges = { left: [0, 100] as [number, number], right: null };
+        const measure = (text: string) => text.length * 7;
+        const [hit] = placeNotes([note], measure, g, ranges, [0, 10]);
+        // t 5 of 0..10 is halfway across; 50 of 0..100 halfway up.
+        expect(hit!.tip).toEqual({ x: 328, y: 142 });
+        expect(hit!.box).toEqual({ x: 328 + 40 - 35, y: 142 - 30 - 11.5, w: 70, h: 23 });
+        const start = arrowStart(hit!.box, hit!.tip)!;
+        expect(start.y).toBeCloseTo(hit!.box.y + hit!.box.h); // out of the bottom edge, towards the point below
+        // A label that would hang off the plot is kept on it; one about a time out of view isn't drawn.
+        const [edge] = placeNotes([{ ...note, t: 9.99, dx: 200 }], measure, g, ranges, [0, 10]);
+        expect(edge!.box.x + edge!.box.w).toBeLessThanOrEqual(g.right - 1);
+        expect(placeNotes([{ ...note, t: 20 }], measure, g, ranges, [0, 10])).toEqual([]);
+        // An arrow to a point inside its box isn't drawn.
+        expect(arrowStart({ x: 0, y: 0, w: 100, h: 20 }, { x: 50, y: 10 })).toBeNull();
     });
 });

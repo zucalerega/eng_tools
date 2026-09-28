@@ -55,6 +55,9 @@ together on one time axis.
   text column becomes a state (CLOSED/OPEN, a mode) or, if it's mostly empty, events,
   like a sequence's IGNITION, which show as markers. If it guessed wrong, change how it's
   read on the dataset's About page: the file is kept as it was uploaded.
+- **Folders:** New folder makes one (a test campaign, a day of cold flows). Drag datasets
+  onto a folder, or onto a folder above in the path at the top, or check some and Move
+  to…. The list shows each dataset's size, and Find datasets looks in every folder.
 - **Plot:** click a channel to add it to the selected plot (click it again to take it
   off), shift-click for a plot of its own, or drag it onto one: onto the right half of a
   plot for its right axis. Plots share the time window and the cursor, and each has an
@@ -69,12 +72,16 @@ together on one time axis.
   dataset that has the channels it uses, and plots like any channel.
 - **Scale, label, and line up:** a channel's settings rename it and set its color, a
   scale and offset (volts to psi, psi to bar) with its unit, its axis, and lines or
-  steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers, and fix
-  an axis's range. Compare with another dataset to overlay two tests, shifted in time to
-  line them up.
+  steps. Set T0 at an event (MOV OPEN, say) to read time from it, add markers (drag them,
+  or T0, to move them), and fix an axis's range. Compare with another dataset to overlay
+  two tests, shifted in time to line them up.
+- **Labels:** Label (or L), then click a plot: a label with an arrow to the data there.
+  Drag the label to move it, or the arrow's tip to point it somewhere else; double-click
+  it to change the words, or right-click it for more.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
-  with that test's channels of the same names. Export the plots as an image, or the
-  samples in view as CSV.
+  with that test's channels of the same names. A dataset's views are listed on its page
+  (Saved views); open one and Save as a new view to keep your changes. Export the plots
+  as an image (labels and all), or the samples in view as CSV.
 
 ## Layout
 

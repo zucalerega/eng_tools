@@ -420,8 +420,13 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
 - **Datasets.** An upload is a dataset: its file, kept as it came (`datasets/<id>/source`),
   and what was read from it: one time base, and a channel per column. Everyone signed in
   (and approved) sees every dataset and can add them; only the person who added one, or
-  an admin, renames it, reads it again, or deletes it. Deleting hides it with everything
-  kept, so it can be restored.
+  an admin, renames it, reads it again, moves it, or deletes it. Deleting hides it with
+  everything kept, so it can be restored.
+- **Folders** (`yorg_folders`, a tree) hold datasets: a test campaign, a day of cold
+  flows. Anyone makes one; whoever made it (or an admin) renames it, moves it (never into
+  itself), or deletes it, once it's empty (deleted datasets in it go up to its parent).
+  Names are unique within a folder, whatever their case. Moving several datasets is all
+  or none. The list shows each dataset's size, and its search looks in every folder.
 - **Reading a file** (`yorg/ingest.py`, pure Python, no numpy) happens once, on the
   server, when it's uploaded, about 15 MB of CSV a second. The first 512 KB say how it's
   laid out: the encoding (UTF-8, UTF-16, or Windows' cp1252), the delimiter (comma, tab,
@@ -462,11 +467,19 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   a channel goes on either axis by dropping it (from the list, or dragged from a legend,
   even another panel's) on that half of a plot or that group of the legend. A channel's
   settings set its scale, offset, unit, color, axis, and lines or steps; there's T0 (at
-  the cursor, or exactly at an event), markers, datasets compared, each shifted in time
-  (lined up by clock time when both have dates), and exports (a PNG of the plots, a CSV
-  of the samples in view). Its layout is plain JSON (`layout.ts`): each browser keeps its
-  layout per dataset, and a saved view keeps one for everyone. Views name channels by
-  name, so a view opens with another test's data.
+  the cursor, or exactly at an event), markers (T0 and markers are dragged to move them),
+  datasets compared, each shifted in time (lined up by clock time when both have dates),
+  and exports (a PNG of the plots, a CSV of the samples in view). Its layout is plain
+  JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
+  one for everyone, listed on its datasets' pages; anyone can open one and save their
+  changes as a view of their own. Views name channels by name, so a view opens with
+  another test's data.
+- **Labels** belong to a plot: words, and an arrow to a point in the data (a time and a
+  value on one axis, snapped to the nearest channel where it was clicked). The box sits
+  an offset in pixels from that point, kept inside the plot, so it stays readable at any
+  zoom. Dragging the box moves it; dragging the arrow's tip points it elsewhere, leaving
+  the box where it is. They're drawn on the plot's canvas, so the PNG has them, and the
+  plot remembers where it drew them to know what a click or a drag is on.
 - **Calculated channels** (`yorg_formulas`) are the team's: a name, a unit, and an
   expression over channels by name, like `[LC-1] + [LC-2]` or
   `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` (O/F while fuel flows). Each shows in every
@@ -512,7 +525,9 @@ are at `/docs`.
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `CVC_DOWNLOADS_DIR` |
 | `GET /api/yorg/datasets?deleted=` | Yorg's datasets, newest first (or the deleted ones) |
-| `POST /api/yorg/datasets?filename=&name=&description=` | upload a file of test data (the raw body) and read it; one that can't be read comes back `failed`, with why |
+| `POST /api/yorg/datasets?filename=&name=&description=&folder=` | upload a file of test data (the raw body) into a folder (or the top) and read it; one that can't be read comes back `failed`, with why |
+| `POST /api/yorg/datasets/move` | move datasets `{datasets, folder_id}` into a folder (null: the top); all or none |
+| `GET`/`POST /api/yorg/folders`, `PATCH`/`DELETE /api/yorg/folders/{id}` | folders of datasets `{name, parent_id}`; rename or move one; delete an empty one |
 | `GET`/`PATCH`/`DELETE /api/yorg/datasets/{id}` | a dataset with its channels, events, and how it was read; rename it; delete it (restorable) |
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
@@ -561,9 +576,9 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
 7. **Yorg** (first version done, September 2026): upload, read, plot, compare, views,
-   exports, and calculated channels. Next: statistics over a selected span, reading while
-   the file is still uploading for very big files, and data streamed live from the test
-   stand.
+   exports, calculated channels, folders, and labels. Next: statistics over a selected
+   span, reading while the file is still uploading for very big files, and data streamed
+   live from the test stand.
 
 ## Open questions
 

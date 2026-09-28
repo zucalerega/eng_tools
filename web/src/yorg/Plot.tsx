@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { AxisSpec, Side } from "./layout";
-import { trace, visibleRange, type Placement, type Samples } from "./samples";
+import type { AxisSpec, Note, Side } from "./layout";
+import { sampleAt, trace, visibleRange, type Placement, type Samples } from "./samples";
 import { formatDuration, formatTick, ticks } from "./scale";
 
 // One plot: channels drawn over a time window on a canvas, with a y axis on either side. Everything that changes the
@@ -8,7 +8,9 @@ import { formatDuration, formatTick, ticks } from "./scale";
 //   drag: zoom to the time you drag across; shift-drag: zoom to a box (time and values)
 //   right-drag, middle-drag, or ctrl-drag: pan; drag on an axis: move it
 //   wheel: zoom time around the pointer (on an axis: zoom it); shift-wheel or sideways: pan
-//   double-click: show everything; right-click: a menu (marker, T0)
+//   double-click: show everything; right-click: a menu (marker, label, T0)
+//   drag a marker (its line or label) to move it; drag a label to move it, or its arrow's tip to point elsewhere;
+//   double-click a label to change it. While placing a label, a click puts one there.
 
 export interface PlotSeries {
     id: string;
@@ -32,6 +34,41 @@ export interface PlotMark {
     x: number;
     label: string;
     kind: "marker" | "event" | "t0";
+    id?: string; // a marker you can drag
+}
+
+/** A place in a plot's data: a time, and a value on one of its axes. */
+export interface Anchor {
+    t: number;
+    y: number;
+    axis: Side;
+}
+
+/** What a right-click was on: a place (if the plot has an axis to say what value), and maybe a label or marker. */
+export interface MenuTarget {
+    anchor: Anchor | null;
+    note: string | null;
+    marker: string | null;
+}
+
+interface Box {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+/** Where a label was drawn: its box, and the point its arrow ends at. */
+export interface NoteHit {
+    id: string;
+    box: Box;
+    tip: { x: number; y: number };
+    lines: string[];
+}
+
+interface Hits {
+    notes: NoteHit[];
+    marks: { id: string; x: number; chip: Box | null }[];
 }
 
 export interface PlotColors {
@@ -65,7 +102,10 @@ interface Geometry {
 type Ranges = Record<Side, [number, number] | null>;
 
 interface Drag {
-    mode: "zoom" | "box" | "pan" | "axis";
+    mode: "zoom" | "box" | "pan" | "axis" | "note" | "tip" | "mark";
+    target: string | null; // the label or marker being moved
+    offset: { dx: number; dy: number }; // a label's, when it was picked up
+    center: { x: number; y: number } | null; // its box's, when its arrow's tip was picked up
     side: Side;
     x0: number;
     y0: number;
@@ -92,7 +132,13 @@ interface Props {
     onCursor: (x: number | null) => void;
     onWindow: (window: [number, number] | null, remember: boolean) => void;
     onAxis: (side: Side, range: [number, number] | null) => void;
-    onMenu: (x: number, clientX: number, clientY: number) => void;
+    onMenu: (x: number, clientX: number, clientY: number, target: MenuTarget) => void;
+    notes: Note[];
+    placing: boolean; // a click puts a label there
+    onPlace: (anchor: Anchor, clientX: number, clientY: number) => void;
+    onNote: (id: string, change: Partial<Omit<Note, "id">>) => void;
+    onEditNote: (id: string, clientX: number, clientY: number) => void;
+    onMoveMark: (id: string, x: number) => void;
 }
 
 /** What an axis shows: its fixed range, or what its channels have in view, with a little room around it. */
@@ -148,6 +194,84 @@ const markColor = (mark: PlotMark, colors: PlotColors): string =>
 const unitsOf = (series: PlotSeries[]): string =>
     [...new Set(series.map((one) => one.unit).filter(Boolean))].join(", ");
 
+const NOTE_LINE = 15;
+
+/**
+ * Where each label goes: its box, dx and dy pixels from the point it's about (kept inside the plot), and the point
+ * itself. Labels about times out of view aren't drawn.
+ */
+export function placeNotes(
+    notes: Note[],
+    measure: (text: string) => number,
+    g: Geometry,
+    ranges: Ranges,
+    view: [number, number],
+): NoteHit[] {
+    const found: NoteHit[] = [];
+    for (const note of notes) {
+        const range = ranges[note.axis] ?? ranges.left ?? ranges.right;
+        if (!range || note.t < view[0] || note.t > view[1]) {
+            continue;
+        }
+        const tip = {
+            x: g.left + ((note.t - view[0]) / (view[1] - view[0])) * (g.right - g.left),
+            y: g.bottom - ((note.y - range[0]) / (range[1] - range[0])) * (g.bottom - g.top),
+        };
+        const lines = (note.text || "…").split("\n");
+        const w = Math.max(...lines.map(measure)) + 14;
+        const h = lines.length * NOTE_LINE + 8;
+        const x = Math.min(Math.max(tip.x + note.dx - w / 2, g.left + 1), g.right - 1 - w);
+        const y = Math.min(Math.max(tip.y + note.dy - h / 2, g.top + 1), g.bottom - 1 - h);
+        found.push({ id: note.id, box: { x, y, w, h }, tip, lines });
+    }
+    return found;
+}
+
+/** Where an arrow from a box to a point leaves the box: on its edge, on the way to the point (null: it's inside). */
+export function arrowStart(box: Box, tip: { x: number; y: number }): { x: number; y: number } | null {
+    const center = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+    const [dx, dy] = [tip.x - center.x, tip.y - center.y];
+    const share = Math.min(dx ? Math.abs(box.w / 2 / dx) : Infinity, dy ? Math.abs(box.h / 2 / dy) : Infinity);
+    return share >= 1 ? null : { x: center.x + dx * share, y: center.y + dy * share };
+}
+
+function drawNote(context: CanvasRenderingContext2D, hit: NoteHit, note: Note, colors: PlotColors): void {
+    const { box, tip } = hit;
+    context.strokeStyle = colors.cursor;
+    context.fillStyle = colors.cursor;
+    context.lineWidth = 1.25;
+    const start = note.arrow ? arrowStart(box, tip) : null;
+    if (start) {
+        context.beginPath();
+        context.moveTo(start.x, start.y);
+        context.lineTo(tip.x, tip.y);
+        context.stroke();
+        const angle = Math.atan2(tip.y - start.y, tip.x - start.x);
+        context.beginPath();
+        context.moveTo(tip.x, tip.y);
+        context.lineTo(tip.x - 9 * Math.cos(angle - 0.4), tip.y - 9 * Math.sin(angle - 0.4));
+        context.lineTo(tip.x - 9 * Math.cos(angle + 0.4), tip.y - 9 * Math.sin(angle + 0.4));
+        context.closePath();
+        context.fill();
+    }
+    context.fillStyle = colors.plot;
+    context.beginPath();
+    if (context.roundRect) {
+        context.roundRect(box.x, box.y, box.w, box.h, 4);
+    } else {
+        context.rect(box.x, box.y, box.w, box.h);
+    }
+    context.fill();
+    context.stroke();
+    context.fillStyle = colors.cursor;
+    context.textAlign = "left";
+    context.textBaseline = "top";
+    hit.lines.forEach((line, index) => context.fillText(line, box.x + 7, box.y + 5 + index * NOTE_LINE));
+}
+
+const inBox = (box: Box, px: number, py: number) =>
+    px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h;
+
 /** Where the pointer is on the canvas, in the canvas's own pixels (the page may be zoomed or scaled around it). */
 function pointerAt(canvas: HTMLElement, event: { clientX: number; clientY: number }): { px: number; py: number } {
     const rect = canvas.getBoundingClientRect();
@@ -162,10 +286,11 @@ function draw(
     props: Props,
     ranges: Ranges,
     titles: Record<Side, string>,
-): void {
+): Hits {
+    const hits: Hits = { notes: [], marks: [] };
     const context = canvas.getContext("2d");
     if (!context || g.width <= 0) {
-        return;
+        return hits;
     }
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(g.width * ratio);
@@ -259,10 +384,14 @@ function draw(
     }
     context.setLineDash([]);
     for (const mark of shown) {
+        const at = Math.round(toX(mark.x)) + 0.5;
+        const hit = mark.id ? { id: mark.id, x: at, chip: null as Box | null } : null;
+        if (hit) {
+            hits.marks.push(hit);
+        }
         if (!mark.label) {
             continue;
         }
-        const at = Math.round(toX(mark.x)) + 0.5;
         const width = context.measureText(mark.label).width + 8;
         let line = lineEnds.findIndex((end) => end + 3 <= at);
         if (line < 0) {
@@ -277,6 +406,9 @@ function draw(
         context.fillRect(at + 1, top, width, 16);
         context.fillStyle = markColor(mark, colors);
         context.fillText(mark.label, at + 5, top + 2);
+        if (hit) {
+            hit.chip = { x: at + 1, y: top, w: width, h: 16 };
+        }
     }
     context.setLineDash([]);
 
@@ -331,10 +463,23 @@ function draw(
             }
         }
     }
+
+    // Labels, over the data.
+    context.font = `12px ${colors.font}`;
+    hits.notes = placeNotes(props.notes, (text) => context.measureText(text).width, g, ranges, view);
+    for (const hit of hits.notes) {
+        drawNote(
+            context,
+            hit,
+            props.notes.find((note) => note.id === hit.id)!,
+            colors,
+        );
+    }
     context.restore();
     context.lineWidth = 1;
     context.strokeStyle = colors.frame;
     context.strokeRect(g.left + 0.5, g.top + 0.5, plotWidth - 1, plotHeight - 1);
+    return hits;
 }
 
 function drawOverlay(canvas: HTMLCanvasElement, g: Geometry, props: Props, ranges: Ranges, drag: Drag | null): void {
@@ -404,6 +549,7 @@ export function Plot(props: Props) {
     const base = useRef<HTMLCanvasElement>(null);
     const overlay = useRef<HTMLCanvasElement>(null);
     const drag = useRef<Drag | null>(null);
+    const hits = useRef<Hits>({ notes: [], marks: [] });
     const latest = useRef(props);
     latest.current = props;
     const [width, setWidth] = useState(0);
@@ -458,9 +604,20 @@ export function Plot(props: Props) {
 
     useEffect(() => {
         if (base.current) {
-            draw(base.current, geometry, latest.current, ranges, { left: leftTitle, right: rightTitle });
+            hits.current = draw(base.current, geometry, latest.current, ranges, { left: leftTitle, right: rightTitle });
         }
-    }, [geometry, ranges, leftTitle, rightTitle, props.series, props.window, props.marks, props.time, props.colors]);
+    }, [
+        geometry,
+        ranges,
+        leftTitle,
+        rightTitle,
+        props.series,
+        props.window,
+        props.marks,
+        props.notes,
+        props.time,
+        props.colors,
+    ]);
 
     useEffect(() => {
         if (overlay.current) {
@@ -515,6 +672,54 @@ export function Plot(props: Props) {
         }
     };
 
+    /** The label, arrow tip, or marker under the pointer: what a drag there moves. */
+    function hitAt(px: number, py: number): { kind: "note" | "tip" | "mark"; id: string } | null {
+        const { notes, marks } = hits.current;
+        for (const note of [...notes].reverse()) {
+            if (inBox(note.box, px, py)) {
+                return { kind: "note", id: note.id };
+            }
+        }
+        for (const note of notes) {
+            if (Math.hypot(note.tip.x - px, note.tip.y - py) <= 7) {
+                return { kind: "tip", id: note.id };
+            }
+        }
+        for (const mark of marks) {
+            if (
+                (mark.chip && inBox(mark.chip, px, py)) ||
+                (Math.abs(mark.x - px) <= 4 && py >= geometry.top && py <= geometry.bottom)
+            ) {
+                return { kind: "mark", id: mark.id };
+            }
+        }
+        return null;
+    }
+
+    /** The place in the data at the pointer: on the nearest channel if it's close, else on an axis. */
+    function anchorAt(px: number, py: number): Anchor | null {
+        const t = timeAt(px);
+        let best: { distance: number; anchor: Anchor } | null = null;
+        for (const one of props.series) {
+            const range = ranges[one.axis];
+            const point = one.samples && range ? sampleAt(one.samples, t, one.placement) : null;
+            if (!point || !range || Number.isNaN(point.y)) {
+                continue;
+            }
+            const y =
+                geometry.bottom - ((point.y - range[0]) / (range[1] - range[0])) * (geometry.bottom - geometry.top);
+            const distance = Math.abs(y - py);
+            if (distance <= 14 && (!best || distance < best.distance)) {
+                best = { distance, anchor: { t: point.x, y: point.y, axis: one.axis } };
+            }
+        }
+        if (best) {
+            return best.anchor;
+        }
+        const side: Side | null = ranges.left ? "left" : ranges.right ? "right" : null;
+        return side ? { t, y: valueAt(ranges[side]!, py), axis: side } : null;
+    }
+
     function pointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
         const { px, py } = place(event);
         const onAxis: Side | null = px < geometry.left ? "left" : px > geometry.right ? "right" : null;
@@ -523,9 +728,30 @@ export function Plot(props: Props) {
         if (!pan && event.button !== 0) {
             return;
         }
-        const mode: Drag["mode"] = onAxis && ranges[onAxis] ? "axis" : pan ? "pan" : event.shiftKey ? "box" : "zoom";
+        if (props.placing && !pan && !onAxis) {
+            const anchor = anchorAt(px, py);
+            if (anchor) {
+                props.onPlace(anchor, event.clientX, event.clientY);
+            }
+            return;
+        }
+        const hit = pan || onAxis ? null : hitAt(px, py);
+        const note = hit ? props.notes.find((one) => one.id === hit.id) : undefined;
+        const box = hit?.kind === "tip" ? hits.current.notes.find((one) => one.id === hit.id)?.box : undefined;
+        const mode: Drag["mode"] = hit
+            ? hit.kind
+            : onAxis && ranges[onAxis]
+              ? "axis"
+              : pan
+                ? "pan"
+                : event.shiftKey
+                  ? "box"
+                  : "zoom";
         drag.current = {
             mode,
+            target: hit?.id ?? null,
+            offset: { dx: note?.dx ?? 0, dy: note?.dy ?? 0 },
+            center: box ? { x: box.x + box.w / 2, y: box.y + box.h / 2 } : null,
             side: onAxis ?? "left",
             x0: px,
             y0: py,
@@ -543,6 +769,15 @@ export function Plot(props: Props) {
         const current = drag.current;
         if (!current) {
             props.onCursor(px >= geometry.left && px <= geometry.right ? timeAt(px) : null);
+            // Say what a drag here would do.
+            const hit = props.placing ? null : hitAt(px, py);
+            event.currentTarget.style.cursor = props.placing
+                ? "copy"
+                : hit?.kind === "mark"
+                  ? "ew-resize"
+                  : hit
+                    ? "move"
+                    : "";
             return;
         }
         current.x = px;
@@ -556,7 +791,29 @@ export function Plot(props: Props) {
         if (!current.moved) {
             return;
         }
-        if (current.mode === "pan") {
+        if (current.mode === "note" && current.target) {
+            props.onNote(current.target, {
+                dx: current.offset.dx + px - current.x0,
+                dy: current.offset.dy + py - current.y0,
+            });
+        } else if (current.mode === "tip" && current.target) {
+            const anchor = anchorAt(px, py);
+            const range = anchor ? ranges[anchor.axis] : null;
+            if (anchor && range) {
+                // The label stays put: its offset from the new tip is where its box was.
+                const [start, end] = props.window;
+                const tip = {
+                    x: geometry.left + ((anchor.t - start) / (end - start)) * (geometry.right - geometry.left),
+                    y:
+                        geometry.bottom -
+                        ((anchor.y - range[0]) / (range[1] - range[0])) * (geometry.bottom - geometry.top),
+                };
+                const center = current.center ?? tip;
+                props.onNote(current.target, { ...anchor, dx: center.x - tip.x, dy: center.y - tip.y });
+            }
+        } else if (current.mode === "mark" && current.target) {
+            props.onMoveMark(current.target, timeAt(Math.min(Math.max(px, geometry.left), geometry.right)));
+        } else if (current.mode === "pan") {
             const shift =
                 (-(px - current.x0) / (geometry.right - geometry.left)) * (current.window[1] - current.window[0]);
             props.onWindow([current.window[0] + shift, current.window[1] + shift], false);
@@ -599,7 +856,12 @@ export function Plot(props: Props) {
             px >= geometry.left &&
             px <= geometry.right
         ) {
-            props.onMenu(timeAt(px), event.clientX, event.clientY);
+            const hit = hitAt(px, py);
+            props.onMenu(timeAt(px), event.clientX, event.clientY, {
+                anchor: anchorAt(px, py),
+                note: hit && hit.kind !== "mark" ? hit.id : null,
+                marker: hit?.kind === "mark" ? hit.id : null,
+            });
         }
         redrawOverlay();
     }
@@ -625,7 +887,13 @@ export function Plot(props: Props) {
                         props.onCursor(null);
                     }
                 }}
-                onDoubleClick={() => {
+                onDoubleClick={(event) => {
+                    const { px, py } = pointerAt(event.currentTarget, event);
+                    const hit = hitAt(px, py);
+                    if (hit && hit.kind !== "mark") {
+                        props.onEditNote(hit.id, event.clientX, event.clientY);
+                        return;
+                    }
                     props.onWindow(null, true);
                     props.onAxis("left", null);
                     props.onAxis("right", null);

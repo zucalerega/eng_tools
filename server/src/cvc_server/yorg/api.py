@@ -19,8 +19,12 @@ from .schemas import (
     DatasetChangeIn,
     DatasetDetailOut,
     DatasetOut,
+    FolderChangeIn,
+    FolderIn,
+    FolderOut,
     FormulaIn,
     FormulaOut,
+    MoveIn,
     ReadOptionsIn,
     ViewIn,
     ViewOut,
@@ -61,6 +65,7 @@ async def post_dataset(
     filename: Annotated[str, Query(min_length=1, max_length=255)],
     name: Annotated[str | None, Query(max_length=200)] = None,
     description: Annotated[str, Query(max_length=5000)] = "",
+    folder: int | None = None,
 ) -> DatasetDetailOut:
     """Upload a file of test data (a CSV) as the raw request body, and read it.
 
@@ -95,10 +100,43 @@ async def post_dataset(
             description=description,
             size=size,
             sha256=digest.hexdigest(),
+            folder_id=folder,
         )
         return await run_in_threadpool(_detail, db, dataset, user)
     finally:
         temp.unlink(missing_ok=True)
+
+
+@router.post("/datasets/move")
+def post_move(body: MoveIn, user: ActiveUser, db: DB) -> list[DatasetOut]:
+    """Put datasets in a folder (folder_id null: the top). All of them, or none if any isn't yours to move."""
+    return [DatasetOut.of(dataset, user) for dataset in datasets.move(db, user, body.datasets, body.folder_id)]
+
+
+@router.get("/folders")
+def get_folders(user: ActiveUser, db: DB) -> list[FolderOut]:
+    """Every folder, by name: each says which it's in (parent_id), for building the tree."""
+    return [FolderOut.of(found, user) for found in datasets.folders(db)]
+
+
+@router.post("/folders", status_code=201)
+def post_folder(body: FolderIn, user: ActiveUser, db: DB) -> FolderOut:
+    return FolderOut.of(datasets.add_folder(db, user, name=body.name, parent_id=body.parent_id), user)
+
+
+@router.patch("/folders/{folder_id}")
+def patch_folder(folder_id: int, body: FolderChangeIn, user: ActiveUser, db: DB) -> FolderOut:
+    changed = datasets.change_folder(
+        db, user, folder_id, name=body.name, parent_id=body.parent_id, move="parent_id" in body.model_fields_set
+    )
+    return FolderOut.of(changed, user)
+
+
+@router.delete("/folders/{folder_id}", status_code=204)
+def delete_folder(folder_id: int, user: ActiveUser, db: DB) -> Response:
+    """Delete an empty folder."""
+    datasets.remove_folder(db, user, folder_id)
+    return Response(status_code=204)
 
 
 @router.get("/datasets/{dataset_id}")

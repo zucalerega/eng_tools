@@ -17,12 +17,28 @@ class DatasetStatus(enum.StrEnum):
     FAILED = "failed"  # the file couldn't be read: error says why, and it can be read again another way
 
 
+class DataFolder(Base):
+    """A folder of datasets (a test campaign, say), in another folder or at the top (parent_id None)."""
+
+    __tablename__ = "yorg_folders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("yorg_folders.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200))  # lowercased: two in a folder can't differ only in case
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+
+
 class Dataset(Base):
     """An uploaded file of test data, and what was read from it: one time base, and a channel per column."""
 
     __tablename__ = "yorg_datasets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("yorg_folders.id"), index=True)  # None: at the top
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     filename: Mapped[str] = mapped_column(String(255))

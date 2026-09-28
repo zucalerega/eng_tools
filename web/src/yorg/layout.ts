@@ -39,6 +39,18 @@ export interface AxisSpec {
     max: number | null;
 }
 
+/** A label on a plot, pointing at a place in its data: a time, and a value on one of its axes. */
+export interface Note {
+    id: string;
+    t: number;
+    y: number;
+    axis: Side;
+    text: string;
+    dx: number; // where the label sits, in pixels from the point, so it reads the same at any zoom
+    dy: number;
+    arrow: boolean; // an arrow from the label to the point
+}
+
 export interface PanelSpec {
     id: string;
     title: string;
@@ -46,6 +58,7 @@ export interface PanelSpec {
     series: SeriesSpec[];
     left: AxisSpec;
     right: AxisSpec;
+    notes: Note[];
 }
 
 export interface Marker {
@@ -80,7 +93,15 @@ export const newId = (): string =>
 const AUTO: AxisSpec = { label: "", min: null, max: null };
 
 export function newPanel(): PanelSpec {
-    return { id: newId(), title: "", height: PANEL_HEIGHT, series: [], left: { ...AUTO }, right: { ...AUTO } };
+    return {
+        id: newId(),
+        title: "",
+        height: PANEL_HEIGHT,
+        series: [],
+        left: { ...AUTO },
+        right: { ...AUTO },
+        notes: [],
+    };
 }
 
 export function newLayout(dataset: number): Layout {
@@ -136,6 +157,9 @@ export type Action =
     | { type: "removePanel"; panel: string }
     | { type: "movePanel"; panel: string; by: -1 | 1 }
     | { type: "changePanel"; panel: string; change: Partial<Pick<PanelSpec, "title" | "height" | "left" | "right">> }
+    | { type: "addNote"; panel: string; note: Note }
+    | { type: "changeNote"; panel: string; note: string; change: Partial<Omit<Note, "id">> }
+    | { type: "removeNote"; panel: string; note: string }
     | { type: "window"; window: [number, number] | null }
     | { type: "t0"; t0: number | null }
     | { type: "addMarker"; t: number; label: string }
@@ -230,6 +254,18 @@ export function reduce(layout: Layout, action: Action): Layout {
         }
         case "changePanel":
             return mapPanel(layout, action.panel, (panel) => ({ ...panel, ...action.change }));
+        case "addNote":
+            return mapPanel(layout, action.panel, (panel) => ({ ...panel, notes: [...panel.notes, action.note] }));
+        case "changeNote":
+            return mapPanel(layout, action.panel, (panel) => ({
+                ...panel,
+                notes: panel.notes.map((note) => (note.id === action.note ? { ...note, ...action.change } : note)),
+            }));
+        case "removeNote":
+            return mapPanel(layout, action.panel, (panel) => ({
+                ...panel,
+                notes: panel.notes.filter((note) => note.id !== action.note),
+            }));
         case "window":
             return { ...layout, window: action.window };
         case "t0":
@@ -305,6 +341,22 @@ function axis(value: unknown): AxisSpec {
     return { label: str(found.label), min: numOrNull(found.min), max: numOrNull(found.max) };
 }
 
+function note(value: unknown): Note | null {
+    if (!isObject(value) || numOrNull(value.t) === null || numOrNull(value.y) === null) {
+        return null;
+    }
+    return {
+        id: str(value.id) || newId(),
+        t: num(value.t, 0),
+        y: num(value.y, 0),
+        axis: value.axis === "right" ? "right" : "left",
+        text: str(value.text).slice(0, 500),
+        dx: Math.min(2000, Math.max(-2000, num(value.dx, 40))),
+        dy: Math.min(2000, Math.max(-2000, num(value.dy, -36))),
+        arrow: value.arrow !== false,
+    };
+}
+
 function series(value: unknown, dataset: number): SeriesSpec | null {
     if (!isObject(value) || typeof value.channel !== "string") {
         return null;
@@ -344,6 +396,9 @@ export function readLayout(value: unknown, dataset: number): Layout {
                 .filter((entry) => entry !== null),
             left: axis(panel.left),
             right: axis(panel.right),
+            notes: list(panel.notes)
+                .map(note)
+                .filter((entry) => entry !== null),
         }));
     const window = list(found.window);
     const [start, end] = [numOrNull(window[0]), numOrNull(window[1])];

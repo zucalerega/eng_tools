@@ -20,10 +20,12 @@ const baseName = (file: File) => file.name.replace(/\.[^.]+$/, "") || file.name;
 
 export function UploadDialog({
     files,
+    folder = null,
     onClose,
     onDone,
 }: {
     files: File[];
+    folder?: number | null; // where they go: null, the top
     onClose: () => void;
     onDone: (datasets: DatasetDetail[]) => void;
 }) {
@@ -48,6 +50,7 @@ export function UploadDialog({
                     item.file,
                     (sent) => update(index, sent >= item.file.size ? { sent, state: "reading" } : { sent }),
                     item.name.trim() || baseName(item.file),
+                    folder,
                 );
                 done.push(result);
                 update(index, { state: "done", sent: item.file.size, result });

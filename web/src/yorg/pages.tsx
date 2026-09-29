@@ -2,7 +2,8 @@ import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
-import { Link, navigate } from "../router";
+import { inPreview } from "../preview";
+import { Link, navigate, usePathname } from "../router";
 import {
     DELIMITERS,
     TIME_FORMATS,
@@ -197,6 +198,7 @@ function useViewsOf(dataset: number): SavedView[] {
 }
 
 function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
+    const preview = inPreview(usePathname()); // what's new: a model of the test, and scripts on it
     const [layout, dispatch] = useReducer(reduce, detail.id, storedLayout);
     useEffect(() => storeLayout(detail.id, layout), [detail.id, layout]);
     const [saving, setSaving] = useState(false);
@@ -228,6 +230,21 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                         <button type="button" onClick={() => setSaving(true)}>
                             Save view
                         </button>
+                        {preview && (
+                            <MenuButton
+                                label="Analyze"
+                                items={[
+                                    {
+                                        label: "Run a model on this test",
+                                        onSelect: () => navigate(`/yorg/models?dataset=${detail.id}`),
+                                    },
+                                    {
+                                        label: "Open in Scripts",
+                                        onSelect: () => navigate(`/yorg/scripts?dataset=${detail.id}`),
+                                    },
+                                ]}
+                            />
+                        )}
                         <Link className="button" to={aboutUrl(detail.id)}>
                             About
                         </Link>

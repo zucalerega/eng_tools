@@ -571,13 +571,20 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   A piece says where it came from (`read_info.split_from`), and, having no file of its
   own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
   to the file (or another folder), and are whoever split them's.
-- **System models** (the dev page, `/yorg/dev`, admins only while it's tried out): a
+- **Yorg's preview** (`/yorg/dev/...`, admins): the site as it will be with what's new in
+  it, so it can be tried as it'll look before everyone has it. `web/src/preview.ts` maps
+  its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
+  the same pages there, and the new ones (Models, Scripts) only there, and the router sends
+  links followed in the preview to their preview pages (a link marked `exact` leaves it).
+  The top bar, a dataset's Analyze menu, and Help's cards show what's new in the preview.
+  Releasing a feature is showing it outside the preview too (and its API to everyone).
+- **System models** (Models, in the preview while it's tried out): a
   feed system as a P&ID, simulated with FullFlow (a network solver) and ThermoProp
   (fluid properties) against a test, to tune it until it matches. `yorg/system/catalog.py`
   lists the parts, their settings (SI units; some only when others are set a way, as an
   ullage's wall only with wall heat transfer), links (followed, starting the model, compared,
   or commanding a valve), and outputs; the web app draws its editor from it
-  (`web/src/yorg/dev`) and `spec.py` checks a model with it (saving takes a half-drawn one;
+  (`web/src/yorg/models`) and `spec.py` checks a model with it (saving takes a half-drawn one;
   running needs liquid parts between tanks, junctions, and outlets and gas parts between
   gas supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid
   parts reaching a tank, whose liquid it carries, and every set of gas parts a supply or an
@@ -625,10 +632,10 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   run, and applies what it found only when asked. The browser compares each sensor with
   its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
   bias; the window's times, and the plots', read from the dataset's T0 in this browser.
-  Saved models are JSON files in `CVC_YORG_DIR/models`, so the dev page adds no tables.
+  Saved models are JSON files in `CVC_YORG_DIR/models`, so the models add no tables.
   FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
   Vault is ever given to others, the GPL applies to it.
-- **Scripts** (the Python window, `/yorg/dev/scripts`, admins only while it's tried out):
+- **Scripts** (the Python window, in the preview while it's tried out):
   Python runs in the browser, never on the server: Pyodide (CPython in WebAssembly, pinned
   in `web/src/yorg/scripts/worker.js`, from jsDelivr), in a module worker started from a
   `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module

@@ -26,7 +26,7 @@ test("the app switcher goes between the vault and Yorg", async () => {
         within(nav)
             .getAllByRole("link")
             .map((link) => link.textContent),
-    ).toEqual(["Datasets", "Views", "Help", "Dev"]); // Dev: the chief is an admin (yorg-dev.test.tsx)
+    ).toEqual(["Datasets", "Views", "Help", "Preview"]); // Preview: the chief is an admin (yorg-preview.test.tsx)
 });
 
 test("Help says what Yorg does, and how", async () => {

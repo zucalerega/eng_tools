@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Catalog, Display, Link, PartKind, Setting } from "../src/yorg/dev/api";
+import type { Catalog, Display, Link, PartKind, Setting } from "../src/yorg/models/api";
 import {
     addEdge,
     addNode,
@@ -17,8 +17,8 @@ import {
     setSetting,
     shownLinks,
     shownSettings,
-} from "../src/yorg/dev/model";
-import { ATMOSPHERE, fromDisplay, PSI, toDisplay, unitOf } from "../src/yorg/dev/units";
+} from "../src/yorg/models/model";
+import { ATMOSPHERE, fromDisplay, PSI, toDisplay, unitOf } from "../src/yorg/models/units";
 
 // System models' units and rules, without a server: the catalog here is the parts the tests use, cut down to what
 // they need.

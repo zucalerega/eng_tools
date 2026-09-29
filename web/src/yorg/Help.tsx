@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Link } from "../router";
+import { inPreview } from "../preview";
+import { Link, usePathname } from "../router";
 
 // What Yorg does, and how: one page, from the top bar's Help.
 
@@ -26,6 +27,7 @@ function Keys({ rows }: { rows: [ReactNode, string][] }) {
 }
 
 export function HelpPage() {
+    const preview = inPreview(usePathname()); // what's new, in the preview until it's released
     return (
         <section className="yorg-page yorg-help">
             <div className="page-head">
@@ -212,6 +214,41 @@ export function HelpPage() {
                         </li>
                     </ul>
                 </Card>
+
+                {preview && (
+                    <Card title="System models">
+                        <ul>
+                            <li>
+                                <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
+                                venturis; and on the gas side, supplies, regulators, gas valves) and link it to a test's
+                                channels: commands drive its valves, pressures it follows, sensors it's compared with.
+                            </li>
+                            <li>
+                                <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is plotted
+                                with the model, and how far apart they are. <em>Fit</em> turns the knobs you pick (CdAs,
+                                losses, a regulator's set pressure) until it matches best.
+                            </li>
+                            <li>
+                                A dataset&apos;s <em>Analyze</em> menu runs a model on it.
+                            </li>
+                        </ul>
+                    </Card>
+                )}
+                {preview && (
+                    <Card title="Scripts">
+                        <ul>
+                            <li>
+                                Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
+                                <code>yorg.channel(&quot;PT-TANK&quot;)</code> is a channel of the test picked, and{" "}
+                                <code>yorg.plot</code> draws on Yorg&apos;s plots.
+                            </li>
+                            <li>
+                                Scripts are kept for everyone in folders; upload .py files, or start from the examples.
+                                A dataset&apos;s <em>Analyze</em> menu opens it in Scripts.
+                            </li>
+                        </ul>
+                    </Card>
+                )}
 
                 <Card title="Views and exports">
                     <ul>

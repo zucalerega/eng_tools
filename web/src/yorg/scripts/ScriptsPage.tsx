@@ -4,7 +4,6 @@ import { Dialog, Notice } from "../../components";
 import { yorg, type Dataset, type DatasetDetail } from "../api";
 import { usePlotColors } from "../colors";
 import { samplesWhenReady, useLoaded } from "../data";
-import { DevTabs } from "../dev/DevTabs";
 import type { AxisSpec } from "../layout";
 import { storedT0 } from "../pages";
 import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
@@ -15,10 +14,10 @@ import { Editor } from "./Editor";
 import { EXAMPLES } from "./examples";
 import { bytesOf, floatsOf, PythonSandbox, type FromPython, type Preloaded, type RunContext } from "./sandbox";
 import { folderTree, nameOfFile, namedChannels, tidyFolder, type Folder } from "./tree";
-import "../dev/dev.css";
+import "../models/models.css";
 import "./scripts.css";
 
-// Yorg's Python window (the dev page's, admins): scripts that pull a test's channels and work them over, with NumPy,
+// Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull a test's channels and work them over, with NumPy,
 // SciPy, pandas, matplotlib, and CoolProp, run in the browser (sandbox.ts). Scripts are kept on the server in folders,
 // for every admin; .py files upload as scripts and scripts download as them.
 
@@ -64,7 +63,12 @@ const NEW_SCRIPT: Open = {
     dirty: false,
 };
 
+/** The test to start with: the one a dataset's page sent (?dataset=5), or the one last picked here. */
 function storedDataset(): number | null {
+    const asked = Number(new URLSearchParams(window.location.search).get("dataset"));
+    if (Number.isFinite(asked) && asked > 0) {
+        return asked;
+    }
     try {
         const found = Number(window.localStorage.getItem(DATASET_KEY));
         return Number.isFinite(found) && found > 0 ? found : null;
@@ -563,7 +567,6 @@ export function ScriptsPage() {
                         Python 3.14 in your browser (Pyodide), with NumPy, SciPy, pandas, matplotlib, and CoolProp
                     </p>
                 </div>
-                <DevTabs />
             </div>
             {problem && <Notice tone="error">{problem}</Notice>}
             <div className="scripts-layout">

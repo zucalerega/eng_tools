@@ -122,7 +122,10 @@ the keys.
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
-- **System models (admins, on Dev, while it's being tried out):** draw a test stand's
+- **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
+  it: the same data, views, and help, with Models and Scripts in its top bar and a dataset's
+  Analyze menu. Everyone else's Yorg stays as it is; admins go in with Preview, top right.
+- **System models (in the preview while it's being tried out):** draw a test stand's
   feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
   outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
   the gas side (dashed), gas supplies, gas junctions, regulators, gas valves, and gas
@@ -139,7 +142,7 @@ the keys.
   collapse factor), or pick them and **Fit**: the server turns them until the model
   matches best, and you apply what it found (or not). Models are saved for every admin,
   run against any test with the same channel names, and go to and from files.
-- **Scripts (admins, on Dev, while it's being tried out):** a Python window. Scripts pull
+- **Scripts (in the preview while it's being tried out):** a Python window. Scripts pull
   a test's channels (`yorg.channel("PT-TANK")`, or any test's with `await yorg.load(...)`)
   and work them over with NumPy, SciPy, pandas, matplotlib, and CoolProp (pure-Python
   packages install from PyPI with micropip); `yorg.plot` draws on Yorg's plots, matplotlib's

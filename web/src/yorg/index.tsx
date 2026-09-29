@@ -1,14 +1,16 @@
 import { Notice } from "../components";
+import { inPreview, sitePath } from "../preview";
 import { Link } from "../router";
 import { useVault } from "../store";
 import { DatasetsPage } from "./Datasets";
-import { DevPage } from "./dev/DevPage";
-import { ScriptsPage } from "./scripts/ScriptsPage";
 import { HelpPage } from "./Help";
+import { ModelsPage } from "./models/ModelsPage";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
+import { ScriptsPage } from "./scripts/ScriptsPage";
 import "./yorg.css";
 
 // Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and the vault.
+// Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models and scripts.
 
 export const YORG = "Yorg";
 
@@ -39,23 +41,44 @@ export const YORG_ICON =
 
 /** Which of Yorg's sections a path is in, for the top bar. */
 export function yorgSection(pathname: string): string {
-    return pathname.startsWith("/yorg/views")
-        ? "views"
-        : pathname.startsWith("/yorg/help")
-          ? "help"
-          : pathname.startsWith("/yorg/dev")
-            ? "dev"
-            : "data";
+    const path = sitePath(pathname);
+    for (const section of ["views", "help", "models", "scripts"]) {
+        if (path.startsWith(`/yorg/${section}`)) {
+            return section;
+        }
+    }
+    return "data";
 }
 
 /** Whether a page is a workspace of plots, which takes the whole window. */
 export function isWorkspace(pathname: string): boolean {
-    return /^\/yorg\/(datasets\/\d+|views\/\d+)\/?$/.test(pathname);
+    return /^\/yorg\/(datasets\/\d+|views\/\d+)\/?$/.test(sitePath(pathname));
 }
 
 export function YorgPage({ pathname }: { pathname: string }) {
     const vault = useVault();
-    const path = pathname.replace(/\/$/, "") || "/yorg";
+    const preview = inPreview(pathname);
+    if (preview && !vault.me) {
+        return <p className="muted">Loading…</p>;
+    }
+    if (!preview || vault.me?.is_admin) {
+        const page = yorgPage(sitePath(pathname).replace(/\/$/, "") || "/yorg", preview);
+        if (page) {
+            return page;
+        }
+    }
+    return (
+        <Notice tone="error">
+            There&apos;s no page here. {/* Out of the preview, unless it's yours to be in. */}
+            <Link to="/yorg" exact={!vault.me?.is_admin}>
+                Go to the test data
+            </Link>
+        </Notice>
+    );
+}
+
+/** A Yorg page by its path (in the preview, what's new too), or null if there's none. */
+function yorgPage(path: string, preview: boolean) {
     let match = /^\/yorg\/datasets\/(\d+)$/.exec(path);
     if (match) {
         return <DatasetPage key={match[1]} id={Number(match[1])} />;
@@ -81,19 +104,10 @@ export function YorgPage({ pathname }: { pathname: string }) {
             return <DeletedPage />;
         case "/yorg/help":
             return <HelpPage />;
-        case "/yorg/dev": // for admins, while they're tried out
-        case "/yorg/dev/scripts":
-            if (!vault.me) {
-                return <p className="muted">Loading…</p>;
-            }
-            if (vault.me.is_admin) {
-                return path === "/yorg/dev" ? <DevPage /> : <ScriptsPage />;
-            }
-            break;
+        case "/yorg/models": // what's new: in the preview only, until it's released
+            return preview ? <ModelsPage /> : null;
+        case "/yorg/scripts":
+            return preview ? <ScriptsPage /> : null;
     }
-    return (
-        <Notice tone="error">
-            There's no page here. <Link to="/yorg">Go to the test data</Link>
-        </Notice>
-    );
+    return null;
 }

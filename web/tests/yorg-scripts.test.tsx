@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { renderApp, Team } from "./team";
 
-// Yorg's Python window (admins, on Dev): scripts kept on the server in folders, uploaded as .py files, and the
+// Yorg's Python window (Scripts, in the preview for admins): scripts kept on the server in folders, uploaded as .py files, and the
 // examples to start from. The scripts run in the browser with Pyodide, which jsdom can't: here, Python never gets
 // ready, and everything else is tested.
 
@@ -15,9 +15,9 @@ test("the Python window is for admins", async () => {
     asBob.unmount();
 
     renderApp(team.chief, "/yorg/dev");
-    await screen.findByRole("heading", { name: "System models" });
+    await screen.findByRole("heading", { name: "Test data" });
     await userEvent.click(
-        within(screen.getByRole("navigation", { name: "Dev pages" })).getByRole("link", { name: "Scripts" }),
+        within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Scripts" }),
     );
     expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Run" }).hasAttribute("disabled")).toBe(true); // no Python here

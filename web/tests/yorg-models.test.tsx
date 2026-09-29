@@ -15,25 +15,25 @@ const COLD_FLOW = [
     }),
 ].join("\n");
 
-test("the dev page is for admins", async () => {
+test("system models are in the preview, for admins", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
-    const asBob = renderApp(bob, "/yorg/dev");
+    const asBob = renderApp(bob, "/yorg/dev/models");
     expect(await screen.findByText(/There's no page here/)).toBeTruthy();
-    const nav = within(screen.getByRole("navigation", { name: "Main" }));
-    expect(nav.queryByRole("link", { name: "Dev" })).toBeNull();
     asBob.unmount();
 
     renderApp(team.chief, "/yorg");
     const main = within(await screen.findByRole("navigation", { name: "Main" }));
-    await userEvent.click(await main.findByRole("link", { name: "Dev" }));
+    await userEvent.click(await main.findByRole("link", { name: "Preview" }));
+    await userEvent.click(await main.findByRole("link", { name: "Models" }));
     expect(await screen.findByRole("heading", { name: "System models" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/yorg/dev/models");
 });
 
 test("a model is drawn, linked to a test, saved, run against it, and fitted to it", { timeout: 360_000 }, async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
-    renderApp(team.chief, "/yorg/dev");
+    renderApp(team.chief, "/yorg/dev/models");
 
     expect((await screen.findByRole("link", { name: "FullFlow" })).getAttribute("href")).toBe(
         "https://github.com/saakethramoju/FullFlow",

@@ -16,7 +16,6 @@ import {
     type SavedModel,
     type SystemModel,
 } from "./api";
-import { DevTabs } from "./DevTabs";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
 import { applyKnobs, FitDialog, FitSummary, type Knob } from "./Fit";
 import { Inspector } from "./Inspector";
@@ -34,9 +33,9 @@ import {
 } from "./model";
 import { Results } from "./Results";
 import { channelToSiLinear, readingFor } from "./units";
-import "./dev.css";
+import "./models.css";
 
-// Yorg's dev page (admins): system models. Draw a test stand's feed system, link its valves and sensors to a test's
+// Yorg's system models (Models, in the preview while they're tried out). Draw a test stand's feed system, link its valves and sensors to a test's
 // channels, run it with FullFlow on the server, and compare it with what was measured; turn the knobs marked "tune"
 // until it matches, or have a fit turn them.
 
@@ -69,6 +68,18 @@ interface Found {
     note: string;
 }
 
+/** A run's window on a dataset, from its T0 (or start): a second before T0 to ten after (or its first ten seconds). */
+function windowFor(found: Dataset): { from: string; to: string } | Record<string, never> {
+    if (found.t_min === null || found.t_max === null) {
+        return {};
+    }
+    const at = storedT0(found.id);
+    const from = at === null ? found.t_min : Math.max(found.t_min, at - 1);
+    const to = Math.min(found.t_max, (at ?? found.t_min) + 10);
+    const origin = at ?? found.t_min;
+    return { from: formatValue(from - origin), to: formatValue(to - origin) };
+}
+
 function download(name: string, text: string) {
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const link = document.createElement("a");
@@ -78,7 +89,7 @@ function download(name: string, text: string) {
     URL.revokeObjectURL(url);
 }
 
-export function DevPage() {
+export function ModelsPage() {
     useLoaded();
     const [catalog, setCatalog] = useState<Catalog | null>(null);
     const [saved, setSaved] = useState<SavedModel[]>([]);
@@ -105,7 +116,15 @@ export function DevPage() {
             ([loadedCatalog, models, all]) => {
                 setCatalog(loadedCatalog);
                 setSaved(models);
-                setDatasets(all.filter((one) => one.status === "ready"));
+                const ready = all.filter((one) => one.status === "ready");
+                setDatasets(ready);
+                // Come from a dataset's page (?dataset=5): that test, picked.
+                const asked = Number(new URLSearchParams(window.location.search).get("dataset"));
+                const found = ready.find((one) => one.id === asked);
+                if (found) {
+                    setDatasetId(found.id);
+                    setWindowText((now) => ({ ...now, ...windowFor(found) }));
+                }
             },
             (error) => setProblem(message(error)),
         );
@@ -121,12 +140,8 @@ export function DevPage() {
     function pickDataset(id: number | null) {
         setDatasetId(id);
         const found = datasets.find((one) => one.id === id);
-        if (id !== null && found && found.t_min !== null && found.t_max !== null) {
-            const at = storedT0(id);
-            const from = at === null ? found.t_min : Math.max(found.t_min, at - 1);
-            const to = Math.min(found.t_max, (at ?? found.t_min) + 10);
-            const origin = at ?? found.t_min;
-            setWindowText({ ...windowText, from: formatValue(from - origin), to: formatValue(to - origin) });
+        if (found) {
+            setWindowText({ ...windowText, ...windowFor(found) });
         }
     }
 
@@ -335,7 +350,6 @@ export function DevPage() {
                         </a>
                     </p>
                 </div>
-                <DevTabs />
                 <div className="dev-head-actions">
                     <select
                         aria-label="Saved models"

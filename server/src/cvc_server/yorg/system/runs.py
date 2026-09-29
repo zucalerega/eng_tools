@@ -36,6 +36,8 @@ class Run:
 class Runs:
     def __init__(self, root: Path):
         self.root = Path(root) / "runs"
+        # Matplotlib (which FullFlow's plotting imports) keeps a font cache: kept between runs, it's built once.
+        self.matplotlib = Path(root) / "matplotlib"
         self._runs: dict[str, Run] = {}
         self._lock = threading.Lock()
         shutil.rmtree(self.root, ignore_errors=True)  # runs don't outlive the server
@@ -57,7 +59,7 @@ class Runs:
                 _write(times, folder / "inputs" / f"{key}.t.f64")
                 _write(values, folder / "inputs" / f"{key}.v.f64")
             (folder / "job.json").write_text(json.dumps({**job, "inputs": sorted(inputs)}), encoding="utf-8")
-            environment = {**os.environ, "MPLCONFIGDIR": str(folder / "mpl"), "MPLBACKEND": "Agg"}
+            environment = {**os.environ, "MPLCONFIGDIR": str(self.matplotlib), "MPLBACKEND": "Agg"}
             with (folder / "log.txt").open("wb") as log:
                 process = subprocess.Popen(
                     [sys.executable, "-m", "cvc_server.yorg.system.runner", str(folder)],

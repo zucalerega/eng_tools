@@ -3,26 +3,31 @@ import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import { yorg, type Dataset, type DatasetDetail } from "../api";
 import { usePlotColors } from "../colors";
-import { samplesWhenReady, useLoaded } from "../data";
+import { readHandoff, starterScript } from "../analysis";
+import { dataset as loadDataset, samplesWhenReady, useLoaded } from "../data";
 import type { AxisSpec } from "../layout";
 import { storedT0 } from "../pages";
 import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
 import { Samples, sampleAt } from "../samples";
 import { formatTick, formatValue, ticks } from "../scale";
 import { scriptsApi, type Script } from "./api";
-import { Editor } from "./Editor";
+import type { Attached } from "./complete";
+import { DataPanel } from "./DataPanel";
+import { Editor, type EditorHandle } from "./Editor";
 import { EXAMPLES } from "./examples";
 import { bytesOf, floatsOf, PythonSandbox, type FromPython, type Preloaded, type RunContext } from "./sandbox";
-import { folderTree, nameOfFile, namedChannels, tidyFolder, type Folder } from "./tree";
+import { channelsToLoad, folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
 import "./scripts.css";
 
-// Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull a test's channels and work them over, with NumPy,
-// SciPy, pandas, matplotlib, and CoolProp, run in the browser (sandbox.ts). Scripts are kept on the server in folders,
-// for every admin; .py files upload as scripts and scripts download as them.
+// Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull tests' channels and work them
+// over, with NumPy, SciPy, pandas, matplotlib, and CoolProp, run in the browser (sandbox.ts). A script works on the
+// tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept on the server in folders, for
+// every admin; .py files upload as scripts and scripts download as them. A dataset's or view's page opens a script on
+// what it had (analysis.ts).
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-const DATASET_KEY = "yorg.scripts.dataset";
+const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
 const COLORS = ["#2f7ed8", "#e0a500", "#2aa876", "#d64541", "#8e5bd1", "#e67e22", "#16a0b5", "#7f8c8d"];
 
 /** What's open in the editor: a saved script, an example (saved only as a copy), or a new one. */
@@ -32,6 +37,7 @@ interface Open {
     name: string;
     folder: string;
     code: string;
+    datasets: number[]; // the tests attached, the first first
     dirty: boolean;
 }
 
@@ -54,26 +60,35 @@ type Python =
 
 type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | null;
 
-const NEW_SCRIPT: Open = {
+const newScript = (datasets: number[]): Open => ({
     id: null,
     example: null,
     name: "New script",
     folder: "",
-    code: '# Your analysis: channels of the test picked above, by name.\npt = yorg.channel("PT-TANK")\nyorg.plot(pt)\n',
+    code: "# Your analysis. Click a channel under Data to put it in, or type its name in quotes.\n",
+    datasets,
     dirty: false,
-};
+});
 
-/** The test to start with: the one a dataset's page sent (?dataset=5), or the one last picked here. */
-function storedDataset(): number | null {
+/** The tests to start with: those a page sent (?dataset=5), or those attached here last. */
+function storedDatasets(): number[] {
     const asked = Number(new URLSearchParams(window.location.search).get("dataset"));
     if (Number.isFinite(asked) && asked > 0) {
-        return asked;
+        return [asked];
     }
     try {
-        const found = Number(window.localStorage.getItem(DATASET_KEY));
-        return Number.isFinite(found) && found > 0 ? found : null;
+        const found: unknown = JSON.parse(window.localStorage.getItem(DATASETS_KEY) ?? "[]");
+        return Array.isArray(found) ? found.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
     } catch {
-        return null;
+        return [];
+    }
+}
+
+function storeDatasets(ids: number[]) {
+    try {
+        window.localStorage.setItem(DATASETS_KEY, JSON.stringify(ids));
+    } catch {
+        // storage blocked: they're attached for this visit
     }
 }
 
@@ -179,9 +194,8 @@ export function ScriptsPage() {
     useLoaded();
     const [scripts, setScripts] = useState<Script[] | null>(null);
     const [datasets, setDatasets] = useState<Dataset[]>([]);
-    const [datasetId, setDatasetId] = useState<number | null>(storedDataset);
     const [problem, setProblem] = useState<string | null>(null);
-    const [open, setOpen] = useState<Open>(NEW_SCRIPT);
+    const [open, setOpen] = useState<Open>(() => newScript(storedDatasets()));
     const [python, setPython] = useState<Python>({ state: "loading", text: "Starting Python…" });
     const [output, setOutput] = useState<Output>(EMPTY_OUTPUT);
     const [asking, setAsking] = useState<Asking>(null);
@@ -190,6 +204,7 @@ export function ScriptsPage() {
     const [closed, setClosed] = useState<Set<string>>(new Set());
     const sandbox = useRef<PythonSandbox | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
+    const editor = useRef<EditorHandle | null>(null);
     const details = useRef(new Map<number, DatasetDetail>());
     // What the sandbox calls: this render's, so they see the test picked now.
     const handlers = useRef<{
@@ -212,7 +227,19 @@ export function ScriptsPage() {
         Promise.all([scriptsApi.list(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
             ([saved, all]) => {
                 setScripts(saved);
-                setDatasets(all.filter((one) => one.status === "ready"));
+                const ready = all.filter((one) => one.status === "ready");
+                setDatasets(ready);
+                // From a dataset's or view's page: a script on what it had.
+                const handoff = readHandoff(window.location.search);
+                if (handoff) {
+                    const names = Object.fromEntries(ready.map((one) => [one.id, one.name]));
+                    setOpen({
+                        ...newScript(handoff.datasets.filter((id) => id in names)),
+                        name: `From ${handoff.title || "a view"}`,
+                        code: starterScript(handoff, names),
+                        dirty: true,
+                    });
+                }
             },
             (error) => setProblem(message(error)),
         );
@@ -225,14 +252,21 @@ export function ScriptsPage() {
         } else if (typeof which === "string" && which.trim()) {
             const all = await request<Dataset[]>("GET", "/api/yorg/datasets");
             const wanted = which.trim().toLowerCase();
-            id = (all.find((one) => one.name === which) ?? all.find((one) => one.name.toLowerCase() === wanted))?.id;
+            const named = all.filter((one) => one.name === which);
+            const found = named.length ? named : all.filter((one) => one.name.toLowerCase() === wanted);
+            if (found.length > 1) {
+                // Tests in two folders can have one name: only an id says which.
+                const ids = found.map((one) => one.id).join(" or ");
+                throw new Error(`${found.length} tests are called ${which}: say which by its id (dataset=${ids})`);
+            }
+            id = found[0]?.id;
             if (id === undefined) {
                 throw new Error(`There's no test called ${which}`);
             }
         } else {
-            id = datasetId ?? undefined;
+            id = open.datasets[0];
             if (id === undefined) {
-                throw new Error("Pick a test above the script, or name one: dataset=...");
+                throw new Error("Attach a test to the script (Data), or name one: dataset=...");
             }
         }
         const known = details.current.get(id);
@@ -257,6 +291,7 @@ export function ScriptsPage() {
             unit: channel.unit,
             labels: channel.labels,
             dataset: detail.name,
+            dataset_id: detail.id,
             t: bytesOf(loaded.times),
             v: bytesOf(loaded.values),
         };
@@ -375,6 +410,7 @@ export function ScriptsPage() {
                     name: example.name,
                     folder: "",
                     code: example.code,
+                    datasets: open.datasets,
                     dirty: false,
                 });
                 return;
@@ -387,6 +423,7 @@ export function ScriptsPage() {
                     name: found.name,
                     folder: found.folder,
                     code: found.code ?? "",
+                    datasets: found.datasets?.length ? found.datasets : open.datasets,
                     dirty: false,
                 });
             });
@@ -397,8 +434,8 @@ export function ScriptsPage() {
         act(async () => {
             const done =
                 asNew || !open.id
-                    ? await scriptsApi.add(name, tidyFolder(folder), open.code)
-                    : await scriptsApi.save(open.id, name, tidyFolder(folder), open.code);
+                    ? await scriptsApi.add(name, tidyFolder(folder), open.code, open.datasets)
+                    : await scriptsApi.save(open.id, name, tidyFolder(folder), open.code, open.datasets);
             setOpen({ ...open, id: done.id, example: null, name: done.name, folder: done.folder, dirty: false });
             setScripts(await scriptsApi.list());
             setAsking(null);
@@ -416,7 +453,7 @@ export function ScriptsPage() {
     async function uploadFiles(files: FileList) {
         const added: Script[] = [];
         for (const file of Array.from(files)) {
-            added.push(await scriptsApi.add(nameOfFile(file.name), open.folder, await file.text()));
+            added.push(await scriptsApi.add(nameOfFile(file.name), open.folder, await file.text(), open.datasets));
         }
         setScripts(await scriptsApi.list());
         const last = added[added.length - 1];
@@ -428,6 +465,7 @@ export function ScriptsPage() {
                     name: last.name,
                     folder: last.folder,
                     code: last.code ?? "",
+                    datasets: last.datasets ?? open.datasets,
                     dirty: false,
                 }),
             );
@@ -445,30 +483,36 @@ export function ScriptsPage() {
             }
             setOutput(EMPTY_OUTPUT);
             setPython({ state: "running", started: Date.now(), text: "Loading its channels…" });
-            let context: RunContext = { dataset: null, t0: null };
+            let context: RunContext = { datasets: [] };
             const preloaded: Preloaded[] = [];
             try {
-                if (datasetId !== null) {
-                    const detail = await detailOf(datasetId);
-                    context = {
-                        dataset: {
-                            id: detail.id,
-                            name: detail.name,
-                            channels: detail.channels.map(({ name, unit, kind, labels }) => ({
-                                name,
-                                unit,
-                                kind,
-                                labels,
-                            })),
-                        },
+                const tests = await Promise.all(open.datasets.map((id) => detailOf(id)));
+                context = {
+                    datasets: tests.map((detail) => ({
+                        id: detail.id,
+                        name: detail.name,
                         t0: storedT0(detail.id),
-                    };
-                    const names = namedChannels(
-                        open.code,
-                        detail.channels.map((one) => one.name),
-                    );
-                    preloaded.push(...(await Promise.all(names.map((name) => channelOf(detail, name)))));
-                }
+                        channels: detail.channels.map(({ name, unit, kind, labels }) => ({ name, unit, kind, labels })),
+                    })),
+                };
+                const wanted = channelsToLoad(
+                    open.code,
+                    tests.map((detail) => ({
+                        id: detail.id,
+                        name: detail.name,
+                        channels: detail.channels.map((one) => one.name),
+                    })),
+                );
+                preloaded.push(
+                    ...(await Promise.all(
+                        wanted.map((one) =>
+                            channelOf(
+                                tests.find((detail) => detail.id === one.dataset)!,
+                                one.channel,
+                            ),
+                        ),
+                    )),
+                );
             } catch (error) {
                 setPython({ state: "ready", version: "" });
                 throw error;
@@ -490,6 +534,17 @@ export function ScriptsPage() {
         setPython({ state: "loading", text: "Starting Python…" });
         box.start();
     }
+
+    // Every test attached, in order (the first is the one that needs no dataset=), its channels once they've loaded.
+    const attached: Attached[] = open.datasets.map((id) => {
+        const loaded = loadDataset(id);
+        const ready = loaded.status === "ready" ? loaded.value : null;
+        return {
+            id,
+            name: ready?.name ?? datasets.find((one) => one.id === id)?.name ?? `Test ${id}`,
+            channels: ready ? ready.channels.map(({ name, unit }) => ({ name, unit })) : [],
+        };
+    });
 
     const running = python.state === "running";
     const [, tick] = useState(0);
@@ -572,7 +627,7 @@ export function ScriptsPage() {
             <div className="scripts-layout">
                 <aside className="scripts-side" aria-label="Scripts">
                     <div className="scripts-side-actions">
-                        <button type="button" onClick={() => withSaved(() => setOpen(NEW_SCRIPT))}>
+                        <button type="button" onClick={() => withSaved(() => setOpen(newScript(open.datasets)))}>
                             New
                         </button>
                         <button type="button" onClick={() => fileInput.current?.click()}>
@@ -627,28 +682,6 @@ export function ScriptsPage() {
                                 onChange={(event) => setOpen({ ...open, folder: event.target.value, dirty: true })}
                             />
                         </label>
-                        <label className="field">
-                            Test
-                            <select
-                                value={datasetId ?? ""}
-                                onChange={(event) => {
-                                    const id = event.target.value ? Number(event.target.value) : null;
-                                    setDatasetId(id);
-                                    try {
-                                        window.localStorage.setItem(DATASET_KEY, id === null ? "" : String(id));
-                                    } catch {
-                                        // storage blocked: it's picked for this visit
-                                    }
-                                }}
-                            >
-                                <option value="">None</option>
-                                {datasets.map((one) => (
-                                    <option key={one.id} value={one.id}>
-                                        {one.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
                     </div>
                     <div className="scripts-actions">
                         {running ? (
@@ -701,7 +734,9 @@ export function ScriptsPage() {
                         </span>
                     </div>
                     <Editor
+                        ref={editor}
                         label="Code"
+                        attached={attached}
                         code={open.code}
                         onChange={(code) => setOpen({ ...open, code, dirty: true })}
                         onRun={() => !running && python.state === "ready" && void run()}
@@ -744,6 +779,15 @@ export function ScriptsPage() {
                         ))}
                     </section>
                 </div>
+                <DataPanel
+                    datasets={datasets}
+                    attached={open.datasets}
+                    onChange={(ids) => {
+                        storeDatasets(ids);
+                        setOpen({ ...open, datasets: ids, dirty: open.id !== null || open.dirty });
+                    }}
+                    onChannel={(channel, test) => editor.current?.insertChannel(channel, test)}
+                />
             </div>
 
             {asking?.ask === "save-as" && (
@@ -783,7 +827,7 @@ export function ScriptsPage() {
                         void act(async () => {
                             await scriptsApi.remove(open.id!);
                             setScripts(await scriptsApi.list());
-                            setOpen(NEW_SCRIPT);
+                            setOpen(newScript(open.datasets));
                             setAsking(null);
                         })
                     }

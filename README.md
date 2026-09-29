@@ -142,14 +142,20 @@ the keys.
   collapse factor), or pick them and **Fit**: the server turns them until the model
   matches best, and you apply what it found (or not). Models are saved for every admin,
   run against any test with the same channel names, and go to and from files.
-- **Scripts (in the preview while it's being tried out):** a Python window. Scripts pull
-  a test's channels (`yorg.channel("PT-TANK")`, or any test's with `await yorg.load(...)`)
-  and work them over with NumPy, SciPy, pandas, matplotlib, and CoolProp (pure-Python
-  packages install from PyPI with micropip); `yorg.plot` draws on Yorg's plots, matplotlib's
-  figures show as images, and `yorg.download` offers a file to save. Python (Pyodide) runs
-  in your browser, sandboxed from the site. Scripts are kept for every admin in folders;
-  upload .py files as scripts and download scripts as them. Examples to start from: a
-  channel's peak, an injector's CdA, ullage gas from CoolProp, a spectrum, and more.
+- **Scripts (in the preview while it's being tried out):** a Python window. A script works on
+  the tests attached to it (Data, beside it): their channels are listed there, and a click puts
+  one in the code (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for another test);
+  in quotes, a few letters offer the channels that have them, and after `yorg.` what the module
+  has (Ctrl+Space asks anywhere). Work them over with NumPy, SciPy, pandas, matplotlib, and
+  CoolProp (pure-Python packages install from PyPI with micropip); `yorg.plot` draws on Yorg's
+  plots, matplotlib's figures show as images, and `yorg.download` offers a file to save. Python
+  (Pyodide) runs in your browser, sandboxed from the site. Scripts are kept for every admin in
+  folders, with their tests; upload .py files as scripts and download scripts as them.
+  Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
+  spectrum, and more.
+- **From a dataset or a view to Scripts and Models** (in the preview): **Scripts** on its page
+  starts a script on what it plots (its channels, over the time in view, its tests attached), and
+  **Model** runs a model on its test over that time; both link back to the test.
 
 ## Layout
 

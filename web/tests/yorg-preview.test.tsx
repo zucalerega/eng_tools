@@ -49,15 +49,17 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     expect(await screen.findByRole("region", { name: "System models" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Scripts" })).toBeTruthy();
 
-    // A dataset's page runs a model on it: the models page opens with the test picked.
+    // A dataset's page runs a model on it: the models page opens with the test picked, and a way back to it.
     await userEvent.click(nav.getByRole("link", { name: "Datasets" }));
     await userEvent.click(await screen.findByRole("link", { name: data.name }));
-    await userEvent.click(await screen.findByRole("button", { name: "Analyze" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Run a model on this test" }));
+    await userEvent.click(await screen.findByRole("link", { name: "Model" }));
     expect(await screen.findByRole("heading", { name: "System models" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev/models");
     await waitFor(() =>
         expect((screen.getByLabelText("Test") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(data.name),
+    );
+    expect(screen.getByRole("link", { name: "Open the test ↗" }).getAttribute("href")).toBe(
+        `/yorg/dev/datasets/${data.id}`,
     );
 
     // Out of the preview, to the same page on the site: what's new isn't there.
@@ -65,6 +67,30 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     expect(await screen.findByText(/There's no page here/)).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/models");
     expect(tabs()).toEqual(["Datasets", "Views", "Help", "Preview"]);
+});
+
+test("a dataset's page opens a script on what it plots, its test attached", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Cold flow", DATA);
+    renderApp(team.chief, `/yorg/dev/datasets/${data.id}`);
+    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    await userEvent.click(await channels.findByRole("button", { name: /PT-TANK/ }));
+    // (the page's own Scripts, not the top bar's: it takes what's plotted along)
+    const scripts = screen
+        .getAllByRole("link", { name: "Scripts" })
+        .find((link) => link.getAttribute("href")?.includes("?from="));
+    await userEvent.click(scripts!);
+    expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/yorg/dev/scripts");
+    await waitFor(() =>
+        expect((screen.getByLabelText("Code") as HTMLTextAreaElement).value).toContain(
+            'pt_tank = yorg.channel("PT-TANK")',
+        ),
+    );
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(`From ${data.name}`);
+    expect(
+        within(screen.getByRole("complementary", { name: "Data" })).getByRole("region", { name: data.name }),
+    ).toBeTruthy();
 });
 
 test("the preview is for admins", async () => {

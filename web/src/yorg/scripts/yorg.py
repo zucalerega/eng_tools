@@ -3,17 +3,20 @@
 The script runs in your browser (Pyodide: CPython compiled to WebAssembly), not on the server, in a sandbox that can't
 reach the site: channels come to it from the page, and what it plots and saves goes back to the page.
 
-    pt = yorg.channel("PT-TANK")                    # from the test picked above the script
+    pt = yorg.channel("PT-TANK")                      # the first test attached to the script (Data)
+    other = yorg.channel("PT-TANK", dataset="Hotfire 4")  # another test attached
     print(pt.values.max(), pt.unit)
-    yorg.plot(pt)                                   # on the page, with Yorg's plots
+    yorg.plot(pt)                                     # on the page, with Yorg's plots
 
-    fm = await yorg.load("FM-OX", dataset="Hotfire 4")    # any channel of any test (a name made as it runs, too)
+    fm = await yorg.load("FM-" + "OX", dataset="Hotfire 3")  # any channel of any test, named as it runs
     for info in await yorg.datasets():
         print(info["name"])
 
-Channels named in the script (as "PT-TANK" is above) are loaded before it starts; yorg.channel() gives those. Times are
-seconds on the dataset's own clock (yorg.t0 is its T0 on that clock, if this browser has one for it); values are in
-the channel's unit, and Channel.si() puts pressures, temperatures, and mass flows in SI units.
+A channel named in the script in quotes ("PT-TANK" above) is loaded before it starts, from the first test attached, and
+from another attached test the script names too (dataset="Hotfire 4", or by its id, dataset=12: two tests in two
+folders can have one name); yorg.channel() gives those. Times are seconds on each test's own clock
+(its T0 on that clock is yorg.attached[i]["t0"], if this browser has one); values are in the channel's unit, and
+Channel.si() puts pressures, temperatures, and mass flows in SI units.
 """
 
 import io
@@ -30,17 +33,19 @@ from pyodide.ffi import to_js  # noqa: E402
 PSI = 6894.757
 ATMOSPHERE = 101325.0
 
-dataset = None  # the test picked above the script: {"id", "name", "channels": [{"name", "unit", "kind", "labels"}]}
+attached = []  # the tests attached to the script, the first first: {"id", "name", "t0", "channels": [{"name", ...}]}
+dataset = None  # the first of them (None: none attached)
 t0 = None  # its T0, on its clock, if this browser has one for it
-_loaded = {}  # name: Channel, loaded before the script started
+_loaded = {}  # (test's id, channel's name): Channel, loaded before the script started
 
 
 class Channel:
     """A channel's samples: t (s, on its dataset's clock) and values (in unit). A state channel's values number its
-    labels: 0 for labels[0], 1 for labels[1] (CLOSED, OPEN)."""
+    labels: 0 for labels[0], 1 for labels[1] (CLOSED, OPEN). dataset is its test's name, dataset_id its id."""
 
-    def __init__(self, name, unit, t, values, labels=(), dataset=None):
+    def __init__(self, name, unit, t, values, labels=(), dataset=None, dataset_id=None):
         self.name, self.unit, self.labels, self.dataset = name, unit, list(labels), dataset
+        self.dataset_id = dataset_id
         self.t = np.asarray(t, dtype=float)
         self.values = np.asarray(values, dtype=float)
 
@@ -58,7 +63,9 @@ class Channel:
     def between(self, start, end):
         """The samples from start to end (s, on the dataset's clock), as a Channel."""
         keep = (self.t >= start) & (self.t <= end)
-        return Channel(self.name, self.unit, self.t[keep], self.values[keep], self.labels, self.dataset)
+        return Channel(
+            self.name, self.unit, self.t[keep], self.values[keep], self.labels, self.dataset, self.dataset_id
+        )
 
     def at(self, times):
         """The values at times (s), interpolated between samples."""
@@ -69,29 +76,67 @@ class Channel:
         return self.labels[int(round(value))] if self.labels else None
 
 
-def channels():
-    """The names of the channels of the test picked above the script."""
-    return [one["name"] for one in (dataset or {}).get("channels", [])]
+def _find(test):
+    """An attached test by its id or name (None: none is). Two tests attached can have one name (in two folders), and
+    then only an id says which."""
+    for info in attached:
+        if test in (info["id"], str(info["id"])):
+            return info
+    named = [info for info in attached if test == info["name"]] or [
+        info for info in attached if str(test).lower() == info["name"].lower()
+    ]
+    if len(named) > 1:
+        ids = " or ".join(str(info["id"]) for info in named)
+        raise LookupError(f"{len(named)} tests attached are called {test}: say which by its id (dataset={ids})")
+    return named[0] if named else None
 
 
-def channel(name):
-    """A channel of the test picked above the script, named in the script (so it's loaded before it starts)."""
-    if name in _loaded:
-        return _loaded[name]
-    if dataset is None:
-        raise LookupError("Pick a test above the script to take its channels")
-    if name not in channels():
-        raise LookupError(f"{dataset['name']} has no channel {name}")
+def _attached(test=None):
+    """An attached test, by its id or name (None: the first)."""
+    if not attached:
+        raise LookupError("Attach a test to the script (Data, beside it) to take its channels")
+    if test is None:
+        return attached[0]
+    found = _find(test)
+    if found is None:
+        raise LookupError(
+            f"{test} isn't attached to the script: attach it under Data, or `await yorg.load(name, dataset={test!r})`"
+        )
+    return found
+
+
+def _ref(info):
+    """How the code names an attached test: "Hotfire 4", or its id when another attached test has its name."""
+    shared = sum(other["name"].lower() == info["name"].lower() for other in attached) > 1
+    return str(info["id"]) if shared else f'"{info["name"]}"'
+
+
+def channels(dataset=None):
+    """The names of an attached test's channels (the first's, unless told another)."""
+    return [one["name"] for one in _attached(dataset)["channels"]]
+
+
+def channel(name, dataset=None):
+    """A channel of an attached test (the first, unless told another), named in the script in quotes: it's loaded
+    before the script starts."""
+    info = _attached(dataset)
+    found = _loaded.get((info["id"], name))
+    if found is not None:
+        return found
+    if name not in [one["name"] for one in info["channels"]]:
+        raise LookupError(f"{info['name']} has no channel {name}")
+    more = "" if info is attached[0] else f", with dataset={_ref(info)} there too"
     raise LookupError(
-        f"{name} isn't loaded: channels named in the script are, before it starts; for a name made as it runs, use "
-        f"`await yorg.load({name!r})`"
+        f"{name} of {info['name']} isn't loaded: a channel is loaded before the script starts when it's named in "
+        f"quotes{more}; for a name made as it runs, use `await yorg.load({name!r}, dataset={_ref(info)})`"
     )
 
 
 async def load(name, dataset=None):
-    """Any channel: the picked test's, or a test's by name or id (dataset=)."""
-    found = await _ask("channel", {"name": name, "dataset": dataset})
-    return _channel(found)
+    """Any channel of any test: an attached one's (the first's unless told another), or any test's by name or id."""
+    found = _find(dataset) if dataset is not None else (attached[0] if attached else None)
+    test = found["id"] if found else dataset
+    return _channel(await _ask("channel", {"name": name, "dataset": test}))
 
 
 async def datasets():
@@ -219,17 +264,20 @@ def _channel(found):
         np.frombuffer(bytes(found["v"]), dtype="<f8"),
         found.get("labels") or (),
         found.get("dataset"),
+        found.get("dataset_id"),
     )
 
 
 def _begin(context, preloaded):
-    """Before a script: the picked test, the channels the script names, and matplotlib drawing to the page."""
+    """Before a script: the tests attached, the channels it names, and matplotlib drawing to the page."""
     global dataset, t0
     context = context.to_py() if hasattr(context, "to_py") else context
-    dataset, t0 = context.get("dataset"), context.get("t0")
+    attached[:] = context.get("datasets") or []
+    dataset = attached[0] if attached else None
+    t0 = dataset.get("t0") if dataset else None
     _loaded.clear()
     for found in preloaded.to_py() if hasattr(preloaded, "to_py") else preloaded:
-        _loaded[found["name"]] = _channel(found)
+        _loaded[found["dataset_id"], found["name"]] = _channel(found)
     if "matplotlib" in sys.modules or _installed("matplotlib"):
         import matplotlib.pyplot as plt
 

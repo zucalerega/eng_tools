@@ -3,7 +3,8 @@ import { request } from "../../api";
 import { Dialog, MenuButton, Notice } from "../../components";
 import type { Dataset } from "../api";
 import { dataset as loadDataset, samples as loadSamples, useLoaded } from "../data";
-import { storedT0 } from "../pages";
+import { linkTarget } from "../../preview";
+import { datasetUrl, storedT0 } from "../pages";
 import { sampleAt } from "../samples";
 import { formatValue } from "../scale";
 import {
@@ -69,15 +70,25 @@ interface Found {
 }
 
 /** A run's window on a dataset, from its T0 (or start): a second before T0 to ten after (or its first ten seconds). */
-function windowFor(found: Dataset): { from: string; to: string } | Record<string, never> {
+function windowFor(
+    found: Dataset,
+    asked: [number, number] | null = null,
+): { from: string; to: string } | Record<string, never> {
     if (found.t_min === null || found.t_max === null) {
         return {};
     }
     const at = storedT0(found.id);
-    const from = at === null ? found.t_min : Math.max(found.t_min, at - 1);
-    const to = Math.min(found.t_max, (at ?? found.t_min) + 10);
     const origin = at ?? found.t_min;
+    // A page's time in view, when it sent one (on the test's clock); else a second before T0 to ten after.
+    const from = asked ? asked[0] : at === null ? found.t_min : Math.max(found.t_min, at - 1);
+    const to = asked ? asked[1] : Math.min(found.t_max, (at ?? found.t_min) + 10);
     return { from: formatValue(from - origin), to: formatValue(to - origin) };
+}
+
+/** The time in view a page sent (?window=12,18.5), if it did. */
+function askedWindow(): [number, number] | null {
+    const parts = (new URLSearchParams(window.location.search).get("window") ?? "").split(",").map(Number);
+    return parts.length === 2 && parts.every(Number.isFinite) && parts[1]! > parts[0]! ? [parts[0]!, parts[1]!] : null;
 }
 
 function download(name: string, text: string) {
@@ -118,12 +129,12 @@ export function ModelsPage() {
                 setSaved(models);
                 const ready = all.filter((one) => one.status === "ready");
                 setDatasets(ready);
-                // Come from a dataset's page (?dataset=5): that test, picked.
+                // Come from a dataset's or view's page (?dataset=5&window=12,18.5): that test, over that time.
                 const asked = Number(new URLSearchParams(window.location.search).get("dataset"));
                 const found = ready.find((one) => one.id === asked);
                 if (found) {
                     setDatasetId(found.id);
-                    setWindowText((now) => ({ ...now, ...windowFor(found) }));
+                    setWindowText((now) => ({ ...now, ...windowFor(found, askedWindow()) }));
                 }
             },
             (error) => setProblem(message(error)),
@@ -604,6 +615,17 @@ export function ModelsPage() {
                         ))}
                     </select>
                 </label>
+                {datasetId !== null && (
+                    <a
+                        className="dev-open-test"
+                        href={linkTarget(datasetUrl(datasetId))}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Its plots, in a new tab"
+                    >
+                        Open the test ↗
+                    </a>
+                )}
                 <label className="field" title={t0 === null ? "Seconds from the dataset's start" : "Seconds from T0"}>
                     From (s)
                     <input

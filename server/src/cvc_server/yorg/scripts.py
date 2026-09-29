@@ -27,6 +27,8 @@ class ScriptIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     folder: str = Field(default="", max_length=300)  # "" for none, or "Hotfires/Injector"
     code: str = Field(default="", max_length=MAX_CODE)
+    # The tests it works on (dataset ids), the first the one yorg.channel() takes from unless told another.
+    datasets: list[int] = Field(default_factory=list, max_length=20)
 
     @field_validator("name")
     @classmethod

@@ -576,7 +576,10 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
   the same pages there, and the new ones (Models, Scripts) only there, and the router sends
   links followed in the preview to their preview pages (a link marked `exact` leaves it).
-  The top bar, a dataset's Analyze menu, and Help's cards show what's new in the preview.
+  The top bar, a dataset's or view's Scripts and Model buttons, and Help's cards show what's
+  new in the preview. Those buttons take what the page plots along (`analysis.ts`: its tests,
+  the channels plotted, the time in view): a script starts on them (`starterScript`), a
+  model's run window is that time.
   Releasing a feature is showing it outside the preview too (and its API to everyone).
 - **System models** (Models, in the preview while it's tried out): a
   feed system as a P&ID, simulated with FullFlow (a network solver) and ThermoProp
@@ -643,8 +646,16 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   own, so a script, whoever wrote or uploaded it, can't reach the site, its API, or the
   session: it gets only what it asks the page for in messages (`sandbox.ts` answers
   read-only: the list of tests, a channel's samples, from the same store the plots use).
-  Before a script runs, the page loads the picked test's channels it names in quotes, so
-  `yorg.channel("PT-TANK")` needs no `await`; others come with `await yorg.load(...)`. The
+  A script works on the tests attached to it (`DataPanel.tsx`; kept with it), the first the
+  one `yorg.channel()` takes from unless given `dataset=`. Before it runs, the page loads the
+  channels it names in quotes: the first test's, and another's when the script names that
+  test too (`tree.channelsToLoad`), so `yorg.channel("PT-TANK")` needs no `await`; any
+  other comes with `await yorg.load(...)`. Tests' names needn't be unique (two folders can
+  each have a "Cold flow 1"), so loaded channels go by test id, and code names a test by its
+  id where two attached share a name (`complete.testRef`); a name two share is refused, not
+  guessed. The editor suggests as you type (`complete.ts`): channels' names where a channel
+  goes, tests' after `dataset=`, the module's after `yorg.`; clicking a channel under Data
+  puts in its `yorg.channel(...)` (its name, in a string). The
   `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
   their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
   matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages

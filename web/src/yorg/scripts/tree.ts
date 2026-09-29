@@ -67,6 +67,26 @@ export function namedChannels(code: string, channels: string[]): string[] {
     return channels.filter((name) => strings.has(name));
 }
 
+/**
+ * The channels to load before a script runs, of the tests attached to it (dataset: a test's id): those it names in
+ * quotes, of the first test, and of another test the script names too (dataset="Hotfire 4", or by its id: dataset=12).
+ */
+export function channelsToLoad(
+    code: string,
+    attached: { id: number; name: string; channels: string[] }[],
+): { dataset: number; channel: string }[] {
+    const strings = quoted(code);
+    const named = (test: { id: number; name: string }) =>
+        strings.has(test.name) ||
+        strings.has(String(test.id)) ||
+        new RegExp(`dataset\\s*=\\s*${test.id}(?![\\w.])`).test(code);
+    return attached.flatMap((test, index) =>
+        index === 0 || named(test)
+            ? test.channels.filter((name) => strings.has(name)).map((channel) => ({ dataset: test.id, channel }))
+            : [],
+    );
+}
+
 /** A script's name from its file's ("tank blowdown.py" is "tank blowdown"). */
 export function nameOfFile(filename: string): string {
     return filename.replace(/\.py$/i, "").trim() || "Script";

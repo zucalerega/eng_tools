@@ -35,21 +35,22 @@ export type FromPython =
 
 type Request = { type: "request"; id: number; what: string; args: Record<string, unknown> };
 
-/** What a run starts with: the test picked, and the channels the script names (loaded already). */
+/** What a run starts with: the tests attached to the script, the first first, and their channels. */
 export interface RunContext {
-    dataset: {
+    datasets: {
         id: number;
         name: string;
+        t0: number | null;
         channels: { name: string; unit: string; kind: string; labels: string[] }[];
-    } | null;
-    t0: number | null;
+    }[];
 }
 
 export interface Preloaded {
     name: string;
     unit: string;
     labels: string[];
-    dataset: string;
+    dataset: string; // its test's name
+    dataset_id: number; // and id (two tests can have one name)
     t: Bytes; // float64s, little-endian
     v: Bytes;
 }

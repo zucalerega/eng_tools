@@ -7,9 +7,19 @@
 
 .scripts-layout {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 230px minmax(0, 1fr) 270px;
     gap: 0.75rem;
     align-items: start;
+}
+
+@media (max-width: 1250px) {
+    .scripts-layout {
+        grid-template-columns: 210px minmax(0, 1fr);
+    }
+
+    .scripts-data {
+        grid-column: 1 / -1;
+    }
 }
 
 @media (max-width: 900px) {
@@ -55,6 +65,8 @@
 .scripts-item {
     display: block;
     width: 100%;
+    height: auto; /* a long name wraps: the button grows with it */
+    line-height: 1.35;
     white-space: normal;
     overflow-wrap: anywhere;
     padding: 0.25rem 0.4rem;
@@ -106,6 +118,7 @@
 }
 
 .scripts-editor {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     height: 380px;
@@ -183,4 +196,146 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-large);
     background: #fff;
+}
+
+/* The editor's suggestions, under the caret (Editor.tsx). */
+.scripts-measure {
+    position: absolute;
+    visibility: hidden;
+    white-space: pre;
+    pointer-events: none;
+}
+
+.scripts-suggestions {
+    position: absolute;
+    z-index: 5;
+    min-width: 16rem;
+    max-width: 28rem;
+    max-height: 14rem;
+    margin: 0;
+    padding: 0.2rem;
+    overflow: auto;
+    list-style: none;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+    font-size: 12.5px;
+}
+
+.scripts-suggestions li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.scripts-suggestions li[aria-selected="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+/* The tests a script works on, and their channels (DataPanel.tsx). */
+.scripts-data {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    padding: 0.6rem;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.scripts-data h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.scripts-data-help {
+    margin: 0 0 0.5rem;
+    font-size: 0.82rem;
+}
+
+.scripts-data .field {
+    margin-bottom: 0.5rem;
+}
+
+.scripts-find {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-test {
+    margin-bottom: 0.6rem;
+}
+
+.scripts-test-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.scripts-test-head a {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.scripts-first {
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.scripts-detach {
+    padding: 0 0.45rem;
+}
+
+.scripts-channels {
+    margin: 0.2rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scripts-channels button {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: 100%;
+    height: auto; /* a long name wraps in the narrow panel */
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0.18rem 0.35rem;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.scripts-channels button:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.scripts-channels button span:last-child {
+    flex-shrink: 0; /* the unit stays whole beside a wrapped name */
 }

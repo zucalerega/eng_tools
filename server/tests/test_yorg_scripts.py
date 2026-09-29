@@ -17,7 +17,7 @@ def test_scripts_are_saved_in_folders_changed_and_deleted(team):
     code = 'pt = yorg.channel("PT-TANK")\nprint(pt.values.max())\n'
     created = team.client.post(
         "/api/yorg/scripts",
-        json={"name": " Tank peak ", "folder": " Hotfires \\ Tanks// ", "code": code},
+        json={"name": " Tank peak ", "folder": " Hotfires \\ Tanks// ", "code": code, "datasets": [3, 1]},
         headers=chief,
     )
     assert created.status_code == 201, created.text
@@ -28,8 +28,9 @@ def test_scripts_are_saved_in_folders_changed_and_deleted(team):
         code,
         "Chief",
     )
+    assert script["datasets"] == [3, 1]  # the tests it works on, the first first
     other = team.client.post("/api/yorg/scripts", json={"name": "Loose"}, headers=chief).json()
-    assert (other["folder"], other["code"]) == ("", "")
+    assert (other["folder"], other["code"], other["datasets"]) == ("", "", [])
 
     # The list has no code (it can be long); a script has it.
     listed = team.client.get("/api/yorg/scripts", headers=chief).json()
@@ -60,6 +61,7 @@ def test_scripts_are_saved_in_folders_changed_and_deleted(team):
         {"name": "x" * 121},
         {"name": "Big", "code": "#" * (512 * 1024 + 1)},
         {"name": "Deep", "folder": "a/" * 151},
+        {"name": "Many tests", "datasets": list(range(21))},
     ],
 )
 def test_a_script_that_cant_be_saved(team, body):

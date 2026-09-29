@@ -15,6 +15,7 @@ import {
     type SavedView,
     type TimeFormat,
 } from "./api";
+import { handoffOf, modelsLink, scriptsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
@@ -197,8 +198,33 @@ function useViewsOf(dataset: number): SavedView[] {
     return views;
 }
 
+/**
+ * A dataset's or a view's way to Scripts and Models (what's new: in the preview until it's released), taking what's
+ * plotted along: a script on its channels over the time in view, a model run on its test over that time.
+ */
+function AnalyzeButtons({ layout, title }: { layout: Layout; title: string }) {
+    const preview = inPreview(usePathname());
+    if (!preview) {
+        return null;
+    }
+    const handoff = handoffOf(layout, title);
+    return (
+        <>
+            <Link
+                className="button"
+                to={scriptsLink(handoff)}
+                title="A script on what's plotted here: its channels, over the time in view"
+            >
+                Scripts
+            </Link>
+            <Link className="button" to={modelsLink(handoff)} title="Run a model on this test, over the time in view">
+                Model
+            </Link>
+        </>
+    );
+}
+
 function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
-    const preview = inPreview(usePathname()); // what's new: a model of the test, and scripts on it
     const [layout, dispatch] = useReducer(reduce, detail.id, storedLayout);
     useEffect(() => storeLayout(detail.id, layout), [detail.id, layout]);
     const [saving, setSaving] = useState(false);
@@ -230,21 +256,7 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                         <button type="button" onClick={() => setSaving(true)}>
                             Save view
                         </button>
-                        {preview && (
-                            <MenuButton
-                                label="Analyze"
-                                items={[
-                                    {
-                                        label: "Run a model on this test",
-                                        onSelect: () => navigate(`/yorg/models?dataset=${detail.id}`),
-                                    },
-                                    {
-                                        label: "Open in Scripts",
-                                        onSelect: () => navigate(`/yorg/scripts?dataset=${detail.id}`),
-                                    },
-                                ]}
-                            />
-                        )}
+                        <AnalyzeButtons layout={layout} title={detail.name} />
                         <Link className="button" to={aboutUrl(detail.id)}>
                             About
                         </Link>
@@ -842,6 +854,7 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
                                 Save as a new view
                             </button>
                         )}
+                        <AnalyzeButtons layout={layout} title={view.name} />
                         <MoreViewActions
                             canChange={view.can_change}
                             onCopy={() => setDialog("copy")}

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAdminMode } from "../admin";
 import { api, type VaultFile } from "../api";
+import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
+import { WEB_HOST } from "../checkouts";
 import { Dialog, FileIcon, Notice, Time } from "../components";
 import { fileUrl, parentOf } from "../paths";
 import { Link } from "../router";
@@ -12,12 +14,26 @@ export function Locks() {
     const adminMode = useAdminMode(vault);
     const [onlyMine, setOnlyMine] = useState(false);
     const [releasing, setReleasing] = useState<VaultFile | null>(null);
+    const [mineAsking, setMineAsking] = useState<{ action: "checkin" | "undo"; file: VaultFile } | null>(null);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
 
     const locked = [...vault.files.values()]
         .filter((file) => file.checked_out && (!onlyMine || file.checked_out.user.id === vault.me?.id))
         .sort((a, b) => (a.checked_out!.since < b.checked_out!.since ? -1 : 1));
+
+    // Your own check-out here, in the web app: nothing to lose, so no asking first.
+    async function undoHere(file: VaultFile) {
+        setBusy(true);
+        try {
+            await api.releaseCheckouts([file.id]);
+            await store.refresh();
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusy(false);
+        }
+    }
 
     async function release(file: VaultFile) {
         setBusy(true);
@@ -70,11 +86,34 @@ export function Locks() {
                                         </Link>
                                     </td>
                                     <td>{mine ? "You" : lock.user.name}</td>
-                                    <td>{lock.host}</td>
+                                    <td>{lock.host === WEB_HOST ? "The web app" : lock.host}</td>
                                     <td>
                                         <Time at={lock.since} />
                                     </td>
                                     <td className="row-actions">
+                                        {mine && lock.host === WEB_HOST && (
+                                            <button
+                                                type="button"
+                                                className="button-small"
+                                                onClick={() => setMineAsking({ action: "checkin", file })}
+                                            >
+                                                Check in…
+                                            </button>
+                                        )}
+                                        {mine && (
+                                            <button
+                                                type="button"
+                                                className="button-small"
+                                                disabled={busy}
+                                                onClick={() =>
+                                                    lock.host === WEB_HOST
+                                                        ? undoHere(file)
+                                                        : setMineAsking({ action: "undo", file })
+                                                }
+                                            >
+                                                Undo check-out
+                                            </button>
+                                        )}
                                         {adminMode && !mine && atLeast(roleIn(vault, parentOf(file.path)), "lead") && (
                                             <button
                                                 type="button"
@@ -90,6 +129,12 @@ export function Locks() {
                         })}
                     </tbody>
                 </table>
+            )}
+            {mineAsking?.action === "checkin" && (
+                <CheckinDialog file={mineAsking.file} onClose={() => setMineAsking(null)} />
+            )}
+            {mineAsking?.action === "undo" && (
+                <UndoCheckoutDialog files={[mineAsking.file]} onClose={() => setMineAsking(null)} />
             )}
             {releasing?.checked_out && (
                 <Dialog

@@ -52,10 +52,23 @@ test("the activity feed says who turned the whitelist on", async () => {
     expect(await screen.findAllByText("chief turned the whitelist on")).not.toHaveLength(0);
 });
 
+test("admins open the admin pages from their account menu", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+    await (await table()).findByRole("link", { name: team.folder });
+    expect(within(screen.getByRole("navigation", { name: "Main" })).queryByRole("link", { name: "Admin" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
+    await userEvent.click(screen.getByRole("link", { name: "Admin" }));
+    expect(await screen.findByRole("heading", { name: "Admin" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull(); // the menu closed
+});
+
 test("people who aren't admins or leads don't get the admin pages", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
     renderApp(bob, "/");
     await (await table()).findByRole("link", { name: team.folder });
+    await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
 });

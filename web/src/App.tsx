@@ -77,7 +77,6 @@ export function App() {
                             {nav("/locks", "locks", "Checked out")}
                             {nav("/activity", "activity", "Activity")}
                             {nav("/solidworks", "solidworks", "SolidWorks")}
-                            {canUseAdminMode(vault) && nav("/admin", "admin", "Admin")}
                         </>
                     )}
                 </nav>
@@ -111,7 +110,10 @@ export function App() {
     );
 }
 
-/** You, in the top bar: a menu with the theme, admin mode (for admins and leads), and signing out. */
+/**
+ * You, in the top bar: a menu with the theme, the Admin pages and admin mode (for admins, and folder leads,
+ * who manage who can do what in their folders there), and signing out.
+ */
 function AccountMenu({ vault }: { vault: VaultState }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
     const theme = useTheme();
@@ -162,14 +164,20 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         ))}
                     </div>
                     {canUseAdminMode(vault) && (
-                        <label className="check" title="Show overrides: release check-outs and force reverts">
-                            <input
-                                type="checkbox"
-                                checked={adminMode}
-                                onChange={(event) => setAdminMode(event.target.checked)}
-                            />
-                            Admin mode
-                        </label>
+                        <>
+                            <hr />
+                            <Link to="/admin" className="menu-item" onClick={() => setOpen(false)}>
+                                Admin
+                            </Link>
+                            <label className="check" title="Show overrides: release check-outs and force reverts">
+                                <input
+                                    type="checkbox"
+                                    checked={adminMode}
+                                    onChange={(event) => setAdminMode(event.target.checked)}
+                                />
+                                Admin mode
+                            </label>
+                        </>
                     )}
                     <hr />
                     <form method="post" action="/auth/logout">

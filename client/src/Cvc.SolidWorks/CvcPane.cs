@@ -454,9 +454,13 @@ internal sealed class CvcPane : UserControl
             return;
         }
         var name = Path.GetFileName(path);
-        if (status.Lock is { } other)
+        if (status.Lock is { } yours && yours.User.Id == _me?.Id)
         {
-            Warn($"{name} is checked out by {other.User.Name} on {other.Host}, so you won't be able to save changes to it.");
+            await TakeOverAsync(path); // checked out to you in the web app, or on another computer: move it here
+        }
+        else if (status.Lock is { } other)
+        {
+            Warn($"{name} is checked out by {other.User.Name} {On(other.Host)}, so you won't be able to save changes to it.");
         }
         else if (Ask($"You're changing {name}, but it isn't checked out to you, so you won't be able to save. Check it out now?") == DialogResult.Yes)
         {
@@ -472,10 +476,12 @@ internal sealed class CvcPane : UserControl
             return;
         }
         var name = Path.GetFileName(path);
-        var question = other.User.Id == _me?.Id
-            ? $"Move your check-out of {name} from {other.Host} to this computer? Changes you made on {other.Host} stay there."
-            : $"Take over {other.User.Name}'s check-out of {name}? It will be checked out to you here, and their check-out ends. "
-                + $"Their changes stay on {other.Host}, and Vault tells them what happened if they try to check in.";
+        var question = other.User.Id != _me?.Id
+            ? $"Take over {other.User.Name}'s check-out of {name}? It will be checked out to you here, and their check-out ends. "
+                + $"Their changes stay on {other.Host}, and Vault tells them what happened if they try to check in."
+            : other.Host == Workspace.WebHost
+                ? $"{name} is checked out to you in the web app. Move the check-out to this computer, to change it here?"
+                : $"Move your check-out of {name} from {other.Host} to this computer? Changes you made on {other.Host} stay there.";
         if (Ask(question) == DialogResult.Yes)
         {
             await CheckOutAsync(new[] { path }, force: true);
@@ -649,7 +655,11 @@ internal sealed class CvcPane : UserControl
     /// The file in the workspace a path kept in a SolidWorks file from elsewhere means (see
     /// <see cref="Workspace.LocalFileFor"/>), for SolidWorks when it can't find one; null if none is here.
     /// </summary>
-    public string? LocalFileFor(string keptPath) => _workspace?.LocalFileFor(keptPath);
+    public string? LocalFileFor(string keptPath) =>
+        _workspace?.LocalFileFor(keptPath, _statuses.Values.Where(s => s.FileId != null).Select(s => s.VaultPath));
+
+    // Where a check-out is: "on LAB-PC", or "in the web app".
+    private static string On(string host) => host == Workspace.WebHost ? "in the web app" : $"on {host}";
 
     // The files here, at their latest versions (with any new parts they use): nothing else comes down.
     private Task UpdateMineAsync() =>
@@ -1198,9 +1208,10 @@ internal sealed class CvcPane : UserControl
         ShowActiveDocument();
     }
 
+    // Only the first line: a list after it is for the message box.
     private void ShowMessage(string text, Color color)
     {
-        _message.Text = text;
+        _message.Text = text.Split('\n')[0].TrimEnd('\r');
         _message.ForeColor = color;
     }
 

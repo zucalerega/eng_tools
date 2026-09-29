@@ -9,6 +9,7 @@ import {
     type RefObject,
 } from "react";
 import type { Account, Lock, VaultFile } from "./api";
+import { on } from "./checkouts";
 import { formatAgo, formatTime } from "./format";
 import { kindOf, opensInSolidWorks } from "./paths";
 
@@ -69,7 +70,7 @@ export function Time({ at }: { at: string }) {
 export function LockLabel({ lock, me }: { lock: Lock; me: Account | null }) {
     return (
         <span className={`lock ${lock.user.id === me?.id ? "lock-mine" : ""}`}>
-            Checked out by {lock.user.id === me?.id ? "you" : lock.user.name} on {lock.host}, <Time at={lock.since} />
+            Checked out by {lock.user.id === me?.id ? "you" : lock.user.name} {on(lock.host)}, <Time at={lock.since} />
         </span>
     );
 }
@@ -83,7 +84,7 @@ export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null 
     const mine = lock.user.id === me?.id;
     return (
         <span className={`lock ${mine ? "lock-mine" : ""}`} title={`Since ${formatTime(lock.since)}`}>
-            Checked out by {mine ? "you" : lock.user.name} on {lock.host}
+            Checked out by {mine ? "you" : lock.user.name} {on(lock.host)}
         </span>
     );
 }

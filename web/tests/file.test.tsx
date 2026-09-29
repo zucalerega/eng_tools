@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fileUrl } from "../src/paths";
@@ -107,4 +107,61 @@ test("admin mode releases someone's check-out and forces a revert", async () => 
     expect(await screen.findByText("Reverted to v1")).toBeTruthy();
     const reverted = await team.file(tank!.id);
     expect([reverted.version, reverted.checked_out]).toEqual([3, null]);
+});
+
+test("a file checks out and in from the web app, and check-outs are undone", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const [valve] = await team.checkin(team.chief, { "Valve.SLDPRT": "valve v1" }, { comment: "first valve" });
+
+    renderApp(alice, fileUrl(valve!.id));
+    await userEvent.click(await screen.findByRole("button", { name: "Check out" }));
+    expect(await screen.findByText(/Checked out by you in the web app/)).toBeTruthy();
+    expect((await team.file(valve!.id)).checked_out?.host).toBe("web");
+
+    await userEvent.click(screen.getByRole("button", { name: "Check in…" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("The new version"), {
+        target: { files: [new File(["valve v2"], "Valve.SLDPRT")] },
+    });
+    expect(await dialog.findByText(/It becomes v2 of Valve.SLDPRT/)).toBeTruthy();
+    await userEvent.type(dialog.getByRole("textbox", { name: /What changed/ }), "thicker seat");
+    await userEvent.click(dialog.getByRole("button", { name: "Check in" }));
+    expect(await screen.findByText("thicker seat")).toBeTruthy();
+    const checkedIn = await team.file(valve!.id);
+    expect([checkedIn.version, checkedIn.checked_out]).toEqual([2, null]);
+
+    // Undoing a check-out here asks nothing; undoing one on a computer says the changes there stay there.
+    await userEvent.click(await screen.findByRole("button", { name: "Check out" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo check-out" }));
+    await waitFor(async () => expect((await team.file(valve!.id)).checked_out).toBeNull());
+    await team.checkout(alice, "Valve.SLDPRT", "ALICE-PC");
+    await userEvent.click(await screen.findByRole("button", { name: "Undo check-out" }));
+    const undo = within(screen.getByRole("dialog"));
+    expect(undo.getByText(/Changes you made on ALICE-PC stay there/)).toBeTruthy();
+    await userEvent.click(undo.getByRole("button", { name: "Undo check-out" }));
+    await waitFor(async () => expect((await team.file(valve!.id)).checked_out).toBeNull());
+});
+
+test("a drawing checked in from the web app stays linked to what it shows", async () => {
+    const team = await Team.create();
+    await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+    const [drawing] = await team.checkin(
+        team.chief,
+        { "Fins/Fin.SLDDRW": "drawing v1" },
+        { refs: { "Fins/Fin.SLDDRW": ["Fins/Fin.SLDPRT"] } },
+    );
+    await team.checkout(team.chief, "Fins/Fin.SLDDRW", "web");
+
+    renderApp(team.chief, fileUrl(drawing!.id));
+    await userEvent.click(await screen.findByRole("button", { name: "Check in…" }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("It stays linked to Fin.SLDPRT, as v1 is.")).toBeTruthy();
+    fireEvent.change(dialog.getByLabelText("The new version"), {
+        target: { files: [new File(["drawing v2"], "Fin.SLDDRW")] },
+    });
+    await dialog.findByText(/It becomes v2/);
+    await userEvent.click(dialog.getByRole("button", { name: "Check in" }));
+    await waitFor(async () => expect((await team.file(drawing!.id)).version).toBe(2));
+    expect((await team.file(drawing!.id)).uses).toHaveLength(1);
 });

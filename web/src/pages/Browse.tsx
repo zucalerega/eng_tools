@@ -22,6 +22,8 @@ import {
     type SortKey,
     type StatusFilter,
 } from "../browsing";
+import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
+import { canCheckOut } from "../checkouts";
 import { FileIcon, FolderIcon, MenuButton, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatDate, formatSize, formatTime } from "../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
@@ -41,6 +43,8 @@ type Open =
     | { dialog: "move" }
     | { dialog: "rename" }
     | { dialog: "delete" }
+    | { dialog: "checkout" }
+    | { dialog: "undo" }
     | null;
 
 /** Rows picked with their checkboxes: folders ("d:" and their path key) and files ("f:" and their id). */
@@ -104,6 +108,9 @@ export function Browse({ folder }: { folder: string }) {
     const picked = pickedFolders.length + pickedFileList.length;
     // Moving, renaming, or deleting a folder takes a lead of it; the server checks, and this says so up front.
     const foldersMovable = pickedFolders.every((f) => atLeast(f.role, "lead"));
+    // Checking out here, in the web app: the picked files nobody has; undoing: the ones checked out to you.
+    const checkable = pickedFileList.filter((f) => canCheckOut(vault, f));
+    const undoable = pickedFileList.filter((f) => f.checked_out?.user.id === vault.me?.id);
 
     function pick(list: FileList | null, input: HTMLInputElement) {
         if (list && list.length > 0) {
@@ -287,6 +294,22 @@ export function Browse({ folder }: { folder: string }) {
             {picked > 0 && !found && (
                 <div className="selection-bar" role="toolbar" aria-label="Selected">
                     <span>{picked} selected</span>
+                    {checkable.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setOpen({ dialog: "checkout" })}
+                            title="Check out here, to change them without SolidWorks"
+                        >
+                            {checkable.length === pickedFileList.length ? "Check out" : `Check out ${checkable.length}`}
+                        </button>
+                    )}
+                    {undoable.length > 0 && (
+                        <button type="button" onClick={() => setOpen({ dialog: "undo" })}>
+                            {undoable.length === pickedFileList.length
+                                ? "Undo check-out"
+                                : `Undo ${undoable.length} check-out${undoable.length === 1 ? "" : "s"}`}
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={() => setOpen({ dialog: "move" })}
@@ -367,6 +390,8 @@ export function Browse({ folder }: { folder: string }) {
             {open?.dialog === "delete" && (
                 <DeleteDialog files={pickedFileList} folders={pickedFolders} onClose={close} />
             )}
+            {open?.dialog === "checkout" && <CheckOutDialog files={checkable} onClose={close} />}
+            {open?.dialog === "undo" && <UndoCheckoutDialog files={undoable} onClose={close} />}
         </section>
     );
 }

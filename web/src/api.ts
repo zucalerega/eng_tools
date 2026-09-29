@@ -270,6 +270,10 @@ export const api = {
             "GET",
             "/api/activity?" + query({ before: options.before, file_id: options.fileId, limit: options.limit }),
         ),
+    /** Lock files for you on host: a computer's name, or the web app's (WEB_HOST). */
+    checkout: (fileIds: number[], host: string) =>
+        request<{ files: VaultFile[] }>("POST", "/api/checkout", { files: fileIds, host }),
+    /** Your own check-outs undone, or (for a lead) someone else's released. */
     releaseCheckouts: (fileIds: number[]) =>
         request<{ files: VaultFile[] }>("POST", "/api/undo-checkout", { files: fileIds }),
     revert: (fileId: number, version: number, comment: string, force: boolean) =>

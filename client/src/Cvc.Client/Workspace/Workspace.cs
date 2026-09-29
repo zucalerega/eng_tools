@@ -14,6 +14,9 @@ namespace Cvc.Client;
 public sealed class Workspace : IDisposable
 {
     public const string MetaFolder = ".cvc";
+
+    /// <summary>What the web app calls itself where a computer's name goes: check-outs and check-ins there are on it.</summary>
+    public const string WebHost = "web";
     internal const string DownloadSuffix = ".cvc-download";
     private const string ConfigFile = "config.json";
     private const string StateFile = "state.json";
@@ -317,12 +320,7 @@ public sealed class Workspace : IDisposable
     /// </summary>
     public (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(IEnumerable<string> keptPaths)
     {
-        var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var file in _state.Remote.Values)
-        {
-            byKey[VaultPaths.Key(file.Path)] = file.Path;
-        }
-        var byName = byKey.Keys.ToLookup(key => key.Substring(key.LastIndexOf('/') + 1), StringComparer.Ordinal);
+        var (byKey, byName) = Index(_state.Remote.Values.Select(file => file.Path));
         var inVault = new List<string>();
         var notInVault = new List<string>();
         var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -349,16 +347,22 @@ public sealed class Workspace : IDisposable
     }
 
     /// <summary>
-    /// The file here that a path kept in a SolidWorks file from elsewhere means, by how the path ends: the longest end
-    /// of it that's a file in this workspace (C:\VLT\09_Hopper\Stringer.SLDPRT for K:\Yellow Jacket Space
-    /// Program\Project CAD\09_Hopper\Stringer.SLDPRT), or null. Null for paths in this workspace: they mean themselves.
-    /// Reads only the disk, so it's safe to call while the workspace is busy.
+    /// The file here that a path kept in a SolidWorks file from elsewhere means, for SolidWorks when it can't find it:
+    /// the vault file it means, as <see cref="FindUsedFiles"/> finds it among vaultPaths (the vault's files), if that's
+    /// here (C:\VLT\09_Hopper\Stringer.SLDPRT for K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT);
+    /// else the file here at the longest end of the path (one not checked in yet). Null if there's neither, and for
+    /// paths in this workspace: they mean themselves. It reads no workspace state, so it's safe while one is running.
     /// </summary>
-    public string? LocalFileFor(string keptPath)
+    public string? LocalFileFor(string keptPath, IEnumerable<string> vaultPaths)
     {
         if (UnderRoot(keptPath) != null)
         {
             return null;
+        }
+        var (byKey, byName) = Index(vaultPaths);
+        if (VaultFileMeant(keptPath, byKey, byName) is { } vaultPath && File.Exists(ToLocalPath(vaultPath)))
+        {
+            return ToLocalPath(vaultPath);
         }
         var names = NamesIn(keptPath);
         for (var skip = 0; skip < names.Length; skip++)
@@ -374,6 +378,17 @@ public sealed class Workspace : IDisposable
             }
         }
         return null;
+    }
+
+    // Vault file paths by key, and those keys by their file name's key: for VaultFileMeant.
+    private static (Dictionary<string, string> ByKey, ILookup<string, string> ByName) Index(IEnumerable<string> vaultPaths)
+    {
+        var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var path in vaultPaths)
+        {
+            byKey[VaultPaths.Key(path)] = path;
+        }
+        return (byKey, byKey.Keys.ToLookup(key => key.Substring(key.LastIndexOf('/') + 1), StringComparer.Ordinal));
     }
 
     // See FindUsedFiles. byKey: the vault's file paths by key; byName: those keys by their file name's.
@@ -827,7 +842,7 @@ public sealed class Workspace : IDisposable
     /// Each item's references as vault paths. Referenced files that are new, or checked out to
     /// you with changes (unless withChanged is false), are added to items (and their own references
     /// followed); the rest are pinned to the version this workspace has, which is the one the item
-    /// was built against.
+    /// was built against. Referenced files the vault can't have are all named in one exception.
     /// </summary>
     private Dictionary<string, List<CheckinReference>> CollectReferences(
         List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf, bool withChanged)
@@ -840,17 +855,23 @@ public sealed class Workspace : IDisposable
         var included = new HashSet<string>(items.Select(s => VaultPaths.Key(s.VaultPath)), StringComparer.Ordinal);
         var result = new Dictionary<string, List<CheckinReference>>(StringComparer.Ordinal);
         var queue = new Queue<FileStatus>(items);
+        var missing = new List<string>(); // neither here nor in the vault, like a part left behind on Kenesto
+        var outside = new List<string>(); // on this computer, but not in the workspace
+        string? user = null; // the first file that uses one of those
         while (queue.Count > 0)
         {
             var item = queue.Dequeue();
             var uses = new List<CheckinReference>();
             foreach (var localPath in referencesOf(item.LocalPath).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                var vaultPath = ReferenceVaultPath(item, localPath);
-                var key = VaultPaths.Key(vaultPath);
-                if (!everything.TryGetValue(key, out var used))
+                var vaultPath = UnderRoot(localPath) == null ? null : ToVaultPath(localPath);
+                var key = vaultPath == null ? null : VaultPaths.Key(vaultPath);
+                FileStatus? used = null;
+                if (key == null || !everything.TryGetValue(key, out used))
                 {
-                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which is missing: it's neither in this workspace nor in the vault");
+                    (vaultPath == null && File.Exists(localPath) ? outside : missing).Add(localPath);
+                    user ??= item.VaultPath;
+                    continue;
                 }
                 if (used.State is FileState.Conflict or FileState.DeletedInVault)
                 {
@@ -872,21 +893,45 @@ public sealed class Workspace : IDisposable
             }
             result[VaultPaths.Key(item.VaultPath)] = uses;
         }
+        if (user != null)
+        {
+            throw new WorkspaceException(CantUse(user, missing, outside));
+        }
         return result;
     }
 
-    private string ReferenceVaultPath(FileStatus item, string localPath)
+    // Why a check-in can't record what its files use: each file it can't, and what to do about it.
+    private string CantUse(string user, List<string> missing, List<string> outside)
     {
-        try
+        missing = missing.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        outside = outside.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var lines = new List<string> { $"{user} can't be checked in: it uses files that aren't in the vault." };
+        if (missing.Count > 0)
         {
-            return ToVaultPath(localPath);
+            lines.Add(missing.Count == 1
+                ? "This one is missing: it isn't here or in the vault. Add it to the vault, or take it out of what uses it:"
+                : $"These {missing.Count} are missing: they aren't here or in the vault. Add them to the vault, or take them out of what uses them:");
+            lines.AddRange(Listed(missing));
         }
-        catch (WorkspaceException)
+        if (outside.Count > 0)
         {
-            throw new WorkspaceException(
-                $"{item.VaultPath} uses {localPath}, which is outside the workspace. Move it into {Root} "
-                + "(for example with Pack and Go), then check in again.");
+            lines.Add((outside.Count == 1 ? "This one is" : $"These {outside.Count} are")
+                + $" outside the workspace: move {(outside.Count == 1 ? "it" : "them")} into {Root} (for example with Pack and Go):");
+            lines.AddRange(Listed(outside));
         }
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    // Paths one to a line, up to 20 of them.
+    private static IEnumerable<string> Listed(List<string> paths)
+    {
+        const int Shown = 20;
+        var lines = paths.Take(Shown).Select(path => "  " + path).ToList();
+        if (paths.Count > Shown)
+        {
+            lines.Add($"  and {paths.Count - Shown} more");
+        }
+        return lines;
     }
 
     private bool IsMine(FileLock? fileLock) =>

@@ -26,7 +26,8 @@ command, and this repository keep the name CVC. The same server also runs
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
 - **Sign in with Google.** Anyone can join, unless an admin turns on the whitelist
-  (Admin > People): then only people an admin invites or approves can.
+  (Admin > People, from the account menu at the top right): then only people an admin
+  invites or approves can.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every
@@ -36,8 +37,16 @@ command, and this repository keep the name CVC. The same server also runs
   assemblies, and drawings, which SolidWorks makes on your computer; and organize the
   vault: new folders, uploads (files, whole folders, or what's in a zip, by dropping them
   on the page), moving or renaming, which every computer's copies follow, and deleting,
-  to a trash each folder keeps. Admins and folder leads can switch on admin mode to
-  release someone's check-out or revert a file they have checked out.
+  to a trash each folder keeps. Admins and folder leads find Admin (people, access, the
+  whitelist) and admin mode in the account menu; admin mode releases someone's check-out
+  or reverts a file they have checked out.
+- **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
+  file, or on a computer without the add-in): Check out on its page (or for files picked
+  in a folder), download it and change it, then Check in… with the new version, or
+  upload it into its folder. A check-out there is "in the web app"; in SolidWorks, the
+  Vault tab offers to move it to that computer when you start changing the file. An
+  assembly checked in on the web doesn't list its parts until it's next checked in from
+  SolidWorks; a drawing stays linked to what it shows.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
   which installs the add-in, and a button that connects it to the vault.
 - **Bringing files over from Kenesto:** upload the project folders as they are (the web
@@ -47,8 +56,10 @@ command, and this repository keep the name CVC. The same server also runs
   the Vault pane in SolidWorks, or with Open in SolidWorks on the web: the add-in reads the
   paths from the files, gets the vault's files whose paths end the same way, and shows
   SolidWorks where they are. It says which parts aren't in the vault. Check an assembly
-  out, save it, and check it in to store the vault's paths in it for good. Once the team
-  works from the vault, disconnect Kenesto's drive, so no one opens a part from there.
+  out, save it, and check it in to store the vault's paths in it for good; while it still
+  uses files the vault doesn't have, checking it in lists them, to upload them or take them
+  out of it. Once the team works from the vault, disconnect Kenesto's drive, so no one
+  opens a part from there.
 
 ## Yorg: test data
 

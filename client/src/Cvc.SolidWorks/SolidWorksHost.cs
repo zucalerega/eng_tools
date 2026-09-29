@@ -155,11 +155,16 @@ internal sealed class SolidWorksHost
             return;
         }
         int errors = 0, warnings = 0;
-        _app.OpenDoc6(path, (int)DocumentType(path), (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings);
-        if (errors != 0)
+        var opened = _app.OpenDoc6(path, (int)DocumentType(path), (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings);
+        if (opened == null)
         {
             Log.Error($"Opening {path} returned SolidWorks error {errors}");
             return;
+        }
+        if (errors != 0)
+        {
+            // It's open, without what it couldn't load (like parts that aren't here): SolidWorks shows which.
+            Log.Info($"Opened {path} with SolidWorks error {errors}, warnings {warnings}");
         }
         // Opening a file that's already open doesn't bring its window forward; this does.
         _app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);

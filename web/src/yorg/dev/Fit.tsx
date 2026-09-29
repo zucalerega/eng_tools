@@ -148,7 +148,7 @@ export function FitSummary({
                                 <td>
                                     <strong>{show(knob.value)}</strong>
                                 </td>
-                                <td className="muted">{ratio === null ? "" : `×${formatValue(ratio)}`}</td>
+                                <td className="muted">{ratio === null ? "" : `×${rounded(ratio)}`}</td>
                             </tr>
                         );
                     })}

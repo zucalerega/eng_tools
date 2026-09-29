@@ -146,7 +146,7 @@ export function DevPage() {
                                 const better = fit.cost_start > 0 ? 100 * (1 - fit.cost / fit.cost_start) : 0;
                                 setFound({
                                     knobs: fit.knobs,
-                                    note: `${fit.stopped ? "Stopped at the time limit: the best of" : "Done:"} ${fit.tries} runs, the error ${formatValue(better)}% smaller.`,
+                                    note: `${fit.stopped ? "Stopped at the time limit: the best of" : "Done:"} ${fit.tries} runs, the error ${better.toFixed(1)}% smaller.`,
                                 });
                             }
                         } else if (status.state === "failed" && job.kind === "fit" && status.progress?.values) {
@@ -633,7 +633,7 @@ export function DevPage() {
                 )}
                 <span className="muted" role="status">
                     {status?.state === "running" && job?.kind === "fit"
-                        ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${formatValue(better)}% smaller`}, ${Math.round(status.elapsed)} s so far`
+                        ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${better.toFixed(1)}% smaller`}, ${Math.round(status.elapsed)} s so far`
                         : status?.state === "running"
                           ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
                           : running

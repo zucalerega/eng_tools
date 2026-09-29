@@ -16,26 +16,39 @@ interface Unit {
 
 const FAHRENHEIT: Unit = { label: "°F", scale: 5 / 9, offset: 459.67 };
 
+const US_PRESSURE: Unit = { label: "psi", scale: PSI };
+const SI_PRESSURE: Unit = { label: "bar", scale: 1e5 };
+
 const SYSTEMS: Record<Display["units"], Partial<Record<Quantity, Unit>>> = {
     us: {
-        pressure: { label: "psi", scale: PSI },
+        pressure: US_PRESSURE,
+        pressure_abs: { label: "psia", scale: PSI },
+        pressure_drop: US_PRESSURE,
         temperature: FAHRENHEIT,
         length: { label: "ft", scale: 0.3048 },
         diameter: { label: "in", scale: 0.0254 },
         area: { label: "in²", scale: 0.00064516 },
         volume: { label: "gal", scale: 0.003785411784 },
         density: { label: "lbm/ft³", scale: 16.01846337 },
+        mass: { label: "lbm", scale: 0.45359237 },
+        specific_heat: { label: "BTU/lbm·°F", scale: 4186.8 },
+        conductance: { label: "BTU/hr·°F", scale: 0.52752793 },
         mass_flow: { label: "lbm/s", scale: 0.45359237 },
         time: { label: "s", scale: 1 },
     },
     si: {
-        pressure: { label: "bar", scale: 1e5 },
+        pressure: SI_PRESSURE,
+        pressure_abs: { label: "bara", scale: 1e5 },
+        pressure_drop: SI_PRESSURE,
         temperature: { label: "K", scale: 1 },
         length: { label: "m", scale: 1 },
         diameter: { label: "mm", scale: 0.001 },
         area: { label: "mm²", scale: 1e-6 },
         volume: { label: "L", scale: 0.001 },
         density: { label: "kg/m³", scale: 1 },
+        mass: { label: "kg", scale: 1 },
+        specific_heat: { label: "J/kg·K", scale: 1 },
+        conductance: { label: "W/K", scale: 1 },
         mass_flow: { label: "kg/s", scale: 1 },
         time: { label: "s", scale: 1 },
     },
@@ -50,13 +63,16 @@ export function unitOf(quantity: Quantity, display: Display): string {
     return quantity === "pressure" ? `${unit.label}${display.gauge ? "g" : "a"}` : unit.label;
 }
 
+/** What's taken off before showing a quantity: the atmosphere, for a pressure shown gauge. */
+const gaugeOf = (quantity: Quantity, display: Display) =>
+    quantity === "pressure" && display.gauge ? display.ambient : 0;
+
 export function toDisplay(quantity: Quantity, si: number, display: Display): number {
     const unit = SYSTEMS[display.units][quantity];
     if (!unit) {
         return si;
     }
-    const gauge = quantity === "pressure" && display.gauge ? display.ambient : 0;
-    return (si - gauge) / unit.scale - (unit.offset ?? 0);
+    return (si - gaugeOf(quantity, display)) / unit.scale - (unit.offset ?? 0);
 }
 
 export function fromDisplay(quantity: Quantity, value: number, display: Display): number {
@@ -64,8 +80,7 @@ export function fromDisplay(quantity: Quantity, value: number, display: Display)
     if (!unit) {
         return value;
     }
-    const gauge = quantity === "pressure" && display.gauge ? display.ambient : 0;
-    return (value + (unit.offset ?? 0)) * unit.scale + gauge;
+    return (value + (unit.offset ?? 0)) * unit.scale + gaugeOf(quantity, display);
 }
 
 /** The units a run reads channels without a unit in: the model's. */
@@ -113,8 +128,7 @@ export function siToDisplayLinear(quantity: Quantity, display: Display): Linear 
     if (!unit) {
         return { scale: 1, offset: 0 };
     }
-    const gauge = quantity === "pressure" && display.gauge ? display.ambient : 0;
-    return { scale: 1 / unit.scale, offset: -gauge / unit.scale - (unit.offset ?? 0) };
+    return { scale: 1 / unit.scale, offset: -gaugeOf(quantity, display) / unit.scale - (unit.offset ?? 0) };
 }
 
 /** From a channel's values (in its unit, or the model's if it has none) to SI. */

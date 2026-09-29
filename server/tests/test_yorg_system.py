@@ -74,14 +74,21 @@ def test_the_dev_page_is_for_admins(team):
     assert {part["type"] for part in catalog["parts"]} >= {
         "tank",
         "junction",
+        "gas_junction",
         "outlet",
         "source",
         "line",
         "valve",
         "orifice",
-        "gas_line",
+        "venturi",
+        "gas_valve",
+        "gas_orifice",
+        "regulator",
     }
     assert "Water" in catalog["liquids"] and "Helium" in catalog["gases"]
+    tank = next(part for part in catalog["parts"] if part["type"] == "tank")
+    wall = next(setting for setting in tank["settings"] if setting["key"] == "heat_transfer")
+    assert wall["only_when"] == [["mode", "ullage"], ["ullage_model", "wall"]] and wall["tunable"]
 
 
 def test_models_are_saved_changed_and_deleted(team):
@@ -103,6 +110,14 @@ def test_models_are_saved_changed_and_deleted(team):
     again = team.client.get(f"/api/yorg/dev/models/{saved['id']}", headers=chief).json()
     assert (again["name"], again["model"]["edges"][2]["settings"]["cda"]) == ("Cold flow 2", 4e-5)
 
+    # A press line saved before gas valves had their name opens as a gas valve.
+    older = cold_flow_model()
+    older["nodes"].append(node("gn2", "source", "Bottle"))
+    older["edges"].append(edge("press", "gas_line", "Press line", "gn2", "tank"))
+    response = team.client.post("/api/yorg/dev/models", json={"name": "Older", "model": older}, headers=chief)
+    assert response.status_code == 201, response.text
+    assert response.json()["model"]["edges"][-1]["type"] == "gas_valve"
+
     # A half-drawn model saves; one whose edge ends nowhere doesn't.
     loose = {"nodes": [node("j", "junction", "Loose end")], "edges": [edge("l", "line", "Line", "j", "nowhere")]}
     response = team.client.post("/api/yorg/dev/models", json={"name": "Broken", "model": loose}, headers=chief)
@@ -121,10 +136,44 @@ def test_models_are_saved_changed_and_deleted(team):
         ),
         (
             lambda m: (
-                m["nodes"].append(node("gn2", "source", "Regulator")),
-                m["edges"].append(edge("press", "gas_line", "Press line", "gn2", "tank")),
+                m["nodes"].append(node("gn2", "source", "Bottle")),
+                m["edges"].append(edge("press", "gas_valve", "Press valve", "gn2", "tank")),
             ),
-            "Press line carries pressurant into a tank's ullage: set Water tank's pressure to ullage",
+            "Press valve carries gas into or out of Water tank's ullage: set Water tank's pressure to gas ullage",
+        ),
+        (
+            lambda m: (
+                m["nodes"].append(node("gn2", "source", "Bottle")),
+                m["edges"].append(edge("purge", "gas_valve", "Purge", "gn2", "j1")),
+            ),
+            "Purge carries gas, so it can't connect to Valve inlet, a liquid junction: use a gas junction",
+        ),
+        (
+            lambda m: (
+                m["nodes"].append(node("gj", "gas_junction", "Press manifold")),
+                m["edges"].append(edge("drain", "line", "Drain", "j2", "gj")),
+            ),
+            "Drain carries liquid, so it can't connect to Press manifold, a gas junction",
+        ),
+        (
+            lambda m: m["nodes"].append(node("gj", "gas_junction", "Press manifold")),
+            "Press manifold isn't connected to a gas supply or a tank's ullage, so nothing says what gas is there",
+        ),
+        (
+            lambda m: (
+                m["nodes"][0]["settings"].update(mode="ullage", volume=0.004, liquid_volume=0.003, gas="Nitrogen"),
+                m["nodes"].append(node("ghe", "source", "Helium bottle", {"gas": "Helium"})),
+                m["edges"].append(edge("press", "gas_valve", "Press valve", "ghe", "tank")),
+            ),
+            "Water tank's ullage (Nitrogen) and Helium bottle (Helium) are connected, but a model carries one gas in "
+            "each connected set of gas lines: make them the same",
+        ),
+        (
+            lambda m: (
+                m["nodes"].append(node("gn2", "source", "Bottle")),
+                m["edges"].append(edge("reg", "regulator", "Regulator", "gn2", "out")),
+            ),
+            "Regulator holds the pressure where it flows to: connect it to a gas junction or a tank",
         ),
         (lambda m: m["edges"][0]["settings"].update(length=-1), "Feed line's length is below 0.001 (in SI units)"),
         (lambda m: m["edges"][0]["links"].update(command="MOV-01"), "Feed line can't be linked to a command channel"),
@@ -221,3 +270,212 @@ def test_a_run_that_fails_says_why(team):
     status = run(team, chief, {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 1.0})
     assert status["state"] == "failed"
     assert status["message"].startswith("Water tank: ThermoProp can't give Water's properties at 200.0 K")
+
+
+def pressurized_csv() -> str:
+    """2 s at 100 Hz: the main valve open from 0.3 s, the vent from 1.5 s, the ullage starting at 250 psig and 50 °F,
+    and the chamber's pressure rising from 0 to 100 psig."""
+    rows = ["Time (s),MOV-01,VENT-01,PT-TANK (psig),TC-ULLAGE (F),PT-CHAMBER (psig)"]
+    for i in range(201):
+        t = i / 100
+        rows.append(f"{t:.2f},{int(t >= 0.3)},{int(t >= 1.5)},{250.0 - 5 * t:.2f},{50.0 - t:.2f},{50.0 * t:.2f}")
+    return "\n".join(rows) + "\n"
+
+
+def pressurized_model() -> dict:
+    """Bottle -> regulator -> press manifold -> press valve -> water tank (a wall-heated ullage) -> main valve ->
+    venturi inlet -> cavitating venturi -> chamber; and a vent from the tank to a vent stack."""
+    setpoint = 300 * PSI + ATMOSPHERE
+    return {
+        "nodes": [
+            node("gn2", "source", "Bottle", {"gas": "Nitrogen", "pressure": 2000 * PSI}),
+            node("gj", "gas_junction", "Press manifold", {"volume": 0.0002, "pressure": setpoint}),
+            node(
+                "tank",
+                "tank",
+                "Water tank",
+                {
+                    "fluid": "Water",
+                    "mode": "ullage",
+                    "ullage_model": "wall",
+                    "volume": 0.02,
+                    "liquid_volume": 0.015,
+                    "wall_mass": 3.0,
+                    "heat_transfer": 20.0,
+                },
+                {"pressure": "PT-TANK", "gas_temperature": "TC-ULLAGE"},
+            ),
+            node("j1", "junction", "Venturi inlet"),
+            node("chamber", "outlet", "Chamber", {}, {"pressure": "PT-CHAMBER"}),
+            node("stack", "outlet", "Vent stack"),
+        ],
+        "edges": [
+            edge("reg", "regulator", "Regulator", "gn2", "gj", {"setpoint": setpoint, "droop": 30 * PSI, "cda": 4e-6}),
+            edge("press", "gas_valve", "Press valve", "gj", "tank", {"cda": 2e-5}),
+            edge("mov", "valve", "Main valve", "tank", "j1", {"cda": 8e-5}, {"command": "MOV-01"}),
+            edge("cav", "venturi", "Venturi", "j1", "chamber", {"cda": 2e-5, "recovery": 0.85}),
+            edge("vent", "gas_valve", "Vent", "tank", "stack", {"cda": 5e-6, "check": "no"}, {"command": "VENT-01"}),
+        ],
+    }
+
+
+def test_a_pressurized_system_starts_from_its_sensors_and_holds_its_pressure(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    status = run(
+        team, chief, {"model": pressurized_model(), "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.01}
+    )
+    assert status["state"] == "done", status
+    result = status["result"]
+    # It started where the tank's sensors say, not at its settings.
+    started = {(one["part"], one["key"]): one for one in result["initial"]}
+    assert started["tank", "pressure"]["channel"] == "PT-TANK"
+    assert started["tank", "pressure"]["value"] == pytest.approx(250 * PSI + ATMOSPHERE, rel=1e-6)
+    assert started["tank", "gas_temperature"]["value"] == pytest.approx(283.15, abs=0.01)
+    assert at(result, "tank.pressure", 0.0) == pytest.approx(250 * PSI + ATMOSPHERE, rel=1e-3)
+    # The press valve fills the tank from the manifold, which the regulator holds within its droop of its set point.
+    for t in (0.2, 1.0, 1.9):
+        manifold = at(result, "gj.pressure", t)
+        assert 270 * PSI + ATMOSPHERE < manifold <= 300.5 * PSI + ATMOSPHERE, (t, manifold)
+    assert at(result, "reg.mass_flow", 1.0) > 0 and 0 < at(result, "reg.position", 1.0) < 1
+    assert at(result, "press.mass_flow", 1.0) > 0
+    # Pressurized with warmer gas from the bottle before the main valve opens, the ullage warms; the wall (at 20 C)
+    # trades heat with it, and moves a little for that (it's heavy).
+    assert at(result, "tank.gas_temperature", 0.0) == pytest.approx(283.15, abs=0.01)
+    assert at(result, "tank.gas_temperature", 0.25) > 283.15 + 0.5
+    assert 1e-4 < abs(at(result, "tank.wall_temperature", 1.4) - 293.15) < 1.0
+    # The venturi cavitates: its flow stays put while the chamber's pressure climbs from 40 to 70 psig.
+    assert at(result, "cav.cavitating", 0.8) == 1.0 and at(result, "cav.cavitating", 1.4) == 1.0
+    assert at(result, "chamber.pressure", 1.4) - at(result, "chamber.pressure", 0.8) == pytest.approx(
+        30 * PSI, rel=0.02
+    )
+    assert at(result, "cav.mass_flow", 1.4) == pytest.approx(at(result, "cav.mass_flow", 0.8), rel=0.01)
+    # The vent opens at 1.5 s: gas leaves the tank, and it loses pressure faster than the regulator makes up.
+    assert at(result, "vent.mass_flow", 1.4) == pytest.approx(0.0, abs=1e-6)
+    assert at(result, "vent.mass_flow", 1.9) > 0.005
+    assert at(result, "tank.pressure", 1.9) < at(result, "tank.pressure", 1.45)
+
+
+def test_a_liquid_follows_its_temperature_channel(team):
+    chief = team.member("chief@x.test", admin=True)
+    rows = ["Time (s),PT-TANK (psig),TC-FUEL (F)"]
+    rows += [f"{i / 100:.2f},300.0,{40 + 70 * i / 100:.2f}" for i in range(201)]  # 40 °F to 180 °F
+    dataset = upload(team, chief, "\n".join(rows) + "\n", "Warming.csv")
+    model = cold_flow_model()
+    model["nodes"][0]["links"]["temperature"] = "TC-FUEL"
+    model["edges"][1]["links"] = {}  # the main valve stays open
+    status = run(team, chief, {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.05})
+    assert status["state"] == "done", status
+    liquid = status["result"]["liquids"]["tank"]
+    assert liquid["follows"] == "TC-FUEL"
+    assert liquid["temperatures"] == pytest.approx([277.59, 355.37], abs=0.01)
+    assert liquid["densities"][1] - liquid["densities"][0] > 20  # water at 180 °F is 2.7% lighter
+    # The injector passes less as the water lightens: CdA sqrt(2 rho dP).
+    result = status["result"]
+    assert at(result, "inj.mass_flow", 1.95) < 0.995 * at(result, "inj.mass_flow", 0.5)
+
+
+def fit_model(injector_cda: float, friction: float) -> dict:
+    """Tank at 300 psig -> feed line -> manifold (a pressure transducer) -> injector -> atmosphere."""
+    return {
+        "nodes": [
+            node("tank", "tank", "Water tank", {"fluid": "Water", "pressure": 300 * PSI + ATMOSPHERE}),
+            node("j1", "junction", "Manifold", {}, {"pressure": "PT-MANIFOLD"}),
+            node("out", "outlet", "Atmosphere"),
+        ],
+        "edges": [
+            edge(
+                "line",
+                "line",
+                "Feed line",
+                "tank",
+                "j1",
+                {"length": 3.0, "diameter": 0.0095, "friction_factor": friction},
+            ),
+            edge("inj", "orifice", "Injector", "j1", "out", {"cda": injector_cda}, {"flow": "FM-01"}),
+        ],
+    }
+
+
+def test_a_fit_finds_the_knobs_that_made_the_data(team):
+    chief = team.member("chief@x.test", admin=True)
+    # What the "test" measured: the model itself, with an injector CdA of 3e-5 m² and a line friction factor of 0.03.
+    blank = upload(team, chief, "Time (s),X\n0,0\n1,0\n", "Blank.csv")
+    truth = run(
+        team, chief, {"model": fit_model(3e-5, 0.03), "dataset_id": blank["id"], "start": 0.0, "end": 1.0, "dt": 0.05}
+    )
+    assert truth["state"] == "done", truth
+    rows = ["Time (s),PT-MANIFOLD (psia),FM-01 (kg/s)"]
+    for t, pressure, flow in zip(
+        truth["result"]["times"],
+        truth["result"]["series"]["j1.pressure"],
+        truth["result"]["series"]["inj.mass_flow"],
+        strict=True,
+    ):
+        rows.append(f"{t:.4f},{pressure / PSI:.6f},{flow:.8f}")
+    measured = upload(team, chief, "\n".join(rows) + "\n", "Measured.csv")
+
+    # Fit from knobs well off: the injector's CdA and the line's friction factor.
+    body = {
+        "model": fit_model(2e-5, 0.015),
+        "dataset_id": measured["id"],
+        "start": 0.0,
+        "end": 1.0,
+        "dt": 0.05,
+        "knobs": [{"part": "inj", "key": "cda"}, {"part": "line", "key": "friction_factor"}],
+    }
+    response = team.client.post("/api/yorg/dev/fits", json=body, headers=chief)
+    assert response.status_code == 201, response.text
+    fit_id = response.json()["id"]
+    team.app.state.yorg_runs.wait(fit_id, timeout=600)
+    status = team.client.get(f"/api/yorg/dev/runs/{fit_id}", headers=chief).json()
+    assert status["state"] == "done", status
+    found = {(knob["part"], knob["key"]): knob for knob in status["result"]["fit"]["knobs"]}
+    assert found["inj", "cda"]["start"] == 2e-5
+    assert found["inj", "cda"]["value"] == pytest.approx(3e-5, rel=0.02)
+    assert found["line", "friction_factor"]["value"] == pytest.approx(0.03, rel=0.05)
+    fitted = status["result"]["fit"]
+    assert fitted["cost"] < 1e-3 * fitted["cost_start"]
+    assert {one["output"] for one in fitted["compared"]} == {"j1.pressure", "inj.mass_flow"}
+    assert status["progress"]["tries"] == fitted["tries"] > 3
+    # The fit's result is the best run: plotted like any other.
+    assert at(status["result"], "inj.mass_flow", 0.5) == pytest.approx(
+        at(truth["result"], "inj.mass_flow", 0.5), rel=0.01
+    )
+
+
+@pytest.mark.parametrize(
+    ("knobs", "message"),
+    [
+        ([{"part": "tank", "key": "fluid"}], "Water tank has no knob fluid to fit"),
+        (
+            [{"part": "tank", "key": "polytropic_exponent"}],
+            "Water tank's ullage exponent n doesn't matter as it's set up",
+        ),
+        ([{"part": "inj", "key": "cda"}, {"part": "inj", "key": "cda"}], "Injector's CdA is picked twice"),
+        ([{"part": "nope", "key": "cda"}], "There's no part nope to fit"),
+    ],
+)
+def test_a_fit_says_what_it_cant_do(team, knobs, message):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, cold_flow_csv())
+    body = {"model": cold_flow_model(), "dataset_id": dataset["id"], "start": 0, "end": 1, "knobs": knobs}
+    response = team.client.post("/api/yorg/dev/fits", json=body, headers=chief)
+    assert (response.status_code, response.json()["message"]) == (422, message)
+
+
+def test_a_fit_needs_something_to_compare_with(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, cold_flow_csv())
+    body = {
+        "model": cold_flow_model(),  # its tank follows PT-TANK, and nothing is compared
+        "dataset_id": dataset["id"],
+        "start": 0,
+        "end": 1,
+        "knobs": [{"part": "inj", "key": "cda"}],
+    }
+    response = team.client.post("/api/yorg/dev/fits", json=body, headers=chief)
+    assert (response.status_code, response.json()["message"]) == (
+        422,
+        "Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure",
+    )

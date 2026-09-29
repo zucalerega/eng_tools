@@ -1,9 +1,10 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { Catalog, Edge, Part, SystemModel } from "./api";
-import { kindOf } from "./model";
+import { kindOf, shownLinks } from "./model";
 
 // The model as a P&ID on an SVG canvas: tanks, gas supplies, junctions, and outlets where they're put, and the lines,
-// valves, orifices, and press lines between them, each with a bubble for every channel it's linked to (PT, TC, FM).
+// valves, orifices, venturis, and regulators between them (gas ones dashed), each with a bubble for every channel it's
+// linked to (PT, TC, FM, CMD).
 //
 //   select: click a part to pick it, drag a node to move it, Delete to remove what's picked
 //   place: click where the new node goes
@@ -38,6 +39,8 @@ function extent(type: string): [number, number] {
             return [24, 24];
         case "outlet":
             return [18, 16];
+        case "gas_junction":
+            return [8, 8];
         default:
             return [6, 6];
     }
@@ -58,7 +61,7 @@ function edgePoint(node: Part, tx: number, ty: number): [number, number] {
 const TAGS: Record<string, string> = { pressure: "PT", temperature: "TC", mass_flow: "FM", command: "CMD" };
 
 function Bubbles({ part, catalog, at }: { part: Part; catalog: Catalog; at: [number, number] }) {
-    const links = kindOf(catalog, part.type).links.filter((link) => part.links[link.key]);
+    const links = shownLinks(kindOf(catalog, part.type), part.settings).filter((link) => part.links[link.key]);
     return (
         <>
             {links.map((link, index) => {
@@ -116,18 +119,40 @@ function NodeShape({ node }: { node: Part }) {
             );
         case "outlet":
             return <path d="M -18 -16 L 18 0 L -18 16 Z" className="dev-shape" />;
+        case "gas_junction":
+            return <circle r={7} className="dev-shape dev-gas" />;
         default:
             return <circle r={6} className="dev-junction" />;
     }
 }
 
+const BOWTIE = "M -12 -9 L 12 9 L 12 -9 L -12 9 Z";
+
 function EdgeSymbol({ edge }: { edge: Edge }) {
     switch (edge.type) {
         case "valve":
-            return <path d="M -12 -9 L 12 9 L 12 -9 L -12 9 Z" className="dev-shape" />;
+        case "gas_valve":
+            return <path d={BOWTIE} className="dev-shape" />;
         case "orifice":
-        case "gas_line":
+        case "gas_orifice":
             return <path d="M 0 -12 L 0 -3 M 0 3 L 0 12" className="dev-plate" />;
+        case "venturi":
+            // Its walls, narrowing to the throat and opening out again.
+            return (
+                <path
+                    d="M -17 -10 L -4 -3.5 L 4 -3.5 L 17 -10 M -17 10 L -4 3.5 L 4 3.5 L 17 10"
+                    className="dev-plate"
+                />
+            );
+        case "regulator":
+            // A valve with a spring-loaded dome on its stem.
+            return (
+                <>
+                    <path d={BOWTIE} className="dev-shape" />
+                    <path d="M 0 0 L 0 -13" className="dev-plate dev-stem" />
+                    <path d="M -9 -13 A 9 7 0 0 1 9 -13 Z" className="dev-shape" />
+                </>
+            );
         default:
             return null;
     }
@@ -275,8 +300,10 @@ export function Diagram(props: Props) {
                         />
                         <g transform={`translate(${mx} ${my}) rotate(${angle})`}>
                             <EdgeSymbol edge={edge} />
+                            {/* Its name under the line, clear of its channels' bubbles above; turned the right way up
+                                when the line runs leftward (turned twice, it's still under the line). */}
                             <text
-                                y={flip ? 26 : -18}
+                                y={28}
                                 textAnchor="middle"
                                 transform={flip ? "rotate(180)" : undefined}
                                 className="dev-label"

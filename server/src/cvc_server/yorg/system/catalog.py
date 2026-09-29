@@ -14,18 +14,25 @@ ATMOSPHERE = 101325.0
 LIQUIDS = ("Water", "Ethanol", "Methanol", "RP1", "Oxygen", "Nitrogen", "NitrousOxide", "Methane", "Custom")
 GASES = ("Nitrogen", "Helium", "Air")
 
+# When a setting or link matters: (setting, value) pairs that must all hold. None of them: always.
+Conditions = tuple[tuple[str, str], ...]
+
 
 @dataclass(frozen=True)
 class Setting:
     key: str
     label: str
-    quantity: str  # pressure, temperature, length, diameter, area, volume, density, time, ratio, number, or choice
+    # pressure (absolute, shown gauge or absolute), pressure_abs (always absolute), pressure_drop (a difference),
+    # temperature, length, diameter, area, volume, density, mass, specific_heat, conductance, time, ratio, number,
+    # or choice
+    quantity: str
     default: float | str
     minimum: float | None = None
     maximum: float | None = None
     tunable: bool = False  # a knob to fit the model to what was measured
     choices: tuple[str, ...] = ()
-    only_when: tuple[str, str] | None = None  # (setting, value): the setting only matters then
+    choice_labels: tuple[str, ...] = ()  # how each choice reads, if not as it is
+    only_when: Conditions = ()
     help: str = ""
 
 
@@ -34,8 +41,12 @@ class Link:
     key: str
     label: str
     quantity: str  # what the channel measures: pressure, temperature, mass_flow, or command
-    role: str  # boundary: the model follows it; sensor: compared with the model; command: opens and closes a valve
+    # boundary: the model follows it; start: its value at the run's start starts the model, which it's then compared
+    # with; sensor: compared with the model; command: opens and closes a valve
+    role: str
     help: str = ""
+    only_when: Conditions = ()
+    start_when: Conditions | None = None  # a boundary that's a start instead, then: an ullage tank's pressure
 
 
 @dataclass(frozen=True)
@@ -50,21 +61,46 @@ class Part:
     type: str
     label: str
     kind: str  # node (a point with a pressure) or edge (a flow path from one node to another)
-    phase: str  # liquid or gas: what flows through it, or what it holds
+    phase: str  # liquid, gas, or any: what flows through it, or what it holds
     help: str
     settings: tuple[Setting, ...] = ()
     links: tuple[Link, ...] = ()
     outputs: tuple[Output, ...] = ()
 
 
-_ULLAGE = ("mode", "ullage")
+def in_words(label: str) -> str:
+    """A label as it reads in a sentence: lowercase, but for symbols and names like CdA, hA, K, and n."""
+    return " ".join(
+        word if len(word) == 1 or any(letter.isupper() for letter in word[1:]) else word.lower()
+        for word in label.split(" ")
+    )
+
+
+def applies(conditions: Conditions | None, settings: dict[str, Any]) -> bool:
+    """Whether every condition holds for a part set up as settings (no conditions: yes)."""
+    return conditions is not None and all(settings.get(key) == value for key, value in conditions)
+
+
+_ULLAGE: Conditions = (("mode", "ullage"),)
+_POLYTROPIC: Conditions = (("mode", "ullage"), ("ullage_model", "polytropic"))
+_WALL: Conditions = (("mode", "ullage"), ("ullage_model", "wall"))
+_CUSTOM: Conditions = (("fluid", "Custom"),)
 _COMMAND = (
     Setting("opening_time", "Opening time", "time", 0.05, 0.001, 60.0, tunable=True, help="Fully closed to fully open"),
     Setting("closed_value", "Command when closed", "number", 0.0, help="The command channel's value when closed"),
     Setting("open_value", "Command when open", "number", 1.0, help="The command channel's value when fully open"),
     Setting("position", "Position without a command", "ratio", 1.0, 0.0, 1.0, help="0 closed, 1 open"),
 )
+_CHECK = Setting(
+    "check",
+    "Check valve",
+    "choice",
+    "yes",
+    choices=("yes", "no"),
+    choice_labels=("Yes: no flow back", "No: flows either way"),
+)
 _FLOW = Link("flow", "Flow meter", "mass_flow", "sensor")
+_MASS_FLOW = Output("mass_flow", "Flow", "mass_flow")
 
 PARTS: tuple[Part, ...] = (
     Part(
@@ -73,17 +109,62 @@ PARTS: tuple[Part, ...] = (
         "node",
         "liquid",
         "A propellant tank. At a fixed pressure (a regulated tank, or one whose pressure you measured), or with a gas "
-        "ullage whose pressure falls as the liquid drains and rises with pressurant from a press line.",
+        "ullage whose pressure falls as the liquid drains, rises with pressurant from a gas valve or regulator, and "
+        "falls through a vent.",
         settings=(
             Setting("fluid", "Liquid", "choice", "Water", choices=LIQUIDS),
-            Setting("density", "Density", "density", 1000.0, 1.0, 30000.0, only_when=("fluid", "Custom")),
-            Setting("temperature", "Liquid temperature", "temperature", 293.15, 1.0, 2000.0),
-            Setting("mode", "Pressure", "choice", "fixed", choices=("fixed", "ullage")),
+            Setting("density", "Density", "density", 1000.0, 1.0, 30000.0, only_when=_CUSTOM),
+            Setting(
+                "vapor_pressure",
+                "Vapor pressure",
+                "pressure_abs",
+                5000.0,
+                0.0,
+                1e8,
+                only_when=_CUSTOM,
+                help="Where a cavitating venturi chokes",
+            ),
+            Setting(
+                "temperature",
+                "Liquid temperature",
+                "temperature",
+                293.15,
+                1.0,
+                2000.0,
+                help="Sets its density and vapor pressure",
+            ),
+            Setting(
+                "mode",
+                "Pressure",
+                "choice",
+                "fixed",
+                choices=("fixed", "ullage"),
+                choice_labels=("Fixed", "Gas ullage"),
+            ),
             Setting("pressure", "Pressure", "pressure", 300 * PSI, 0.0, 1e9, help="Ullage: at the start"),
             Setting("volume", "Tank volume", "volume", 0.02, 1e-6, 1000.0, only_when=_ULLAGE),
             Setting("liquid_volume", "Liquid at the start", "volume", 0.015, 0.0, 1000.0, only_when=_ULLAGE),
             Setting("gas", "Ullage gas", "choice", "Nitrogen", choices=GASES, only_when=_ULLAGE),
-            Setting("gas_temperature", "Ullage temperature", "temperature", 293.15, 1.0, 2000.0, only_when=_ULLAGE),
+            Setting(
+                "gas_temperature",
+                "Ullage temperature at the start",
+                "temperature",
+                293.15,
+                1.0,
+                2000.0,
+                only_when=_ULLAGE,
+            ),
+            Setting(
+                "ullage_model",
+                "Ullage heat",
+                "choice",
+                "polytropic",
+                choices=("polytropic", "wall"),
+                choice_labels=("An exponent n", "Through the tank wall"),
+                only_when=_ULLAGE,
+                help="How heat moves between the ullage gas and the tank: a polytropic exponent, or the gas and the "
+                "wall's temperatures with an hA between them",
+            ),
             Setting(
                 "polytropic_exponent",
                 "Ullage exponent n",
@@ -92,8 +173,43 @@ PARTS: tuple[Part, ...] = (
                 1.0,
                 1.7,
                 tunable=True,
-                only_when=_ULLAGE,
-                help="Heat transfer: 1 isothermal, 1.4 (nitrogen) or 1.67 (helium) with none",
+                only_when=_POLYTROPIC,
+                help="1 isothermal, 1.4 (nitrogen) or 1.67 (helium) with no heat moving",
+            ),
+            Setting(
+                "wall_mass",
+                "Wall mass",
+                "mass",
+                5.0,
+                0.001,
+                1e5,
+                only_when=_WALL,
+                help="Of the tank wall around the ullage",
+            ),
+            Setting(
+                "wall_specific_heat",
+                "Wall specific heat",
+                "specific_heat",
+                900.0,
+                1.0,
+                1e5,
+                only_when=_WALL,
+                help="Aluminum 900, steel 500, carbon fiber about 800 J/kg·K",
+            ),
+            Setting(
+                "wall_temperature", "Wall temperature at the start", "temperature", 293.15, 1.0, 2000.0, only_when=_WALL
+            ),
+            Setting(
+                "heat_transfer",
+                "Wall hA",
+                "conductance",
+                20.0,
+                0.0,
+                1e6,
+                tunable=True,
+                only_when=_WALL,
+                help="Heat transfer coefficient times the wall's area in the ullage: the more, the nearer the gas stays "
+                "to the wall's temperature",
             ),
             Setting(
                 "collapse_factor",
@@ -113,29 +229,55 @@ PARTS: tuple[Part, ...] = (
                 "Pressure",
                 "pressure",
                 "boundary",
-                "Fixed: the tank's pressure follows it. Ullage: compared with the model, and its first value is the "
-                "starting pressure.",
+                "Fixed: the tank's pressure follows it. Ullage: its value at the start is the ullage's, and it's "
+                "compared with the model.",
+                start_when=_ULLAGE,
             ),
             Link(
-                "temperature", "Liquid temperature", "temperature", "boundary", "Its average sets the liquid's density"
+                "temperature",
+                "Liquid temperature",
+                "temperature",
+                "boundary",
+                "The liquid's density and vapor pressure follow it",
+            ),
+            Link(
+                "gas_temperature",
+                "Ullage temperature",
+                "temperature",
+                "start",
+                "Its value at the start is the ullage gas's, and it's compared with the model",
+                only_when=_ULLAGE,
+            ),
+            Link(
+                "wall_temperature",
+                "Wall temperature",
+                "temperature",
+                "start",
+                "Its value at the start is the wall's, and it's compared with the model",
+                only_when=_WALL,
             ),
         ),
-        outputs=(Output("pressure", "Pressure", "pressure"), Output("liquid_volume", "Liquid", "volume")),
+        outputs=(
+            Output("pressure", "Pressure", "pressure"),
+            Output("liquid_volume", "Liquid", "volume"),
+            Output("gas_temperature", "Ullage temperature", "temperature"),
+            Output("wall_temperature", "Wall temperature", "temperature"),
+        ),
     ),
     Part(
         "source",
         "Gas supply",
         "node",
         "gas",
-        "Pressurant from a regulator or a bottle, at a fixed pressure or one you measured.",
+        "Pressurant from a bottle or a facility line, at a fixed pressure or one you measured.",
         settings=(
             Setting("gas", "Gas", "choice", "Nitrogen", choices=GASES),
-            Setting("pressure", "Pressure", "pressure", 350 * PSI, 0.0, 1e9),
+            Setting("pressure", "Pressure", "pressure", 2000 * PSI, 0.0, 1e9),
             Setting("temperature", "Temperature", "temperature", 293.15, 1.0, 2000.0),
         ),
         links=(
             Link("pressure", "Pressure", "pressure", "boundary", "The supply's pressure follows it"),
-            Link("temperature", "Temperature", "temperature", "boundary", "Its average is the gas's temperature"),
+            Link("temperature", "Temperature", "temperature", "boundary", "The gas's temperature follows it"),
         ),
         outputs=(Output("pressure", "Pressure", "pressure"),),
     ),
@@ -144,17 +286,48 @@ PARTS: tuple[Part, ...] = (
         "Junction",
         "node",
         "liquid",
-        "A point in the lines between parts: a tee, a manifold, where a pressure transducer sits. Its pressure is "
-        "whatever makes what flows in flow out.",
+        "A point in the liquid lines between parts: a tee, a manifold, where a pressure transducer sits. Its pressure "
+        "is whatever makes what flows in flow out.",
         links=(Link("pressure", "Pressure transducer", "pressure", "sensor"),),
         outputs=(Output("pressure", "Pressure", "pressure"),),
+    ),
+    Part(
+        "gas_junction",
+        "Gas junction",
+        "node",
+        "gas",
+        "A point in the gas lines: between a regulator and a valve, a press manifold, where a pressure transducer "
+        "sits. It holds the gas in the tubing around it.",
+        settings=(
+            Setting("volume", "Volume of its tubing", "volume", 0.0002, 1e-8, 10.0, help="1 m of 1/2 in tube: 0.1 L"),
+            Setting("pressure", "Pressure at the start", "pressure", ATMOSPHERE, 0.0, 1e9),
+            Setting("temperature", "Temperature at the start", "temperature", 293.15, 1.0, 2000.0),
+        ),
+        links=(
+            Link(
+                "pressure",
+                "Pressure transducer",
+                "pressure",
+                "start",
+                "Its value at the start is the junction's, and it's compared with the model",
+            ),
+            Link(
+                "temperature",
+                "Temperature",
+                "temperature",
+                "start",
+                "Its value at the start is the gas's, and it's compared with the model",
+            ),
+        ),
+        outputs=(Output("pressure", "Pressure", "pressure"), Output("temperature", "Temperature", "temperature")),
     ),
     Part(
         "outlet",
         "Outlet",
         "node",
-        "liquid",
-        "Where the liquid goes: the atmosphere, a chamber, a catch tank. At a fixed pressure or one you measured.",
+        "any",
+        "Where the flow goes: the atmosphere, a chamber, a catch tank, a vent stack. At a fixed pressure or one you "
+        "measured.",
         settings=(Setting("pressure", "Pressure", "pressure", ATMOSPHERE, 0.0, 1e9),),
         links=(
             Link("pressure", "Pressure", "pressure", "boundary", "The outlet's pressure follows it (chamber pressure)"),
@@ -183,7 +356,7 @@ PARTS: tuple[Part, ...] = (
             ),
         ),
         links=(_FLOW,),
-        outputs=(Output("mass_flow", "Flow", "mass_flow"),),
+        outputs=(_MASS_FLOW,),
     ),
     Part(
         "valve",
@@ -193,7 +366,7 @@ PARTS: tuple[Part, ...] = (
         "A valve that opens and closes as a command channel says (or stays at one position), over its opening time.",
         settings=(Setting("cda", "CdA when open", "area", 5e-5, 0.0, 1.0, tunable=True), *_COMMAND),
         links=(Link("command", "Command", "command", "command"), _FLOW),
-        outputs=(Output("mass_flow", "Flow", "mass_flow"), Output("position", "Position", "ratio")),
+        outputs=(_MASS_FLOW, Output("position", "Position", "ratio")),
     ),
     Part(
         "orifice",
@@ -203,30 +376,123 @@ PARTS: tuple[Part, ...] = (
         "A fixed restriction: an injector, a metering orifice.",
         settings=(Setting("cda", "CdA", "area", 3e-5, 0.0, 1.0, tunable=True),),
         links=(_FLOW,),
-        outputs=(Output("mass_flow", "Flow", "mass_flow"),),
+        outputs=(_MASS_FLOW,),
     ),
     Part(
-        "gas_line",
-        "Press line",
+        "venturi",
+        "Cavitating venturi",
+        "edge",
+        "liquid",
+        "A venturi whose throat cavitates once the pressure after it falls far enough: then its flow is set by the "
+        "pressure before it and the liquid's vapor pressure alone.",
+        settings=(
+            Setting("cda", "Throat CdA", "area", 2e-5, 0.0, 1.0, tunable=True, help="Cavitating: Cd times throat area"),
+            Setting(
+                "recovery",
+                "Pressure recovery",
+                "ratio",
+                0.85,
+                0.05,
+                0.99,
+                tunable=True,
+                help="It cavitates while the pressure after it is below the vapor pressure plus this share of the rest "
+                "of the pressure before it: 0.8 to 0.9 for most venturis",
+            ),
+        ),
+        links=(_FLOW,),
+        outputs=(_MASS_FLOW, Output("cavitating", "Cavitating", "ratio")),
+    ),
+    Part(
+        "gas_valve",
+        "Gas valve",
         "edge",
         "gas",
-        "Pressurant from a gas supply into a tank's ullage, through an orifice or a valve (choked or not).",
-        settings=(
-            Setting("cda", "CdA", "area", 2e-6, 0.0, 1.0, tunable=True),
-            Setting("check", "Check valve", "choice", "yes", choices=("yes", "no"), help="Yes: no flow back"),
-            *_COMMAND,
-        ),
+        "A valve in the gas lines, choked or not: a press valve into a tank, a vent out of one. It opens and closes as "
+        "a command channel says (or stays at one position), over its opening time.",
+        settings=(Setting("cda", "CdA when open", "area", 1e-5, 0.0, 1.0, tunable=True), _CHECK, *_COMMAND),
         links=(Link("command", "Command", "command", "command"), _FLOW),
-        outputs=(Output("mass_flow", "Flow", "mass_flow"), Output("position", "Position", "ratio")),
+        outputs=(_MASS_FLOW, Output("position", "Position", "ratio")),
+    ),
+    Part(
+        "gas_orifice",
+        "Gas orifice",
+        "edge",
+        "gas",
+        "A fixed restriction in the gas lines, choked or not: a metering orifice, a bleed.",
+        settings=(Setting("cda", "CdA", "area", 1e-5, 0.0, 1.0, tunable=True),),
+        links=(_FLOW,),
+        outputs=(_MASS_FLOW,),
+    ),
+    Part(
+        "regulator",
+        "Regulator",
+        "edge",
+        "gas",
+        "A pressure regulator: it opens as the pressure where it flows to falls below its set pressure, fully open "
+        "at its droop below it, and closes above it. No flow goes back through it.",
+        settings=(
+            Setting(
+                "setpoint",
+                "Set pressure",
+                "pressure",
+                300 * PSI + ATMOSPHERE,
+                0.0,
+                1e9,
+                tunable=True,
+                help="Where it closes (lock-up)",
+            ),
+            Setting(
+                "droop",
+                "Droop",
+                "pressure_drop",
+                20 * PSI,
+                1.0,
+                1e8,
+                tunable=True,
+                help="How far below its set pressure it's fully open",
+            ),
+            Setting("cda", "CdA fully open", "area", 1e-5, 0.0, 1.0, tunable=True),
+            Setting(
+                "response_time",
+                "Response time",
+                "time",
+                0.05,
+                0.001,
+                60.0,
+                tunable=True,
+                help="Closed to fully open, at the fastest",
+            ),
+        ),
+        links=(_FLOW,),
+        outputs=(_MASS_FLOW, Output("position", "Opening", "ratio")),
     ),
 )
 
 BY_TYPE = {part.type: part for part in PARTS}
 
+# Part types that have been renamed: saved models may still have the old names.
+RENAMED = {"gas_line": "gas_valve"}
+
 
 def settings_of(part_type: str, given: dict[str, Any]) -> dict[str, Any]:
     """A part's settings: what's given, with each missing one at its default."""
     return {setting.key: given.get(setting.key, setting.default) for setting in BY_TYPE[part_type].settings}
+
+
+def link_role(link: Link, settings: dict[str, Any]) -> str:
+    """What a link does for a part set up as settings: an ullage tank's pressure starts the model, where a fixed
+    tank's is followed."""
+    return "start" if applies(link.start_when, settings) else link.role
+
+
+def output_of(link: Link) -> str:
+    """The output a link's channel is compared with: an edge's flow, or the node's value of the link's name."""
+    return "mass_flow" if link.quantity == "mass_flow" else link.key
+
+
+def compared(link: Link, settings: dict[str, Any]) -> bool:
+    """Whether a link's channel is compared with the model (and fitted to)."""
+    return applies(link.only_when, settings) and link_role(link, settings) in ("start", "sensor")
 
 
 def as_json() -> dict[str, Any]:

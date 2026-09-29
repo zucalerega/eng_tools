@@ -123,15 +123,22 @@ the keys.
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
 - **System models (admins, on Dev, while it's being tried out):** draw a test stand's
-  feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), gas supplies,
-  junctions, outlets, and the lines, valves, orifices, and press lines between them. Link
-  its valves to their command channels, what it follows (a tank's pressure, a chamber's)
-  to theirs, and its pressure transducers and flow meters to what they measured. Run it
-  against a test (FullFlow and ThermoProp simulate it on the server) to see each sensor's
-  measured and modeled values together, with how far apart they are (RMS and bias). Then
-  tune the settings marked tune (CdAs, a line's friction factor and fittings' K, a valve's
-  opening time, an ullage's heat-transfer exponent and collapse factor) until they match.
-  Models are saved for every admin, and run against any test with the same channel names.
+  feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
+  outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
+  the gas side (dashed), gas supplies, gas junctions, regulators, gas valves, and gas
+  orifices: press lines into a tank's ullage, and vents out of it. Link its valves to their
+  command channels, what it follows (a tank's pressure, a chamber's, a liquid's
+  temperature, whose density and vapor pressure then follow it through the run) to theirs,
+  and its sensors to what they measured; an ullage or a gas junction starts from its
+  sensors' values at the run's start (pressure, gas and wall temperatures). Run it against
+  a test (FullFlow and ThermoProp simulate it on the server) over a window from T0 (the
+  one set on the dataset's plots) to see each sensor's measured and modeled values
+  together, with how far apart they are (RMS and bias). Then tune the settings marked tune
+  (CdAs, a line's friction factor and fittings' K, a valve's opening time, a regulator's
+  set pressure and droop, a venturi's recovery, an ullage's exponent or wall hA and its
+  collapse factor), or pick them and **Fit**: the server turns them until the model
+  matches best, and you apply what it found (or not). Models are saved for every admin,
+  run against any test with the same channel names, and go to and from files.
 
 ## Layout
 

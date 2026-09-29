@@ -1,20 +1,45 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { request } from "../../api";
-import { Dialog, Notice } from "../../components";
+import { Dialog, MenuButton, Notice } from "../../components";
 import type { Dataset } from "../api";
-import { dataset as loadDataset, useLoaded } from "../data";
+import { dataset as loadDataset, samples as loadSamples, useLoaded } from "../data";
+import { storedT0 } from "../pages";
+import { sampleAt } from "../samples";
 import { formatValue } from "../scale";
-import { devApi, type Catalog, type RunResult, type RunStatus, type SavedModel, type SystemModel } from "./api";
+import {
+    devApi,
+    type Catalog,
+    type FitKnob,
+    type Quantity,
+    type RunResult,
+    type RunStatus,
+    type SavedModel,
+    type SystemModel,
+} from "./api";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
+import { applyKnobs, FitDialog, FitSummary, type Knob } from "./Fit";
 import { Inspector } from "./Inspector";
-import { addEdge, addNode, changePart, connectProblem, EMPTY_MODEL, exampleModel, removePart } from "./model";
+import {
+    addEdge,
+    addNode,
+    changePart,
+    connectProblem,
+    EMPTY_MODEL,
+    exampleModel,
+    exportModel,
+    importModel,
+    pressurizedExample,
+    removePart,
+} from "./model";
 import { Results } from "./Results";
-import { readingFor } from "./units";
+import { channelToSiLinear, readingFor } from "./units";
 import "./dev.css";
 
 // Yorg's dev page (admins): system models. Draw a test stand's feed system, link its valves and sensors to a test's
 // channels, run it with FullFlow on the server, and compare it with what was measured; turn the knobs marked "tune"
-// until it matches.
+// until it matches, or have a fit turn them.
+
+const FULLFLOW = "https://github.com/saakethramoju/FullFlow";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -25,7 +50,32 @@ interface Current {
     dirty: boolean;
 }
 
-type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | null;
+type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | { ask: "fit" } | null;
+
+/** A run or a fit on the server: what it ran (the model as it was, against which dataset), and how it's going. */
+interface Job {
+    kind: "run" | "fit";
+    id: string;
+    model: SystemModel;
+    datasetId: number;
+    knobs: Knob[];
+    status: RunStatus | null;
+}
+
+/** What a fit found, to apply: the knobs from where they started, and how it went. */
+interface Found {
+    knobs: FitKnob[];
+    note: string;
+}
+
+function download(name: string, text: string) {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${name.replace(/[\\/:*?"<>|]+/g, " ").trim() || "model"}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
 
 export function DevPage() {
     useLoaded();
@@ -40,16 +90,14 @@ export function DevPage() {
     const [asking, setAsking] = useState<Asking>(null);
     const [newName, setNewName] = useState("");
     const [datasetId, setDatasetId] = useState<number | null>(null);
-    const [windowText, setWindowText] = useState({ start: "", end: "", dt: "0.01" });
-    // A run: what it ran (the model as it was, against which dataset), and how it's going.
-    const [run, setRun] = useState<{
-        id: string;
-        model: SystemModel;
-        datasetId: number;
-        status: RunStatus | null;
-    } | null>(null);
+    // The run's window, in seconds from T0 (or, without one, from the dataset's start).
+    const [windowText, setWindowText] = useState({ from: "", to: "", dt: "0.01" });
+    const [job, setJob] = useState<Job | null>(null);
     const [shown, setShown] = useState<{ result: RunResult; model: SystemModel; datasetId: number } | null>(null);
+    const [found, setFound] = useState<Found | null>(null);
+    const [lastKnobs, setLastKnobs] = useState<Knob[]>([]);
     const dragStart = useRef<SystemModel | null>(null);
+    const fileInput = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         Promise.all([devApi.catalog(), devApi.models(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
@@ -62,40 +110,72 @@ export function DevPage() {
         );
     }, []);
 
-    // A dataset picked: its channels load, and the run's window starts as its first 10 seconds.
+    // A dataset picked: its channels load, and the run's window starts as a second before T0 to ten after (or its
+    // first ten seconds, without a T0).
     const detail = datasetId === null ? null : loadDataset(datasetId);
     const channels = detail?.status === "ready" ? detail.value.channels : [];
+    const picked = datasets.find((one) => one.id === datasetId);
+    const t0 = datasetId === null ? null : storedT0(datasetId);
+    const zero = t0 ?? picked?.t_min ?? 0;
     function pickDataset(id: number | null) {
         setDatasetId(id);
         const found = datasets.find((one) => one.id === id);
-        if (found && found.t_min !== null && found.t_max !== null) {
-            setWindowText({
-                ...windowText,
-                start: formatValue(found.t_min),
-                end: formatValue(Math.min(found.t_max, found.t_min + 10)),
-            });
+        if (id !== null && found && found.t_min !== null && found.t_max !== null) {
+            const at = storedT0(id);
+            const from = at === null ? found.t_min : Math.max(found.t_min, at - 1);
+            const to = Math.min(found.t_max, (at ?? found.t_min) + 10);
+            const origin = at ?? found.t_min;
+            setWindowText({ ...windowText, from: formatValue(from - origin), to: formatValue(to - origin) });
         }
     }
 
-    // While a run goes, ask how it's doing.
+    // While a run or a fit goes, ask how it's doing.
     useEffect(() => {
-        if (!run || (run.status && run.status.state !== "running")) {
+        if (!job || (job.status && job.status.state !== "running")) {
             return;
         }
-        const timer = window.setTimeout(() => {
-            devApi.status(run.id).then(
-                (status) => {
-                    setRun({ ...run, status });
-                    if (status.state === "done") {
-                        setShown({ result: status.result, model: run.model, datasetId: run.datasetId });
-                    }
-                },
-                (error) =>
-                    setRun({ ...run, status: { state: "failed", elapsed: 0, duration: 0, message: message(error) } }),
-            );
-        }, 600);
+        const timer = window.setTimeout(
+            () => {
+                devApi.status(job.id).then(
+                    (status) => {
+                        setJob({ ...job, status });
+                        if (status.state === "done") {
+                            setShown({ result: status.result, model: job.model, datasetId: job.datasetId });
+                            const fit = status.result.fit;
+                            if (fit) {
+                                const better = fit.cost_start > 0 ? 100 * (1 - fit.cost / fit.cost_start) : 0;
+                                setFound({
+                                    knobs: fit.knobs,
+                                    note: `${fit.stopped ? "Stopped at the time limit: the best of" : "Done:"} ${fit.tries} runs, the error ${formatValue(better)}% smaller.`,
+                                });
+                            }
+                        } else if (status.state === "failed" && job.kind === "fit" && status.progress?.values) {
+                            // Stopped: what it had found so far is still worth having.
+                            const values = status.progress.values;
+                            setFound({
+                                knobs: job.knobs.map((knob, index) => ({
+                                    ...knob,
+                                    start: Number(
+                                        [...job.model.nodes, ...job.model.edges].find((one) => one.id === knob.part)
+                                            ?.settings[knob.key] ?? 0,
+                                    ),
+                                    value: values[index] ?? 0,
+                                })),
+                                note: `Stopped after ${status.progress.tries ?? 0} runs: the best it had found.`,
+                            });
+                        }
+                    },
+                    (error) =>
+                        setJob({
+                            ...job,
+                            status: { state: "failed", elapsed: 0, duration: 0, message: message(error) },
+                        }),
+                );
+            },
+            job.kind === "fit" ? 1000 : 600,
+        );
         return () => window.clearTimeout(timer);
-    }, [run]);
+    }, [job]);
 
     if (!catalog) {
         return problem ? <Notice tone="error">{problem}</Notice> : <p className="muted">Loading…</p>;
@@ -130,6 +210,7 @@ export function DevPage() {
         setSelected(null);
         setTool({ mode: "select" });
         setShown(null);
+        setFound(null);
     }
 
     async function act(action: () => Promise<void>) {
@@ -159,13 +240,53 @@ export function DevPage() {
         }
     }
 
-    const start = Number(windowText.start);
-    const end = Number(windowText.end);
+    async function importFile(file: File) {
+        const text = await file.text();
+        const imported = importModel(text, file.name.replace(/\.json$/i, ""));
+        withSaved(() => open(imported.model, null, imported.name));
+    }
+
+    const from = Number(windowText.from);
+    const to = Number(windowText.to);
     const dt = Number(windowText.dt);
-    const running = run?.status?.state === "running" || (run !== null && run.status === null);
-    const canRun =
-        datasetId !== null && Number.isFinite(start) && Number.isFinite(end) && end > start && dt > 0 && !running;
-    const status = run?.status;
+    const start = zero + from;
+    const end = zero + to;
+    const running = job !== null && (job.status === null || job.status.state === "running");
+    const windowOk =
+        datasetId !== null &&
+        windowText.from.trim() !== "" &&
+        windowText.to.trim() !== "" &&
+        Number.isFinite(from) &&
+        Number.isFinite(to) &&
+        to > from &&
+        dt > 0;
+    const status = job?.status;
+
+    /** A channel's value at the run's start, in SI, from the picked test (null until its samples are in). */
+    function startValue(name: string, quantity: Quantity): number | null {
+        if (detail?.status !== "ready" || !windowOk) {
+            return null;
+        }
+        const channel = detail.value.channels.find((one) => one.name === name);
+        if (!channel) {
+            return null;
+        }
+        const loaded = loadSamples(detail.value, channel);
+        if (loaded.status !== "ready") {
+            return null;
+        }
+        const { scale, offset } = channelToSiLinear(quantity, channel.unit, current.model.display);
+        return sampleAt(loaded.value, start, { shift: 0, scale, offset })?.y ?? null;
+    }
+
+    const runBody = (model: SystemModel, id: number) => ({
+        model,
+        dataset_id: id,
+        start,
+        end,
+        dt,
+        reading: readingFor(model.display),
+    });
 
     const startRun = () =>
         act(async () => {
@@ -173,26 +294,46 @@ export function DevPage() {
                 return;
             }
             const model = current.model;
-            const started = await devApi.run({
-                model,
-                dataset_id: datasetId,
-                start,
-                end,
-                dt,
-                reading: readingFor(model.display),
-            });
-            setRun({ id: started.id, model, datasetId, status: null });
+            const started = await devApi.run(runBody(model, datasetId));
+            setFound(null);
+            setJob({ kind: "run", id: started.id, model, datasetId, knobs: [], status: null });
+        });
+
+    const startFit = (knobs: Knob[]) =>
+        act(async () => {
+            if (datasetId === null) {
+                return;
+            }
+            const model = current.model;
+            setAsking(null);
+            setLastKnobs(knobs);
+            const started = await devApi.fit({ ...runBody(model, datasetId), knobs });
+            setFound(null);
+            setJob({ kind: "fit", id: started.id, model, datasetId, knobs, status: null });
         });
 
     const nodeTypes = catalog.parts.filter((part) => part.kind === "node");
     const edgeTypes = catalog.parts.filter((part) => part.kind === "edge");
     const shownDetail = shown && shown.datasetId === datasetId && detail?.status === "ready" ? detail.value : null;
     const display = current.model.display;
+    const progress = status?.progress;
+    const better =
+        progress?.cost_start && progress.cost !== undefined && Number.isFinite(progress.cost)
+            ? 100 * (1 - progress.cost / progress.cost_start)
+            : null;
 
     return (
         <section className="yorg-page dev-page" onKeyDown={onKey}>
             <div className="page-head">
-                <h1>System models</h1>
+                <div>
+                    <h1>System models</h1>
+                    <p className="muted dev-powered">
+                        Powered by{" "}
+                        <a href={FULLFLOW} target="_blank" rel="noreferrer">
+                            FullFlow
+                        </a>
+                    </p>
+                </div>
                 <div className="dev-head-actions">
                     <select
                         aria-label="Saved models"
@@ -222,12 +363,20 @@ export function DevPage() {
                     <button type="button" onClick={() => withSaved(() => open(EMPTY_MODEL, null, "New model"))}>
                         New
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => withSaved(() => open(exampleModel(catalog), null, "Cold flow example"))}
-                    >
-                        Start from an example
-                    </button>
+                    <MenuButton
+                        label="Start from an example"
+                        items={[
+                            {
+                                label: "Cold flow",
+                                onSelect: () => withSaved(() => open(exampleModel(catalog), null, "Cold flow example")),
+                            },
+                            {
+                                label: "Pressurized flow",
+                                onSelect: () =>
+                                    withSaved(() => open(pressurizedExample(catalog), null, "Pressurized example")),
+                            },
+                        ]}
+                    />
                     <button
                         type="button"
                         className="button-primary"
@@ -246,6 +395,30 @@ export function DevPage() {
                     >
                         Save as…
                     </button>
+                    <MenuButton
+                        label="File"
+                        items={[
+                            { label: "Import a model file…", onSelect: () => fileInput.current?.click() },
+                            {
+                                label: "Export to a file",
+                                onSelect: () => download(current.name, exportModel(current.name, current.model)),
+                            },
+                        ]}
+                    />
+                    <input
+                        ref={fileInput}
+                        type="file"
+                        accept=".json,application/json"
+                        hidden
+                        aria-label="Model file"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) {
+                                void act(() => importFile(file));
+                            }
+                        }}
+                    />
                     {current.id && (
                         <button type="button" className="button-danger" onClick={() => setAsking({ ask: "delete" })}>
                             Delete…
@@ -276,6 +449,7 @@ export function DevPage() {
                     <button
                         key={kind.type}
                         type="button"
+                        className={kind.phase === "gas" ? "dev-gas-tool" : undefined}
                         aria-pressed={tool.mode === "connect" && tool.type === kind.type}
                         title={`${kind.help} Click where it starts, then where it ends.`}
                         onClick={() => setTool({ mode: "connect", type: kind.type, from: null })}
@@ -319,7 +493,7 @@ export function DevPage() {
                           ? "Now click where it flows to (Esc to stop)."
                           : "Click where it flows from."
                       : current.model.nodes.length === 0
-                        ? "Add tanks, junctions, and outlets, then connect them with lines, valves, and orifices."
+                        ? "Add tanks, junctions, and outlets, then connect them with lines, valves, and orifices (gas parts, dashed, for pressurant)."
                         : "Click a part to set it up; drag to move it; Delete removes it."}
             </p>
 
@@ -382,6 +556,7 @@ export function DevPage() {
                             catalog={catalog}
                             id={selected}
                             channels={channels}
+                            startValue={startValue}
                             onChange={change}
                             onDelete={(id) => {
                                 change(removePart(current.model, id));
@@ -391,7 +566,8 @@ export function DevPage() {
                     ) : (
                         <p className="muted">
                             Pick a part to set it up and link it to the test&apos;s channels: a tank&apos;s pressure, a
-                            valve&apos;s command, a junction&apos;s pressure transducer.
+                            valve&apos;s command, a junction&apos;s pressure transducer. A tank or gas junction linked
+                            to a sensor starts from its value at the run&apos;s start.
                         </p>
                     )}
                 </aside>
@@ -412,20 +588,20 @@ export function DevPage() {
                         ))}
                     </select>
                 </label>
-                <label className="field">
+                <label className="field" title={t0 === null ? "Seconds from the dataset's start" : "Seconds from T0"}>
                     From (s)
                     <input
                         inputMode="decimal"
-                        value={windowText.start}
-                        onChange={(event) => setWindowText({ ...windowText, start: event.target.value })}
+                        value={windowText.from}
+                        onChange={(event) => setWindowText({ ...windowText, from: event.target.value })}
                     />
                 </label>
-                <label className="field">
+                <label className="field" title={t0 === null ? "Seconds from the dataset's start" : "Seconds from T0"}>
                     To (s)
                     <input
                         inputMode="decimal"
-                        value={windowText.end}
-                        onChange={(event) => setWindowText({ ...windowText, end: event.target.value })}
+                        value={windowText.to}
+                        onChange={(event) => setWindowText({ ...windowText, to: event.target.value })}
                     />
                 </label>
                 <label className="field">
@@ -437,29 +613,68 @@ export function DevPage() {
                     />
                 </label>
                 {running ? (
-                    <button type="button" onClick={() => run && void act(async () => devApi.stop(run.id))}>
+                    <button type="button" onClick={() => job && void act(async () => devApi.stop(job.id))}>
                         Stop
                     </button>
                 ) : (
-                    <button type="button" className="button-primary" disabled={!canRun} onClick={() => void startRun()}>
-                        Run
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            className="button-primary"
+                            disabled={!windowOk}
+                            onClick={() => void startRun()}
+                        >
+                            Run
+                        </button>
+                        <button type="button" disabled={!windowOk} onClick={() => setAsking({ ask: "fit" })}>
+                            Fit…
+                        </button>
+                    </>
                 )}
                 <span className="muted" role="status">
-                    {status?.state === "running"
-                        ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
-                        : running
-                          ? "Starting…"
-                          : status?.state === "done"
-                            ? `Done in ${Math.round(status.elapsed)} s`
-                            : ""}
+                    {status?.state === "running" && job?.kind === "fit"
+                        ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${formatValue(better)}% smaller`}, ${Math.round(status.elapsed)} s so far`
+                        : status?.state === "running"
+                          ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
+                          : running
+                            ? "Starting…"
+                            : status?.state === "done"
+                              ? `Done in ${Math.round(status.elapsed)} s`
+                              : ""}
                 </span>
+                {datasetId !== null && (
+                    <span className="muted dev-zero">
+                        {t0 === null ? "Times from the dataset's start" : "Times from T0 (set on the dataset's plots)"}
+                    </span>
+                )}
             </div>
             {status?.state === "failed" && <Notice tone="error">{status.message}</Notice>}
+            {found && (
+                <FitSummary
+                    model={current.model}
+                    catalog={catalog}
+                    found={found.knobs}
+                    note={found.note}
+                    onApply={() => {
+                        change(applyKnobs(current.model, found.knobs));
+                        setFound(null);
+                    }}
+                    onDiscard={() => setFound(null)}
+                />
+            )}
             {shown && shownDetail && (
-                <Results model={shown.model} catalog={catalog} result={shown.result} detail={shownDetail} />
+                <Results model={shown.model} catalog={catalog} result={shown.result} detail={shownDetail} zero={t0} />
             )}
 
+            {asking?.ask === "fit" && (
+                <FitDialog
+                    model={current.model}
+                    catalog={catalog}
+                    picked={lastKnobs}
+                    onStart={(knobs) => void startFit(knobs)}
+                    onCancel={() => setAsking(null)}
+                />
+            )}
             {asking?.ask === "save-as" && (
                 <Dialog
                     title="Save the model"

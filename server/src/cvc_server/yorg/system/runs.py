@@ -1,5 +1,6 @@
-"""Model runs: each a process of its own (runner.py) with a folder of inputs and results, so a long simulation never
-holds up the site, and one that runs past its limit is stopped. A run's folder goes a while after it's done.
+"""Model runs and fits: each a process of its own (runner.py) with a folder of inputs and results, so a long
+simulation never holds up the site, and one that runs past its limit is stopped. A run's folder goes a while after
+it's done.
 """
 
 import json
@@ -18,6 +19,7 @@ from typing import Any
 from ...errors import Conflict, NotFound
 
 TIME_LIMIT = 600.0  # seconds a run may take
+FIT_LIMIT = 1800.0  # and a fit (it stops itself a minute before, with the best it found)
 KEEP = 1800.0  # seconds a finished run's results are kept
 RUNNING_AT_ONCE = 2  # the server has one CPU: more would only slow each other
 
@@ -26,10 +28,12 @@ RUNNING_AT_ONCE = 2  # the server has one CPU: more would only slow each other
 class Run:
     id: str
     user_id: int
+    kind: str  # run or fit
     folder: Path
     process: subprocess.Popen
     started: float
     duration: float  # simulated seconds
+    limit: float  # seconds it may take
     finished: float | None = None
 
 
@@ -43,13 +47,17 @@ class Runs:
         shutil.rmtree(self.root, ignore_errors=True)  # runs don't outlive the server
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def start(self, user_id: int, job: dict[str, Any], inputs: dict[str, tuple[array, array]]) -> Run:
-        """Start a run of job (see runner.py), with inputs: each linked channel's times and values, by part.link."""
+    def start(
+        self, user_id: int, job: dict[str, Any], inputs: dict[str, tuple[array, array]], kind: str = "run"
+    ) -> Run:
+        """Start a run (or a fit) of job (see runner.py), with inputs: each linked channel's times and values, by
+        part.link."""
+        limit = FIT_LIMIT if kind == "fit" else TIME_LIMIT
         with self._lock:
             self._sweep()
             for run in list(self._runs.values()):
-                if run.user_id == user_id and run.finished is None:
-                    self._stop(run)  # your new run replaces the one still going
+                if run.user_id == user_id and run.kind == kind and run.finished is None:
+                    self._stop(run)  # your new run replaces the one still going (and a fit, a fit)
             if sum(1 for run in self._runs.values() if run.finished is None) >= RUNNING_AT_ONCE:
                 raise Conflict("Other runs are using the server: try again in a minute", code="busy")
             run_id = secrets.token_hex(8)
@@ -58,7 +66,8 @@ class Runs:
             for key, (times, values) in inputs.items():
                 _write(times, folder / "inputs" / f"{key}.t.f64")
                 _write(values, folder / "inputs" / f"{key}.v.f64")
-            (folder / "job.json").write_text(json.dumps({**job, "inputs": sorted(inputs)}), encoding="utf-8")
+            job = {**job, "kind": kind, "inputs": sorted(inputs), "deadline": limit - 60.0}
+            (folder / "job.json").write_text(json.dumps(job), encoding="utf-8")
             environment = {**os.environ, "MPLCONFIGDIR": str(self.matplotlib), "MPLBACKEND": "Agg"}
             with (folder / "log.txt").open("wb") as log:
                 process = subprocess.Popen(
@@ -67,39 +76,40 @@ class Runs:
                     stderr=subprocess.STDOUT,
                     env=environment,
                 )
-            run = Run(run_id, user_id, folder, process, time.monotonic(), job["end"] - job["start"])
+            run = Run(run_id, user_id, kind, folder, process, time.monotonic(), job["end"] - job["start"], limit)
             self._runs[run_id] = run
             return run
 
     def status(self, run_id: str, user_id: int) -> dict[str, Any]:
-        """How a run is going: running (with how far it has got), done (with its results), or failed (and why)."""
+        """How a run is going: running (with how far it has got), done (with its results), or failed (and why). A
+        fit's progress (its tries, and the best it has found) comes with it, stopped or not."""
         with self._lock:
             run = self._find(run_id, user_id)
             now = time.monotonic()
             if run.finished is None and run.process.poll() is not None:
                 run.finished = now
-            if run.finished is None and now - run.started > TIME_LIMIT:
+            if run.finished is None and now - run.started > run.limit:
                 self._stop(run)
+                what = "fit" if run.kind == "fit" else "run"
                 _save(
                     run.folder / "error.json",
                     {
-                        "message": f"The run took longer than {TIME_LIMIT / 60:.0f} minutes, so it was stopped. Try a shorter time, or a longer time step."
+                        "message": f"The {what} took longer than {run.limit / 60:.0f} minutes, so it was stopped. "
+                        "Try a shorter time, or a longer time step."
                     },
                 )
             elapsed = (run.finished or now) - run.started
+            progress = _load(run.folder / "progress.json") or {}
+            status = {"elapsed": elapsed, "duration": run.duration}
+            if run.kind == "fit":
+                status["progress"] = progress
             if run.finished is None:
-                progress = _load(run.folder / "progress.json") or {}
-                return {
-                    "state": "running",
-                    "elapsed": elapsed,
-                    "done": progress.get("t", 0.0),
-                    "duration": run.duration,
-                }
+                return {**status, "state": "running", "done": progress.get("t", 0.0)}
             result = _load(run.folder / "result.json")
             if result is not None:
-                return {"state": "done", "elapsed": elapsed, "duration": run.duration, "result": result}
+                return {**status, "state": "done", "result": result}
             error = _load(run.folder / "error.json") or {"message": _crash(run.folder)}
-            return {"state": "failed", "elapsed": elapsed, "duration": run.duration, "message": error["message"]}
+            return {**status, "state": "failed", "message": error["message"]}
 
     def wait(self, run_id: str, timeout: float) -> None:
         """Wait for a run's process to end (for tests: pages ask for status instead)."""
@@ -133,7 +143,7 @@ class Runs:
     def _sweep(self) -> None:
         now = time.monotonic()
         for run_id, run in list(self._runs.items()):
-            if run.finished is None and now - run.started > TIME_LIMIT:
+            if run.finished is None and now - run.started > run.limit:
                 self._stop(run)
             if run.finished is not None and now - run.finished > KEEP:
                 shutil.rmtree(run.folder, ignore_errors=True)

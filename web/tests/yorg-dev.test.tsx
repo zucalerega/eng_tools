@@ -30,12 +30,16 @@ test("the dev page is for admins", async () => {
     expect(await screen.findByRole("heading", { name: "System models" })).toBeTruthy();
 });
 
-test("a model is drawn, linked to a test, saved, and run against it", { timeout: 180_000 }, async () => {
+test("a model is drawn, linked to a test, saved, run against it, and fitted to it", { timeout: 360_000 }, async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
     renderApp(team.chief, "/yorg/dev");
 
+    expect((await screen.findByRole("link", { name: "FullFlow" })).getAttribute("href")).toBe(
+        "https://github.com/saakethramoju/FullFlow",
+    );
     await userEvent.click(await screen.findByRole("button", { name: "Start from an example" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Cold flow" }));
     const diagram = within(screen.getByRole("application", { name: "P&ID" }));
     expect(diagram.getByRole("button", { name: "Fuel tank" })).toBeTruthy();
     expect(diagram.getByRole("button", { name: "Main valve" })).toBeTruthy();
@@ -72,4 +76,22 @@ test("a model is drawn, linked to a test, saved, and run against it", { timeout:
     expect(results.getByText(/PT-MANIFOLD \(measured\)/)).toBeTruthy();
     expect(await results.findByText(/^RMS .* psig · bias/)).toBeTruthy(); // once the measured channel has loaded
     expect(results.getByText(/Fuel tank: Water at 293\.15 K/)).toBeTruthy();
+
+    // A fit: the injector's CdA turned until the manifold reads what was measured, then applied to the model.
+    await userEvent.clear(screen.getByLabelText("Time step (s)"));
+    await userEvent.type(screen.getByLabelText("Time step (s)"), "0.02");
+    await userEvent.click(screen.getByRole("button", { name: "Fit…" }));
+    const fitting = within(screen.getByRole("dialog"));
+    expect(fitting.getByText("PT-MANIFOLD")).toBeTruthy();
+    await userEvent.click(fitting.getByRole("checkbox", { name: /^Injector: CdA/ }));
+    await userEvent.click(fitting.getByRole("button", { name: "Fit" }));
+    const fit = within(await screen.findByRole("region", { name: "Fit" }, { timeout: 170_000 }));
+    expect(fit.getByText(/^Done: \d+ runs, the error/)).toBeTruthy();
+    expect(fit.getByText("Injector: CdA")).toBeTruthy();
+    fireEvent.pointerDown(diagram.getByRole("button", { name: "Injector" }));
+    const injector = within(await screen.findByRole("region", { name: "Injector settings" }));
+    const before = (injector.getByLabelText(/^CdA/) as HTMLInputElement).value;
+    await userEvent.click(fit.getByRole("button", { name: "Apply to the model" }));
+    await waitFor(() => expect((injector.getByLabelText(/^CdA/) as HTMLInputElement).value).not.toBe(before));
+    expect(screen.getByRole("option", { name: "Stand A cold flow (changed)" })).toBeTruthy();
 });

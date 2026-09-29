@@ -302,3 +302,72 @@
 .dev-add-output select {
     max-width: 24rem;
 }
+
+.dev-powered {
+    margin: 0.1rem 0 0;
+    font-size: 0.8rem;
+}
+
+.dev-toolbar .dev-gas-tool {
+    border-style: dashed;
+}
+
+.dev-stem {
+    stroke-width: 2;
+}
+
+.dev-linked {
+    display: block;
+    padding: 0.3rem 0.5rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.dev-zero {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+}
+
+.dev-started {
+    font-size: 0.85rem;
+}
+
+.dev-knobs {
+    display: grid;
+    gap: 0.3rem;
+    max-height: 45vh;
+    overflow: auto;
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.dev-fit-found {
+    margin-top: 0.9rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.dev-fit-table {
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.dev-fit-table th,
+.dev-fit-table td {
+    padding: 0.2rem 0.9rem 0.2rem 0;
+    text-align: left;
+}
+
+.dev-fit-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0;
+}

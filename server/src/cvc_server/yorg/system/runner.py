@@ -1,7 +1,8 @@
-"""A model run's process: python -m cvc_server.yorg.system.runner <folder>.
+"""A model run's (or fit's) process: python -m cvc_server.yorg.system.runner <folder>.
 
-The folder holds job.json (the checked model, the window, the time step) and inputs/ (each linked channel's times
-and values, as little-endian float64s). The run writes progress.json as it goes, then result.json or error.json.
+The folder holds job.json (the checked model, the window, the time step; for a fit, what to fit) and inputs/ (each
+linked channel's times and values, as little-endian float64s). The process writes progress.json as it goes, then
+result.json or error.json.
 """
 
 import json
@@ -11,9 +12,11 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from .fit import fit
 from .network import ModelError, run
 
 
@@ -26,7 +29,7 @@ def _save(path: Path, value: dict) -> None:
 
 
 class _Progress:
-    """Says how far the run has got, at most twice a second."""
+    """Says how far a run has got, at most twice a second."""
 
     def __init__(self, path: Path):
         self.path, self.last, self.shown = path, 0.0, 0.0
@@ -47,8 +50,13 @@ def main(folder: Path) -> None:
         )
         for key in job["inputs"]
     }
+    progress = folder / "progress.json"
+
+    def report(state: dict[str, Any]) -> None:
+        _save(progress, state)
+
     try:
-        result = run(job, inputs, _Progress(folder / "progress.json"))
+        result = fit(job, inputs, report) if job.get("kind") == "fit" else run(job, inputs, _Progress(progress))
     except ModelError as error:
         _save(folder / "error.json", {"message": str(error)})
         return

@@ -6,13 +6,14 @@ import type { AxisSpec } from "../layout";
 import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
 import { Samples, sampleAt } from "../samples";
 import { clockTicks, formatClock, formatTick, formatValue, ticks } from "../scale";
-import type { Catalog, Quantity, RunResult, SystemModel } from "./api";
+import type { Catalog, Liquid, Quantity, RunResult, SystemModel } from "./api";
 import { channelPlacement, comparisons, kindOf, modelPlacement } from "./model";
-import { unitOf } from "./units";
+import { toDisplay, unitOf } from "./units";
 
-// A run against a test: each channel the model is compared with, plotted with the model's value, with how far apart
-// they are (RMS and bias, over the run); and any other output the model has, to add. The plots share their window
-// (drag to zoom, as in Yorg's workspace) and cursor.
+// A run against a test: what it started from (values taken from channels at its start), each channel the model is
+// compared with, plotted with the model's value, with how far apart they are (RMS and bias, over the run); and any
+// other output the model has, to add. The plots share their window (drag to zoom, as in Yorg's workspace) and cursor,
+// and read from T0 when the dataset has one.
 
 const MEASURED = "#2f7ed8";
 const MODELED = "#e0a500";
@@ -86,16 +87,32 @@ interface PlotBox {
     fit: Fit | null;
 }
 
+const MINUS = "\u2212";
+
+/** A tank's liquid, as it was in the run: at a temperature, or following a channel's over a range. */
+function liquidText(name: string, liquid: Liquid): string {
+    const range = (values: [number, number] | undefined, unit: string) =>
+        values && values[1] - values[0] > 1e-6
+            ? `${formatValue(values[0])}–${formatValue(values[1])} ${unit}`
+            : `${formatValue(values?.[0] ?? 0)} ${unit}`;
+    if (liquid.follows && liquid.temperatures && liquid.densities) {
+        return `${name}: ${liquid.fluid} following ${liquid.follows}, ${range(liquid.temperatures, "K")}, ${range(liquid.densities, "kg/m³")}`;
+    }
+    return `${name}: ${liquid.fluid} at ${formatValue(liquid.temperature)} K, ${formatValue(liquid.density)} kg/m³`;
+}
+
 export function Results({
     model,
     catalog,
     result,
     detail,
+    zero = null,
 }: {
     model: SystemModel;
     catalog: Catalog;
     result: RunResult;
     detail: DatasetDetail;
+    zero?: number | null; // the dataset's T0, if it has one here
 }) {
     useLoaded(); // redraw as measured channels load
     const colors = usePlotColors();
@@ -106,13 +123,23 @@ export function Results({
     const display = model.display;
     const shown = window ?? span;
 
-    const time: TimeAxis = useMemo(
-        () =>
-            detail.time_kind === "clock"
-                ? { ticks: clockTicks, label: (x, step) => formatClock(x, step) }
-                : { ticks, label: (x, step) => formatTick(x, step) },
-        [detail.time_kind],
-    );
+    const time: TimeAxis = useMemo(() => {
+        if (zero !== null) {
+            return {
+                ticks: (from, to, count) => {
+                    const found = ticks(from - zero, to - zero, count);
+                    return { values: found.values.map((value) => value + zero), step: found.step };
+                },
+                label: (x, step) => {
+                    const t = x - zero;
+                    return Math.abs(t) < 1e-9 ? "T0" : `T${t < 0 ? MINUS : "+"}${formatTick(Math.abs(t), step)}`;
+                },
+            };
+        }
+        return detail.time_kind === "clock"
+            ? { ticks: clockTicks, label: (x, step) => formatClock(x, step) }
+            : { ticks, label: (x, step) => formatTick(x, step) };
+    }, [detail.time_kind, zero]);
 
     const outputs = [...model.nodes, ...model.edges].flatMap((part) =>
         kindOf(catalog, part.type).outputs.map((output) => ({
@@ -211,9 +238,24 @@ export function Results({
                 {result.steps} points in {formatValue(result.elapsed)} s of computing
                 {Object.entries(result.liquids).map(([tank, liquid]) => {
                     const name = model.nodes.find((node) => node.id === tank)?.name ?? tank;
-                    return ` · ${name}: ${liquid.fluid} at ${formatValue(liquid.temperature)} K, ${formatValue(liquid.density)} kg/m³`;
+                    return ` · ${liquidText(name, liquid)}`;
                 })}
             </p>
+            {result.initial.length > 0 && (
+                <p className="muted dev-started">
+                    Started from the test:{" "}
+                    {result.initial
+                        .map((one) => {
+                            const part = [...model.nodes, ...model.edges].find((found) => found.id === one.part);
+                            const link =
+                                part && kindOf(catalog, part.type).links.find((found) => found.key === one.key);
+                            const unit = unitOf(one.quantity, display);
+                            const value = formatValue(toDisplay(one.quantity, one.value, display));
+                            return `${part?.name ?? one.part} ${(link?.label ?? one.key).toLowerCase()} ${value}${unit ? ` ${unit}` : ""} (${one.channel})`;
+                        })
+                        .join(" · ")}
+                </p>
+            )}
             {result.notes.map((note) => (
                 <p key={note} className="notice notice-warning">
                     {note}

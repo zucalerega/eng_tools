@@ -40,6 +40,11 @@ function storedLayout(id: number): Layout {
     return newLayout(id);
 }
 
+/** Where this browser's layout for a dataset puts T0 (null: it has none). */
+export function storedT0(id: number): number | null {
+    return storedLayout(id).t0;
+}
+
 function storeLayout(id: number, layout: Layout): void {
     try {
         window.localStorage.setItem(LAYOUT_KEY + id, JSON.stringify(layout));

@@ -1,21 +1,42 @@
 import { useEffect, useState } from "react";
 import type { Channel } from "../api";
 import { formatValue } from "../scale";
-import type { Catalog, Display, Quantity, SystemModel } from "./api";
-import { changePart, isEdge, kindOf, partOf, reverse, setLink, setSetting, shownSettings } from "./model";
+import type { Catalog, Display, Link, Quantity, Role, SystemModel } from "./api";
+import {
+    changePart,
+    isEdge,
+    kindOf,
+    partOf,
+    reverse,
+    roleOf,
+    setLink,
+    setSetting,
+    shownLinks,
+    shownSettings,
+} from "./model";
 import { fromDisplay, toDisplay, unitOf } from "./units";
 
 // The picked part's name, settings (in the model's units; the knobs to tune are marked), and the channels it's linked
-// to in the test's data.
+// to in the test's data. A setting a linked channel takes over says so: the tank's pressure follows PT-TANK, or starts
+// at PT-TANK's value at the run's start.
 
 interface Props {
     model: SystemModel;
     catalog: Catalog;
     id: string;
     channels: Channel[]; // the test's
+    /** A channel's value at the run's start, in SI (null: no test, not loaded yet, or no sample there). */
+    startValue: (channel: string, quantity: Quantity) => number | null;
     onChange: (model: SystemModel) => void;
     onDelete: (id: string) => void;
 }
+
+const ROLES: Record<Role, string> = {
+    boundary: "(it follows)",
+    start: "(starts it, compared)",
+    sensor: "(compared)",
+    command: "(drives it)",
+};
 
 /** A number in the model's units, edited as text and kept (in SI) when you leave the box or press Enter. */
 function NumberField({
@@ -25,6 +46,7 @@ function NumberField({
     display,
     tunable,
     help,
+    note,
     onCommit,
 }: {
     label: string;
@@ -33,6 +55,7 @@ function NumberField({
     display: Display;
     tunable: boolean;
     help: string;
+    note: string | null; // a linked channel sets it instead: how
     onCommit: (si: number) => void;
 }) {
     const shown = formatValue(toDisplay(quantity, si, display));
@@ -57,28 +80,54 @@ function NumberField({
                     </span>
                 )}
             </span>
-            <span className="dev-input">
-                <input
-                    inputMode="decimal"
-                    value={text}
-                    onChange={(event) => setText(event.target.value)}
-                    onBlur={commit}
-                    onKeyDown={(event) => event.key === "Enter" && commit()}
-                />
-                {unit && <span className="muted">{unit}</span>}
-            </span>
+            {note ? (
+                <span className="dev-linked">{note}</span>
+            ) : (
+                <span className="dev-input">
+                    <input
+                        inputMode="decimal"
+                        value={text}
+                        onChange={(event) => setText(event.target.value)}
+                        onBlur={commit}
+                        onKeyDown={(event) => event.key === "Enter" && commit()}
+                    />
+                    {unit && <span className="muted">{unit}</span>}
+                </span>
+            )}
         </label>
     );
 }
 
-export function Inspector({ model, catalog, id, channels, onChange, onDelete }: Props) {
+export function Inspector({ model, catalog, id, channels, startValue, onChange, onDelete }: Props) {
     const part = partOf(model, id);
     if (!part) {
         return null;
     }
     const kind = kindOf(catalog, part.type);
+    const links = shownLinks(kind, part.settings);
     const sorted = [...channels].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const nameOf = (nodeId: string) => model.nodes.find((node) => node.id === nodeId)?.name ?? nodeId;
+    const display = model.display;
+
+    /** How a linked channel sets a setting of the same name, if one does. */
+    function linkedNote(key: string): string | null {
+        const link: Link | undefined = links.find((one) => one.key === key && part!.links[one.key]);
+        if (!link) {
+            return null;
+        }
+        const channel = part!.links[link.key]!;
+        const role = roleOf(link, part!.settings);
+        if (role === "boundary") {
+            return `Follows ${channel}`;
+        }
+        if (role !== "start") {
+            return null;
+        }
+        const value = startValue(channel, link.quantity);
+        return value === null
+            ? `${channel} at the run's start`
+            : `${channel} at the start: ${formatValue(toDisplay(link.quantity, value, display))} ${unitOf(link.quantity, display)}`;
+    }
 
     function link(key: string, channel: string, quantity: Quantity) {
         let next = setLink(model, id, key, channel);
@@ -133,9 +182,9 @@ export function Inspector({ model, catalog, id, channels, onChange, onDelete }: 
                                 value={String(value)}
                                 onChange={(event) => onChange(setSetting(model, id, setting.key, event.target.value))}
                             >
-                                {setting.choices.map((choice) => (
+                                {setting.choices.map((choice, index) => (
                                     <option key={choice} value={choice}>
-                                        {choice === "fixed" ? "Fixed" : choice === "ullage" ? "Gas ullage" : choice}
+                                        {setting.choice_labels[index] ?? choice}
                                     </option>
                                 ))}
                             </select>
@@ -148,26 +197,20 @@ export function Inspector({ model, catalog, id, channels, onChange, onDelete }: 
                         label={setting.label}
                         si={Number(value)}
                         quantity={setting.quantity}
-                        display={model.display}
+                        display={display}
                         tunable={setting.tunable}
                         help={setting.help}
+                        note={linkedNote(setting.key)}
                         onCommit={(si) => onChange(setSetting(model, id, setting.key, si))}
                     />
                 );
             })}
-            {kind.links.length > 0 && <h3>Channels</h3>}
-            {kind.links.map((one) => (
+            {links.length > 0 && <h3>Channels</h3>}
+            {links.map((one) => (
                 <label key={one.key} className="field dev-field" title={one.help || undefined}>
                     <span>
                         {one.label}
-                        <span className="muted">
-                            {" "}
-                            {one.role === "sensor"
-                                ? "(compared)"
-                                : one.role === "command"
-                                  ? "(drives it)"
-                                  : "(it follows)"}
-                        </span>
+                        <span className="muted"> {ROLES[roleOf(one, part.settings)]}</span>
                     </span>
                     <select
                         value={part.links[one.key] ?? ""}

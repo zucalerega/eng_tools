@@ -574,31 +574,60 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
 - **System models** (the dev page, `/yorg/dev`, admins only while it's tried out): a
   feed system as a P&ID, simulated with FullFlow (a network solver) and ThermoProp
   (fluid properties) against a test, to tune it until it matches. `yorg/system/catalog.py`
-  lists the parts, their settings (SI units), links, and outputs; the web app draws its
-  editor from it (`web/src/yorg/dev`) and `spec.py` checks a model with it (saving takes a
-  half-drawn one; running needs liquid paths between liquid nodes, press lines from a gas
-  supply into an ullage, and every liquid path reaching a tank, whose liquid it carries).
-  A run is a process of its own (`runner.py`, stopped after 10 minutes; two at a time, a
-  new one of yours replacing the last), so a long simulation never slows the site: the
-  server cuts the channels the model follows (valve commands, and the pressures and
-  temperatures it follows) to the run's window, in SI units by their unit (`channels.py`),
-  and the page asks how it's going. `network.py` builds the FullFlow network: a fixed
-  tank, supply, or outlet is a pressure that follows its channel (a `Sequence`); lines are
-  `DarcyWeisbach` (fittings' K folded into f); valves and orifices are a CdA law smoothed
-  near zero flow (`components.py`: plain square roots leave a node between a closed valve
-  and an orifice hard to solve), press lines an ideal-gas orifice with a check valve;
-  junctions balance their flows relative to their size; an ullage tank conserves its
-  liquid and its gas, with p = p0 (rho / rho0)^n and a collapse factor on the gas flowing
-  in. Commands step between 0 and 1 (by the command's open and closed values) and a rate
-  limit (`Actuator`) opens a valve over its opening time. Liquids are ThermoProp's at the
-  tank's temperature (a linked channel's average), or a density given. FullFlow's
-  transient solver runs with two-point Jacobians and 1e-8 tolerances (as accurate here,
-  and several times faster than its defaults); results come back at up to 2,000 points.
-  The browser compares each sensor with its output in the model's units (`units.ts`,
-  like `channels.py`) and says the RMS and bias. Saved models are JSON files in
-  `CVC_YORG_DIR/models`, so the dev page adds no tables. FullFlow, ThermoProp, and FullPlot
-  are GPL-3.0: fine for the team's own server, but if Vault is ever given to others, the
-  GPL applies to it.
+  lists the parts, their settings (SI units; some only when others are set a way, as an
+  ullage's wall only with wall heat transfer), links (followed, starting the model, compared,
+  or commanding a valve), and outputs; the web app draws its editor from it
+  (`web/src/yorg/dev`) and `spec.py` checks a model with it (saving takes a half-drawn one;
+  running needs liquid parts between tanks, junctions, and outlets and gas parts between
+  gas supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid
+  parts reaching a tank, whose liquid it carries, and every set of gas parts a supply or an
+  ullage, of one gas). A part renamed (the press line, now a gas valve) is read under its
+  new name. A run is a process of its own (`runner.py`, stopped after 10 minutes; two at a
+  time, a new one of yours replacing the last), so a long simulation never slows the site:
+  the server cuts the channels the model uses (valve commands, what it follows, what starts
+  it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
+  it's going. `network.py` builds the FullFlow network: a fixed tank, supply, or outlet is a
+  pressure that follows its channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K
+  folded into f); valves and orifices are a CdA law smoothed near zero flow
+  (`components.py`: plain square roots leave a node between a closed valve and an orifice
+  hard to solve), venturis FullFlow's `CavitatingVenturi` smoothed the same way (and made
+  continuous where it starts to cavitate, its noncavitating Cd the cavitating one over
+  sqrt(1 - R)); gas valves and orifices are an ideal-gas orifice, choked or not, taking the
+  temperature of where they flow from; a regulator is such an orifice whose opening
+  (`Regulator`: fully open at its droop below set pressure, on the pressure where it flows
+  to, reached as a first-order lag of its response time) is a state FullFlow solves in each
+  step: FullFlow's `PID` and `Actuator` move once a step, on the last step's pressure, a step
+  behind the little volume of tubing after a regulator. A gas junction's small volume makes
+  a run several times slower (SciPy creeps through each step's last digits), so leave one
+  out where no sensor or branch needs it. Liquid junctions balance their flows in kg/s. Gas
+  junctions and wall-heated ullages are FullFlow `Volume`s of ideal gas (density,
+  internal energy, and enthalpy derived from pressure and temperature, which FullFlow
+  iterates while it keeps mass and energy), with gas flowing in bringing the enthalpy of
+  where it came from; a wall-heated ullage trades heat with a `Solid` (the tank wall) by
+  `Convection`, and its liquid is kept by `LiquidStore`, the ullage's volume a stored
+  state for the gas's boundary work. An exponent-heated ullage keeps p = p0 (rho /
+  rho0)^n (`UllageTank`). Pressurant flowing into either is divided by the collapse
+  factor. Commands step between 0 and 1 (by the command's open and closed values) and a
+  rate limit opens a valve over its opening time. Liquids are ThermoProp's at the tank's
+  temperature, or, linked to a channel, tabulated over the temperatures it reads and
+  following it through the run (density and vapor pressure); a custom one has its
+  density and vapor pressure given. What starts from a channel (an ullage's pressure and
+  temperatures, a gas junction's) takes its value at the run's start, and the result says
+  what it took. All the outputs go to one `Recorder` component's exports, and components
+  are added in the order values flow, so FullFlow's settling needs one pass per trial:
+  together several times faster than a probe for each output and its default passes.
+  FullFlow's transient solver runs with two-point Jacobians and 1e-8 tolerances; results
+  come back at up to 2,000 points. A **fit** (`fit.py`, the same kind of process, stopped
+  after 30 minutes with the best it found) is SciPy's least squares over the knobs picked,
+  each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30 times its start,
+  within its limits), each try a run of the model; each compared channel (averaged down
+  to 300 points) counts the same, its errors over its swing. The page shows a fit's best
+  run, and applies what it found only when asked. The browser compares each sensor with
+  its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
+  bias; the window's times, and the plots', read from the dataset's T0 in this browser.
+  Saved models are JSON files in `CVC_YORG_DIR/models`, so the dev page adds no tables.
+  FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
+  Vault is ever given to others, the GPL applies to it.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.

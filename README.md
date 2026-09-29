@@ -139,6 +139,14 @@ the keys.
   collapse factor), or pick them and **Fit**: the server turns them until the model
   matches best, and you apply what it found (or not). Models are saved for every admin,
   run against any test with the same channel names, and go to and from files.
+- **Scripts (admins, on Dev, while it's being tried out):** a Python window. Scripts pull
+  a test's channels (`yorg.channel("PT-TANK")`, or any test's with `await yorg.load(...)`)
+  and work them over with NumPy, SciPy, pandas, matplotlib, and CoolProp (pure-Python
+  packages install from PyPI with micropip); `yorg.plot` draws on Yorg's plots, matplotlib's
+  figures show as images, and `yorg.download` offers a file to save. Python (Pyodide) runs
+  in your browser, sandboxed from the site. Scripts are kept for every admin in folders;
+  upload .py files as scripts and download scripts as them. Examples to start from: a
+  channel's peak, an injector's CdA, ullage gas from CoolProp, a spectrum, and more.
 
 ## Layout
 

@@ -12,11 +12,11 @@ from ...models import User
 from .. import datasets
 from ..api import Files
 from ..models import DatasetStatus
+from ..saved import Saved
 from . import catalog, channels
 from .catalog import in_words
 from .runs import Runs
 from .spec import BadModel, Runnable, SystemModelIn, check_shape, runnable
-from .store import Models
 
 router = APIRouter(prefix="/api/yorg/dev", tags=["yorg-dev"])
 
@@ -34,7 +34,7 @@ def admin_user(user: ActiveUser) -> User:
 AdminUser = Annotated[User, Depends(admin_user)]
 
 
-def get_models(request: Request) -> Models:
+def get_models(request: Request) -> Saved:
     return request.app.state.yorg_models
 
 
@@ -42,7 +42,7 @@ def get_runs(request: Request) -> Runs:
     return request.app.state.yorg_runs
 
 
-SavedModels = Annotated[Models, Depends(get_models)]
+SavedModels = Annotated[Saved, Depends(get_models)]
 ModelRuns = Annotated[Runs, Depends(get_runs)]
 
 
@@ -101,7 +101,7 @@ def get_saved_models(user: AdminUser, models: SavedModels) -> list[dict[str, Any
 @router.post("/models", status_code=201)
 def post_model(body: ModelSaveIn, user: AdminUser, models: SavedModels) -> dict[str, Any]:
     check_shape(body.model)
-    return models.add(user, body.name.strip(), body.model.model_dump())
+    return models.add(user, name=body.name.strip(), model=body.model.model_dump())
 
 
 @router.get("/models/{model_id}")
@@ -114,7 +114,7 @@ def get_model(model_id: str, user: AdminUser, models: SavedModels) -> dict[str, 
 @router.put("/models/{model_id}")
 def put_model(model_id: str, body: ModelSaveIn, user: AdminUser, models: SavedModels) -> dict[str, Any]:
     check_shape(body.model)
-    return models.change(user, model_id, body.name.strip(), body.model.model_dump())
+    return models.change(user, model_id, name=body.name.strip(), model=body.model.model_dump())
 
 
 @router.delete("/models/{model_id}", status_code=204)

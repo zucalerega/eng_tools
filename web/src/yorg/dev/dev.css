@@ -371,3 +371,26 @@
     gap: 0.4rem;
     margin-bottom: 0;
 }
+
+.dev-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.dev-tabs a {
+    padding: 0.3rem 0.8rem;
+    border-radius: var(--radius);
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.dev-tabs a[aria-current="page"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+}

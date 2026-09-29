@@ -1,0 +1,186 @@
+/* Yorg's Python window (ScriptsPage.tsx). */
+
+.scripts-page .page-head {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.scripts-layout {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .scripts-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.scripts-side {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    padding: 0.6rem;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.scripts-side-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-side-actions button {
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.scripts-search {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-tree,
+.scripts-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.scripts-folder,
+.scripts-item {
+    display: block;
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0.25rem 0.4rem;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
+    text-align: left;
+    font-size: 0.88rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.scripts-folder {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.scripts-item:hover,
+.scripts-folder:hover {
+    background: var(--accent-soft);
+}
+
+.scripts-current {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.scripts-main {
+    display: grid;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.scripts-bar,
+.scripts-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.scripts-bar .field {
+    margin: 0;
+}
+
+.scripts-actions {
+    align-items: center;
+}
+
+.scripts-editor {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    height: 380px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    overflow: hidden;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.scripts-gutter {
+    padding: 0.5rem 0.4rem 0.5rem 0.6rem;
+    overflow: hidden;
+    text-align: right;
+    color: var(--muted);
+    user-select: none;
+    border-right: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+
+.scripts-editor textarea {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    border: none;
+    border-radius: 0;
+    resize: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    tab-size: 4;
+    outline: none;
+}
+
+.scripts-output {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.scripts-console {
+    margin: 0;
+    padding: 0.6rem 0.75rem;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    font-size: 12.5px;
+    white-space: pre-wrap;
+}
+
+.scripts-stderr,
+.scripts-error {
+    color: var(--danger, #d64541);
+}
+
+.scripts-note {
+    color: var(--muted);
+}
+
+.scripts-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.scripts-figure {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: #fff;
+}

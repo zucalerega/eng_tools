@@ -628,6 +628,24 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   Saved models are JSON files in `CVC_YORG_DIR/models`, so the dev page adds no tables.
   FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
   Vault is ever given to others, the GPL applies to it.
+- **Scripts** (the Python window, `/yorg/dev/scripts`, admins only while it's tried out):
+  Python runs in the browser, never on the server: Pyodide (CPython in WebAssembly, pinned
+  in `web/src/yorg/scripts/worker.js`, from jsDelivr), in a module worker started from a
+  `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module
+  workers, and a sandboxed frame can't start one from a blob). The frame's origin is its
+  own, so a script, whoever wrote or uploaded it, can't reach the site, its API, or the
+  session: it gets only what it asks the page for in messages (`sandbox.ts` answers
+  read-only: the list of tests, a channel's samples, from the same store the plots use).
+  Before a script runs, the page loads the picked test's channels it names in quotes, so
+  `yorg.channel("PT-TANK")` needs no `await`; others come with `await yorg.load(...)`. The
+  `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
+  their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
+  matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages
+  (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
+  Stopping a script ends the worker; Python starts again for the next. Scripts are JSON
+  files in `CVC_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
+  folder path, and the code. REFPROP isn't there: it needs NIST's license, and would run
+  on the server behind a property API.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.

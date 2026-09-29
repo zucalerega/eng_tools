@@ -3,6 +3,7 @@ import { Link } from "../router";
 import { useVault } from "../store";
 import { DatasetsPage } from "./Datasets";
 import { DevPage } from "./dev/DevPage";
+import { ScriptsPage } from "./scripts/ScriptsPage";
 import { HelpPage } from "./Help";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
@@ -80,12 +81,13 @@ export function YorgPage({ pathname }: { pathname: string }) {
             return <DeletedPage />;
         case "/yorg/help":
             return <HelpPage />;
-        case "/yorg/dev": // for admins
+        case "/yorg/dev": // for admins, while they're tried out
+        case "/yorg/dev/scripts":
             if (!vault.me) {
                 return <p className="muted">Loading…</p>;
             }
             if (vault.me.is_admin) {
-                return <DevPage />;
+                return path === "/yorg/dev" ? <DevPage /> : <ScriptsPage />;
             }
             break;
     }

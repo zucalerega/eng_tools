@@ -146,6 +146,29 @@ export function samples(detail: DatasetDetail, channel: Channel): Loaded<Samples
     });
 }
 
+/** A channel's samples once they're in (the same ones the plots use), for code that waits rather than redraws. */
+export function samplesWhenReady(detail: DatasetDetail, channel: Channel): Promise<Samples> {
+    return new Promise((resolve, reject) => {
+        let unsubscribe = () => {};
+        const settled = (): boolean => {
+            const loaded = samples(detail, channel);
+            if (loaded.status === "loading") {
+                return false;
+            }
+            unsubscribe();
+            if (loaded.status === "ready") {
+                resolve(loaded.value);
+            } else {
+                reject(new Error(loaded.error));
+            }
+            return true;
+        };
+        if (!settled()) {
+            unsubscribe = sampleStore.subscribe(() => void settled());
+        }
+    });
+}
+
 /** Load a dataset again (it was renamed, deleted, or restored), showing it as it was until then. */
 export function reloadDataset(id: number): Promise<void> {
     return datasetStore.refresh(String(id), () => yorg.dataset(id));

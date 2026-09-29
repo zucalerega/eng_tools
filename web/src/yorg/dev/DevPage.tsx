@@ -16,6 +16,7 @@ import {
     type SavedModel,
     type SystemModel,
 } from "./api";
+import { DevTabs } from "./DevTabs";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
 import { applyKnobs, FitDialog, FitSummary, type Knob } from "./Fit";
 import { Inspector } from "./Inspector";
@@ -334,6 +335,7 @@ export function DevPage() {
                         </a>
                     </p>
                 </div>
+                <DevTabs />
                 <div className="dev-head-actions">
                     <select
                         aria-label="Saved models"

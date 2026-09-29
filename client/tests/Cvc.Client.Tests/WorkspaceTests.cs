@@ -460,6 +460,48 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task PathsKeptInFilesFromElsewhereMeanTheVaultFilesTheyEndLike()
+    {
+        // A folder brought over from Kenesto: its files keep the paths their parts had on Kenesto's drive.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var kenesto = $@"K:\Yellow Jacket Space Program\Project CAD\{_folder}\09_Hopper";
+        await alice.CheckinAsync(
+            [
+                Write(alice, "09_Hopper/Assy - Vehicle.SLDASM", "assembly"),
+                Write(alice, "09_Hopper/Stringer.SLDPRT", "stringer"),
+                Write(alice, "09_Hopper/Structures/Leg.SLDPRT", "leg"),
+                Write(alice, "09_Hopper/Tanks/Bracket.SLDPRT", "tank bracket"),
+                Write(alice, "09_Hopper/Legs/Bracket.SLDPRT", "leg bracket"),
+            ],
+            "from Kenesto");
+        await bob.RefreshAsync();
+
+        var (inVault, notInVault) = bob.FindUsedFiles(
+        [
+            $@"{kenesto}\Stringer.SLDPRT",
+            $@"{kenesto}\Structures\LEG.sldprt",
+            $@"{kenesto}\Legs\Bracket.SLDPRT",
+            @"K:\Old stuff\Bracket.SLDPRT", // either bracket, as far as its path says
+            $@"{kenesto}\Nozzle.SLDPRT", // never brought over
+            Local(bob, "09_Hopper/Stringer.SLDPRT"), // a path here, to the same file
+        ]);
+
+        Assert.Equal(
+            [Local(bob, "09_Hopper/Stringer.SLDPRT"), Local(bob, "09_Hopper/Structures/Leg.SLDPRT"), Local(bob, "09_Hopper/Legs/Bracket.SLDPRT")],
+            inVault);
+        Assert.Equal([@"K:\Old stuff\Bracket.SLDPRT", $@"{kenesto}\Nozzle.SLDPRT"], notInVault);
+
+        // Once they're here, SolidWorks is pointed at them by the same paths.
+        Assert.Null(bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT"));
+        await bob.GetLatestAsync(inVault);
+        Assert.Equal("leg bracket", File.ReadAllText(Local(bob, "09_Hopper/Legs/Bracket.SLDPRT")));
+        Assert.Equal(Local(bob, "09_Hopper/Legs/Bracket.SLDPRT"), bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT"));
+        Assert.Null(bob.LocalFileFor($@"{kenesto}\Nozzle.SLDPRT"));
+        Assert.Null(bob.LocalFileFor(Local(bob, "Nozzle.SLDPRT"))); // a path here means itself
+    }
+
+    [Fact]
     public async Task GetLatestCarriesOnPastFilesItCannotReplace()
     {
         if (OperatingSystem.IsWindows())

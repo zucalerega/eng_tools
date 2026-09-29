@@ -40,6 +40,15 @@ command, and this repository keep the name CVC. The same server also runs
   release someone's check-out or revert a file they have checked out.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
   which installs the add-in, and a button that connects it to the vault.
+- **Bringing files over from Kenesto:** upload the project folders as they are (the web
+  app takes whole folders), so `09_Hopper` stays `09_Hopper`. Assemblies from there still
+  name their parts where Kenesto had them (`K:\Yellow Jacket Space Program\Project
+  CAD\09_Hopper\Stringer.SLDPRT`), and the web app can't read that. So open them from
+  the Vault pane in SolidWorks, or with Open in SolidWorks on the web: the add-in reads the
+  paths from the files, gets the vault's files whose paths end the same way, and shows
+  SolidWorks where they are. It says which parts aren't in the vault. Check an assembly
+  out, save it, and check it in to store the vault's paths in it for good. Once the team
+  works from the vault, disconnect Kenesto's drive, so no one opens a part from there.
 
 ## Yorg: test data
 

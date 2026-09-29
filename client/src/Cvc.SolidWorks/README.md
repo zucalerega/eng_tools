@@ -12,7 +12,8 @@ task pane with these parts:
   are checked out. Assemblies open up to show their parts and sub-assemblies (with the
   version each was checked in with), and parts and assemblies list their drawings. Hover
   for where a file is used. Double-click to open: a file that isn't here yet is
-  downloaded first, with the parts it uses. Right-click for actions; on a folder, Get
+  downloaded first, with the parts it uses, and one that is gets the parts it uses that
+  aren't. Right-click for actions; on a folder, Get
   latest (it says how many files that downloads, and how big, first), Check in, or Show
   in File Explorer.
 - **Update my files** gets the latest versions of the files on this computer, and any
@@ -42,6 +43,13 @@ While you work:
 - **Open in SolidWorks** from the web app: Vault gets the latest version, and the parts it
   uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
   `cvc-open.exe`, which setup registers for `cvc:` links.)
+- **Files brought over from Kenesto** (uploaded in the web app) name their parts where
+  Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
+  vault can't read what they use. Opening or getting one reads the parts' paths from the
+  file and gets the vault's files whose paths end the same way (`09_Hopper\...`), so they
+  come along like any other assembly's parts; parts that aren't in the vault are named on
+  the tab, with their old paths in the log. When SolidWorks can't find a part, Vault
+  points it at the file in `C:\VLT` whose path ends the same way.
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
@@ -139,6 +147,11 @@ these on SolidWorks 2025:
     new part comes down, and nothing else does. Click Download everything...: it says how
     many files and how big, and No downloads nothing. Right-click a folder that isn't here
     in Browse and choose Get latest: it asks first too.
+18. Upload a folder from Kenesto in the web app, keeping its folders (an assembly with parts
+    in the same folder and in subfolders, and a sub-assembly), leaving one part out. On the
+    Browse tab, double-click the assembly: its parts come down, it opens with them, and the
+    tab names the part left out. Close it, delete a part from `C:\VLT`, and double-click the
+    assembly again: that part comes back, and nothing else downloads.
 
 ## When something goes wrong
 

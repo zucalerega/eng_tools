@@ -58,6 +58,22 @@ public sealed class GetResult
 
     /// <summary>Files that couldn't be updated, and why (for example, open in SolidWorks).</summary>
     public List<string> Failures { get; } = new List<string>();
+
+    /// <summary>Add a later get's results to these, each file once.</summary>
+    public void Add(GetResult later)
+    {
+        AddNew(Downloaded, later.Downloaded);
+        AddNew(Skipped, later.Skipped);
+        AddNew(Removed, later.Removed);
+        BackedUp.AddRange(later.BackedUp.Except(BackedUp, StringComparer.Ordinal).ToList());
+        Failures.AddRange(later.Failures.Except(Failures, StringComparer.Ordinal).ToList());
+    }
+
+    private static void AddNew(List<FileStatus> to, List<FileStatus> more)
+    {
+        var there = new HashSet<string>(to.Select(s => VaultPaths.Key(s.VaultPath)), StringComparer.Ordinal);
+        to.AddRange(more.Where(s => there.Add(VaultPaths.Key(s.VaultPath))));
+    }
 }
 
 /// <summary>How much a get would download: files not here yet, newer versions of files that are, and their total size.</summary>

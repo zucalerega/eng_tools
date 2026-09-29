@@ -69,6 +69,7 @@ export function App() {
                             {nav("/yorg", "data", "Datasets")}
                             {nav("/yorg/views", "views", "Views")}
                             {nav("/yorg/help", "help", "Help")}
+                            {vault.me?.is_admin && nav("/yorg/dev", "dev", "Dev")}
                         </>
                     ) : (
                         <>

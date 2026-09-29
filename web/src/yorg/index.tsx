@@ -1,6 +1,8 @@
 import { Notice } from "../components";
 import { Link } from "../router";
+import { useVault } from "../store";
 import { DatasetsPage } from "./Datasets";
+import { DevPage } from "./dev/DevPage";
 import { HelpPage } from "./Help";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
@@ -36,7 +38,13 @@ export const YORG_ICON =
 
 /** Which of Yorg's sections a path is in, for the top bar. */
 export function yorgSection(pathname: string): string {
-    return pathname.startsWith("/yorg/views") ? "views" : pathname.startsWith("/yorg/help") ? "help" : "data";
+    return pathname.startsWith("/yorg/views")
+        ? "views"
+        : pathname.startsWith("/yorg/help")
+          ? "help"
+          : pathname.startsWith("/yorg/dev")
+            ? "dev"
+            : "data";
 }
 
 /** Whether a page is a workspace of plots, which takes the whole window. */
@@ -45,6 +53,7 @@ export function isWorkspace(pathname: string): boolean {
 }
 
 export function YorgPage({ pathname }: { pathname: string }) {
+    const vault = useVault();
     const path = pathname.replace(/\/$/, "") || "/yorg";
     let match = /^\/yorg\/datasets\/(\d+)$/.exec(path);
     if (match) {
@@ -71,11 +80,18 @@ export function YorgPage({ pathname }: { pathname: string }) {
             return <DeletedPage />;
         case "/yorg/help":
             return <HelpPage />;
-        default:
-            return (
-                <Notice tone="error">
-                    There's no page here. <Link to="/yorg">Go to the test data</Link>
-                </Notice>
-            );
+        case "/yorg/dev": // for admins
+            if (!vault.me) {
+                return <p className="muted">Loading…</p>;
+            }
+            if (vault.me.is_admin) {
+                return <DevPage />;
+            }
+            break;
     }
+    return (
+        <Notice tone="error">
+            There's no page here. <Link to="/yorg">Go to the test data</Link>
+        </Notice>
+    );
 }

@@ -122,6 +122,16 @@ the keys.
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
+- **System models (admins, on Dev, while it's being tried out):** draw a test stand's
+  feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), gas supplies,
+  junctions, outlets, and the lines, valves, orifices, and press lines between them. Link
+  its valves to their command channels, what it follows (a tank's pressure, a chamber's)
+  to theirs, and its pressure transducers and flow meters to what they measured. Run it
+  against a test (FullFlow and ThermoProp simulate it on the server) to see each sensor's
+  measured and modeled values together, with how far apart they are (RMS and bias). Then
+  tune the settings marked tune (CdAs, a line's friction factor and fittings' K, a valve's
+  opening time, an ullage's heat-transfer exponent and collapse factor) until they match.
+  Models are saved for every admin, and run against any test with the same channel names.
 
 ## Layout
 

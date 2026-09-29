@@ -24,10 +24,10 @@ import {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const extension = (name: string) => (name.includes(".") ? name.slice(name.lastIndexOf(".")).toLowerCase() : "");
+export const extension = (name: string) => (name.includes(".") ? name.slice(name.lastIndexOf(".")).toLowerCase() : "");
 
 /** Run one change against the server, then fetch the vault again so the page shows it. */
-function useChange(onDone: () => void) {
+export function useChange(onDone: () => void) {
     const store = useStore();
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -83,8 +83,8 @@ export function NewFolderDialog({ folder, onClose }: { folder: string; onClose: 
 
 /**
  * What an upload will add (and leave out, and why), a comment for the history, and progress while the
- * files go up. They're checked in together, as version 1 of each. A zip goes up as the files in it,
- * where it is, unless you say to upload the zip itself.
+ * files go up. They're checked in together, as version 1 of each, or the next version of files checked out
+ * here. A zip goes up as the files in it, where it is, unless you say to upload the zip itself.
  */
 export function UploadDialog({ folder, picked, onClose }: { folder: string; picked: Picked[]; onClose: () => void }) {
     const vault = useVault();
@@ -148,9 +148,7 @@ export function UploadDialog({ folder, picked, onClose }: { folder: string; pick
                     Opening {opening ?? "the zip"}…
                 </p>
             ) : count > 0 ? (
-                <p>
-                    {count === 1 ? "1 file" : `${count} files`}, {formatSize(size)}, each checked in as version 1.
-                </p>
+                <p>{uploadSummary(count, plan.updates, size)}</p>
             ) : (
                 <p>There's nothing here that can be uploaded.</p>
             )}
@@ -206,6 +204,19 @@ export function UploadDialog({ folder, picked, onClose }: { folder: string; pick
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
+}
+
+// "2 files, 3 MB, each checked in as version 1", with files checked out here, going in as their next version, apart.
+function uploadSummary(count: number, updates: number, size: number): string {
+    const files = (n: number) => (n === 1 ? "1 file" : `${n} files`);
+    const added = count - updates;
+    if (updates === 0) {
+        return `${files(added)}, ${formatSize(size)}, each checked in as version 1.`;
+    }
+    const checkedOut = `${files(updates)} you have checked out here, as ${updates === 1 ? "its" : "their"} next version`;
+    return added === 0
+        ? `${checkedOut}: ${formatSize(size)}.`
+        : `${files(added)} as version 1, and ${checkedOut}: ${formatSize(size)} in all.`;
 }
 
 /** Move files and folders into another folder you can add files to. */

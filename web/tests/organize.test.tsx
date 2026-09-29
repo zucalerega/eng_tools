@@ -122,3 +122,53 @@ test("files and folders move and get new names, but not away from what uses them
     await userEvent.click(screen.getByRole("button", { name: `Move to ${team.folder}` }));
     expect((await screen.findByRole("alert")).textContent).toContain("wouldn't find it");
 });
+
+test("uploading a file checked out here checks it in, and the rest say why they're left out", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    await team.checkin(team.chief, {
+        "Tank.SLDPRT": "tank v1",
+        "Nozzle.SLDPRT": "nozzle v1",
+        "Valve.SLDPRT": "valve v1",
+    });
+    await team.checkout(team.chief, "Tank.SLDPRT", "web");
+    await team.checkout(bob, "Valve.SLDPRT", "BOB-PC");
+    renderApp(team.chief, folderUrl(team.folder));
+
+    fireEvent.change(await screen.findByLabelText("Upload files"), {
+        target: {
+            files: [
+                file("Tank.SLDPRT", "tank v2"),
+                file("Nozzle.SLDPRT", "nozzle v2"),
+                file("Valve.SLDPRT", "valve v2"),
+            ],
+        },
+    });
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText(/^1 file you have checked out here, as its next version/)).toBeTruthy();
+    expect(dialog.getByText(/To change it, check it out/)).toBeTruthy();
+    expect(dialog.getByText("Bob has it checked out on BOB-PC.")).toBeTruthy();
+    await userEvent.click(dialog.getByRole("button", { name: "Upload 1 file" }));
+    await waitFor(async () => {
+        const tank = (await (await table()).findByRole("link", { name: "Tank.SLDPRT" })).closest("tr")!;
+        expect(within(tank).getByText("v2")).toBeTruthy();
+        expect(within(tank).getByText("Checked in")).toBeTruthy();
+    });
+});
+
+test("picked files check out here, and those check-outs are undone", async () => {
+    const team = await Team.create();
+    await team.checkin(team.chief, { "Tank.SLDPRT": "tank", "Nozzle.SLDPRT": "nozzle" });
+    renderApp(team.chief, folderUrl(team.folder));
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Select Tank.SLDPRT" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select Nozzle.SLDPRT" }));
+    await userEvent.click(screen.getByRole("button", { name: "Check out" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Check out" }));
+    expect(await screen.findAllByText("Checked out by you in the web app")).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select Tank.SLDPRT" }));
+    await userEvent.click(screen.getByRole("button", { name: "Undo check-out" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Undo check-out" }));
+    await waitFor(() => expect(screen.getAllByText("Checked out by you in the web app")).toHaveLength(1));
+});

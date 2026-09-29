@@ -1,11 +1,13 @@
-import { api } from "./api";
+import { api, type VaultFile } from "./api";
+import { keptReferences, on, WEB_HOST } from "./checkouts";
 import { kindOf, nameProblem, parentOf, pathKey } from "./paths";
 import { contentsOf, type VaultState } from "./store";
 import { readZip } from "./zip";
 
 // Uploading files and whole folders from the browser: each file's contents go up once (the server
 // skips contents it has), then they're all checked in together, as one version each. A .zip can go up
-// as the files in it, where it was, with the folders in it (like Windows' Extract Here).
+// as the files in it, where it was, with the folders in it (like Windows' Extract Here). Files you have
+// checked out in the web app go in as their next version: that's checking them in.
 
 /** A file picked or dropped, with where it sits under what was picked (Folder/Sub/Part.SLDPRT). */
 export interface Picked {
@@ -26,9 +28,10 @@ export interface Skipped {
 }
 
 export interface UploadPlan {
-    ready: { source: Source; path: string }[];
+    ready: { source: Source; path: string; references: string[] }[]; // references: what a drawing shows
     skipped: Skipped[];
     assemblies: number; // uploaded without their parts recorded (see the dialog)
+    updates: number; // new versions of files checked out here
 }
 
 // Like the CLI and the add-in: files that are never version-controlled.
@@ -82,6 +85,7 @@ export function planUpload(vault: VaultState, folder: string, sources: Source[],
         ready: [],
         skipped: skipped.map(({ path, reason }) => ({ path: at(path), reason })),
         assemblies: 0,
+        updates: 0,
     };
     const seen = new Set<string>();
     for (const source of sources) {
@@ -93,28 +97,54 @@ export function planUpload(vault: VaultState, folder: string, sources: Source[],
         }
         const problem = names.map((part) => nameProblem(part, path)).find((found) => found !== null);
         const key = pathKey(path);
+        const existing = contentsOf(vault, parentOf(path)).files.find((file) => pathKey(file.path) === key);
+        const references = existing && kindOf(name) === "drawing" ? keptReferences(vault, existing) : [];
         const reason =
             problem ??
-            (kindOf(name) === "drawing"
-                ? "Drawings are checked in from SolidWorks, so they stay linked to the part or assembly they show."
-                : contentsOf(vault, parentOf(path)).files.some((existing) => pathKey(existing.path) === key)
-                  ? "It's in the vault already. To change it, check it out and in from SolidWorks."
+            (existing
+                ? whyNotCheckedIn(vault, existing.checked_out, name, references)
+                : kindOf(name) === "drawing"
+                  ? "Drawings are checked in from SolidWorks, so they stay linked to the part or assembly they show."
                   : vault.folders.has(key)
                     ? "There's a folder with that name."
-                    : seen.has(key)
-                      ? "It's in this upload twice."
-                      : null);
+                    : null) ??
+            (seen.has(key) ? "It's in this upload twice." : null);
         if (reason) {
             plan.skipped.push({ path, reason });
             continue;
         }
         seen.add(key);
-        plan.ready.push({ source, path });
+        plan.ready.push({ source, path, references });
+        if (existing) {
+            plan.updates += 1;
+        }
         if (kindOf(name) === "assembly") {
             plan.assemblies += 1;
         }
     }
     return plan;
+}
+
+// Why a file already in the vault can't go in as its next version, or null if it's checked out to you here.
+function whyNotCheckedIn(
+    vault: VaultState,
+    lock: VaultFile["checked_out"],
+    name: string,
+    references: string[],
+): string | null {
+    if (!lock) {
+        return "It's in the vault already. To change it, check it out (on its page, or in SolidWorks), then upload it.";
+    }
+    if (lock.user.id !== vault.me?.id) {
+        return `${lock.user.name} has it checked out ${on(lock.host)}.`;
+    }
+    if (lock.host !== WEB_HOST) {
+        return `It's checked out to you ${on(lock.host)}: check it in there.`;
+    }
+    if (kindOf(name) === "drawing" && references.length === 0) {
+        return "This drawing isn't linked to what it shows, so check it in from SolidWorks.";
+    }
+    return null;
 }
 
 /** The files in what was dropped: files, and folders with everything in them. */
@@ -153,7 +183,7 @@ export async function droppedFiles(items: DataTransferItemList): Promise<Picked[
 export const pickedFiles = (files: FileList): Picked[] =>
     [...files].map((file) => ({ file, relative: file.webkitRelativePath || file.name }));
 
-async function sha256(data: Uint8Array<ArrayBuffer>): Promise<string> {
+export async function sha256(data: Uint8Array<ArrayBuffer>): Promise<string> {
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
     return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -168,15 +198,15 @@ export async function upload(
     progress: (done: number, current: string) => void,
 ): Promise<void> {
     const items = [];
-    for (const [index, { source, path }] of ready.entries()) {
+    for (const [index, { source, path, references }] of ready.entries()) {
         progress(index, path);
         const data = await source.read();
         const hash = await sha256(data);
         if (!(await api.hasBlob(hash))) {
             await api.uploadBlob(hash, data);
         }
-        items.push({ path, sha256: hash, size: data.length, references: [] });
+        items.push({ path, sha256: hash, size: data.length, references: references.map((used) => ({ path: used })) });
     }
     progress(ready.length, "");
-    await api.checkin({ comment: comment.trim() || "Uploaded in the web app", host: "web", items });
+    await api.checkin({ comment: comment.trim() || "Uploaded in the web app", host: WEB_HOST, items });
 }

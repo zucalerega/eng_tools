@@ -492,13 +492,35 @@ public sealed class WorkspaceTests : IDisposable
             inVault);
         Assert.Equal([@"K:\Old stuff\Bracket.SLDPRT", $@"{kenesto}\Nozzle.SLDPRT"], notInVault);
 
-        // Once they're here, SolidWorks is pointed at them by the same paths.
-        Assert.Null(bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT"));
+        // Once they're here, SolidWorks is pointed at them by the same paths, or by a name only one vault file has
+        // (a part someone put in an assembly from their Downloads folder, that's in the vault too).
+        var vaultPaths = (await bob.StatusAsync()).Where(s => s.FileId != null).Select(s => s.VaultPath).ToList();
+        Assert.Null(bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT", vaultPaths));
         await bob.GetLatestAsync(inVault);
         Assert.Equal("leg bracket", File.ReadAllText(Local(bob, "09_Hopper/Legs/Bracket.SLDPRT")));
-        Assert.Equal(Local(bob, "09_Hopper/Legs/Bracket.SLDPRT"), bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT"));
-        Assert.Null(bob.LocalFileFor($@"{kenesto}\Nozzle.SLDPRT"));
-        Assert.Null(bob.LocalFileFor(Local(bob, "Nozzle.SLDPRT"))); // a path here means itself
+        Assert.Equal(Local(bob, "09_Hopper/Legs/Bracket.SLDPRT"), bob.LocalFileFor($@"{kenesto}\Legs\Bracket.SLDPRT", vaultPaths));
+        Assert.Equal(Local(bob, "09_Hopper/Structures/Leg.SLDPRT"), bob.LocalFileFor(@"C:\Users\losha\Downloads\leg.SLDPRT", vaultPaths));
+        Assert.Null(bob.LocalFileFor($@"{kenesto}\Nozzle.SLDPRT", vaultPaths));
+        Assert.Null(bob.LocalFileFor(Local(bob, "Nozzle.SLDPRT"), vaultPaths)); // a path here means itself
+    }
+
+    [Fact]
+    public async Task ACheckinNamesEveryFileItUsesThatTheVaultCantHave()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var downloaded = Path.Combine(_temp, "Downloads", "Relief Valve.SLDPRT"); // here, outside the workspace
+        Directory.CreateDirectory(Path.GetDirectoryName(downloaded)!);
+        File.WriteAllText(downloaded, "valve");
+        string[] kenesto = [@"K:\Project CAD\YJSP Library\Tee.SLDPRT", @"K:\Project CAD\YJSP Library\Cross.SLDPRT"]; // nowhere
+        var vehicle = Write(alice, "Vehicle.SLDASM", "assembly");
+
+        var error = await Assert.ThrowsAsync<WorkspaceException>(
+            () => alice.CheckinAsync([vehicle], "vehicle", referencesOf: _ => [.. kenesto, downloaded]));
+
+        Assert.StartsWith($"{_folder}/Vehicle.SLDASM can't be checked in", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"take them out of what uses them:{Environment.NewLine}  {kenesto[0]}{Environment.NewLine}  {kenesto[1]}", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"outside the workspace: move it into {alice.Root} (for example with Pack and Go):{Environment.NewLine}  {downloaded}", error.Message, StringComparison.Ordinal);
+        Assert.Equal(FileState.New, Assert.Single(await alice.StatusAsync([vehicle])).State); // nothing was checked in
     }
 
     [Fact]

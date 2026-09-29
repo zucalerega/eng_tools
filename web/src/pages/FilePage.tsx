@@ -1,6 +1,8 @@
 import { useEffect, useId, useState } from "react";
 import { useAdminMode } from "../admin";
 import { api, type FileDetail, type VaultFile } from "../api";
+import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
+import { checkedOutHere, WEB_HOST } from "../checkouts";
 import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
 import { formatSize } from "../format";
 import { DeleteDialog } from "../manage";
@@ -11,7 +13,13 @@ import { atLeast, nearestFolder, roleIn, useStore, useVault } from "../store";
 import { parentsOf, StructureTree, UsedVersion } from "../structure";
 import { Breadcrumbs } from "./Browse";
 
-type Asking = { action: "release" } | { action: "revert"; version: number } | { action: "delete" } | null;
+type Asking =
+    | { action: "release" }
+    | { action: "revert"; version: number }
+    | { action: "delete" }
+    | { action: "checkin" }
+    | { action: "undo" }
+    | null;
 
 export function FilePage({ id }: { id: number }) {
     const vault = useVault();
@@ -46,6 +54,8 @@ export function FilePage({ id }: { id: number }) {
     const role = roleIn(vault, shelf);
     const lock = file.checked_out;
     const holder = lock && lock.user.id !== vault.me?.id ? lock : null; // checked out by someone else
+    const mine = lock !== null && holder === null;
+    const here = checkedOutHere(vault, file); // checked out to you in the web app
     const canLead = atLeast(role, "lead");
     const canEdit = atLeast(role, "editor");
     const canRevert = canEdit && !file.deleted_at && (!holder || (adminMode && canLead));
@@ -106,6 +116,32 @@ export function FilePage({ id }: { id: number }) {
                     <a className="button" href={api.downloadUrl(file.id)} download>
                         Download
                     </a>
+                    {canEdit && !file.deleted_at && !lock && (
+                        <button
+                            type="button"
+                            disabled={busy}
+                            title="Check it out here, to change it without SolidWorks"
+                            onClick={() => act(() => api.checkout([file.id], WEB_HOST))}
+                        >
+                            Check out
+                        </button>
+                    )}
+                    {here && (
+                        <button type="button" onClick={() => setAsking({ action: "checkin" })}>
+                            Check in…
+                        </button>
+                    )}
+                    {mine && (
+                        <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                                here ? act(() => api.releaseCheckouts([file.id])) : setAsking({ action: "undo" })
+                            }
+                        >
+                            Undo check-out
+                        </button>
+                    )}
                     {holder && adminMode && canLead && (
                         <button
                             type="button"
@@ -124,6 +160,13 @@ export function FilePage({ id }: { id: number }) {
             </header>
 
             {problem && <Notice tone="error">{problem}</Notice>}
+            {here && (
+                <Notice tone="info">
+                    It's checked out to you here, in the web app. Download it and change it, then check in the new
+                    version. To change it in SolidWorks instead, open it there: the Vault tab offers to move the
+                    check-out to that computer.
+                </Notice>
+            )}
             {kind === "drawing" && file.uses.length === 0 && (
                 <Notice tone="warning">
                     This drawing isn't linked to the part or assembly it shows. Check it in again from SolidWorks, where
@@ -210,6 +253,8 @@ export function FilePage({ id }: { id: number }) {
             {asking?.action === "delete" && (
                 <DeleteDialog files={[file]} folders={[]} onClose={() => setAsking(null)} />
             )}
+            {asking?.action === "checkin" && <CheckinDialog file={file} onClose={() => setAsking(null)} />}
+            {asking?.action === "undo" && <UndoCheckoutDialog files={[file]} onClose={() => setAsking(null)} />}
             {asking?.action === "release" && holder && (
                 <Dialog
                     title={`Release ${holder.user.name}'s check-out?`}

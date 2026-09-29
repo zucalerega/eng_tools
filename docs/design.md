@@ -255,9 +255,12 @@ on top of it.
   `Workspace.FindUsedFiles` takes each to the vault file whose path ends the same way,
   with the most folders matching (none if two match as well); those come down with it,
   and kept paths nothing matches are listed. When SolidWorks can't find a file anyway,
-  the add-in's `ReferenceNotFoundNotify` handler points it at the file here whose path
-  ends the same way (`Workspace.LocalFileFor`). Checking such an assembly in from
-  SolidWorks records its references (see "A check-in of unchanged contents" above).
+  the add-in's `ReferenceNotFoundNotify` handler points it at the vault file that match
+  means, if it's here, or else at the file here at the longest end of the path
+  (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
+  references (see "A check-in of unchanged contents" above); one that uses files the vault
+  can't have (missing, or outside the workspace) names them all at once, and nothing is
+  checked in.
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.
@@ -389,8 +392,9 @@ cookie, and sends `X-CVC-Request` on every request.
   - A folder's trash, with a Restore for each folder and file deleted from it.
   - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
     add-in").
-  - Checked out (who has what), activity, and admin (people and the whitelist for admins;
-    access for admins and folder leads).
+  - Checked out (who has what, with check-in and undo for your own), activity, and admin
+    (people and the whitelist for admins; access for admins and folder leads), which is in
+    the account menu.
 
   All of it comes from the sync feed's `uses`, so a check-in anywhere shows up in every
   tree within seconds.
@@ -405,20 +409,30 @@ cookie, and sends `X-CVC-Request` on every request.
   pages, and the add-in's task pane icon draw the same shapes. The code, the `cvc`
   command, and the repository keep the name CVC.
 - **Light and dark:** light, dark, or the computer's setting, chosen in the account
-  menu (top right, with admin mode and signing out) and remembered per browser
+  menu (top right, with Admin, admin mode, and signing out) and remembered per browser
   (`theme.ts`, as `data-theme` on the page). The sign-in pages, a card with the mark,
   follow the same choice.
 - **Organizing:** in a folder you can edit, New makes a folder (or a part or assembly,
   below), and Upload (or dropping files and folders on the page) adds files and whole
   folders: each file's contents go up once, hashed in the browser, then they're checked in
-  together as version 1 of each. Drawings are left out (they come from SolidWorks, which
-  links them), and so are temporary files; an assembly goes up without its parts recorded,
+  together as version 1 of each, or as the next version of files checked out to you in the
+  web app (see "Web check-outs"). New drawings are left out (they come from SolidWorks,
+  which links them), and so are temporary files; an assembly goes up without its parts recorded,
   until someone checks it in once from SolidWorks. A zip goes up as the files in it, with
   its folders, where the zip was (unless you say to upload the zip itself): the browser
   reads the zip's directory, then inflates each file (`DecompressionStream`) and checks
   its CRC as it goes up (`zip.ts`). Checkboxes pick folders and files to move to another
   folder, rename (see "Move and rename": the server says if SolidWorks would lose a
   file), or delete (to the trash; files that others use get a warning and a second yes).
+- **Web check-outs:** Check out on a file's page (or for files picked in a folder) locks
+  it for you with `web` as the computer (`checkouts.ts`). Check in… uploads its new
+  version (a file of the same type) with a comment, as uploading it into its folder does;
+  Undo check-out ends it, asking first about a check-out on a computer, whose changes stay
+  there. The web app can't read SolidWorks files, so an assembly's new version records no
+  parts until it's checked in from SolidWorks (see "A check-in of unchanged contents"),
+  and a drawing's keeps what its latest version shows, so it stays linked. The add-in
+  treats a web check-out as yours on another computer: when you start changing the file,
+  it offers to move the check-out to its computer.
 - **New files:** New part and New assembly in a folder you can edit, and New drawing on
   a part's or assembly's page. The app checks the name (free, allowed by Windows, and for
   a drawing named after its model), then links to `cvc://new`, and SolidWorks on this

@@ -27,7 +27,9 @@ task pane with these parts:
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
 
 While you work:
-- **Start editing a file you haven't checked out** and Vault offers to check it out.
+- **Start editing a file you haven't checked out** and Vault offers to check it out (or,
+  if it's checked out to you in the web app or on another computer, to move the check-out
+  here).
   Saving such a file also offers a check-out first, then saves it in place, or explains
   why it can't be saved (someone else has it, or there's a newer version) and offers to
   save your changes under another name.
@@ -49,7 +51,9 @@ While you work:
   file and gets the vault's files whose paths end the same way (`09_Hopper\...`), so they
   come along like any other assembly's parts; parts that aren't in the vault are named on
   the tab, with their old paths in the log. When SolidWorks can't find a part, Vault
-  points it at the file in `C:\VLT` whose path ends the same way.
+  points it at the vault's copy, found the same way (or by its name, when only one file in
+  the vault has it). Checking in an assembly that still uses files the vault doesn't have
+  lists them all, and checks nothing in.
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and

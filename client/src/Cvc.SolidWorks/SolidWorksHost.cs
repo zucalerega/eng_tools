@@ -46,11 +46,19 @@ internal sealed class SolidWorksHost
     public bool HasUnsavedChanges(string path) => OpenDocument(path)?.GetSaveFlag() == true;
 
     /// <summary>The files a SolidWorks file uses directly: an assembly's components, a drawing's models.</summary>
-    public IReadOnlyList<string> References(string path)
+    public IReadOnlyList<string> References(string path) => Dependencies(path, search: true);
+
+    /// <summary>
+    /// The paths a SolidWorks file keeps for the files it uses directly, as they were when it was saved, without
+    /// looking for them. A file brought from elsewhere keeps elsewhere's (Kenesto's K:\...).
+    /// </summary>
+    public IReadOnlyList<string> KeptReferences(string path) => Dependencies(path, search: false);
+
+    private IReadOnlyList<string> Dependencies(string path, bool search)
     {
         var found = new List<string>();
         if (!IsSolidWorksFile(path)
-            || _app.GetDocumentDependencies2(path, false, true, false) is not object[] pairs)
+            || _app.GetDocumentDependencies2(path, false, search, false) is not object[] pairs)
         {
             return found;
         }

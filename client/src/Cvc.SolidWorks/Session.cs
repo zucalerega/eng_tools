@@ -26,6 +26,7 @@ internal sealed class Session : IDisposable
         app.FileOpenPostNotify += OnFileOpened;
         app.DocumentLoadNotify2 += OnDocumentLoaded;
         app.FileNewNotify2 += OnFileNew;
+        app.ReferenceNotFoundNotify += OnReferenceNotFound;
         _documents.WatchOpenDocuments();
         _pane.Start();
         _links = new LinkListener(_pane);
@@ -38,6 +39,7 @@ internal sealed class Session : IDisposable
         _app.FileOpenPostNotify -= OnFileOpened;
         _app.DocumentLoadNotify2 -= OnDocumentLoaded;
         _app.FileNewNotify2 -= OnFileNew;
+        _app.ReferenceNotFoundNotify -= OnReferenceNotFound;
         _documents.Dispose();
         _taskPane.DeleteView();
         Marshal.ReleaseComObject(_taskPane);
@@ -60,6 +62,19 @@ internal sealed class Session : IDisposable
 
     // Follow a new document from the start: nothing else tells us when it's first saved.
     private int OnFileNew(object document, int type, string template) => Guard(_documents.WatchOpenDocuments);
+
+    // SolidWorks can't find a file an assembly or drawing uses, where it was or near the assembly. A file brought
+    // from elsewhere keeps elsewhere's paths (Kenesto's K:\...): the file in the workspace whose path ends the same
+    // way is the one it means. Without an answer, SolidWorks asks.
+    private int OnReferenceNotFound(string fileName) => Guard(() =>
+    {
+        var found = _pane.LocalFileFor(fileName);
+        Log.Info($"SolidWorks couldn't find {fileName}: {found ?? "no file here ends like it"}");
+        if (found != null)
+        {
+            _app.SetMissingReferencePathName(found);
+        }
+    });
 
     // An exception must never escape into SolidWorks.
     private static int Guard(Action handler)

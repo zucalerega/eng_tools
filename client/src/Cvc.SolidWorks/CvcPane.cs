@@ -558,17 +558,98 @@ internal sealed class CvcPane : UserControl
     });
 
     private Task GetLatestAsync(string path) =>
-        RunAsync("Getting the latest version", async workspace => Summary(await GetLatestHereAsync(workspace, path)));
+        RunAsync("Getting the latest version", async workspace => await GetLatestHereAsync(workspace, path));
 
     // The file and the parts it uses are updated in place, open or not.
-    private async Task<GetResult> GetLatestHereAsync(Workspace workspace, string path)
+    private async Task<string> GetLatestHereAsync(Workspace workspace, string path)
     {
         var involved = new List<string> { path };
         involved.AddRange(_sw.AllReferences(path));
         var stale = (await CurrentStatusAsync(workspace, involved)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
         RefuseUnsaved(stale, "get the latest version");
-        return await ReplacingAsync(stale, () => workspace.GetLatestAsync(new[] { path }));
+        var notInVault = new List<string>();
+        var result = await ReplacingAsync(stale, async () =>
+        {
+            var got = await workspace.GetLatestAsync(new[] { path });
+            await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
+            return got;
+        });
+        return Summary(result) + NotInVaultNote(notInVault);
     }
+
+    // Before opening a file that's here: the files it uses that aren't. Nothing to say if they all are.
+    private Task GetWhatItUsesAsync(string path) =>
+        RunAsync("Getting the files it uses", async workspace =>
+        {
+            var result = new GetResult();
+            var notInVault = new List<string>();
+            await GetKeptReferencesAsync(workspace, path, latest: false, result, notInVault);
+            return result.Downloaded.Count + result.Failures.Count + notInVault.Count == 0 ? "" : Summary(result) + NotInVaultNote(notInVault);
+        });
+
+    /// <summary>
+    /// Get the files a SolidWorks file uses, and theirs, by the paths SolidWorks keeps in them. The vault knows what
+    /// files checked in from SolidWorks use, but not what files uploaded in the web app use (like a folder brought
+    /// over from Kenesto): those say it only in themselves, by where the files were where they came from (K:\...),
+    /// and <see cref="Workspace.FindUsedFiles"/> finds them in the vault. Each level is read once it's here. latest:
+    /// files already here are updated too; otherwise only what isn't here comes down. Kept paths no vault file
+    /// matches, and no file is at, go in notInVault.
+    /// </summary>
+    private async Task GetKeptReferencesAsync(Workspace workspace, string path, bool latest, GetResult result, List<string> notInVault)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
+        var level = new List<string> { path };
+        while (level.Count > 0)
+        {
+            var (inVault, missing) = workspace.FindUsedFiles(level.Where(File.Exists).SelectMany(_sw.KeptReferences).ToList());
+            notInVault.AddRange(missing.Where(p => !File.Exists(p) && !notInVault.Contains(p, StringComparer.OrdinalIgnoreCase)));
+            level = inVault.Where(seen.Add).ToList();
+            var get = latest ? level : level.Where(p => !File.Exists(p)).ToList();
+            if (get.Count > 0)
+            {
+                result.Add(await workspace.GetLatestAsync(get));
+            }
+        }
+    }
+
+    // Whether a SolidWorks file here uses files the vault has that aren't here, by the paths it keeps. Quick: it
+    // doesn't wait for the vault, and says no while another operation is running.
+    private bool UsesFilesNotHere(string path)
+    {
+        if (_workspace is not { } workspace || !SolidWorksHost.IsSolidWorksFile(path) || !_gate.Wait(0))
+        {
+            return false;
+        }
+        try
+        {
+            return workspace.FindUsedFiles(_sw.KeptReferences(path)).InVault.Any(p => !File.Exists(p));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    // What the files got use that's in neither the vault nor anywhere here (like files left behind on Kenesto): the
+    // first few by name, and all of them in the log.
+    private static string NotInVaultNote(IReadOnlyList<string> notInVault)
+    {
+        if (notInVault.Count == 0)
+        {
+            return "";
+        }
+        Log.Info("Used, but not in the vault or on this computer: " + string.Join("; ", notInVault));
+        var names = notInVault.Select(Path.GetFileName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var shown = string.Join(", ", names.Take(3)) + (names.Count > 3 ? $", and {names.Count - 3} more" : "");
+        return $" {Count(notInVault.Count, "file")} it uses {(notInVault.Count == 1 ? "isn't" : "aren't")} in the vault: {shown}. "
+            + $"Where they were is in {Log.FilePath}.";
+    }
+
+    /// <summary>
+    /// The file in the workspace a path kept in a SolidWorks file from elsewhere means (see
+    /// <see cref="Workspace.LocalFileFor"/>), for SolidWorks when it can't find one; null if none is here.
+    /// </summary>
+    public string? LocalFileFor(string keptPath) => _workspace?.LocalFileFor(keptPath);
 
     // The files here, at their latest versions (with any new parts they use): nothing else comes down.
     private Task UpdateMineAsync() =>
@@ -595,7 +676,8 @@ internal sealed class CvcPane : UserControl
             return Ask(question) == DialogResult.Yes ? Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync())) : null;
         });
 
-    // Get latest on what's selected. A folder's files that aren't here yet come down after saying how much they are.
+    // Get latest on what's selected: files with what they use. A folder's files that aren't here yet come down after
+    // saying how much they are.
     private Task GetSelectedAsync(IReadOnlyList<string> paths, bool folder) =>
         RunAsync("Getting the latest versions", async workspace =>
         {
@@ -605,7 +687,17 @@ internal sealed class CvcPane : UserControl
             {
                 return null;
             }
-            return Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync(paths)));
+            var notInVault = new List<string>();
+            var result = await GetUpdatingOpenAsync(workspace, async () =>
+            {
+                var got = await workspace.GetLatestAsync(paths);
+                foreach (var path in folder ? Array.Empty<string>() : paths.Where(SolidWorksHost.IsSolidWorksFile))
+                {
+                    await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
+                }
+                return got;
+            });
+            return Summary(result) + NotInVaultNote(notInVault);
         });
 
     /// <summary>
@@ -1116,7 +1208,10 @@ internal sealed class CvcPane : UserControl
 
     private DialogResult Ask(string question) => MessageBox.Show(this, question, "Vault", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
-    /// <summary>Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses.</summary>
+    /// <summary>
+    /// Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses; one
+    /// that is, with the parts it uses that aren't.
+    /// </summary>
     private async Task OpenAsync(IReadOnlyList<string> paths)
     {
         foreach (var path in paths)
@@ -1124,6 +1219,10 @@ internal sealed class CvcPane : UserControl
             if (!File.Exists(path) && StatusOf(path)?.FileId != null)
             {
                 await GetLatestAsync(path);
+            }
+            else if (File.Exists(path) && UsesFilesNotHere(path))
+            {
+                await GetWhatItUsesAsync(path);
             }
             if (!File.Exists(path))
             {

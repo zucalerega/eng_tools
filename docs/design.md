@@ -242,6 +242,17 @@ on top of it.
 - **Same root everywhere.** Every machine uses `C:\VLT` by default. SolidWorks stores
   absolute paths to referenced files, so with the same root, references resolve on
   every machine.
+- **Files from elsewhere.** A file uploaded in the web app has no references recorded
+  (the server can't read SolidWorks files), and one brought over from Kenesto keeps the
+  paths its parts had there (`K:\Yellow Jacket Space Program\Project
+  CAD\09_Hopper\Stringer.SLDPRT`). Opening or getting one in the add-in reads the paths
+  SolidWorks keeps in it (`GetDocumentDependencies2`, not searching), level by level, and
+  `Workspace.FindUsedFiles` takes each to the vault file whose path ends the same way,
+  with the most folders matching (none if two match as well); those come down with it,
+  and kept paths nothing matches are listed. When SolidWorks can't find a file anyway,
+  the add-in's `ReferenceNotFoundNotify` handler points it at the file here whose path
+  ends the same way (`Workspace.LocalFileFor`). Checking such an assembly in from
+  SolidWorks records its references (see "A check-in of unchanged contents" above).
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.

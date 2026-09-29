@@ -281,6 +281,134 @@ public sealed class Workspace : IDisposable
     }
 
     /// <summary>
+    /// The vault files meant by paths SolidWorks files keep for the files they use (their local paths here, whether
+    /// they're here yet or not), and the kept paths that mean none, as of the last refresh. A path in this workspace
+    /// means the file there. A file brought from elsewhere keeps elsewhere's paths: one from Kenesto names its drive
+    /// (K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT), meaning the vault file whose path ends
+    /// the same way, with the most folders matching (09_Hopper/Stringer.SLDPRT). Where others match as well, it
+    /// means none of them.
+    /// </summary>
+    public (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(IEnumerable<string> keptPaths)
+    {
+        var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in _state.Remote.Values)
+        {
+            byKey[VaultPaths.Key(file.Path)] = file.Path;
+        }
+        var byName = byKey.Keys.ToLookup(key => key.Substring(key.LastIndexOf('/') + 1), StringComparer.Ordinal);
+        var inVault = new List<string>();
+        var notInVault = new List<string>();
+        var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kept in keptPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var here = UnderRoot(kept);
+            var vaultPath = here == null
+                ? VaultFileMeant(kept, byKey, byName)
+                : byKey.TryGetValue(VaultPaths.Key(here), out var found) ? found : null;
+            if (vaultPath != null || (here != null && File.Exists(kept))) // or new here, not checked in yet
+            {
+                var local = vaultPath == null ? kept : ToLocalPath(vaultPath);
+                if (listed.Add(local))
+                {
+                    inVault.Add(local);
+                }
+            }
+            else
+            {
+                notInVault.Add(kept);
+            }
+        }
+        return (inVault, notInVault);
+    }
+
+    /// <summary>
+    /// The file here that a path kept in a SolidWorks file from elsewhere means, by how the path ends: the longest end
+    /// of it that's a file in this workspace (C:\VLT\09_Hopper\Stringer.SLDPRT for K:\Yellow Jacket Space
+    /// Program\Project CAD\09_Hopper\Stringer.SLDPRT), or null. Null for paths in this workspace: they mean themselves.
+    /// Reads only the disk, so it's safe to call while the workspace is busy.
+    /// </summary>
+    public string? LocalFileFor(string keptPath)
+    {
+        if (UnderRoot(keptPath) != null)
+        {
+            return null;
+        }
+        var names = NamesIn(keptPath);
+        for (var skip = 0; skip < names.Length; skip++)
+        {
+            var end = names.Skip(skip).ToList();
+            if (end.All(IsVaultName))
+            {
+                var candidate = ToLocalPath(string.Join("/", end));
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    // See FindUsedFiles. byKey: the vault's file paths by key; byName: those keys by their file name's.
+    private static string? VaultFileMeant(string kept, Dictionary<string, string> byKey, ILookup<string, string> byName)
+    {
+        var names = NamesIn(kept).Select(VaultPaths.Key).ToArray();
+        if (names.Length == 0)
+        {
+            return null;
+        }
+        string? best = null;
+        var bestScore = -1;
+        var tied = false;
+        foreach (var key in byName[names[names.Length - 1]])
+        {
+            var parts = key.Split('/');
+            var matched = 0;
+            while (matched < parts.Length && matched < names.Length
+                && parts[parts.Length - 1 - matched] == names[names.Length - 1 - matched])
+            {
+                matched++;
+            }
+            // A vault path that's all of the end of the kept one (the vault's top standing for a folder there) beats
+            // one matching as many names with folders above them that don't.
+            var score = (2 * matched) + (matched == parts.Length ? 1 : 0);
+            if (score > bestScore)
+            {
+                (best, bestScore, tied) = (key, score, false);
+            }
+            else if (score == bestScore)
+            {
+                tied = true;
+            }
+        }
+        return best == null || tied ? null : byKey[best];
+    }
+
+    private static string[] NamesIn(string path) => path.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+    private static bool IsVaultName(string name)
+    {
+        try
+        {
+            VaultPaths.CleanName(name);
+            return true;
+        }
+        catch (VaultPathException)
+        {
+            return false;
+        }
+    }
+
+    // The path's vault path if it's in this workspace, else null.
+    private string? UnderRoot(string path)
+    {
+        var root = Root.TrimEnd('\\', '/');
+        return path.Length > root.Length + 1 && path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && path[root.Length] is '\\' or '/'
+            ? path.Substring(root.Length + 1).Replace('\\', '/')
+            : null;
+    }
+
+    /// <summary>
     /// Check that a new file can be made at this path before making it: nothing is there, in the vault or
     /// here, and you can add files to its folder, as far as this workspace knows (the server has the last word).
     /// </summary>

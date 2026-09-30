@@ -122,6 +122,58 @@ the keys.
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
+- **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
+  it: the same data, views, and help, with Models and Scripts in its top bar, and Python and
+  Model on a dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview,
+  top right.
+- **System models (in the preview while it's being tried out):** draw a test stand's
+  feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
+  outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
+  the gas side (dashed), gas supplies, gas junctions, regulators, gas valves, and gas
+  orifices: press lines into a tank's ullage, and vents out of it. Link its valves to their
+  command channels, what it follows (a tank's pressure, a chamber's, a liquid's
+  temperature, whose density and vapor pressure then follow it through the run) to theirs,
+  and its sensors to what they measured; an ullage or a gas junction starts from its
+  sensors' values at the run's start (pressure, gas and wall temperatures). Run it against
+  a test (FullFlow and ThermoProp simulate it on the server) over a window from T0 (the
+  one set on the dataset's plots) to see each sensor's measured and modeled values
+  together, with how far apart they are (RMS and bias). Then tune the settings marked tune
+  (CdAs, a line's friction factor and fittings' K, a valve's opening time, a regulator's
+  set pressure and droop, a venturi's recovery, an ullage's exponent or wall hA and its
+  collapse factor), or pick them and **Fit**: the server turns them until the model
+  matches best, and you apply what it found (or not). Models are saved for every admin,
+  run against any test with the same channel names, and go to and from files.
+- **Scripts (in the preview while it's being tried out):** a Python notebook. Its cells run
+  one at a time in the notebook's variables, so the cell that loads the data runs once and
+  the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all
+  runs them in order and stops at one that fails, and each cell's output is under it. Text
+  cells are Markdown. After Escape, Jupyter's keys move between cells and add, delete, and
+  turn them into text or code (Keys lists them). A script works on the tests attached to it
+  (Data, beside it): their channels are listed there, and a click puts one in the code
+  (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for another test). The editor
+  colors Python, folds, finds and replaces (Ctrl+F), and suggests as you type: channels in
+  quotes, what the module has after `yorg.`, and what your variables have, from the running
+  Python (`pt.` offers `values`, `t`, `si`...); hovering a name says what it is, and a syntax
+  error is underlined as you type it. Work them over with NumPy, SciPy, pandas, matplotlib, and
+  CoolProp (pure-Python packages install from PyPI with micropip); `yorg.plot` draws on Yorg's
+  plots, matplotlib's figures show as images, and `yorg.download` offers a file to save. Python
+  (Pyodide) runs in your browser, sandboxed from the site, and stays open while the tab does:
+  come back to Scripts and its imports and the channels it had are still there. While a
+  script's open, Python gets its slow imports ready (CoolProp's first import reads its whole
+  fluid library: 20 seconds to a minute), so Run can go straight away; Run while Python's busy
+  and the run waits, saying for what. As it runs, the output says each step (loading
+  packages, importing a module, running your code) and how long it's taken, and after, how
+  long the run took and where the time went. Scripts are kept for every admin in
+  folders, with their tests, as .py code with a `# %%` line starting each cell (as VS Code
+  and Spyder read them); upload .py files as scripts and download scripts as them.
+  Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
+  spectrum, and more.
+- **Python on a dataset or a view** (in the preview): **Python** on its page docks a notebook
+  beside the plots, started on what they show: its cells work on the page's channels, with
+  `yorg.window` the time in view (as it is when a cell runs), and what they `yorg.plot` goes on
+  the page's own plots, on the same time axis (× takes one off). Drag its edge to widen it;
+  **Open in Scripts** keeps it as a script. **Model** runs a model on the test over the time in
+  view, and links back to it.
 
 ## Layout
 

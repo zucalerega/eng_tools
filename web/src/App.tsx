@@ -11,6 +11,7 @@ import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
 import { SolidWorks } from "./pages/SolidWorks";
 import { Trash } from "./pages/Trash";
+import { inPreview, PREVIEW, sitePath } from "./preview";
 import { Link, usePathname } from "./router";
 import { useVault, type VaultState } from "./store";
 import { setTheme, useTheme, type Theme } from "./theme";
@@ -28,8 +29,10 @@ export function App() {
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
-    // Two apps share the site and its sign-in: the vault, and Yorg (test data, under /yorg).
+    // Two apps share the site and its sign-in: the vault, and Yorg (test data, under /yorg). Yorg's preview (/yorg/dev,
+    // admins) is Yorg as it will be, with what's new in its top bar too.
     const yorg = inYorg(pathname);
+    const preview = inPreview(pathname) && vault.me?.is_admin === true;
     useEffect(() => {
         document.title = yorg ? YORG : "Vault";
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
@@ -68,7 +71,18 @@ export function App() {
                         <>
                             {nav("/yorg", "data", "Datasets")}
                             {nav("/yorg/views", "views", "Views")}
+                            {preview && nav("/yorg/models", "models", "Models")}
+                            {preview && nav("/yorg/scripts", "scripts", "Scripts")}
                             {nav("/yorg/help", "help", "Help")}
+                            {vault.me?.is_admin && !preview && (
+                                <Link
+                                    to={PREVIEW}
+                                    className="preview-link"
+                                    title="Yorg as it will be with what's new: only admins see it"
+                                >
+                                    Preview
+                                </Link>
+                            )}
                         </>
                     ) : (
                         <>
@@ -84,6 +98,14 @@ export function App() {
                     <AccountMenu vault={vault} />
                 </div>
             </header>
+            {preview && (
+                <div className="preview-banner" role="status">
+                    Preview: Yorg as it will be, with system models and scripts. Only admins see it.
+                    <Link to={sitePath(pathname)} exact className="button button-small">
+                        Leave the preview
+                    </Link>
+                </div>
+            )}
             {adminMode && !yorg && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.

@@ -15,8 +15,12 @@ from .errors import CvcError
 from .storage import BlobStore
 from .vault import init_vault
 from .yorg import api as yorg_api
+from .yorg import scripts as yorg_scripts
 from .yorg.datasets import recover as recover_yorg
 from .yorg.files import DataFiles
+from .yorg.saved import Saved
+from .yorg.system import api as yorg_system_api
+from .yorg.system.runs import Runs
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             init_vault(db)
             recover_yorg(db)
         yield
+        app.state.yorg_runs.close()
         engine.dispose()
 
     app = FastAPI(title="Vault", version=__version__, lifespan=lifespan)
@@ -39,6 +44,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = sessions
     app.state.store = BlobStore(settings.blob_dir)
     app.state.yorg_files = DataFiles(settings.yorg_dir)
+    app.state.yorg_models = Saved(settings.yorg_dir, "model", "model")
+    app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
+    app.state.yorg_runs = Runs(settings.yorg_dir)
     app.state.oauth = signin.make_oauth(settings)
     # Carries Google sign-in state between the redirect to Google and the callback.
     app.add_middleware(
@@ -66,6 +74,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin.router)
     app.include_router(signin.router)
     app.include_router(yorg_api.router)
+    app.include_router(yorg_system_api.router)
+    app.include_router(yorg_scripts.router)
     web.mount_assets(app, settings)
     app.include_router(web.router)  # last: it takes every path nothing else did
     return app

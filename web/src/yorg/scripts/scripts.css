@@ -1,0 +1,805 @@
+/* Yorg's Python window (ScriptsPage.tsx). */
+
+.scripts-page .page-head {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.scripts-layout {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr) 270px;
+    gap: 0.75rem;
+    align-items: start;
+}
+
+@media (max-width: 1250px) {
+    .scripts-layout {
+        grid-template-columns: 210px minmax(0, 1fr);
+    }
+
+    .scripts-data {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 900px) {
+    .scripts-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.scripts-side {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    padding: 0.6rem;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.scripts-side-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-side-actions button {
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.scripts-search {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-tree,
+.scripts-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.scripts-folder,
+.scripts-item {
+    display: block;
+    width: 100%;
+    height: auto; /* a long name wraps: the button grows with it */
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0.25rem 0.4rem;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
+    text-align: left;
+    font-size: 0.88rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.scripts-folder {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.scripts-item:hover,
+.scripts-folder:hover {
+    background: var(--accent-soft);
+}
+
+.scripts-current {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.scripts-main {
+    display: grid;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.scripts-bar,
+.scripts-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.scripts-bar .field {
+    margin: 0;
+}
+
+.scripts-actions {
+    align-items: center;
+}
+
+.scripts-output {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.scripts-console {
+    margin: 0;
+    padding: 0.6rem 0.75rem;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    white-space: pre-wrap;
+}
+
+.scripts-stderr,
+.scripts-error {
+    color: var(--danger, #d64541);
+}
+
+.scripts-note {
+    color: var(--muted);
+}
+
+.scripts-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.scripts-figure {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: #fff;
+}
+
+/* The tests a script works on, and their channels (DataPanel.tsx). */
+.scripts-data {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    padding: 0.6rem;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.scripts-data h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+}
+
+.scripts-data-help {
+    margin: 0 0 0.5rem;
+    font-size: 0.82rem;
+}
+
+.scripts-data .field {
+    margin-bottom: 0.5rem;
+}
+
+.scripts-find {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.scripts-test {
+    margin-bottom: 0.6rem;
+}
+
+.scripts-test-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.scripts-test-head a {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.scripts-first {
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.scripts-detach {
+    padding: 0 0.45rem;
+}
+
+.scripts-channels {
+    margin: 0.2rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scripts-channels button {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: 100%;
+    height: auto; /* a long name wraps in the narrow panel */
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0.18rem 0.35rem;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text);
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.scripts-channels button:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.scripts-channels button span:last-child {
+    flex-shrink: 0; /* the unit stays whole beside a wrapped name */
+}
+
+/* Python's state, in the page's bar (Output.tsx): a dot that pulses while it's busy. */
+.python-status {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+}
+
+.python-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--border-strong);
+}
+
+.python-ready {
+    background: var(--good);
+}
+
+.python-busy {
+    background: var(--warning);
+    animation: python-pulse 1.2s ease-in-out infinite;
+}
+
+.python-running {
+    background: var(--accent);
+    animation: python-pulse 1.2s ease-in-out infinite;
+}
+
+.python-failed {
+    background: var(--danger);
+}
+
+@keyframes python-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+/* How a run is going (a spinner, a bar sliding along its top), or how it went, over its output. */
+.run-header {
+    position: relative;
+    overflow: hidden;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.run-queued,
+.run-running {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.run-error {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.run-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat;
+    background-size: 40% 100%;
+    animation: run-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes run-slide {
+    from {
+        background-position: -67% 0;
+    }
+
+    to {
+        background-position: 167% 0;
+    }
+}
+
+.run-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.run-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    line-height: 1;
+    font-weight: 700;
+}
+
+.run-queued .run-icon,
+.run-running .run-icon {
+    border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: run-spin 0.8s linear infinite;
+}
+
+.run-done .run-icon::before {
+    content: "✓";
+    color: var(--good);
+}
+
+.run-error .run-icon::before {
+    content: "✕";
+    color: var(--danger);
+}
+
+.run-stopped .run-icon::before {
+    content: "■";
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+@keyframes run-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.run-line {
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.run-note {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .python-dot,
+    .run-bar,
+    .run-icon {
+        animation: none;
+    }
+}
+
+/*
+ * Code's colors in the editor (editorTheme.ts): Python's parts, and the editor's own highlights. Keywords in the site's
+ * blue, and in its gold when it's dark; dark as the site is (styles.css), set twice as it sets its own.
+ */
+:root {
+    --code-keyword: #1d4d94;
+    --code-string: #0f7b3f;
+    --code-number: #b45309;
+    --code-comment: #6b778a;
+    --code-function: #7a3ec8;
+    --code-definition: #0b1b33;
+    --code-builtin: #0e7490;
+    --code-property: #24364f;
+    --code-decorator: #946300;
+    --code-punctuation: #5b677a;
+    --code-active-line: #f4f7fc;
+    --code-selection: rgb(29 77 148 / 20%);
+    --code-bracket: rgb(29 77 148 / 12%);
+    --code-match: rgb(224 165 0 / 18%);
+    --code-search: rgb(224 165 0 / 30%);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --code-keyword: #e0a500;
+        --code-string: #7ee2a8;
+        --code-number: #f6b26b;
+        --code-comment: #7b8799;
+        --code-function: #b9a2ff;
+        --code-definition: #8fb6f2;
+        --code-builtin: #56d4dd;
+        --code-property: #c9d4e4;
+        --code-decorator: #e0a500;
+        --code-punctuation: #95a1b5;
+        --code-active-line: #121b2a;
+        --code-selection: rgb(122 167 238 / 25%);
+        --code-bracket: rgb(122 167 238 / 18%);
+        --code-match: rgb(224 165 0 / 16%);
+        --code-search: rgb(224 165 0 / 28%);
+    }
+}
+
+:root[data-theme="dark"] {
+    --code-keyword: #e0a500;
+    --code-string: #7ee2a8;
+    --code-number: #f6b26b;
+    --code-comment: #7b8799;
+    --code-function: #b9a2ff;
+    --code-definition: #8fb6f2;
+    --code-builtin: #56d4dd;
+    --code-property: #c9d4e4;
+    --code-decorator: #e0a500;
+    --code-punctuation: #95a1b5;
+    --code-active-line: #121b2a;
+    --code-selection: rgb(122 167 238 / 25%);
+    --code-bracket: rgb(122 167 238 / 18%);
+    --code-match: rgb(224 165 0 / 16%);
+    --code-search: rgb(224 165 0 / 28%);
+}
+
+/* A notebook (Notebook.tsx): a bar of what it does, then its cells, each a name, its code (or text), and its output. */
+.notebook {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr); /* a long line scrolls in its editor, not the page */
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.notebook-bar {
+    position: sticky;
+    top: calc(3.5rem + 2px); /* under the site's top bar, which stays too */
+    z-index: 3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0;
+    background: var(--bg);
+}
+
+.notebook-bar .python-status {
+    margin-left: auto;
+}
+
+.notebook-keys {
+    min-width: 19rem;
+    padding: 0.6rem 0.75rem;
+}
+
+.notebook-keys dl {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0 0 0.4rem;
+}
+
+.notebook-keys dl > div {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.notebook-keys dt,
+.notebook-keys dd {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.notebook-keys p {
+    margin: 0;
+    font-size: 0.8rem;
+}
+
+kbd {
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.cell {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    transition: border-color 0.12s;
+}
+
+.cell-selected {
+    border-left-color: var(--accent);
+}
+
+.cell-going {
+    border-left-color: var(--gold);
+}
+
+.cell:focus {
+    outline: none;
+    box-shadow: var(--focus); /* the notebook's keys are on this cell */
+}
+
+.cell-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.45rem;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-large) var(--radius-large) 0 0;
+    background: var(--surface-2);
+}
+
+.cell-count {
+    min-width: 2.4rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.cell-kind {
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cell-run {
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--accent);
+    font-size: 0.7rem;
+}
+
+.cell-run:hover {
+    background: var(--accent-soft);
+}
+
+.cell-stop {
+    color: var(--danger);
+}
+
+.cell-title {
+    flex: 1;
+    min-width: 6rem;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.cell-title:hover {
+    border-color: var(--border);
+}
+
+.cell-title:focus {
+    border-color: var(--accent);
+    background: var(--surface);
+}
+
+.cell-title::placeholder {
+    color: var(--muted);
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.cell-status {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cell-status-queued,
+.cell-status-running {
+    color: var(--accent);
+}
+
+.cell-status-done::before {
+    content: "✓ ";
+    color: var(--good);
+    font-weight: 700;
+}
+
+.cell-status-error {
+    color: var(--danger);
+}
+
+.cell-head .menu-button {
+    padding: 0.1rem 0.5rem;
+}
+
+.code-editor .cm-editor {
+    border-radius: 0 0 var(--radius-large) var(--radius-large);
+}
+
+.cell-output {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.55rem 0.6rem 0.6rem;
+    border-top: 1px solid var(--border);
+}
+
+.cell-stale {
+    opacity: 0.6; /* from before Python started again: what it made is gone from Python */
+}
+
+.cell-markdown {
+    min-height: 2.2rem;
+    padding: 0.35rem 0.9rem;
+}
+
+.notebook-end {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.25rem;
+}
+
+/* What a name is, hovering over it in the editor (CodeEditor.tsx). */
+.code-doc {
+    max-width: 36rem;
+    max-height: 20rem;
+    margin: 0;
+    padding: 0.5rem 0.65rem;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+/* A text cell's Markdown, shown (Markdown.tsx). */
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+    margin: 0.5rem 0 0.35rem;
+    color: var(--heading);
+    font-family: var(--font-brand);
+    line-height: 1.25;
+    letter-spacing: normal;
+    text-transform: none; /* as the notebook's writer wrote it, not as the site's headings are */
+}
+
+.markdown h2 {
+    font-size: 1.35rem;
+}
+
+.markdown h3 {
+    font-size: 1.15rem;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+    font-size: 1rem;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown blockquote {
+    margin: 0.4rem 0;
+}
+
+.markdown code {
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+}
+
+.markdown pre {
+    padding: 0.5rem 0.7rem;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.markdown pre code {
+    padding: 0;
+    background: none;
+}
+
+.markdown blockquote {
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--muted);
+}
+
+.markdown hr {
+    border: none;
+    border-top: 1px solid var(--border);
+}
+
+/* A page's Python, docked beside its plots (PythonDock.tsx): its head, the edge that sets its width, its notebook. */
+.yorg-dock-edge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    z-index: 4;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.yorg-dock-edge:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.yorg-dock-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.yorg-dock-head h2 {
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.yorg-dock-head .muted {
+    flex: 1;
+    font-size: 0.82rem;
+}
+
+.yorg-dock .notebook-bar {
+    top: -0.5rem; /* in the dock's own scroll, not the page's */
+}
+
+.scripts-elsewhere {
+    margin: 0;
+    font-size: 0.85rem;
+}

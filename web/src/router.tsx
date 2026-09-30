@@ -1,6 +1,8 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
+import { linkTarget } from "./preview";
 
-// A small router: the address bar is the state. Links push history entries, and pages read the path.
+// A small router: the address bar is the state. Links push history entries, and pages read the path. In Yorg's
+// preview (preview.ts), links to Yorg's pages go to their preview ones, unless exact.
 
 const listeners = new Set<() => void>();
 
@@ -13,11 +15,12 @@ function subscribe(listener: () => void): () => void {
     };
 }
 
-export function navigate(to: string, options: { replace?: boolean } = {}): void {
+export function navigate(to: string, options: { replace?: boolean; exact?: boolean } = {}): void {
+    const target = options.exact ? to : linkTarget(to);
     if (options.replace) {
-        window.history.replaceState(null, "", to);
+        window.history.replaceState(null, "", target);
     } else {
-        window.history.pushState(null, "", to);
+        window.history.pushState(null, "", target);
     }
     window.scrollTo?.(0, 0);
     listeners.forEach((listener) => listener());
@@ -28,7 +31,13 @@ export function usePathname(): string {
     return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
-export function Link({ to, onClick, ...props }: { to: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({
+    to,
+    exact = false,
+    onClick,
+    ...props
+}: { to: string; exact?: boolean } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+    const target = exact ? to : linkTarget(to);
     function follow(event: MouseEvent<HTMLAnchorElement>) {
         onClick?.(event);
         // Let the browser handle new tabs and windows.
@@ -36,7 +45,7 @@ export function Link({ to, onClick, ...props }: { to: string } & AnchorHTMLAttri
             return;
         }
         event.preventDefault();
-        navigate(to);
+        navigate(to, { exact }); // where it goes from the page open now
     }
-    return <a {...props} href={to} onClick={follow} />;
+    return <a {...props} href={target} onClick={follow} />;
 }

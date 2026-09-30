@@ -571,6 +571,167 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   A piece says where it came from (`read_info.split_from`), and, having no file of its
   own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
   to the file (or another folder), and are whoever split them's.
+- **Yorg's preview** (`/yorg/dev/...`, admins): the site as it will be with what's new in
+  it, so it can be tried as it'll look before everyone has it. `web/src/preview.ts` maps
+  its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
+  the same pages there, and the new ones (Models, Scripts) only there, and the router sends
+  links followed in the preview to their preview pages (a link marked `exact` leaves it).
+  The top bar, a dataset's or view's Python and Model buttons, and Help's cards show what's
+  new in the preview. They take what the page plots (`analysis.ts`: its tests, the channels
+  plotted, the time in view): the page's Python starts on them (`starterScript`), a
+  model's run window is that time.
+  Releasing a feature is showing it outside the preview too (and its API to everyone).
+- **System models** (Models, in the preview while it's tried out): a
+  feed system as a P&ID, simulated with FullFlow (a network solver) and ThermoProp
+  (fluid properties) against a test, to tune it until it matches. `yorg/system/catalog.py`
+  lists the parts, their settings (SI units; some only when others are set a way, as an
+  ullage's wall only with wall heat transfer), links (followed, starting the model, compared,
+  or commanding a valve), and outputs; the web app draws its editor from it
+  (`web/src/yorg/models`) and `spec.py` checks a model with it (saving takes a half-drawn one;
+  running needs liquid parts between tanks, junctions, and outlets and gas parts between
+  gas supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid
+  parts reaching a tank, whose liquid it carries, and every set of gas parts a supply or an
+  ullage, of one gas). A part renamed (the press line, now a gas valve) is read under its
+  new name. A run is a process of its own (`runner.py`, stopped after 10 minutes; two at a
+  time, a new one of yours replacing the last), so a long simulation never slows the site:
+  the server cuts the channels the model uses (valve commands, what it follows, what starts
+  it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
+  it's going. `network.py` builds the FullFlow network: a fixed tank, supply, or outlet is a
+  pressure that follows its channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K
+  folded into f); valves and orifices are a CdA law smoothed near zero flow
+  (`components.py`: plain square roots leave a node between a closed valve and an orifice
+  hard to solve), venturis FullFlow's `CavitatingVenturi` smoothed the same way (and made
+  continuous where it starts to cavitate, its noncavitating Cd the cavitating one over
+  sqrt(1 - R)); gas valves and orifices are an ideal-gas orifice, choked or not, taking the
+  temperature of where they flow from; a regulator is such an orifice whose opening
+  (`Regulator`: fully open at its droop below set pressure, on the pressure where it flows
+  to, reached as a first-order lag of its response time) is a state FullFlow solves in each
+  step: FullFlow's `PID` and `Actuator` move once a step, on the last step's pressure, a step
+  behind the little volume of tubing after a regulator. A gas junction's small volume makes
+  a run several times slower (SciPy creeps through each step's last digits), so leave one
+  out where no sensor or branch needs it. Liquid junctions balance their flows in kg/s. Gas
+  junctions and wall-heated ullages are FullFlow `Volume`s of ideal gas (density,
+  internal energy, and enthalpy derived from pressure and temperature, which FullFlow
+  iterates while it keeps mass and energy), with gas flowing in bringing the enthalpy of
+  where it came from; a wall-heated ullage trades heat with a `Solid` (the tank wall) by
+  `Convection`, and its liquid is kept by `LiquidStore`, the ullage's volume a stored
+  state for the gas's boundary work. An exponent-heated ullage keeps p = p0 (rho /
+  rho0)^n (`UllageTank`). Pressurant flowing into either is divided by the collapse
+  factor. Commands step between 0 and 1 (by the command's open and closed values) and a
+  rate limit opens a valve over its opening time. Liquids are ThermoProp's at the tank's
+  temperature, or, linked to a channel, tabulated over the temperatures it reads and
+  following it through the run (density and vapor pressure); a custom one has its
+  density and vapor pressure given. What starts from a channel (an ullage's pressure and
+  temperatures, a gas junction's) takes its value at the run's start, and the result says
+  what it took. All the outputs go to one `Recorder` component's exports, and components
+  are added in the order values flow, so FullFlow's settling needs one pass per trial:
+  together several times faster than a probe for each output and its default passes.
+  FullFlow's transient solver runs with two-point Jacobians and 1e-8 tolerances; results
+  come back at up to 2,000 points. A **fit** (`fit.py`, the same kind of process, stopped
+  after 30 minutes with the best it found) is SciPy's least squares over the knobs picked,
+  each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30 times its start,
+  within its limits), each try a run of the model; each compared channel (averaged down
+  to 300 points) counts the same, its errors over its swing. The page shows a fit's best
+  run, and applies what it found only when asked. The browser compares each sensor with
+  its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
+  bias; the window's times, and the plots', read from the dataset's T0 in this browser.
+  Saved models are JSON files in `CVC_YORG_DIR/models`, so the models add no tables.
+  FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
+  Vault is ever given to others, the GPL applies to it.
+- **Scripts** (the Python window, in the preview while it's tried out):
+  Python runs in the browser, never on the server: Pyodide (CPython in WebAssembly, pinned
+  in `web/src/yorg/scripts/worker.js`, from jsDelivr), in a module worker started from a
+  `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module
+  workers, and a sandboxed frame can't start one from a blob). The frame's origin is its
+  own, so a script, whoever wrote or uploaded it, can't reach the site, its API, or the
+  session: it gets only what it asks the page for in messages (`python.ts` answers
+  read-only: the list of tests, a channel's samples, from the same store the plots use).
+  The tab has one Python (`python.ts`), started when a page first wants it and kept while
+  the tab is open, so leaving Scripts and coming back finds its imports done and the
+  channels it had; nothing using it for 30 minutes stops it, to give its memory back
+  (Pyodide with SciPy, pandas, and CoolProp loaded holds several hundred MB). It does one
+  thing at a time: runs in the order asked for (Run while it starts, and the run waits),
+  and, with none waiting, a script's slow imports ahead of its run: while a script is open,
+  the page has Python import the slow packages it names (`tree.slowImports`, `yorg._warm`:
+  NumPy, SciPy, pandas, matplotlib, CoolProp, SymPy; importing them does nothing else) and
+  starts its channels coming from the server. That matters because Python is slow at a few
+  things (measured on an M-series Mac; a team laptop is slower, and a background tab too):
+  starting takes 1 to 4 s; SciPy, pandas, and matplotlib load and import in about 6 s; and
+  CoolProp reads its whole fluid library the first time it's imported, about 21 s in
+  WebAssembly against 1 s natively (no CoolProp setting avoids it; its calls are quick after
+  that). The browser keeps Pyodide's files once downloaded (9 MB for Python and NumPy, 42 MB
+  with those packages), even from the sandbox. Python keeps the channels it's been handed,
+  by a key for each read of each channel (`inputs.channelKey`), up to 512 MB of samples
+  beyond what a run uses: a run hands over only those it hasn't, and a test's channels share
+  one time array, which goes once. Each step says what it is as it starts (the worker's
+  `progress`: starting Python, loading packages, importing a module, which an import hook in
+  `yorg.py` reports, taking channels, running the code), and the page shows it with how long
+  it's been going and why the slow ones are slow (`progress.ts`); a run that's over says how
+  long it took and where the time went, from the page (the server, waiting for Python) and
+  the worker (packages, imports, channels), the rest being the script's own. Stopping a run
+  that Python has started ends the worker (a browser can interrupt Python only with a
+  `SharedArrayBuffer`, which needs the whole site cross-origin isolated), and Python starts
+  again without what it had. The tests can't run Pyodide (jsdom), so there Python is a
+  stand-in (`web/tests/python.ts`) that says what a test tells it to: the page's side is
+  tested, and `worker.js` and `yorg.py` are tried in a browser.
+  A script works on the tests attached to it (`DataPanel.tsx`; kept with it), the first the
+  one `yorg.channel()` takes from unless given `dataset=`. Before it runs, the page loads the
+  channels it names in quotes: the first test's, and another's when the script names that
+  test too (`tree.channelsToLoad`), so `yorg.channel("PT-TANK")` needs no `await`; any
+  other comes with `await yorg.load(...)`. Tests' names needn't be unique (two folders can
+  each have a "Cold flow 1"), so loaded channels go by test id, and code names a test by its
+  id where two attached share a name (`complete.testRef`); a name two share is refused, not
+  guessed. A script is a notebook (`Notebook.tsx`): cells, each run on its own in the
+  notebook's variables (`yorg._namespace`, kept while Python stays open; a saved script's are
+  its own, found again when it's opened again), so the cell that loads the data runs once
+  and those after it as often as they're changed. Runs are numbered as a notebook numbers
+  them ([3] beside the cell, and `<In [3]>` in a traceback, whose line is marked in its cell);
+  "run all" is one batch (`RunRequest.batch`) that stops at a cell that fails, and stopping a
+  running cell starts Python again and drops what's waiting, as it counted on what Python had.
+  A cell's output is under it; one from before Python started again is dimmed and says so. The
+  cells are kept as the script's code, a `# %%` line (with a title, and `[markdown]` for text)
+  starting each (`cells.ts`, as VS Code, Spyder, and Jupytext write them): no new field in the
+  API, a script downloads as a .py that runs as it is and opens as cells in those, and a script
+  without marks is one cell and stays as it was. Text cells are Markdown, shown as React's
+  elements (`Markdown.tsx`), never HTML from the text, and their links go only to the web, mail,
+  or the site. Jupyter's keys work after Escape leaves a cell's code (↑ ↓, A and B, D D, M and
+  Y, Enter). The editor is CodeMirror 6 (`CodeEditor.tsx`; the web app's only dependency beyond
+  React, for what a textarea can't do: highlighting as Python reads, folding, many cursors,
+  find and replace, and a list of suggestions; about 190 KB gzipped, in its own chunk that
+  loads with Scripts), colored from the site's variables and code colors of its own
+  (`editorTheme.ts`, `--code-*` in scripts.css). It suggests as you type: channels' names in
+  quotes where a channel goes, tests' after `dataset=`, the module's after `yorg.`
+  (`complete.ts`); the code's own names and Python's words; and what the notebook's
+  variables have, from jedi in the running Python (`yorg._complete`: `pt.` offers `t`,
+  `values`, `si`...). Hovering a name shows its signature and docstring (`yorg._inspect`), and
+  Python's own reading of the code (`yorg._check`) underlines a syntax error as it's typed.
+  The editor asks Python only while it's otherwise idle, and waits for its answer 3 s at most,
+  so a run never waits on the editor; Python gets jedi ready (about 2 s, and what it's
+  slowest to learn the first time, NumPy's arrays) once it's been idle 4 s. Clicking a channel
+  under Data puts in its `yorg.channel(...)` (its name, in a string) where you last typed. In
+  the tests, CodeMirror runs in jsdom with its ranges measured as empty (`tests/setup.ts`), and
+  code is set and read through CodeMirror (`tests/notebook.ts`). A notebook's plots let the
+  wheel scroll the page, and zoom with Ctrl or ⌘ held (`Plot`'s `wheelScrolls`).
+  A dataset's or view's page has Python of its own (`PythonDock.tsx`, its Python button):
+  a notebook docked beside the plots (as wide as it's dragged), on the page's tests, whose
+  cells run with the page's time in view, T0, and each test's shift as they are when a cell
+  runs (`RunRequest.view`: `yorg.window`, `yorg.t0`, `yorg.shifts`), and whose `yorg.plot`s
+  go on the page's own plots, under them, on its time axis: the Workspace's `extraPlots`,
+  with its window, cursor, and marks, a Channel's times placed where its test is shifted to,
+  and a × to take one off the page (running its cell again puts it back). Its notebook is
+  the page's (`page-dataset-5`: its cells and runs kept in the tab, `stored.ts`), so it's as
+  it was when the page is made again (a view saved, a file read again); it starts on what
+  the page plots. Open in Scripts takes it, cells, tests, and variables, to the Scripts page to
+  be kept. The workspace's keys leave it alone (`.yorg-dock`), and it loads (with CodeMirror)
+  only when it's opened. The
+  `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
+  their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
+  matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages
+  (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
+  Scripts are JSON
+  files in `CVC_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
+  folder path, and the code (its cells, marked). REFPROP isn't there: it needs NIST's license, and would run
+  on the server behind a property API.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.

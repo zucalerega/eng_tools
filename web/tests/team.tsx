@@ -133,6 +133,16 @@ export class Team {
         return call("POST", "/api/yorg/views", who.token, { name, datasets: [dataset], config });
     }
 
+    /** A script (the Python window's), as the server keeps it: found by its name. */
+    async script(who: Member, name: string): Promise<{ id: string; name: string; code: string }> {
+        const all = await call<{ id: string; name: string }[]>("GET", "/api/yorg/scripts", who.token);
+        const found = all.find((one) => one.name === name);
+        if (!found) {
+            throw new Error(`There's no script called ${name}`);
+        }
+        return call("GET", `/api/yorg/scripts/${found.id}`, who.token);
+    }
+
     /** A file of test data, uploaded to Yorg (named to be unique to this test). */
     async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
         const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });

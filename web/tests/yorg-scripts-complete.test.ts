@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { handoffOf, modelsLink, readHandoff, scriptsLink, starterScript, variableName } from "../src/yorg/analysis";
+import { parseCells } from "../src/yorg/scripts/cells";
 import { newLayout, newPanel, type Layout } from "../src/yorg/layout";
 import { channelCode, completionAt, inString, testRef, type Attached } from "../src/yorg/scripts/complete";
 import { channelsToLoad } from "../src/yorg/scripts/tree";
@@ -184,6 +185,12 @@ describe("from a dataset's or view's page", () => {
         expect(code).toContain("start, end = 10, 20  # s, on Cold flow 1's clock\n");
         expect(code).toContain('shift = {"Hotfire 4": -1.5}.get(channel.dataset, 0.0)');
         expect(code).toContain("yorg.plot(part, name=channel.dataset, title=channel.name)");
+        // A notebook: what it says it is, the channels loaded once, then what's done with them.
+        expect(parseCells(code).map((cell) => [cell.kind, cell.title])).toEqual([
+            ["markdown", ""],
+            ["code", "Load the channels"],
+            ["code", "Each one, over the time in view"],
+        ]);
     });
 
     test("two of its tests with one name: the script says which by id", () => {

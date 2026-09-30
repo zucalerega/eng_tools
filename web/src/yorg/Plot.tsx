@@ -9,7 +9,8 @@ import { formatDuration, formatTick, ticks } from "./scale";
 //   drag: zoom to the time you drag across; shift-drag: zoom to a box (time and values)
 //   right-drag, middle-drag, or ctrl-drag: pan; drag on an axis: move it (a plot has an axis for each unit, or as
 //   many as it's given, from the plot out on either side)
-//   wheel: zoom time around the pointer (on an axis: zoom it); shift-wheel or sideways: pan
+//   wheel: zoom time around the pointer (on an axis: zoom it); shift-wheel or sideways: pan (in a page read by
+//   scrolling, as a notebook is, the wheel scrolls it, and does these with Ctrl or ⌘ held, as a trackpad's pinch is)
 //   double-click: show everything; right-click: a menu (marker, label, T0)
 //   drag a marker (its line or label) to move it; drag a label to move it, or its arrow's tip to point elsewhere;
 //   double-click a label to change it. While placing a label (or T0, or a measurement's points), a click puts it
@@ -158,6 +159,7 @@ interface Props {
     onNote: (id: string, change: Partial<Omit<Note, "id">>) => void;
     onEditNote: (id: string, clientX: number, clientY: number) => void;
     onMoveMark: (id: string, x: number) => void;
+    wheelScrolls?: boolean; // the wheel scrolls the page, unless Ctrl or ⌘ is held (a notebook's plots)
 }
 
 /** What an axis shows: its fixed range, or what its channels have in view, with a little room around it. */
@@ -778,6 +780,9 @@ export function Plot(props: Props) {
         }
         const wheel = (event: WheelEvent) => {
             const current = latest.current;
+            if (current.wheelScrolls && !event.ctrlKey && !event.metaKey) {
+                return; // the page's: it scrolls
+            }
             const g = geometryRef.current;
             const { px, py } = pointerAt(canvas, event);
             const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;

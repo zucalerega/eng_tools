@@ -19,7 +19,8 @@ folders can have one name); yorg.channel() gives those. Times are seconds on eac
 Channel.si() puts pressures, temperatures, and mass flows in SI units.
 
 Python stays open while the browser tab does: what a script imported, and the channels it had, are there for the next
-run (its own variables aren't: each run starts afresh).
+run. A notebook's cells share their variables (load the data in one, work it over in the next); a script on its own
+starts afresh each run.
 """
 
 import ast
@@ -392,6 +393,98 @@ def _warm(code):
                 pass
     finally:
         _reporting = False
+
+
+# --- a notebook's variables, and the editor's help with them ------------------------------------------------------------
+
+_namespaces = {}  # a notebook's name for itself: its variables, kept from one cell's run to the next
+
+
+def _namespace(name):
+    """A notebook's variables (worker.js runs its cells in them), made the first time it runs a cell."""
+    found = _namespaces.get(name)
+    if found is None:
+        found = _namespaces[name] = {"__name__": "__main__", "yorg": sys.modules[__name__]}
+    return found
+
+
+def _names(namespace):
+    """What the editor's suggestions know: a notebook's variables (or just yorg, for a script on its own)."""
+    return [_namespaces.get(namespace) or {"__name__": "__main__", "yorg": sys.modules[__name__]}]
+
+
+def _jedi():
+    """jedi, the editor's suggestions, if it's loaded (worker.js loads it once Python's otherwise idle)."""
+    return sys.modules.get("jedi") or (importlib.import_module("jedi") if importlib.util.find_spec("jedi") else None)
+
+
+def _complete(namespace, code, line, column):
+    """What could go at a place in a cell (line from 1, column from 0), knowing what the notebook has now, as JSON:
+    [{"label", "type"}]. Names starting with _ only when that's what's typed."""
+    jedi = _jedi()
+    if jedi is None:
+        return "[]"
+    try:
+        found = jedi.Interpreter(code, _names(namespace)).complete(line, column)
+    except Exception:  # noqa: BLE001  whatever jedi can't make of it: no suggestions
+        return "[]"
+    items = []
+    for completion in found[:400]:
+        typed = completion.name[: len(completion.name) - len(completion.complete or "")]
+        if completion.name.startswith("_") and not typed.startswith("_"):
+            continue
+        items.append({"label": completion.name, "type": completion.type})
+    return json.dumps(items)
+
+
+def _inspect(namespace, code, line, column):
+    """What the name at a place in a cell is: its signature and the start of its docstring ("" if nothing's known)."""
+    jedi = _jedi()
+    if jedi is None:
+        return ""
+    try:
+        found = jedi.Interpreter(code, _names(namespace)).help(line, column)
+    except Exception:  # noqa: BLE001  nothing known
+        return ""
+    for name in found:
+        text = name.docstring().strip()
+        if text:
+            return text[:1500]
+    return ""
+
+
+def _check(code):
+    """A cell's code, checked as Python reads it: its first syntax error, as JSON (line from 1, column from 0), or
+    null."""
+    try:
+        compile(code, "<cell>", "exec", ast.PyCF_ONLY_AST | ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+    except SyntaxError as error:
+        line = error.lineno or 1
+        column = max(0, (error.offset or 1) - 1)
+        end_line = error.end_lineno or line
+        end_column = (error.end_offset or 0) - 1
+        if end_line == line and end_column <= column:
+            end_column = column + 1  # at least the character it's at
+        return json.dumps(
+            {"line": line, "column": column, "end_line": end_line, "end_column": end_column, "message": error.msg}
+        )
+    except (ValueError, OverflowError):
+        return "null"
+    return "null"
+
+
+def _warm_tools():
+    """Get the editor's suggestions ready: jedi imported, and what it takes it longest to learn the first time (NumPy
+    and its arrays) learned."""
+    jedi = _jedi()
+    if jedi is None:
+        return
+    try:
+        jedi.Interpreter("numpy.li", [{"numpy": np}]).complete(1, 8)
+        jedi.Interpreter("x.me", [{"x": np.zeros(1)}]).complete(1, 4)
+        jedi.Interpreter("c.va", [{"c": Channel("", "", (), ())}]).complete(1, 4)
+    except Exception:  # noqa: BLE001  the suggestions get ready as they're asked for, then
+        pass
 
 
 # --- a run --------------------------------------------------------------------------------------------------------------

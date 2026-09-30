@@ -21,11 +21,32 @@ const WORKER_URL = dataUrl(workerSource);
 /** Bytes in a message: a structured clone, so their buffer is always an ArrayBuffer of their own. */
 export type Bytes = Uint8Array<ArrayBuffer>;
 
+/** The editor's questions for Python about a cell's code (line from 1, column from 0). */
+export type Service = "complete" | "inspect" | "check";
+
 /** What the page tells Python (worker.js). */
 export type ToPython =
     | { type: "init"; module: string } // yorg.py's source
     | { type: "prepare"; code: string } // import a script's slow modules, ahead of its run
-    | { type: "run"; run: string; code: string; context: string; keys: string[] } // context: JSON (inputs.ts)
+    | { type: "tools" } // get the editor's suggestions ready
+    | {
+          type: "run";
+          run: string;
+          code: string;
+          context: string; // JSON (inputs.ts)
+          keys: string[];
+          namespace: string | null; // a notebook's: its cells share their variables (null: a script on its own)
+          filename: string; // as tracebacks name it: script.py, or a notebook cell's <In [3]>
+      }
+    | {
+          type: "service";
+          id: number;
+          what: Service;
+          namespace: string | null;
+          code: string;
+          line: number;
+          column: number;
+      }
     | { type: "response"; id: number; value?: unknown; error?: string };
 
 /** What Python tells the page (see worker.js). Output and steps say which run they're from (null: none). */
@@ -40,6 +61,7 @@ export type FromPython =
     | { type: "done"; run: string; elapsed: number; timings: Timing[] }
     | { type: "error"; run: string; text: string; line: number | null; elapsed: number; timings: Timing[] }
     | { type: "request"; id: number; run: string | null; what: string; args: Record<string, unknown> }
+    | { type: "answer"; id: number; value: unknown } // to a service
     | { type: "failed"; error: string };
 
 /** Where Python runs: the sandbox, or, in tests (jsdom can't run Pyodide), something that answers as it would. */

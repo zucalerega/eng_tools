@@ -10,6 +10,8 @@ import type { FromPython, PythonTransport, ToPython } from "../src/yorg/scripts/
 export class FakePython implements PythonTransport {
     readonly received: ToPython[] = [];
     stopped = false;
+    /** How it answers the editor's questions (suggestions, what a name is, syntax): with nothing, unless told. */
+    services: (question: Extract<ToPython, { type: "service" }>) => unknown = () => null;
     private receiver: ((message: FromPython) => void) | null = null;
 
     start(receive: (message: FromPython) => void): void {
@@ -18,6 +20,12 @@ export class FakePython implements PythonTransport {
 
     post(message: ToPython): void {
         this.received.push(message);
+        if (message.type === "service") {
+            const value = this.services(message);
+            queueMicrotask(() => this.receiver?.({ type: "answer", id: message.id, value }));
+        } else if (message.type === "tools") {
+            queueMicrotask(() => this.receiver?.({ type: "prepared" })); // the editor's suggestions: ready at once
+        }
     }
 
     stop(): void {

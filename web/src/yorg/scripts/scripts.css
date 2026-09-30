@@ -117,53 +117,6 @@
     align-items: center;
 }
 
-.scripts-editor {
-    position: relative;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    height: 380px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-large);
-    background: var(--surface);
-    overflow: hidden;
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-}
-
-.scripts-gutter-error {
-    color: var(--danger);
-    background: var(--danger-soft);
-    font-weight: 700;
-}
-
-.scripts-gutter {
-    padding: 0.5rem 0.4rem 0.5rem 0.6rem;
-    overflow: hidden;
-    text-align: right;
-    color: var(--muted);
-    user-select: none;
-    border-right: 1px solid var(--border);
-    font-variant-numeric: tabular-nums;
-}
-
-.scripts-editor textarea {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0.5rem 0.6rem;
-    border: none;
-    border-radius: 0;
-    resize: none;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    line-height: inherit;
-    white-space: pre;
-    tab-size: 4;
-    outline: none;
-}
-
 .scripts-output {
     display: grid;
     gap: 0.6rem;
@@ -177,7 +130,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-large);
     background: var(--surface);
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 12.5px;
     white-space: pre-wrap;
 }
@@ -203,46 +156,6 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-large);
     background: #fff;
-}
-
-/* The editor's suggestions, under the caret (Editor.tsx). */
-.scripts-measure {
-    position: absolute;
-    visibility: hidden;
-    white-space: pre;
-    pointer-events: none;
-}
-
-.scripts-suggestions {
-    position: absolute;
-    z-index: 5;
-    min-width: 16rem;
-    max-width: 28rem;
-    max-height: 14rem;
-    margin: 0;
-    padding: 0.2rem;
-    overflow: auto;
-    list-style: none;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
-    font-size: 12.5px;
-}
-
-.scripts-suggestions li {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.2rem 0.45rem;
-    border-radius: 4px;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.scripts-suggestions li[aria-selected="true"] {
-    background: var(--accent-soft);
-    color: var(--accent);
 }
 
 /* The tests a script works on, and their channels (DataPanel.tsx). */
@@ -333,7 +246,7 @@
     background: none;
     color: var(--text);
     text-align: left;
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 12.5px;
     cursor: pointer;
 }
@@ -493,4 +406,353 @@
     .run-icon {
         animation: none;
     }
+}
+
+/*
+ * Code's colors in the editor (editorTheme.ts): Python's parts, and the editor's own highlights. Keywords in the site's
+ * blue, and in its gold when it's dark; dark as the site is (styles.css), set twice as it sets its own.
+ */
+:root {
+    --code-keyword: #1d4d94;
+    --code-string: #0f7b3f;
+    --code-number: #b45309;
+    --code-comment: #6b778a;
+    --code-function: #7a3ec8;
+    --code-definition: #0b1b33;
+    --code-builtin: #0e7490;
+    --code-property: #24364f;
+    --code-decorator: #946300;
+    --code-punctuation: #5b677a;
+    --code-active-line: #f4f7fc;
+    --code-selection: rgb(29 77 148 / 20%);
+    --code-bracket: rgb(29 77 148 / 12%);
+    --code-match: rgb(224 165 0 / 18%);
+    --code-search: rgb(224 165 0 / 30%);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --code-keyword: #e0a500;
+        --code-string: #7ee2a8;
+        --code-number: #f6b26b;
+        --code-comment: #7b8799;
+        --code-function: #b9a2ff;
+        --code-definition: #8fb6f2;
+        --code-builtin: #56d4dd;
+        --code-property: #c9d4e4;
+        --code-decorator: #e0a500;
+        --code-punctuation: #95a1b5;
+        --code-active-line: #121b2a;
+        --code-selection: rgb(122 167 238 / 25%);
+        --code-bracket: rgb(122 167 238 / 18%);
+        --code-match: rgb(224 165 0 / 16%);
+        --code-search: rgb(224 165 0 / 28%);
+    }
+}
+
+:root[data-theme="dark"] {
+    --code-keyword: #e0a500;
+    --code-string: #7ee2a8;
+    --code-number: #f6b26b;
+    --code-comment: #7b8799;
+    --code-function: #b9a2ff;
+    --code-definition: #8fb6f2;
+    --code-builtin: #56d4dd;
+    --code-property: #c9d4e4;
+    --code-decorator: #e0a500;
+    --code-punctuation: #95a1b5;
+    --code-active-line: #121b2a;
+    --code-selection: rgb(122 167 238 / 25%);
+    --code-bracket: rgb(122 167 238 / 18%);
+    --code-match: rgb(224 165 0 / 16%);
+    --code-search: rgb(224 165 0 / 28%);
+}
+
+/* A notebook (Notebook.tsx): a bar of what it does, then its cells, each a name, its code (or text), and its output. */
+.notebook {
+    display: grid;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.notebook-bar {
+    position: sticky;
+    top: calc(3.5rem + 2px); /* under the site's top bar, which stays too */
+    z-index: 3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0;
+    background: var(--bg);
+}
+
+.notebook-bar .python-status {
+    margin-left: auto;
+}
+
+.notebook-keys {
+    min-width: 19rem;
+    padding: 0.6rem 0.75rem;
+}
+
+.notebook-keys dl {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0 0 0.4rem;
+}
+
+.notebook-keys dl > div {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.notebook-keys dt,
+.notebook-keys dd {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.notebook-keys p {
+    margin: 0;
+    font-size: 0.8rem;
+}
+
+kbd {
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.cell {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    transition: border-color 0.12s;
+}
+
+.cell-selected {
+    border-left-color: var(--accent);
+}
+
+.cell-going {
+    border-left-color: var(--gold);
+}
+
+.cell:focus {
+    outline: none;
+    box-shadow: var(--focus); /* the notebook's keys are on this cell */
+}
+
+.cell-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.45rem;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-large) var(--radius-large) 0 0;
+    background: var(--surface-2);
+}
+
+.cell-count {
+    min-width: 2.4rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.cell-kind {
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cell-run {
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--accent);
+    font-size: 0.7rem;
+}
+
+.cell-run:hover {
+    background: var(--accent-soft);
+}
+
+.cell-stop {
+    color: var(--danger);
+}
+
+.cell-title {
+    flex: 1;
+    min-width: 6rem;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.cell-title:hover {
+    border-color: var(--border);
+}
+
+.cell-title:focus {
+    border-color: var(--accent);
+    background: var(--surface);
+}
+
+.cell-title::placeholder {
+    color: var(--muted);
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.cell-status {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cell-status-queued,
+.cell-status-running {
+    color: var(--accent);
+}
+
+.cell-status-done::before {
+    content: "✓ ";
+    color: var(--good);
+    font-weight: 700;
+}
+
+.cell-status-error {
+    color: var(--danger);
+}
+
+.cell-head .menu-button {
+    padding: 0.1rem 0.5rem;
+}
+
+.code-editor .cm-editor {
+    border-radius: 0 0 var(--radius-large) var(--radius-large);
+}
+
+.cell-output {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.55rem 0.6rem 0.6rem;
+    border-top: 1px solid var(--border);
+}
+
+.cell-stale {
+    opacity: 0.6; /* from before Python started again: what it made is gone from Python */
+}
+
+.cell-markdown {
+    min-height: 2.2rem;
+    padding: 0.35rem 0.9rem;
+}
+
+.notebook-end {
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.25rem;
+}
+
+/* What a name is, hovering over it in the editor (CodeEditor.tsx). */
+.code-doc {
+    max-width: 36rem;
+    max-height: 20rem;
+    margin: 0;
+    padding: 0.5rem 0.65rem;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+/* A text cell's Markdown, shown (Markdown.tsx). */
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+    margin: 0.5rem 0 0.35rem;
+    color: var(--heading);
+    font-family: var(--font-brand);
+    line-height: 1.25;
+    letter-spacing: normal;
+    text-transform: none; /* as the notebook's writer wrote it, not as the site's headings are */
+}
+
+.markdown h2 {
+    font-size: 1.35rem;
+}
+
+.markdown h3 {
+    font-size: 1.15rem;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+    font-size: 1rem;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown blockquote {
+    margin: 0.4rem 0;
+}
+
+.markdown code {
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+}
+
+.markdown pre {
+    padding: 0.5rem 0.7rem;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.markdown pre code {
+    padding: 0;
+    background: none;
+}
+
+.markdown blockquote {
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--muted);
+}
+
+.markdown hr {
+    border: none;
+    border-top: 1px solid var(--border);
 }

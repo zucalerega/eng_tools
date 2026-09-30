@@ -5,11 +5,13 @@
 // blob).
 //
 // From the page (python.ts), done one after another: init (with the yorg module's source), prepare (a script's code:
-// its slow imports, ahead of its run), run (a script, its tests as JSON, the keys of the channels it names); and, any
-// time, response (to a request). To the page: progress (each step as it starts: starting Python, loading packages,
-// importing a module, taking channels, running the code), ready, prepared, stdout/stderr and plot/figure/file (each
-// with the run it's from), request (channels, a channel, the tests), done or error (with where the time went), and
-// failed (Python couldn't start).
+// its slow imports, ahead of its run), tools (the editor's suggestions, got ready), run (a script or a notebook's cell:
+// its code, its tests as JSON, the keys of the channels it names, the notebook whose variables it runs in), service
+// (for the editor: suggestions, what a name is, the code's syntax); and, any time, response (to a request). To the
+// page: progress (each step as it starts: starting Python, loading packages, importing a module, taking channels,
+// running the code), ready, prepared (a prepare or tools done), stdout/stderr and plot/figure/file (each with the run
+// it's from), request (channels, a channel, the tests), done or error (with where the time went), answer (a service's),
+// and failed (Python couldn't start).
 
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 
@@ -112,18 +114,21 @@ async function loadImports(code, timings) {
     }
 }
 
-/** A Python error's traceback from the script's own lines on (Pyodide's frames above them say nothing useful). */
+// Where code the page runs comes from, in tracebacks: a script, or a notebook's cell, by its run ("<In [3]>").
+const OURS = /File "(script\.py|<In \[\d+\]>)"/;
+
+/** A Python error's traceback from the first of our frames on (Pyodide's frames above them say nothing useful). */
 function traceback(error) {
     const text = errorText(error);
     const lines = text.split("\n");
-    const first = lines.findIndex((line) => line.includes('File "script.py"'));
+    const first = lines.findIndex((line) => OURS.test(line));
     return first < 0 ? text.trim() : ["Traceback (most recent call last):", ...lines.slice(first)].join("\n").trim();
 }
 
-/** The script's line an error happened on (its last frame in the script), if it's there. */
-function lineOf(error) {
-    const found = [...errorText(error).matchAll(/File "script\.py", line (\d+)/g)];
-    return found.length ? Number(found[found.length - 1][1]) : null;
+/** The line of file an error happened on (its last frame there), if it's there. */
+function lineOf(error, file) {
+    const found = [...errorText(error).matchAll(/File "([^"]+)", line (\d+)/g)].filter((one) => one[1] === file);
+    return found.length ? Number(found[found.length - 1][2]) : null;
 }
 
 /** Get a script's slow imports ready before it runs: its packages loaded, and the slow modules imported. */
@@ -138,8 +143,38 @@ async function prepare({ code }) {
     post({ type: "prepared" });
 }
 
-async function run({ run: id, code, context, keys }) {
+/** Get the editor's suggestions ready: jedi, loaded and imported, and what it's slowest to learn, learned. */
+async function tools() {
+    current = null;
+    try {
+        await pyodide.loadPackage(["jedi"], { messageCallback: () => {} });
+        yorg._warm_tools();
+    } catch {
+        // No suggestions from Python, then: the editor's own still come.
+    }
+    post({ type: "prepared" });
+}
+
+/** The editor's questions about a cell: what could go at a place, what a name is, the code's first syntax error. */
+function service({ id, what, namespace, code, line, column }) {
+    let value = null;
+    try {
+        if (what === "complete") {
+            value = JSON.parse(yorg._complete(namespace ?? "", code, line, column));
+        } else if (what === "inspect") {
+            value = yorg._inspect(namespace ?? "", code, line, column) || null;
+        } else if (what === "check") {
+            value = JSON.parse(yorg._check(code));
+        }
+    } catch {
+        value = null; // no answer, rather than a wrong one
+    }
+    post({ type: "answer", id, value });
+}
+
+async function run({ run: id, code, context, keys, namespace, filename }) {
     current = id;
+    const file = filename || "script.py";
     const started = performance.now();
     const timings = [];
     const imports = () => JSON.parse(yorg._import_times());
@@ -163,9 +198,14 @@ async function run({ run: id, code, context, keys }) {
         }
         progress("code");
         yorg._begin(context, JSON.stringify(keys));
-        globals = pyodide.toPy({ __name__: "__main__" });
-        globals.set("yorg", yorg);
-        await pyodide.runPythonAsync(code, { globals, filename: "script.py" });
+        // A notebook's cells run in its variables, kept between them; a script on its own, in its own.
+        if (namespace) {
+            globals = yorg._namespace(namespace);
+        } else {
+            globals = pyodide.toPy({ __name__: "__main__" });
+            globals.set("yorg", yorg);
+        }
+        await pyodide.runPythonAsync(code, { globals, filename: file });
         yorg._finish();
         post({ type: "done", run: id, elapsed: secondsSince(started), timings: [...timings, ...imports()] });
     } catch (error) {
@@ -178,7 +218,7 @@ async function run({ run: id, code, context, keys }) {
             type: "error",
             run: id,
             text: traceback(error),
-            line: lineOf(error),
+            line: lineOf(error, file),
             elapsed: secondsSince(started),
             timings: [...timings, ...imports()],
         });
@@ -197,8 +237,12 @@ async function handle(message) {
         }
     } else if (message.type === "prepare") {
         await prepare(message);
+    } else if (message.type === "tools") {
+        await tools();
     } else if (message.type === "run") {
         await run(message);
+    } else if (message.type === "service") {
+        service(message);
     }
 }
 

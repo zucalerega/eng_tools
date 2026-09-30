@@ -33,6 +33,7 @@
     --radius: 6px;
     --radius-large: 10px;
     --font-brand: Bahnschrift, "DIN Alternate", "DIN Next", Rubik, "Segoe UI", system-ui, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
     font-family:
         system-ui,
         -apple-system,

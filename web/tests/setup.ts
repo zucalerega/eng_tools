@@ -24,6 +24,11 @@ beforeAll(() => {
     };
 });
 
+// The Python window's editor (CodeMirror) measures text by its ranges, which jsdom lays out nowhere: they're empty.
+const nowhere = { x: 0, y: 0, top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, toJSON: () => ({}) };
+Range.prototype.getBoundingClientRect = () => nowhere as DOMRect;
+Range.prototype.getClientRects = () => Object.assign([], { item: () => null }) as unknown as DOMRectList;
+
 // The tab's Python lives as long as the tab: each test starts with its own, which says nothing unless the test tells
 // it to (tests/python.ts).
 beforeEach(() => python.reset(() => new FakePython()));

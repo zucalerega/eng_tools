@@ -199,15 +199,17 @@ export function usePopover<T extends HTMLElement>(): [boolean, (open: boolean) =
     return [open, setOpen, within];
 }
 
-/** A button with a menu of actions under it. */
+/** A button with a menu of actions under it (named, for screen readers, by name when its label is only a sign). */
 export function MenuButton({
     label,
     items,
     primary = false,
+    name,
 }: {
     label: string;
     items: { label: string; onSelect: () => void }[];
     primary?: boolean;
+    name?: string;
 }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
     return (
@@ -217,12 +219,14 @@ export function MenuButton({
                 className={`menu-button ${primary ? "button-primary" : ""}`}
                 aria-haspopup="menu"
                 aria-expanded={open}
+                aria-label={name}
+                title={name}
                 onClick={() => setOpen(!open)}
             >
                 {label}
             </button>
             {open && (
-                <div className="menu" role="menu" aria-label={label}>
+                <div className="menu" role="menu" aria-label={name ?? label}>
                     {items.map((item) => (
                         <button
                             key={item.label}

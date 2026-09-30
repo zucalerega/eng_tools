@@ -30,8 +30,8 @@ export function useTicking(on: boolean): number {
 }
 
 /** Whether anything Python's doing has a timer going. */
-export const isTicking = (python: PythonState, run: RunRecord | null): boolean =>
-    python.busy !== null || run?.status === "queued" || run?.status === "running";
+export const isTicking = (python: PythonState, ...runs: (RunRecord | null)[]): boolean =>
+    python.busy !== null || runs.some((run) => run?.status === "queued" || run?.status === "running");
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
@@ -58,7 +58,9 @@ export function PythonStatus({ python, now, onRestart }: { python: PythonState; 
         text =
             busy.kind === "start"
                 ? stepLine(busy.step, now)
-                : `Getting the script's imports ready: ${lowerFirst(stepLine(busy.step, now, busy.asked))}`;
+                : busy.kind === "tools"
+                  ? `Getting the editor's suggestions ready · ${formatElapsed(now - busy.since)}`
+                  : `Getting the script's imports ready: ${lowerFirst(stepLine(busy.step, now, busy.asked))}`;
     }
     return (
         <span className="python-status">
@@ -84,10 +86,46 @@ export function PythonStatus({ python, now, onRestart }: { python: PythonState; 
     );
 }
 
-/** How a run is going, or how it went: a headline, what it's on (or where its time went), and why. */
-function RunHeader({ run, python, now }: { run: RunRecord; python: PythonState; now: number }) {
+// Under this, a notebook's cell that's done says only so, beside its name: a run that took longer says where the time went.
+const WORTH_SAYING_S = 2;
+
+/** What a cell's run is up to, beside the cell's name: "Running · 3 s", "✓ 0.4 s", "Not run". */
+export function cellStatus(run: RunRecord, now: number): string {
+    const total = ((run.finished ?? now) - run.requested) / 1000;
+    switch (run.status) {
+        case "queued":
+            return `Waiting · ${formatElapsed(now - run.requested)}`;
+        case "running":
+            return `Running · ${formatElapsed(now - run.requested)}`;
+        case "done":
+            return `Done in ${formatSeconds(total)}`;
+        case "error":
+            return `Failed in ${formatSeconds(total)}`;
+        case "stopped":
+            return run.skipped ? "Not run" : `Stopped after ${formatSeconds(total)}`;
+    }
+}
+
+/**
+ * How a run is going, or how it went: a headline, what it's on (or where its time went), and why. Compact (a cell's,
+ * whose name says how it went): only while it goes, when it took long enough to say where the time went, or stopped.
+ */
+function RunHeader({
+    run,
+    python,
+    now,
+    compact,
+}: {
+    run: RunRecord;
+    python: PythonState;
+    now: number;
+    compact: boolean;
+}) {
     const asked = useMemo(() => topImports(run.code), [run.code]);
     const total = ((run.finished ?? now) - run.requested) / 1000;
+    if (compact && (run.status === "done" || run.status === "error") && total < WORTH_SAYING_S) {
+        return null;
+    }
     let title: string;
     let line: string | null = null;
     let note: string | null = null;
@@ -103,6 +141,8 @@ function RunHeader({ run, python, now }: { run: RunRecord; python: PythonState; 
                 note = "Start it again above, and the run goes on.";
             } else if (busy?.kind === "run") {
                 line = "Waiting for the run before it";
+            } else if (busy?.kind === "tools") {
+                line = `Waiting for Python: getting the editor's suggestions ready · ${formatElapsed(now - busy.since)}`;
             } else if (busy) {
                 line = `Waiting for Python: ${lowerFirst(stepLine(busy.step, now, busy.asked))}`;
                 note = stepNote(busy.step);
@@ -126,10 +166,15 @@ function RunHeader({ run, python, now }: { run: RunRecord; python: PythonState; 
                 .join(" · ");
             break;
         case "stopped":
-            title = `Stopped after ${formatSeconds(total)}`;
-            line = run.restarted
-                ? "Python is starting again without what it had: the next run imports its modules and gets its channels again."
-                : "It hadn't started.";
+            title = run.skipped ? "Not run" : `Stopped after ${formatSeconds(total)}`;
+            line =
+                run.skipped === "failed"
+                    ? "A cell run before it failed, so it wasn't run."
+                    : run.skipped === "restart"
+                      ? "Python started again before it ran."
+                      : run.restarted
+                        ? "Python is starting again without what it had: the next run imports its modules and gets its channels again."
+                        : "It hadn't started.";
             break;
     }
     const going = run.status === "queued" || run.status === "running";
@@ -146,12 +191,22 @@ function RunHeader({ run, python, now }: { run: RunRecord; python: PythonState; 
     );
 }
 
-/** A run's output, under how it's going (or went). */
-export function RunView({ run, python, now }: { run: RunRecord; python: PythonState; now: number }) {
+/** A run's output, under how it's going (or went): compact for a notebook's cell (see RunHeader). */
+export function RunView({
+    run,
+    python,
+    now,
+    compact = false,
+}: {
+    run: RunRecord;
+    python: PythonState;
+    now: number;
+    compact?: boolean;
+}) {
     const { output } = run;
     return (
         <>
-            <RunHeader run={run} python={python} now={now} />
+            <RunHeader run={run} python={python} now={now} compact={compact} />
             {(output.lines.length > 0 || run.error) && (
                 <pre className="scripts-console" aria-label="Printed">
                     {output.lines.map((line, index) => (
@@ -234,7 +289,10 @@ function ScriptPlot({ title, series }: ScriptPlotData) {
     );
     const nothing = () => {};
     return (
-        <div className="scripts-plot">
+        <div
+            className="scripts-plot"
+            title="Drag across to zoom; Ctrl (⌘) and the wheel, or a pinch, zoom too; double-click shows it all"
+        >
             <div className="dev-legend">
                 <strong>{title}</strong>
                 {prepared.map((one) => {
@@ -272,6 +330,7 @@ function ScriptPlot({ title, series }: ScriptPlotData) {
                 onNote={nothing}
                 onEditNote={nothing}
                 onMoveMark={nothing}
+                wheelScrolls
             />
         </div>
     );

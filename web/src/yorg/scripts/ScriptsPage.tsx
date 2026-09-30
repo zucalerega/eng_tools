@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
@@ -7,11 +7,11 @@ import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
 import type { Attached } from "./complete";
 import { DataPanel } from "./DataPanel";
-import { Editor, type EditorHandle } from "./Editor";
 import { EXAMPLES } from "./examples";
 import { gatherInputs } from "./inputs";
-import { isTicking, PythonStatus, RunView, useTicking } from "./Output";
-import { python, usePython, useRun } from "./python";
+import { codeOf, joinCells, newCell, parseCells, type Cell } from "./cells";
+import { Notebook, type NotebookHandle } from "./Notebook";
+import { python, usePython } from "./python";
 import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
 import "./scripts.css";
@@ -19,37 +19,46 @@ import "./scripts.css";
 // Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull tests' channels and work them
 // over, with NumPy, SciPy, pandas, matplotlib, and CoolProp, run in the browser by the tab's Python (python.ts), which
 // stays open as you come and go, gets a script's slow imports ready while you read it, and says what it's doing as it
-// runs (Output.tsx). A script works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them.
-// Scripts are kept on the server in folders, for every admin; .py files upload as scripts and scripts download as them.
-// A dataset's or view's page opens a script on what it had (analysis.ts).
+// runs (Output.tsx). A script is a notebook (Notebook.tsx): cells run one at a time in its variables, so the data
+// loads once. It works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept
+// on the server in folders, for every admin, as .py code with a "# %%" line starting each cell (cells.ts); .py files
+// upload as scripts and scripts download as them. A dataset's or view's page opens a script on what it had
+// (analysis.ts).
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
-const OPEN_KEY = "yorg.scripts.open"; // for this tab: the script open and its last run, to come back to
+const OPEN_KEY = "yorg.scripts.open"; // for this tab: the script open and its cells' last runs, to come back to
 const PREPARE_MS = 600; // how long typing pauses before Python gets a script's imports ready
 
-/** What's open in the editor: a saved script, an example (saved only as a copy), or a new one. */
+/** What's open: a saved script, an example (saved only as a copy), or a new one, as a notebook. */
 interface Open {
     id: string | null; // saved as, if it is
     example: string | null; // the example it is, if it is
     name: string;
     folder: string;
-    code: string;
+    cells: Cell[];
+    namespace: string; // its variables' in Python: a saved script's are its own, found again when it's opened again
     datasets: number[]; // the tests attached, the first first
     dirty: boolean;
 }
 
 type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | null;
 
-const newScript = (datasets: number[]): Open => ({
-    id: null,
-    example: null,
-    name: "New script",
-    folder: "",
-    code: "# Your analysis. Click a channel under Data to put it in, or type its name in quotes.\n",
-    datasets,
-    dirty: false,
-});
+let unsaved = 0;
+
+const newScript = (datasets: number[], code = ""): Open => {
+    unsaved += 1;
+    return {
+        id: null,
+        example: null,
+        name: "New script",
+        folder: "",
+        cells: code ? parseCells(code) : [newCell()],
+        namespace: `new-${Date.now().toString(36)}-${unsaved}`,
+        datasets,
+        dirty: false,
+    };
+};
 
 /** The tests to start with: those a page sent (?dataset=5), or those attached here last. */
 function storedDatasets(): number[] {
@@ -73,22 +82,24 @@ function storeDatasets(ids: number[]) {
     }
 }
 
-/** The script open when this tab last left the page, and its last run (whose output Python still has). */
-function remembered(): { open: Open; run: string | null } | null {
+/** The script open when this tab last left the page, and its cells' last runs (whose output Python still has). */
+function remembered(): { open: Open; runs: Record<string, string> } | null {
     try {
         const found = JSON.parse(window.sessionStorage.getItem(OPEN_KEY) ?? "null") as {
             open?: Open;
-            run?: string | null;
+            runs?: Record<string, string>;
         } | null;
-        return found?.open && typeof found.open.code === "string" ? { open: found.open, run: found.run ?? null } : null;
+        return found?.open && Array.isArray(found.open.cells) && found.open.cells.length
+            ? { open: found.open, runs: found.runs ?? {} }
+            : null;
     } catch {
         return null;
     }
 }
 
-function remember(open: Open, run: string | null) {
+function remember(open: Open, runs: Record<string, string>) {
     try {
-        window.sessionStorage.setItem(OPEN_KEY, JSON.stringify({ open, run }));
+        window.sessionStorage.setItem(OPEN_KEY, JSON.stringify({ open, runs }));
     } catch {
         // storage blocked: the page starts afresh next time
     }
@@ -109,20 +120,42 @@ export function ScriptsPage() {
     const [scripts, setScripts] = useState<Script[] | null>(null);
     const [datasets, setDatasets] = useState<Dataset[]>([]);
     const [problem, setProblem] = useState<string | null>(null);
-    const [open, setOpen] = useState<Open>(() => remembered()?.open ?? newScript(storedDatasets()));
-    const [runId, setRunId] = useState<string | null>(() => remembered()?.run ?? null);
-    const run = useRun(runId);
+    const [open, setOpenScript] = useState<Open>(() => remembered()?.open ?? newScript(storedDatasets()));
+    const [runs, setRuns] = useState<Record<string, string>>(() => remembered()?.runs ?? {});
     const [asking, setAsking] = useState<Asking>(null);
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
     const [search, setSearch] = useState("");
     const [closed, setClosed] = useState<Set<string>>(new Set());
     const fileInput = useRef<HTMLInputElement | null>(null);
-    const editor = useRef<EditorHandle | null>(null);
-    const now = useTicking(isTicking(state, run));
+    const notebook = useRef<NotebookHandle | null>(null);
+
+    /** Open another script (or another version of this one): the last one's outputs go, unless a run's still on. */
+    function setOpen(next: Open) {
+        if (next.namespace !== open.namespace || next.cells !== open.cells) {
+            for (const run of Object.values(runs)) {
+                const record = python.runOf(run);
+                if (record && record.status !== "queued" && record.status !== "running") {
+                    python.forget(run);
+                }
+            }
+            setRuns({});
+        }
+        setOpenScript(next);
+    }
+
+    /** The cells changed (as the notebook changes them): the script has changes to save. */
+    const setCells = (change: SetStateAction<Cell[]>) =>
+        setOpenScript((now) => ({
+            ...now,
+            cells: typeof change === "function" ? change(now.cells) : change,
+            dirty: true,
+        }));
+
+    const code = useMemo(() => codeOf(open.cells), [open.cells]);
 
     // Python starts when the page opens (unless it's on already, from before), so it's ready by the time a script is.
     useEffect(() => python.acquire(), []);
-    useEffect(() => remember(open, runId), [open, runId]);
+    useEffect(() => remember(open, runs), [open, runs]);
 
     // While a script's read and edited, Python gets its slow imports ready (CoolProp's takes 20 s to a minute), and the
     // channels it names come from the server: its run needn't wait for either.
@@ -132,11 +165,11 @@ export function ScriptsPage() {
             return;
         }
         const timer = window.setTimeout(() => {
-            python.prepare(open.code);
-            gatherInputs(open.code, open.datasets).catch(() => {}); // what's wrong, the run says
+            python.prepare(code);
+            gatherInputs(code, open.datasets).catch(() => {}); // what's wrong, the run says
         }, PREPARE_MS);
         return () => window.clearTimeout(timer);
-    }, [open.code, open.datasets, ready, state.generation]);
+    }, [code, open.datasets, ready, state.generation]);
 
     useEffect(() => {
         Promise.all([scriptsApi.list(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
@@ -149,12 +182,15 @@ export function ScriptsPage() {
                 const handoff = readHandoff(window.location.search);
                 if (handoff) {
                     const names = Object.fromEntries(ready.map((one) => [one.id, one.name]));
-                    setOpen({
-                        ...newScript(handoff.datasets.filter((id) => id in names)),
+                    setOpenScript({
+                        ...newScript(
+                            handoff.datasets.filter((id) => id in names),
+                            starterScript(handoff, names),
+                        ),
                         name: `From ${handoff.title || "a view"}`,
-                        code: starterScript(handoff, names),
                         dirty: true,
                     });
+                    setRuns({});
                     window.history.replaceState(null, "", window.location.pathname);
                 }
             },
@@ -203,7 +239,8 @@ export function ScriptsPage() {
                     example: example.id,
                     name: example.name,
                     folder: "",
-                    code: example.code,
+                    cells: parseCells(example.code),
+                    namespace: example.id,
                     datasets: open.datasets,
                     dirty: false,
                 });
@@ -216,7 +253,8 @@ export function ScriptsPage() {
                     example: null,
                     name: found.name,
                     folder: found.folder,
-                    code: found.code ?? "",
+                    cells: parseCells(found.code ?? ""),
+                    namespace: `script-${found.id}`,
                     datasets: found.datasets?.length ? found.datasets : open.datasets,
                     dirty: false,
                 });
@@ -226,11 +264,13 @@ export function ScriptsPage() {
 
     const save = (name: string, folder: string, asNew: boolean) =>
         act(async () => {
+            const text = joinCells(open.cells);
             const done =
                 asNew || !open.id
-                    ? await scriptsApi.add(name, tidyFolder(folder), open.code, open.datasets)
-                    : await scriptsApi.save(open.id, name, tidyFolder(folder), open.code, open.datasets);
-            setOpen({ ...open, id: done.id, example: null, name: done.name, folder: done.folder, dirty: false });
+                    ? await scriptsApi.add(name, tidyFolder(folder), text, open.datasets)
+                    : await scriptsApi.save(open.id, name, tidyFolder(folder), text, open.datasets);
+            // The notebook's variables and outputs stay: it's the same notebook, saved.
+            setOpenScript({ ...open, id: done.id, example: null, name: done.name, folder: done.folder, dirty: false });
             setScripts(await scriptsApi.list());
             setAsking(null);
         });
@@ -258,25 +298,13 @@ export function ScriptsPage() {
                     example: null,
                     name: last.name,
                     folder: last.folder,
-                    code: last.code ?? "",
+                    cells: parseCells(last.code ?? ""),
+                    namespace: `script-${last.id}`,
                     datasets: last.datasets ?? open.datasets,
                     dirty: false,
                 }),
             );
         }
-    }
-
-    const running = run?.status === "queued" || run?.status === "running";
-
-    /** Run the script: now, or once Python's started and done with what's before it (the output says which). */
-    function start() {
-        if (running) {
-            return;
-        }
-        if (runId) {
-            python.forget(runId); // its output goes, figures and all
-        }
-        setRunId(python.run({ code: open.code, datasets: open.datasets }));
     }
 
     // Every test attached, in order (the first is the one that needs no dataset=), its channels once they've loaded.
@@ -409,24 +437,6 @@ export function ScriptsPage() {
                         </label>
                     </div>
                     <div className="scripts-actions">
-                        {running ? (
-                            <button
-                                type="button"
-                                className="button-danger"
-                                onClick={() => runId && python.stop(runId)}
-                                title={
-                                    run?.status === "running"
-                                        ? "Stop it: Python starts again, without what it's imported"
-                                        : "Don't run it after all"
-                                }
-                            >
-                                Stop
-                            </button>
-                        ) : (
-                            <button type="button" className="button-primary" title="Ctrl+Enter" onClick={start}>
-                                Run
-                            </button>
-                        )}
                         <button
                             type="button"
                             disabled={open.id !== null && !open.dirty}
@@ -444,7 +454,7 @@ export function ScriptsPage() {
                         >
                             Save as…
                         </button>
-                        <button type="button" onClick={() => download(`${open.name}.py`, open.code)}>
+                        <button type="button" onClick={() => download(`${open.name}.py`, joinCells(open.cells))}>
                             Download .py
                         </button>
                         {open.id && (
@@ -456,29 +466,20 @@ export function ScriptsPage() {
                                 Delete…
                             </button>
                         )}
-                        <PythonStatus python={state} now={now} onRestart={() => python.restart()} />
                         {open.example && <span className="muted">An example: Save as… keeps a copy of your own</span>}
                     </div>
-                    <Editor
-                        ref={editor}
-                        label="Code"
+                    <Notebook
+                        key={open.namespace}
+                        ref={notebook}
+                        cells={open.cells}
+                        setCells={setCells}
+                        runs={runs}
+                        setRuns={setRuns}
+                        namespace={open.namespace}
+                        datasets={open.datasets}
                         attached={attached}
-                        code={open.code}
-                        errorLine={run?.status === "error" && run.code === open.code ? run.line : null}
-                        onChange={(code) => setOpen({ ...open, code, dirty: true })}
-                        onRun={start}
                         onSave={saveNow}
                     />
-                    <section className="scripts-output" aria-label="Output">
-                        {run ? (
-                            <RunView run={run} python={state} now={now} />
-                        ) : (
-                            <p className="muted">
-                                What the script prints, plots (yorg.plot, matplotlib), and saves (yorg.download) shows
-                                here.
-                            </p>
-                        )}
-                    </section>
                 </div>
                 <DataPanel
                     datasets={datasets}
@@ -487,7 +488,7 @@ export function ScriptsPage() {
                         storeDatasets(ids);
                         setOpen({ ...open, datasets: ids, dirty: open.id !== null || open.dirty });
                     }}
-                    onChannel={(channel, test) => editor.current?.insertChannel(channel, test)}
+                    onChannel={(channel, test) => notebook.current?.insertChannel(channel, test)}
                 />
             </div>
 

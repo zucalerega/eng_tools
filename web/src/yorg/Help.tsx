@@ -243,6 +243,11 @@ export function HelpPage() {
                                 <code>yorg.plot</code> draws on Yorg&apos;s plots.
                             </li>
                             <li>
+                                A script is a notebook: load the data in one cell, then change and run the ones after it
+                                without loading it again (Shift+Enter runs a cell). The editor suggests as you type,
+                                what your variables have too, and <em>Keys</em> lists its keys.
+                            </li>
+                            <li>
                                 Python stays open while this tab does, with what it has imported and the channels it
                                 has, and gets a script&apos;s slow imports ready while you read it. The output says what
                                 it&apos;s doing, for how long, and after a run, where the time went.

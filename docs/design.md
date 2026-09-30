@@ -681,16 +681,44 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   other comes with `await yorg.load(...)`. Tests' names needn't be unique (two folders can
   each have a "Cold flow 1"), so loaded channels go by test id, and code names a test by its
   id where two attached share a name (`complete.testRef`); a name two share is refused, not
-  guessed. The editor suggests as you type (`complete.ts`): channels' names where a channel
-  goes, tests' after `dataset=`, the module's after `yorg.`; clicking a channel under Data
-  puts in its `yorg.channel(...)` (its name, in a string). The
+  guessed. A script is a notebook (`Notebook.tsx`): cells, each run on its own in the
+  notebook's variables (`yorg._namespace`, kept while Python stays open; a saved script's are
+  its own, found again when it's opened again), so the cell that loads the data runs once
+  and those after it as often as they're changed. Runs are numbered as a notebook numbers
+  them ([3] beside the cell, and `<In [3]>` in a traceback, whose line is marked in its cell);
+  "run all" is one batch (`RunRequest.batch`) that stops at a cell that fails, and stopping a
+  running cell starts Python again and drops what's waiting, as it counted on what Python had.
+  A cell's output is under it; one from before Python started again is dimmed and says so. The
+  cells are kept as the script's code, a `# %%` line (with a title, and `[markdown]` for text)
+  starting each (`cells.ts`, as VS Code, Spyder, and Jupytext write them): no new field in the
+  API, a script downloads as a .py that runs as it is and opens as cells in those, and a script
+  without marks is one cell and stays as it was. Text cells are Markdown, shown as React's
+  elements (`Markdown.tsx`), never HTML from the text, and their links go only to the web, mail,
+  or the site. Jupyter's keys work after Escape leaves a cell's code (↑ ↓, A and B, D D, M and
+  Y, Enter). The editor is CodeMirror 6 (`CodeEditor.tsx`; the web app's only dependency beyond
+  React, for what a textarea can't do: highlighting as Python reads, folding, many cursors,
+  find and replace, and a list of suggestions; about 190 KB gzipped, in its own chunk that
+  loads with Scripts), colored from the site's variables and code colors of its own
+  (`editorTheme.ts`, `--code-*` in scripts.css). It suggests as you type: channels' names in
+  quotes where a channel goes, tests' after `dataset=`, the module's after `yorg.`
+  (`complete.ts`); the code's own names and Python's words; and what the notebook's
+  variables have, from jedi in the running Python (`yorg._complete`: `pt.` offers `t`,
+  `values`, `si`...). Hovering a name shows its signature and docstring (`yorg._inspect`), and
+  Python's own reading of the code (`yorg._check`) underlines a syntax error as it's typed.
+  The editor asks Python only while it's otherwise idle, and waits for its answer 3 s at most,
+  so a run never waits on the editor; Python gets jedi ready (about 2 s, and what it's
+  slowest to learn the first time, NumPy's arrays) once it's been idle 4 s. Clicking a channel
+  under Data puts in its `yorg.channel(...)` (its name, in a string) where you last typed. In
+  the tests, CodeMirror runs in jsdom with its ranges measured as empty (`tests/setup.ts`), and
+  code is set and read through CodeMirror (`tests/notebook.ts`). A notebook's plots let the
+  wheel scroll the page, and zoom with Ctrl or ⌘ held (`Plot`'s `wheelScrolls`). The
   `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
   their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
   matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages
   (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
   Scripts are JSON
   files in `CVC_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
-  folder path, and the code. REFPROP isn't there: it needs NIST's license, and would run
+  folder path, and the code (its cells, marked). REFPROP isn't there: it needs NIST's license, and would run
   on the server behind a property API.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor

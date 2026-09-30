@@ -142,11 +142,18 @@ the keys.
   collapse factor), or pick them and **Fit**: the server turns them until the model
   matches best, and you apply what it found (or not). Models are saved for every admin,
   run against any test with the same channel names, and go to and from files.
-- **Scripts (in the preview while it's being tried out):** a Python window. A script works on
-  the tests attached to it (Data, beside it): their channels are listed there, and a click puts
-  one in the code (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for another test);
-  in quotes, a few letters offer the channels that have them, and after `yorg.` what the module
-  has (Ctrl+Space asks anywhere). Work them over with NumPy, SciPy, pandas, matplotlib, and
+- **Scripts (in the preview while it's being tried out):** a Python notebook. Its cells run
+  one at a time in the notebook's variables, so the cell that loads the data runs once and
+  the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all
+  runs them in order and stops at one that fails, and each cell's output is under it. Text
+  cells are Markdown. After Escape, Jupyter's keys move between cells and add, delete, and
+  turn them into text or code (Keys lists them). A script works on the tests attached to it
+  (Data, beside it): their channels are listed there, and a click puts one in the code
+  (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for another test). The editor
+  colors Python, folds, finds and replaces (Ctrl+F), and suggests as you type: channels in
+  quotes, what the module has after `yorg.`, and what your variables have, from the running
+  Python (`pt.` offers `values`, `t`, `si`...); hovering a name says what it is, and a syntax
+  error is underlined as you type it. Work them over with NumPy, SciPy, pandas, matplotlib, and
   CoolProp (pure-Python packages install from PyPI with micropip); `yorg.plot` draws on Yorg's
   plots, matplotlib's figures show as images, and `yorg.download` offers a file to save. Python
   (Pyodide) runs in your browser, sandboxed from the site, and stays open while the tab does:
@@ -156,7 +163,8 @@ the keys.
   and the run waits, saying for what. As it runs, the output says each step (loading
   packages, importing a module, running your code) and how long it's taken, and after, how
   long the run took and where the time went. Scripts are kept for every admin in
-  folders, with their tests; upload .py files as scripts and download scripts as them.
+  folders, with their tests, as .py code with a `# %%` line starting each cell (as VS Code
+  and Spyder read them); upload .py files as scripts and download scripts as them.
   Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
   spectrum, and more.
 - **From a dataset or a view to Scripts and Models** (in the preview): **Scripts** on its page

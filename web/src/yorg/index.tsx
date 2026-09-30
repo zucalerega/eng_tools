@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Notice } from "../components";
 import { inPreview, sitePath } from "../preview";
 import { Link } from "../router";
@@ -6,13 +7,15 @@ import { DatasetsPage } from "./Datasets";
 import { HelpPage } from "./Help";
 import { ModelsPage } from "./models/ModelsPage";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
-import { ScriptsPage } from "./scripts/ScriptsPage";
 import "./yorg.css";
 
 // Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and the vault.
+// The Python window and its editor (CodeMirror) load only when Scripts is opened.
 // Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models and scripts.
 
 export const YORG = "Yorg";
+
+const ScriptsPage = lazy(() => import("./scripts/ScriptsPage").then((module) => ({ default: module.ScriptsPage })));
 
 export const inYorg = (pathname: string): boolean => pathname === "/yorg" || pathname.startsWith("/yorg/");
 
@@ -107,7 +110,11 @@ function yorgPage(path: string, preview: boolean) {
         case "/yorg/models": // what's new: in the preview only, until it's released
             return preview ? <ModelsPage /> : null;
         case "/yorg/scripts":
-            return preview ? <ScriptsPage /> : null;
+            return preview ? (
+                <Suspense fallback={<p className="muted">Loading…</p>}>
+                    <ScriptsPage />
+                </Suspense>
+            ) : null;
     }
     return null;
 }

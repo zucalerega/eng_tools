@@ -21,7 +21,7 @@ export interface Timing {
     seconds: number;
     packages?: string[]; // packages: which
     module?: string; // import: which
-    reason?: "start" | "prepare" | "run"; // waiting: for Python to start, to get imports ready, or for another run
+    reason?: "start" | "prepare" | "tools" | "run"; // waiting: for Python to start, imports, suggestions, or a run
 }
 
 // Pyodide names its packages in lower case; these are the names people know them by.
@@ -115,10 +115,13 @@ export function stepNote(step: Step): string | null {
     }
 }
 
-/** Seconds, as a run's time is shown: 0.4 s, 2.1 s, 21 s, 1 min 5 s. */
+/** Seconds, as a run's time is shown: 40 ms, 2.1 s, 21 s, 1 min 5 s. */
 export function formatSeconds(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) {
-        return "0 s";
+        return "0 ms";
+    }
+    if (seconds < 0.995) {
+        return `${Math.round(seconds * 1000)} ms`;
     }
     if (Math.round(seconds * 10) < 100) {
         return `${seconds.toFixed(1)} s`;
@@ -136,7 +139,12 @@ export function formatElapsed(ms: number): string {
     return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
 }
 
-const WAITING_FOR = { start: "Python to start", prepare: "imports to get ready", run: "the run before" } as const;
+const WAITING_FOR = {
+    start: "Python to start",
+    prepare: "imports to get ready",
+    tools: "the editor's suggestions to get ready",
+    run: "the run before",
+} as const;
 
 /** One part of a run's time, in words: "importing CoolProp". */
 function timingLabel(timing: Timing, asked: string[]): string {

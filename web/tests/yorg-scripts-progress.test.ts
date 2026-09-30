@@ -69,7 +69,7 @@ describe("where a run's time went", () => {
             ["importing CoolProp.CoolProp", "21 s"],
             ["loading SciPy", "2.1 s"],
             ["waiting for Python to start", "1.2 s"],
-            ["your code", "0.9 s"],
+            ["your code", "890 ms"],
         ]);
     });
 
@@ -81,7 +81,9 @@ describe("where a run's time went", () => {
     });
 
     test("times read as people say them", () => {
-        expect(formatSeconds(0.43)).toBe("0.4 s");
+        expect(formatSeconds(0.043)).toBe("43 ms");
+        expect(formatSeconds(0.43)).toBe("430 ms");
+        expect(formatSeconds(0.999)).toBe("1.0 s");
         expect(formatSeconds(9.94)).toBe("9.9 s");
         expect(formatSeconds(9.96)).toBe("10 s");
         expect(formatSeconds(21.4)).toBe("21 s");

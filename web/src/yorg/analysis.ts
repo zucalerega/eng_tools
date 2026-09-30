@@ -91,7 +91,7 @@ export function variableName(channel: string, taken: Set<string>): string {
 
 const number = (value: number) => String(Number(value.toPrecision(10)));
 
-/** A script to start from: what the page had, loaded, over its window. */
+/** A notebook to start from (cells: "# %%"): what the page had, loaded in one cell, and over its window in the next. */
 export function starterScript(handoff: Handoff, names: Record<number, string>): string {
     const first = handoff.datasets[0];
     const nameOf = (id: number) => names[id] ?? `test ${id}`;
@@ -101,7 +101,10 @@ export function starterScript(handoff: Handoff, names: Record<number, string>): 
     const byId = handoff.datasets.some(shared);
     const refOf = (id: number) => (shared(id) ? String(id) : JSON.stringify(nameOf(id)));
     const lines = [
-        `# From ${handoff.title || nameOf(first ?? 0)}: the channels it plotted${handoff.window ? ", over its window" : ""}.`,
+        "# %% [markdown]",
+        `# From **${handoff.title || nameOf(first ?? 0)}**: the channels it plotted${handoff.window ? ", over the time in view" : ""}.`,
+        "",
+        "# %% Load the channels",
     ];
     const taken = new Set<string>();
     const variables: string[] = [];
@@ -115,12 +118,12 @@ export function starterScript(handoff: Handoff, names: Record<number, string>): 
         lines.push("# Click a channel under Data to add it here.");
         return `${lines.join("\n")}\n`;
     }
-    lines.push("");
     if (handoff.window) {
         lines.push(
             `start, end = ${number(handoff.window[0])}, ${number(handoff.window[1])}  # s, on ${nameOf(first ?? 0)}'s clock`,
         );
     }
+    lines.push("", `# %% Each one${handoff.window ? ", over the time in view" : ""}`);
     lines.push(`for channel in (${variables.join(", ")}${variables.length === 1 ? "," : ""}):`);
     if (handoff.window) {
         const shifted = handoff.channels.some((one) => (handoff.shifts[one.dataset] ?? 0) !== 0);

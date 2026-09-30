@@ -1,17 +1,22 @@
 import { useSyncExternalStore } from "react";
 import { channelNamed, datasetList, gatherInputs, handover, type Inputs } from "./inputs";
 import type { Step, Timing } from "./progress";
-import { floatsOf, PythonSandbox, type Bytes, type FromPython, type PythonTransport } from "./sandbox";
+import { floatsOf, PythonSandbox, type Bytes, type FromPython, type PythonTransport, type Service } from "./sandbox";
 import { slowImports, topImports } from "./tree";
 import moduleSource from "./yorg.py?raw";
 
 // Python for the whole tab: one Pyodide (sandbox.ts), started when a page first wants it and kept while the tab is
 // open, so leaving the Scripts page and coming back finds it as it was, its imports done and the channels it had.
 // It does one thing at a time: runs, in the order asked for, and, with none waiting, a script's slow imports ahead of
-// its run. It says what it's doing at every step (progress.ts words them), and keeps each run's output until the page
-// lets it go. When nothing has used it for half an hour it stops, to give its memory back.
+// its run, then the editor's suggestions. A notebook's cells run in the notebook's variables, and "run all" stops at
+// the first cell that fails. Between runs it answers the editor's questions (what could go here, what's this, is the
+// syntax right), never keeping a run waiting for them. It says what it's doing at every step (progress.ts words them),
+// and keeps each run's output until the page lets it go. When nothing has used it for half an hour it stops, to give
+// its memory back.
 
 const IDLE_MS = 30 * 60 * 1000;
+const TOOLS_AFTER_MS = 4000; // of Python idle, before it gets the editor's suggestions ready: runs come first
+const SERVICE_MS = 3000; // how long the editor waits for Python's answer before going without (jedi learns a type once)
 const MAX_LINES = 5000; // of a run's printed output: more would slow the page, and nobody reads them all
 
 export type Line = { kind: "stdout" | "stderr"; text: string };
@@ -43,13 +48,16 @@ export interface RunRecord {
     output: RunOutput;
     timings: Timing[]; // where its time went
     error: string | null; // the traceback, or why it couldn't start
-    line: number | null; // the script's line it failed on
+    line: number | null; // the script's (or cell's) line it failed on
     restarted: boolean; // stopped while Python ran it: Python started again, without what it had
+    skipped: "failed" | "restart" | null; // stopped before it ran: a cell before it failed, or Python started again
+    count: number | null; // a notebook's: the how-manyth run of its cells this is (as a notebook's [3])
+    generation: number; // Python's (PythonState.generation) when it ran: an older one's variables are gone
 }
 
-/** What Python is busy with: starting, getting a script's imports ready, or a run. */
+/** What Python is busy with: starting, getting a script's imports or the editor's suggestions ready, or a run. */
 export interface Busy {
-    kind: "start" | "prepare" | "run";
+    kind: "start" | "prepare" | "tools" | "run";
     run: string | null;
     since: number;
     step: Step;
@@ -65,15 +73,19 @@ export interface PythonState {
     busy: Busy | null;
 }
 
-/** A run: a script's code, and the tests attached to it (the first first). */
+/** A run: a script's code (or a cell's), and the tests attached to it (the first first). */
 export interface RunRequest {
     code: string;
     datasets: number[];
+    namespace?: string | null; // a notebook's: its cells share their variables (none: a script on its own)
+    filename?: string; // as tracebacks name the code (a script's is script.py; a notebook's cell's, <In [3]>)
+    batch?: string; // runs asked for together (run all): one that fails stops those after it
 }
 
-type Gathered = { inputs: Inputs; at: number; waitedFor: "start" | "prepare" | "run" | null };
+type Gathered = { inputs: Inputs; at: number; waitedFor: Busy["kind"] | null };
 type RunJob = { kind: "run"; id: string; request: RunRequest; gathered: Gathered | null };
-type Job = { kind: "prepare"; code: string; key: string } | RunJob;
+type Job = { kind: "prepare"; code: string; key: string } | RunJob; // what waits its turn
+type Active = Job | { kind: "tools" }; // and what Python's on (the editor's suggestions never wait: they're last)
 
 const emptyOutput = (): RunOutput => ({ lines: [], dropped: 0, plots: [], figures: [], files: [] });
 const OFF: PythonState = { status: "off", version: null, error: null, idle: false, generation: 0, busy: null };
@@ -93,12 +105,19 @@ export class PythonSession {
     private state: PythonState = OFF;
     private readonly runs = new Map<string, RunRecord>();
     private queue: Job[] = [];
-    private active: Job | null = null;
+    private active: Active | null = null;
     private readonly prepared = new Set<string>(); // slow imports got ready (as slowImports lists them), this time
+    private readonly counts = new Map<string, number>(); // runs of each notebook's cells, this time
+    private toolsWanted = false; // an editor's open: its suggestions come from Python
+    private tooled = false; // they're ready, this time
+    private readonly answers = new Map<number, (value: unknown) => void>(); // services waiting for Python
+    private asked = 0;
     private users = 0;
     private idleTimer: ReturnType<typeof setTimeout> | null = null;
+    private toolsTimer: ReturnType<typeof setTimeout> | null = null;
     private soon: ReturnType<typeof setTimeout> | null = null;
     private count = 0;
+    private version = 0; // up at every change, for pages that show many runs
     private readonly listeners = new Set<() => void>();
 
     constructor(private make: () => PythonTransport) {}
@@ -109,6 +128,8 @@ export class PythonSession {
     };
 
     snapshot = (): PythonState => this.state;
+
+    changes = (): number => this.version;
 
     runOf = (id: string): RunRecord | undefined => this.runs.get(id);
 
@@ -154,6 +175,9 @@ export class PythonSession {
             error: null,
             line: null,
             restarted: false,
+            skipped: null,
+            count: null,
+            generation: this.state.generation,
         });
         const job: RunJob = { kind: "run", id, request, gathered: null };
         gatherInputs(request.code, request.datasets, (channels) =>
@@ -173,6 +197,7 @@ export class PythonSession {
                 if (at >= 0) {
                     this.queue.splice(at, 1);
                     this.finish(id, { status: "error", error: `Couldn't get what it needs: ${message(error)}` });
+                    this.skipAfter(job, "failed");
                     this.pump();
                 }
             },
@@ -198,30 +223,74 @@ export class PythonSession {
         this.pump();
     }
 
-    /** Stop a run: one waiting leaves the queue; the one running stops Python, which starts again. */
+    /**
+     * Stop a run. One waiting leaves the queue, and those asked for with it after it. The one running stops Python,
+     * which starts again: what's waiting goes too, since it counted on what Python had.
+     */
     stop(id: string): void {
-        const at = this.queue.findIndex((job) => job.kind === "run" && job.id === id);
-        if (at >= 0) {
-            this.queue.splice(at, 1);
+        const job = this.queue.find((one): one is RunJob => one.kind === "run" && one.id === id);
+        if (job) {
+            this.queue.splice(this.queue.indexOf(job), 1);
             this.finish(id, { status: "stopped" });
+            this.skipAfter(job, "failed");
             this.pump();
         } else if (this.active?.kind === "run" && this.active.id === id) {
             this.restart();
         }
     }
 
-    /** Stop Python and start it again, without what it had (its imports, channels): a run it was on stops. */
+    /**
+     * Stop Python and start it again, without what it had: its imports, channels, and notebooks' variables. A run
+     * it's on stops, and so do those waiting (they counted on what it had), unless it wasn't up to run anything.
+     */
     restart(): void {
         const job = this.active;
+        const running = this.state.status === "ready";
         this.transport?.stop();
         this.transport = null;
         this.active = null;
         if (job?.kind === "run") {
             this.finish(job.id, { status: "stopped", restarted: true });
         }
-        this.prepared.clear();
+        if (running) {
+            for (const waiting of this.queue.filter((one): one is RunJob => one.kind === "run")) {
+                this.finish(waiting.id, { status: "stopped", skipped: "restart" });
+            }
+            this.queue = [];
+        }
+        this.forgetAll();
         this.state = { ...OFF, generation: this.state.generation + 1 };
         this.start();
+    }
+
+    /** An editor wants suggestions from Python: it gets them ready once it's free, and again whenever it starts over. */
+    wantTools(): void {
+        this.toolsWanted = true;
+        this.pump();
+    }
+
+    /**
+     * Ask Python about a cell's code for the editor (what could go at a place, what a name is, its syntax). Answered
+     * only while Python's free, and quickly, or not at all (null): a run never waits on the editor.
+     */
+    service(what: Service, request: { namespace: string | null; code: string; line: number; column: number }) {
+        const transport = this.transport;
+        if (!transport || this.state.status !== "ready" || this.active) {
+            return Promise.resolve(null);
+        }
+        this.asked += 1;
+        const id = this.asked;
+        return new Promise<unknown>((resolve) => {
+            const timer = setTimeout(() => {
+                this.answers.delete(id);
+                resolve(null);
+            }, SERVICE_MS);
+            this.answers.set(id, (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            });
+            transport.post({ type: "service", id, what, ...request });
+        });
     }
 
     /** Let a run's record go, with its figures and files (a run that's on is stopped first). */
@@ -246,14 +315,15 @@ export class PythonSession {
         this.active = null;
         this.runs.forEach(revoke);
         this.runs.clear();
-        this.prepared.clear();
+        this.forgetAll();
+        this.toolsWanted = false;
         this.users = 0;
-        for (const timer of [this.idleTimer, this.soon]) {
+        for (const timer of [this.idleTimer, this.toolsTimer, this.soon]) {
             if (timer !== null) {
                 clearTimeout(timer);
             }
         }
-        this.idleTimer = this.soon = null;
+        this.idleTimer = this.toolsTimer = this.soon = null;
         this.make = make;
         this.state = OFF;
         this.notify();
@@ -286,22 +356,71 @@ export class PythonSession {
         }
         this.transport.stop();
         this.transport = null;
-        this.prepared.clear();
+        this.forgetAll();
         this.set({ ...OFF, idle: true, generation: this.state.generation + 1 });
     }
 
-    /** Give Python the next thing to do, if it's free: the first run (once its channels are in), else a warm-up. */
+    /** Python's gone (stopped, failed, started over): so is all it had, and nothing it was asked answers. */
+    private forgetAll(): void {
+        this.prepared.clear();
+        this.counts.clear();
+        this.tooled = false;
+        if (this.toolsTimer !== null) {
+            clearTimeout(this.toolsTimer);
+            this.toolsTimer = null;
+        }
+        this.answers.forEach((resolve) => resolve(null));
+        this.answers.clear();
+    }
+
+    /** Runs asked for with this one after it (a notebook's run all) don't run: the one before them didn't. */
+    private skipAfter(job: RunJob, why: "failed" | "restart"): void {
+        const batch = job.request.batch;
+        if (!batch) {
+            return;
+        }
+        const after = this.queue.filter((one): one is RunJob => one.kind === "run" && one.request.batch === batch);
+        this.queue = this.queue.filter((one) => !after.includes(one as RunJob));
+        for (const one of after) {
+            this.finish(one.id, { status: "stopped", skipped: why });
+        }
+    }
+
+    /**
+     * Give Python the next thing to do, if it's free: the first run (once its channels are in), else a script's
+     * imports to get ready, else, with nothing else to do, the editor's suggestions.
+     */
     private pump(): void {
         const transport = this.transport;
         if (this.active || this.state.status !== "ready" || !transport) {
             return;
         }
         const job = this.queue[0];
-        if (!job || (job.kind === "run" && !job.gathered)) {
+        const now = Date.now();
+        if (!job) {
+            // The editor's suggestions, once Python's been idle a while: a run asked for meanwhile goes first.
+            if (this.toolsWanted && !this.tooled && this.toolsTimer === null) {
+                this.toolsTimer = setTimeout(() => {
+                    this.toolsTimer = null;
+                    if (!this.active && this.queue.length === 0 && this.transport === transport && !this.tooled) {
+                        const since = Date.now();
+                        this.active = { kind: "tools" };
+                        const step: Step = { phase: "import", since, module: "jedi" };
+                        this.set({ busy: { kind: "tools", run: null, since, step, asked: [] } });
+                        transport.post({ type: "tools" });
+                    }
+                }, TOOLS_AFTER_MS);
+            }
+            return;
+        }
+        if (this.toolsTimer !== null) {
+            clearTimeout(this.toolsTimer);
+            this.toolsTimer = null;
+        }
+        if (job.kind === "run" && !job.gathered) {
             return; // a run whose channels are still coming holds its place, and what's after it waits
         }
         this.queue.shift();
-        const now = Date.now();
         if (job.kind === "prepare") {
             if (this.prepared.has(job.key)) {
                 this.pump();
@@ -325,7 +444,13 @@ export class PythonSession {
             timings.push({ kind: "waiting", seconds: (now - gathered.at) / 1000, reason: gathered.waitedFor });
         }
         const step: Step = { phase: "code", since: now };
-        this.update(job.id, { status: "running", step, timings });
+        const namespace = job.request.namespace ?? null;
+        const count = namespace === null ? null : (this.counts.get(namespace) ?? 0) + 1;
+        if (namespace !== null && count !== null) {
+            this.counts.set(namespace, count);
+        }
+        const generation = this.state.generation;
+        this.update(job.id, { status: "running", step, timings, count, generation });
         this.set({ busy: { kind: "run", run: job.id, since: now, step, asked: topImports(job.request.code) } });
         transport.post({
             type: "run",
@@ -333,6 +458,9 @@ export class PythonSession {
             code: job.request.code,
             context: JSON.stringify(gathered.inputs.context),
             keys: gathered.inputs.keys,
+            namespace,
+            // A notebook's cell is named by its run's number, as its [3] shows it (and Jupyter names it).
+            filename: job.request.filename ?? (count === null ? "script.py" : `<In [${count}]>`),
         });
     }
 
@@ -362,9 +490,16 @@ export class PythonSession {
                 if (this.active?.kind === "prepare") {
                     this.prepared.add(this.active.key);
                     this.active = null;
+                } else if (this.active?.kind === "tools") {
+                    this.tooled = true;
+                    this.active = null;
                 }
                 this.set({ busy: null });
                 this.pump();
+                return;
+            case "answer":
+                this.answers.get(found.id)?.(found.value);
+                this.answers.delete(found.id);
                 return;
             case "stdout":
             case "stderr": {
@@ -405,18 +540,19 @@ export class PythonSession {
             }
             case "done":
             case "error": {
-                if (this.active?.kind !== "run" || this.active.id !== found.run) {
+                const job = this.active;
+                if (job?.kind !== "run" || job.id !== found.run) {
                     return; // stopped meanwhile
                 }
                 this.active = null;
                 const before = this.runs.get(found.run)?.timings ?? [];
                 const timings = [...before, ...found.timings];
-                this.finish(
-                    found.run,
-                    found.type === "done"
-                        ? { status: "done", timings }
-                        : { status: "error", timings, error: found.text, line: found.line },
-                );
+                if (found.type === "done") {
+                    this.finish(found.run, { status: "done", timings });
+                } else {
+                    this.finish(found.run, { status: "error", timings, error: found.text, line: found.line });
+                    this.skipAfter(job, "failed");
+                }
                 this.set({ busy: null });
                 this.pump();
                 return;
@@ -473,8 +609,9 @@ export class PythonSession {
         this.active = null;
         if (job?.kind === "run") {
             this.finish(job.id, { status: "error", error: `Python stopped: ${error}` });
+            this.skipAfter(job, "failed");
         }
-        this.prepared.clear();
+        this.forgetAll();
         this.set({ status: "failed", error, version: null, busy: null, generation: this.state.generation + 1 });
     }
 
@@ -512,6 +649,7 @@ export class PythonSession {
             clearTimeout(this.soon);
             this.soon = null;
         }
+        this.version += 1;
         this.listeners.forEach((listener) => listener());
     }
 }
@@ -527,4 +665,10 @@ export function usePython(): PythonState {
 /** A run's record, kept current (null: none, or let go). */
 export function useRun(id: string | null): RunRecord | null {
     return useSyncExternalStore(python.subscribe, () => (id === null ? null : (python.runOf(id) ?? null)));
+}
+
+/** Runs' records, kept current (a notebook's cells' last runs), each null for none. */
+export function useRuns(ids: (string | undefined)[]): (RunRecord | null)[] {
+    useSyncExternalStore(python.subscribe, python.changes);
+    return ids.map((id) => (id === undefined ? null : (python.runOf(id) ?? null)));
 }

@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { inPreview, previewPath, sitePath } from "../src/preview";
+import { cell, codeOf } from "./notebook";
 import { renderApp, Team } from "./team";
 
 // Yorg's preview (/yorg/dev/...): the site as it will be with what's new in it (system models, scripts), for admins;
@@ -82,11 +83,8 @@ test("a dataset's page opens a script on what it plots, its test attached", asyn
     await userEvent.click(scripts!);
     expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev/scripts");
-    await waitFor(() =>
-        expect((screen.getByLabelText("Code") as HTMLTextAreaElement).value).toContain(
-            'pt_tank = yorg.channel("PT-TANK")',
-        ),
-    );
+    await waitFor(() => expect(cell(2).getAttribute("aria-label")).toBe("Cell 2: Load the channels"));
+    expect(await codeOf(2)).toContain('pt_tank = yorg.channel("PT-TANK")');
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(`From ${data.name}`);
     expect(
         within(screen.getByRole("complementary", { name: "Data" })).getByRole("region", { name: data.name }),

@@ -46,6 +46,8 @@ const MEMBERS: [string, string][] = [
     ["attached", ": the tests attached to the script"],
     ["dataset", ": the first test attached"],
     ["t0", ": its T0"],
+    ["window", ": a page's time in view, (start, end)"],
+    ["shifts", ": a page's tests' shifts, by id"],
     ["plot", "(x, y=None, name=None, unit='', title=None)"],
     ["download", "(filename, content): a file to save"],
     ["si", "(values, unit): in SI units"],

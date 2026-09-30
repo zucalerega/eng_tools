@@ -21,6 +21,15 @@ Channel.si() puts pressures, temperatures, and mass flows in SI units.
 Python stays open while the browser tab does: what a script imported, and the channels it had, are there for the next
 run. A notebook's cells share their variables (load the data in one, work it over in the next); a script on its own
 starts afresh each run.
+
+On a dataset's or view's page (its Python, docked beside the plots), yorg.window is the time in view and yorg.t0 the
+page's T0, both on the first test's clock; yorg.shifts has how far each other test is moved to line up with it; and
+yorg.plot draws on the page's own plots, on its time axis (a Channel where its test is; other times on the first
+test's clock).
+
+    start, end = yorg.window
+    part = yorg.channel("PT-CHAMBER").between(start, end)
+    yorg.plot(part.t, part.values * 6.895, name="PT-CHAMBER", unit="kPa")
 """
 
 import ast
@@ -44,7 +53,9 @@ ATMOSPHERE = 101325.0
 
 attached = []  # the tests attached to the script, the first first: {"id", "name", "t0", "channels": [{"name", ...}]}
 dataset = None  # the first of them (None: none attached)
-t0 = None  # its T0, on its clock, if this browser has one for it
+t0 = None  # its T0, on its clock, if this browser has one for it (a page's: the page's)
+window = None  # a page's time in view, (start, end), on the first test's clock (None: not run from a page)
+shifts = {}  # a page's: how far each test (by id) is moved on its time axis to line up with the first
 _loaded = {}  # (test's id, channel's name): Channel, this run's, loaded before it started
 
 
@@ -161,8 +172,9 @@ async def datasets():
 def plot(x, y=None, name=None, unit="", title=None):
     """Plot y against x (s) on the page with Yorg's plots (drag to zoom, a shared cursor). Series with the same title
     share a plot; the title is the name unless given. plot(channel) plots a Channel; plot(y), y against its index."""
+    of = None
     if isinstance(x, Channel):
-        name, unit = name or x.name, unit or x.unit
+        name, unit, of = name or x.name, unit or x.unit, x.dataset_id
         x, y = x.t, x.values
     elif y is None:
         y = np.asarray(x, dtype=float)
@@ -172,7 +184,10 @@ def plot(x, y=None, name=None, unit="", title=None):
     if len(x) != len(y):
         raise ValueError(f"x has {len(x)} values and y {len(y)}: they go in pairs")
     name = str(name or "Series")
-    _send("plot", {"title": str(title or name), "name": name, "unit": str(unit), "x": x.tobytes(), "y": y.tobytes()})
+    message = {"title": str(title or name), "name": name, "unit": str(unit), "x": x.tobytes(), "y": y.tobytes()}
+    if of is not None:
+        message["dataset"] = of  # its times are its test's: a page puts them where that test is
+    _send("plot", message)
 
 
 def download(filename, content):
@@ -493,11 +508,16 @@ def _warm_tools():
 def _begin(context, keys):
     """Before a run: the tests attached (context, JSON), the channels it names (keys, JSON: kept here already), its
     imports said as they start, and matplotlib's figures from before it gone."""
-    global dataset, t0, _reporting, _after
+    global dataset, t0, window, shifts, _reporting, _after
     context, keys = json.loads(context), json.loads(keys)
     attached[:] = context.get("datasets") or []
     dataset = attached[0] if attached else None
     t0 = dataset.get("t0") if dataset else None
+    page = context.get("view") or {}
+    window = tuple(page["window"]) if page.get("window") else None
+    shifts = {int(test): float(by) for test, by in (page.get("shifts") or {}).items()}
+    if "t0" in page:
+        t0 = page["t0"]
     _loaded.clear()
     for key in keys:
         channel = _cache.pop(key)

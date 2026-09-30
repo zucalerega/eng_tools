@@ -55,7 +55,16 @@ export type FromPython =
     | { type: "ready"; version: string }
     | { type: "prepared" }
     | { type: "stdout" | "stderr"; run: string | null; text: string }
-    | { type: "plot"; run: string | null; title: string; name: string; unit: string; x: Bytes; y: Bytes }
+    | {
+          type: "plot";
+          run: string | null;
+          title: string;
+          name: string;
+          unit: string;
+          x: Bytes;
+          y: Bytes;
+          dataset?: number; // x is this test's times (a Channel's): a page puts them where that test is
+      }
     | { type: "figure"; run: string | null; png: Bytes }
     | { type: "file"; run: string | null; name: string; data: Bytes }
     | { type: "done"; run: string; elapsed: number; timings: Timing[] }

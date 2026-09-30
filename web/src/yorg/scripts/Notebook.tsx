@@ -14,6 +14,7 @@ import { CodeEditor, type CodeEditorHandle, type EditorKeys, type RunError } fro
 import type { Attached } from "./complete";
 import { Markdown } from "./Markdown";
 import { newCell, type Cell } from "./cells";
+import type { PageView } from "./inputs";
 import { cellStatus, isTicking, PythonStatus, RunView, useTicking } from "./Output";
 import { python, usePython, useRuns, type RunRecord } from "./python";
 
@@ -37,6 +38,7 @@ interface Props {
     datasets: number[]; // the tests attached, the first first
     attached: Attached[]; // and their channels, for the editor's suggestions
     onSave: () => void;
+    view?: PageView; // a dataset's or view's page's (its Python, docked): its plots go on the page's
     ref?: Ref<NotebookHandle>;
 }
 
@@ -94,7 +96,7 @@ function KeysHelp() {
     );
 }
 
-export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, attached, onSave, ref }: Props) {
+export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, attached, onSave, view, ref }: Props) {
     const state = usePython();
     const records = useRuns(cells.map((cell) => runs[cell.id]));
     const now = useTicking(isTicking(state, ...records));
@@ -222,7 +224,7 @@ export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, 
             if (before) {
                 python.forget(before);
             }
-            started[cell.id] = python.run({ code: cell.source, datasets, namespace, batch });
+            started[cell.id] = python.run({ code: cell.source, datasets, namespace, batch, view });
         }
         setRuns((now) => ({ ...now, ...started }));
     }
@@ -550,7 +552,13 @@ export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, 
                         )}
                         {code && record && (
                             <div className={`cell-output ${stale ? "cell-stale" : ""}`}>
-                                <RunView run={record} python={state} now={now} compact />
+                                <RunView
+                                    run={record}
+                                    python={state}
+                                    now={now}
+                                    compact
+                                    plotsOnPage={view !== undefined}
+                                />
                             </div>
                         )}
                     </section>

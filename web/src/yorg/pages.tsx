@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -15,11 +15,11 @@ import {
     type SavedView,
     type TimeFormat,
 } from "./api";
-import { handoffOf, modelsLink, scriptsLink } from "./analysis";
+import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
-import { Workspace } from "./Workspace";
+import { Workspace, type ExtraPlot } from "./Workspace";
 
 // Yorg's pages: a dataset's plots and its details, saved views, and deleted datasets (the datasets: Datasets.tsx).
 
@@ -198,26 +198,80 @@ function useViewsOf(dataset: number): SavedView[] {
     return views;
 }
 
+// A page's own Python, beside its plots: loaded (with its editor) only when it's opened.
+const PythonDock = lazy(() => import("./scripts/PythonDock").then((module) => ({ default: module.PythonDock })));
+const PYTHON_KEY = "yorg.python.open"; // whether it's open: for the tab, on every page
+
+function storedOpen(): boolean {
+    try {
+        return window.sessionStorage.getItem(PYTHON_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
 /**
- * A dataset's or a view's way to Scripts and Models (what's new: in the preview until it's released), taking what's
- * plotted along: a script on its channels over the time in view, a model run on its test over that time.
+ * A dataset's or view's own Python (what's new: in the preview until it's released): a notebook docked beside its
+ * plots (scripts/PythonDock.tsx), whose plots go on the page's, under its own; each can be taken off the page.
  */
-function AnalyzeButtons({ layout, title }: { layout: Layout; title: string }) {
+function usePagePython(page: string, layout: Layout, title: string) {
+    const preview = inPreview(usePathname());
+    const [open, setOpenState] = useState(storedOpen);
+    const [plots, setPlots] = useState<ExtraPlot[]>([]);
+    const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+    const setOpen = (next: boolean) => {
+        setOpenState(next);
+        try {
+            window.sessionStorage.setItem(PYTHON_KEY, next ? "1" : "0");
+        } catch {
+            // storage blocked: it's open or closed for this page
+        }
+    };
+    const shown = preview && open;
+    return {
+        button: preview ? (
+            <button
+                type="button"
+                aria-pressed={open}
+                onClick={() => setOpen(!open)}
+                title="Python beside the plots: this page's channels and time in view, and plots of its own on the page"
+            >
+                Python
+            </button>
+        ) : null,
+        dock: shown ? (
+            <Suspense fallback={<aside className="yorg-dock muted">Loading Python…</aside>}>
+                <PythonDock
+                    page={page}
+                    title={title}
+                    layout={layout}
+                    onPlots={setPlots}
+                    onClose={() => setOpen(false)}
+                />
+            </Suspense>
+        ) : undefined,
+        extraPlots: shown ? plots.filter((plot) => !hidden.has(plot.id)) : [],
+        onRemoveExtra: (id: string) => setHidden(new Set([...hidden, id])),
+    };
+}
+
+/**
+ * A dataset's or a view's way to its Python and Models (what's new: in the preview until it's released): Python beside
+ * its plots, and a model run on its test over the time in view.
+ */
+function AnalyzeButtons({ layout, title, python }: { layout: Layout; title: string; python: ReactNode }) {
     const preview = inPreview(usePathname());
     if (!preview) {
         return null;
     }
-    const handoff = handoffOf(layout, title);
     return (
         <>
+            {python}
             <Link
                 className="button"
-                to={scriptsLink(handoff)}
-                title="A script on what's plotted here: its channels, over the time in view"
+                to={modelsLink(handoffOf(layout, title))}
+                title="Run a model on this test, over the time in view"
             >
-                Scripts
-            </Link>
-            <Link className="button" to={modelsLink(handoff)} title="Run a model on this test, over the time in view">
                 Model
             </Link>
         </>
@@ -229,11 +283,15 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
     useEffect(() => storeLayout(detail.id, layout), [detail.id, layout]);
     const [saving, setSaving] = useState(false);
     const views = useViewsOf(detail.id);
+    const python = usePagePython(`dataset-${detail.id}`, layout, detail.name);
     return (
         <>
             <Workspace
                 layout={layout}
                 dispatch={dispatch}
+                dock={python.dock}
+                extraPlots={python.extraPlots}
+                onRemoveExtra={python.onRemoveExtra}
                 title={
                     <>
                         <h1>{detail.name}</h1>
@@ -256,7 +314,7 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                         <button type="button" onClick={() => setSaving(true)}>
                             Save view
                         </button>
-                        <AnalyzeButtons layout={layout} title={detail.name} />
+                        <AnalyzeButtons layout={layout} title={detail.name} python={python.button} />
                         <Link className="button" to={aboutUrl(detail.id)}>
                             About
                         </Link>
@@ -828,11 +886,15 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
             setProblem(message(error));
         }
     }
+    const python = usePagePython(`view-${view.id}`, layout, view.name);
     return (
         <>
             <Workspace
                 layout={layout}
                 dispatch={dispatch}
+                dock={python.dock}
+                extraPlots={python.extraPlots}
+                onRemoveExtra={python.onRemoveExtra}
                 title={
                     <>
                         <h1>{view.name}</h1>
@@ -854,7 +916,7 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
                                 Save as a new view
                             </button>
                         )}
-                        <AnalyzeButtons layout={layout} title={view.name} />
+                        <AnalyzeButtons layout={layout} title={view.name} python={python.button} />
                         <MoreViewActions
                             canChange={view.can_change}
                             onCopy={() => setDialog("copy")}

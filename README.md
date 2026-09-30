@@ -123,8 +123,9 @@ the keys.
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
 - **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
-  it: the same data, views, and help, with Models and Scripts in its top bar and a dataset's
-  Analyze menu. Everyone else's Yorg stays as it is; admins go in with Preview, top right.
+  it: the same data, views, and help, with Models and Scripts in its top bar, and Python and
+  Model on a dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview,
+  top right.
 - **System models (in the preview while it's being tried out):** draw a test stand's
   feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
   outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
@@ -167,9 +168,12 @@ the keys.
   and Spyder read them); upload .py files as scripts and download scripts as them.
   Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
   spectrum, and more.
-- **From a dataset or a view to Scripts and Models** (in the preview): **Scripts** on its page
-  starts a script on what it plots (its channels, over the time in view, its tests attached), and
-  **Model** runs a model on its test over that time; both link back to the test.
+- **Python on a dataset or a view** (in the preview): **Python** on its page docks a notebook
+  beside the plots, started on what they show: its cells work on the page's channels, with
+  `yorg.window` the time in view (as it is when a cell runs), and what they `yorg.plot` goes on
+  the page's own plots, on the same time axis (× takes one off). Drag its edge to widen it;
+  **Open in Scripts** keeps it as a script. **Model** runs a model on the test over the time in
+  view, and links back to it.
 
 ## Layout
 

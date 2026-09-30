@@ -163,6 +163,53 @@ main.main-full {
     height: calc(100vh - 3.5rem - 2px);
 }
 
+/* A page's Python, docked on the right of its plots (as wide as it's dragged to: scripts/PythonDock.tsx). */
+.yorg-workspace.yorg-docked {
+    grid-template-columns: 17rem minmax(0, 1fr) auto;
+}
+
+.yorg-dock {
+    position: relative;
+    min-width: 0;
+    max-width: 70vw;
+    overflow: auto;
+    padding: 0.5rem 0.75rem 1rem;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+}
+
+/* A plot of the page's Python's, under the page's own: the same time axis, a dashed edge (Workspace.tsx). */
+.yorg-extra {
+    border-style: dashed;
+    border-color: var(--border-strong);
+}
+
+.yorg-extra-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88rem;
+}
+
+.yorg-extra-tag {
+    padding: 0 0.45rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.yorg-extra-series .yorg-swatch {
+    display: inline-block;
+}
+
+.yorg-extra-head button {
+    margin-left: auto;
+}
+
 .yorg-sidebar {
     overflow: auto;
     padding: 0.75rem;
@@ -861,9 +908,17 @@ main.main-full {
 }
 
 @media (max-width: 900px) {
-    .yorg-workspace {
+    .yorg-workspace,
+    .yorg-workspace.yorg-docked {
         grid-template-columns: minmax(0, 1fr);
         height: auto;
+    }
+
+    .yorg-dock {
+        width: auto !important; /* under the plots: as wide as they are */
+        max-width: none;
+        border-left: none;
+        border-top: 1px solid var(--border);
     }
 
     .yorg-sidebar {

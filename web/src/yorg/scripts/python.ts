@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { channelNamed, datasetList, gatherInputs, handover, type Inputs } from "./inputs";
+import { channelNamed, datasetList, gatherInputs, handover, type Inputs, type PageView } from "./inputs";
 import type { Step, Timing } from "./progress";
 import { floatsOf, PythonSandbox, type Bytes, type FromPython, type PythonTransport, type Service } from "./sandbox";
 import { slowImports, topImports } from "./tree";
@@ -24,7 +24,7 @@ export type Line = { kind: "stdout" | "stderr"; text: string };
 /** One of a run's plots (yorg.plot): its series, each over its own x. */
 export interface ScriptPlotData {
     title: string;
-    series: { name: string; unit: string; x: Float64Array; y: Float64Array }[];
+    series: { name: string; unit: string; x: Float64Array; y: Float64Array; dataset: number | null }[]; // dataset: whose times x are
 }
 
 export interface RunOutput {
@@ -80,6 +80,7 @@ export interface RunRequest {
     namespace?: string | null; // a notebook's: its cells share their variables (none: a script on its own)
     filename?: string; // as tracebacks name the code (a script's is script.py; a notebook's cell's, <In [3]>)
     batch?: string; // runs asked for together (run all): one that fails stops those after it
+    view?: PageView; // run from a dataset's or view's page: its time in view, T0, and shifts
 }
 
 type Gathered = { inputs: Inputs; at: number; waitedFor: Busy["kind"] | null };
@@ -180,8 +181,11 @@ export class PythonSession {
             generation: this.state.generation,
         });
         const job: RunJob = { kind: "run", id, request, gathered: null };
-        gatherInputs(request.code, request.datasets, (channels) =>
-            this.update(id, { step: { phase: "server", since: Date.now(), channels } }),
+        gatherInputs(
+            request.code,
+            request.datasets,
+            (channels) => this.update(id, { step: { phase: "server", since: Date.now(), channels } }),
+            request.view,
         ).then(
             (inputs) => {
                 const waitedFor = this.state.status === "starting" ? "start" : (this.active?.kind ?? null);
@@ -514,7 +518,13 @@ export class PythonSession {
                 return;
             }
             case "plot": {
-                const series = { name: found.name, unit: found.unit, x: floatsOf(found.x), y: floatsOf(found.y) };
+                const series = {
+                    name: found.name,
+                    unit: found.unit,
+                    x: floatsOf(found.x),
+                    y: floatsOf(found.y),
+                    dataset: found.dataset ?? null,
+                };
                 this.output(found.run, (output) => {
                     const plots = output.plots.some((plot) => plot.title === found.title)
                         ? output.plots.map((plot) =>

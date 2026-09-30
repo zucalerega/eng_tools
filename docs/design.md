@@ -576,9 +576,9 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
   the same pages there, and the new ones (Models, Scripts) only there, and the router sends
   links followed in the preview to their preview pages (a link marked `exact` leaves it).
-  The top bar, a dataset's or view's Scripts and Model buttons, and Help's cards show what's
-  new in the preview. Those buttons take what the page plots along (`analysis.ts`: its tests,
-  the channels plotted, the time in view): a script starts on them (`starterScript`), a
+  The top bar, a dataset's or view's Python and Model buttons, and Help's cards show what's
+  new in the preview. They take what the page plots (`analysis.ts`: its tests, the channels
+  plotted, the time in view): the page's Python starts on them (`starterScript`), a
   model's run window is that time.
   Releasing a feature is showing it outside the preview too (and its API to everyone).
 - **System models** (Models, in the preview while it's tried out): a
@@ -711,7 +711,19 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   under Data puts in its `yorg.channel(...)` (its name, in a string) where you last typed. In
   the tests, CodeMirror runs in jsdom with its ranges measured as empty (`tests/setup.ts`), and
   code is set and read through CodeMirror (`tests/notebook.ts`). A notebook's plots let the
-  wheel scroll the page, and zoom with Ctrl or ⌘ held (`Plot`'s `wheelScrolls`). The
+  wheel scroll the page, and zoom with Ctrl or ⌘ held (`Plot`'s `wheelScrolls`).
+  A dataset's or view's page has Python of its own (`PythonDock.tsx`, its Python button):
+  a notebook docked beside the plots (as wide as it's dragged), on the page's tests, whose
+  cells run with the page's time in view, T0, and each test's shift as they are when a cell
+  runs (`RunRequest.view`: `yorg.window`, `yorg.t0`, `yorg.shifts`), and whose `yorg.plot`s
+  go on the page's own plots, under them, on its time axis: the Workspace's `extraPlots`,
+  with its window, cursor, and marks, a Channel's times placed where its test is shifted to,
+  and a × to take one off the page (running its cell again puts it back). Its notebook is
+  the page's (`page-dataset-5`: its cells and runs kept in the tab, `stored.ts`), so it's as
+  it was when the page is made again (a view saved, a file read again); it starts on what
+  the page plots. Open in Scripts takes it, cells, tests, and variables, to the Scripts page to
+  be kept. The workspace's keys leave it alone (`.yorg-dock`), and it loads (with CodeMirror)
+  only when it's opened. The
   `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
   their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
   matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages

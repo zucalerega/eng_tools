@@ -229,7 +229,7 @@ export function HelpPage() {
                                 losses, a regulator's set pressure) until it matches best.
                             </li>
                             <li>
-                                A dataset&apos;s <em>Analyze</em> menu runs a model on it.
+                                <em>Model</em> on a dataset&apos;s page runs a model on it.
                             </li>
                         </ul>
                     </Card>
@@ -254,7 +254,11 @@ export function HelpPage() {
                             </li>
                             <li>
                                 Scripts are kept for everyone in folders; upload .py files, or start from the examples.
-                                <em>Scripts</em> on a dataset&apos;s or view&apos;s page opens one on what it plots.
+                            </li>
+                            <li>
+                                <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
+                                what they show. <code>yorg.window</code> is the time in view, and <code>yorg.plot</code>{" "}
+                                draws on the page&apos;s plots.
                             </li>
                         </ul>
                     </Card>

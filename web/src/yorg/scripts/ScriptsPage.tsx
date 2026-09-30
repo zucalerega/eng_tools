@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
-import { readHandoff, starterScript } from "../analysis";
 import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
 import type { Attached } from "./complete";
@@ -12,6 +11,7 @@ import { gatherInputs } from "./inputs";
 import { codeOf, joinCells, newCell, parseCells, type Cell } from "./cells";
 import { Notebook, type NotebookHandle } from "./Notebook";
 import { python, usePython } from "./python";
+import { keepScript, keptScript, type OpenScript } from "./stored";
 import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
 import "./scripts.css";
@@ -22,38 +22,27 @@ import "./scripts.css";
 // runs (Output.tsx). A script is a notebook (Notebook.tsx): cells run one at a time in its variables, so the data
 // loads once. It works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept
 // on the server in folders, for every admin, as .py code with a "# %%" line starting each cell (cells.ts); .py files
-// upload as scripts and scripts download as them. A dataset's or view's page opens a script on what it had
-// (analysis.ts).
+// upload as scripts and scripts download as them. A dataset's or view's page's own Python (docked beside its plots:
+// PythonDock.tsx) opens its notebook here too.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
-const OPEN_KEY = "yorg.scripts.open"; // for this tab: the script open and its cells' last runs, to come back to
 const PREPARE_MS = 600; // how long typing pauses before Python gets a script's imports ready
 
-/** What's open: a saved script, an example (saved only as a copy), or a new one, as a notebook. */
-interface Open {
-    id: string | null; // saved as, if it is
-    example: string | null; // the example it is, if it is
-    name: string;
-    folder: string;
-    cells: Cell[];
-    namespace: string; // its variables' in Python: a saved script's are its own, found again when it's opened again
-    datasets: number[]; // the tests attached, the first first
-    dirty: boolean;
-}
+type Open = OpenScript;
 
 type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | null;
 
 let unsaved = 0;
 
-const newScript = (datasets: number[], code = ""): Open => {
+const newScript = (datasets: number[]): Open => {
     unsaved += 1;
     return {
         id: null,
         example: null,
         name: "New script",
         folder: "",
-        cells: code ? parseCells(code) : [newCell()],
+        cells: [newCell()],
         namespace: `new-${Date.now().toString(36)}-${unsaved}`,
         datasets,
         dirty: false,
@@ -82,29 +71,6 @@ function storeDatasets(ids: number[]) {
     }
 }
 
-/** The script open when this tab last left the page, and its cells' last runs (whose output Python still has). */
-function remembered(): { open: Open; runs: Record<string, string> } | null {
-    try {
-        const found = JSON.parse(window.sessionStorage.getItem(OPEN_KEY) ?? "null") as {
-            open?: Open;
-            runs?: Record<string, string>;
-        } | null;
-        return found?.open && Array.isArray(found.open.cells) && found.open.cells.length
-            ? { open: found.open, runs: found.runs ?? {} }
-            : null;
-    } catch {
-        return null;
-    }
-}
-
-function remember(open: Open, runs: Record<string, string>) {
-    try {
-        window.sessionStorage.setItem(OPEN_KEY, JSON.stringify({ open, runs }));
-    } catch {
-        // storage blocked: the page starts afresh next time
-    }
-}
-
 function download(name: string, text: string) {
     const url = URL.createObjectURL(new Blob([text], { type: "text/x-python" }));
     const link = document.createElement("a");
@@ -120,8 +86,8 @@ export function ScriptsPage() {
     const [scripts, setScripts] = useState<Script[] | null>(null);
     const [datasets, setDatasets] = useState<Dataset[]>([]);
     const [problem, setProblem] = useState<string | null>(null);
-    const [open, setOpenScript] = useState<Open>(() => remembered()?.open ?? newScript(storedDatasets()));
-    const [runs, setRuns] = useState<Record<string, string>>(() => remembered()?.runs ?? {});
+    const [open, setOpenScript] = useState<Open>(() => keptScript()?.open ?? newScript(storedDatasets()));
+    const [runs, setRuns] = useState<Record<string, string>>(() => keptScript()?.runs ?? {});
     const [asking, setAsking] = useState<Asking>(null);
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
     const [search, setSearch] = useState("");
@@ -155,7 +121,7 @@ export function ScriptsPage() {
 
     // Python starts when the page opens (unless it's on already, from before), so it's ready by the time a script is.
     useEffect(() => python.acquire(), []);
-    useEffect(() => remember(open, runs), [open, runs]);
+    useEffect(() => keepScript(open, runs), [open, runs]);
 
     // While a script's read and edited, Python gets its slow imports ready (CoolProp's takes 20 s to a minute), and the
     // channels it names come from the server: its run needn't wait for either.
@@ -175,24 +141,7 @@ export function ScriptsPage() {
         Promise.all([scriptsApi.list(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
             ([saved, all]) => {
                 setScripts(saved);
-                const ready = all.filter((one) => one.status === "ready");
-                setDatasets(ready);
-                // From a dataset's or view's page: a script on what it had. Taken from the address, so going back to
-                // it later finds the script as it's been changed, not started over.
-                const handoff = readHandoff(window.location.search);
-                if (handoff) {
-                    const names = Object.fromEntries(ready.map((one) => [one.id, one.name]));
-                    setOpenScript({
-                        ...newScript(
-                            handoff.datasets.filter((id) => id in names),
-                            starterScript(handoff, names),
-                        ),
-                        name: `From ${handoff.title || "a view"}`,
-                        dirty: true,
-                    });
-                    setRuns({});
-                    window.history.replaceState(null, "", window.location.pathname);
-                }
+                setDatasets(all.filter((one) => one.status === "ready"));
             },
             (error) => setProblem(message(error)),
         );

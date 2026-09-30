@@ -51,13 +51,24 @@ import {
     type Shading,
     type TimeAxis,
 } from "./Plot";
-import { sampleAt, type Placement, type Samples } from "./samples";
+import { sampleAt, Samples, type Placement } from "./samples";
 import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "./scale";
 import { Sidebar } from "./Sidebar";
 import { SplitDialog } from "./Split";
 
 // A page of plots: the channels on the left, and panels stacked on one time axis, each with its legend. Every
-// panel shows the same time window and the same cursor.
+// panel shows the same time window and the same cursor. A page may dock something beside the plots (its Python), and
+// add plots of its own under the layout's (what that Python drew), on the same time axis.
+
+/**
+ * A plot from elsewhere on the page's time axis (its Python's): each series' x are times, on the first dataset's clock
+ * unless the series says whose they are (a compared dataset's, drawn where it's shifted to).
+ */
+export interface ExtraPlot {
+    id: string;
+    title: string;
+    series: { name: string; unit: string; x: Float64Array; y: Float64Array; dataset: number | null }[];
+}
 
 /** A series with what it draws: its dataset, channel (or calculated channel), and samples (or why they're missing). */
 export interface Resolved {
@@ -383,12 +394,18 @@ export function Workspace({
     title,
     actions,
     notice,
+    dock,
+    extraPlots = [],
+    onRemoveExtra,
 }: {
     layout: Layout;
     dispatch: (action: Action) => void;
     title: ReactNode;
     actions?: ReactNode;
     notice?: ReactNode;
+    dock?: ReactNode; // beside the plots: the page's Python
+    extraPlots?: ExtraPlot[]; // under them
+    onRemoveExtra?: (id: string) => void;
 }) {
     const version = useLoaded();
     const colors = usePlotColors();
@@ -570,8 +587,13 @@ export function Workspace({
             most.left = Math.max(most.left, left);
             most.right = Math.max(most.right, panel.axes.length - left);
         }
+        for (const plot of extraPlots) {
+            const units = new Set(plot.series.map((one) => one.unit)).size;
+            most.left = Math.max(most.left, Math.ceil(units / 2));
+            most.right = Math.max(most.right, Math.floor(units / 2));
+        }
         return most;
-    }, [layout.panels]);
+    }, [layout.panels, extraPlots]);
 
     // Where a channel goes on a plot: onto the axis of others like it (the same unit; states), else a new axis.
     const placeFor = (panelId: string | null, quantity: string): AxisTarget | undefined => {
@@ -694,7 +716,8 @@ export function Workspace({
             event.ctrlKey ||
             event.metaKey ||
             event.altKey ||
-            (target instanceof Element && target.closest("input, textarea, select, [contenteditable], .dialog"))
+            (target instanceof Element &&
+                target.closest("input, textarea, select, [contenteditable], .dialog, .yorg-dock"))
         ) {
             return;
         }
@@ -753,7 +776,7 @@ export function Workspace({
     const nothingPlotted = everyResolved.length === 0;
 
     return (
-        <div className="yorg-workspace" ref={root}>
+        <div className={`yorg-workspace ${dock ? "yorg-docked" : ""}`} ref={root}>
             <Sidebar
                 layout={layout}
                 dispatch={dispatch}
@@ -909,6 +932,22 @@ export function Workspace({
                     >
                         Add a plot
                     </button>
+                    {extraPlots.map((plot) => (
+                        <ExtraPanel
+                            key={plot.id}
+                            plot={plot}
+                            layout={layout}
+                            window={view}
+                            time={time.axis}
+                            marks={marks}
+                            cursor={cursor}
+                            gutters={gutters}
+                            colors={colors}
+                            onCursor={onCursor}
+                            onWindow={setWindow}
+                            onRemove={onRemoveExtra}
+                        />
+                    ))}
                 </div>
                 {cursor !== null && (
                     <p className="yorg-cursor" aria-live="off">
@@ -917,6 +956,7 @@ export function Workspace({
                     </p>
                 )}
             </section>
+            {dock}
             {menu && (
                 <PlotMenu
                     at={menu}
@@ -1489,6 +1529,139 @@ const inOrder = (axes: AxisSpec[]): AxisSpec[] => [
     ...axes.filter((axis) => axis.side === "left"),
     ...axes.filter((axis) => axis.side === "right"),
 ];
+
+/**
+ * A plot from elsewhere (the page's Python's), under the layout's: the same time window, cursor, and marks as they
+ * have, an axis for each unit, and a way to take it off the page.
+ */
+function ExtraPanel({
+    plot,
+    layout,
+    window: view,
+    time,
+    marks,
+    cursor,
+    gutters,
+    colors,
+    onCursor,
+    onWindow,
+    onRemove,
+}: {
+    plot: ExtraPlot;
+    layout: Layout;
+    window: [number, number];
+    time: TimeAxis;
+    marks: PlotMark[];
+    cursor: number | null;
+    gutters: { left: number; right: number };
+    colors: ReturnType<typeof usePlotColors>;
+    onCursor: (x: number | null) => void;
+    onWindow: (window: [number, number] | null, remember: boolean) => void;
+    onRemove?: (id: string) => void;
+}) {
+    const { axes, series } = useMemo(() => {
+        const units = [...new Set(plot.series.map((one) => one.unit))];
+        const axes: AxisSpec[] = units.map((unit, index) => ({
+            id: `unit-${index}`,
+            side: index % 2 === 0 ? "left" : "right",
+            label: unit,
+            min: null,
+            max: null,
+        }));
+        const series = plot.series.map((one, index) => {
+            // Plots want times in order: a script's may not have them so.
+            const order = Array.from(one.x.keys()).sort((a, b) => one.x[a]! - one.x[b]!);
+            return {
+                id: `${plot.id}:${index}`,
+                name: one.name,
+                color: PALETTE[index % PALETTE.length]!,
+                width: 1.5,
+                step: false,
+                axis: `unit-${units.indexOf(one.unit)}`,
+                samples: new Samples(
+                    Float64Array.from(order, (i) => one.x[i]!),
+                    Float64Array.from(order, (i) => one.y[i]!),
+                ),
+                placement: { shift: one.dataset === null ? 0 : shiftOf(layout, one.dataset), scale: 1, offset: 0 },
+                unit: one.unit,
+                labels: null,
+            } satisfies PlotSeries & { name: string };
+        });
+        return { axes, series };
+    }, [plot, layout.datasets]);
+    const readouts = new Map(
+        series.map((one) => [one.id, cursor === null ? null : sampleAt(one.samples, cursor, one.placement)] as const),
+    );
+    const nothing = () => {};
+    return (
+        <section className="yorg-panel yorg-extra" aria-label={`From Python: ${plot.title}`}>
+            <header className="yorg-panel-head yorg-extra-head">
+                <span className="yorg-extra-tag">Python</span>
+                <strong>{plot.title}</strong>
+                {onRemove && (
+                    <button
+                        type="button"
+                        className="button-small"
+                        aria-label={`Take ${plot.title} off the page`}
+                        title="Take it off the page (running its cell again puts it back)"
+                        onClick={() => onRemove(plot.id)}
+                    >
+                        ×
+                    </button>
+                )}
+            </header>
+            {/* As the page's plots are laid out, so its time axis lines up with theirs. */}
+            <div className="yorg-panel-body">
+                <Plot
+                    label={plot.title}
+                    series={series}
+                    axes={axes}
+                    height={220}
+                    window={view}
+                    time={time}
+                    marks={marks}
+                    shading={[]}
+                    cursor={cursor}
+                    readouts={readouts}
+                    gutters={gutters}
+                    colors={colors}
+                    onCursor={onCursor}
+                    onWindow={onWindow}
+                    onAxis={nothing}
+                    onMenu={nothing}
+                    notes={[]}
+                    placing={false}
+                    onPlace={nothing}
+                    measure={null}
+                    onNote={nothing}
+                    onEditNote={nothing}
+                    onMoveMark={nothing}
+                />
+                <div className="yorg-legend" role="group" aria-label={`${plot.title}: series`}>
+                    <ul>
+                        {series.map((one) => {
+                            const point = readouts.get(one.id);
+                            return (
+                                <li key={one.id} className="yorg-extra-series">
+                                    <span />
+                                    <i
+                                        className="yorg-swatch"
+                                        style={{ background: one.color, borderColor: one.color }}
+                                    />
+                                    <span className="yorg-series">{one.name}</span>
+                                    <span className="yorg-value">
+                                        {point && !Number.isNaN(point.y) ? formatValue(point.y) : ""}
+                                    </span>
+                                    <span className="yorg-unit">{one.unit}</span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            </div>
+        </section>
+    );
+}
 
 function PanelView({
     panel,

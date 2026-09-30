@@ -10,7 +10,17 @@ import { channelsToLoad } from "./tree";
 // keeps the channels it's been given (yorg.py) under a key for each read of each channel, so a run hands over only
 // those it hasn't had, and a test's channels share their times, which go once.
 
-/** What a run starts with: the tests attached to the script, the first first, and their channels. */
+/**
+ * A dataset's or view's page, for a script run from it (its Python, docked): the time in view and the page's T0, on
+ * the first test's clock, and how far each test is moved on the page's time axis (by id).
+ */
+export interface PageView {
+    window: [number, number] | null;
+    t0: number | null;
+    shifts: Record<number, number>;
+}
+
+/** What a run starts with: the tests attached to the script, the first first, and their channels (and its page's). */
 export interface RunContext {
     datasets: {
         id: number;
@@ -18,6 +28,7 @@ export interface RunContext {
         t0: number | null;
         channels: { name: string; unit: string; kind: string; labels: string[] }[];
     }[];
+    view?: PageView;
 }
 
 /** A channel as Python takes it: what it is (JSON), its times (null: Python has them), and its values. */
@@ -56,6 +67,7 @@ export async function gatherInputs(
     code: string,
     datasets: number[],
     onServer: (names: string[]) => void = () => {},
+    view?: PageView,
 ): Promise<Inputs> {
     const tests = await Promise.all(datasets.map((id) => datasetWhenReady(id)));
     const context: RunContext = {
@@ -65,6 +77,7 @@ export async function gatherInputs(
             t0: storedT0(detail.id),
             channels: detail.channels.map(({ name, unit, kind, labels }) => ({ name, unit, kind, labels })),
         })),
+        ...(view ? { view } : {}),
     };
     const wanted = channelsToLoad(
         code,

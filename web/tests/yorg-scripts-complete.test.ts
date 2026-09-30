@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { handoffOf, modelsLink, readHandoff, scriptsLink, starterScript, variableName } from "../src/yorg/analysis";
+import { handoffOf, modelsLink, starterScript, variableName } from "../src/yorg/analysis";
 import { parseCells } from "../src/yorg/scripts/cells";
 import { newLayout, newPanel, type Layout } from "../src/yorg/layout";
 import { channelCode, completionAt, inString, testRef, type Attached } from "../src/yorg/scripts/complete";
@@ -166,38 +166,34 @@ describe("from a dataset's or view's page", () => {
         expect(handoff).toEqual({
             title: "Overlay",
             datasets: [3, 4],
-            shifts: { 3: 0, 4: -1.5 },
             channels: [
                 { dataset: 3, name: "PT-TANK" },
                 { dataset: 4, name: "PT-TANK" },
             ],
             window: [10, 20],
         });
-        expect(readHandoff(new URL(`http://x${scriptsLink(handoff)}`).search)).toEqual(handoff);
         expect(modelsLink(handoff)).toBe("/yorg/models?dataset=3&window=10,20");
-        expect(readHandoff("?from=not-json")).toBeNull();
     });
 
-    test("a script to start from loads them, over the window, a moved test's by its own clock", () => {
+    test("a page's notebook starts by loading them, then each over the time in view, a moved test's by its clock", () => {
         const code = starterScript(handoffOf(layoutWith(), "Overlay"), { 3: "Cold flow 1", 4: "Hotfire 4" });
         expect(code).toContain('pt_tank = yorg.channel("PT-TANK")\n');
         expect(code).toContain('pt_tank_2 = yorg.channel("PT-TANK", dataset="Hotfire 4")\n');
-        expect(code).toContain("start, end = 10, 20  # s, on Cold flow 1's clock\n");
-        expect(code).toContain('shift = {"Hotfire 4": -1.5}.get(channel.dataset, 0.0)');
-        expect(code).toContain("yorg.plot(part, name=channel.dataset, title=channel.name)");
+        expect(code).toContain("start, end = yorg.window");
+        expect(code).toContain("shift = yorg.shifts.get(channel.dataset_id, 0.0)");
+        expect(code).toContain('print(f"{channel.name} ({channel.dataset}): mean');
         // A notebook: what it says it is, the channels loaded once, then what's done with them.
         expect(parseCells(code).map((cell) => [cell.kind, cell.title])).toEqual([
             ["markdown", ""],
             ["code", "Load the channels"],
-            ["code", "Each one, over the time in view"],
+            ["code", "Each one, in view"],
         ]);
     });
 
-    test("two of its tests with one name: the script says which by id", () => {
+    test("two of its tests with one name: the notebook says which by id", () => {
         const code = starterScript(handoffOf(layoutWith(), "Twins"), { 3: "Cold flow 1", 4: "Cold flow 1" });
         expect(code).toContain('pt_tank_2 = yorg.channel("PT-TANK", dataset=4)\n');
-        expect(code).toContain("shift = {4: -1.5}.get(channel.dataset_id, 0.0)");
-        expect(code).toContain('yorg.plot(part, name=f"{channel.dataset} {channel.dataset_id}", title=channel.name)');
+        expect(code).toContain('print(f"{channel.name} ({channel.dataset} {channel.dataset_id}): mean');
     });
 
     test("Python names for channels", () => {

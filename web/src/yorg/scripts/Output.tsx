@@ -191,17 +191,22 @@ function RunHeader({
     );
 }
 
-/** A run's output, under how it's going (or went): compact for a notebook's cell (see RunHeader). */
+/**
+ * A run's output, under how it's going (or went): compact for a notebook's cell (see RunHeader). Its plots are drawn
+ * here, or, on a dataset's or view's page (plotsOnPage), said to be on the page's plots.
+ */
 export function RunView({
     run,
     python,
     now,
     compact = false,
+    plotsOnPage = false,
 }: {
     run: RunRecord;
     python: PythonState;
     now: number;
     compact?: boolean;
+    plotsOnPage?: boolean;
 }) {
     const { output } = run;
     return (
@@ -233,9 +238,13 @@ export function RunView({
                     ))}
                 </p>
             )}
-            {output.plots.map((plot) => (
-                <ScriptPlot key={plot.title} {...plot} />
-            ))}
+            {plotsOnPage
+                ? output.plots.length > 0 && (
+                      <p className="scripts-elsewhere muted">
+                          On the page&apos;s plots: {output.plots.map((plot) => plot.title).join(", ")}
+                      </p>
+                  )
+                : output.plots.map((plot) => <ScriptPlot key={plot.title} {...plot} />)}
             {output.figures.map((url, index) => (
                 <img key={url} src={url} alt={`Figure ${index + 1}`} className="scripts-figure" />
             ))}

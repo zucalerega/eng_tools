@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import { inPreview, previewPath, sitePath } from "../src/preview";
-import { cell, codeOf } from "./notebook";
 import { renderApp, Team } from "./team";
 
 // Yorg's preview (/yorg/dev/...): the site as it will be with what's new in it (system models, scripts), for admins;
@@ -68,27 +67,6 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     expect(await screen.findByText(/There's no page here/)).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/models");
     expect(tabs()).toEqual(["Datasets", "Views", "Help", "Preview"]);
-});
-
-test("a dataset's page opens a script on what it plots, its test attached", async () => {
-    const team = await Team.create();
-    const data = await team.data(team.chief, "Cold flow", DATA);
-    renderApp(team.chief, `/yorg/dev/datasets/${data.id}`);
-    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
-    await userEvent.click(await channels.findByRole("button", { name: /PT-TANK/ }));
-    // (the page's own Scripts, not the top bar's: it takes what's plotted along)
-    const scripts = screen
-        .getAllByRole("link", { name: "Scripts" })
-        .find((link) => link.getAttribute("href")?.includes("?from="));
-    await userEvent.click(scripts!);
-    expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
-    expect(window.location.pathname).toBe("/yorg/dev/scripts");
-    await waitFor(() => expect(cell(2).getAttribute("aria-label")).toBe("Cell 2: Load the channels"));
-    expect(await codeOf(2)).toContain('pt_tank = yorg.channel("PT-TANK")');
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(`From ${data.name}`);
-    expect(
-        within(screen.getByRole("complementary", { name: "Data" })).getByRole("region", { name: data.name }),
-    ).toBeTruthy();
 });
 
 test("the preview is for admins", async () => {

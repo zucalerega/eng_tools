@@ -149,7 +149,13 @@ the keys.
   has (Ctrl+Space asks anywhere). Work them over with NumPy, SciPy, pandas, matplotlib, and
   CoolProp (pure-Python packages install from PyPI with micropip); `yorg.plot` draws on Yorg's
   plots, matplotlib's figures show as images, and `yorg.download` offers a file to save. Python
-  (Pyodide) runs in your browser, sandboxed from the site. Scripts are kept for every admin in
+  (Pyodide) runs in your browser, sandboxed from the site, and stays open while the tab does:
+  come back to Scripts and its imports and the channels it had are still there. While a
+  script's open, Python gets its slow imports ready (CoolProp's first import reads its whole
+  fluid library: 20 seconds to a minute), so Run can go straight away; Run while Python's busy
+  and the run waits, saying for what. As it runs, the output says each step (loading
+  packages, importing a module, running your code) and how long it's taken, and after, how
+  long the run took and where the time went. Scripts are kept for every admin in
   folders, with their tests; upload .py files as scripts and download scripts as them.
   Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
   spectrum, and more.

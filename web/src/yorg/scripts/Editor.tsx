@@ -20,6 +20,7 @@ interface Props {
     onSave: () => void;
     label: string;
     attached: Attached[]; // the tests attached to the script, the first first, for completing their names
+    errorLine?: number | null; // the line the last run failed on, marked in the gutter
     ref?: Ref<EditorHandle>;
 }
 
@@ -44,7 +45,7 @@ interface Open {
     y: number;
 }
 
-export function Editor({ code, onChange, onRun, onSave, label, attached, ref }: Props) {
+export function Editor({ code, onChange, onRun, onSave, label, attached, errorLine = null, ref }: Props) {
     const area = useRef<HTMLTextAreaElement>(null);
     const gutter = useRef<HTMLDivElement>(null);
     const measure = useRef<HTMLSpanElement>(null);
@@ -171,7 +172,9 @@ export function Editor({ code, onChange, onRun, onSave, label, attached, ref }: 
         <div className="scripts-editor">
             <div className="scripts-gutter" ref={gutter} aria-hidden="true">
                 {Array.from({ length: lines }, (_, index) => (
-                    <div key={index}>{index + 1}</div>
+                    <div key={index} className={index + 1 === errorLine ? "scripts-gutter-error" : undefined}>
+                        {index + 1}
+                    </div>
                 ))}
             </div>
             <textarea

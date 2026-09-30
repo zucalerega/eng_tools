@@ -146,12 +146,12 @@ export function samples(detail: DatasetDetail, channel: Channel): Loaded<Samples
     });
 }
 
-/** A channel's samples once they're in (the same ones the plots use), for code that waits rather than redraws. */
-export function samplesWhenReady(detail: DatasetDetail, channel: Channel): Promise<Samples> {
+/** What a store has once it's in (asking for it with get, which loads it the first time), for code that waits. */
+function whenReady<T>(store: Store<T>, get: () => Loaded<T>): Promise<T> {
     return new Promise((resolve, reject) => {
         let unsubscribe = () => {};
         const settled = (): boolean => {
-            const loaded = samples(detail, channel);
+            const loaded = get();
             if (loaded.status === "loading") {
                 return false;
             }
@@ -164,9 +164,19 @@ export function samplesWhenReady(detail: DatasetDetail, channel: Channel): Promi
             return true;
         };
         if (!settled()) {
-            unsubscribe = sampleStore.subscribe(() => void settled());
+            unsubscribe = store.subscribe(() => void settled());
         }
     });
+}
+
+/** A dataset once it's in (the same one its page shows). */
+export function datasetWhenReady(id: number): Promise<DatasetDetail> {
+    return whenReady(datasetStore, () => dataset(id));
+}
+
+/** A channel's samples once they're in (the same ones the plots use), for code that waits rather than redraws. */
+export function samplesWhenReady(detail: DatasetDetail, channel: Channel): Promise<Samples> {
+    return whenReady(sampleStore, () => samples(detail, channel));
 }
 
 /** Load a dataset again (it was renamed, deleted, or restored), showing it as it was until then. */

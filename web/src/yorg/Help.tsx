@@ -243,8 +243,13 @@ export function HelpPage() {
                                 <code>yorg.plot</code> draws on Yorg&apos;s plots.
                             </li>
                             <li>
+                                Python stays open while this tab does, with what it has imported and the channels it
+                                has, and gets a script&apos;s slow imports ready while you read it. The output says what
+                                it&apos;s doing, for how long, and after a run, where the time went.
+                            </li>
+                            <li>
                                 Scripts are kept for everyone in folders; upload .py files, or start from the examples.
-                                A dataset&apos;s <em>Analyze</em> menu opens it in Scripts.
+                                <em>Scripts</em> on a dataset&apos;s or view&apos;s page opens one on what it plots.
                             </li>
                         </ul>
                     </Card>

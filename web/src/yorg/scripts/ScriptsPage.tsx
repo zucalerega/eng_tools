@@ -1,34 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
-import { yorg, type Dataset, type DatasetDetail } from "../api";
-import { usePlotColors } from "../colors";
+import type { Dataset } from "../api";
 import { readHandoff, starterScript } from "../analysis";
-import { dataset as loadDataset, samplesWhenReady, useLoaded } from "../data";
-import type { AxisSpec } from "../layout";
-import { storedT0 } from "../pages";
-import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
-import { Samples, sampleAt } from "../samples";
-import { formatTick, formatValue, ticks } from "../scale";
+import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
 import type { Attached } from "./complete";
 import { DataPanel } from "./DataPanel";
 import { Editor, type EditorHandle } from "./Editor";
 import { EXAMPLES } from "./examples";
-import { bytesOf, floatsOf, PythonSandbox, type FromPython, type Preloaded, type RunContext } from "./sandbox";
-import { channelsToLoad, folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
+import { gatherInputs } from "./inputs";
+import { isTicking, PythonStatus, RunView, useTicking } from "./Output";
+import { python, usePython, useRun } from "./python";
+import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
 import "./scripts.css";
 
 // Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull tests' channels and work them
-// over, with NumPy, SciPy, pandas, matplotlib, and CoolProp, run in the browser (sandbox.ts). A script works on the
-// tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept on the server in folders, for
-// every admin; .py files upload as scripts and scripts download as them. A dataset's or view's page opens a script on
-// what it had (analysis.ts).
+// over, with NumPy, SciPy, pandas, matplotlib, and CoolProp, run in the browser by the tab's Python (python.ts), which
+// stays open as you come and go, gets a script's slow imports ready while you read it, and says what it's doing as it
+// runs (Output.tsx). A script works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them.
+// Scripts are kept on the server in folders, for every admin; .py files upload as scripts and scripts download as them.
+// A dataset's or view's page opens a script on what it had (analysis.ts).
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
-const COLORS = ["#2f7ed8", "#e0a500", "#2aa876", "#d64541", "#8e5bd1", "#e67e22", "#16a0b5", "#7f8c8d"];
+const OPEN_KEY = "yorg.scripts.open"; // for this tab: the script open and its last run, to come back to
+const PREPARE_MS = 600; // how long typing pauses before Python gets a script's imports ready
 
 /** What's open in the editor: a saved script, an example (saved only as a copy), or a new one. */
 interface Open {
@@ -40,23 +38,6 @@ interface Open {
     datasets: number[]; // the tests attached, the first first
     dirty: boolean;
 }
-
-type Line = { kind: "stdout" | "stderr" | "error" | "note"; text: string };
-
-interface Output {
-    lines: Line[];
-    plots: { title: string; series: { name: string; unit: string; x: Float64Array; y: Float64Array }[] }[];
-    figures: string[]; // object URLs of PNGs
-    files: { name: string; url: string }[];
-}
-
-const EMPTY_OUTPUT: Output = { lines: [], plots: [], figures: [], files: [] };
-
-type Python =
-    | { state: "loading"; text: string }
-    | { state: "ready"; version: string }
-    | { state: "running"; started: number; text: string }
-    | { state: "failed"; error: string };
 
 type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | null;
 
@@ -92,6 +73,27 @@ function storeDatasets(ids: number[]) {
     }
 }
 
+/** The script open when this tab last left the page, and its last run (whose output Python still has). */
+function remembered(): { open: Open; run: string | null } | null {
+    try {
+        const found = JSON.parse(window.sessionStorage.getItem(OPEN_KEY) ?? "null") as {
+            open?: Open;
+            run?: string | null;
+        } | null;
+        return found?.open && typeof found.open.code === "string" ? { open: found.open, run: found.run ?? null } : null;
+    } catch {
+        return null;
+    }
+}
+
+function remember(open: Open, run: string | null) {
+    try {
+        window.sessionStorage.setItem(OPEN_KEY, JSON.stringify({ open, run }));
+    } catch {
+        // storage blocked: the page starts afresh next time
+    }
+}
+
 function download(name: string, text: string) {
     const url = URL.createObjectURL(new Blob([text], { type: "text/x-python" }));
     const link = document.createElement("a");
@@ -101,127 +103,40 @@ function download(name: string, text: string) {
     URL.revokeObjectURL(url);
 }
 
-/** One of a script's plots (yorg.plot): its series over their x, zoomable like Yorg's. */
-function ScriptPlot({ title, series }: Output["plots"][number]) {
-    const colors = usePlotColors();
-    const prepared = useMemo(
-        () =>
-            series.map((one, index) => {
-                // Yorg's plots want x in order: a script's may not have it so.
-                const order = Array.from(one.x.keys()).sort((a, b) => one.x[a]! - one.x[b]!);
-                const x = Float64Array.from(order, (i) => one.x[i]!);
-                const y = Float64Array.from(order, (i) => one.y[i]!);
-                return {
-                    id: `${title}:${index}`,
-                    name: one.name,
-                    color: COLORS[index % COLORS.length]!,
-                    width: 1.5,
-                    step: false,
-                    axis: "a",
-                    samples: new Samples(x, y),
-                    placement: { shift: 0, scale: 1, offset: 0 },
-                    unit: one.unit,
-                    labels: null,
-                } satisfies PlotSeries & { name: string };
-            }),
-        [series, title],
-    );
-    const span = useMemo((): [number, number] => {
-        let low = Infinity;
-        let high = -Infinity;
-        for (const one of prepared) {
-            const times = one.samples.times;
-            if (times.length) {
-                low = Math.min(low, times[0]!);
-                high = Math.max(high, times[times.length - 1]!);
-            }
-        }
-        return Number.isFinite(low) && high > low ? [low, high] : [0, 1];
-    }, [prepared]);
-    const [window, setWindow] = useState<[number, number] | null>(null);
-    const [cursor, setCursor] = useState<number | null>(null);
-    const time: TimeAxis = { ticks, label: (x, step) => formatTick(x, step) };
-    const axes: AxisSpec[] = [{ id: "a", side: "left", label: "", min: null, max: null }];
-    const readouts = new Map(
-        prepared.map((one) => [one.id, cursor === null ? null : sampleAt(one.samples, cursor, one.placement)] as const),
-    );
-    const nothing = () => {};
-    return (
-        <div className="scripts-plot">
-            <div className="dev-legend">
-                <strong>{title}</strong>
-                {prepared.map((one) => {
-                    const point = readouts.get(one.id);
-                    return (
-                        <span key={one.id} className="dev-swatch">
-                            <i style={{ background: one.color }} />
-                            {one.name}
-                            {point && ` ${formatValue(point.y)}${one.unit ? ` ${one.unit}` : ""}`}
-                        </span>
-                    );
-                })}
-            </div>
-            <Plot
-                label={title}
-                series={prepared}
-                axes={axes}
-                height={220}
-                window={window ?? span}
-                time={time}
-                marks={[]}
-                shading={[]}
-                cursor={cursor}
-                readouts={readouts}
-                gutters={{ left: 1, right: 0 }}
-                colors={colors}
-                onCursor={setCursor}
-                onWindow={(next) => setWindow(next)}
-                onAxis={nothing}
-                onMenu={nothing}
-                notes={[]}
-                placing={false}
-                onPlace={nothing}
-                measure={null}
-                onNote={nothing}
-                onEditNote={nothing}
-                onMoveMark={nothing}
-            />
-        </div>
-    );
-}
-
 export function ScriptsPage() {
     useLoaded();
+    const state = usePython();
     const [scripts, setScripts] = useState<Script[] | null>(null);
     const [datasets, setDatasets] = useState<Dataset[]>([]);
     const [problem, setProblem] = useState<string | null>(null);
-    const [open, setOpen] = useState<Open>(() => newScript(storedDatasets()));
-    const [python, setPython] = useState<Python>({ state: "loading", text: "Starting Python…" });
-    const [output, setOutput] = useState<Output>(EMPTY_OUTPUT);
+    const [open, setOpen] = useState<Open>(() => remembered()?.open ?? newScript(storedDatasets()));
+    const [runId, setRunId] = useState<string | null>(() => remembered()?.run ?? null);
+    const run = useRun(runId);
     const [asking, setAsking] = useState<Asking>(null);
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
     const [search, setSearch] = useState("");
     const [closed, setClosed] = useState<Set<string>>(new Set());
-    const sandbox = useRef<PythonSandbox | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
     const editor = useRef<EditorHandle | null>(null);
-    const details = useRef(new Map<number, DatasetDetail>());
-    // What the sandbox calls: this render's, so they see the test picked now.
-    const handlers = useRef<{
-        receive: (found: FromPython) => void;
-        answer: (what: string, args: Record<string, unknown>) => Promise<unknown>;
-    } | null>(null);
+    const now = useTicking(isTicking(state, run));
 
-    // Python starts when the page opens, so it's ready by the time a script is.
+    // Python starts when the page opens (unless it's on already, from before), so it's ready by the time a script is.
+    useEffect(() => python.acquire(), []);
+    useEffect(() => remember(open, runId), [open, runId]);
+
+    // While a script's read and edited, Python gets its slow imports ready (CoolProp's takes 20 s to a minute), and the
+    // channels it names come from the server: its run needn't wait for either.
+    const ready = state.status === "ready";
     useEffect(() => {
-        const box = new PythonSandbox(
-            (found) => handlers.current?.receive(found),
-            (what, args) => handlers.current?.answer(what, args) ?? Promise.reject(new Error("The page is closing")),
-        );
-        sandbox.current = box;
-        box.start();
-        return () => box.dispose();
-    }, []);
+        if (!ready) {
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            python.prepare(open.code);
+            gatherInputs(open.code, open.datasets).catch(() => {}); // what's wrong, the run says
+        }, PREPARE_MS);
+        return () => window.clearTimeout(timer);
+    }, [open.code, open.datasets, ready, state.generation]);
 
     useEffect(() => {
         Promise.all([scriptsApi.list(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
@@ -229,7 +144,8 @@ export function ScriptsPage() {
                 setScripts(saved);
                 const ready = all.filter((one) => one.status === "ready");
                 setDatasets(ready);
-                // From a dataset's or view's page: a script on what it had.
+                // From a dataset's or view's page: a script on what it had. Taken from the address, so going back to
+                // it later finds the script as it's been changed, not started over.
                 const handoff = readHandoff(window.location.search);
                 if (handoff) {
                     const names = Object.fromEntries(ready.map((one) => [one.id, one.name]));
@@ -239,134 +155,12 @@ export function ScriptsPage() {
                         code: starterScript(handoff, names),
                         dirty: true,
                     });
+                    window.history.replaceState(null, "", window.location.pathname);
                 }
             },
             (error) => setProblem(message(error)),
         );
     }, []);
-
-    async function detailOf(which: unknown): Promise<DatasetDetail> {
-        let id: number | undefined;
-        if (typeof which === "number") {
-            id = which;
-        } else if (typeof which === "string" && which.trim()) {
-            const all = await request<Dataset[]>("GET", "/api/yorg/datasets");
-            const wanted = which.trim().toLowerCase();
-            const named = all.filter((one) => one.name === which);
-            const found = named.length ? named : all.filter((one) => one.name.toLowerCase() === wanted);
-            if (found.length > 1) {
-                // Tests in two folders can have one name: only an id says which.
-                const ids = found.map((one) => one.id).join(" or ");
-                throw new Error(`${found.length} tests are called ${which}: say which by its id (dataset=${ids})`);
-            }
-            id = found[0]?.id;
-            if (id === undefined) {
-                throw new Error(`There's no test called ${which}`);
-            }
-        } else {
-            id = open.datasets[0];
-            if (id === undefined) {
-                throw new Error("Attach a test to the script (Data), or name one: dataset=...");
-            }
-        }
-        const known = details.current.get(id);
-        if (known) {
-            return known;
-        }
-        const detail = await yorg.dataset(id);
-        details.current.set(id, detail);
-        return detail;
-    }
-
-    async function channelOf(detail: DatasetDetail, name: string): Promise<Preloaded> {
-        const channel =
-            detail.channels.find((one) => one.name === name) ??
-            detail.channels.find((one) => one.name.toLowerCase() === name.toLowerCase());
-        if (!channel) {
-            throw new Error(`${detail.name} has no channel ${name}`);
-        }
-        const loaded = await samplesWhenReady(detail, channel);
-        return {
-            name: channel.name,
-            unit: channel.unit,
-            labels: channel.labels,
-            dataset: detail.name,
-            dataset_id: detail.id,
-            t: bytesOf(loaded.times),
-            v: bytesOf(loaded.values),
-        };
-    }
-
-    /** A script's requests, answered read-only: the tests, and their channels. */
-    async function answer(what: string, args: Record<string, unknown>): Promise<unknown> {
-        if (what === "datasets") {
-            const all = await request<Dataset[]>("GET", "/api/yorg/datasets");
-            return all
-                .filter((one) => one.status === "ready")
-                .map(({ id, name, rows, t_min, t_max, time_kind }) => ({ id, name, rows, t_min, t_max, time_kind }));
-        }
-        if (what === "channel") {
-            return channelOf(await detailOf(args.dataset ?? null), String(args.name ?? ""));
-        }
-        throw new Error(`A script can't ask for ${what}`);
-    }
-
-    function receive(found: FromPython) {
-        switch (found.type) {
-            case "status":
-                setPython((now) =>
-                    now.state === "running" ? { ...now, text: found.text } : { state: "loading", text: found.text },
-                );
-                return;
-            case "ready":
-                setPython({ state: "ready", version: found.version });
-                return;
-            case "failed":
-                setPython({ state: "failed", error: found.error });
-                return;
-            case "stdout":
-            case "stderr":
-                setOutput((now) => ({ ...now, lines: [...now.lines, { kind: found.type, text: found.text }] }));
-                return;
-            case "plot": {
-                const series = { name: found.name, unit: found.unit, x: floatsOf(found.x), y: floatsOf(found.y) };
-                setOutput((now) => {
-                    const plots = now.plots.some((plot) => plot.title === found.title)
-                        ? now.plots.map((plot) =>
-                              plot.title === found.title ? { ...plot, series: [...plot.series, series] } : plot,
-                          )
-                        : [...now.plots, { title: found.title, series: [series] }];
-                    return { ...now, plots };
-                });
-                return;
-            }
-            case "figure": {
-                const url = URL.createObjectURL(new Blob([found.png], { type: "image/png" }));
-                setOutput((now) => ({ ...now, figures: [...now.figures, url] }));
-                return;
-            }
-            case "file": {
-                const url = URL.createObjectURL(new Blob([found.data]));
-                setOutput((now) => ({ ...now, files: [...now.files, { name: found.name, url }] }));
-                return;
-            }
-            case "done":
-            case "error":
-                setPython((now) => (now.state === "running" ? { state: "ready", version: "" } : now));
-                setOutput((now) => ({
-                    ...now,
-                    lines: [
-                        ...now.lines,
-                        found.type === "error"
-                            ? { kind: "error", text: found.text }
-                            : { kind: "note", text: `Done in ${formatValue(found.elapsed)} s` },
-                    ],
-                }));
-                return;
-        }
-    }
-
-    handlers.current = { receive, answer };
 
     const tree = useMemo(() => {
         const wanted = search.trim().toLowerCase();
@@ -472,67 +266,17 @@ export function ScriptsPage() {
         }
     }
 
-    const run = () =>
-        act(async () => {
-            const box = sandbox.current;
-            if (!box || python.state !== "ready") {
-                return;
-            }
-            for (const url of [...output.figures, ...output.files.map((one) => one.url)]) {
-                URL.revokeObjectURL(url);
-            }
-            setOutput(EMPTY_OUTPUT);
-            setPython({ state: "running", started: Date.now(), text: "Loading its channels…" });
-            let context: RunContext = { datasets: [] };
-            const preloaded: Preloaded[] = [];
-            try {
-                const tests = await Promise.all(open.datasets.map((id) => detailOf(id)));
-                context = {
-                    datasets: tests.map((detail) => ({
-                        id: detail.id,
-                        name: detail.name,
-                        t0: storedT0(detail.id),
-                        channels: detail.channels.map(({ name, unit, kind, labels }) => ({ name, unit, kind, labels })),
-                    })),
-                };
-                const wanted = channelsToLoad(
-                    open.code,
-                    tests.map((detail) => ({
-                        id: detail.id,
-                        name: detail.name,
-                        channels: detail.channels.map((one) => one.name),
-                    })),
-                );
-                preloaded.push(
-                    ...(await Promise.all(
-                        wanted.map((one) =>
-                            channelOf(
-                                tests.find((detail) => detail.id === one.dataset)!,
-                                one.channel,
-                            ),
-                        ),
-                    )),
-                );
-            } catch (error) {
-                setPython({ state: "ready", version: "" });
-                throw error;
-            }
-            setPython((now) => (now.state === "running" ? { ...now, text: "Running…" } : now));
-            box.run(open.code, context, preloaded);
-        });
+    const running = run?.status === "queued" || run?.status === "running";
 
-    function stop() {
-        const box = sandbox.current;
-        if (!box) {
+    /** Run the script: now, or once Python's started and done with what's before it (the output says which). */
+    function start() {
+        if (running) {
             return;
         }
-        box.stop();
-        setOutput((now) => ({
-            ...now,
-            lines: [...now.lines, { kind: "note", text: "Stopped. Python starts again…" }],
-        }));
-        setPython({ state: "loading", text: "Starting Python…" });
-        box.start();
+        if (runId) {
+            python.forget(runId); // its output goes, figures and all
+        }
+        setRunId(python.run({ code: open.code, datasets: open.datasets }));
     }
 
     // Every test attached, in order (the first is the one that needs no dataset=), its channels once they've loaded.
@@ -545,16 +289,6 @@ export function ScriptsPage() {
             channels: ready ? ready.channels.map(({ name, unit }) => ({ name, unit })) : [],
         };
     });
-
-    const running = python.state === "running";
-    const [, tick] = useState(0);
-    useEffect(() => {
-        if (!running) {
-            return;
-        }
-        const timer = window.setInterval(() => tick((n) => n + 1), 500);
-        return () => window.clearInterval(timer);
-    }, [running]);
 
     function folderView(folder: Folder<(typeof tree)["items"][number]>, depth: number) {
         const shut = closed.has(folder.path);
@@ -603,15 +337,6 @@ export function ScriptsPage() {
             </li>
         );
     }
-
-    const statusText =
-        python.state === "loading"
-            ? python.text
-            : python.state === "failed"
-              ? `Python didn't start: ${python.error}`
-              : python.state === "running"
-                ? `${python.text} ${Math.round((Date.now() - python.started) / 1000)} s`
-                : "Python ready";
 
     return (
         <section className="yorg-page scripts-page">
@@ -685,17 +410,20 @@ export function ScriptsPage() {
                     </div>
                     <div className="scripts-actions">
                         {running ? (
-                            <button type="button" className="button-danger" onClick={stop}>
+                            <button
+                                type="button"
+                                className="button-danger"
+                                onClick={() => runId && python.stop(runId)}
+                                title={
+                                    run?.status === "running"
+                                        ? "Stop it: Python starts again, without what it's imported"
+                                        : "Don't run it after all"
+                                }
+                            >
                                 Stop
                             </button>
                         ) : (
-                            <button
-                                type="button"
-                                className="button-primary"
-                                disabled={python.state !== "ready"}
-                                title="Ctrl+Enter"
-                                onClick={() => void run()}
-                            >
+                            <button type="button" className="button-primary" title="Ctrl+Enter" onClick={start}>
                                 Run
                             </button>
                         )}
@@ -728,55 +456,28 @@ export function ScriptsPage() {
                                 Delete…
                             </button>
                         )}
-                        <span className="muted" role="status">
-                            {statusText}
-                            {open.example && " · an example: Save as… keeps a copy of your own"}
-                        </span>
+                        <PythonStatus python={state} now={now} onRestart={() => python.restart()} />
+                        {open.example && <span className="muted">An example: Save as… keeps a copy of your own</span>}
                     </div>
                     <Editor
                         ref={editor}
                         label="Code"
                         attached={attached}
                         code={open.code}
+                        errorLine={run?.status === "error" && run.code === open.code ? run.line : null}
                         onChange={(code) => setOpen({ ...open, code, dirty: true })}
-                        onRun={() => !running && python.state === "ready" && void run()}
+                        onRun={start}
                         onSave={saveNow}
                     />
                     <section className="scripts-output" aria-label="Output">
-                        {output.lines.length === 0 &&
-                            output.plots.length === 0 &&
-                            output.figures.length === 0 &&
-                            output.files.length === 0 && (
-                                <p className="muted">
-                                    What the script prints, plots (yorg.plot, matplotlib), and saves (yorg.download)
-                                    shows here.
-                                </p>
-                            )}
-                        {output.lines.length > 0 && (
-                            <pre className="scripts-console">
-                                {output.lines.map((line, index) => (
-                                    <span key={index} className={`scripts-${line.kind}`}>
-                                        {line.text}
-                                        {"\n"}
-                                    </span>
-                                ))}
-                            </pre>
-                        )}
-                        {output.files.length > 0 && (
-                            <p className="scripts-files">
-                                {output.files.map((file) => (
-                                    <a key={file.url} href={file.url} download={file.name} className="button">
-                                        Save {file.name}
-                                    </a>
-                                ))}
+                        {run ? (
+                            <RunView run={run} python={state} now={now} />
+                        ) : (
+                            <p className="muted">
+                                What the script prints, plots (yorg.plot, matplotlib), and saves (yorg.download) shows
+                                here.
                             </p>
                         )}
-                        {output.plots.map((plot) => (
-                            <ScriptPlot key={plot.title} {...plot} />
-                        ))}
-                        {output.figures.map((url, index) => (
-                            <img key={url} src={url} alt={`Figure ${index + 1}`} className="scripts-figure" />
-                        ))}
                     </section>
                 </div>
                 <DataPanel

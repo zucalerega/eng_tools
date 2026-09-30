@@ -17,11 +17,19 @@ from another attached test the script names too (dataset="Hotfire 4", or by its 
 folders can have one name); yorg.channel() gives those. Times are seconds on each test's own clock
 (its T0 on that clock is yorg.attached[i]["t0"], if this browser has one); values are in the channel's unit, and
 Channel.si() puts pressures, temperatures, and mass flows in SI units.
+
+Python stays open while the browser tab does: what a script imported, and the channels it had, are there for the next
+run (its own variables aren't: each run starts afresh).
 """
 
+import ast
+import builtins
+import importlib.util
 import io
+import json
 import os
 import sys
+import time
 
 os.environ.setdefault("MPLBACKEND", "Agg")  # before matplotlib: a worker has no page to draw on
 
@@ -36,7 +44,7 @@ ATMOSPHERE = 101325.0
 attached = []  # the tests attached to the script, the first first: {"id", "name", "t0", "channels": [{"name", ...}]}
 dataset = None  # the first of them (None: none attached)
 t0 = None  # its T0, on its clock, if this browser has one for it
-_loaded = {}  # (test's id, channel's name): Channel, loaded before the script started
+_loaded = {}  # (test's id, channel's name): Channel, this run's, loaded before it started
 
 
 class Channel:
@@ -74,6 +82,10 @@ class Channel:
     def label(self, value):
         """A state channel's label for a value (OPEN for 1, say)."""
         return self.labels[int(round(value))] if self.labels else None
+
+    def _copy(self):
+        """The same samples in a Channel of its own: a run can change what it has without the next run seeing it."""
+        return Channel(self.name, self.unit, self.t, self.values, self.labels, self.dataset, self.dataset_id)
 
 
 def _find(test):
@@ -136,12 +148,13 @@ async def load(name, dataset=None):
     """Any channel of any test: an attached one's (the first's unless told another), or any test's by name or id."""
     found = _find(dataset) if dataset is not None else (attached[0] if attached else None)
     test = found["id"] if found else dataset
-    return _channel(await _ask("channel", {"name": name, "dataset": test}))
+    handed = await _yorg_page.ask("channel", _js({"name": name, "dataset": test}))
+    return _keep(json.loads(handed.meta), handed.t, handed.v)._copy()
 
 
 async def datasets():
     """Every test (dataset) there is, each a dict: id, name, rows, t_min, t_max."""
-    return await _ask("datasets", {})
+    return json.loads(await _yorg_page.ask("datasets", _js({})))
 
 
 def plot(x, y=None, name=None, unit="", title=None):
@@ -250,59 +263,182 @@ def _send(kind, payload):
     _yorg_page.send(kind, _js(payload))
 
 
-async def _ask(what, args):
-    found = await _yorg_page.ask(what, _js(args))
-    return found.to_py() if hasattr(found, "to_py") else found
+# --- the channels the page hands over, kept while Python stays open ---------------------------------------------------
+
+_cache = {}  # the page's key for a read of a channel: Channel, the least recently used first
+_times = {}  # a read's time arrays, by key: a test's channels mostly share one, which comes once
+_CACHE_BYTES = 512 * 1024 * 1024  # of samples kept once runs are done with them (a run keeps all it names)
 
 
-def _channel(found):
-    """A Channel from what the page sent: its times and values as little-endian float64 bytes."""
-    return Channel(
-        found["name"],
-        found.get("unit", ""),
-        np.frombuffer(bytes(found["t"]), dtype="<f8"),
-        np.frombuffer(bytes(found["v"]), dtype="<f8"),
-        found.get("labels") or (),
-        found.get("dataset"),
-        found.get("dataset_id"),
+def _array(data):
+    """A JavaScript Uint8Array of little-endian float64s, as NumPy's (read-only: runs share it)."""
+    return np.frombuffer(data.to_bytes(), dtype="<f8")
+
+
+def _keep(meta, t, v):
+    """Keep a channel the page handed over: its times from t, or those kept under its time key (t is False)."""
+    if t is not False:
+        _times[meta["time_key"]] = _array(t)
+    channel = Channel(
+        meta["name"],
+        meta.get("unit", ""),
+        _times[meta["time_key"]],
+        _array(v),
+        meta.get("labels") or (),
+        meta.get("dataset"),
+        meta.get("dataset_id"),
     )
+    channel._key, channel._time_key = meta["key"], meta["time_key"]
+    _cache.pop(meta["key"], None)
+    _cache[meta["key"]] = channel
+    return channel
 
 
-def _begin(context, preloaded):
-    """Before a script: the tests attached, the channels it names, and matplotlib drawing to the page."""
-    global dataset, t0
-    context = context.to_py() if hasattr(context, "to_py") else context
+def _store(meta, t, v):
+    """A channel handed over before a run (worker.js): meta is JSON, t and v its times (or False) and values."""
+    _keep(json.loads(meta), t, v)
+
+
+def _missing(keys):
+    """Of the channels a run names (keys, as JSON), those Python hasn't got, as JSON."""
+    return json.dumps([key for key in json.loads(keys) if key not in _cache])
+
+
+def _time_keys():
+    """The keys of the time arrays Python has (as JSON): the page doesn't hand those over again."""
+    return json.dumps(list(_times))
+
+
+def _trim(keep):
+    """Let the least recently used channels go while more than _CACHE_BYTES are kept (not those in keep)."""
+
+    def size():
+        arrays = {id(array): array for channel in _cache.values() for array in (channel.t, channel.values)}
+        return sum(array.nbytes for array in arrays.values())
+
+    for key in list(_cache):
+        if size() <= _CACHE_BYTES:
+            break
+        if key not in keep:
+            del _cache[key]
+    used = {channel._time_key for channel in _cache.values()}
+    for key in [key for key in _times if key not in used]:
+        del _times[key]
+
+
+# --- imports, said as they start (some take a while), and timed -------------------------------------------------------
+
+_real_import = builtins.__import__
+_reporting = False  # during a run, or getting a script's imports ready: say what's importing
+_after = None  # what a run is back to once an import's done ("code")
+_importing = False  # in an import that's been said: those it makes are part of it
+_imported = []  # this run's imports, timed: {"kind": "import", "module", "seconds"}
+
+
+def _import(name, globals=None, locals=None, fromlist=(), level=0):
+    global _importing
+    if not _reporting or _importing or level or name in sys.modules:
+        return _real_import(name, globals, locals, fromlist, level)
+    _importing = True
+    _yorg_page.progress("import", name)
+    started = time.perf_counter()
+    try:
+        return _real_import(name, globals, locals, fromlist, level)
+    finally:
+        _importing = False
+        _imported.append({"kind": "import", "module": name, "seconds": time.perf_counter() - started})
+        _patch_pyplot()
+        if _after:
+            _yorg_page.progress(_after, None)
+
+
+builtins.__import__ = _import
+
+
+def _import_times():
+    """This run's imports and how long each took, as JSON."""
+    return json.dumps(_imported)
+
+
+# Slow to import, and nothing happens on import but getting ready: worth importing before a script runs (as slowImports
+# in tree.ts has them).
+_WARM = {"numpy", "scipy", "pandas", "matplotlib", "CoolProp", "sympy"}
+
+
+def _warm(code):
+    """Import the slow modules a script imports (only those), before it runs, saying which as each starts."""
+    global _reporting, _after
+    try:
+        tree = compile(code, "<script>", "exec", ast.PyCF_ONLY_AST | ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+    except (SyntaxError, ValueError):
+        return  # the run says what's wrong
+    wanted = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            wanted += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            # from scipy import signal: signal is a module of its own, which the import brings.
+            wanted += [node.module] + [f"{node.module}.{alias.name}" for alias in node.names if alias.name != "*"]
+    _reporting, _after = True, None
+    try:
+        for name in dict.fromkeys(wanted):
+            if name.partition(".")[0] not in _WARM or name in sys.modules:
+                continue
+            try:
+                if "." in name and importlib.util.find_spec(name) is None:
+                    continue
+                __import__(name)
+            except Exception:  # noqa: BLE001  not a module (from x import a_function), or broken: the run says
+                pass
+    finally:
+        _reporting = False
+
+
+# --- a run --------------------------------------------------------------------------------------------------------------
+
+
+def _begin(context, keys):
+    """Before a run: the tests attached (context, JSON), the channels it names (keys, JSON: kept here already), its
+    imports said as they start, and matplotlib's figures from before it gone."""
+    global dataset, t0, _reporting, _after
+    context, keys = json.loads(context), json.loads(keys)
     attached[:] = context.get("datasets") or []
     dataset = attached[0] if attached else None
     t0 = dataset.get("t0") if dataset else None
     _loaded.clear()
-    for found in preloaded.to_py() if hasattr(preloaded, "to_py") else preloaded:
-        _loaded[found["dataset_id"], found["name"]] = _channel(found)
-    if "matplotlib" in sys.modules or _installed("matplotlib"):
-        import matplotlib.pyplot as plt
+    for key in keys:
+        channel = _cache.pop(key)
+        _cache[key] = channel  # the most recently used, last
+        _loaded[channel.dataset_id, channel.name] = channel._copy()
+    _trim(set(keys))
+    _imported.clear()
+    _reporting, _after = True, "code"
+    _patch_pyplot()
+    if "matplotlib.pyplot" in sys.modules:
+        sys.modules["matplotlib.pyplot"].close("all")
 
-        plt.close("all")
+
+def _finish():
+    """After a run, however it went: imports no longer said, and the figures it drew but didn't show, shown (as a
+    notebook would)."""
+    global _reporting, _after
+    _reporting, _after = False, None
+    if "matplotlib.pyplot" in sys.modules:
+        _show()
+
+
+def _patch_pyplot():
+    """Once pyplot's imported, its show() shows the figures on the page."""
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is not None and plt.show is not _show:
         plt.show = _show
-
-
-def _installed(name):
-    import importlib.util
-
-    return importlib.util.find_spec(name) is not None
 
 
 def _show(*args, **kwargs):
     """matplotlib's show: each open figure to the page, as a PNG."""
-    import matplotlib.pyplot as plt
-
+    plt = sys.modules["matplotlib.pyplot"]
     for number in plt.get_fignums():
         buffer = io.BytesIO()
         plt.figure(number).savefig(buffer, format="png", dpi=110, bbox_inches="tight")
         _send("figure", {"png": buffer.getvalue()})
     plt.close("all")
-
-
-def _end():
-    """After a script: the figures it drew but didn't show, shown (as a notebook would)."""
-    if "matplotlib.pyplot" in sys.modules:
-        _show()

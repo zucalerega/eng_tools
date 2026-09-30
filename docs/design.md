@@ -644,8 +644,36 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module
   workers, and a sandboxed frame can't start one from a blob). The frame's origin is its
   own, so a script, whoever wrote or uploaded it, can't reach the site, its API, or the
-  session: it gets only what it asks the page for in messages (`sandbox.ts` answers
+  session: it gets only what it asks the page for in messages (`python.ts` answers
   read-only: the list of tests, a channel's samples, from the same store the plots use).
+  The tab has one Python (`python.ts`), started when a page first wants it and kept while
+  the tab is open, so leaving Scripts and coming back finds its imports done and the
+  channels it had; nothing using it for 30 minutes stops it, to give its memory back
+  (Pyodide with SciPy, pandas, and CoolProp loaded holds several hundred MB). It does one
+  thing at a time: runs in the order asked for (Run while it starts, and the run waits),
+  and, with none waiting, a script's slow imports ahead of its run: while a script is open,
+  the page has Python import the slow packages it names (`tree.slowImports`, `yorg._warm`:
+  NumPy, SciPy, pandas, matplotlib, CoolProp, SymPy; importing them does nothing else) and
+  starts its channels coming from the server. That matters because Python is slow at a few
+  things (measured on an M-series Mac; a team laptop is slower, and a background tab too):
+  starting takes 1 to 4 s; SciPy, pandas, and matplotlib load and import in about 6 s; and
+  CoolProp reads its whole fluid library the first time it's imported, about 21 s in
+  WebAssembly against 1 s natively (no CoolProp setting avoids it; its calls are quick after
+  that). The browser keeps Pyodide's files once downloaded (9 MB for Python and NumPy, 42 MB
+  with those packages), even from the sandbox. Python keeps the channels it's been handed,
+  by a key for each read of each channel (`inputs.channelKey`), up to 512 MB of samples
+  beyond what a run uses: a run hands over only those it hasn't, and a test's channels share
+  one time array, which goes once. Each step says what it is as it starts (the worker's
+  `progress`: starting Python, loading packages, importing a module, which an import hook in
+  `yorg.py` reports, taking channels, running the code), and the page shows it with how long
+  it's been going and why the slow ones are slow (`progress.ts`); a run that's over says how
+  long it took and where the time went, from the page (the server, waiting for Python) and
+  the worker (packages, imports, channels), the rest being the script's own. Stopping a run
+  that Python has started ends the worker (a browser can interrupt Python only with a
+  `SharedArrayBuffer`, which needs the whole site cross-origin isolated), and Python starts
+  again without what it had. The tests can't run Pyodide (jsdom), so there Python is a
+  stand-in (`web/tests/python.ts`) that says what a test tells it to: the page's side is
+  tested, and `worker.js` and `yorg.py` are tried in a browser.
   A script works on the tests attached to it (`DataPanel.tsx`; kept with it), the first the
   one `yorg.channel()` takes from unless given `dataset=`. Before it runs, the page loads the
   channels it names in quotes: the first test's, and another's when the script names that
@@ -660,7 +688,7 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
   matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages
   (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
-  Stopping a script ends the worker; Python starts again for the next. Scripts are JSON
+  Scripts are JSON
   files in `CVC_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
   folder path, and the code. REFPROP isn't there: it needs NIST's license, and would run
   on the server behind a property API.

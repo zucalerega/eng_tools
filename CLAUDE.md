@@ -14,6 +14,8 @@ roadmap. Read the design before changing behavior.
 | `client/` | C#. `Cvc.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Cvc.Cli`: the `cvc` command. `Cvc.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). `Cvc.SolidWorks.Open`: `cvc-open.exe`, which follows the web app's `cvc://` links into the add-in. `Cvc.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
 | `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). Start at `store.ts`: the vault index, kept current through the sync feed. `api.ts`: the server's API. `pages/`: one file per page. `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). Tests run against the real server. |
 | `docs/design.md` | Design, API, roadmap, open questions. |
+| `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
+| `deploy/` | `deploy.sh`, which deploys the live site, and copies of the server's service files. |
 | `.github/workflows/ci.yml` | The checks every change must pass. |
 
 ## Commands
@@ -179,35 +181,43 @@ keep working with older clients:
 
 ## Deployment
 
-The server is one Docker image (`server/Dockerfile`: non-root, health-checked) plus a
-persistent `/data` volume holding the SQLite database and the blobs. We haven't chosen
-a host yet (docs/design.md, "Deploying").
+The live site (https://lucazerega.tail07089c.ts.net) is an Oracle Cloud VM behind
+Tailscale Funnel, running the server from a uv environment as a systemd service.
+**docs/deploying.md has all of it:** where it runs, getting access, deploying, the checks,
+rolling back, backups, setting up a new server, and the rules. In short:
 
-- **What ships:** only images CI built from a version tag on `main` (`v1.2.3`), which it
-  publishes to `ghcr.io/<owner>/cvc-server:<tag>`. Never deploy from a laptop or an
-  untagged commit.
+- **Deploy with `bash deploy/deploy.sh`** (`main`) or `bash deploy/deploy.sh v1.2.3` (a
+  release). It builds exactly that commit in a checkout of its own, backs up the
+  database, switches over, and puts the old version back if `/healthz` doesn't answer.
+  Deploy only `main` or a release tag, and only when the owner asks for a deploy.
 - **Releasing:**
   1. Bump the version in `server/pyproject.toml`, `server/src/cvc_server/__init__.py`,
      and `client/Directory.Build.props`.
   2. Tag `main`.
   3. Write release notes in the GitHub release.
 - **Before deploying:**
-  - CI is green on the tag.
-  - The database and blobs are backed up.
-  - You have read every migration in the release.
+  - CI is green on what you deploy.
+  - You have read every migration in the release (the script backs the database up).
   - The team knows if check-ins will be briefly unavailable.
 - **After deploying:**
-  - `/healthz` answers.
+  - The script says "Deployed: Vault answers." (`/healthz`).
   - You can sign in.
   - On a scratch folder, you can check a file in, out, and in again.
   - The logs are clean.
-- **Rolling back:** redeploy the previous tag. If the release ran a migration, also
+- **Rolling back:** deploy the previous tag. If the release ran a migration, also
   restore the database backup taken before the deploy. Blobs are append-only, so they
   never need restoring.
-- **Backups:** every night, copy the database, the blob folder, and the Yorg folder
-  (`CVC_YORG_DIR`) off the host. Blobs never change, so blob backups are incremental.
-  Test a restore every semester.
+- **Backups:** the server backs its database up every night (kept 14 days). Still to
+  do: copy the database, the blob folder, and the Yorg folder (`CVC_YORG_DIR`) off the
+  host every night (blobs never change, so blob backups are incremental), and test a
+  restore every semester.
 - **Configuration:** production runs with `CVC_ENV=production`, and every setting
-  comes from the environment.
+  comes from `/srv/vault/.env` on the server. Never print it, copy it off, or commit it.
+- **Never expose a development server** (dev sign-in) through Funnel or any other way.
+- **The server's own files** (its systemd units and backup script) are copied in
+  `deploy/`. Change them there too when you change them on the server.
 - **Clients:** each CLI and add-in release must work with both the current and the
   previous server release.
+- The Docker image (`server/Dockerfile`, which CI publishes to
+  `ghcr.io/<owner>/cvc-server:<tag>` for version tags) is another way to run the server.
+  The live site doesn't use it.

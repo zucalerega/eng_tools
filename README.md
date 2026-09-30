@@ -185,7 +185,8 @@ the keys.
 | `client/src/Cvc.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `web/` | Web app: TypeScript, React, Vite; served by the server | working |
 | `server/src/cvc_server/yorg`, `web/src/yorg` | Yorg, the test data app | working |
-| `docs/` | Design and roadmap | |
+| `deploy/` | The deploy script and the live server's service files | working |
+| `docs/` | Design, roadmap, and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 
@@ -257,3 +258,9 @@ cd web && npm test
 
 The client and web app tests start the real server, so they need uv too. How we work
 (branches, reviews, releases) is in [CLAUDE.md](CLAUDE.md).
+
+## The live site
+
+Vault and Yorg run at https://lucazerega.tail07089c.ts.net, on an Oracle Cloud VM. How
+it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how to look after
+it are in [docs/deploying.md](docs/deploying.md).

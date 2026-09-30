@@ -1,6 +1,8 @@
 import { cleanup, configure } from "@testing-library/react";
-import { afterEach, beforeAll } from "vitest";
+import { afterEach, beforeAll, beforeEach } from "vitest";
 import { setAdminMode } from "../src/admin";
+import { python } from "../src/yorg/scripts/python";
+import { FakePython } from "./python";
 
 // What a test waits for often takes a round trip or two to the real server, then a sync: on a busy
 // computer (SolidWorks or MATLAB running alongside), an upload and its check-in can take a few seconds.
@@ -22,8 +24,13 @@ beforeAll(() => {
     };
 });
 
+// The tab's Python lives as long as the tab: each test starts with its own, which says nothing unless the test tells
+// it to (tests/python.ts).
+beforeEach(() => python.reset(() => new FakePython()));
+
 afterEach(() => {
     cleanup();
     setAdminMode(false);
     localStorage.clear(); // choices remembered in the browser, like the sort
+    sessionStorage.clear(); // and in this tab, like the script open
 });

@@ -131,6 +131,12 @@
     line-height: 1.5;
 }
 
+.scripts-gutter-error {
+    color: var(--danger);
+    background: var(--danger-soft);
+    font-weight: 700;
+}
+
 .scripts-gutter {
     padding: 0.5rem 0.4rem 0.5rem 0.6rem;
     overflow: hidden;
@@ -171,6 +177,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-large);
     background: var(--surface);
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
     font-size: 12.5px;
     white-space: pre-wrap;
 }
@@ -338,4 +345,152 @@
 
 .scripts-channels button span:last-child {
     flex-shrink: 0; /* the unit stays whole beside a wrapped name */
+}
+
+/* Python's state, in the page's bar (Output.tsx): a dot that pulses while it's busy. */
+.python-status {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+}
+
+.python-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--border-strong);
+}
+
+.python-ready {
+    background: var(--good);
+}
+
+.python-busy {
+    background: var(--warning);
+    animation: python-pulse 1.2s ease-in-out infinite;
+}
+
+.python-running {
+    background: var(--accent);
+    animation: python-pulse 1.2s ease-in-out infinite;
+}
+
+.python-failed {
+    background: var(--danger);
+}
+
+@keyframes python-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+/* How a run is going (a spinner, a bar sliding along its top), or how it went, over its output. */
+.run-header {
+    position: relative;
+    overflow: hidden;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.run-queued,
+.run-running {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.run-error {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.run-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat;
+    background-size: 40% 100%;
+    animation: run-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes run-slide {
+    from {
+        background-position: -67% 0;
+    }
+
+    to {
+        background-position: 167% 0;
+    }
+}
+
+.run-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.run-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    line-height: 1;
+    font-weight: 700;
+}
+
+.run-queued .run-icon,
+.run-running .run-icon {
+    border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: run-spin 0.8s linear infinite;
+}
+
+.run-done .run-icon::before {
+    content: "✓";
+    color: var(--good);
+}
+
+.run-error .run-icon::before {
+    content: "✕";
+    color: var(--danger);
+}
+
+.run-stopped .run-icon::before {
+    content: "■";
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+@keyframes run-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.run-line {
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.run-note {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .python-dot,
+    .run-bar,
+    .run-icon {
+        animation: none;
+    }
 }

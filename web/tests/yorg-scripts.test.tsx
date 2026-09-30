@@ -5,7 +5,7 @@ import { renderApp, Team } from "./team";
 
 // Yorg's Python window (Scripts, in the preview for admins): scripts kept on the server in folders, uploaded as .py files, and the
 // examples to start from. The scripts run in the browser with Pyodide, which jsdom can't: here, Python never gets
-// ready, and everything else is tested.
+// ready unless a test says so (tests/python.ts; running is in yorg-scripts-python.test.tsx).
 
 test("the Python window is for admins", async () => {
     const team = await Team.create();
@@ -20,7 +20,7 @@ test("the Python window is for admins", async () => {
         within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Scripts" }),
     );
     expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Run" }).hasAttribute("disabled")).toBe(true); // no Python here
+    expect(await screen.findByText(/^Starting Python · \d+ s$/)).toBeTruthy(); // it starts with the page
 });
 
 test("scripts are opened from the examples, saved in folders, uploaded, changed, and deleted", async () => {

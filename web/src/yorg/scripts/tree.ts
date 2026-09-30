@@ -87,6 +87,49 @@ export function channelsToLoad(
     );
 }
 
+/**
+ * The modules a script imports (import a.b, from a.b import c), each once, in order. Read line by line, not parsed:
+ * good enough to know what to get ready ahead of a run (the worker parses the code itself before importing anything).
+ */
+export function importsOf(code: string): string[] {
+    const found = new Set<string>();
+    for (const line of code.split("\n")) {
+        for (const statement of line.replace(/#.*$/, "").split(";")) {
+            const plain = /^\s*import\s+(.+)$/.exec(statement);
+            if (plain) {
+                for (const part of plain[1]!.split(",")) {
+                    const name = /^\s*([A-Za-z_][\w.]*)/.exec(part)?.[1];
+                    if (name) {
+                        found.add(name);
+                    }
+                }
+                continue;
+            }
+            const from = /^\s*from\s+([A-Za-z_][\w.]*)\s+import\b/.exec(statement);
+            if (from) {
+                found.add(from[1]!);
+            }
+        }
+    }
+    return [...found];
+}
+
+/** The packages a script imports (the first part of each import's name): scipy for scipy.signal. */
+export function topImports(code: string): string[] {
+    return [...new Set(importsOf(code).map((name) => name.split(".")[0]!))];
+}
+
+// Packages slow enough to import that Python imports them ahead of a run (as yorg.py's _WARM has them), and that do
+// nothing on import but get ready.
+const WARM = new Set(["numpy", "scipy", "pandas", "matplotlib", "CoolProp", "sympy"]);
+
+/** The slow imports a script has, which Python can get ready before it runs (sorted: the same set, the same list). */
+export function slowImports(code: string): string[] {
+    return importsOf(code)
+        .filter((name) => WARM.has(name.split(".")[0]!))
+        .sort();
+}
+
 /** A script's name from its file's ("tank blowdown.py" is "tank blowdown"). */
 export function nameOfFile(filename: string): string {
     return filename.replace(/\.py$/i, "").trim() || "Script";

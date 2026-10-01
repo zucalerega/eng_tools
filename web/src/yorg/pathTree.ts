@@ -41,6 +41,16 @@ export function folderTree<T extends { name: string; folder: string; order?: num
     return top;
 }
 
+/** The folders things are in, and those folders' folders: Hotfires, then Hotfires/HF-3 (each once, sorted). */
+export function foldersOf(items: { folder: string }[]): string[] {
+    const all = new Set<string>();
+    for (const item of items) {
+        const parts = tidyFolder(item.folder).split("/").filter(Boolean);
+        parts.forEach((_, index) => all.add(parts.slice(0, index + 1).join("/")));
+    }
+    return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+}
+
 /** A folder path as it's kept: forward slashes, no empty or padded parts (as the server tidies it). */
 export function tidyFolder(path: string): string {
     return path

@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
+import { FolderPicker } from "../FolderPicker";
+import { foldersOf } from "../pathTree";
 import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
 import type { Attached } from "./complete";
@@ -32,6 +34,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
 const PANEL_KEY = "yorg.scripts.panel"; // what's beside the notebook: its tests (Data), or the Reference
 const PREPARE_MS = 600; // how long typing pauses before Python gets a script's imports ready
+const DRAGGED_SCRIPT = "application/x-yorg-script"; // a script's id, as it's dragged onto a folder
 
 type Open = OpenScript;
 
@@ -106,6 +109,8 @@ export function ScriptsPage() {
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
     const [search, setSearch] = useState("");
     const [closed, setClosed] = useState<Set<string>>(new Set());
+    const [dragging, setDragging] = useState(false); // a script, onto a folder
+    const [over, setOver] = useState<string | null>(null); // the folder it's over ("": the top)
     const [panel, setPanelState] = useState<Panel>(storedPanel);
     const fileInput = useRef<HTMLInputElement | null>(null);
     const notebook = useRef<NotebookHandle | null>(null);
@@ -185,6 +190,8 @@ export function ScriptsPage() {
                 : all,
         );
     }, [scripts, search]);
+
+    const folders = useMemo(() => foldersOf(scripts ?? []), [scripts]); // to pick one from
 
     function withSaved(then: () => void) {
         if (open.dirty) {
@@ -302,6 +309,40 @@ export function ScriptsPage() {
         };
     });
 
+    /** A script into a folder ("": out of its folder), as it was saved: whatever's open and not saved stays open. */
+    const moveScript = (id: string, folder: string) =>
+        act(async () => {
+            const found = scripts?.find((one) => one.id === id);
+            if (!found || found.folder === folder) {
+                return;
+            }
+            const saved = await scriptsApi.get(id);
+            await scriptsApi.save(id, saved.name, folder, saved.code ?? "", saved.datasets ?? []);
+            setOpenScript((now) => (now.id === id ? { ...now, folder } : now));
+            setScripts(await scriptsApi.list());
+        });
+
+    /** What a folder (or the top) does with a script dragged onto it. */
+    const dropOn = (folder: string) => ({
+        onDragOver: (event: DragEvent) => {
+            if (event.dataTransfer.types.includes(DRAGGED_SCRIPT)) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setOver(folder);
+            }
+        },
+        onDragLeave: () => setOver((now) => (now === folder ? null : now)),
+        onDrop: (event: DragEvent) => {
+            if (!event.dataTransfer.types.includes(DRAGGED_SCRIPT)) {
+                return;
+            }
+            event.preventDefault();
+            setOver(null);
+            setDragging(false);
+            void moveScript(event.dataTransfer.getData(DRAGGED_SCRIPT), folder);
+        },
+    });
+
     function folderView(folder: Folder<(typeof tree)["items"][number]>, depth: number) {
         const shut = closed.has(folder.path);
         return (
@@ -309,7 +350,8 @@ export function ScriptsPage() {
                 {folder.path && (
                     <button
                         type="button"
-                        className="scripts-folder"
+                        className={`scripts-folder${over === folder.path ? " yorg-drop-folder" : ""}`}
+                        {...dropOn(folder.path)}
                         style={{ paddingLeft: `${depth * 0.9}rem` }}
                         aria-expanded={!shut}
                         onClick={() => {
@@ -330,8 +372,23 @@ export function ScriptsPage() {
                         {folder.folders.map((inner) => folderView(inner, depth + (folder.path ? 1 : 0)))}
                         {folder.items.map((item) => {
                             const current = item.example ? open.example === item.id : open.id === item.id;
+                            // A script of yours (or any, for an admin) drags onto a folder; the examples stay put.
+                            const movable = !item.example && "can_change" in item && item.can_change;
                             return (
-                                <li key={item.id}>
+                                <li
+                                    key={item.id}
+                                    draggable={movable}
+                                    title={movable ? "Drag it onto a folder to move it" : undefined}
+                                    onDragStart={(event) => {
+                                        event.dataTransfer.setData(DRAGGED_SCRIPT, item.id);
+                                        event.dataTransfer.effectAllowed = "move";
+                                        setDragging(true);
+                                    }}
+                                    onDragEnd={() => {
+                                        setDragging(false);
+                                        setOver(null);
+                                    }}
+                                >
                                     <button
                                         type="button"
                                         className={`scripts-item ${current ? "scripts-current" : ""}`}
@@ -402,6 +459,11 @@ export function ScriptsPage() {
                         />
                     </div>
                     <div className="pane-body">
+                        {dragging && (
+                            <div className={`yorg-drop-top${over === "" ? " yorg-drop-folder" : ""}`} {...dropOn("")}>
+                                Drop here: no folder
+                            </div>
+                        )}
                         {scripts === null ? (
                             <p className="muted">Loading…</p>
                         ) : (
@@ -418,14 +480,15 @@ export function ScriptsPage() {
                             maxLength={120}
                             onChange={(event) => setOpen({ ...open, name: event.target.value, dirty: true })}
                         />
-                        <label className="scripts-path" title="Its folder: a path, like Hotfires/Injector">
+                        <label
+                            className="scripts-path"
+                            title="Its folder: one there is, or a new one, like Hotfires/Injector"
+                        >
                             <Icon name="folder" />
-                            <input
-                                aria-label="Folder"
+                            <FolderPicker
                                 value={open.folder}
-                                maxLength={300}
-                                placeholder="No folder"
-                                onChange={(event) => setOpen({ ...open, folder: event.target.value, dirty: true })}
+                                folders={folders}
+                                onChange={(folder) => setOpen({ ...open, folder, dirty: true })}
                             />
                         </label>
                         <div className="scripts-file-actions">
@@ -555,11 +618,11 @@ export function ScriptsPage() {
                     </label>
                     <label className="field">
                         Folder
-                        <input
+                        <FolderPicker
                             value={saveAs.folder}
-                            maxLength={300}
-                            placeholder="Hotfires/Injector"
-                            onChange={(event) => setSaveAs({ ...saveAs, folder: event.target.value })}
+                            folders={folders}
+                            placeholder="None, or a new one, like Hotfires/Injector"
+                            onChange={(folder) => setSaveAs({ ...saveAs, folder })}
                         />
                     </label>
                 </Dialog>

@@ -1,6 +1,6 @@
 // Yorg's preview (/yorg/dev/...): the site as it will be with what's new in it, for admins to try before everyone has
 // it. Its pages are Yorg's own, under /yorg/dev (/yorg/dev/datasets/5 is /yorg/datasets/5), with the new ones
-// (Models, Scripts) where they'll be; a link followed in the preview stays in it.
+// (Models) where they'll be; a link followed in the preview stays in it.
 
 export const PREVIEW = "/yorg/dev";
 

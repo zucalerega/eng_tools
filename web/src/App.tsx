@@ -72,7 +72,7 @@ export function App() {
                             {nav("/yorg", "data", "Datasets")}
                             {nav("/yorg/views", "views", "Views")}
                             {preview && nav("/yorg/models", "models", "Models")}
-                            {preview && nav("/yorg/scripts", "scripts", "Scripts")}
+                            {nav("/yorg/scripts", "scripts", "Scripts")}
                             {nav("/yorg/help", "help", "Help")}
                             {vault.me?.is_admin && !preview && (
                                 <Link
@@ -100,7 +100,7 @@ export function App() {
             </header>
             {preview && (
                 <div className="preview-banner" role="status">
-                    Preview: Yorg as it will be, with system models and scripts. Only admins see it.
+                    Preview: Yorg as it will be, with system models. Only admins see it.
                     <Link to={sitePath(pathname)} exact className="button button-small">
                         Leave the preview
                     </Link>

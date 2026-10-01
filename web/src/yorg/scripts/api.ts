@@ -1,7 +1,7 @@
 import { request } from "../../api";
 
-// Yorg's saved scripts (/api/yorg/scripts, for admins while the Python window is tried out): each with a name and a
-// folder ("Hotfires/Injector"; "" for none).
+// Yorg's saved scripts (/api/yorg/scripts): everyone's, each with a name and a folder ("Hotfires/Injector"; "" for
+// none), and changed only by whoever saved it, or an admin.
 
 export interface Script {
     id: string;
@@ -13,6 +13,7 @@ export interface Script {
     created_by: string;
     updated_at: string;
     updated_by: string;
+    can_change: boolean; // whether you can save over it, or delete it (else Save keeps a copy of your own)
 }
 
 export const scriptsApi = {

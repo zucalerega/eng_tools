@@ -41,7 +41,8 @@ def can_change(user: User, created_by: int | None) -> bool:
     return user.is_admin or user.id == created_by
 
 
-def _check_can_change(user: User, created_by: int | None, what: str) -> None:
+def check_can_change(user: User, created_by: int | None, what: str) -> None:
+    """Only whoever added it (created_by: their id; None for no one known), or an admin."""
     if not can_change(user, created_by):
         raise Forbidden(f"Only whoever added this {what}, or an admin, can change it", code="not_yours")
 
@@ -102,7 +103,7 @@ def add(
 def read(db: Session, user: User, files: DataFiles, dataset_id: int, options: ReadOptions) -> Dataset:
     """Read a dataset's file again, another way. If that doesn't work, the last read stays."""
     found = dataset(db, dataset_id)
-    _check_can_change(user, found.created_by, "dataset")
+    check_can_change(user, found.created_by, "dataset")
     if found.deleted_at is not None:
         raise Conflict(f"{found.name} is deleted: restore it first")
     if split_from := found.read_info.get("split_from"):
@@ -167,7 +168,7 @@ def _failed(db: Session, dataset_id: int, message: str, options: ReadOptions) ->
 
 def update(db: Session, user: User, dataset_id: int, *, name: str | None, description: str | None) -> Dataset:
     found = dataset(db, dataset_id)
-    _check_can_change(user, found.created_by, "dataset")
+    check_can_change(user, found.created_by, "dataset")
     if name is not None:
         found.name = name
     if description is not None:
@@ -180,7 +181,7 @@ def update(db: Session, user: User, dataset_id: int, *, name: str | None, descri
 def remove(db: Session, user: User, dataset_id: int) -> Dataset:
     """Delete a dataset: it's hidden, with its file and arrays kept, until someone restores it."""
     found = dataset(db, dataset_id)
-    _check_can_change(user, found.created_by, "dataset")
+    check_can_change(user, found.created_by, "dataset")
     if found.deleted_at is None:
         found.deleted_at = utcnow()
         found.deleter = user
@@ -190,7 +191,7 @@ def remove(db: Session, user: User, dataset_id: int) -> Dataset:
 
 def restore(db: Session, user: User, dataset_id: int) -> Dataset:
     found = dataset(db, dataset_id)
-    _check_can_change(user, found.created_by, "dataset")
+    check_can_change(user, found.created_by, "dataset")
     found.deleted_at = None
     found.deleter = None
     db.commit()
@@ -340,7 +341,7 @@ def change_folder(
 ) -> DataFolder:
     """Rename a folder, or (move) put it in another folder, or at the top (parent_id None)."""
     found = folder(db, folder_id)
-    _check_can_change(user, found.created_by, "folder")
+    check_can_change(user, found.created_by, "folder")
     parent = parent_id if move else found.parent_id
     if move and parent is not None:
         above: int | None = parent
@@ -358,7 +359,7 @@ def change_folder(
 def remove_folder(db: Session, user: User, folder_id: int) -> None:
     """Delete an empty folder. Deleted datasets that were in it go to its folder, to be restored there."""
     found = folder(db, folder_id)
-    _check_can_change(user, found.created_by, "folder")
+    check_can_change(user, found.created_by, "folder")
     inside = db.scalar(select(DataFolder.id).where(DataFolder.parent_id == found.id).limit(1)) is not None
     inside = (
         inside
@@ -379,7 +380,7 @@ def move(db: Session, user: User, dataset_ids: list[int], folder_id: int | None)
         folder(db, folder_id)
     moving = [dataset(db, dataset_id) for dataset_id in dataset_ids]
     for found in moving:
-        _check_can_change(user, found.created_by, "dataset")
+        check_can_change(user, found.created_by, "dataset")
     for found in moving:
         found.folder_id = folder_id
     db.commit()
@@ -427,7 +428,7 @@ def update_formula(
     db: Session, user: User, formula_id: int, *, name: str, expression: str, unit: str, description: str
 ) -> Formula:
     found = formula(db, formula_id)
-    _check_can_change(user, found.created_by, "calculated channel")
+    check_can_change(user, found.created_by, "calculated channel")
     _check_name_free(db, name, formula_id)
     found.name = name
     found.name_key = name.lower()
@@ -442,7 +443,7 @@ def update_formula(
 
 def remove_formula(db: Session, user: User, formula_id: int) -> None:
     found = formula(db, formula_id)
-    _check_can_change(user, found.created_by, "calculated channel")
+    check_can_change(user, found.created_by, "calculated channel")
     db.delete(found)
     db.commit()
 
@@ -505,7 +506,7 @@ def update_view(
 ) -> View:
     """A view changed; its folder too, unless that's None (a client from before views had folders)."""
     found = view(db, view_id)
-    _check_can_change(user, found.created_by, "view")
+    check_can_change(user, found.created_by, "view")
     _check_size(config)
     found.name = name
     if folder is not None:
@@ -521,6 +522,6 @@ def update_view(
 
 def remove_view(db: Session, user: User, view_id: int) -> None:
     found = view(db, view_id)
-    _check_can_change(user, found.created_by, "view")
+    check_can_change(user, found.created_by, "view")
     db.delete(found)
     db.commit()

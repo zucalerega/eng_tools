@@ -234,39 +234,39 @@ export function HelpPage() {
                         </ul>
                     </Card>
                 )}
-                {preview && (
-                    <Card title="Scripts">
-                        <ul>
-                            <li>
-                                Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
-                                <code>yorg.channel(&quot;PT-TANK&quot;)</code> is a channel of the test picked, and{" "}
-                                <code>yorg.plot</code> draws on Yorg&apos;s plots.
-                            </li>
-                            <li>
-                                A script is a notebook: load the data in one cell, then change and run the ones after it
-                                without loading it again (Shift+Enter runs a cell). The editor suggests as you type,
-                                what your variables have too, and the keyboard button lists its keys.
-                            </li>
-                            <li>
-                                The <em>Reference</em>, beside the notebook (the book, in a page&apos;s Python), says
-                                what the <code>yorg</code> module has, with an example of each to put in your code.
-                            </li>
-                            <li>
-                                Python stays open while this tab does, with what it has imported and the channels it
-                                has, and gets a script&apos;s slow imports ready while you read it. The output says what
-                                it&apos;s doing, for how long, and after a run, where the time went.
-                            </li>
-                            <li>
-                                Scripts are kept for everyone in folders; upload .py files, or start from the examples.
-                            </li>
-                            <li>
-                                <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
-                                what they show. <code>yorg.window</code> is the time in view, and <code>yorg.plot</code>{" "}
-                                draws on the page&apos;s plots.
-                            </li>
-                        </ul>
-                    </Card>
-                )}
+                <Card title="Scripts">
+                    <ul>
+                        <li>
+                            Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
+                            <code>yorg.channel(&quot;PT-TANK&quot;)</code> is a channel of the test picked, and{" "}
+                            <code>yorg.plot</code> draws on Yorg&apos;s plots.
+                        </li>
+                        <li>
+                            A script is a notebook: load the data in one cell, then change and run the ones after it
+                            without loading it again (Shift+Enter runs a cell). The editor suggests as you type, what
+                            your variables have too, and the keyboard button lists its keys.
+                        </li>
+                        <li>
+                            The <em>Reference</em>, beside the notebook (the book, in a page&apos;s Python), says what
+                            the <code>yorg</code> module has, with an example of each to put in your code.
+                        </li>
+                        <li>
+                            Python stays open while this tab does, with what it has imported and the channels it has,
+                            and gets a script&apos;s slow imports ready while you read it. The output says what
+                            it&apos;s doing, for how long, and after a run, where the time went.
+                        </li>
+                        <li>
+                            Scripts are kept for everyone, in folders: anyone can open and run one, and only whoever
+                            saved it (or an admin) changes it; <em>Save as…</em> keeps a copy of your own. Upload .py
+                            files, or start from the examples.
+                        </li>
+                        <li>
+                            <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
+                            what they show. <code>yorg.window</code> is the time in view, and <code>yorg.plot</code>{" "}
+                            draws on the page&apos;s plots.
+                        </li>
+                    </ul>
+                </Card>
 
                 <Card title="Views, links, and exports">
                     <ul>

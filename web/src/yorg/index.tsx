@@ -11,7 +11,7 @@ import "./yorg.css";
 
 // Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and the vault.
 // The Python window and its editor (CodeMirror) load only when Scripts is opened.
-// Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models and scripts.
+// Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models.
 
 export const YORG = "Yorg";
 
@@ -110,11 +110,11 @@ function yorgPage(path: string, preview: boolean) {
         case "/yorg/models": // what's new: in the preview only, until it's released
             return preview ? <ModelsPage /> : null;
         case "/yorg/scripts":
-            return preview ? (
+            return (
                 <Suspense fallback={<p className="muted">Loading…</p>}>
                     <ScriptsPage />
                 </Suspense>
-            ) : null;
+            );
     }
     return null;
 }

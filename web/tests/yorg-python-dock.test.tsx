@@ -62,6 +62,20 @@ test("a dataset's page has its own Python beside its plots: a notebook on what i
     expect(screen.queryByRole("complementary", { name: "Python" })).toBeNull();
 });
 
+test("on the site, anyone has a page's Python, which opens in the site's Scripts; Models stay in the preview", async () => {
+    fakePython();
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const data = await team.data(team.chief, "Cold flow", DATA);
+    renderApp(bob, `/yorg/datasets/${data.id}`);
+    await userEvent.click(await screen.findByRole("button", { name: "Python" }));
+    const dock = within(await screen.findByRole("complementary", { name: "Python" }));
+    expect(screen.queryByRole("link", { name: "Model" })).toBeNull();
+    await userEvent.click(dock.getByRole("button", { name: "Open in Scripts" }));
+    expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/yorg/scripts");
+});
+
 test("keys in a page's Python are its notebook's, not the plots'", async () => {
     await datasetWithPython();
     await press(2, "Escape");

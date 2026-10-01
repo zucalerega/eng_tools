@@ -15,6 +15,7 @@ export interface OpenScript {
     namespace: string; // its variables' in Python: a saved script's are its own, found again when it's opened again
     datasets: number[]; // the tests attached, the first first
     dirty: boolean;
+    canChange?: boolean; // false: a saved script of someone else's, which Save keeps a copy of (else it's yours to save)
 }
 
 /** A notebook's cells, and their last runs (a cell's id: its run's). */

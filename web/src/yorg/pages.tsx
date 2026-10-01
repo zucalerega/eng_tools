@@ -221,7 +221,6 @@ function storedOpen(): boolean {
  * plots (scripts/PythonDock.tsx), whose plots go on the page's, under its own; each can be taken off the page.
  */
 function usePagePython(page: string, layout: Layout, title: string) {
-    const preview = inPreview(usePathname());
     const [open, setOpenState] = useState(storedOpen);
     const [plots, setPlots] = useState<ExtraPlot[]>([]);
     const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -233,9 +232,9 @@ function usePagePython(page: string, layout: Layout, title: string) {
             // storage blocked: it's open or closed for this page
         }
     };
-    const shown = preview && open;
+    const shown = open;
     return {
-        button: preview ? (
+        button: (
             <button
                 type="button"
                 aria-pressed={open}
@@ -244,7 +243,7 @@ function usePagePython(page: string, layout: Layout, title: string) {
             >
                 Python
             </button>
-        ) : null,
+        ),
         dock: shown ? (
             <Suspense fallback={<aside className="yorg-dock muted">Loading Python…</aside>}>
                 <PythonDock
@@ -262,24 +261,23 @@ function usePagePython(page: string, layout: Layout, title: string) {
 }
 
 /**
- * A dataset's or a view's way to its Python and Models (what's new: in the preview until it's released): Python beside
- * its plots, and a model run on its test over the time in view.
+ * A dataset's or a view's way to its Python (beside its plots) and, in the preview until they're released, to Models (a
+ * model run on its test over the time in view).
  */
 function AnalyzeButtons({ layout, title, python }: { layout: Layout; title: string; python: ReactNode }) {
     const preview = inPreview(usePathname());
-    if (!preview) {
-        return null;
-    }
     return (
         <>
             {python}
-            <Link
-                className="button"
-                to={modelsLink(handoffOf(layout, title))}
-                title="Run a model on this test, over the time in view"
-            >
-                Model
-            </Link>
+            {preview && (
+                <Link
+                    className="button"
+                    to={modelsLink(handoffOf(layout, title))}
+                    title="Run a model on this test, over the time in view"
+                >
+                    Model
+                </Link>
+            )}
         </>
     );
 }

@@ -18,15 +18,15 @@ import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
 import "./scripts.css";
 
-// Yorg's Python window (Scripts, in the preview while it's tried out): scripts that pull tests' channels and work them
-// over, with NumPy, SciPy, pandas, matplotlib, and CoolProp, run in the browser by the tab's Python (python.ts), which
-// stays open as you come and go, gets a script's slow imports ready while you read it, and says what it's doing as it
-// runs (Output.tsx). A script is a notebook (Notebook.tsx): cells run one at a time in its variables, so the data
-// loads once. It works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept
-// on the server in folders, for every admin, as .py code with a "# %%" line starting each cell (cells.ts); .py files
-// upload as scripts and scripts download as them. Beside the notebook, its tests (Data) or what the yorg module has
-// (the Reference: Reference.tsx). A dataset's or view's page's own Python (docked beside its plots: PythonDock.tsx)
-// opens its notebook here too.
+// Yorg's Python window (Scripts): scripts that pull tests' channels and work them over, with NumPy, SciPy, pandas,
+// matplotlib, and CoolProp, run in the browser by the tab's Python (python.ts), which stays open as you come and go,
+// gets a script's slow imports ready while you read it, and says what it's doing as it runs (Output.tsx). A script is a
+// notebook (Notebook.tsx): cells run one at a time in its variables, so the data loads once. It works on the tests
+// attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept on the server in folders, for
+// everyone (each changed only by whoever saved it, or an admin: another's is saved as a copy), as .py code with a
+// "# %%" line starting each cell (cells.ts); .py files upload as scripts and scripts download as them. Beside the
+// notebook, its tests (Data) or what the yorg module has (the Reference: Reference.tsx). A dataset's or view's page's
+// own Python (docked beside its plots: PythonDock.tsx) opens its notebook here too.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
@@ -230,6 +230,7 @@ export function ScriptsPage() {
                     namespace: `script-${found.id}`,
                     datasets: found.datasets?.length ? found.datasets : open.datasets,
                     dirty: false,
+                    canChange: found.can_change,
                 });
             });
         });
@@ -243,16 +244,25 @@ export function ScriptsPage() {
                     ? await scriptsApi.add(name, tidyFolder(folder), text, open.datasets)
                     : await scriptsApi.save(open.id, name, tidyFolder(folder), text, open.datasets);
             // The notebook's variables and outputs stay: it's the same notebook, saved.
-            setOpenScript({ ...open, id: done.id, example: null, name: done.name, folder: done.folder, dirty: false });
+            setOpenScript({
+                ...open,
+                id: done.id,
+                example: null,
+                name: done.name,
+                folder: done.folder,
+                dirty: false,
+                canChange: done.can_change,
+            });
             setScripts(await scriptsApi.list());
             setAsking(null);
         });
 
+    /** Save over it if it's yours; else (new, an example, or someone else's) as one of your own. */
     function saveNow() {
-        if (open.id) {
+        if (open.id && open.canChange !== false) {
             void save(open.name, open.folder, false);
         } else {
-            setSaveAs({ name: open.name, folder: open.folder });
+            setSaveAs({ name: open.id ? `${open.name} copy` : open.name, folder: open.folder });
             setAsking({ ask: "save-as" });
         }
     }
@@ -275,6 +285,7 @@ export function ScriptsPage() {
                     namespace: `script-${last.id}`,
                     datasets: last.datasets ?? open.datasets,
                     dirty: false,
+                    canChange: last.can_change,
                 }),
             );
         }
@@ -431,6 +442,14 @@ export function ScriptsPage() {
                                     Example
                                 </span>
                             )}
+                            {open.id && open.canChange === false && (
+                                <span
+                                    className="scripts-badge"
+                                    title="Only whoever saved it, or an admin, changes it: Save keeps a copy of your own"
+                                >
+                                    Someone else&apos;s
+                                </span>
+                            )}
                             <button
                                 type="button"
                                 className="button-small"
@@ -459,7 +478,7 @@ export function ScriptsPage() {
                             >
                                 <Icon name="download" />
                             </button>
-                            {open.id && (
+                            {open.id && open.canChange !== false && (
                                 <button
                                     type="button"
                                     className="icon-button icon-danger"

@@ -4,8 +4,8 @@ import { describe, expect, test } from "vitest";
 import { inPreview, previewPath, sitePath } from "../src/preview";
 import { renderApp, Team } from "./team";
 
-// Yorg's preview (/yorg/dev/...): the site as it will be with what's new in it (system models, scripts), for admins;
-// everyone else's Yorg stays as it is.
+// Yorg's preview (/yorg/dev/...): the site as it will be with what's new in it (system models), for admins; everyone
+// else's Yorg stays as it is. Scripts and Python beside the plots were in it, and now are everyone's.
 
 describe("preview paths", () => {
     test("Yorg's pages have preview ones; the vault's don't", () => {
@@ -32,9 +32,9 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     const nav = within(await screen.findByRole("navigation", { name: "Main" }));
     const tabs = () => nav.getAllByRole("link").map((link) => link.textContent);
     await nav.findByRole("link", { name: "Preview" }); // once it knows the chief is an admin
-    expect(tabs()).toEqual(["Datasets", "Views", "Help", "Preview"]);
+    expect(tabs()).toEqual(["Datasets", "Views", "Scripts", "Help", "Preview"]);
 
-    // In the preview: Models and Scripts in the top bar, and the preview says so.
+    // In the preview: Models in the top bar too, and the preview says so.
     await userEvent.click(nav.getByRole("link", { name: "Preview" }));
     expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev");
@@ -66,7 +66,7 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     await userEvent.click(screen.getByRole("link", { name: "Leave the preview" }));
     expect(await screen.findByText(/There's no page here/)).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/models");
-    expect(tabs()).toEqual(["Datasets", "Views", "Help", "Preview"]);
+    expect(tabs()).toEqual(["Datasets", "Views", "Scripts", "Help", "Preview"]);
 });
 
 test("the preview is for admins", async () => {
@@ -75,7 +75,8 @@ test("the preview is for admins", async () => {
     renderApp(bob, "/yorg/dev/views");
     expect(await screen.findByText(/There's no page here/)).toBeTruthy();
     const nav = within(screen.getByRole("navigation", { name: "Main" }));
-    expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(["Datasets", "Views", "Help"]);
+    expect(nav.getAllByRole("link").map((link) => link.textContent)).toEqual(["Datasets", "Views", "Scripts", "Help"]);
+    expect(screen.queryByRole("link", { name: "Preview" })).toBeNull(); // no way in
     expect(screen.queryByText(/Preview: Yorg as it will be/)).toBeNull();
     // The way back goes to the site, not the preview.
     await userEvent.click(screen.getByRole("link", { name: "Go to the test data" }));

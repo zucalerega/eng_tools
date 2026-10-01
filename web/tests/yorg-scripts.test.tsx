@@ -4,25 +4,54 @@ import { expect, test } from "vitest";
 import { acceptSuggestion, cell, codeOf, setCode, typeIn } from "./notebook";
 import { renderApp, Team } from "./team";
 
-// Yorg's Python window (Scripts, in the preview for admins): scripts kept on the server in folders, uploaded as .py
-// files, and the examples to start from; each a notebook of cells. The scripts run in the browser with Pyodide, which
+// Yorg's Python window (Scripts, everyone's): scripts kept on the server in folders, uploaded as .py files, and the
+// examples to start from; each a notebook of cells. The scripts run in the browser with Pyodide, which
 // jsdom can't: here, Python never gets ready unless a test says so (tests/python.ts; running is in
 // yorg-scripts-python.test.tsx and yorg-notebook.test.tsx).
 
-test("the Python window is for admins", async () => {
+test("everyone has the Python window: a script is changed by whoever saved it, another's saved as a copy", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
-    const asBob = renderApp(bob, "/yorg/dev/scripts");
-    expect(await screen.findByText(/There's no page here/)).toBeTruthy();
-    asBob.unmount();
+    const alice = await team.member("Alice");
+    const name = `Bob's ${team.folder}`;
 
-    renderApp(team.chief, "/yorg/dev");
+    // Bob, on the site: Scripts is in the top bar, and Python starts with the page.
+    const asBob = renderApp(bob, "/yorg");
     await screen.findByRole("heading", { name: "Test data" });
     await userEvent.click(
         within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Scripts" }),
     );
     expect(await screen.findByRole("heading", { name: "Scripts" })).toBeTruthy();
-    expect(await screen.findByText(/^Starting Python · \d+ s$/)).toBeTruthy(); // it starts with the page
+    expect(window.location.pathname).toBe("/yorg/scripts");
+    expect(await screen.findByText(/^Starting Python · \d+ s$/)).toBeTruthy();
+
+    // He saves one of his own, his to delete.
+    await setCode(1, 'print("Bob\'s")');
+    await userEvent.click(screen.getByRole("button", { name: "Save" })); // a new one: Save asks for its name
+    let dialog = within(screen.getByRole("dialog"));
+    await userEvent.clear(dialog.getByLabelText("Name"));
+    await userEvent.type(dialog.getByLabelText("Name"), name);
+    await userEvent.click(dialog.getByRole("button", { name: "Save" }));
+    const bobs = within(screen.getByRole("complementary", { name: "Scripts" }));
+    await waitFor(() => expect(bobs.getByRole("button", { name })).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Delete…" })).toBeTruthy();
+    asBob.unmount();
+
+    // Alice opens it, to run and change: saving keeps a copy of her own, and Bob's isn't hers to delete.
+    renderApp(alice, "/yorg/scripts");
+    const alices = within(await screen.findByRole("complementary", { name: "Scripts" }));
+    await userEvent.click(await alices.findByRole("button", { name }));
+    expect(await screen.findByText("Someone else's")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete…" })).toBeNull();
+    await setCode(1, 'print("Alice\'s")');
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    dialog = within(screen.getByRole("dialog"));
+    expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe(`${name} copy`);
+    await userEvent.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(alices.getByRole("button", { name: `${name} copy` })).toBeTruthy());
+    expect(screen.queryByText("Someone else's")).toBeNull();
+    expect((await team.script(bob, name)).code).toContain('print("Bob\'s")'); // as Bob saved it
+    expect((await team.script(alice, `${name} copy`)).code).toContain('print("Alice\'s")');
 });
 
 test("scripts are opened from the examples, saved in folders, uploaded, changed, and deleted", async () => {

@@ -599,10 +599,10 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
 - **Yorg's preview** (`/yorg/dev/...`, admins): the site as it will be with what's new in
   it, so it can be tried as it'll look before everyone has it. `web/src/preview.ts` maps
   its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
-  the same pages there, and the new ones (Models, Scripts) only there, and the router sends
+  the same pages there, and the new ones (Models) only there, and the router sends
   links followed in the preview to their preview pages (a link marked `exact` leaves it).
-  The top bar, a dataset's or view's Python and Model buttons, and Help's cards show what's
-  new in the preview. They take what the page plots (`analysis.ts`: its tests, the channels
+  The top bar, a dataset's or view's Model button, and Help's cards show what's new in the
+  preview. Scripts and a page's Python were in it, and are everyone's now. They take what the page plots (`analysis.ts`: its tests, the channels
   plotted, the time in view): the page's Python starts on them (`starterScript`), a
   model's run window is that time.
   Releasing a feature is showing it outside the preview too (and its API to everyone).
@@ -663,7 +663,7 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   Saved models are JSON files in `CVC_YORG_DIR/models`, so the models add no tables.
   FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
   Vault is ever given to others, the GPL applies to it.
-- **Scripts** (the Python window, in the preview while it's tried out):
+- **Scripts** (the Python window, everyone's):
   Python runs in the browser, never on the server: Pyodide (CPython in WebAssembly, pinned
   in `web/src/yorg/scripts/worker.js`, from jsDelivr), in a module worker started from a
   `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module
@@ -764,7 +764,11 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
   Scripts are JSON
   files in `CVC_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
-  folder path, and the code (its cells, marked). REFPROP isn't there: it needs NIST's license, and would run
+  folder path, the code (its cells, marked), and who saved it (`created_by_id`). Anyone can
+  open, run, and save one; only whoever saved it, or an admin, can change or delete it
+  (`check_can_change`, as for a view), so saving another's keeps a copy of your own. Those
+  saved while scripts were only admins' have no `created_by_id`, and only admins change
+  them. REFPROP isn't there: it needs NIST's license, and would run
   on the server behind a property API.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor

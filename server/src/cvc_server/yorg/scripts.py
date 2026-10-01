@@ -1,6 +1,7 @@
-"""Yorg's scripts (/api/yorg/scripts), for admins while the Python window is tried out: Python that pulls a test's
-channels and works them over. They run in the browser (Pyodide), never on the server; the server only keeps them,
-each with a name and a folder (a path like "Hotfires/Injector"), for every admin.
+"""Yorg's scripts (/api/yorg/scripts): Python that pulls a test's channels and works them over. They run in the browser
+(Pyodide), never on the server; the server only keeps them, each with a name and a folder (a path like
+"Hotfires/Injector"), for everyone. Anyone can save one, or a copy of another's; only whoever saved it, or an admin,
+can change or delete it (as a view), and those saved before scripts were anyone's only an admin.
 """
 
 from typing import Annotated, Any
@@ -8,9 +9,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
+from ..api.deps import ActiveUser
+from ..models import User
+from .datasets import can_change, check_can_change
 from .saved import Saved
 from .schemas import FolderPath
-from .system.api import AdminUser
 
 router = APIRouter(prefix="/api/yorg/scripts", tags=["yorg-scripts"])
 
@@ -40,28 +43,35 @@ class ScriptIn(BaseModel):
         return value
 
 
+def _out(user: User, script: dict[str, Any]) -> dict[str, Any]:
+    """A script as someone sees it: with whether they can change it."""
+    return {**script, "can_change": can_change(user, script.get("created_by_id"))}
+
+
 @router.get("")
-def get_saved_scripts(user: AdminUser, scripts: SavedScripts) -> list[dict[str, Any]]:
+def get_saved_scripts(user: ActiveUser, scripts: SavedScripts) -> list[dict[str, Any]]:
     """Every script (without its code), the latest changed first."""
-    return scripts.all()
+    return [_out(user, script) for script in scripts.all()]
 
 
 @router.post("", status_code=201)
-def post_script(body: ScriptIn, user: AdminUser, scripts: SavedScripts) -> dict[str, Any]:
-    return scripts.add(user, **body.model_dump())
+def post_script(body: ScriptIn, user: ActiveUser, scripts: SavedScripts) -> dict[str, Any]:
+    return _out(user, scripts.add(user, **body.model_dump()))
 
 
 @router.get("/{script_id}")
-def get_script(script_id: str, user: AdminUser, scripts: SavedScripts) -> dict[str, Any]:
-    return scripts.get(script_id)
+def get_script(script_id: str, user: ActiveUser, scripts: SavedScripts) -> dict[str, Any]:
+    return _out(user, scripts.get(script_id))
 
 
 @router.put("/{script_id}")
-def put_script(script_id: str, body: ScriptIn, user: AdminUser, scripts: SavedScripts) -> dict[str, Any]:
-    return scripts.change(user, script_id, **body.model_dump())
+def put_script(script_id: str, body: ScriptIn, user: ActiveUser, scripts: SavedScripts) -> dict[str, Any]:
+    check_can_change(user, scripts.get(script_id).get("created_by_id"), "script")
+    return _out(user, scripts.change(user, script_id, **body.model_dump()))
 
 
 @router.delete("/{script_id}", status_code=204)
-def delete_script(script_id: str, user: AdminUser, scripts: SavedScripts) -> Response:
+def delete_script(script_id: str, user: ActiveUser, scripts: SavedScripts) -> Response:
+    check_can_change(user, scripts.get(script_id).get("created_by_id"), "script")
     scripts.remove(script_id)
     return Response(status_code=204)

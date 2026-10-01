@@ -1,4 +1,4 @@
-"""What Yorg's dev pages save for every admin (system models, scripts): a JSON file each in a folder of CVC_YORG_DIR,
+"""What Yorg keeps as files rather than rows (system models, scripts): a JSON file each in a folder of CVC_YORG_DIR,
 so they need no tables of their own (and leave nothing behind in the database if they go)."""
 
 import json
@@ -46,6 +46,7 @@ class Saved:
             **fields,
             "created_at": now,
             "created_by": user.name,
+            "created_by_id": user.id,  # whose it is, to change (those saved before it was kept have none)
             "updated_at": now,
             "updated_by": user.name,
         }

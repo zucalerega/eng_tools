@@ -131,9 +131,9 @@ the keys.
   Save view to keep them; on a dataset's page they become the plots their browser keeps for
   it. A link made in the preview opens the site's page, so it works for everyone.
 - **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
-  it: the same data, views, and help, with Models and Scripts in its top bar, and Python and
-  Model on a dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview,
-  top right.
+  it: the same data, views, scripts, and help, with Models in its top bar, and Model on a
+  dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview, top right
+  (no one else sees it).
 - **System models (in the preview while it's being tried out):** draw a test stand's
   feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
   outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
@@ -151,7 +151,7 @@ the keys.
   collapse factor), or pick them and **Fit**: the server turns them until the model
   matches best, and you apply what it found (or not). Models are saved for every admin,
   run against any test with the same channel names, and go to and from files.
-- **Scripts (in the preview while it's being tried out):** a Python notebook. Its cells run
+- **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all
   runs them in order and stops at one that fails, and each cell's output is under it. Text
@@ -173,12 +173,14 @@ the keys.
   fluid library: 20 seconds to a minute), so Run can go straight away; Run while Python's busy
   and the run waits, saying for what. As it runs, the output says each step (loading
   packages, importing a module, running your code) and how long it's taken, and after, how
-  long the run took and where the time went. Scripts are kept for every admin in
-  folders, with their tests, as .py code with a `# %%` line starting each cell (as VS Code
-  and Spyder read them); upload .py files as scripts and download scripts as them.
+  long the run took and where the time went. Scripts are kept for everyone in folders,
+  with their tests, as .py code with a `# %%` line starting each cell (as VS Code and
+  Spyder read them); upload .py files as scripts and download scripts as them. Anyone can
+  open and run a script; only whoever saved it (or an admin) can change or delete it, and
+  saving someone else's keeps a copy of your own.
   Examples to start from: a channel's peak, an injector's CdA, ullage gas from CoolProp, a
   spectrum, and more.
-- **Python on a dataset or a view** (in the preview): **Python** on its page docks a notebook
+- **Python on a dataset or a view:** **Python** on its page docks a notebook
   beside the plots, started on what they show: its cells work on the page's channels, with
   `yorg.window` the time in view (as it is when a cell runs), and what they `yorg.plot` goes on
   the page's own plots, on the same time axis (× takes one off). Drag its edge to widen it;

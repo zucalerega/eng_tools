@@ -942,6 +942,27 @@ main.main-full {
     }
 }
 
+/* Folders of saved views (ViewsPage): paths of their own, shut and opened in place, each with how many it has. */
+.yorg-view-folder {
+    gap: 0.45rem;
+    height: auto;
+    padding: 0.1rem 0.3rem 0.1rem 0;
+    border: none;
+    background: none;
+    font-weight: 600;
+}
+
+.yorg-view-folder:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
+}
+
+.yorg-view-chevron {
+    width: 0.8rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
 /* Folders of datasets: a folder (or a folder in the path above) lights up while something can be dropped on it. */
 .yorg-folder-name {
     display: inline-flex;

@@ -526,7 +526,12 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
-  another test's data.
+  another test's data. A view's folder is a path of its own (`yorg_views.folder`,
+  "Hotfires/HF-3", "" at the top), tidied by the server as a script's is (`FolderPath`),
+  not one of the datasets' folders; the Views tab arranges them in a tree
+  (`pathTree.ts`), each folder's views the most recently changed first. Renaming or
+  moving a view sends its plots as they were saved, so changes to them on the page stay
+  to be saved; a client from before folders, which sends none, leaves a view where it is.
 - **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
   page without saving a view, so views are kept for what's worth keeping. A link is the
   page's address on the site (`sitePath`: never the preview's, which only admins open)
@@ -721,14 +726,22 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   loads with Scripts), colored from the site's variables and code colors of its own
   (`editorTheme.ts`, `--code-*` in scripts.css). It suggests as you type: channels' names in
   quotes where a channel goes, tests' after `dataset=`, the module's after `yorg.`
-  (`complete.ts`); the code's own names and Python's words; and what the notebook's
-  variables have, from jedi in the running Python (`yorg._complete`: `pt.` offers `t`,
+  (`complete.ts`, with the Reference's words beside each); the code's own names and Python's
+  words; and what the notebook's variables have, from jedi in the running Python
+  (`yorg._complete`: `pt.` offers `t`,
   `values`, `si`...). Hovering a name shows its signature and docstring (`yorg._inspect`), and
   Python's own reading of the code (`yorg._check`) underlines a syntax error as it's typed.
   The editor asks Python only while it's otherwise idle, and waits for its answer 3 s at most,
   so a run never waits on the editor; Python gets jedi ready (about 2 s, and what it's
   slowest to learn the first time, NumPy's arrays) once it's been idle 4 s. Clicking a channel
-  under Data puts in its `yorg.channel(...)` (its name, in a string) where you last typed. In
+  under Data puts in its `yorg.channel(...)` (its name, in a string) where you last typed.
+  The page is laid out as an editor is: the scripts, the notebook, and beside it the tests
+  attached (Data) or the `yorg` module's Reference (`Reference.tsx`), each pane under a head of
+  the same height, the side panes staying in view as the notebook scrolls. The Reference
+  (`docs.ts`) gives each of `yorg.py`'s public names its signature, a line, more, and an
+  example; `tests/yorg-reference.test.tsx` holds it to `yorg.py`'s own names and signatures,
+  so the two can't drift. A search shows the names it's in, or failing that, the entries it's
+  in; Insert puts an example after the line the cursor's on, in the cell last written in. In
   the tests, CodeMirror runs in jsdom with its ranges measured as empty (`tests/setup.ts`), and
   code is set and read through CodeMirror (`tests/notebook.ts`). A notebook's plots let the
   wheel scroll the page, and zoom with Ctrl or ⌘ held (`Plot`'s `wheelScrolls`).
@@ -742,8 +755,9 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   the page's (`page-dataset-5`: its cells and runs kept in the tab, `stored.ts`), so it's as
   it was when the page is made again (a view saved, a file read again); it starts on what
   the page plots. Open in Scripts takes it, cells, tests, and variables, to the Scripts page to
-  be kept. The workspace's keys leave it alone (`.yorg-dock`), and it loads (with CodeMirror)
-  only when it's opened. The
+  be kept. Its head says how Python is, and opens the Reference in the notebook's place (the
+  notebook's hidden, not gone, meanwhile). The workspace's keys leave it alone (`.yorg-dock`),
+  and it loads (with CodeMirror) only when it's opened. The
   `yorg` module (`yorg.py`, sent to the worker as text) gives channels as NumPy arrays with
   their units (`Channel.si()` for SI), and sends plots (drawn with Yorg's `Plot`),
   matplotlib figures (as PNGs), and files to save back to the page. Pyodide's own packages
@@ -793,7 +807,7 @@ are at `/docs`.
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `POST /api/yorg/datasets/{id}/split` | make datasets of spans of it `{pieces: [{name, start, end, zero}], folder_id}`, all or none (422 if a span has no samples) |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
-| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, description, datasets, config}` |
+| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder, description, datasets, config}` (`folder` optional: left out, a new view's at the top and a changed one stays put) |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
 
 ## Deploying

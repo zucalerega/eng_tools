@@ -245,7 +245,11 @@ export function HelpPage() {
                             <li>
                                 A script is a notebook: load the data in one cell, then change and run the ones after it
                                 without loading it again (Shift+Enter runs a cell). The editor suggests as you type,
-                                what your variables have too, and <em>Keys</em> lists its keys.
+                                what your variables have too, and the keyboard button lists its keys.
+                            </li>
+                            <li>
+                                The <em>Reference</em>, beside the notebook (the book, in a page&apos;s Python), says
+                                what the <code>yorg</code> module has, with an example of each to put in your code.
                             </li>
                             <li>
                                 Python stays open while this tab does, with what it has imported and the channels it
@@ -272,9 +276,14 @@ export function HelpPage() {
                             its channels.
                         </li>
                         <li>
-                            <em>Copy link</em>, beside it, sends someone the plots as they are (tests and their shifts,
-                            time in view, T0, and the rest) without saving a view. They open as unsaved changes, for
-                            whoever opens them to <em>Save view</em> or not.
+                            Views go in folders, given as a path when you save one (<code>Hotfires/HF-3</code>), or
+                            later with <em>More</em> and <em>Rename or move</em>. The <em>Views</em> tab shows them in
+                            their folders.
+                        </li>
+                        <li>
+                            <em>Copy link</em>, beside <em>Save view</em>, sends someone the plots as they are (tests
+                            and their shifts, time in view, T0, and the rest) without saving a view. They open as
+                            unsaved changes, for whoever opens them to <em>Save view</em> or not.
                         </li>
                         <li>
                             <em>Export</em>: an image of the plots (labels included), or the data in view as CSV

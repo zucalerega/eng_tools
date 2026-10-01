@@ -463,6 +463,34 @@ def test_views_are_saved_for_everyone_and_changed_by_their_owner(team):
     assert team.client.get(url, headers=alice).status_code == 404
 
 
+def test_views_are_kept_in_folders_of_their_own(team):
+    alice = team.member("alice@x.test")
+    dataset = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    body = {"name": "Tank pressures", "datasets": [dataset["id"]], "config": {"panels": []}}
+
+    def add(**more):
+        response = team.client.post("/api/yorg/views", json={**body, **more}, headers=alice)
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    assert add()["folder"] == ""  # at the top
+    view = add(folder=" Hotfires \\ HF-3// ")  # a path, tidied as a script's is
+    assert view["folder"] == "Hotfires/HF-3"
+    url = f"/api/yorg/views/{view['id']}"
+
+    # Changed by a client from before views had folders (no folder): it stays where it was.
+    renamed = team.client.put(url, json={**body, "name": "Tanks"}, headers=alice).json()
+    assert (renamed["name"], renamed["folder"]) == ("Tanks", "Hotfires/HF-3")
+    moved = team.client.put(url, json={**body, "folder": "Cold flows/CF-2"}, headers=alice).json()
+    assert moved["folder"] == "Cold flows/CF-2"
+    assert team.client.put(url, json={**body, "folder": ""}, headers=alice).json()["folder"] == ""
+
+    too_long = team.client.post("/api/yorg/views", json={**body, "folder": "x" * 301}, headers=alice)
+    assert too_long.status_code == 422
+    listed = team.client.get("/api/yorg/views", headers=alice).json()
+    assert sorted(v["folder"] for v in listed) == ["", ""]
+
+
 def test_folders_keep_datasets_in_order(team):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test")

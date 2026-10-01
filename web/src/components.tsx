@@ -205,11 +205,13 @@ export function MenuButton({
     items,
     primary = false,
     name,
+    align = "right",
 }: {
     label: string;
     items: { label: string; onSelect: () => void }[];
     primary?: boolean;
     name?: string;
+    align?: "left" | "right"; // the menu's edge that lines up with the button's (left: it opens rightwards)
 }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
     return (
@@ -226,7 +228,7 @@ export function MenuButton({
                 {label}
             </button>
             {open && (
-                <div className="menu" role="menu" aria-label={name ?? label}>
+                <div className={`menu ${align === "left" ? "menu-left" : ""}`} role="menu" aria-label={name ?? label}>
                     {items.map((item) => (
                         <button
                             key={item.label}

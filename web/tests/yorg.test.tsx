@@ -304,6 +304,60 @@ test("a saved view opens for everyone, and works with another test's data", asyn
     expect(window.location.pathname).toBe(`/yorg/datasets/${second.id}`);
 });
 
+test("saved views are kept in folders of their own: saved in one, moved, and found in the Views tab", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Foldered", HOTFIRE);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
+    const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    await userEvent.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Save view" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Save this view" }));
+    await userEvent.type(dialog.getByLabelText("Name"), "Tanks");
+    await userEvent.type(dialog.getByLabelText("Folder"), ` ${team.folder} / Hotfires `);
+    await userEvent.click(dialog.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("heading", { name: "Tanks" })).toBeTruthy();
+    expect(screen.getByText(new RegExp(`saved view in ${team.folder}/Hotfires`))).toBeTruthy();
+
+    // Moved and renamed with a change to its plots not saved: the change stays on the page, not saved with it.
+    const viewChannels = within(await screen.findByRole("complementary", { name: "Channels" }));
+    await userEvent.click(await viewChannels.findByRole("button", { name: /PT-FU-01/ }));
+    expect(await screen.findByText(/saved view in .*· changed/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename or move…" }));
+    const rename = within(await screen.findByRole("dialog", { name: "Rename or move the view" }));
+    await userEvent.clear(rename.getByLabelText("Name"));
+    await userEvent.type(rename.getByLabelText("Name"), "Ox tanks");
+    await userEvent.clear(rename.getByLabelText("Folder"));
+    await userEvent.type(rename.getByLabelText("Folder"), `${team.folder}/Cold flows`);
+    await userEvent.click(rename.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("heading", { name: "Ox tanks" })).toBeTruthy();
+    expect(screen.getByText(new RegExp(`saved view in ${team.folder}/Cold flows.*changed`))).toBeTruthy();
+    const plotted = within(screen.getByRole("group", { name: "Plot 1: channels" }));
+    expect(plotted.getByRole("button", { name: "PT-FU-01" })).toBeTruthy();
+    const kept = (await team.views(team.chief)).find((view) => view.folder === `${team.folder}/Cold flows`);
+    expect(kept?.name).toBe("Ox tanks");
+    expect(JSON.stringify(kept?.config)).not.toContain("PT-FU-01");
+
+    // The Views tab: in its folder, which shuts and opens; and found by a word.
+    await userEvent.click(screen.getByRole("link", { name: "Views" }));
+    const table = within(await screen.findByRole("table", { name: "Saved views" }));
+    const folder = table.getByRole("button", { name: new RegExp(`^${team.folder}`) });
+    expect(folder.getAttribute("aria-expanded")).toBe("true");
+    expect(table.getByRole("button", { name: /^Cold flows/ })).toBeTruthy();
+    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    await userEvent.click(folder);
+    expect(table.queryByRole("link", { name: "Ox tanks" })).toBeNull();
+    await userEvent.click(folder);
+    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
+
+    await userEvent.click(folder); // shut, but a search opens what it finds
+    await userEvent.type(screen.getByLabelText("Find a view"), `Ox tanks ${team.folder}`);
+    const found = within(screen.getByRole("table", { name: "Saved views" }));
+    expect(found.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    expect(found.getByText(`in ${team.folder}/Cold flows`)).toBeTruthy();
+});
+
 test("a dataset's page says how it was read, and it can be read another way", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "No time", "A,B\n5,1\n3,2\n4,3\n");

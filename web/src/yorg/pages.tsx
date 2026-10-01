@@ -18,6 +18,7 @@ import {
 import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
+import { folderTree, type Folder } from "./pathTree";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";
@@ -358,8 +359,60 @@ function DatasetWorkspace({
     );
 }
 
-function SaveViewDialog({ layout, onClose, name = "" }: { layout: Layout; onClose: () => void; name?: string }) {
+/** The folders views are in (and those they're in), to pick one from as a folder's typed. */
+function useViewFolders(): string[] {
+    const [folders, setFolders] = useState<string[]>([]);
+    useEffect(() => {
+        yorg.views().then(
+            (views) => {
+                const all = new Set<string>();
+                for (const view of views) {
+                    const parts = view.folder.split("/").filter(Boolean);
+                    parts.forEach((_, index) => all.add(parts.slice(0, index + 1).join("/")));
+                }
+                setFolders([...all].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })));
+            },
+            () => {},
+        );
+    }, []);
+    return folders;
+}
+
+/** Where a view is kept: a path of folders of its own ("Hotfires/HF-3"), or none (at the top). */
+function FolderField({ value, onChange }: { value: string; onChange: (folder: string) => void }) {
+    const folders = useViewFolders();
+    return (
+        <label className="field">
+            Folder
+            <input
+                value={value}
+                list="yorg-view-folders"
+                maxLength={300}
+                placeholder="None, or a path like Hotfires/HF-3"
+                onChange={(event) => onChange(event.target.value)}
+            />
+            <datalist id="yorg-view-folders">
+                {folders.map((folder) => (
+                    <option key={folder} value={folder} />
+                ))}
+            </datalist>
+        </label>
+    );
+}
+
+function SaveViewDialog({
+    layout,
+    onClose,
+    name = "",
+    folder: inFolder = "",
+}: {
+    layout: Layout;
+    onClose: () => void;
+    name?: string;
+    folder?: string; // a copy's: the view's own
+}) {
     const [title, setTitle] = useState(name);
+    const [folder, setFolder] = useState(inFolder);
     const [description, setDescription] = useState("");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -368,6 +421,7 @@ function SaveViewDialog({ layout, onClose, name = "" }: { layout: Layout; onClos
         try {
             const saved = await yorg.saveView({
                 name: title.trim(),
+                folder,
                 description,
                 datasets: layout.datasets.map((ref) => ref.id),
                 config: layout,
@@ -395,6 +449,66 @@ function SaveViewDialog({ layout, onClose, name = "" }: { layout: Layout; onClos
                 Name
                 <input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} />
             </label>
+            <FolderField value={folder} onChange={setFolder} />
+            <label className="field">
+                Notes
+                <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
+            </label>
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
+/**
+ * A view renamed, moved to another folder, or its notes changed. Its plots go as they were saved: changes to them
+ * since stay on the page, to save or not.
+ */
+function RenameViewDialog({
+    view,
+    meta,
+    onDone,
+    onClose,
+}: {
+    view: SavedView;
+    meta: ViewMeta;
+    onDone: (meta: ViewMeta) => void;
+    onClose: () => void;
+}) {
+    const [name, setName] = useState(meta.name);
+    const [folder, setFolder] = useState(meta.folder);
+    const [description, setDescription] = useState(meta.description);
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function save() {
+        setBusy(true);
+        try {
+            const saved = await yorg.updateView(view.id, {
+                name: name.trim(),
+                folder,
+                description,
+                datasets: view.datasets,
+                config: view.config,
+            });
+            onDone({ name: saved.name, folder: saved.folder, description: saved.description });
+        } catch (error) {
+            setProblem(message(error));
+            setBusy(false);
+        }
+    }
+    return (
+        <Dialog
+            title="Rename or move the view"
+            confirm="Save"
+            busy={busy}
+            disabled={!name.trim()}
+            onConfirm={() => void save()}
+            onCancel={onClose}
+        >
+            <label className="field">
+                Name
+                <input autoFocus value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
+            </label>
+            <FolderField value={folder} onChange={setFolder} />
             <label className="field">
                 Notes
                 <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
@@ -966,10 +1080,27 @@ function ReadSettings({ detail }: { detail: DatasetDetail }) {
 
 // --- saved views ----------------------------------------------------------------------------------------------------
 
+const CLOSED_KEY = "yorg.views.closed"; // the folders of views shut, by path
+
+function storedClosed(): Set<string> {
+    try {
+        const found: unknown = JSON.parse(window.localStorage.getItem(CLOSED_KEY) ?? "[]");
+        return new Set(Array.isArray(found) ? found.filter((path): path is string => typeof path === "string") : []);
+    } catch {
+        return new Set();
+    }
+}
+
+/** How many views a folder has, in it and in its folders. */
+const countIn = (folder: Folder<SavedView>): number =>
+    folder.items.length + folder.folders.reduce((sum, inner) => sum + countIn(inner), 0);
+
 export function ViewsPage() {
     const [views, setViews] = useState<SavedView[] | null>(null);
     const [datasets, setDatasets] = useState<Map<number, string>>(new Map());
     const [problem, setProblem] = useState<string | null>(null);
+    const [find, setFind] = useState("");
+    const [closed, setClosed] = useState<Set<string>>(storedClosed);
     useEffect(() => {
         yorg.views().then(setViews, (error: unknown) => setProblem(message(error)));
         yorg.datasets().then(
@@ -977,49 +1108,126 @@ export function ViewsPage() {
             () => {},
         );
     }, []);
+
+    const dataOf = (view: SavedView) => view.datasets.map((id) => datasets.get(id) ?? `deleted (${id})`).join(", ");
+    const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const searching = words.length > 0;
+    // In their folders, each folder's the most recently changed first (as they come); found by a word, every folder
+    // that has one is open.
+    const tree = folderTree(
+        (views ?? [])
+            .map((view, order) => ({ ...view, order }))
+            .filter((view) => {
+                const text = [view.name, view.folder, view.description, dataOf(view)].join(" ").toLowerCase();
+                return words.every((word) => text.includes(word));
+            }),
+    );
+
+    function toggle(path: string) {
+        const next = new Set(closed);
+        if (next.has(path)) {
+            next.delete(path);
+        } else {
+            next.add(path);
+        }
+        setClosed(next);
+        try {
+            window.localStorage.setItem(CLOSED_KEY, JSON.stringify([...next]));
+        } catch {
+            // storage blocked: they're shut for this visit
+        }
+    }
+
+    function rows(folder: Folder<SavedView>, depth: number): ReactNode[] {
+        const indent = (more: number) => ({ paddingLeft: `${depth * 1.25 + more}rem` });
+        const shut = !searching && closed.has(folder.path);
+        const head = folder.path ? (
+            <tr key={`folder:${folder.path}`} className="yorg-folder-row">
+                <td colSpan={3} style={indent(0.75)}>
+                    <button
+                        type="button"
+                        className="yorg-view-folder"
+                        aria-expanded={!shut}
+                        title={folder.path}
+                        onClick={() => toggle(folder.path)}
+                    >
+                        <span className="yorg-view-chevron" aria-hidden="true">
+                            {shut ? "▸" : "▾"}
+                        </span>
+                        <span className="file-icon file-icon-folder" aria-hidden="true" />
+                        {folder.name}
+                        <span className="muted">{countIn(folder)}</span>
+                    </button>
+                </td>
+            </tr>
+        ) : null;
+        if (shut) {
+            return [head];
+        }
+        const inner = folder.path ? depth + 1 : depth;
+        return [
+            head,
+            ...folder.folders.flatMap((one) => rows(one, inner)),
+            ...folder.items.map((view) => (
+                <tr key={view.id}>
+                    <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
+                        <Link to={viewUrl(view.id)} className="name">
+                            {view.name}
+                        </Link>
+                        {searching && view.folder && <p className="muted yorg-description">in {view.folder}</p>}
+                        {view.description && <p className="muted yorg-description">{view.description}</p>}
+                    </td>
+                    <td>{dataOf(view)}</td>
+                    <td>
+                        {view.updated_by?.name ?? "—"}
+                        <span className="muted">
+                            {" · "}
+                            <Time at={view.updated_at} />
+                        </span>
+                    </td>
+                </tr>
+            )),
+        ];
+    }
+
     return (
         <section className="yorg-page">
             <div className="page-head">
                 <h1>Saved views</h1>
             </div>
             <p className="lead muted">
-                Plots someone saved: channels, scales, time windows, and markers. Open one, or use it with another
-                test's data.
+                Plots someone saved: channels, scales, time windows, and markers, in folders. Open one, or use it with
+                another test&apos;s data.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
             {views?.length === 0 && (
                 <div className="empty">No saved views yet. Plot a dataset the way you want it, then Save view.</div>
             )}
             {views && views.length > 0 && (
-                <table className="table" aria-label="Saved views">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Data</th>
-                            <th>Changed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {views.map((view) => (
-                            <tr key={view.id}>
-                                <td>
-                                    <Link to={viewUrl(view.id)} className="name">
-                                        {view.name}
-                                    </Link>
-                                    {view.description && <p className="muted yorg-description">{view.description}</p>}
-                                </td>
-                                <td>{view.datasets.map((id) => datasets.get(id) ?? `deleted (${id})`).join(", ")}</td>
-                                <td>
-                                    {view.updated_by?.name ?? "—"}
-                                    <span className="muted">
-                                        {" · "}
-                                        <Time at={view.updated_at} />
-                                    </span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <>
+                    <input
+                        className="search"
+                        type="search"
+                        placeholder="Find a view: its name, folder, notes, or data"
+                        aria-label="Find a view"
+                        value={find}
+                        onChange={(event) => setFind(event.target.value)}
+                    />
+                    {searching && tree.items.length === 0 && tree.folders.length === 0 ? (
+                        <div className="empty">No view has that.</div>
+                    ) : (
+                        <table className="table yorg-views" aria-label="Saved views">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Data</th>
+                                    <th>Changed</th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows(tree, 0)}</tbody>
+                        </table>
+                    )}
+                </>
             )}
         </section>
     );
@@ -1055,6 +1263,9 @@ export function ViewPage({ id }: { id: number }) {
     );
 }
 
+/** What a view's called, where it's kept, and its notes: changed without its plots (RenameViewDialog). */
+type ViewMeta = Pick<SavedView, "name" | "folder" | "description">;
+
 function ViewWorkspace({
     view,
     onSaved,
@@ -1073,11 +1284,12 @@ function ViewWorkspace({
     const [savedAs] = useState(() => JSON.stringify(readLayout(view.config, view.datasets[0] ?? 0)));
     const changed = JSON.stringify(layout) !== savedAs;
     const unreadable = useLinkUsed(linked, onLinkUsed);
-    const [dialog, setDialog] = useState<"copy" | "other" | "delete" | null>(null);
+    // Renamed or moved here, it stays as it is (a page made again would lose changes to its plots not yet saved).
+    const [meta, setMeta] = useState<ViewMeta>({ name: view.name, folder: view.folder, description: view.description });
+    const [dialog, setDialog] = useState<"copy" | "other" | "delete" | "rename" | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
     const body = () => ({
-        name: view.name,
-        description: view.description,
+        ...meta,
         datasets: layout.datasets.map((ref) => ref.id),
         config: layout,
     });
@@ -1088,7 +1300,7 @@ function ViewWorkspace({
             setProblem(message(error));
         }
     }
-    const python = usePagePython(`view-${view.id}`, layout, view.name);
+    const python = usePagePython(`view-${view.id}`, layout, meta.name);
     return (
         <>
             <Workspace
@@ -1099,9 +1311,9 @@ function ViewWorkspace({
                 onRemoveExtra={python.onRemoveExtra}
                 title={
                     <>
-                        <h1>{view.name}</h1>
+                        <h1>{meta.name}</h1>
                         <span className="muted">
-                            saved view, by {view.created_by?.name ?? "someone"}
+                            saved view{meta.folder ? ` in ${meta.folder}` : ""}, by {view.created_by?.name ?? "someone"}
                             {changed ? " · changed" : ""}
                         </span>
                     </>
@@ -1126,10 +1338,11 @@ function ViewWorkspace({
                             </button>
                         )}
                         <CopyLink layout={layout} />
-                        <AnalyzeButtons layout={layout} title={view.name} python={python.button} />
+                        <AnalyzeButtons layout={layout} title={meta.name} python={python.button} />
                         <MoreViewActions
                             canChange={view.can_change}
                             onCopy={() => setDialog("copy")}
+                            onRename={() => setDialog("rename")}
                             onOther={() => setDialog("other")}
                             onDelete={() => setDialog("delete")}
                         />
@@ -1137,12 +1350,28 @@ function ViewWorkspace({
                 }
             />
             {dialog === "copy" && (
-                <SaveViewDialog layout={layout} name={`${view.name} (copy)`} onClose={() => setDialog(null)} />
+                <SaveViewDialog
+                    layout={layout}
+                    name={`${meta.name} (copy)`}
+                    folder={meta.folder}
+                    onClose={() => setDialog(null)}
+                />
+            )}
+            {dialog === "rename" && (
+                <RenameViewDialog
+                    view={view}
+                    meta={meta}
+                    onDone={(renamed) => {
+                        setMeta(renamed);
+                        setDialog(null);
+                    }}
+                    onClose={() => setDialog(null)}
+                />
             )}
             {dialog === "other" && <OtherDatasetDialog layout={layout} onClose={() => setDialog(null)} />}
             {dialog === "delete" && (
                 <Dialog
-                    title={`Delete the view ${view.name}?`}
+                    title={`Delete the view ${meta.name}?`}
                     confirm="Delete"
                     danger
                     onConfirm={() => {
@@ -1164,16 +1393,19 @@ function ViewWorkspace({
 function MoreViewActions({
     canChange,
     onCopy,
+    onRename,
     onOther,
     onDelete,
 }: {
     canChange: boolean;
     onCopy: () => void;
+    onRename: () => void;
     onOther: () => void;
     onDelete: () => void;
 }) {
     const items = [
         { label: "Save as a new view…", onSelect: onCopy },
+        ...(canChange ? [{ label: "Rename or move…", onSelect: onRename }] : []),
         { label: "Use with another dataset…", onSelect: onOther },
         ...(canChange ? [{ label: "Delete this view…", onSelect: onDelete }] : []),
     ];

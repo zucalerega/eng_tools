@@ -1,6 +1,8 @@
 // What the Python window's editor offers as you type: a channel's name in quotes, a test's name, what the yorg module
 // has after "yorg.", and (asked for with Ctrl+Space) a whole yorg.channel("...") for a word.
 
+import { ENTRIES } from "./docs";
+
 /** A test attached to the script, and its channels, for completing their names. */
 export interface Attached {
     id: number;
@@ -30,6 +32,8 @@ export interface Suggestion {
     label: string; // what the list shows
     detail: string; // beside it, muted
     insert: string; // what replaces from..to
+    info?: string; // more about it, beside the list while it's the one picked
+    type?: "function" | "class" | "variable" | "constant"; // its icon in the list
 }
 
 export interface Completion {
@@ -38,25 +42,21 @@ export interface Completion {
     items: Suggestion[];
 }
 
-const MEMBERS: [string, string][] = [
-    ["channel", "(name, dataset=None): a channel named in quotes, of an attached test"],
-    ["load", "(name, dataset=None): any channel, with await"],
-    ["channels", "(dataset=None): an attached test's channels"],
-    ["datasets", "(): every test, with await"],
-    ["attached", ": the tests attached to the script"],
-    ["dataset", ": the first test attached"],
-    ["t0", ": its T0"],
-    ["window", ": a page's time in view, (start, end)"],
-    ["shifts", ": a page's tests' shifts, by id"],
-    ["plot", "(x, y=None, name=None, unit='', title=None)"],
-    ["download", "(filename, content): a file to save"],
-    ["si", "(values, unit): in SI units"],
-    ["resample", "(*channels, dt=None): on one clock"],
-    ["cda", "(mass_flow, pressure_drop, density)"],
-    ["Channel", ": t, values, unit, between(), at(), si()"],
-    ["PSI", " = 6894.757 Pa"],
-    ["ATMOSPHERE", " = 101325 Pa"],
-];
+/** What the module has, after "yorg.": as the Reference has it (docs.ts), in its order. */
+const MEMBERS: Suggestion[] = ENTRIES.filter((entry) => entry.of === "yorg").map((entry) => ({
+    label: entry.name,
+    detail: entry.kind === "async" ? `${entry.signature}, with await` : entry.signature,
+    insert: entry.name,
+    info: [entry.summary, entry.details].filter(Boolean).join(" "),
+    type:
+        entry.kind === "class"
+            ? "class"
+            : entry.kind !== "value"
+              ? "function"
+              : entry.name === entry.name.toUpperCase()
+                ? "constant"
+                : "variable",
+}));
 
 const MAX = 50;
 
@@ -141,10 +141,7 @@ export function completionAt(code: string, caret: number, attached: Attached[], 
     const member = /\byorg\.([A-Za-z_]*)$/.exec(line);
     if (member) {
         const typed = member[1]!;
-        const items = matching(
-            MEMBERS.map(([name, detail]) => ({ label: name, detail: detail.trim(), insert: name })),
-            typed,
-        );
+        const items = matching(MEMBERS, typed);
         return items.length ? { from: caret - typed.length, to: caret, items } : null;
     }
     if (!asked) {

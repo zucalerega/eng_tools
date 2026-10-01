@@ -5,9 +5,12 @@ import type { Layout } from "../layout";
 import type { ExtraPlot } from "../Workspace";
 import { codeOf, parseCells, type Cell } from "./cells";
 import type { Attached } from "./complete";
+import { Icon } from "./icons";
 import { gatherInputs, type PageView } from "./inputs";
-import { Notebook } from "./Notebook";
+import { Notebook, type NotebookHandle } from "./Notebook";
+import { isTicking, PythonStatus, useTicking } from "./Output";
 import { python, usePython, useRuns } from "./python";
+import { Reference } from "./Reference";
 import { keepNotebook, keptNotebook, openInScripts } from "./stored";
 import "../models/models.css";
 import "./scripts.css";
@@ -15,7 +18,8 @@ import "./scripts.css";
 // A dataset's or view's page's own Python, docked beside its plots: a notebook of the page's (kept in the tab), on the
 // page's tests, run with its time in view, T0, and shifts as they are when a cell runs (yorg.window, yorg.t0,
 // yorg.shifts), and whose plots go on the page's own, on its time axis (the Workspace's extra plots), while it's open.
-// It starts on what the page plots. Its notebook, variables and all, opens on the Scripts page to be kept.
+// It starts on what the page plots. Its notebook, variables and all, opens on the Scripts page to be kept. The yorg
+// module's Reference opens in its place.
 
 const PREPARE_MS = 600; // how long typing pauses before Python gets the notebook's imports ready
 const WIDTH_KEY = "yorg.python.width";
@@ -60,6 +64,7 @@ function inView(layout: Layout): [number, number] | null {
 export function PythonDock({ page, title, layout, onPlots, onClose }: Props) {
     useLoaded();
     const state = usePython();
+    const now = useTicking(isTicking(state));
     const datasets = useMemo(() => layout.datasets.map((ref) => ref.id), [layout.datasets]);
     const names = Object.fromEntries(
         datasets.map((id) => {
@@ -72,6 +77,18 @@ export function PythonDock({ page, title, layout, onPlots, onClose }: Props) {
     );
     const [runs, setRuns] = useState<Record<string, string>>(() => keptNotebook(page)?.runs ?? {});
     const [width, setWidth] = useState(storedWidth);
+    const [reference, setReference] = useState(false);
+    const notebook = useRef<NotebookHandle | null>(null);
+    const inserting = useRef<string | null>(null); // an example from the Reference, for once the notebook's back
+
+    // An example goes in once the notebook's shown again, so its editor can take the cursor.
+    useEffect(() => {
+        const lines = inserting.current;
+        if (!reference && lines !== null) {
+            inserting.current = null;
+            notebook.current?.insertLines(lines);
+        }
+    }, [reference]);
     const namespace = `page-${page}`;
     const code = useMemo(() => codeOf(cells), [cells]);
 
@@ -157,30 +174,76 @@ export function PythonDock({ page, title, layout, onPlots, onClose }: Props) {
             />
             <div className="yorg-dock-head">
                 <h2>Python</h2>
-                <span className="muted">on {title}: its plots go on this page&apos;s</span>
+                <span className="yorg-dock-on" title={`On ${title}: what it plots goes on this page's plots`}>
+                    {title}
+                </span>
+                <PythonStatus python={state} now={now} onRestart={() => python.restart()} />
                 <button
                     type="button"
-                    className="button-small"
-                    title="The notebook on the Scripts page, to keep it: its cells, tests, and variables go along"
+                    className="icon-button"
+                    aria-label="Reference"
+                    aria-pressed={reference}
+                    title="What the yorg module has"
+                    onClick={() => setReference(!reference)}
+                >
+                    <Icon name="book" />
+                </button>
+                <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Open in Scripts"
+                    title="Open in Scripts, to keep it: its cells, tests, and variables go along"
                     onClick={() => openInScripts({ name: `From ${title}`, cells, namespace, datasets })}
                 >
-                    Open in Scripts
+                    <Icon name="external" />
                 </button>
-                <button type="button" className="button-small" aria-label="Close Python" onClick={onClose}>
-                    ×
+                <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Close Python"
+                    title="Close Python (its plots go too)"
+                    onClick={onClose}
+                >
+                    <Icon name="close" />
                 </button>
             </div>
-            <Notebook
-                cells={cells}
-                setCells={setCells}
-                runs={runs}
-                setRuns={setRuns}
-                namespace={namespace}
-                datasets={datasets}
-                attached={attached}
-                onSave={() => {}}
-                view={view}
-            />
+            {reference && (
+                <div className="yorg-dock-reference">
+                    <div className="yorg-dock-reference-head">
+                        <strong>Reference</strong>
+                        <button
+                            type="button"
+                            className="icon-button"
+                            aria-label="Close the reference"
+                            onClick={() => setReference(false)}
+                        >
+                            <Icon name="close" />
+                        </button>
+                    </div>
+                    <Reference
+                        onInsert={(lines) => {
+                            inserting.current = lines;
+                            setReference(false);
+                        }}
+                    />
+                </div>
+            )}
+            {/* Hidden, not gone, while the Reference is open: its cells keep their place and their editors. */}
+            <div className="yorg-dock-notebook" hidden={reference}>
+                <Notebook
+                    ref={notebook}
+                    cells={cells}
+                    setCells={setCells}
+                    runs={runs}
+                    setRuns={setRuns}
+                    namespace={namespace}
+                    datasets={datasets}
+                    attached={attached}
+                    onSave={() => {}}
+                    view={view}
+                    status={false}
+                />
+            </div>
         </aside>
     );
 }

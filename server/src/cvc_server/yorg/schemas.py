@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from ..api.schemas import UserRef
 from ..models import User
@@ -12,6 +12,15 @@ from .ingest import Delimiter, ReadOptions, TimeFormat
 from .models import Channel, DataFolder, Dataset, Formula, View
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+def _tidy_folder(value: str) -> str:
+    """A folder path, tidied: forward slashes, no empty or padded parts ("" for none)."""
+    return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
+
+
+# Where a view or a script is kept: a path of folders, as "Hotfires/HF-3", or "" for none (at the top).
+FolderPath = Annotated[str, Field(max_length=300), AfterValidator(_tidy_folder)]
 
 
 def _ref(user: User | None) -> UserRef | None:
@@ -255,11 +264,13 @@ class ViewIn(BaseModel):
     description: str = Field("", max_length=5000)
     datasets: list[int] = Field(default_factory=list, max_length=100)
     config: dict[str, Any]  # the web app's layout of the plots
+    folder: FolderPath | None = None  # None: at the top for a new view, and where it was for a changed one
 
 
 class ViewOut(BaseModel):
     id: int
     name: str
+    folder: str  # "" at the top
     description: str
     datasets: list[int]
     config: dict[str, Any]
@@ -274,6 +285,7 @@ class ViewOut(BaseModel):
         return cls(
             id=view.id,
             name=view.name,
+            folder=view.folder,
             description=view.description,
             datasets=view.datasets,
             config=view.config,

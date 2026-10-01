@@ -164,7 +164,7 @@ export const table = async () => within(await screen.findByRole("table", { name:
 /** The folder tree beside the table. */
 export const folderTree = async () => within(await screen.findByRole("navigation", { name: "Folder tree" }));
 
-/** The breadcrumbs above it: Vault / Team / Folder. */
+/** The breadcrumbs above a page's title: Files / Team / Folder. */
 export const breadcrumbs = async () => within(await screen.findByRole("navigation", { name: "Folders" }));
 
 /** The web app at this page, as this person, talking to the test server. */

@@ -36,7 +36,7 @@ test("admins see what's new in the preview, where it will be; the site stays as 
 
     // In the preview: Models in the top bar too, and the preview says so.
     await userEvent.click(nav.getByRole("link", { name: "Preview" }));
-    expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev");
     expect(tabs()).toEqual(["Datasets", "Views", "Models", "Scripts", "Help"]);
     expect(screen.getByText(/^Preview: Yorg as it will be/)).toBeTruthy();
@@ -53,7 +53,7 @@ test("admins see what's new in the preview, where it will be; the site stays as 
     await userEvent.click(nav.getByRole("link", { name: "Datasets" }));
     await userEvent.click(await screen.findByRole("link", { name: data.name }));
     await userEvent.click(await screen.findByRole("link", { name: "Model" }));
-    expect(await screen.findByRole("heading", { name: "System models" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Models" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev/models");
     await waitFor(() =>
         expect((screen.getByLabelText("Test") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(data.name),
@@ -80,6 +80,6 @@ test("the preview is for admins", async () => {
     expect(screen.queryByText(/Preview: Yorg as it will be/)).toBeNull();
     // The way back goes to the site, not the preview.
     await userEvent.click(screen.getByRole("link", { name: "Go to the test data" }));
-    expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg");
 });

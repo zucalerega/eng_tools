@@ -353,7 +353,7 @@ export function ModelsPage() {
         <section className="yorg-page dev-page" onKeyDown={onKey}>
             <div className="page-head">
                 <div>
-                    <h1>System models</h1>
+                    <h1>Models</h1>
                     <p className="muted dev-powered">
                         Powered by{" "}
                         <a href={FULLFLOW} target="_blank" rel="noreferrer">

@@ -130,7 +130,9 @@ test("the folder tree beside the files opens the way to where you are", async ()
     expect(tree.queryByRole("link", { name: "Tabs" })).toBeNull();
     await userEvent.click(tree.getByRole("button", { name: "Show the folders in Fins" }));
     expect(tree.getByRole("link", { name: "Tabs" })).toBeTruthy();
-    expect((await breadcrumbs()).getByRole("link", { name: "Fins" })).toBeTruthy();
+    // The page's title is the folder's name, with the way there above it.
+    expect(await screen.findByRole("heading", { level: 1, name: "Fins" })).toBeTruthy();
+    expect((await breadcrumbs()).getByRole("link", { name: team.folder })).toBeTruthy();
 });
 
 test("files say who created them, who changed them last and when, and who has them", async () => {

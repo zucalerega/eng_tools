@@ -152,7 +152,7 @@ export function Browse({ folder }: { folder: string }) {
     return (
         <section className={dropping ? "drop-target" : undefined} {...drop}>
             <div className="page-head">
-                <Breadcrumbs path={path} />
+                <FolderTitle path={path} />
                 <div className="page-actions">
                     {canAdd && (
                         <>
@@ -410,12 +410,12 @@ function matchSummary(folders: number, files: number, within: string): string {
     return `${counts.join(" and ")}${where}.${more}`;
 }
 
-/** Vault / Structures / Fins, each a link to its folder; then here, if the page is something in the last one. */
-export function Breadcrumbs({ path, here }: { path: string; here?: string }) {
+/** The way to a page, above its title: Files / Structures / Fins, each a link to its folder. */
+export function Breadcrumbs({ path }: { path: string }) {
     const parts = path ? path.split("/") : [];
     return (
         <nav className="breadcrumbs" aria-label="Folders">
-            <Link to="/">Vault</Link>
+            <Link to="/">Files</Link>
             {parts.map((part, index) => {
                 const sub = parts.slice(0, index + 1).join("/");
                 return (
@@ -427,15 +427,18 @@ export function Breadcrumbs({ path, here }: { path: string; here?: string }) {
                     </span>
                 );
             })}
-            {here && (
-                <span>
-                    <span className="separator" aria-hidden="true">
-                        /
-                    </span>
-                    <span className="crumb-here">{here}</span>
-                </span>
-            )}
         </nav>
+    );
+}
+
+/** A folder page's title, its name ("Files" at the top), with the folders above it on the way there. */
+function FolderTitle({ path }: { path: string }) {
+    const parts = path ? path.split("/") : [];
+    return (
+        <div className="page-title">
+            {parts.length > 0 && <Breadcrumbs path={parts.slice(0, -1).join("/")} />}
+            <h1>{parts[parts.length - 1] ?? "Files"}</h1>
+        </div>
     );
 }
 

@@ -1279,35 +1279,99 @@ main.main-full {
     font-size: 0.85rem;
 }
 
-/* Help: what Yorg does, and how, in cards. */
-.yorg-help-grid {
+/* Help: what Yorg does, and how. Its topics go down the page, with their contents beside them, which stay in view and
+   mark the topic being read. */
+.yorg-help-layout {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(23rem, 100%), 1fr));
-    gap: 1rem;
+    grid-template-columns: 12rem minmax(0, 46rem);
+    gap: 3rem;
     align-items: start;
-    margin-bottom: 2rem;
+    margin: 0.5rem 0 3rem;
 }
 
-.yorg-help-grid section {
-    padding: 0.9rem 1.1rem 0.5rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-large);
+.yorg-help-contents {
+    position: sticky;
+    top: 4.75rem;
 }
 
-.yorg-help-grid h2 {
-    margin: 0 0 0.5rem;
+.yorg-help-contents ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-left: 1px solid var(--border);
 }
 
-.yorg-help-grid ul {
-    margin: 0 0 0.5rem;
-    padding-left: 1.1rem;
-}
-
-.yorg-help-grid li {
-    margin: 0.3rem 0;
+.yorg-help-contents a {
+    display: block;
+    margin-left: -1px;
+    padding: 0.3rem 0 0.3rem 0.9rem;
+    border-left: 2px solid transparent;
+    color: var(--muted);
     font-size: 0.9rem;
-    line-height: 1.45;
+}
+
+.yorg-help-contents a:hover {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.yorg-help-contents a[aria-current="true"] {
+    border-left-color: var(--gold);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.yorg-help-topics section {
+    padding: 1.5rem 0 1.25rem;
+    border-top: 1px solid var(--border);
+    scroll-margin-top: 4.5rem; /* clear of the top bar, when a link brings it into view */
+}
+
+.yorg-help-topics section:first-child {
+    padding-top: 0;
+    border-top: none;
+}
+
+.yorg-help-topics h2 {
+    margin: 0 0 0.75rem;
+}
+
+.yorg-help-topics ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.yorg-help-topics li {
+    margin: 0.5rem 0;
+    line-height: 1.6;
+}
+
+.yorg-help-topics li::marker {
+    color: var(--muted);
+}
+
+@media (max-width: 900px) {
+    .yorg-help-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.5rem;
+    }
+
+    .yorg-help-contents {
+        position: static;
+    }
+
+    .yorg-help-contents ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 1.1rem;
+        border-left: none;
+    }
+
+    .yorg-help-contents a {
+        margin-left: 0;
+        padding: 0.15rem 0;
+        border-left: none;
+    }
 }
 
 .yorg-help code {
@@ -1327,15 +1391,23 @@ main.main-full {
 }
 
 .yorg-help-keys {
-    margin: 0 0 0.6rem;
-    font-size: 0.9rem;
+    margin: 0;
 }
 
 .yorg-help-keys div {
     display: grid;
-    grid-template-columns: 8.5rem minmax(0, 1fr);
-    gap: 0.75rem;
-    padding: 0.2rem 0;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.yorg-help-keys div:last-child {
+    border-bottom: none;
+}
+
+.yorg-help-keys dt {
+    font-weight: 600;
 }
 
 .yorg-help-keys dd {

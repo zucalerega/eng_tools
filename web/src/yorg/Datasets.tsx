@@ -86,7 +86,7 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
     const inside = (id: number) => allDatasets.filter((one) => within(one.folder_id, id, byId)).length;
     const where = (id: number | null) =>
         id === null
-            ? "Test data"
+            ? "Datasets"
             : pathTo(id, byId)
                   .map((one) => one.name)
                   .join(" / ");
@@ -166,29 +166,36 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
                 }
             }}
         >
-            <nav className="breadcrumbs" aria-label="Folders">
-                <Link
-                    to={folderUrl(null)}
-                    className={dropping === "top" ? "yorg-drop-folder" : undefined}
-                    {...dropOn(null, "top")}
-                >
-                    Test data
-                </Link>
-                {path.map((one) => (
-                    <span key={one.id}>
-                        <span className="separator">/</span>
-                        <Link
-                            to={folderUrl(one.id)}
-                            className={dropping === `crumb-${one.id}` ? "yorg-drop-folder" : undefined}
-                            {...dropOn(one.id, `crumb-${one.id}`)}
-                        >
-                            {one.name}
-                        </Link>
-                    </span>
-                ))}
-            </nav>
             <div className="page-head">
-                <h1>{here?.name ?? "Test data"}</h1>
+                <div className="page-title">
+                    {/* In a folder, the way there, above its name: each folder on it takes what's dropped on it. */}
+                    {here && (
+                        <nav className="breadcrumbs" aria-label="Folders">
+                            <Link
+                                to={folderUrl(null)}
+                                className={dropping === "top" ? "yorg-drop-folder" : undefined}
+                                {...dropOn(null, "top")}
+                            >
+                                Datasets
+                            </Link>
+                            {path.slice(0, -1).map((one) => (
+                                <span key={one.id}>
+                                    <span className="separator" aria-hidden="true">
+                                        /
+                                    </span>
+                                    <Link
+                                        to={folderUrl(one.id)}
+                                        className={dropping === `crumb-${one.id}` ? "yorg-drop-folder" : undefined}
+                                        {...dropOn(one.id, `crumb-${one.id}`)}
+                                    >
+                                        {one.name}
+                                    </Link>
+                                </span>
+                            ))}
+                        </nav>
+                    )}
+                    <h1>{here?.name ?? "Datasets"}</h1>
+                </div>
                 <div className="page-actions">
                     <Link className="button" to="/yorg/views">
                         Saved views
@@ -586,7 +593,7 @@ function MoveDialog({
             <div className="yorg-move" role="radiogroup" aria-label="To">
                 <label className="check yorg-move-choice">
                     <input type="radio" name="folder" checked={chosen === null} onChange={() => setChosen(null)} />
-                    Test data (the top)
+                    Datasets (the top)
                 </label>
                 {rows}
             </div>

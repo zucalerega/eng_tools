@@ -133,7 +133,7 @@ test("Python stays open while you're elsewhere: back on Scripts, the script and 
 
     const nav = within(screen.getByRole("navigation", { name: "Main" }));
     await userEvent.click(nav.getByRole("link", { name: "Datasets" }));
-    expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
     await userEvent.click(nav.getByRole("link", { name: "Scripts" }));
     await waitFor(async () => expect(await codeOf(1)).toBe('print("hello")'));
     expect(first().getByText("hello")).toBeTruthy();

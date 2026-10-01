@@ -245,7 +245,11 @@ export function HelpPage() {
                             <li>
                                 A script is a notebook: load the data in one cell, then change and run the ones after it
                                 without loading it again (Shift+Enter runs a cell). The editor suggests as you type,
-                                what your variables have too, and <em>Keys</em> lists its keys.
+                                what your variables have too, and the keyboard button lists its keys.
+                            </li>
+                            <li>
+                                The <em>Reference</em>, beside the notebook (the book, in a page&apos;s Python), says
+                                what the <code>yorg</code> module has, with an example of each to put in your code.
                             </li>
                             <li>
                                 Python stays open while this tab does, with what it has imported and the channels it

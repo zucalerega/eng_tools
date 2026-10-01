@@ -71,6 +71,8 @@ export interface CodeEditorHandle {
     focus: (at?: "start" | "end") => void;
     /** A channel, from the Data panel, at the cursor: its name in a string, else the code that takes it. */
     insertChannel: (channel: string, test: string | number | null) => void;
+    /** Lines of code (an example from the Reference), after the cursor's line: on their own lines. */
+    insertLines: (code: string) => void;
 }
 
 interface Props {
@@ -117,7 +119,13 @@ async function suggest(context: CompletionContext, props: Props): Promise<Comple
             from: ours.from,
             to: ours.to,
             filter: false, // in its own order: the best first
-            options: ours.items.map((item) => ({ label: item.label, detail: item.detail, apply: item.insert })),
+            options: ours.items.map((item) => ({
+                label: item.label,
+                detail: item.detail,
+                apply: item.insert,
+                info: item.info,
+                type: item.type,
+            })),
         };
     }
     const word = context.matchBefore(/[A-Za-z_][\w.]*$|\.$/);
@@ -383,6 +391,23 @@ export function CodeEditor(props: Props) {
             const head = current.state.selection.main.head;
             const text = inString(current.state.doc.toString(), head) ? channel : channelCode(channel, test);
             current.dispatch({ ...current.state.replaceSelection(text), userEvent: "input" });
+            current.focus();
+        },
+        insertLines(code) {
+            const current = view.current;
+            if (!current) {
+                return;
+            }
+            const line = current.state.doc.lineAt(current.state.selection.main.head);
+            const empty = line.text.trim() === "";
+            const text = empty ? code : `\n${code}`;
+            const from = empty ? line.from : line.to;
+            current.dispatch({
+                changes: { from, to: line.to, insert: text },
+                selection: { anchor: from + text.length },
+                scrollIntoView: true,
+                userEvent: "input",
+            });
             current.focus();
         },
     }));

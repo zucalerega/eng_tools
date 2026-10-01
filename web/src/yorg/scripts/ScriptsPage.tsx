@@ -7,10 +7,12 @@ import { scriptsApi, type Script } from "./api";
 import type { Attached } from "./complete";
 import { DataPanel } from "./DataPanel";
 import { EXAMPLES } from "./examples";
+import { Icon } from "./icons";
 import { gatherInputs } from "./inputs";
 import { codeOf, joinCells, newCell, parseCells, type Cell } from "./cells";
 import { Notebook, type NotebookHandle } from "./Notebook";
 import { python, usePython } from "./python";
+import { Reference } from "./Reference";
 import { keepScript, keptScript, type OpenScript } from "./stored";
 import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
 import "../models/models.css";
@@ -22,11 +24,13 @@ import "./scripts.css";
 // runs (Output.tsx). A script is a notebook (Notebook.tsx): cells run one at a time in its variables, so the data
 // loads once. It works on the tests attached to it (Data, beside it: DataPanel.tsx), and keeps them. Scripts are kept
 // on the server in folders, for every admin, as .py code with a "# %%" line starting each cell (cells.ts); .py files
-// upload as scripts and scripts download as them. A dataset's or view's page's own Python (docked beside its plots:
-// PythonDock.tsx) opens its notebook here too.
+// upload as scripts and scripts download as them. Beside the notebook, its tests (Data) or what the yorg module has
+// (the Reference: Reference.tsx). A dataset's or view's page's own Python (docked beside its plots: PythonDock.tsx)
+// opens its notebook here too.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const DATASETS_KEY = "yorg.scripts.datasets"; // the tests attached last, for a new script
+const PANEL_KEY = "yorg.scripts.panel"; // what's beside the notebook: its tests (Data), or the Reference
 const PREPARE_MS = 600; // how long typing pauses before Python gets a script's imports ready
 
 type Open = OpenScript;
@@ -71,6 +75,16 @@ function storeDatasets(ids: number[]) {
     }
 }
 
+type Panel = "data" | "reference";
+
+function storedPanel(): Panel {
+    try {
+        return window.localStorage.getItem(PANEL_KEY) === "reference" ? "reference" : "data";
+    } catch {
+        return "data";
+    }
+}
+
 function download(name: string, text: string) {
     const url = URL.createObjectURL(new Blob([text], { type: "text/x-python" }));
     const link = document.createElement("a");
@@ -92,6 +106,7 @@ export function ScriptsPage() {
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
     const [search, setSearch] = useState("");
     const [closed, setClosed] = useState<Set<string>>(new Set());
+    const [panel, setPanelState] = useState<Panel>(storedPanel);
     const fileInput = useRef<HTMLInputElement | null>(null);
     const notebook = useRef<NotebookHandle | null>(null);
 
@@ -118,6 +133,15 @@ export function ScriptsPage() {
         }));
 
     const code = useMemo(() => codeOf(open.cells), [open.cells]);
+
+    function setPanel(next: Panel) {
+        setPanelState(next);
+        try {
+            window.localStorage.setItem(PANEL_KEY, next);
+        } catch {
+            // storage blocked: it's beside the notebook for this visit
+        }
+    }
 
     // Python starts when the page opens (unless it's on already, from before), so it's ready by the time a script is.
     useEffect(() => python.acquire(), []);
@@ -318,22 +342,37 @@ export function ScriptsPage() {
     return (
         <section className="yorg-page scripts-page">
             <div className="page-head">
-                <div>
-                    <h1>Scripts</h1>
-                    <p className="muted dev-powered">
-                        Python 3.14 in your browser (Pyodide), with NumPy, SciPy, pandas, matplotlib, and CoolProp
-                    </p>
-                </div>
+                <h1>Scripts</h1>
             </div>
             {problem && <Notice tone="error">{problem}</Notice>}
             <div className="scripts-layout">
-                <aside className="scripts-side" aria-label="Scripts">
-                    <div className="scripts-side-actions">
-                        <button type="button" onClick={() => withSaved(() => setOpen(newScript(open.datasets)))}>
-                            New
+                <aside className="scripts-side scripts-pane" aria-label="Scripts">
+                    <div className="pane-head">
+                        <input
+                            className="scripts-search"
+                            type="search"
+                            placeholder="Find a script"
+                            aria-label="Find a script"
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                        />
+                        <button
+                            type="button"
+                            className="icon-button"
+                            aria-label="New script"
+                            title="A new script"
+                            onClick={() => withSaved(() => setOpen(newScript(open.datasets)))}
+                        >
+                            <Icon name="plus" />
                         </button>
-                        <button type="button" onClick={() => fileInput.current?.click()}>
-                            Upload .py…
+                        <button
+                            type="button"
+                            className="icon-button"
+                            aria-label="Upload .py files"
+                            title="Upload .py files, each as a script"
+                            onClick={() => fileInput.current?.click()}
+                        >
+                            <Icon name="upload" />
                         </button>
                         <input
                             ref={fileInput}
@@ -351,71 +390,87 @@ export function ScriptsPage() {
                             }}
                         />
                     </div>
-                    <input
-                        className="scripts-search"
-                        type="search"
-                        placeholder="Find a script"
-                        aria-label="Find a script"
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                    />
-                    {scripts === null ? (
-                        <p className="muted">Loading…</p>
-                    ) : (
-                        <ul className="scripts-tree">{folderView(tree, 0)}</ul>
-                    )}
+                    <div className="pane-body">
+                        {scripts === null ? (
+                            <p className="muted">Loading…</p>
+                        ) : (
+                            <ul className="scripts-tree">{folderView(tree, 0)}</ul>
+                        )}
+                    </div>
                 </aside>
                 <div className="scripts-main">
-                    <div className="scripts-bar">
-                        <label className="field">
-                            Name
+                    <div className="pane-head scripts-file">
+                        <input
+                            className="scripts-name"
+                            aria-label="Name"
+                            value={open.name}
+                            maxLength={120}
+                            onChange={(event) => setOpen({ ...open, name: event.target.value, dirty: true })}
+                        />
+                        <label className="scripts-path" title="Its folder: a path, like Hotfires/Injector">
+                            <Icon name="folder" />
                             <input
-                                value={open.name}
-                                maxLength={120}
-                                onChange={(event) => setOpen({ ...open, name: event.target.value, dirty: true })}
-                            />
-                        </label>
-                        <label className="field">
-                            Folder
-                            <input
+                                aria-label="Folder"
                                 value={open.folder}
                                 maxLength={300}
-                                placeholder="Hotfires/Injector"
+                                placeholder="No folder"
                                 onChange={(event) => setOpen({ ...open, folder: event.target.value, dirty: true })}
                             />
                         </label>
-                    </div>
-                    <div className="scripts-actions">
-                        <button
-                            type="button"
-                            disabled={open.id !== null && !open.dirty}
-                            title="Ctrl+S"
-                            onClick={saveNow}
-                        >
-                            Save
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSaveAs({ name: open.id ? `${open.name} copy` : open.name, folder: open.folder });
-                                setAsking({ ask: "save-as" });
-                            }}
-                        >
-                            Save as…
-                        </button>
-                        <button type="button" onClick={() => download(`${open.name}.py`, joinCells(open.cells))}>
-                            Download .py
-                        </button>
-                        {open.id && (
+                        <div className="scripts-file-actions">
+                            {open.dirty && (
+                                <span
+                                    className="scripts-dirty"
+                                    role="img"
+                                    aria-label="Changes not saved"
+                                    title="Changes not saved"
+                                />
+                            )}
+                            {open.example && (
+                                <span className="scripts-badge" title="Save as… keeps a copy of your own">
+                                    Example
+                                </span>
+                            )}
                             <button
                                 type="button"
-                                className="button-danger"
-                                onClick={() => setAsking({ ask: "delete" })}
+                                className="button-small"
+                                disabled={open.id !== null && !open.dirty}
+                                title="Ctrl+S"
+                                onClick={saveNow}
                             >
-                                Delete…
+                                Save
                             </button>
-                        )}
-                        {open.example && <span className="muted">An example: Save as… keeps a copy of your own</span>}
+                            <button
+                                type="button"
+                                className="button-small"
+                                onClick={() => {
+                                    setSaveAs({ name: open.id ? `${open.name} copy` : open.name, folder: open.folder });
+                                    setAsking({ ask: "save-as" });
+                                }}
+                            >
+                                Save as…
+                            </button>
+                            <button
+                                type="button"
+                                className="icon-button"
+                                aria-label="Download .py"
+                                title="Download it, as a .py file"
+                                onClick={() => download(`${open.name}.py`, joinCells(open.cells))}
+                            >
+                                <Icon name="download" />
+                            </button>
+                            {open.id && (
+                                <button
+                                    type="button"
+                                    className="icon-button icon-danger"
+                                    aria-label="Delete…"
+                                    title="Delete the script"
+                                    onClick={() => setAsking({ ask: "delete" })}
+                                >
+                                    <Icon name="trash" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <Notebook
                         key={open.namespace}
@@ -430,15 +485,36 @@ export function ScriptsPage() {
                         onSave={saveNow}
                     />
                 </div>
-                <DataPanel
-                    datasets={datasets}
-                    attached={open.datasets}
-                    onChange={(ids) => {
-                        storeDatasets(ids);
-                        setOpen({ ...open, datasets: ids, dirty: open.id !== null || open.dirty });
-                    }}
-                    onChannel={(channel, test) => notebook.current?.insertChannel(channel, test)}
-                />
+                <div className="scripts-panel scripts-pane">
+                    <div className="pane-head scripts-switch" role="group" aria-label="Beside the script">
+                        <button type="button" aria-pressed={panel === "data"} onClick={() => setPanel("data")}>
+                            Data
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={panel === "reference"}
+                            onClick={() => setPanel("reference")}
+                        >
+                            <Icon name="book" />
+                            Reference
+                        </button>
+                    </div>
+                    <div className="pane-body">
+                        {panel === "data" ? (
+                            <DataPanel
+                                datasets={datasets}
+                                attached={open.datasets}
+                                onChange={(ids) => {
+                                    storeDatasets(ids);
+                                    setOpen({ ...open, datasets: ids, dirty: open.id !== null || open.dirty });
+                                }}
+                                onChannel={(channel, test) => notebook.current?.insertChannel(channel, test)}
+                            />
+                        ) : (
+                            <Reference onInsert={(lines) => notebook.current?.insertLines(lines)} />
+                        )}
+                    </div>
+                </div>
             </div>
 
             {asking?.ask === "save-as" && (

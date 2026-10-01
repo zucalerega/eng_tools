@@ -148,9 +148,11 @@ the keys.
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all
   runs them in order and stops at one that fails, and each cell's output is under it. Text
   cells are Markdown. After Escape, Jupyter's keys move between cells and add, delete, and
-  turn them into text or code (Keys lists them). A script works on the tests attached to it
-  (Data, beside it): their channels are listed there, and a click puts one in the code
-  (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for another test). The editor
+  turn them into text or code (the keyboard button in the notebook's bar lists them). A script
+  works on the tests attached to it (Data, beside it): their channels are listed there, and a
+  click puts one in the code (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for
+  another test). Beside it too, the **Reference** says what the `yorg` module has: each name
+  with what it does, found by a word, and an example that **Insert** puts in your code. The editor
   colors Python, folds, finds and replaces (Ctrl+F), and suggests as you type: channels in
   quotes, what the module has after `yorg.`, and what your variables have, from the running
   Python (`pt.` offers `values`, `t`, `si`...); hovering a name says what it is, and a syntax
@@ -172,7 +174,8 @@ the keys.
   beside the plots, started on what they show: its cells work on the page's channels, with
   `yorg.window` the time in view (as it is when a cell runs), and what they `yorg.plot` goes on
   the page's own plots, on the same time axis (× takes one off). Drag its edge to widen it;
-  **Open in Scripts** keeps it as a script. **Model** runs a model on the test over the time in
+  the book opens the Reference in the notebook's place, and **Open in Scripts** keeps it as a
+  script. **Model** runs a model on the test over the time in
   view, and links back to it.
 
 ## Layout

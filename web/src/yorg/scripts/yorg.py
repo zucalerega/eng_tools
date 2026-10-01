@@ -247,17 +247,17 @@ def si(values, unit, ambient=ATMOSPHERE):
 # --- helpers ---------------------------------------------------------------------------------------------------------
 
 
-def resample(*channels_, dt=None, start=None, end=None):
+def resample(*channels, dt=None, start=None, end=None):
     """Channels on one clock (every dt seconds, by default the finest of theirs, over the time they all have), as
     (t, [values of each]): for arithmetic between channels logged at different rates."""
-    if not channels_:
+    if not channels:
         raise ValueError("resample what? Give it channels")
-    start = max(one.t[0] for one in channels_) if start is None else start
-    end = min(one.t[-1] for one in channels_) if end is None else end
+    start = max(one.t[0] for one in channels) if start is None else start
+    end = min(one.t[-1] for one in channels) if end is None else end
     if dt is None:
-        dt = min(float(np.median(np.diff(one.t))) for one in channels_ if len(one.t) > 1)
+        dt = min(float(np.median(np.diff(one.t))) for one in channels if len(one.t) > 1)
     t = np.arange(start, end + dt / 2, dt)
-    return t, [one.at(t) for one in channels_]
+    return t, [one.at(t) for one in channels]
 
 
 def cda(mass_flow, pressure_drop, density):

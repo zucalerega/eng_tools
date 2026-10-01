@@ -64,10 +64,17 @@ describe("suggestions", () => {
         expect(at('print("|', true)?.items.length).toBe(6); // every channel once, and both tests
     });
 
-    test("after yorg.: what the module has", () => {
+    test("after yorg.: what the module has, as the Reference says it", () => {
         const found = at("pt = yorg.ch|");
         expect(found?.items.map((item) => item.label)).toEqual(["channel", "channels", "Channel", "attached"]);
         expect(found?.from).toBe("pt = yorg.".length);
+        expect(found?.items[0]).toMatchObject({ detail: "(name, dataset=None)", type: "function" });
+        expect(found?.items[0]?.info).toMatch(/^A channel of a test attached under Data/);
+        expect(at("x = yorg.lo|")?.items[0]).toMatchObject({
+            label: "load",
+            detail: "(name, dataset=None), with await",
+        });
+        expect(at("x = yorg.PS|")?.items[0]).toMatchObject({ label: "PSI", detail: "", type: "constant" });
     });
 
     test("asked on a word: a whole yorg.channel() of the test it's in", () => {

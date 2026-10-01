@@ -12,6 +12,7 @@ import {
 import { MenuButton, usePopover } from "../../components";
 import { CodeEditor, type CodeEditorHandle, type EditorKeys, type RunError } from "./CodeEditor";
 import type { Attached } from "./complete";
+import { Icon } from "./icons";
 import { Markdown } from "./Markdown";
 import { newCell, type Cell } from "./cells";
 import type { PageView } from "./inputs";
@@ -24,9 +25,10 @@ import { python, usePython, useRuns, type RunRecord } from "./python";
 // titled or not, and moved, added, and deleted from a cell's menu or with Jupyter's keys: Escape leaves a cell's editor,
 // then ↑ ↓ go between cells, A and B add one above and below, D D deletes, M and Y make text and code, Enter edits.
 
-/** What the page can do in the notebook: put a channel (from Data) into the cell last written in. */
+/** What the page can do in the notebook: put a channel (from Data), or an example (from the Reference), into the code. */
 export interface NotebookHandle {
     insertChannel: (channel: string, test: string | number | null) => void;
+    insertLines: (code: string) => void;
 }
 
 interface Props {
@@ -39,6 +41,7 @@ interface Props {
     attached: Attached[]; // and their channels, for the editor's suggestions
     onSave: () => void;
     view?: PageView; // a dataset's or view's page's (its Python, docked): its plots go on the page's
+    status?: boolean; // whether its bar says how Python is (the dock says it in its head, where there's room)
     ref?: Ref<NotebookHandle>;
 }
 
@@ -74,8 +77,15 @@ function KeysHelp() {
     ];
     return (
         <div className="popover" ref={within}>
-            <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-                Keys
+            <button
+                type="button"
+                className="icon-button"
+                aria-label="Keys"
+                title="Keys: running cells, moving between them, and the editor's"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+            >
+                <Icon name="keyboard" />
             </button>
             {open && (
                 <div className="menu notebook-keys" role="dialog" aria-label="Keys">
@@ -96,7 +106,8 @@ function KeysHelp() {
     );
 }
 
-export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, attached, onSave, view, ref }: Props) {
+export function Notebook(props: Props) {
+    const { cells, setCells, runs, setRuns, namespace, datasets, attached, onSave, view, status = true, ref } = props;
     const state = usePython();
     const records = useRuns(cells.map((cell) => runs[cell.id]));
     const now = useTicking(isTicking(state, ...records));
@@ -340,14 +351,31 @@ export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, 
         event.preventDefault();
     }
 
+    /** The code cell to put things in: the one last written in, else the first. */
+    function target(): string | undefined {
+        const last = lastWritten.current;
+        return last && cells.some((cell) => cell.id === last && cell.kind === "code")
+            ? last
+            : cells.find((cell) => cell.kind === "code")?.id;
+    }
+
     useImperativeHandle(ref, () => ({
         insertChannel(channel, test) {
-            const id =
-                (lastWritten.current && cells.some((cell) => cell.id === lastWritten.current) && lastWritten.current) ||
-                cells.find((cell) => cell.kind === "code")?.id;
+            const id = target();
             if (id) {
                 editors.current.get(id)?.insertChannel(channel, test);
             }
+        },
+        insertLines(code) {
+            const editor = editors.current.get(target() ?? "");
+            if (editor) {
+                editor.insertLines(code);
+                return;
+            }
+            // No code cell to put it in: a new one, at the end.
+            const cell = newCell("code", code);
+            setCells((now) => [...now, cell]);
+            focus(cell.id, "end");
         },
     }));
 
@@ -359,28 +387,35 @@ export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, 
     return (
         <div className="notebook">
             <div className="notebook-bar" role="toolbar" aria-label="Notebook">
-                <button
-                    type="button"
-                    className="button-primary"
-                    onClick={() => run(codeIds())}
-                    title="Run every cell, top to bottom: one that fails stops those after it"
-                >
-                    Run all
-                </button>
-                <MenuButton
-                    label="More runs"
-                    items={[
-                        { label: "Run the cells above", onSelect: () => run(codeIds(0, selectedIndex)) },
-                        { label: "Run this cell and those below", onSelect: () => run(codeIds(selectedIndex)) },
-                        {
-                            label: "Restart Python, and run all",
-                            onSelect: () => {
-                                python.restart();
-                                run(codeIds());
+                <div className="split-button">
+                    <button
+                        type="button"
+                        className="button-primary"
+                        onClick={() => run(codeIds())}
+                        title="Run every cell, top to bottom: one that fails stops those after it"
+                    >
+                        <Icon name="play" />
+                        Run all
+                    </button>
+                    <MenuButton
+                        label=""
+                        name="More runs"
+                        primary
+                        align="left"
+                        items={[
+                            { label: "Run the cells above", onSelect: () => run(codeIds(0, selectedIndex)) },
+                            { label: "Run this cell and those below", onSelect: () => run(codeIds(selectedIndex)) },
+                            {
+                                label: "Restart Python, and run all",
+                                onSelect: () => {
+                                    python.restart();
+                                    run(codeIds());
+                                },
                             },
-                        },
-                    ]}
-                />
+                        ]}
+                    />
+                </div>
+                <span className="bar-gap" aria-hidden="true" />
                 <button type="button" onClick={() => insert(selectedIndex + 1)} title="A code cell after this one (B)">
                     + Code
                 </button>
@@ -391,11 +426,12 @@ export function Notebook({ cells, setCells, runs, setRuns, namespace, datasets, 
                 >
                     + Text
                 </button>
-                <button type="button" onClick={clearOutputs} disabled={anyGoing}>
+                <span className="bar-gap" aria-hidden="true" />
+                <button type="button" onClick={clearOutputs} disabled={anyGoing} title="Clear every cell's output">
                     Clear outputs
                 </button>
                 <KeysHelp />
-                <PythonStatus python={state} now={now} onRestart={() => python.restart()} />
+                {status && <PythonStatus python={state} now={now} onRestart={() => python.restart()} />}
             </div>
             {cells.map((cell, index) => {
                 const record = records[index] ?? null;

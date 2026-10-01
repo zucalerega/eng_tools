@@ -1,24 +1,26 @@
-/* Yorg's Python window (ScriptsPage.tsx). */
+/* Yorg's Python window (ScriptsPage.tsx), laid out as an editor is: the scripts on the left, the notebook in the
+   middle, its tests or the yorg module's Reference on the right, each under a head of the same height. */
 
 .scripts-page .page-head {
-    flex-wrap: wrap;
-    gap: 0.75rem;
+    margin-bottom: 0.9rem;
 }
 
 .scripts-layout {
     display: grid;
-    grid-template-columns: 230px minmax(0, 1fr) 270px;
+    grid-template-columns: 240px minmax(0, 1fr) 300px;
     gap: 0.75rem;
     align-items: start;
 }
 
 @media (max-width: 1250px) {
     .scripts-layout {
-        grid-template-columns: 210px minmax(0, 1fr);
+        grid-template-columns: 220px minmax(0, 1fr);
     }
 
-    .scripts-data {
+    .scripts-layout > .scripts-panel {
         grid-column: 1 / -1;
+        position: static;
+        max-height: none;
     }
 }
 
@@ -26,32 +28,75 @@
     .scripts-layout {
         grid-template-columns: minmax(0, 1fr);
     }
+
+    .scripts-layout > .scripts-side {
+        position: static;
+        max-height: 22rem;
+    }
 }
 
-.scripts-side {
+/* The panes beside the notebook: they stay in view as it scrolls, and scroll on their own. */
+.scripts-pane {
+    position: sticky;
+    top: calc(3.5rem + 0.75rem); /* under the site's top bar */
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 3.5rem - 1.5rem);
     border: 1px solid var(--border);
     border-radius: var(--radius-large);
     background: var(--surface);
-    padding: 0.6rem;
-    max-height: 80vh;
-    overflow: auto;
+    overflow: hidden;
 }
 
-.scripts-side-actions {
+/* A pane's head (and the script's, over the notebook): one row, as high as each other's. */
+.pane-head {
     display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.5rem;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.45rem;
+    border-bottom: 1px solid var(--border);
 }
 
-.scripts-side-actions button {
-    flex: 1;
-    padding: 0.3rem 0.5rem;
-    font-size: 0.85rem;
+.pane-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 0.5rem;
+}
+
+/* A button that's only an icon: what it does is its label and tooltip. */
+.icon {
+    flex-shrink: 0;
+}
+
+button.icon-button {
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+}
+
+button.icon-button:hover:not(:disabled),
+button.icon-button[aria-expanded="true"],
+button.icon-button[aria-pressed="true"] {
+    border-color: var(--border);
+    background: var(--row-hover);
+    color: var(--text);
+}
+
+button.icon-button.icon-danger:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .scripts-search {
-    width: 100%;
-    margin-bottom: 0.5rem;
+    flex: 1;
+    min-width: 0;
+    height: 1.9rem;
+    font-size: 0.85rem;
 }
 
 .scripts-tree,
@@ -74,7 +119,7 @@
     border-radius: var(--radius);
     background: none;
     text-align: left;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     color: var(--text);
     cursor: pointer;
 }
@@ -97,24 +142,115 @@
 
 .scripts-main {
     display: grid;
-    gap: 0.6rem;
+    gap: 0.5rem;
     min-width: 0;
 }
 
-.scripts-bar,
-.scripts-actions {
-    display: flex;
+/* The script's head: its name and folder, whether it's saved, and what to do with it. */
+.scripts-file {
     flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
 }
 
-.scripts-bar .field {
-    margin: 0;
+.scripts-name,
+.scripts-path input {
+    height: 1.9rem;
+    border-color: transparent;
+    background: transparent;
 }
 
-.scripts-actions {
+.scripts-name {
+    flex: 1 1 12rem;
+    min-width: 6rem;
+    max-width: 24rem;
+    padding: 0 0.45rem;
+    font-size: 0.98rem;
+    font-weight: 600;
+}
+
+.scripts-path {
+    display: flex;
+    flex: 0 1 10rem;
     align-items: center;
+    gap: 0.1rem;
+    min-width: 6rem;
+    max-width: 14rem;
+    padding-left: 0.35rem;
+    border-left: 1px solid var(--border);
+    color: var(--muted);
+}
+
+.scripts-path input {
+    width: 100%;
+    min-width: 0;
+    padding: 0 0.35rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.scripts-name:hover,
+.scripts-path input:hover {
+    border-color: var(--border);
+}
+
+.scripts-name:focus,
+.scripts-path input:focus {
+    border-color: var(--accent);
+    background: var(--surface);
+    color: var(--text);
+}
+
+/* Changes not saved: a dot, as an editor's tab has. */
+.scripts-dirty {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--gold);
+}
+
+.scripts-badge {
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.scripts-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: auto;
+}
+
+.scripts-file-actions .scripts-dirty {
+    margin-right: 0.2rem;
+}
+
+/* What's beside the notebook, picked as an editor's side panel is: its tests, or the Reference. */
+.scripts-switch {
+    gap: 0.2rem;
+}
+
+.scripts-switch button {
+    flex: 1;
+    height: 1.9rem;
+    padding: 0 0.6rem;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.scripts-switch button[aria-pressed="true"] {
+    border-color: var(--border);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
 }
 
 .scripts-output {
@@ -158,24 +294,7 @@
     background: #fff;
 }
 
-/* The tests a script works on, and their channels (DataPanel.tsx). */
-.scripts-data {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-large);
-    background: var(--surface);
-    padding: 0.6rem;
-    max-height: 80vh;
-    overflow: auto;
-}
-
-.scripts-data h2 {
-    margin: 0 0 0.25rem;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-}
-
+/* The tests a script works on, and their channels (DataPanel.tsx), in the pane beside the notebook. */
 .scripts-data-help {
     margin: 0 0 0.5rem;
     font-size: 0.82rem;
@@ -263,11 +382,20 @@
 /* Python's state, in the page's bar (Output.tsx): a dot that pulses while it's busy. */
 .python-status {
     display: inline-flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 0.45rem;
-    font-size: 0.88rem;
+    min-width: 0;
+    font-size: 0.85rem;
     color: var(--muted);
+}
+
+/* Long ("Getting the script's imports ready: importing CoolProp · 12 s") cut short where there's no room for it:
+   all of it is the status's tooltip. */
+.python-status-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .python-dot {
@@ -476,6 +604,8 @@
     min-width: 0;
 }
 
+/* The notebook's toolbar: what runs, what adds a cell, and Python's state at its end, in one row as long as
+   there's room; it stays in view as the cells scroll. */
 .notebook-bar {
     position: sticky;
     top: calc(3.5rem + 2px); /* under the site's top bar, which stays too */
@@ -483,13 +613,53 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0;
+    gap: 0.3rem;
+    padding: 0.3rem 0;
     background: var(--bg);
 }
 
+.notebook-bar button {
+    height: 1.9rem;
+    padding: 0 0.65rem;
+    font-size: 0.84rem;
+}
+
+.notebook-bar button.icon-button {
+    width: 1.9rem;
+    padding: 0;
+}
+
 .notebook-bar .python-status {
-    margin-left: auto;
+    flex: 1 1 8rem;
+    justify-content: flex-end;
+}
+
+.bar-gap {
+    width: 1px;
+    height: 1.2rem;
+    margin: 0 0.25rem;
+    background: var(--border-strong);
+}
+
+/* Run all, and the other runs under its arrow: one button in two. */
+.split-button {
+    display: inline-flex;
+}
+
+.split-button > button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.split-button > .popover > button.menu-button {
+    padding: 0 0.5rem;
+    border-left-color: color-mix(in srgb, #fff 30%, var(--primary));
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.split-button > .popover > button.menu-button::after {
+    margin: -0.2rem 0 0;
 }
 
 .notebook-keys {
@@ -777,29 +947,225 @@ kbd {
 
 .yorg-dock-head {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.4rem;
+    gap: 0.25rem;
+    min-height: 2.4rem;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
 }
 
 .yorg-dock-head h2 {
-    margin: 0;
+    margin: 0 0.3rem 0 0;
     font-size: 1rem;
     letter-spacing: normal;
     text-transform: none;
 }
 
-.yorg-dock-head .muted {
-    flex: 1;
+/* Whose it is (the page's test or view), and how Python is: both cut short if they must be. */
+.yorg-dock-on {
+    flex: 0 1 auto;
+    min-width: 2rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
     font-size: 0.82rem;
+}
+
+.yorg-dock-head .python-status {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    margin-right: 0.2rem;
+    font-size: 0.8rem;
 }
 
 .yorg-dock .notebook-bar {
     top: -0.5rem; /* in the dock's own scroll, not the page's */
+    z-index: 6; /* over the page's toolbar (5): its menus reach over the page */
+}
+
+.yorg-dock-reference-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0.25rem 0 0.4rem;
 }
 
 .scripts-elsewhere {
     margin: 0;
     font-size: 0.85rem;
+}
+
+/* The yorg module's Reference (Reference.tsx): beside the notebook, or in the dock in its place. */
+.reference {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr); /* an example's long line scrolls in its box, not the pane */
+    gap: 0.6rem;
+    font-size: 0.85rem;
+}
+
+.reference-intro {
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+.reference-find {
+    width: 100%;
+    height: 1.9rem;
+    font-size: 0.85rem;
+}
+
+.reference-section h3 {
+    margin: 0 0 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.reference-section ul {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.reference-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch; /* not a button's centring */
+    justify-items: start;
+    gap: 0.1rem;
+    width: 100%;
+    height: auto;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text);
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    white-space: normal;
+}
+
+button.reference-entry {
+    cursor: pointer;
+}
+
+button.reference-entry:hover:not(:disabled),
+.reference-open > .reference-entry {
+    border-color: var(--border);
+    background: var(--row-hover);
+}
+
+.reference-usage {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+}
+
+.reference-quiet {
+    color: var(--muted);
+}
+
+.reference-name,
+.reference-title {
+    font-weight: 700;
+    color: var(--code-function);
+}
+
+.reference-title {
+    color: var(--heading);
+}
+
+.reference-summary {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.reference-more {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.4rem;
+    padding: 0.35rem 0.45rem 0.5rem;
+}
+
+.reference-more p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.reference-example {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
+
+.reference-example-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.2rem 0.25rem 0.2rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.reference-example-head button {
+    height: 1.5rem;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.reference-code {
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    line-height: 1.5;
+}
+
+/* Code coloured as the editor colours it (classHighlighter's classes: editorTheme.ts has the editor's). */
+.tok-keyword,
+.tok-operatorKeyword {
+    color: var(--code-keyword);
+}
+
+.tok-string,
+.tok-string2 {
+    color: var(--code-string);
+}
+
+.tok-number,
+.tok-bool,
+.tok-atom {
+    color: var(--code-number);
+}
+
+.tok-comment {
+    color: var(--code-comment);
+    font-style: italic;
+}
+
+.tok-propertyName {
+    color: var(--code-property);
+}
+
+.tok-variableName.tok-definition,
+.tok-className {
+    color: var(--code-definition);
+}
+
+.tok-punctuation,
+.tok-operator {
+    color: var(--code-punctuation);
 }

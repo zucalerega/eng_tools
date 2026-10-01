@@ -26,7 +26,6 @@ export function DataPanel({ datasets, attached, onChange, onChannel }: Props) {
     const others = datasets.filter((one) => !attached.includes(one.id));
     return (
         <aside className="scripts-data" aria-label="Data">
-            <h2>Data</h2>
             <p className="muted scripts-data-help">
                 The tests the script works on. Click a channel to put it in the code; in quotes, type a few letters of
                 one.

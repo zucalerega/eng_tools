@@ -136,7 +136,7 @@ test("a notebook is saved as a script with a # %% mark for each cell, and opens 
         "# %% Load\npt = 1\n\n# %% [markdown]\n# # Notes\n# What it's for.\n",
     );
 
-    await userEvent.click(list.getByRole("button", { name: "New" }));
+    await userEvent.click(list.getByRole("button", { name: "New script" }));
     await waitFor(() => expect(cellCount()).toBe(1));
     await userEvent.click(list.getByRole("button", { name: "Cells" }));
     await waitFor(() => expect(cell(1).getAttribute("aria-label")).toBe("Cell 1: Load"));

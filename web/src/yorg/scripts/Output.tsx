@@ -4,6 +4,7 @@ import type { AxisSpec } from "../layout";
 import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
 import { Samples, sampleAt } from "../samples";
 import { formatTick, formatValue, ticks } from "../scale";
+import { Icon } from "./icons";
 import { breakdown, formatElapsed, formatSeconds, stepNote, stepText, type Step } from "./progress";
 import type { PythonState, RunRecord, ScriptPlotData } from "./python";
 import { topImports } from "./tree";
@@ -63,9 +64,11 @@ export function PythonStatus({ python, now, onRestart }: { python: PythonState; 
                   : `Getting the script's imports ready: ${lowerFirst(stepLine(busy.step, now, busy.asked))}`;
     }
     return (
-        <span className="python-status">
+        <span className="python-status" title={text}>
             <span className={`python-dot python-${tone}`} aria-hidden="true" />
-            <span role="status">{text}</span>
+            <span role="status" className="python-status-text">
+                {text}
+            </span>
             {python.status === "failed" ? (
                 <button type="button" className="button-small" onClick={onRestart}>
                     Start Python again
@@ -74,11 +77,12 @@ export function PythonStatus({ python, now, onRestart }: { python: PythonState; 
                 python.status === "ready" && (
                     <button
                         type="button"
-                        className="button-small"
+                        className="icon-button"
+                        aria-label="Restart Python"
                         onClick={onRestart}
-                        title="Start Python afresh, without what it's imported and the channels it has (it takes a few seconds)"
+                        title="Restart Python: afresh, without what it's imported and the channels it has (it takes a few seconds)"
                     >
-                        Restart Python
+                        <Icon name="restart" />
                     </button>
                 )
             )}

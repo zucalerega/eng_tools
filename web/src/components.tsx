@@ -257,7 +257,8 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warning" 
 
 /**
  * A modal question: the page underneath waits until it's answered, and Enter confirms. With link, confirming
- * follows confirmHref (a cvc: link for SolidWorks, say), and there's nothing to confirm without one.
+ * follows confirmHref (a cvc: link for SolidWorks, say), and there's nothing to confirm without one. Without confirm,
+ * it only shows something, until it's closed.
  */
 export function Dialog({
     title,
@@ -274,8 +275,8 @@ export function Dialog({
 }: {
     title: string;
     children: ReactNode;
-    confirm: string;
-    onConfirm: () => void;
+    confirm?: string;
+    onConfirm?: () => void;
     onCancel: () => void;
     cancel?: string; // "Close", when it's done
     busy?: boolean;
@@ -313,11 +314,14 @@ export function Dialog({
                 ref={dialog}
                 onSubmit={(event) => {
                     event.preventDefault();
+                    if (confirm === undefined) {
+                        return;
+                    }
                     if (link && confirmHref) {
                         window.location.assign(confirmHref);
-                        onConfirm();
+                        onConfirm?.();
                     } else if (!link && !busy && !disabled) {
-                        onConfirm();
+                        onConfirm?.();
                     }
                 }}
             >
@@ -327,7 +331,7 @@ export function Dialog({
                     <button type="button" ref={cancelButton} onClick={onCancel} disabled={busy}>
                         {cancel}
                     </button>
-                    {link && confirmHref ? (
+                    {confirm === undefined ? null : link && confirmHref ? (
                         <a className={`button ${className}`} href={confirmHref} onClick={onConfirm}>
                             {confirm}
                         </a>

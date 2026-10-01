@@ -264,12 +264,17 @@ export function HelpPage() {
                     </Card>
                 )}
 
-                <Card title="Views and exports">
+                <Card title="Views, links, and exports">
                     <ul>
                         <li>
                             <em>Save view</em> keeps the plots for everyone. A dataset's views are under{" "}
                             <em>Saved views</em> on its page; open one with another test's data for the same plots of
                             its channels.
+                        </li>
+                        <li>
+                            <em>Copy link</em>, beside it, sends someone the plots as they are (tests and their shifts,
+                            time in view, T0, and the rest) without saving a view. They open as unsaved changes, for
+                            whoever opens them to <em>Save view</em> or not.
                         </li>
                         <li>
                             <em>Export</em>: an image of the plots (labels included), or the data in view as CSV

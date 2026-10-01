@@ -122,6 +122,11 @@ the keys.
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Export the plots
   as an image (labels and all), or the samples in view as CSV.
+- **Copy link** (beside Save view, on a dataset's or a view's page) to send someone what's
+  on screen without saving a view: the plots, the tests compared and their shifts, the time
+  in view, T0, and the rest. Whoever opens it sees those plots as unsaved changes, and can
+  Save view to keep them; on a dataset's page they become the plots their browser keeps for
+  it. A link made in the preview opens the site's page, so it works for everyone.
 - **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
   it: the same data, views, and help, with Models and Scripts in its top bar, and Python and
   Model on a dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview,

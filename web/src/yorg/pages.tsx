@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useReducer, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -19,9 +19,11 @@ import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
+import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";
 
-// Yorg's pages: a dataset's plots and its details, saved views, and deleted datasets (the datasets: Datasets.tsx).
+// Yorg's pages: a dataset's plots and its details, saved views, links to plots, and deleted datasets (the datasets:
+// Datasets.tsx).
 
 export const datasetUrl = (id: number): string => `/yorg/datasets/${id}`;
 export const aboutUrl = (id: number): string => `/yorg/datasets/${id}/about`;
@@ -146,8 +148,9 @@ export function DeletedPage() {
 
 export function DatasetPage({ id }: { id: number }) {
     useLoaded();
+    const [linked, linkUsed] = useLinkedPlots();
     const loaded = loadDataset(id);
-    if (loaded.status === "loading") {
+    if (loaded.status === "loading" || linked.status === "reading") {
         return <p className="muted yorg-page">Loading the dataset…</p>;
     }
     if (loaded.status === "failed") {
@@ -183,7 +186,9 @@ export function DatasetPage({ id }: { id: number }) {
             </div>
         );
     }
-    return <DatasetWorkspace key={`${id}/${detail.data_version}`} detail={detail} />;
+    return (
+        <DatasetWorkspace key={`${id}/${detail.data_version}`} detail={detail} linked={linked} onLinkUsed={linkUsed} />
+    );
 }
 
 /** The views saved (by anyone) that plot a dataset, newest first. */
@@ -278,8 +283,20 @@ function AnalyzeButtons({ layout, title, python }: { layout: Layout; title: stri
     );
 }
 
-function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
-    const [layout, dispatch] = useReducer(reduce, detail.id, storedLayout);
+function DatasetWorkspace({
+    detail,
+    linked,
+    onLinkUsed,
+}: {
+    detail: DatasetDetail;
+    linked: Linked;
+    onLinkUsed: () => void;
+}) {
+    // A link's plots, if it brought some (then this browser's for the dataset, as any change is), or this browser's.
+    const [layout, dispatch] = useReducer(reduce, detail.id, (id) =>
+        linked.status === "ready" ? readLayout(linked.config, id) : storedLayout(id),
+    );
+    const unreadable = useLinkUsed(linked, onLinkUsed);
     useEffect(() => storeLayout(detail.id, layout), [detail.id, layout]);
     const [saving, setSaving] = useState(false);
     const views = useViewsOf(detail.id);
@@ -314,6 +331,7 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                         <button type="button" onClick={() => setSaving(true)}>
                             Save view
                         </button>
+                        <CopyLink layout={layout} />
                         <AnalyzeButtons layout={layout} title={detail.name} python={python.button} />
                         <Link className="button" to={aboutUrl(detail.id)}>
                             About
@@ -321,12 +339,17 @@ function DatasetWorkspace({ detail }: { detail: DatasetDetail }) {
                     </>
                 }
                 notice={
-                    detail.warnings.length > 0 ? (
-                        <p className="yorg-warnings muted">
-                            Reading the file: {detail.warnings[0]}
-                            {detail.warnings.length > 1 && ` (and ${detail.warnings.length - 1} more)`}{" "}
-                            <Link to={aboutUrl(detail.id)}>Details</Link>
-                        </p>
+                    unreadable || detail.warnings.length > 0 ? (
+                        <>
+                            {unreadable && <UnreadableLink />}
+                            {detail.warnings.length > 0 && (
+                                <p className="yorg-warnings muted">
+                                    Reading the file: {detail.warnings[0]}
+                                    {detail.warnings.length > 1 && ` (and ${detail.warnings.length - 1} more)`}{" "}
+                                    <Link to={aboutUrl(detail.id)}>Details</Link>
+                                </p>
+                            )}
+                        </>
                     ) : undefined
                 }
             />
@@ -366,7 +389,7 @@ function SaveViewDialog({ layout, onClose, name = "" }: { layout: Layout; onClos
         >
             <p className="muted">
                 Everyone can open a saved view: its plots, channels, scales, time window, and markers. Only you (and
-                admins) can change it.
+                admins) can change it. To send someone these plots without saving a view, use Copy link.
             </p>
             <label className="field">
                 Name
@@ -378,6 +401,162 @@ function SaveViewDialog({ layout, onClose, name = "" }: { layout: Layout; onClos
             </label>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
+    );
+}
+
+// --- links to plots -------------------------------------------------------------------------------------------------
+
+const LINK_DELAY_MS = 300; // plots unchanged this long get their link made, ready for a click
+const COPIED_MS = 2000; // how long Copy link says it copied
+
+/**
+ * Copy link: a link to the plots as they are (share.ts), to send someone without saving a view. It's made once the
+ * plots settle, so a click copies at once: Safari lets a page copy only while it's handling the click.
+ */
+function CopyLink({ layout }: { layout: Layout }) {
+    const [made, setMade] = useState<{ layout: Layout; link: string } | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [byHand, setByHand] = useState<{ link: string | null } | null>(null);
+    useEffect(() => {
+        let current = true;
+        const timer = window.setTimeout(() => {
+            plotsLink(layout).then(
+                (link) => {
+                    if (current) {
+                        setMade({ layout, link });
+                    }
+                },
+                () => {}, // a click makes it again, and says what's wrong
+            );
+        }, LINK_DELAY_MS);
+        return () => {
+            current = false;
+            window.clearTimeout(timer);
+        };
+    }, [layout]);
+    useEffect(() => {
+        if (!copied) {
+            return;
+        }
+        const timer = window.setTimeout(() => setCopied(false), COPIED_MS);
+        return () => window.clearTimeout(timer);
+    }, [copied]);
+    async function copy() {
+        let link: string | null = null;
+        try {
+            link = made?.layout === layout ? made.link : await plotsLink(layout);
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+        } catch {
+            // No clipboard (a site without HTTPS), or the browser said no: it's copied by hand. Or there's no link.
+            setByHand({ link });
+        }
+    }
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => void copy()}
+                title="A link to these plots as they are, to send to someone: it saves nothing, and whoever opens it can save it as a view"
+            >
+                {copied ? "Link copied" : "Copy link"}
+            </button>
+            {byHand && (
+                <Dialog
+                    title={byHand.link === null ? "Couldn't make a link" : "Copy this link"}
+                    cancel="Close"
+                    onCancel={() => setByHand(null)}
+                >
+                    {byHand.link === null ? (
+                        <p>This browser can&apos;t make links to plots. Update it, or save a view to share them.</p>
+                    ) : (
+                        <>
+                            <p className="muted">
+                                The browser didn&apos;t let Yorg copy it: copy it from here (Ctrl+C, or ⌘C on a Mac). It
+                                opens these plots as they are now for whoever follows it, and saves nothing.
+                            </p>
+                            <label className="field">
+                                Link
+                                <input
+                                    readOnly
+                                    autoFocus
+                                    value={byHand.link}
+                                    onFocus={(event) => event.currentTarget.select()}
+                                />
+                            </label>
+                        </>
+                    )}
+                </Dialog>
+            )}
+        </>
+    );
+}
+
+/** The plots a link to the page brought (?plots=): none, being read, read (a layout's JSON), or unreadable. */
+type Linked =
+    | { status: "none" }
+    | { status: "reading"; text: string }
+    | { status: "ready"; config: unknown }
+    | { status: "unreadable" };
+
+/**
+ * The plots in the page's address when it opened, read for the plots the page makes first, and then used (taken out of
+ * the address) once those are made: a reload, or plots made again (a view saved), start from the page's own.
+ */
+function useLinkedPlots(): [Linked, () => void] {
+    const [linked, setLinked] = useState<Linked>(() => {
+        const text = plotsInAddress();
+        return text === null ? { status: "none" } : { status: "reading", text };
+    });
+    const text = linked.status === "reading" ? linked.text : null;
+    useEffect(() => {
+        if (text === null) {
+            return;
+        }
+        let current = true;
+        readPlots(text).then(
+            (config) => {
+                if (current) {
+                    setLinked({ status: "ready", config });
+                }
+            },
+            () => {
+                if (current) {
+                    setLinked({ status: "unreadable" });
+                }
+            },
+        );
+        return () => {
+            current = false;
+        };
+    }, [text]);
+    const used = useCallback(() => {
+        dropPlotsFromAddress();
+        setLinked({ status: "none" });
+    }, []);
+    return [linked, used];
+}
+
+/**
+ * For the plots a page makes first: once they're made (from a link's plots, or the page's own if those couldn't be
+ * read), the link's used. Whether its plots couldn't be read, for the page to say so over these.
+ */
+function useLinkUsed(linked: Linked, used: () => void): boolean {
+    const [unreadable] = useState(linked.status === "unreadable");
+    useEffect(() => {
+        if (linked.status !== "none") {
+            used();
+        }
+    }, []); // once: plots made again (a view saved) start from the page's own
+    return unreadable;
+}
+
+function UnreadableLink() {
+    return (
+        <Notice tone="warning">
+            The plots in this link couldn&apos;t be read (was it cut short?), so this is the page without them. Ask
+            whoever sent it to copy it again.
+        </Notice>
     );
 }
 
@@ -849,6 +1028,7 @@ export function ViewsPage() {
 export function ViewPage({ id }: { id: number }) {
     const [view, setView] = useState<SavedView | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    const [linked, linkUsed] = useLinkedPlots();
     useEffect(() => {
         yorg.view(id).then(setView, (error: unknown) => setProblem(message(error)));
     }, [id]);
@@ -861,16 +1041,38 @@ export function ViewPage({ id }: { id: number }) {
             </div>
         );
     }
-    if (!view) {
+    if (!view || linked.status === "reading") {
         return <p className="muted yorg-page">Loading the view…</p>;
     }
-    return <ViewWorkspace key={`${view.id}/${view.updated_at}`} view={view} onSaved={setView} />;
+    return (
+        <ViewWorkspace
+            key={`${view.id}/${view.updated_at}`}
+            view={view}
+            onSaved={setView}
+            linked={linked}
+            onLinkUsed={linkUsed}
+        />
+    );
 }
 
-function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: SavedView) => void }) {
-    const [layout, dispatch] = useReducer(reduce, view, (saved) => readLayout(saved.config, saved.datasets[0] ?? 0));
+function ViewWorkspace({
+    view,
+    onSaved,
+    linked,
+    onLinkUsed,
+}: {
+    view: SavedView;
+    onSaved: (view: SavedView) => void;
+    linked: Linked;
+    onLinkUsed: () => void;
+}) {
+    // A link's plots, if it brought some: the view, changed (to save, or not).
+    const [layout, dispatch] = useReducer(reduce, view, (saved) =>
+        readLayout(linked.status === "ready" ? linked.config : saved.config, saved.datasets[0] ?? 0),
+    );
     const [savedAs] = useState(() => JSON.stringify(readLayout(view.config, view.datasets[0] ?? 0)));
     const changed = JSON.stringify(layout) !== savedAs;
+    const unreadable = useLinkUsed(linked, onLinkUsed);
     const [dialog, setDialog] = useState<"copy" | "other" | "delete" | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
     const body = () => ({
@@ -904,7 +1106,14 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
                         </span>
                     </>
                 }
-                notice={problem ? <Notice tone="error">{problem}</Notice> : undefined}
+                notice={
+                    unreadable || problem ? (
+                        <>
+                            {unreadable && <UnreadableLink />}
+                            {problem && <Notice tone="error">{problem}</Notice>}
+                        </>
+                    ) : undefined
+                }
                 actions={
                     <>
                         {view.can_change ? (
@@ -916,6 +1125,7 @@ function ViewWorkspace({ view, onSaved }: { view: SavedView; onSaved: (view: Sav
                                 Save as a new view
                             </button>
                         )}
+                        <CopyLink layout={layout} />
                         <AnalyzeButtons layout={layout} title={view.name} python={python.button} />
                         <MoreViewActions
                             canChange={view.can_change}

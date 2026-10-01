@@ -212,7 +212,8 @@ down to one you do have access to, so you can navigate there.
   must also send an `X-CVC-Request` header, which cross-site pages can't add
   (CSRF protection). A page opened before signing in is where signing in comes back to,
   with its query (a link to Yorg's plots holds them there), and only paths on the site
-  (`_safe_next`).
+  (`_safe_next`). Google's round trip keeps that in the session cookie, which browsers cap
+  at 4 KB, so one longer than 2,000 characters comes back to its page without its query.
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
      challenge.

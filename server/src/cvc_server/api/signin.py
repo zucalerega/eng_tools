@@ -134,10 +134,18 @@ def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
     )
 
 
+# Where to come back to goes through Google's round trip in the session cookie, which browsers cap at 4 KB with the
+# sign-in's own state in it too: a longer one (a link with many of Yorg's plots in its query) comes back to its page.
+MOST_NEXT = 2000
+
+
 def _safe_next(target: str | None) -> str:
-    """Only paths on this site, so sign-in can't be abused to redirect somewhere else."""
+    """Only paths on this site, so sign-in can't be abused to redirect somewhere else, and short enough to keep."""
     if not target or not target.startswith("/") or target.startswith(("//", "/\\")):
         return "/"
+    if len(target) > MOST_NEXT:
+        page = target.split("?", 1)[0]
+        return page if len(page) <= MOST_NEXT else "/"
     return target
 
 

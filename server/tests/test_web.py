@@ -1,5 +1,8 @@
 """The web app's page and assets: served to people who are signed in and approved."""
 
+import html
+from urllib.parse import urlencode
+
 import pytest
 
 from .conftest import BOOTSTRAP_ADMIN
@@ -39,6 +42,29 @@ def test_pages_ask_for_sign_in_first_and_come_back(built, client):
     # Already signed in, the home page carries on to where you were going.
     onward = client.get("/", params={"next": "/file/12"}, follow_redirects=False)
     assert (onward.status_code, onward.headers["location"]) == (303, "/file/12")
+
+
+def test_signing_in_comes_back_to_the_page_with_its_query(built, client):
+    # A link to Yorg's plots holds them in its query: someone not signed in yet still gets them after signing in.
+    page = "/yorg/datasets/5?plots=s0pNzMtXqA4tTi2y0jA0sgAA"
+    first = client.get(page, follow_redirects=False)
+    assert (first.status_code, first.headers["location"]) == (303, "/?" + urlencode({"next": page}))
+    assert f'value="{html.escape(page)}"' in client.get(first.headers["location"]).text  # the sign-in form keeps it
+
+    signed_in = client.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN, "next": page}, follow_redirects=False)
+    assert signed_in.headers["location"] == page
+
+
+def test_a_link_too_long_to_keep_through_sign_in_comes_back_to_its_page(built, client):
+    # Google's round trip keeps where to come back to in a cookie of 4 KB at most: a link with a big layout in its
+    # query comes back to its page, without its plots, rather than break signing in.
+    page = "/yorg/datasets/5?plots=" + "A" * 2500
+    first = client.get(page, follow_redirects=False)
+    sign_in_page = client.get(first.headers["location"]).text
+    assert 'value="/yorg/datasets/5"' in sign_in_page
+    assert "plots=" not in sign_in_page
+    signed_in = client.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN, "next": page}, follow_redirects=False)
+    assert signed_in.headers["location"] == "/yorg/datasets/5"
 
 
 def test_people_waiting_for_approval_see_the_home_page(built, client, team):

@@ -4,7 +4,7 @@ import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
 import { configureApi, type Account, type SiteSettings, type VaultFile } from "../src/api";
 import { StoreContext, VaultStore } from "../src/store";
-import type { DatasetDetail } from "../src/yorg/api";
+import type { DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
 // Drives the real server the way the add-in and the CLI do, to set up what a test looks at.
@@ -133,9 +133,9 @@ export class Team {
         return call("POST", "/api/yorg/views", who.token, { name, datasets: [dataset], config });
     }
 
-    /** The saved views, as the server keeps them. */
-    async views(who: Member): Promise<{ id: number; name: string; folder: string; config: unknown }[]> {
-        return call("GET", "/api/yorg/views", who.token);
+    /** Every saved view, as the server keeps it. */
+    async views(who: Member): Promise<SavedView[]> {
+        return call<SavedView[]>("GET", "/api/yorg/views", who.token);
     }
 
     /** A script (the Python window's), as the server keeps it: found by its name. */

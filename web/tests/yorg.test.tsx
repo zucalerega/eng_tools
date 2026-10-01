@@ -36,7 +36,14 @@ test("Help says what Yorg does, and how", async () => {
     await userEvent.click(nav.getByRole("link", { name: "Help" }));
     expect(await screen.findByRole("heading", { name: "How Yorg works" })).toBeTruthy();
     expect(nav.getByRole("link", { name: "Help" }).getAttribute("aria-current")).toBe("page");
-    for (const card of ["Getting data in", "Plotting", "Moving around", "Time and T0", "Calculated channels"]) {
+    for (const card of [
+        "Getting data in",
+        "Plotting",
+        "Moving around",
+        "Time and T0",
+        "Calculated channels",
+        "Views, links, and exports",
+    ]) {
         expect(screen.getByRole("region", { name: card })).toBeTruthy();
     }
 });

@@ -42,7 +42,9 @@ def app_page(path: str, request: Request, db: DB, settings: Config) -> Response:
         raise NotFound("Not found")
     user = session_user(request, db)
     if user is None or user.status != UserStatus.ACTIVE:
-        return RedirectResponse("/?" + urlencode({"next": "/" + path}), status_code=303)
+        # Back here after signing in, with the query: a link can hold what it opens there (Yorg's plots, say).
+        here = "/" + path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse("/?" + urlencode({"next": here}), status_code=303)
     index = app_index(settings)
     if index is None:
         raise NotFound("The web app isn't built on this server")

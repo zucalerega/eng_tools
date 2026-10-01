@@ -210,7 +210,10 @@ down to one you do have access to, so you can navigate there.
   While it's off, anyone with a Google account gets what *everyone* is granted, and Yorg.
 - **The browser** keeps an HttpOnly session cookie. Requests that change something
   must also send an `X-CVC-Request` header, which cross-site pages can't add
-  (CSRF protection).
+  (CSRF protection). A page opened before signing in is where signing in comes back to,
+  with its query (a link to Yorg's plots holds them there), and only paths on the site
+  (`_safe_next`). Google's round trip keeps that in the session cookie, which browsers cap
+  at 4 KB, so one longer than 2,000 characters comes back to its page without its query.
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
      challenge.
@@ -529,6 +532,23 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   (`pathTree.ts`), each folder's views the most recently changed first. Renaming or
   moving a view sends its plots as they were saved, so changes to them on the page stay
   to be saved; a client from before folders, which sends none, leaves a view where it is.
+- **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
+  page without saving a view, so views are kept for what's worth keeping. A link is the
+  page's address on the site (`sitePath`: never the preview's, which only admins open)
+  with its layout in `?plots=`: the JSON a saved view keeps, deflated
+  (`CompressionStream("deflate-raw")`) and base64url-encoded (`share.ts`), about 500
+  characters for a channel or two and 2 KB for 60. It's in the query, not after a `#`,
+  because signing in comes back to a page's path and query; nothing is stored on the
+  server. The page reads it as a saved view's layout is read (`readLayout`), so a link
+  made before the layout grew still opens, and the recipient's own sign-in decides which
+  tests they see. Its plots open as unsaved changes: a view's page shows the view changed,
+  and a dataset's makes them this browser's layout for it (as Use with another dataset
+  does). Once its plots are made, the page takes it out of the address, so a reload, or a
+  view saved, starts from the page's own; one that can't be read (cut short) says so, over
+  the page as it is without it. Copy link makes the link ahead, once the plots have
+  settled for 300 ms, so a click copies at once: Safari lets a page copy only while it
+  handles the click. Where the browser won't copy (a site without HTTPS has no clipboard),
+  it shows the link to copy by hand.
 - **Labels** belong to a plot: words, and an arrow to a point in the data (a time and a
   value on one axis, snapped to the nearest channel where it was clicked). The box sits
   an offset in pixels from that point, kept inside the plot, so it stays readable at any
@@ -833,7 +853,7 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
 7. **Yorg** (first version done, September 2026): upload, read, plot (an axis per
-   unit), compare, views, exports, calculated channels, folders, labels, measuring,
+   unit), compare, views, links, exports, calculated channels, folders, labels, measuring,
    masks, splitting files into their tests, time from T0 or of day (UTC or local), and a
    Help page (`Help.tsx`, `/yorg/help`: keep it in step with the features). Next:
    statistics over a selected span (and over each test, from its mask),

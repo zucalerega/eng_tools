@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from .saved import Saved
+from .schemas import FolderPath
 from .system.api import AdminUser
 
 router = APIRouter(prefix="/api/yorg/scripts", tags=["yorg-scripts"])
@@ -25,7 +26,7 @@ SavedScripts = Annotated[Saved, Depends(get_scripts)]
 
 class ScriptIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    folder: str = Field(default="", max_length=300)  # "" for none, or "Hotfires/Injector"
+    folder: FolderPath = ""  # "" for none, or "Hotfires/Injector"
     code: str = Field(default="", max_length=MAX_CODE)
     # The tests it works on (dataset ids), the first the one yorg.channel() takes from unless told another.
     datasets: list[int] = Field(default_factory=list, max_length=20)
@@ -37,12 +38,6 @@ class ScriptIn(BaseModel):
         if not value:
             raise ValueError("a script needs a name")
         return value
-
-    @field_validator("folder")
-    @classmethod
-    def _folder(cls, value: str) -> str:
-        """A folder path, tidied: forward slashes, no empty or padded parts."""
-        return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
 
 
 @router.get("")

@@ -92,6 +92,31 @@ def test_upgrades_keep_yorgs_data(tmp_path):
         assert db.exec_driver_sql(joined).one() == ("Hotfire 3", None, "PT-1")
 
 
+def test_upgrades_keep_views(tmp_path):
+    """Views got folders: those saved before are at the top, as they were."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0006")
+    when = "'2026-09-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when})"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO yorg_views (id, name, description, datasets, config, created_at, created_by, updated_at) "
+            f"VALUES (1, 'Tanks', '', '[3]', '{{\"panels\": []}}', {when}, 1, {when})"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT name, folder, datasets, config FROM yorg_views").one() == (
+            "Tanks",
+            "",
+            "[3]",
+            '{"panels": []}',
+        )
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

@@ -157,6 +157,7 @@ export interface FormulaBody {
 export interface SavedView {
     id: number;
     name: string;
+    folder: string; // a path of its own ("Hotfires/HF-3"), "" at the top
     description: string;
     datasets: number[];
     config: unknown; // a Layout, as this app saved it (layout.ts reads it)
@@ -169,6 +170,7 @@ export interface SavedView {
 
 export interface ViewBody {
     name: string;
+    folder?: string; // left out: at the top for a new view, where it was for a changed one
     description: string;
     datasets: number[];
     config: unknown;

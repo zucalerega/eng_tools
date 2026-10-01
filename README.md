@@ -120,8 +120,11 @@ the keys.
   on it; Esc clears the measurement.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
   with that test's channels of the same names. A dataset's views are listed on its page
-  (Saved views); open one and Save as a new view to keep your changes. Export the plots
-  as an image (labels and all), or the samples in view as CSV.
+  (Saved views); open one and Save as a new view to keep your changes. Views go in
+  folders of their own, as scripts do: a path like `Hotfires/HF-3`, given when you save
+  one or later with More > Rename or move; the Views tab shows them in their folders,
+  and finds them by a word. Export the plots as an image (labels and all), or the
+  samples in view as CSV.
 - **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
   it: the same data, views, and help, with Models and Scripts in its top bar, and Python and
   Model on a dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview,

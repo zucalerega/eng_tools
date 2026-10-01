@@ -468,11 +468,19 @@ def _check_size(config: dict[str, Any]) -> None:
 
 
 def add_view(
-    db: Session, user: User, *, name: str, description: str, datasets: list[int], config: dict[str, Any]
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    description: str,
+    datasets: list[int],
+    config: dict[str, Any],
+    folder: str = "",
 ) -> View:
     _check_size(config)
     new = View(
         name=name,
+        folder=folder,
         description=description,
         datasets=datasets,
         config=config,
@@ -493,11 +501,15 @@ def update_view(
     description: str,
     datasets: list[int],
     config: dict[str, Any],
+    folder: str | None = None,
 ) -> View:
+    """A view changed; its folder too, unless that's None (a client from before views had folders)."""
     found = view(db, view_id)
     _check_can_change(user, found.created_by, "view")
     _check_size(config)
     found.name = name
+    if folder is not None:
+        found.folder = folder
     found.description = description
     found.datasets = datasets
     found.config = config

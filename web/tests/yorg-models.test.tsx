@@ -26,7 +26,7 @@ test("system models are in the preview, for admins", async () => {
     const main = within(await screen.findByRole("navigation", { name: "Main" }));
     await userEvent.click(await main.findByRole("link", { name: "Preview" }));
     await userEvent.click(await main.findByRole("link", { name: "Models" }));
-    expect(await screen.findByRole("heading", { name: "System models" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Models" })).toBeTruthy();
     expect(window.location.pathname).toBe("/yorg/dev/models");
 });
 

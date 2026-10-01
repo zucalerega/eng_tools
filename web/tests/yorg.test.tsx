@@ -20,7 +20,7 @@ test("the app switcher goes between the vault and Yorg", async () => {
     expect(within(apps).getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
 
     await userEvent.click(within(apps).getByRole("link", { name: "Yorg" }));
-    expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
     const nav = screen.getByRole("navigation", { name: "Main" });
     expect(
         within(nav)
@@ -34,9 +34,9 @@ test("Help says what Yorg does, and how", async () => {
     renderApp(team.chief, "/yorg");
     const nav = within(await screen.findByRole("navigation", { name: "Main" }));
     await userEvent.click(nav.getByRole("link", { name: "Help" }));
-    expect(await screen.findByRole("heading", { name: "How Yorg works" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Help" })).toBeTruthy();
     expect(nav.getByRole("link", { name: "Help" }).getAttribute("aria-current")).toBe("page");
-    for (const card of [
+    for (const topic of [
         "Getting data in",
         "Plotting",
         "Moving around",
@@ -44,7 +44,47 @@ test("Help says what Yorg does, and how", async () => {
         "Calculated channels",
         "Views, links, and exports",
     ]) {
-        expect(screen.getByRole("region", { name: card })).toBeTruthy();
+        expect(screen.getByRole("region", { name: topic })).toBeTruthy();
+    }
+
+    // Beside the topics, their contents: a link to each, marking the one you're on.
+    const contents = within(screen.getByRole("navigation", { name: "Contents" }));
+    expect(contents.getAllByRole("link").map((link) => link.textContent)).toEqual([
+        "Getting data in",
+        "Organizing",
+        "Plotting",
+        "Moving around",
+        "Time and T0",
+        "Marking up",
+        "Calculated channels",
+        "Splitting a file into tests",
+        "Scripts",
+        "Views, links, and exports",
+    ]); // system models are only in the preview
+    expect(contents.getByRole("link", { name: "Getting data in" }).getAttribute("aria-current")).toBe("true");
+    await userEvent.click(contents.getByRole("link", { name: "Time and T0" }));
+    expect(contents.getByRole("link", { name: "Time and T0" }).getAttribute("aria-current")).toBe("true");
+    expect(contents.getByRole("link", { name: "Getting data in" }).getAttribute("aria-current")).toBeNull();
+    expect(window.location.hash).toBe("#help-time-and-t0"); // a link to it, to share
+});
+
+test("each page's title is the name of its tab, in the vault and in Yorg", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+    for (const [app, tabs] of [
+        ["Vault", ["Files", "Assemblies", "Checked out", "Activity", "SolidWorks"]],
+        ["Yorg", ["Datasets", "Views", "Scripts", "Help"]],
+    ] as const) {
+        const apps = within(await screen.findByRole("navigation", { name: "Apps" }));
+        await userEvent.click(apps.getByRole("link", { name: app }));
+        for (const tab of tabs) {
+            await userEvent.click(
+                within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: tab }),
+            );
+            expect(await screen.findByRole("heading", { level: 1, name: tab })).toBeTruthy();
+            // At the top, nothing above the title: the way to a folder shows only in one.
+            expect(screen.queryByRole("navigation", { name: "Folders" })).toBeNull();
+        }
     }
 });
 
@@ -398,7 +438,7 @@ test("renaming, deleting, and restoring a dataset", async () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
-    expect(await screen.findByRole("heading", { name: "Test data" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("link", { name: `Leak check 2 ${team.folder}` })).toBeNull());
 
     await userEvent.click(screen.getByRole("link", { name: "Deleted datasets" }));
@@ -451,7 +491,7 @@ test("folders: made, moved into, browsed, and searched across; and each dataset'
     table = within(await screen.findByRole("table", { name: "Datasets" }));
     expect(await table.findByRole("link", { name: data.name })).toBeTruthy();
     await userEvent.click(
-        within(screen.getByRole("navigation", { name: "Folders" })).getByRole("link", { name: "Test data" }),
+        within(screen.getByRole("navigation", { name: "Folders" })).getByRole("link", { name: "Datasets" }),
     );
 
     // A search looks in every folder, and says where each dataset is.

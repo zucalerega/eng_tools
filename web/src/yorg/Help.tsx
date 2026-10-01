@@ -1,17 +1,21 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { inPreview } from "../preview";
 import { Link, usePathname } from "../router";
 
-// What Yorg does, and how: one page, from the top bar's Help.
+// What Yorg does, and how: one page, from the top bar's Help. Its topics go down the page, and the contents beside
+// them keep to the one you're reading.
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <section aria-label={title}>
-            <h2>{title}</h2>
-            {children}
-        </section>
-    );
+interface Topic {
+    title: string;
+    body: ReactNode;
 }
+
+/** A topic's id, for its link in the contents (and in the address): "Time and T0" is help-time-and-t0. */
+const idOf = (title: string) =>
+    `help-${title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}`;
 
 function Keys({ rows }: { rows: [ReactNode, string][] }) {
     return (
@@ -28,18 +32,11 @@ function Keys({ rows }: { rows: [ReactNode, string][] }) {
 
 export function HelpPage() {
     const preview = inPreview(usePathname()); // what's new, in the preview until it's released
-    return (
-        <section className="yorg-page yorg-help">
-            <div className="page-head">
-                <h1>How Yorg works</h1>
-            </div>
-            <p className="lead muted">
-                Upload a CSV from a hotfire or cold flow, and plot its channels together on one time axis. Everyone
-                signed in sees every dataset, view, and calculated channel; only whoever added a dataset (or an admin)
-                changes it.
-            </p>
-            <div className="yorg-help-grid">
-                <Card title="Getting data in">
+    const topics: Topic[] = [
+        {
+            title: "Getting data in",
+            body: (
+                <>
                     <ul>
                         <li>
                             <Link to="/yorg">Upload data</Link>, or drop CSV files on the datasets page (up to 2 GB
@@ -64,9 +61,13 @@ export function HelpPage() {
                             its Read settings choose the time column, its format, the names' row, or the delimiter.
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Organizing">
+                </>
+            ),
+        },
+        {
+            title: "Organizing",
+            body: (
+                <>
                     <ul>
                         <li>
                             <em>New folder</em> for a campaign or a test day; drag datasets onto a folder (or one in the
@@ -77,9 +78,13 @@ export function HelpPage() {
                             <Link to="/yorg/deleted">Deleted</Link>).
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Plotting">
+                </>
+            ),
+        },
+        {
+            title: "Plotting",
+            body: (
+                <>
                     <ul>
                         <li>
                             Click a channel to plot it on the selected plot, and again to take it off; shift-click for a
@@ -102,9 +107,13 @@ export function HelpPage() {
                             in time to line them up.
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Moving around">
+                </>
+            ),
+        },
+        {
+            title: "Moving around",
+            body: (
+                <>
                     <Keys
                         rows={[
                             ["Drag", "zoom to that time"],
@@ -140,9 +149,13 @@ export function HelpPage() {
                             ],
                         ]}
                     />
-                </Card>
-
-                <Card title="Time and T0">
+                </>
+            ),
+        },
+        {
+            title: "Time and T0",
+            body: (
+                <>
                     <ul>
                         <li>
                             Unix-time data reads as time of day in UTC. <em>Options → Time reads</em> switches to your
@@ -159,9 +172,13 @@ export function HelpPage() {
                         </li>
                         <li>The legend reads every channel at the cursor, and the cursor's time shows bottom right.</li>
                     </ul>
-                </Card>
-
-                <Card title="Marking up">
+                </>
+            ),
+        },
+        {
+            title: "Marking up",
+            body: (
+                <>
                     <ul>
                         <li>
                             <em>Marker</em> (<kbd>M</kbd>): a named line across the plots; drag it to move it.
@@ -179,9 +196,13 @@ export function HelpPage() {
                             ). It shades the plots where it holds, and can hide data everywhere else.
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Calculated channels">
+                </>
+            ),
+        },
+        {
+            title: "Calculated channels",
+            body: (
+                <>
                     <ul>
                         <li>
                             <em>New calculated channel</em>, under a dataset's channels: for the whole team, in every
@@ -200,9 +221,13 @@ export function HelpPage() {
                             O/F while fuel flows: <code>where([FM-FU] &gt; 0.05, [FM-OX] / [FM-FU])</code>
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Splitting a file into tests">
+                </>
+            ),
+        },
+        {
+            title: "Splitting a file into tests",
+            body: (
+                <>
                     <ul>
                         <li>
                             <em>Split</em> makes a dataset of each test in a file: where a mask holds (with seconds
@@ -213,28 +238,40 @@ export function HelpPage() {
                             which stays as it was.
                         </li>
                     </ul>
-                </Card>
-
-                {preview && (
-                    <Card title="System models">
-                        <ul>
-                            <li>
-                                <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
-                                venturis; and on the gas side, supplies, regulators, gas valves) and link it to a test's
-                                channels: commands drive its valves, pressures it follows, sensors it's compared with.
-                            </li>
-                            <li>
-                                <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is plotted
-                                with the model, and how far apart they are. <em>Fit</em> turns the knobs you pick (CdAs,
-                                losses, a regulator's set pressure) until it matches best.
-                            </li>
-                            <li>
-                                <em>Model</em> on a dataset&apos;s page runs a model on it.
-                            </li>
-                        </ul>
-                    </Card>
-                )}
-                <Card title="Scripts">
+                </>
+            ),
+        },
+        ...(preview
+            ? [
+                  {
+                      title: "System models",
+                      body: (
+                          <>
+                              <ul>
+                                  <li>
+                                      <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
+                                      venturis; and on the gas side, supplies, regulators, gas valves) and link it to a
+                                      test's channels: commands drive its valves, pressures it follows, sensors it's
+                                      compared with.
+                                  </li>
+                                  <li>
+                                      <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is
+                                      plotted with the model, and how far apart they are. <em>Fit</em> turns the knobs
+                                      you pick (CdAs, losses, a regulator's set pressure) until it matches best.
+                                  </li>
+                                  <li>
+                                      <em>Model</em> on a dataset&apos;s page runs a model on it.
+                                  </li>
+                              </ul>
+                          </>
+                      ),
+                  },
+              ]
+            : []),
+        {
+            title: "Scripts",
+            body: (
+                <>
                     <ul>
                         <li>
                             Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
@@ -266,9 +303,13 @@ export function HelpPage() {
                             draws on the page&apos;s plots.
                         </li>
                     </ul>
-                </Card>
-
-                <Card title="Views, links, and exports">
+                </>
+            ),
+        },
+        {
+            title: "Views, links, and exports",
+            body: (
+                <>
                     <ul>
                         <li>
                             <em>Save view</em> keeps the plots for everyone. A dataset's views are under{" "}
@@ -290,7 +331,89 @@ export function HelpPage() {
                             (without what masks hide).
                         </li>
                     </ul>
-                </Card>
+                </>
+            ),
+        },
+    ];
+    const ids = topics.map((topic) => idOf(topic.title));
+    const [current, setCurrent] = useState(ids[0]);
+    const key = ids.join(" ");
+
+    useEffect(() => {
+        // Come with a topic in the address (/yorg/help#help-plotting): to it.
+        const asked = window.location.hash.slice(1);
+        if (asked && key.split(" ").includes(asked)) {
+            document.getElementById(asked)?.scrollIntoView?.({ block: "start" });
+            setCurrent(asked);
+        }
+        // The contents keep to the topic being read: the first one in the top part of the window.
+        if (typeof IntersectionObserver === "undefined") {
+            return;
+        }
+        const showing = new Map<string, boolean>();
+        const observer = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    showing.set(entry.target.id, entry.isIntersecting);
+                }
+                const first = key.split(" ").find((id) => showing.get(id));
+                if (first) {
+                    setCurrent(first);
+                }
+            },
+            { rootMargin: "-80px 0px -55% 0px" },
+        );
+        for (const id of key.split(" ")) {
+            const section = document.getElementById(id);
+            if (section) {
+                observer.observe(section);
+            }
+        }
+        return () => observer.disconnect();
+    }, [key]);
+
+    /** To a topic, smoothly, and into the address so the link can be shared. */
+    function goTo(event: MouseEvent, id: string) {
+        event.preventDefault();
+        document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+        window.history.replaceState(window.history.state, "", `#${id}`);
+        setCurrent(id);
+    }
+
+    return (
+        <section className="yorg-page yorg-help">
+            <div className="page-head">
+                <h1>Help</h1>
+            </div>
+            <p className="lead muted">
+                Upload a CSV from a hotfire or cold flow, and plot its channels together on one time axis. Everyone
+                signed in sees every dataset, view, and calculated channel; only whoever added a dataset (or an admin)
+                changes it.
+            </p>
+            <div className="yorg-help-layout">
+                <nav className="yorg-help-contents" aria-label="Contents">
+                    <ul>
+                        {topics.map((topic, index) => (
+                            <li key={ids[index]}>
+                                <a
+                                    href={`#${ids[index]}`}
+                                    aria-current={current === ids[index] ? "true" : undefined}
+                                    onClick={(event) => goTo(event, ids[index]!)}
+                                >
+                                    {topic.title}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+                <div className="yorg-help-topics">
+                    {topics.map((topic, index) => (
+                        <section key={ids[index]} id={ids[index]} aria-labelledby={`${ids[index]}-title`}>
+                            <h2 id={`${ids[index]}-title`}>{topic.title}</h2>
+                            {topic.body}
+                        </section>
+                    ))}
+                </div>
             </div>
         </section>
     );

@@ -1191,7 +1191,7 @@ export function ViewsPage() {
     return (
         <section className="yorg-page">
             <div className="page-head">
-                <h1>Saved views</h1>
+                <h1>Views</h1>
             </div>
             <p className="lead muted">
                 Plots someone saved: channels, scales, time windows, and markers, in folders. Open one, or use it with

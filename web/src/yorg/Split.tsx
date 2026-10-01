@@ -106,7 +106,7 @@ export function SplitDialog({
         for (let step = id; step !== null; step = byId.get(step)?.parent_id ?? null) {
             names.unshift(byId.get(step)?.name ?? "…");
         }
-        return names.length > 0 ? names.join(" / ") : "Test data (the top)";
+        return names.length > 0 ? names.join(" / ") : "Datasets (the top)";
     };
 
     async function make() {

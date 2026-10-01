@@ -20,7 +20,7 @@ export function SolidWorks() {
     const others = downloads?.filter((download) => download !== installer) ?? [];
     return (
         <section className="software">
-            <h1>Vault in SolidWorks</h1>
+            <h1>SolidWorks</h1>
             <p className="lead">
                 The add-in puts a Vault tab in SolidWorks 2025: check files out and in, open assemblies with everything
                 they use, and see who has what checked out, without leaving SolidWorks. The Open in SolidWorks and New

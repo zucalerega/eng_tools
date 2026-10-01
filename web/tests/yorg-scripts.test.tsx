@@ -17,7 +17,7 @@ test("everyone has the Python window: a script is changed by whoever saved it, a
 
     // Bob, on the site: Scripts is in the top bar, and Python starts with the page.
     const asBob = renderApp(bob, "/yorg");
-    await screen.findByRole("heading", { name: "Test data" });
+    await screen.findByRole("heading", { name: "Datasets" });
     await userEvent.click(
         within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Scripts" }),
     );

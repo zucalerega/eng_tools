@@ -68,7 +68,10 @@ export function Trash({ folder }: { folder: string }) {
     return (
         <section>
             <div className="page-head">
-                <Breadcrumbs path={folder} here="Trash" />
+                <div className="page-title">
+                    <Breadcrumbs path={folder} />
+                    <h1>Trash</h1>
+                </div>
                 <div className="page-actions">
                     <Link className="button" to={folderUrl(folder)}>
                         Back to {folder ? "the folder" : "the vault"}

@@ -523,7 +523,12 @@ placeholder: the web app says it in one place (`YORG` in `web/src/yorg/index.tsx
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
-  another test's data.
+  another test's data. A view's folder is a path of its own (`yorg_views.folder`,
+  "Hotfires/HF-3", "" at the top), tidied by the server as a script's is (`FolderPath`),
+  not one of the datasets' folders; the Views tab arranges them in a tree
+  (`pathTree.ts`), each folder's views the most recently changed first. Renaming or
+  moving a view sends its plots as they were saved, so changes to them on the page stay
+  to be saved; a client from before folders, which sends none, leaves a view where it is.
 - **Labels** belong to a plot: words, and an arrow to a point in the data (a time and a
   value on one axis, snapped to the nearest channel where it was clicked). The box sits
   an offset in pixels from that point, kept inside the plot, so it stays readable at any
@@ -782,7 +787,7 @@ are at `/docs`.
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `POST /api/yorg/datasets/{id}/split` | make datasets of spans of it `{pieces: [{name, start, end, zero}], folder_id}`, all or none (422 if a span has no samples) |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
-| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, description, datasets, config}` |
+| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder, description, datasets, config}` (`folder` optional: left out, a new view's at the top and a changed one stays put) |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
 
 ## Deploying

@@ -276,6 +276,11 @@ export function HelpPage() {
                             its channels.
                         </li>
                         <li>
+                            Views go in folders, given as a path when you save one (<code>Hotfires/HF-3</code>), or
+                            later with <em>More</em> and <em>Rename or move</em>. The <em>Views</em> tab shows them in
+                            their folders.
+                        </li>
+                        <li>
                             <em>Export</em>: an image of the plots (labels included), or the data in view as CSV
                             (without what masks hide).
                         </li>

@@ -133,6 +133,11 @@ export class Team {
         return call("POST", "/api/yorg/views", who.token, { name, datasets: [dataset], config });
     }
 
+    /** The saved views, as the server keeps them. */
+    async views(who: Member): Promise<{ id: number; name: string; folder: string; config: unknown }[]> {
+        return call("GET", "/api/yorg/views", who.token);
+    }
+
     /** A script (the Python window's), as the server keeps it: found by its name. */
     async script(who: Member, name: string): Promise<{ id: string; name: string; code: string }> {
         const all = await call<{ id: string; name: string }[]>("GET", "/api/yorg/scripts", who.token);

@@ -130,6 +130,8 @@ class View(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
+    # Its folder, a path of its own ("Hotfires/HF-3"; "" at the top): views aren't in the datasets' folders.
+    folder: Mapped[str] = mapped_column(String(300), default="", server_default="")
     description: Mapped[str] = mapped_column(Text, default="")
     datasets: Mapped[list[int]] = mapped_column(JSON, default=list)  # the datasets it plots, by id
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

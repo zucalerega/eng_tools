@@ -247,7 +247,13 @@ def get_views(user: ActiveUser, db: DB) -> list[ViewOut]:
 @router.post("/views", status_code=201)
 def post_view(body: ViewIn, user: ActiveUser, db: DB) -> ViewOut:
     new = datasets.add_view(
-        db, user, name=body.name, description=body.description, datasets=body.datasets, config=body.config
+        db,
+        user,
+        name=body.name,
+        description=body.description,
+        datasets=body.datasets,
+        config=body.config,
+        folder=body.folder or "",
     )
     return ViewOut.of(new, user)
 
@@ -267,6 +273,7 @@ def put_view(view_id: int, body: ViewIn, user: ActiveUser, db: DB) -> ViewOut:
         description=body.description,
         datasets=body.datasets,
         config=body.config,
+        folder=body.folder,
     )
     return ViewOut.of(changed, user)
 

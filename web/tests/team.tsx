@@ -127,10 +127,26 @@ export class Team {
         return people.find((person) => person.email === email);
     }
 
-    /** A saved view of a dataset, with one plot of one channel. */
-    async view(who: Member, name: string, dataset: number, channel: string): Promise<{ id: number; name: string }> {
+    /** A saved view of a dataset, with one plot of one channel, in a folder ("": at the top). */
+    async view(
+        who: Member,
+        name: string,
+        dataset: number,
+        channel: string,
+        folder = "",
+    ): Promise<{ id: number; name: string }> {
         const config = { datasets: [{ id: dataset, shift: 0 }], panels: [{ series: [{ dataset, channel }] }] };
-        return call("POST", "/api/yorg/views", who.token, { name, datasets: [dataset], config });
+        return call("POST", "/api/yorg/views", who.token, { name, folder, datasets: [dataset], config });
+    }
+
+    /** A new saved script, in a folder ("": at the top). */
+    async addScript(
+        who: Member,
+        name: string,
+        folder = "",
+        code = "print(1)\n",
+    ): Promise<{ id: string; name: string }> {
+        return call("POST", "/api/yorg/scripts", who.token, { name, folder, code });
     }
 
     /** Every saved view, as the server keeps it. */

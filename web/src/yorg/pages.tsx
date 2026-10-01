@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type DragEvent, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -18,7 +18,8 @@ import {
 import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
-import { folderTree, type Folder } from "./pathTree";
+import { FolderPicker } from "./FolderPicker";
+import { folderTree, foldersOf, type Folder } from "./pathTree";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";
@@ -357,43 +358,30 @@ function DatasetWorkspace({
     );
 }
 
-/** The folders views are in (and those they're in), to pick one from as a folder's typed. */
+/** The folders views are in (and those they're in), to pick one from. */
 function useViewFolders(): string[] {
     const [folders, setFolders] = useState<string[]>([]);
     useEffect(() => {
         yorg.views().then(
-            (views) => {
-                const all = new Set<string>();
-                for (const view of views) {
-                    const parts = view.folder.split("/").filter(Boolean);
-                    parts.forEach((_, index) => all.add(parts.slice(0, index + 1).join("/")));
-                }
-                setFolders([...all].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })));
-            },
+            (views) => setFolders(foldersOf(views)),
             () => {},
         );
     }, []);
     return folders;
 }
 
-/** Where a view is kept: a path of folders of its own ("Hotfires/HF-3"), or none (at the top). */
+/** Where a view is kept: a folder there is, picked from the list, or a path for a new one ("Hotfires/HF-3"). */
 function FolderField({ value, onChange }: { value: string; onChange: (folder: string) => void }) {
     const folders = useViewFolders();
     return (
         <label className="field">
             Folder
-            <input
+            <FolderPicker
                 value={value}
-                list="yorg-view-folders"
-                maxLength={300}
-                placeholder="None, or a path like Hotfires/HF-3"
-                onChange={(event) => onChange(event.target.value)}
+                onChange={onChange}
+                folders={folders}
+                placeholder="None, or a new one, like Hotfires/HF-3"
             />
-            <datalist id="yorg-view-folders">
-                {folders.map((folder) => (
-                    <option key={folder} value={folder} />
-                ))}
-            </datalist>
         </label>
     );
 }
@@ -1093,12 +1081,16 @@ function storedClosed(): Set<string> {
 const countIn = (folder: Folder<SavedView>): number =>
     folder.items.length + folder.folders.reduce((sum, inner) => sum + countIn(inner), 0);
 
+const DRAGGED_VIEW = "application/x-yorg-view"; // a saved view's id, as it's dragged onto a folder
+
 export function ViewsPage() {
     const [views, setViews] = useState<SavedView[] | null>(null);
     const [datasets, setDatasets] = useState<Map<number, string>>(new Map());
     const [problem, setProblem] = useState<string | null>(null);
     const [find, setFind] = useState("");
     const [closed, setClosed] = useState<Set<string>>(storedClosed);
+    const [dragging, setDragging] = useState(false); // a view, onto a folder
+    const [over, setOver] = useState<string | null>(null); // the folder it's over ("": the top)
     useEffect(() => {
         yorg.views().then(setViews, (error: unknown) => setProblem(message(error)));
         yorg.datasets().then(
@@ -1136,11 +1128,52 @@ export function ViewsPage() {
         }
     }
 
+    /** A view into a folder ("": out of its folder), as whoever saved it (or an admin) can: its plots stay as saved. */
+    async function moveView(id: number, folder: string) {
+        const view = views?.find((one) => one.id === id);
+        if (!view || view.folder === folder) {
+            return;
+        }
+        setProblem(null);
+        try {
+            const { name, description, datasets: ids, config } = view;
+            await yorg.updateView(id, { name, folder, description, datasets: ids, config });
+            setViews(await yorg.views());
+        } catch (error) {
+            setProblem(message(error));
+        }
+    }
+
+    /** What a folder (or the top) does with a view dragged onto it. */
+    const dropOn = (folder: string) => ({
+        onDragOver: (event: DragEvent) => {
+            if (event.dataTransfer.types.includes(DRAGGED_VIEW)) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setOver(folder);
+            }
+        },
+        onDragLeave: () => setOver((now) => (now === folder ? null : now)),
+        onDrop: (event: DragEvent) => {
+            if (!event.dataTransfer.types.includes(DRAGGED_VIEW)) {
+                return;
+            }
+            event.preventDefault();
+            setOver(null);
+            setDragging(false);
+            void moveView(Number(event.dataTransfer.getData(DRAGGED_VIEW)), folder);
+        },
+    });
+
     function rows(folder: Folder<SavedView>, depth: number): ReactNode[] {
         const indent = (more: number) => ({ paddingLeft: `${depth * 1.25 + more}rem` });
         const shut = !searching && closed.has(folder.path);
         const head = folder.path ? (
-            <tr key={`folder:${folder.path}`} className="yorg-folder-row">
+            <tr
+                key={`folder:${folder.path}`}
+                className={`yorg-folder-row${over === folder.path ? " yorg-drop-folder" : ""}`}
+                {...dropOn(folder.path)}
+            >
                 <td colSpan={3} style={indent(0.75)}>
                     <button
                         type="button"
@@ -1167,7 +1200,21 @@ export function ViewsPage() {
             head,
             ...folder.folders.flatMap((one) => rows(one, inner)),
             ...folder.items.map((view) => (
-                <tr key={view.id}>
+                <tr
+                    key={view.id}
+                    // Yours (or any, for an admin) to drag onto a folder.
+                    draggable={view.can_change}
+                    title={view.can_change ? "Drag it onto a folder to move it" : undefined}
+                    onDragStart={(event) => {
+                        event.dataTransfer.setData(DRAGGED_VIEW, String(view.id));
+                        event.dataTransfer.effectAllowed = "move";
+                        setDragging(true);
+                    }}
+                    onDragEnd={() => {
+                        setDragging(false);
+                        setOver(null);
+                    }}
+                >
                     <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
                         <Link to={viewUrl(view.id)} className="name">
                             {view.name}
@@ -1211,6 +1258,11 @@ export function ViewsPage() {
                         value={find}
                         onChange={(event) => setFind(event.target.value)}
                     />
+                    {dragging && (
+                        <div className={`yorg-drop-top${over === "" ? " yorg-drop-folder" : ""}`} {...dropOn("")}>
+                            Drop here to take it out of its folder
+                        </div>
+                    )}
                     {searching && tree.items.length === 0 && tree.folders.length === 0 ? (
                         <div className="empty">No view has that.</div>
                     ) : (

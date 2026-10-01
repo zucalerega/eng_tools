@@ -295,7 +295,8 @@ export function HelpPage() {
                         <li>
                             Scripts are kept for everyone, in folders: anyone can open and run one, and only whoever
                             saved it (or an admin) changes it; <em>Save as…</em> keeps a copy of your own. Upload .py
-                            files, or start from the examples.
+                            files, or start from the examples. Pick a script&apos;s folder from the list above it (or
+                            type a new one), or drag a script onto a folder in the list of scripts.
                         </li>
                         <li>
                             <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
@@ -317,9 +318,10 @@ export function HelpPage() {
                             its channels.
                         </li>
                         <li>
-                            Views go in folders, given as a path when you save one (<code>Hotfires/HF-3</code>), or
-                            later with <em>More</em> and <em>Rename or move</em>. The <em>Views</em> tab shows them in
-                            their folders.
+                            Views go in folders: pick one from the list when you save one, or type a new one (
+                            <code>Hotfires/HF-3</code>); later, <em>More</em> and <em>Rename or move</em>. The{" "}
+                            <em>Views</em> tab shows them in their folders: drag one of yours onto a folder to move it,
+                            or to the top, out of its folder.
                         </li>
                         <li>
                             <em>Copy link</em>, beside <em>Save view</em>, sends someone the plots as they are (tests

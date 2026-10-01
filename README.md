@@ -121,9 +121,10 @@ the keys.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
   with that test's channels of the same names. A dataset's views are listed on its page
   (Saved views); open one and Save as a new view to keep your changes. Views go in
-  folders of their own, as scripts do: a path like `Hotfires/HF-3`, given when you save
-  one or later with More > Rename or move; the Views tab shows them in their folders,
-  and finds them by a word. Export the plots as an image (labels and all), or the
+  folders of their own, as scripts do: picked from a list of those there are when you
+  save one (or a new path typed, like `Hotfires/HF-3`), or later with More > Rename or
+  move; the Views tab shows them in their folders, finds them by a word, and moves yours
+  into another folder (or out of one) when you drag it there. Export the plots as an image (labels and all), or the
   samples in view as CSV.
 - **Copy link** (beside Save view, on a dataset's or a view's page) to send someone what's
   on screen without saving a view: the plots, the tests compared and their shifts, the time
@@ -173,8 +174,8 @@ the keys.
   fluid library: 20 seconds to a minute), so Run can go straight away; Run while Python's busy
   and the run waits, saying for what. As it runs, the output says each step (loading
   packages, importing a module, running your code) and how long it's taken, and after, how
-  long the run took and where the time went. Scripts are kept for everyone in folders,
-  with their tests, as .py code with a `# %%` line starting each cell (as VS Code and
+  long the run took and where the time went. Scripts are kept for everyone in folders
+  (picked from a list, or dragged onto one in the list of scripts), with their tests, as .py code with a `# %%` line starting each cell (as VS Code and
   Spyder read them); upload .py files as scripts and download scripts as them. Anyone can
   open and run a script; only whoever saved it (or an admin) can change or delete it, and
   saving someone else's keeps a copy of your own.

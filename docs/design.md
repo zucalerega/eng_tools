@@ -210,7 +210,9 @@ down to one you do have access to, so you can navigate there.
   While it's off, anyone with a Google account gets what *everyone* is granted, and Yorg.
 - **The browser** keeps an HttpOnly session cookie. Requests that change something
   must also send an `X-CVC-Request` header, which cross-site pages can't add
-  (CSRF protection).
+  (CSRF protection). A page opened before signing in is where signing in comes back to,
+  with its query (a link to Yorg's plots holds them there), and only paths on the site
+  (`_safe_next`).
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
      challenge.

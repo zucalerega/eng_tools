@@ -57,13 +57,23 @@ CVC_WEB_DIR=/opt/vault/app/web/dist
 
 ## Getting access
 
-Deploying takes SSH access to the server as `opc`. Someone who has it adds your public key
-to `/home/opc/.ssh/authorized_keys` (the owner can also do that from the Oracle Cloud
-console). Keep your private key on your own computer: the deploy script uses
-`~/.ssh/vault_oracle`, or whichever key `VAULT_DEPLOY_KEY` names.
+Deploying takes SSH access to the server as `opc`. The server takes keys only, no
+passwords, and no key is in this repository, so a clone alone can't deploy: each computer
+that deploys has a key of its own. The first one, `vault-oracle`, is on the owner's laptop.
 
-Agents use the key already set up on the computer they run on. They never make, copy,
-move, or print keys.
+To deploy from another computer:
+
+1. On it, make a key: `ssh-keygen -t ed25519 -f ~/.ssh/vault_oracle -C "vault-<computer>"`.
+2. Send its public half (`~/.ssh/vault_oracle.pub`, one line) to someone who has access.
+   Never send the private half.
+3. They add that line to `/home/opc/.ssh/authorized_keys` on the server. Taking the line
+   out again stops that computer.
+4. Check it: `ssh -i ~/.ssh/vault_oracle opc@129.80.217.44 true` answers without asking for
+   a password. Then deploy as below.
+
+Agents use the key already set up on the computer they run on, so an agent can deploy only
+from a computer that has one. Agents never make, copy, move, or print private keys: on a
+computer without one, an agent says it can't deploy and leaves it to someone who can.
 
 ## Deploying
 

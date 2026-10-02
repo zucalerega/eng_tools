@@ -816,11 +816,16 @@ are at `/docs`.
 
 ## Deploying
 
-The server ships as a Docker image (`server/Dockerfile`). It runs as a non-root user,
-has a health check, and keeps its database and file contents on a `/data` volume.
+The live site runs on an Oracle Cloud "Always Free" VM, reached through Tailscale
+Funnel, with the server running from a uv environment as a systemd service.
+[deploying.md](deploying.md) has how it's hosted, how to deploy (`deploy/deploy.sh`), its
+backups, and how to set up a new server; the release and rollback rules are in
+CLAUDE.md, under "Deployment".
+
+The server also ships as a Docker image (`server/Dockerfile`). It runs as a non-root
+user, has a health check, and keeps its database and file contents on a `/data` volume.
 CI builds and smoke-tests the image on every change, and publishes it to
-`ghcr.io/<owner>/cvc-server:<tag>` for version tags. The release, backup, and
-rollback rules are in CLAUDE.md, under "Deployment". Setup:
+`ghcr.io/<owner>/cvc-server:<tag>` for version tags. Setup, wherever it runs:
 
 1. In Google Cloud Console, create an OAuth client of type *Web application* with
    the redirect URI `https://<your CVC address>/auth/callback`. Sign-in only asks
@@ -835,8 +840,8 @@ rollback rules are in CLAUDE.md, under "Deployment". Setup:
 4. Put CI's `Vault-Setup.exe` (and `cvc.exe`, if you like) in a folder and point
    `CVC_DOWNLOADS_DIR` at it: members get them from the web app's SolidWorks page.
 
-We still need to decide where to host it: Render (about $7/month plus disk), a
-~$5/month VPS, or a machine on campus. The image runs on any of them.
+Where to host it was decided in September 2026: the Oracle Cloud VM above, which costs
+nothing. The image would run on Render, a VPS, or a machine on campus too.
 
 ## Roadmap
 
@@ -851,8 +856,10 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 4. **Web app** (done): browse and search, history, download, who-has-what, activity,
    admin (approvals, permissions), admin mode (releasing check-outs, forced reverts),
    and opening files in SolidWorks (the `cvc:` link).
-5. **Deploy**: Docker image and CI (done). Still to do: R2 blob store, hosting,
-   backups, and importing the current files from Kenesto.
+5. **Deploy**: Docker image and CI (done). Hosted on an Oracle Cloud VM since September
+   2026, with a deploy script and nightly database backups ([deploying.md](deploying.md)).
+   Still to do: R2 blob store, backups off the host, and importing the current files
+   from Kenesto.
 6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in
    notifications to team chat, released revisions (A, B, C) for flight hardware,
    and rename/move with reference repair.
@@ -866,7 +873,6 @@ We still need to decide where to host it: Render (about $7/month plus disk), a
 
 ## Open questions
 
-- Hosting: Render, a VPS, or a campus machine (decide at deploy time).
 - Sign-up: open to any Google account for now (September 2026). Later: turn the whitelist
   on, or let in only the school's Google accounts?
 - SolidWorks version: 2025 (decided September 2026). The add-in targets API version 33.

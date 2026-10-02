@@ -211,6 +211,7 @@ function describe(event: VaultEvent): ReactNode {
                 <>
                     {who} changed {text("email")}'s account
                     {detail.status ? ` (${text("status")})` : ""}
+                    {detail.name ? ` (name: ${text("name")})` : ""}
                     {detail.is_admin === true ? " (made admin)" : detail.is_admin === false ? " (admin removed)" : ""}
                 </>
             );

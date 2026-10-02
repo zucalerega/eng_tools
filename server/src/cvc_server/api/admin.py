@@ -5,7 +5,17 @@ from fastapi import APIRouter
 from .. import auth, vault
 from ..models import UserStatus
 from .deps import DB, ActiveUser, AnyUser
-from .schemas import GrantIn, GrantsOut, InviteIn, SiteSettingsOut, SiteSettingsPatch, TokenOut, UserOut, UserPatch
+from .schemas import (
+    GrantIn,
+    GrantsOut,
+    InviteIn,
+    MePatch,
+    SiteSettingsOut,
+    SiteSettingsPatch,
+    TokenOut,
+    UserOut,
+    UserPatch,
+)
 
 router = APIRouter(prefix="/api", tags=["people"])
 
@@ -16,10 +26,18 @@ def get_me(user: AnyUser) -> UserOut:
     return UserOut.of(user)
 
 
+@router.patch("/me")
+def patch_me(body: MePatch, user: ActiveUser, db: DB) -> UserOut:
+    """Change your own name."""
+    return UserOut.of(vault.rename_self(db, user, body.name))
+
+
 @router.get("/users")
 def get_users(user: ActiveUser, db: DB) -> list[UserOut]:
-    """Admins see every account, including ones waiting for approval; others see active members."""
-    return [UserOut.of(u) for u in vault.list_users(db, user)]
+    """Admins see every account, including ones waiting for approval, and when each was last on; others see active
+    members."""
+    active = vault.last_active(db, user)
+    return [UserOut.of(u, active.get(u.id)) for u in vault.list_users(db, user)]
 
 
 @router.post("/users", status_code=201)

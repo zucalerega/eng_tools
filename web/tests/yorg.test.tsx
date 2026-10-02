@@ -88,6 +88,37 @@ test("each page's title is the name of its tab, in the vault and in Yorg", async
     }
 });
 
+test("a label goes where a plot's clicked, after L or the Label button", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Labels", HOTFIRE);
+    // jsdom lays nothing out: plots get a width to put things in.
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 800 });
+    try {
+        renderApp(team.chief, `/yorg/datasets/${data.id}`);
+        const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
+        await userEvent.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
+        const plot = await screen.findByRole("img", { name: /^Plot 1: PT-OX-01/ });
+        for (const how of ["L", "the Label button"]) {
+            if (how === "L") {
+                await userEvent.keyboard("l");
+            } else {
+                await userEvent.click(screen.getByRole("button", { name: "Label" }));
+            }
+            expect(screen.getByRole("button", { name: "Click a plot…" })).toBeTruthy();
+            // A click: its pointerdown puts the label there, and its mousedown comes just after.
+            await waitFor(() => {
+                fireEvent.pointerDown(plot, { clientX: 400, clientY: 120, button: 0 });
+                fireEvent.mouseDown(plot, { clientX: 400, clientY: 120, button: 0 });
+                expect(screen.getByRole("dialog", { name: "Label" })).toBeTruthy();
+            });
+            await userEvent.type(screen.getByRole("textbox", { name: "Label" }), `Ignition, by ${how}{Enter}`);
+            await waitFor(() => expect(screen.queryByRole("dialog", { name: "Label" })).toBeNull());
+        }
+    } finally {
+        delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+    }
+});
+
 test("uploading a file of test data opens its channels, ready to plot", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/yorg");

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Account, type Grants, type Role, type SiteSettings } from "../api";
+import { formatDate, formatTime } from "../format";
 import { Dialog, Notice, Time } from "../components";
 import { Link } from "../router";
 import { atLeast, useVault, type VaultState } from "../store";
@@ -21,7 +22,7 @@ export function Admin({ section }: { section: "people" | "access" }) {
                         </Link>
                     )}
                     <Link to="/admin/access" aria-current={shown === "access" ? "page" : undefined}>
-                        Access
+                        Vault Access
                     </Link>
                 </nav>
             </div>
@@ -49,6 +50,7 @@ function useAction(reload: () => Promise<void>) {
 }
 
 const STATUS_ORDER = { pending: 0, invited: 1, active: 2, disabled: 3 };
+const PEOPLE_REFRESH_MS = 30_000; // how often the list of people is fetched again, for who's on now
 
 function People() {
     const vault = useVault();
@@ -68,6 +70,16 @@ function People() {
         reload().catch((error: Error) => setProblem(error.message));
     }, [reload, setProblem]);
 
+    // Who's on changes as people come and go: look again every so often while the page is in view.
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            if (!document.hidden) {
+                reload().catch(() => {}); // the next try, or the next action, says what's wrong
+            }
+        }, PEOPLE_REFRESH_MS);
+        return () => window.clearInterval(timer);
+    }, [reload]);
+
     function invite(event: FormEvent) {
         event.preventDefault();
         void run(async () => {
@@ -81,6 +93,7 @@ function People() {
         (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name),
     );
     const waiting = sorted.filter((person) => person.status === "pending").length;
+    const onNow = sorted.filter((person) => person.active_now).length;
     return (
         <>
             {problem && <Notice tone="error">{problem}</Notice>}
@@ -109,7 +122,7 @@ function People() {
                     ) : (
                         <p className="muted">
                             Off: anyone who signs in with Google joins right away. They get what Everyone has on the
-                            Access tab, and Yorg's test data.
+                            Vault Access tab, and Yorg's test data.
                         </p>
                     )}
                 </div>
@@ -127,7 +140,7 @@ function People() {
                 >
                     <p>
                         Anyone with a Google account will be able to sign in and join right away. They'll get what
-                        Everyone has on the Access tab, and Yorg's test data.
+                        Everyone has on the Vault Access tab, and Yorg's test data.
                     </p>
                     {waiting > 0 && (
                         <p>
@@ -156,95 +169,123 @@ function People() {
             {people === null ? (
                 <p className="muted">Loading…</p>
             ) : (
-                <table className="table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Status</th>
-                            <th>Last sign-in</th>
-                            <th>
-                                <span className="visually-hidden">Actions</span>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sorted.map((person) => {
-                            const me = person.id === vault.me?.id;
-                            return (
-                                <tr key={person.id}>
-                                    <td>
-                                        {person.name}
-                                        {person.is_admin && <span className="badge">admin</span>}
-                                    </td>
-                                    <td>{person.email}</td>
-                                    <td>
-                                        <span className={`status status-${person.status}`}>
-                                            {person.status === "pending" ? "waiting for approval" : person.status}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {person.last_login_at ? (
-                                            <Time at={person.last_login_at} />
-                                        ) : (
-                                            <span className="muted">never</span>
-                                        )}
-                                    </td>
-                                    <td className="row-actions">
-                                        {person.status === "pending" && (
-                                            <button
-                                                type="button"
-                                                className="button-small button-primary"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                    run(() => api.updateUser(person.id, { status: "active" }))
-                                                }
-                                            >
-                                                Approve
-                                            </button>
-                                        )}
-                                        {person.status === "disabled" && (
-                                            <button
-                                                type="button"
-                                                className="button-small"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                    run(() => api.updateUser(person.id, { status: "active" }))
-                                                }
-                                            >
-                                                Enable
-                                            </button>
-                                        )}
-                                        {!me && person.status === "active" && (
-                                            <button
-                                                type="button"
-                                                className="button-small"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                    run(() => api.updateUser(person.id, { is_admin: !person.is_admin }))
-                                                }
-                                            >
-                                                {person.is_admin ? "Remove admin" : "Make admin"}
-                                            </button>
-                                        )}
-                                        {!me && person.status !== "disabled" && (
-                                            <button
-                                                type="button"
-                                                className="button-small button-danger"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                    run(() => api.updateUser(person.id, { status: "disabled" }))
-                                                }
-                                            >
-                                                Disable
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                <>
+                    <p className="people-counts">
+                        <span>
+                            <strong>{people.length}</strong> {people.length === 1 ? "person" : "people"}
+                        </span>
+                        <span className={onNow > 0 ? "active-now" : "muted"}>
+                            <strong>{onNow}</strong> active now
+                        </span>
+                    </p>
+                    <table className="table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Joined</th>
+                                <th>Last active</th>
+                                <th>Last sign-in</th>
+                                <th>
+                                    <span className="visually-hidden">Actions</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sorted.map((person) => {
+                                const me = person.id === vault.me?.id;
+                                return (
+                                    <tr key={person.id}>
+                                        <td>
+                                            {person.name}
+                                            {person.is_admin && <span className="badge">admin</span>}
+                                        </td>
+                                        <td>{person.email}</td>
+                                        <td>
+                                            <span className={`status status-${person.status}`}>
+                                                {person.status === "pending" ? "waiting for approval" : person.status}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <time dateTime={person.created_at} title={formatTime(person.created_at)}>
+                                                {formatDate(person.created_at)}
+                                            </time>
+                                        </td>
+                                        <td>
+                                            {person.active_now ? (
+                                                <span className="active-now">active now</span>
+                                            ) : person.last_active_at ? (
+                                                <Time at={person.last_active_at} />
+                                            ) : (
+                                                <span className="muted">never</span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {person.last_login_at ? (
+                                                <Time at={person.last_login_at} />
+                                            ) : (
+                                                <span className="muted">never</span>
+                                            )}
+                                        </td>
+                                        <td className="row-actions">
+                                            {person.status === "pending" && (
+                                                <button
+                                                    type="button"
+                                                    className="button-small button-primary"
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        run(() => api.updateUser(person.id, { status: "active" }))
+                                                    }
+                                                >
+                                                    Approve
+                                                </button>
+                                            )}
+                                            {person.status === "disabled" && (
+                                                <button
+                                                    type="button"
+                                                    className="button-small"
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        run(() => api.updateUser(person.id, { status: "active" }))
+                                                    }
+                                                >
+                                                    Enable
+                                                </button>
+                                            )}
+                                            {!me && person.status === "active" && (
+                                                <button
+                                                    type="button"
+                                                    className="button-small"
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        run(() =>
+                                                            api.updateUser(person.id, { is_admin: !person.is_admin }),
+                                                        )
+                                                    }
+                                                >
+                                                    {person.is_admin ? "Remove admin" : "Make admin"}
+                                                </button>
+                                            )}
+                                            {!me && person.status !== "disabled" && (
+                                                <button
+                                                    type="button"
+                                                    className="button-small button-danger"
+                                                    disabled={busy}
+                                                    onClick={() =>
+                                                        run(() => api.updateUser(person.id, { status: "disabled" }))
+                                                    }
+                                                >
+                                                    Disable
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </>
             )}
         </>
     );

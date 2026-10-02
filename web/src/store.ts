@@ -69,6 +69,11 @@ export class VaultStore {
         document.removeEventListener("visibilitychange", this.catchUp);
     }
 
+    /** You, as the server has you now: after you changed your name, say. */
+    updateMe(me: Account): void {
+        this.set({ me });
+    }
+
     /** Fetch what changed, now: after this page changed something, say. */
     refresh(): Promise<void> {
         this.pending ??= this.sync().finally(() => (this.pending = null));

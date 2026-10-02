@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .. import vault
+from .. import auth, vault
 from ..models import Role, SiteSettings, Token, User
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -31,9 +31,12 @@ class UserOut(BaseModel):
     is_admin: bool
     created_at: datetime
     last_login_at: datetime | None
+    # For admins (vault.last_active): when they last used Vault, and whether they're on now. Null and false otherwise.
+    last_active_at: datetime | None = None
+    active_now: bool = False
 
     @classmethod
-    def of(cls, user: User) -> "UserOut":
+    def of(cls, user: User, last_active: datetime | None = None) -> "UserOut":
         return cls(
             id=user.id,
             name=user.display_name,
@@ -42,6 +45,8 @@ class UserOut(BaseModel):
             is_admin=user.is_admin,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
+            last_active_at=last_active,
+            active_now=auth.active_now(last_active),
         )
 
 
@@ -367,6 +372,10 @@ class UserPatch(BaseModel):
     status: Literal["active", "disabled"] | None = None
     is_admin: bool | None = None
     name: str | None = None
+
+
+class MePatch(BaseModel):
+    name: str = Field(max_length=200)  # your name, as everyone sees it
 
 
 class SiteSettingsOut(BaseModel):

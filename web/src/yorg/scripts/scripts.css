@@ -658,8 +658,10 @@ button.icon-button.icon-danger:hover:not(:disabled) {
     border-bottom-left-radius: 0;
 }
 
+/* Its arrow, centred on Run all's text: moved, not given a margin, so the two halves keep one height and line. */
 .split-button > .popover > button.menu-button::after {
-    margin: -0.2rem 0 0;
+    margin: 0;
+    transform: translateY(-0.18rem) rotate(45deg);
 }
 
 .notebook-keys {

@@ -11,6 +11,9 @@ export interface Account extends UserRef {
     is_admin: boolean;
     created_at: string;
     last_login_at: string | null;
+    // For admins (Admin > People): when they last used Vault (the web app, the add-in, the CLI), and if they're on now.
+    last_active_at?: string | null;
+    active_now?: boolean;
 }
 
 /** What admins decide for everyone. */
@@ -260,6 +263,8 @@ const query = (params: Record<string, string | number | boolean | undefined>) =>
 
 export const api = {
     me: () => request<Account>("GET", "/api/me"),
+    /** Your own name, as everyone sees it. */
+    renameMe: (name: string) => request<Account>("PATCH", "/api/me", { name }),
     folder: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path })),
     /** A folder's trash: the folders and files deleted from it. */
     trash: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path, deleted: true })),

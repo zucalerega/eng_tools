@@ -803,6 +803,32 @@ a.tag:hover {
     color: var(--muted);
 }
 
+/* Admin > People: how many people have accounts, and how many are on now. */
+.people-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin: 1rem 0 0.75rem;
+}
+
+/* Someone using Vault now (Admin > People), with a green dot. */
+.active-now {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--good);
+    font-weight: 600;
+}
+
+.active-now::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent);
+}
+
 /* --- structure: what an assembly uses, and where a file is used -------------------------------- */
 
 .tree-row {

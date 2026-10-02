@@ -2,14 +2,18 @@
 
 import re
 import secrets
+from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from cvc_server import auth
 from cvc_server.app import create_app
 from cvc_server.config import Settings
+from cvc_server.db import utcnow
+from cvc_server.models import Token
 
 from .conftest import BOOTSTRAP_ADMIN
 
@@ -192,3 +196,55 @@ def test_production_has_no_dev_sign_in(tmp_path):
 def test_production_refuses_unsafe_settings(tmp_path, overrides):
     with pytest.raises(RuntimeError):
         create_app(production_settings(tmp_path, **overrides))
+
+
+def test_admins_see_when_people_were_last_on_and_who_is_on_now(app, client, team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    team.member("idle@x.test")  # never used Vault
+    client.get("/api/folders", headers=alice)
+
+    people = {u["email"]: u for u in client.get("/api/users", headers=chief).json()}
+    assert people["alice@x.test"]["active_now"] is True
+    assert utcnow() - datetime.fromisoformat(people["alice@x.test"]["last_active_at"]) < timedelta(minutes=1)
+    assert (people["idle@x.test"]["last_active_at"], people["idle@x.test"]["active_now"]) == (None, False)
+
+    # Ten minutes on, without using it since: when she was last on, but not on now.
+    with app.state.sessionmaker() as db:
+        db.execute(
+            update(Token)
+            .where(Token.user_id == team.ids["alice@x.test"])
+            .values(last_used_at=utcnow() - timedelta(minutes=10))
+        )
+        db.commit()
+    later = {u["email"]: u for u in client.get("/api/users", headers=chief).json()}["alice@x.test"]
+    assert later["active_now"] is False
+    ago = utcnow() - datetime.fromisoformat(later["last_active_at"])
+    assert timedelta(minutes=9) < ago < timedelta(minutes=11)
+
+    # Everyone else sees who the members are, not when they're on.
+    seen = {u["email"]: u for u in client.get("/api/users", headers=alice).json()}
+    assert (seen["chief@x.test"]["last_active_at"], seen["chief@x.test"]["active_now"]) == (None, False)
+
+
+def test_people_change_their_own_name_and_signing_in_with_google_again_keeps_it(app, client, team, settings):
+    alice = team.member("alice@x.test")
+    changed = client.patch("/api/me", json={"name": "  Ally Smith  "}, headers=alice)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["name"] == "Ally Smith"
+    assert client.get("/api/me", headers=alice).json()["name"] == "Ally Smith"
+    assert client.patch("/api/me", json={"name": "   "}, headers=alice).json()["error"] == "bad_name"
+    assert client.patch("/api/me", json={"name": "x" * 201}, headers=alice).status_code == 422
+
+    # Google's name for her doesn't come back when she signs in again.
+    with app.state.sessionmaker() as db:
+        user = auth.sign_in(
+            db, settings, subject="google-alice", email="alice@x.test", name="Alice", email_verified=True
+        )
+        assert user.name == "Ally Smith"
+
+    # The activity feed says so.
+    chief = team.member("chief@x.test", admin=True)
+    events = client.get("/api/activity", headers=chief).json()
+    renamed = [e for e in events if e["action"] == "update_user" and e["detail"].get("name") == "Ally Smith"]
+    assert len(renamed) == 1

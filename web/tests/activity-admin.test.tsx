@@ -24,6 +24,50 @@ test("admins approve people waiting for it", async () => {
     await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
 });
 
+test("admins see when each person was last on, and who's on now", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice"); // signed in just now
+    renderApp(team.chief, "/admin");
+    expect(await screen.findByRole("columnheader", { name: "Last active" })).toBeTruthy();
+    const lastActive = (email: string) => {
+        const row = screen.getAllByText(email)[0]!.closest("tr")!; // its name is its email, until it has one
+        const column = [...row.closest("table")!.querySelectorAll("th")].findIndex(
+            (th) => th.textContent === "Last active",
+        );
+        return row.querySelectorAll("td")[column]!.textContent;
+    };
+    await waitFor(() => expect(lastActive(alice.user.email)).toBe("active now"));
+    expect(lastActive(team.chief.user.email)).toBe("active now"); // on this page
+
+    // Invited, and never on since.
+    const email = `idle-${team.folder.toLowerCase()}@rocketry.test`;
+    await userEvent.type(screen.getByLabelText("Invite by email"), email);
+    await userEvent.click(screen.getByRole("button", { name: "Invite" }));
+    await waitFor(() => expect(lastActive(email)).toBe("never"));
+
+    // How many people there are, and how many are on now; and when each joined.
+    const counts = (await screen.findByText(/people$/)).closest("p")!.textContent!;
+    expect(counts).toMatch(/^\d+ people\d+ active now$/);
+    expect(Number(/(\d+) active now/.exec(counts)![1])).toBeGreaterThanOrEqual(2); // Alice and the chief
+    expect(screen.getByRole("columnheader", { name: "Joined" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Vault Access" })).toBeTruthy();
+});
+
+test("people change their own name from their account menu", async () => {
+    const team = await Team.create();
+    const member = await team.member(`Renamer-${team.folder}`);
+    renderApp(member, "/");
+    await userEvent.click(await screen.findByRole("button", { name: /^Account: / }));
+    await userEvent.click(screen.getByRole("button", { name: "Change your name…" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Change your name" }));
+    const box = dialog.getByLabelText("Name");
+    await userEvent.clear(box);
+    await userEvent.type(box, `Ally ${team.folder}`);
+    await userEvent.click(dialog.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("button", { name: `Account: Ally ${team.folder}` })).toBeTruthy();
+    expect((await team.account(member.user.email))?.name).toBe(`Ally ${team.folder}`);
+});
+
 test("admins turn the whitelist off, which approves everyone waiting, and on again", async () => {
     const team = await Team.create();
     const newbie = await team.stranger(); // with the whitelist on

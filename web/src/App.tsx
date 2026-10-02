@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { api } from "./api";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
-import { Notice, usePopover, VaultMark } from "./components";
+import { Dialog, Notice, usePopover, VaultMark } from "./components";
 import { WithFolderTree } from "./folderTree";
 import { folderFromUrl } from "./paths";
 import { Activity } from "./pages/Activity";
@@ -13,7 +14,7 @@ import { SolidWorks } from "./pages/SolidWorks";
 import { Trash } from "./pages/Trash";
 import { inPreview, PREVIEW, sitePath } from "./preview";
 import { Link, usePathname } from "./router";
-import { useVault, type VaultState } from "./store";
+import { useStore, useVault, type VaultState } from "./store";
 import { setTheme, useTheme, type Theme } from "./theme";
 import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
 
@@ -138,6 +139,7 @@ export function App() {
  */
 function AccountMenu({ vault }: { vault: VaultState }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    const [naming, setNaming] = useState(false);
     const theme = useTheme();
     const adminMode = useAdminMode(vault);
     const me = vault.me;
@@ -169,6 +171,16 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         {me?.name}
                         <span className="muted">{me?.email}</span>
                     </p>
+                    <button
+                        type="button"
+                        className="menu-item"
+                        onClick={() => {
+                            setOpen(false);
+                            setNaming(true);
+                        }}
+                    >
+                        Change your name…
+                    </button>
                     <hr />
                     <p className="menu-label" id="theme-label">
                         Theme
@@ -209,7 +221,44 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                     </form>
                 </div>
             )}
+            {naming && me && <NameDialog name={me.name} onClose={() => setNaming(false)} />}
         </div>
+    );
+}
+
+/** Your name, as everyone sees it: on your check-outs, in the activity, in Admin. */
+function NameDialog({ name: now, onClose }: { name: string; onClose: () => void }) {
+    const store = useStore();
+    const [name, setName] = useState(now);
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function save() {
+        setBusy(true);
+        try {
+            store.updateMe(await api.renameMe(name.trim()));
+            void store.refresh(); // your name on files and check-outs, too
+            onClose();
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+            setBusy(false);
+        }
+    }
+    return (
+        <Dialog
+            title="Change your name"
+            confirm="Save"
+            busy={busy}
+            disabled={!name.trim() || name.trim() === now}
+            onConfirm={() => void save()}
+            onCancel={onClose}
+        >
+            <p className="muted">How everyone sees you: on your check-outs, in the activity, and in Admin.</p>
+            <label className="field">
+                Name
+                <input autoFocus value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
+            </label>
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
     );
 }
 

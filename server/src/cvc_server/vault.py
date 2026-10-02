@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ from .models import (
     Grant,
     Role,
     SiteSettings,
+    Token,
     User,
     UserStatus,
     VaultState,
@@ -1280,6 +1281,22 @@ def list_users(db: Session, user: User) -> list[User]:
     return list(db.scalars(stmt))
 
 
+def last_active(db: Session, viewer: User) -> dict[int, datetime]:
+    """
+    When each account last used Vault, by user id: its last sign-in, or the last use of any of its sessions and
+    clients (the web app, the add-in, the CLI). Only admins see when people were on; anyone else gets nothing.
+    """
+    if not viewer.is_admin:
+        return {}
+    found: dict[int, datetime] = {}
+    uses = db.execute(select(Token.user_id, func.max(Token.last_used_at)).group_by(Token.user_id)).all()
+    logins = db.execute(select(User.id, User.last_login_at)).all()
+    for user_id, at in [*uses, *logins]:
+        if at is not None and (user_id not in found or at > found[user_id]):
+            found[user_id] = at
+    return found
+
+
 def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
     """Pre-approve an email: the account is active from its first Google sign-in."""
     _require_admin(admin)
@@ -1330,6 +1347,24 @@ def update_user(
         _event(db, admin, "update_user", email=user.email, **changes)
     db.commit()
     return user
+
+
+def rename_self(db: Session, user: User, name: str) -> User:
+    """Change your own name: how everyone sees you. (An admin fixes anyone's with update_user; signing in with Google
+    again keeps it, auth.sign_in.)"""
+    name = name.strip()
+    if not name:
+        raise CvcError("A name can't be empty", code="bad_name")
+    if len(name) > 200:
+        raise CvcError("A name can be at most 200 characters", code="bad_name")
+    seq = begin_write(db)
+    me = db.get_one(User, user.id)
+    if name != me.name:
+        me.name = name
+        _bump_access(db, seq)  # names come with the vault's index: everyone's app picks it up
+        _event(db, me, "update_user", email=me.email, name=name)
+    db.commit()
+    return me
 
 
 def site_settings(db: Session, user: User) -> SiteSettings:

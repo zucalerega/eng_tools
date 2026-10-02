@@ -4,7 +4,7 @@ import base64
 import hashlib
 import hmac
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -17,7 +17,10 @@ from .models import ClientAuthCode, SiteSettings, Token, User, UserStatus
 SESSION = "session"  # browser cookie
 CLIENT = "client"  # CLI or SolidWorks add-in, sent as "Authorization: Bearer ..."
 CODE_TTL = timedelta(minutes=5)
-_TOUCH_EVERY = timedelta(minutes=5)  # how often last_used_at is refreshed; avoids a write per request
+# How often a token's last_used_at is refreshed: often enough to tell who's on now (an open page asks every few
+# seconds), without a write for every request.
+_TOUCH_EVERY = timedelta(minutes=1)
+ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
 
 
 def _digest(secret: str) -> str:
@@ -87,6 +90,11 @@ def authenticate(db: Session, secret: str) -> User | None:
         token.last_used_at = now
         db.commit()
     return db.get(User, token.user_id)
+
+
+def active_now(last_active: datetime | None) -> bool:
+    """Whether someone last active then is using Vault now: a page open, the add-in, or the CLI."""
+    return last_active is not None and utcnow() - last_active <= ACTIVE_NOW
 
 
 def revoke_secret(db: Session, secret: str) -> None:

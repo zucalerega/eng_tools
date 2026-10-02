@@ -208,6 +208,13 @@ down to one you do have access to, so you can navigate there.
   however it signs in. Turning the whitelist off approves everyone waiting, since they
   could sign in again to join; turning it on changes no one who already has an account.
   While it's off, anyone with a Google account gets what *everyone* is granted, and Yorg.
+- **Who's on:** a token notes when it was last used, at most once a minute (not a write per
+  request), so Admin > People shows when each person was last on (their last sign-in, or
+  the last use of a session or a client: the web app, the add-in, the CLI) and who's on
+  now (within two minutes: an open page asks every 3 seconds). Only admins see it
+  (`vault.last_active`); the list others get for granting access doesn't say.
+- **Names:** an account's name is Google's at its first sign-in, and anyone can change
+  their own (the account menu, `vault.rename_self`); signing in again keeps it.
 - **The browser** keeps an HttpOnly session cookie. Requests that change something
   must also send an `X-CVC-Request` header, which cross-site pages can't add
   (CSRF protection). A page opened before signing in is where signing in comes back to,
@@ -782,7 +789,7 @@ are at `/docs`.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/me` | who you are, and whether you're approved |
+| `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
 | `GET /api/folders?path=&deleted=` | a folder's subfolders and files (or its trash) |
 | `POST /api/folders` | create a folder |
 | `GET /api/files/{id}` | a file's versions, references, and where it's used |
@@ -799,7 +806,7 @@ are at `/docs`.
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
-| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins) |
+| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `CVC_DOWNLOADS_DIR` |

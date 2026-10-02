@@ -27,7 +27,9 @@ command, and this repository keep the name CVC. The same server also runs
   their folders.
 - **Sign in with Google.** Anyone can join, unless an admin turns on the whitelist
   (Admin > People, from the account menu at the top right): then only people an admin
-  invites or approves can.
+  invites or approves can. Admin > People also shows how many people there are and how
+  many are on now, and when each joined and was last on. Change the name everyone sees
+  you by from your account menu.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every

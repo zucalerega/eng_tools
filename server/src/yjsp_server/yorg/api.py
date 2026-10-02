@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ..api.deps import DB, ActiveUser, Config
-from ..errors import CvcError, NotFound, TooLarge
+from ..errors import ApiError, NotFound, TooLarge
 from ..models import User
 from . import datasets
 from .files import DataFiles
@@ -89,7 +89,7 @@ async def post_dataset(
                 digest.update(chunk)
                 out.write(chunk)
         if size == 0:
-            raise CvcError(f"{filename} is empty", code="empty")
+            raise ApiError(f"{filename} is empty", code="empty")
         dataset = await run_in_threadpool(
             datasets.add,
             db,

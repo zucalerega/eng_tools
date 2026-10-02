@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session
 
 from .. import auth
 from ..config import Settings
-from ..errors import CvcError, Forbidden, NotFound
+from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
-from .deps import DB, SESSION_COOKIE, Config, session_user
+from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -46,25 +46,30 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-# Vault's mark, as the web app draws it (VaultMark in web/src/components.tsx): a vault door, and a gold orbit
-# with a sliver of whatever's behind it around it. {door} and {gap} are colors.
-_DOOR = (
-    '<g fill="none" stroke="{door}"><polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 '
+# The site's two apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/components.tsx), a
+# vault door crossed by a gold orbit with a sliver of the card around it, and Yorg's (YorgMark in web/src/yorg), a
+# signal rising across a pair of axes to its gold peak.
+_GOLD = "#e0a500"
+_VAULT_MARK = (
+    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
+    '<g fill="none" stroke="currentColor"><polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 '
     '41.2,9.8 54.2,22.8" stroke-width="5"/><circle cx="32" cy="32" r="12.5" stroke-width="3"/>'
-    '<path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" stroke-width="3"/></g><g fill="{door}">'
+    '<path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" stroke-width="3"/></g><g fill="currentColor">'
     '<circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/><circle cx="16.8" cy="40.8" r="2.8"/>'
     '<circle cx="47.2" cy="40.8" r="2.8"/></g>'
-    '<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="#e0a500" style="stroke:{gap}" stroke-width="2.5" paint-order="stroke"/>'
+    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{_GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
+    'paint-order="stroke"/></svg>'
 )
-_MARK = (
-    '<svg width="56" height="56" viewBox="0 0 64 64" aria-hidden="true">'
-    + _DOOR.format(door="currentColor", gap="var(--surface)")
-    + "</svg>"
+_YORG_MARK = (
+    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
+    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M9 7v48h48" stroke-width="5"/><path d="M17 45l8-13 8 7 9-20 7 10 6-5" stroke-width="4"/></g>'
+    f'<circle cx="42" cy="19" r="5.5" fill="{_GOLD}"/></svg>'
 )
+# The site's own icon: the gold orbit both marks take from the team's logo, on the top bar's navy.
 _FAVICON = "data:image/svg+xml," + quote(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b1b33"/>'
-    + _DOOR.format(door="#fff", gap="#0b1b33")
-    + "</svg>"
+    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{_GOLD}"/></svg>'
 )
 # Light, or dark like the computer (or as chosen in the web app's account menu, which keeps it in localStorage).
 _DARK = """color-scheme: dark; --bg: #070b12; --surface: #0e1522; --text: #e5ebf4; --muted: #95a1b5;
@@ -84,6 +89,7 @@ _STYLE = f"""
   .card {{ width: min(25rem, 100%); padding: 2.25rem 2rem 2rem; background: var(--surface);
     border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }}
   .brand {{ display: flex; flex-direction: column; align-items: center; gap: .55rem; margin-bottom: 1.75rem; }}
+  .marks {{ display: flex; gap: .9rem; margin-bottom: .2rem; }}
   .brand svg {{ color: var(--door); }}
   .wordmark, h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
   .wordmark {{ font-size: 1.8rem; font-weight: 700; letter-spacing: .28em; margin-right: -.28em;
@@ -113,22 +119,23 @@ _STYLE = f"""
   .foot {{ margin: 1.5rem 0 0; font-size: .78rem; color: var(--muted); text-align: center; }}
 """
 _THEME = (
-    "<script>try{var t=localStorage.getItem('vault.theme');"
+    "<script>try{var t=localStorage.getItem('yjsp.theme');"
     "if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>"
 )
+SITE = "YJSP"
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    """A sign-in page: a card with Vault's mark, like the web app's. The title "Vault" is just the brand."""
-    heading = "" if title == "Vault" else f"<h1>{_esc(title)}</h1>"
-    tab_title = title if title == "Vault" else f"{title} · Vault"
+    """A sign-in page: a card with the site's name and its apps' marks. The title "YJSP" is just the brand."""
+    heading = "" if title == SITE else f"<h1>{_esc(title)}</h1>"
+    tab_title = title if title == SITE else f"{title} · {SITE}"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{_esc(tab_title)}</title>
 <link rel="icon" href="{_esc(_FAVICON)}">{_THEME}<style>{_STYLE}</style></head>
-<body><main class="card"><div class="brand">{_MARK}<span class="wordmark">Vault</span>
-<p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
+<body><main class="card"><div class="brand"><div class="marks">{_VAULT_MARK}{_YORG_MARK}</div>
+<span class="wordmark">{SITE}</span><p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
     )
@@ -174,7 +181,8 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             return web.index_response(index)
     if user is None:
         parts = [
-            '<p class="lead">The team\'s CAD vault: every part, assembly, and drawing, with its whole history.</p>'
+            '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
+            "history, and Yorg, the test data, plotted.</p>"
         ]
         if request.app.state.oauth is not None:
             query = urlencode({"next": _safe_next(next_path)})
@@ -197,7 +205,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
 
     body = f'<p class="lead">Signed in as <strong>{_esc(user.display_name)}</strong><br>{_esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
-        body += "<p>An admin needs to approve your account before you can use Vault. Check back soon.</p>"
+        body += "<p>An admin needs to approve your account before you can use Vault and Yorg. Check back soon.</p>"
     elif user.status == UserStatus.DISABLED:
         body += "<p>This account is disabled. If that's a mistake, ask an admin.</p>"
     else:
@@ -206,7 +214,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
         )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
-    return _page("Waiting for approval" if user.status == UserStatus.PENDING else "Vault", body)
+    return _page("Waiting for approval" if user.status == UserStatus.PENDING else SITE, body)
 
 
 @router.get("/auth/login", include_in_schema=False)
@@ -215,7 +223,7 @@ async def login(request: Request, settings: Config, next_path: NextPath = "/"):
     if oauth is None:
         if settings.dev_auth and not settings.production:
             return RedirectResponse("/?" + urlencode({"next": _safe_next(next_path)}), status_code=303)
-        raise CvcError("Google sign-in isn't set up on this server", code="signin_unavailable")
+        raise ApiError("Google sign-in isn't set up on this server", code="signin_unavailable")
     request.session["next"] = _safe_next(next_path)
     return await oauth.google.authorize_redirect(request, f"{settings.public_url.rstrip('/')}/auth/callback")
 
@@ -243,11 +251,11 @@ async def callback(request: Request, db: DB, settings: Config) -> RedirectRespon
 
 @router.post("/auth/logout", include_in_schema=False)
 def logout(request: Request, db: DB) -> RedirectResponse:
-    secret = request.cookies.get(SESSION_COOKIE)
-    if secret:
-        auth.revoke_secret(db, secret)
     response = RedirectResponse("/", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
+    for cookie in (SESSION_COOKIE, OLD_SESSION_COOKIE):
+        if secret := request.cookies.get(cookie):
+            auth.revoke_secret(db, secret)
+            response.delete_cookie(cookie)
     return response
 
 
@@ -255,12 +263,12 @@ def logout(request: Request, db: DB) -> RedirectResponse:
 
 
 def _approval_signer(settings: Settings) -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.secret_key, salt="cvc-client-approval")
+    return URLSafeTimedSerializer(settings.secret_key, salt="yjsp-client-approval")
 
 
 def _check_client_request(port: int, state: str, challenge: str) -> None:
     if not 1024 <= port <= 65535 or not _CHALLENGE.fullmatch(challenge) or not 0 < len(state) <= 200:
-        raise CvcError("This sign-in request from the Vault client is malformed", code="bad_client_request")
+        raise ApiError("This sign-in request from the Vault client is malformed", code="bad_client_request")
 
 
 def _client_callback(port: int, **params: str) -> str:
@@ -352,7 +360,7 @@ def dev_login(request: Request, db: DB, settings: Config, email: str, name: str 
 
 @router.post("/auth/dev-token")
 def dev_token(body: DevTokenIn, db: DB, settings: Config) -> TokenIssuedOut:
-    """Development only (CVC_DEV_AUTH): a client token for any email, without Google."""
+    """Development only (YJSP_DEV_AUTH): a client token for any email, without Google."""
     _require_dev(settings)
     user = _dev_identity(db, settings, body.email, body.name)
     return TokenIssuedOut(token=auth.issue_token(db, user, kind=auth.CLIENT, name="dev token"), user=UserOut.of(user))

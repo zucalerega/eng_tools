@@ -1,15 +1,15 @@
-# /etc/systemd/system/vault.service on the server: see docs/deploying.md. Keep this copy the same as the server's.
+# /etc/systemd/system/yjsp.service on the server: see docs/deploying.md. Keep this copy the same as the server's.
 [Unit]
-Description=Vault and Yorg (cvc-server)
+Description=YJSP: Vault and Yorg (yjsp-server)
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=vault
-Group=vault
+User=yjsp
+Group=yjsp
 # .env and data/ are here.
-WorkingDirectory=/srv/vault
-ExecStart=/opt/vault/app/server/.venv/bin/cvc-server
+WorkingDirectory=/srv/yjsp
+ExecStart=/opt/yjsp/app/server/.venv/bin/yjsp-server
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -17,7 +17,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/srv/vault
+ReadWritePaths=/srv/yjsp
 LimitNOFILE=65536
 
 [Install]

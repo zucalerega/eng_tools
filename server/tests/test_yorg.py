@@ -7,10 +7,10 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from cvc_server.app import create_app
-from cvc_server.models import UserStatus
-from cvc_server.yorg import ingest
-from cvc_server.yorg.models import Dataset
+from yjsp_server.app import create_app
+from yjsp_server.models import UserStatus
+from yjsp_server.yorg import ingest
+from yjsp_server.yorg.models import Dataset
 
 
 def upload(team, who, text: str | bytes, filename: str = "run.csv", **params) -> dict:

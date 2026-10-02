@@ -3,7 +3,7 @@
 from typing import Any
 
 
-class CvcError(Exception):
+class ApiError(Exception):
     status = 400
     code = "bad_request"
 
@@ -15,26 +15,26 @@ class CvcError(Exception):
         self.details = details
 
 
-class Unauthorized(CvcError):
+class Unauthorized(ApiError):
     status = 401
     code = "unauthorized"
 
 
-class Forbidden(CvcError):
+class Forbidden(ApiError):
     status = 403
     code = "forbidden"
 
 
-class NotFound(CvcError):
+class NotFound(ApiError):
     status = 404
     code = "not_found"
 
 
-class Conflict(CvcError):
+class Conflict(ApiError):
     status = 409
     code = "conflict"
 
 
-class TooLarge(CvcError):
+class TooLarge(ApiError):
     status = 413
     code = "too_large"

@@ -1,0 +1,11 @@
+#!/bin/bash
+# /usr/local/sbin/yjsp-backup on the server, run each night by yjsp-backup.timer: see docs/deploying.md.
+# The site's database (Vault's and Yorg's tables), copied each night with SQLite's own backup (whole and consistent
+# while the server runs), kept for 14 days. The files (CAD versions, datasets, scripts) aren't copied: they need
+# somewhere off this server.
+set -euo pipefail
+cd /srv/yjsp
+stamp=$(date -u +%Y-%m-%d)
+sqlite3 data/yjsp.db ".backup 'backups/yjsp-$stamp.db'"
+gzip -f "backups/yjsp-$stamp.db"
+find backups -name 'yjsp-*.db.gz' -mtime +14 -delete

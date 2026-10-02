@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .. import vault
-from ..errors import CvcError, Forbidden, TooLarge
+from ..errors import ApiError, Forbidden, TooLarge
 from ..storage import SHA256
 from .deps import DB, ActiveUser, Config, Store
 from .schemas import (
@@ -55,7 +55,7 @@ def get_file(file_id: int, user: ActiveUser, db: DB) -> FileDetailOut:
 def get_content(file_id: int, user: ActiveUser, db: DB, store: Store, version: int | None = None) -> FileResponse:
     """Download a version (default: the latest)."""
     file, found = vault.version_content(db, user, file_id, version)
-    headers = {"X-CVC-Version": str(found.number), "X-CVC-SHA256": found.blob_sha256}
+    headers = {"X-Vault-Version": str(found.number), "X-Vault-SHA256": found.blob_sha256}
     return FileResponse(
         store.path(found.blob_sha256), filename=file.name, media_type="application/octet-stream", headers=headers
     )
@@ -143,7 +143,7 @@ def get_activity(
 
 def _check_sha(sha256: str) -> None:
     if not SHA256.fullmatch(sha256):
-        raise CvcError("Blobs are named by their SHA-256, as 64 lowercase hex digits", code="bad_sha256")
+        raise ApiError("Blobs are named by their SHA-256, as 64 lowercase hex digits", code="bad_sha256")
 
 
 @router.head("/blobs/{sha256}")
@@ -153,7 +153,7 @@ def head_blob(sha256: str, user: ActiveUser, db: DB) -> Response:
     size = vault.blob_size(db, sha256)
     if size is None:
         return Response(status_code=404)
-    return Response(status_code=200, headers={"X-CVC-Size": str(size)})
+    return Response(status_code=200, headers={"X-Vault-Size": str(size)})
 
 
 @router.put("/blobs/{sha256}")
@@ -184,7 +184,7 @@ async def put_blob(
                 digest.update(chunk)
                 out.write(chunk)
         if digest.hexdigest() != sha256:
-            raise CvcError(
+            raise ApiError(
                 "The upload doesn't match its SHA-256; it was damaged on the way, so try again", code="hash_mismatch"
             )
         store.commit(sha256, temp)

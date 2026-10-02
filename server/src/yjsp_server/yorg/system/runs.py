@@ -71,7 +71,7 @@ class Runs:
             environment = {**os.environ, "MPLCONFIGDIR": str(self.matplotlib), "MPLBACKEND": "Agg"}
             with (folder / "log.txt").open("wb") as log:
                 process = subprocess.Popen(
-                    [sys.executable, "-m", "cvc_server.yorg.system.runner", str(folder)],
+                    [sys.executable, "-m", "yjsp_server.yorg.system.runner", str(folder)],
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     env=environment,

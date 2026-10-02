@@ -1,4 +1,4 @@
-// The CVC server's JSON API (see server/src/cvc_server/api/schemas.py, or /docs on a running server).
+// The server's JSON API (see server/src/yjsp_server/api/schemas.py, or /docs on a running server).
 
 export interface UserRef {
     id: number;
@@ -168,7 +168,7 @@ class Bytes {
 /** What every request carries: the header the server wants on browser writes, and (in tests) a client token. */
 function baseHeaders(): Record<string, string> {
     // The server refuses browser writes without this header, which other sites can't add (CSRF).
-    const headers: Record<string, string> = { "X-CVC-Request": "1" };
+    const headers: Record<string, string> = { "X-YJSP-Request": "1" };
     if (token) {
         headers["Authorization"] = `Bearer ${token}`;
     }

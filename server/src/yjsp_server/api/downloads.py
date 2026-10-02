@@ -1,4 +1,4 @@
-"""Software the web app offers members: the files in CVC_DOWNLOADS_DIR, like the add-in's installer."""
+"""Software the web app offers members: the files in YJSP_DOWNLOADS_DIR, like the add-in's installer."""
 
 from datetime import UTC, datetime
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""A model run's (or fit's) process: python -m cvc_server.yorg.system.runner <folder>.
+"""A model run's (or fit's) process: python -m yjsp_server.yorg.system.runner <folder>.
 
 The folder holds job.json (the checked model, the window, the time step; for a fit, what to fit) and inputs/ (each
 linked channel's times and values, as little-endian float64s). The process writes progress.json as it goes, then

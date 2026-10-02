@@ -12,7 +12,7 @@ from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...errors import CvcError
+from ...errors import ApiError
 from .catalog import ATMOSPHERE, PSI
 
 _PRESSURE = {
@@ -40,7 +40,7 @@ _MASS_FLOW = {
 }
 
 
-class NoSuchChannel(CvcError):
+class NoSuchChannel(ApiError):
     status = 422
     code = "no_channel"
 

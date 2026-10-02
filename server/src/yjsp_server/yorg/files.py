@@ -1,4 +1,4 @@
-"""Where Yorg keeps files (CVC_YORG_DIR): each dataset's upload, and the arrays read from it."""
+"""Where Yorg keeps files (YJSP_YORG_DIR): each dataset's upload, and the arrays read from it."""
 
 import os
 import shutil

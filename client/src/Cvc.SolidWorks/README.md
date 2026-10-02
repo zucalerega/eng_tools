@@ -63,7 +63,7 @@ While you work:
 
 1. In the Vault web app, open **SolidWorks** (at the top) and download `Vault-Setup.exe`.
    (It's the `vault-setup` artifact of a CI run; an admin puts it in the server's
-   `CVC_DOWNLOADS_DIR`.)
+   `YJSP_DOWNLOADS_DIR`.)
 2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
    click **More info**, then **Run anyway**. It asks for administrator rights, then installs
    the add-in in `C:\Program Files\Vault for SolidWorks`. Running a newer one updates it.
@@ -86,7 +86,7 @@ folder's files.
 A dev server on a Mac can serve a Windows PC on the same network:
 
 ```
-cd server && CVC_DEV_AUTH=1 CVC_BOOTSTRAP_ADMINS=you@example.com CVC_HOST=0.0.0.0 uv run cvc-server
+cd server && YJSP_DEV_AUTH=1 YJSP_BOOTSTRAP_ADMINS=you@example.com YJSP_HOST=0.0.0.0 uv run yjsp-server
 ```
 
 In the add-in, use `http://<the Mac's IP address>:8000` as the server, and sign in with

@@ -1,4 +1,4 @@
-"""What Yorg keeps as files rather than rows (system models, scripts): a JSON file each in a folder of CVC_YORG_DIR,
+"""What Yorg keeps as files rather than rows (system models, scripts): a JSON file each in a folder of YJSP_YORG_DIR,
 so they need no tables of their own (and leave nothing behind in the database if they go)."""
 
 import json

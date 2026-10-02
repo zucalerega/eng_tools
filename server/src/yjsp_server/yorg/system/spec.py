@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from ...errors import CvcError
+from ...errors import ApiError
 from .catalog import BY_TYPE, RENAMED, in_words, settings_of
 
 _ID = r"^[A-Za-z0-9_-]{1,40}$"
@@ -17,7 +17,7 @@ _LIQUID_ENDS = {"tank", "junction", "outlet"}
 _GAS_ENDS = {"source", "gas_junction", "tank", "outlet"}
 
 
-class BadModel(CvcError):
+class BadModel(ApiError):
     status = 422
     code = "bad_model"
 

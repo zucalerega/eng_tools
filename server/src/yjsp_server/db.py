@@ -23,7 +23,7 @@ class UTCDateTime(TypeDecorator):
         if value is None:
             return None
         if value.tzinfo is None:
-            raise ValueError("naive datetime: CVC only stores timezone-aware UTC times")
+            raise ValueError("naive datetime: the database only stores timezone-aware UTC times")
         return value.astimezone(UTC)
 
     def process_result_value(self, value, dialect):

@@ -16,7 +16,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..db import utcnow
-from ..errors import Conflict, CvcError, Forbidden, NotFound, TooLarge
+from ..errors import ApiError, Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
 from .files import DataFiles
 from .ingest import ReadError, ReadOptions, read_csv
@@ -27,12 +27,12 @@ log = logging.getLogger(__name__)
 MAX_VIEW_BYTES = 512 * 1024
 
 
-class Unreadable(CvcError):
+class Unreadable(ApiError):
     status = 422
     code = "unreadable"
 
 
-class EmptyPiece(CvcError):
+class EmptyPiece(ApiError):
     status = 422
     code = "empty_piece"
 

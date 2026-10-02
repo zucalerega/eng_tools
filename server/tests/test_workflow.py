@@ -31,7 +31,7 @@ def test_add_check_out_check_in_and_history(team, client):
     assert client.get(f"/api/files/{fin['id']}/content", headers=chief).content == b"fin v2"
     old = client.get(f"/api/files/{fin['id']}/content", params={"version": 1}, headers=chief)
     assert old.content == b"fin v1"
-    assert old.headers["x-cvc-version"] == "1"
+    assert old.headers["x-vault-version"] == "1"
     assert "Fin.SLDPRT" in old.headers["content-disposition"]
 
 
@@ -356,7 +356,7 @@ def test_uploads_are_verified(team, client):
     assert client.put(f"/api/blobs/{sha}", content=data, headers=chief).status_code == 201
     assert client.put(f"/api/blobs/{sha}", content=data, headers=chief).json()["stored"] is False
     head = client.head(f"/api/blobs/{sha}", headers=chief)
-    assert (head.status_code, head.headers["x-cvc-size"]) == (200, str(len(data)))
+    assert (head.status_code, head.headers["x-vault-size"]) == (200, str(len(data)))
 
     body = {"host": "PC-1", "items": [{"path": "X.STEP", "sha256": "1" * 64, "size": 1}]}
     assert client.post("/api/checkin", json=body, headers=chief).json()["error"] == "blob_missing"

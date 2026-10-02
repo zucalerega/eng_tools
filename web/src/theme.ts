@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
 
 export type Theme = "system" | "light" | "dark";
 
-const KEY = "vault.theme";
+const KEY = "yjsp.theme";
 const listeners = new Set<() => void>();
 
 function stored(): Theme {

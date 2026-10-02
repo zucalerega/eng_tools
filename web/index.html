@@ -14,7 +14,7 @@
         <script>
             // The theme chosen in the account menu (src/theme.ts), set before the page draws so it never flashes.
             try {
-                var theme = localStorage.getItem("vault.theme");
+                var theme = localStorage.getItem("yjsp.theme");
                 if (theme === "light" || theme === "dark") {
                     document.documentElement.dataset.theme = theme;
                 }

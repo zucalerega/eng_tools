@@ -1,6 +1,6 @@
 namespace Cvc.Client;
 
-// Bodies of the server's JSON API (server/src/cvc_server/api/schemas.py). Property names map
+// Bodies of the server's JSON API (server/src/yjsp_server/api/schemas.py). Property names map
 // to the server's snake_case names through Json.Options.
 
 /// <summary>A person, as shown next to files and versions.</summary>

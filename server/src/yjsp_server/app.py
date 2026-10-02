@@ -11,7 +11,7 @@ from . import __version__
 from .api import admin, downloads, files, signin, web
 from .config import Settings
 from .db import make_engine, migrate
-from .errors import CvcError
+from .errors import ApiError
 from .storage import BlobStore
 from .vault import init_vault
 from .yorg import api as yorg_api
@@ -39,10 +39,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.yorg_runs.close()
         engine.dispose()
 
-    app = FastAPI(title="Vault", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.sessionmaker = sessions
-    app.state.store = BlobStore(settings.blob_dir)
+    app.state.store = BlobStore(settings.vault_dir / "blobs")
     app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.yorg_models = Saved(settings.yorg_dir, "model", "model")
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
@@ -52,14 +52,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
-        session_cookie="cvc_signin",
+        session_cookie="yjsp_signin",
         max_age=600,
         same_site="lax",
         https_only=settings.production,
     )
 
-    @app.exception_handler(CvcError)
-    async def cvc_error(_: Request, exc: CvcError) -> JSONResponse:
+    @app.exception_handler(ApiError)
+    async def api_error(_: Request, exc: ApiError) -> JSONResponse:
         body = {"error": exc.code, "message": exc.message}
         if exc.details:
             body["details"] = exc.details

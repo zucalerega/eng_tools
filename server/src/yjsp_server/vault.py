@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from . import paths
 from .access import Access, Tree
 from .db import utcnow
-from .errors import Conflict, CvcError, Forbidden, NotFound
+from .errors import ApiError, Conflict, Forbidden, NotFound
 from .models import (
     Blob,
     Checkin,
@@ -308,7 +308,7 @@ def _parents(db: Session, file_id: int) -> list[tuple[File, Version, int]]:
 def _host(host: str) -> str:
     host = host.strip()
     if not host or len(host) > 255:
-        raise CvcError("Say which computer this is (host)", code="bad_host")
+        raise ApiError("Say which computer this is (host)", code="bad_host")
     return host
 
 
@@ -503,7 +503,7 @@ def _ensure_folders(db: Session, tree: Tree, access: Access, user: User, names: 
 def create_folder(db: Session, user: User, path: str) -> FolderView:
     names = paths.split(path)
     if not names:
-        raise CvcError("The vault root already exists", code="exists")
+        raise ApiError("The vault root already exists", code="exists")
     seq = begin_write(db)
     tree, access = _context(db, user)
     if tree.find(names) is not None:
@@ -637,7 +637,7 @@ def checkin(
     """
     host = _host(host)
     if not items:
-        raise CvcError("Nothing to check in")
+        raise ApiError("Nothing to check in")
     seq = begin_write(db)
     tree, access = _context(db, user)
     now = utcnow()
@@ -647,16 +647,16 @@ def checkin(
     for item in items:
         names = paths.split(item.path)
         if not names:
-            raise CvcError("A check-in item has an empty path", code="bad_path")
+            raise ApiError("A check-in item has an empty path", code="bad_path")
         path = paths.join(*names)
         if paths.key(path) in seen:
-            raise CvcError(f"{path} is listed twice")
+            raise ApiError(f"{path} is listed twice")
         seen.add(paths.key(path))
         blob = db.get(Blob, item.sha256)
         if blob is None:
-            raise CvcError(f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256)
+            raise ApiError(f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256)
         if blob.size != item.size:
-            raise CvcError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
+            raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
         existing = _live_file(db, tree.find(names[:-1]), names[-1])
         if existing is not None:
             access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
@@ -747,7 +747,7 @@ def checkin(
                     continue
                 child_version = ref.version or child.latest_version
                 if child_version > child.latest_version:
-                    raise CvcError(f"{ref.path} has no version {ref.version}", code="bad_reference")
+                    raise ApiError(f"{ref.path} has no version {ref.version}", code="bad_reference")
             if child.id == file.id or child.id in linked:
                 continue
             linked.add(child.id)
@@ -761,15 +761,15 @@ def checkin(
             elif not any(paths.named_after(file.name, model.name) for model in shows):
                 misnamed.append({"drawing": tree.file_path(file), "shows": tree.file_path(shows[0])})
     if missing:
-        raise CvcError(
+        raise ApiError(
             "Some referenced files aren't in the vault; add them to this check-in",
             code="missing_references",
             missing=missing,
         )
     if unlinked:
-        raise CvcError(
+        raise ApiError(
             f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
-            "vault. Check drawings in from SolidWorks, with the CVC add-in: it records what each drawing shows.",
+            "vault. Check drawings in from SolidWorks, with the Vault add-in: it records what each drawing shows.",
             code="drawing_without_model",
             drawings=unlinked,
         )
@@ -777,7 +777,7 @@ def checkin(
         first = misnamed[0]
         model = first["shows"].rsplit("/", 1)[-1]
         stem = model.rsplit(".", 1)[0]
-        raise CvcError(
+        raise ApiError(
             f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, so "
             f'call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
             code="drawing_name",
@@ -812,9 +812,9 @@ def revert(
     path = tree.file_path(file)
     access.require(file.folder_id, Role.EDITOR, f"revert {path}")
     if number == file.latest_version:
-        raise CvcError(f"v{number} is already the latest version of {path}", code="bad_version")
+        raise ApiError(f"v{number} is already the latest version of {path}", code="bad_version")
     if not 1 <= number < file.latest_version:
-        raise CvcError(f"{path} has no version {number}", code="bad_version")
+        raise ApiError(f"{path} has no version {number}", code="bad_version")
     if file.checked_out_by is not None and file.checked_out_by != user.id:
         lock = _lock_json(db, tree, file)
         if not force:
@@ -879,12 +879,12 @@ def delete(
         if folder is None or not access.visible(folder.id):
             raise NotFound(f"There's no folder {path}")
         if folder.parent_id is None:
-            raise CvcError("The top of the vault can't be deleted", code="bad_delete")
+            raise ApiError("The top of the vault can't be deleted", code="bad_delete")
         access.require(folder.id, Role.LEAD, f"delete {tree.path(folder.id)}")
         chosen.append(folder)
     named = _resolve_many(db, tree, access, refs)
     if not chosen and not named:
-        raise CvcError("Say what to delete", code="bad_delete")
+        raise ApiError("Say what to delete", code="bad_delete")
     for file in named:
         access.require(file.folder_id, Role.EDITOR, f"delete {tree.file_path(file)}")
     # A folder inside another one being deleted goes with that one.
@@ -1126,17 +1126,17 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
         if folder is None or not access.visible(folder.id):
             raise NotFound(f"There's no folder {path}")
         if folder.parent_id is None:
-            raise CvcError("The top of the vault doesn't move", code="bad_move")
+            raise ApiError("The top of the vault doesn't move", code="bad_move")
         access.require(folder.id, Role.LEAD, f"move {tree.path(folder.id)}")
         moving_folders.append(folder)
     moving_files = _resolve_many(db, tree, access, files)
     if not moving_folders and not moving_files:
-        raise CvcError("Say what to move", code="bad_move")
+        raise ApiError("Say what to move", code="bad_move")
     dest_names = paths.split(to)
     deepest, _ = tree.deepest(dest_names)
     for folder in moving_folders:
         if folder.id in tree.ancestry(deepest.id):
-            raise CvcError(f"{tree.path(folder.id)} can't go inside itself", code="bad_move")
+            raise ApiError(f"{tree.path(folder.id)} can't go inside itself", code="bad_move")
     dest = _ensure_folders(db, tree, access, user, dest_names, seq)
     access.require(dest.id, Role.EDITOR, f"move files into {tree.label(dest.id)}")
 
@@ -1157,7 +1157,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
         old = tree.file_path(file)
         access.require(file.folder_id, Role.EDITOR, f"move {old}")
         if file.id in moves:
-            raise CvcError(f"{old} is moving with its folder already", code="bad_move")
+            raise ApiError(f"{old} is moving with its folder already", code="bad_move")
         if file.folder_id == dest.id:
             continue
         if paths.key(file.name) in names or _taken(db, tree, dest, file.name):
@@ -1198,14 +1198,14 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     seq = begin_write(db)
     tree, access = _context(db, user)
     if (file is None) == (folder is None):
-        raise CvcError("Rename a file or a folder", code="bad_rename")
+        raise ApiError("Rename a file or a folder", code="bad_rename")
     moves: dict[int, tuple[str, str]] = {}
     if file is not None:
         target = _resolve(db, tree, access, file)
         old = tree.file_path(target)
         access.require(target.folder_id, Role.EDITOR, f"rename {old}")
         if paths.extension(new_name) != paths.extension(target.name):
-            raise CvcError(f"{new_name} would change what kind of file {target.name} is", code="bad_rename")
+            raise ApiError(f"{new_name} would change what kind of file {target.name} is", code="bad_rename")
         parent = tree.by_id[target.folder_id]
         if _taken(db, tree, parent, new_name, target):
             raise Conflict(f"{paths.join(tree.path(parent.id), new_name)} is taken", code="exists")
@@ -1223,7 +1223,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     if renamed is None or not access.visible(renamed.id):
         raise NotFound(f"There's no folder {folder}")
     if renamed.parent_id is None:
-        raise CvcError("The top of the vault has no name", code="bad_rename")
+        raise ApiError("The top of the vault has no name", code="bad_rename")
     access.require(renamed.id, Role.LEAD, f"rename {tree.path(renamed.id)}")
     parent = tree.by_id[renamed.parent_id]
     if _taken(db, tree, parent, new_name, renamed):
@@ -1302,7 +1302,7 @@ def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
     _require_admin(admin)
     email = email.strip().lower()
     if not _EMAIL.match(email):
-        raise CvcError(f"{email!r} isn't an email address", code="bad_email")
+        raise ApiError(f"{email!r} isn't an email address", code="bad_email")
     begin_write(db)
     if db.scalar(select(User.id).where(User.email == email)) is not None:
         raise Conflict(f"{email} already has an account", code="exists")
@@ -1329,11 +1329,11 @@ def update_user(
     if user is None:
         raise NotFound(f"User {user_id} not found")
     if user.id == admin.id and (status not in (None, UserStatus.ACTIVE) or is_admin is False):
-        raise CvcError("You can't disable yourself or drop your own admin rights", code="self_lockout")
+        raise ApiError("You can't disable yourself or drop your own admin rights", code="self_lockout")
     changes: dict[str, Any] = {}
     if status is not None and status != user.status:
         if status not in (UserStatus.ACTIVE, UserStatus.DISABLED):
-            raise CvcError("An account can be set active or disabled", code="bad_status")
+            raise ApiError("An account can be set active or disabled", code="bad_status")
         user.status = status
         changes["status"] = status.value
     if is_admin is not None and is_admin != user.is_admin:
@@ -1354,9 +1354,9 @@ def rename_self(db: Session, user: User, name: str) -> User:
     again keeps it, auth.sign_in.)"""
     name = name.strip()
     if not name:
-        raise CvcError("A name can't be empty", code="bad_name")
+        raise ApiError("A name can't be empty", code="bad_name")
     if len(name) > 200:
-        raise CvcError("A name can be at most 200 characters", code="bad_name")
+        raise ApiError("A name can be at most 200 characters", code="bad_name")
     seq = begin_write(db)
     me = db.get_one(User, user.id)
     if name != me.name:

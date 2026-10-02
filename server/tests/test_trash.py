@@ -1,6 +1,6 @@
 """The trash: files and whole folders deleted, and brought back as they were."""
 
-from cvc_server.models import UserStatus
+from yjsp_server.models import UserStatus
 
 
 def delete(client, who, *, files=(), folders=(), force=False):

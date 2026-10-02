@@ -4,7 +4,7 @@ import type { VaultState } from "./store";
 // Admin mode shows the overrides: releasing someone's check-out and reverting a file they have
 // checked out. It's off by default, remembered per browser, and offered to admins and folder leads.
 
-const KEY = "cvc.adminMode";
+const KEY = "vault.adminMode";
 const listeners = new Set<() => void>();
 
 function stored(): boolean {

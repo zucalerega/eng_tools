@@ -2,8 +2,8 @@
 
 import pytest
 
-from cvc_server.yorg.system.catalog import PSI
-from cvc_server.yorg.system.channels import Reading, to_si
+from yjsp_server.yorg.system.catalog import PSI
+from yjsp_server.yorg.system.channels import Reading, to_si
 
 ATMOSPHERE = 101325.0
 

@@ -8,9 +8,9 @@ models.py, generate a migration from server/:
 
 from alembic import context
 
-from cvc_server import models  # noqa: F401  (registers the tables)
-from cvc_server.db import Base, UTCDateTime, make_engine
-from cvc_server.yorg import models as yorg_models  # noqa: F401  (and Yorg's)
+from yjsp_server import models  # noqa: F401  (registers the tables)
+from yjsp_server.db import Base, UTCDateTime, make_engine
+from yjsp_server.yorg import models as yorg_models  # noqa: F401  (and Yorg's)
 
 
 def render_item(type_, obj, autogen_context):
@@ -35,7 +35,7 @@ connection = context.config.attributes.get("connection")
 if connection is not None:
     run(connection)
 else:
-    from cvc_server.config import Settings
+    from yjsp_server.config import Settings
 
     with make_engine(Settings().database_url).connect() as conn:
         run(conn)

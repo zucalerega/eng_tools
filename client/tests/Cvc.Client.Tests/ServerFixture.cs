@@ -8,7 +8,7 @@ using System.Text;
 namespace Cvc.Client.Tests;
 
 /// <summary>
-/// The real CVC server (`uv run cvc-server` in server/), with dev sign-in, on a free port,
+/// The real server (`uv run yjsp-server` in server/), with dev sign-in, on a free port,
 /// with a throwaway vault in which everyone is an editor. Shared by the tests in the
 /// "server" collection; each test works in its own vault folder.
 /// </summary>
@@ -16,7 +16,7 @@ public sealed class ServerFixture : IAsyncLifetime
 {
     public const string Chief = "chief@rocketry.test";
 
-    private readonly string _data = Path.Combine(Path.GetTempPath(), "cvc-server-" + Guid.NewGuid().ToString("N"));
+    private readonly string _data = Path.Combine(Path.GetTempPath(), "yjsp-server-" + Guid.NewGuid().ToString("N"));
     private readonly StringBuilder _log = new StringBuilder();
     private Process? _server;
 
@@ -37,15 +37,16 @@ public sealed class ServerFixture : IAsyncLifetime
         };
         start.ArgumentList.Add("run");
         start.ArgumentList.Add("--quiet");
-        start.ArgumentList.Add("cvc-server");
-        start.Environment["CVC_ENV"] = "development";
-        start.Environment["CVC_DEV_AUTH"] = "1";
-        start.Environment["CVC_BOOTSTRAP_ADMINS"] = Chief;
-        start.Environment["CVC_HOST"] = "127.0.0.1";
-        start.Environment["CVC_PORT"] = port.ToString(CultureInfo.InvariantCulture);
-        start.Environment["CVC_PUBLIC_URL"] = Url.AbsoluteUri.TrimEnd('/');
-        start.Environment["CVC_DATABASE_URL"] = "sqlite:///" + Path.Combine(_data, "cvc.db");
-        start.Environment["CVC_BLOB_DIR"] = Path.Combine(_data, "blobs");
+        start.ArgumentList.Add("yjsp-server");
+        start.Environment["YJSP_ENV"] = "development";
+        start.Environment["YJSP_DEV_AUTH"] = "1";
+        start.Environment["YJSP_BOOTSTRAP_ADMINS"] = Chief;
+        start.Environment["YJSP_HOST"] = "127.0.0.1";
+        start.Environment["YJSP_PORT"] = port.ToString(CultureInfo.InvariantCulture);
+        start.Environment["YJSP_PUBLIC_URL"] = Url.AbsoluteUri.TrimEnd('/');
+        start.Environment["YJSP_DATABASE_URL"] = "sqlite:///" + Path.Combine(_data, "yjsp.db");
+        start.Environment["YJSP_VAULT_DIR"] = Path.Combine(_data, "vault");
+        start.Environment["YJSP_YORG_DIR"] = Path.Combine(_data, "yorg");
         _server = Process.Start(start) ?? throw new InvalidOperationException("Couldn't start the server with uv");
         _server.OutputDataReceived += (_, e) => Log(e.Data);
         _server.ErrorDataReceived += (_, e) => Log(e.Data);

@@ -37,7 +37,7 @@ def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: 
 
     Anyone joins at once, unless an admin has turned the whitelist on: then a new
     account waits for an admin (pending) unless an admin invited the email.
-    Emails in CVC_BOOTSTRAP_ADMINS are always active admins. A disabled account
+    Emails in YJSP_BOOTSTRAP_ADMINS are always active admins. A disabled account
     stays disabled.
     """
     if not email_verified:
@@ -64,7 +64,7 @@ def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: 
 
 def issue_token(db: Session, user: User, *, kind: str, name: str, ttl: timedelta | None = None) -> str:
     """A new secret for the user. Only its hash is stored, so it can't be shown again."""
-    secret = "cvc_" + secrets.token_urlsafe(32)
+    secret = "yjsp_" + secrets.token_urlsafe(32)
     now = utcnow()
     db.add(
         Token(
@@ -93,7 +93,7 @@ def authenticate(db: Session, secret: str) -> User | None:
 
 
 def active_now(last_active: datetime | None) -> bool:
-    """Whether someone last active then is using Vault now: a page open, the add-in, or the CLI."""
+    """Whether someone last active then is using the site now: a page open, the add-in, or the CLI."""
     return last_active is not None and utcnow() - last_active <= ACTIVE_NOW
 
 

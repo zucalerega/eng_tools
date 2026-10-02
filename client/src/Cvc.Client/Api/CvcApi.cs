@@ -108,7 +108,7 @@ public sealed class CvcApi : IDisposable
     public Task<IssuedToken> RedeemSignInCodeAsync(string code, string verifier, CancellationToken ct = default) =>
         PostAsync<IssuedToken>("auth/client/token", new { code, verifier }, ct);
 
-    /// <summary>Development servers only (CVC_DEV_AUTH): a token for any email, without Google.</summary>
+    /// <summary>Development servers only (YJSP_DEV_AUTH): a token for any email, without Google.</summary>
     public Task<IssuedToken> DevTokenAsync(string email, string name = "", CancellationToken ct = default) =>
         PostAsync<IssuedToken>("auth/dev-token", new { email, name }, ct);
 

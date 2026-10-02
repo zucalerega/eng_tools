@@ -1,4 +1,4 @@
-// Yorg's part of the server's API (server/src/cvc_server/yorg/schemas.py, or /docs on a running server).
+// Yorg's part of the server's API (server/src/yjsp_server/yorg/schemas.py, or /docs on a running server).
 
 import { apiUrl, request, requestBytes, uploadFile, type UserRef } from "../api";
 

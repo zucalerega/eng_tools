@@ -1388,9 +1388,14 @@ function NoteEditor({
                 done();
             }
         };
-        document.addEventListener("mousedown", close);
-        document.addEventListener("keydown", close);
+        // From the next task on: a label's put on a plot as the click's pointerdown comes, and that click's own
+        // mousedown, just after it, would close (and so remove) the label it just made.
+        const listen = window.setTimeout(() => {
+            document.addEventListener("mousedown", close);
+            document.addEventListener("keydown", close);
+        }, 0);
         return () => {
+            window.clearTimeout(listen);
             document.removeEventListener("mousedown", close);
             document.removeEventListener("keydown", close);
         };

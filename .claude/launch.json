@@ -3,15 +3,14 @@
   "configurations": [
     {
       "name": "yjsp-server",
-      "runtimeExecutable": "env",
+      "runtimeExecutable": "uv",
       "runtimeArgs": [
-        "YJSP_DEV_AUTH=1",
-        "YJSP_BOOTSTRAP_ADMINS=dev@yjsp.test",
-        "uv",
         "run",
         "--directory",
         "server",
-        "yjsp-server"
+        "python",
+        "-c",
+        "import os; os.environ.update(YJSP_DEV_AUTH='1', YJSP_BOOTSTRAP_ADMINS='dev@yjsp.test'); from yjsp_server.__main__ import main; main()"
       ],
       "port": 8000
     },

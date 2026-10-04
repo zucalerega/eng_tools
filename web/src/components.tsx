@@ -159,7 +159,7 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warning" 
 
 /**
  * A modal question: the page underneath waits until it's answered, and Enter confirms. With link, confirming
- * follows confirmHref (a cvc: link for SolidWorks, say), and there's nothing to confirm without one. Without confirm,
+ * follows confirmHref (a link for SolidWorks, say), and there's nothing to confirm without one. Without confirm,
  * it only shows something, until it's closed.
  */
 export function Dialog({

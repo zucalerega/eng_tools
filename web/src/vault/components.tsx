@@ -74,16 +74,22 @@ export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null 
 }
 
 /**
- * A link that SolidWorks on this computer follows, through the cvc: links the add-in's installer
- * registers: open a vault file (after getting its latest version and the parts it uses), or start a
- * new part or assembly there.
+ * The scheme of the links SolidWorks follows. The add-in's installer registers vault:// from 0.4.0, and cvc://, the
+ * only one before; until every laptop has 0.4.0 the links are cvc://, which both follow. Then this is "vault"
+ * (docs/design.md, "Names from before YJSP").
+ */
+export const LINK_SCHEME = "cvc";
+
+/**
+ * A link that SolidWorks on this computer follows, through the links the add-in's installer registers: open a
+ * vault file (after getting its latest version and the parts it uses), or start a new part or assembly there.
  */
 export const solidWorksLink = (action: "open" | "new", path: string, more: Record<string, string> = {}): string =>
-    `cvc://${action}?` + new URLSearchParams({ server: window.location.origin, path, ...more }).toString();
+    `${LINK_SCHEME}://${action}?` + new URLSearchParams({ server: window.location.origin, path, ...more }).toString();
 
 /** A link that sets the add-in up for this vault: SolidWorks starts, and the browser asks you to let it in. */
 export const connectLink = (): string =>
-    "cvc://connect?" + new URLSearchParams({ server: window.location.origin }).toString();
+    `${LINK_SCHEME}://connect?` + new URLSearchParams({ server: window.location.origin }).toString();
 
 export function OpenInSolidWorks({ path, compact = false }: { path: string; compact?: boolean }) {
     if (!opensInSolidWorks(path)) {

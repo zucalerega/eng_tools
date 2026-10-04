@@ -48,23 +48,23 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: vault-setup
-          path: client/src/Cvc.Setup/bin/Release/net48/Vault-Setup.exe
+          path: client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
           if-no-files-found: error
       # The add-in's files as they are, to install by hand with install.ps1 (see its README).
       - uses: actions/upload-artifact@v7
         with:
-          name: cvc-solidworks-addin
-          path: client/src/Cvc.SolidWorks/bin/Release/net48/
+          name: vault-solidworks-addin
+          path: client/src/Vault.SolidWorks/bin/Release/net48/
           if-no-files-found: error
-      # One self-contained cvc.exe: runs on Windows without installing .NET.
+      # One self-contained vault.exe: runs on Windows without installing .NET.
       - run: >-
-          dotnet publish src/Cvc.Cli --no-restore --configuration Release --runtime win-x64
+          dotnet publish src/Vault.Cli --no-restore --configuration Release --runtime win-x64
           --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
-          --output ${{ runner.temp }}/cvc-windows
+          --output ${{ runner.temp }}/vault-windows
       - uses: actions/upload-artifact@v7
         with:
-          name: cvc-windows
-          path: ${{ runner.temp }}/cvc-windows/cvc.exe
+          name: vault-windows
+          path: ${{ runner.temp }}/vault-windows/vault.exe
           if-no-files-found: error
 
   web:

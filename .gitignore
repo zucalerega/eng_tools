@@ -5,17 +5,17 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Local server data: database and file contents. Never commit.
+# Local server data: the database and the apps' files. Never commit.
 data/
 
 # Secrets
 .env
 
-# Web app (planned)
+# Web app
 node_modules/
 dist/
 
-# .NET client and add-in (planned)
+# Vault's .NET clients and add-in
 bin/
 obj/
 .vs/

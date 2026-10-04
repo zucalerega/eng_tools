@@ -7,7 +7,7 @@ import { Link } from "../router";
 import { contentsOf, useVault, type VaultState } from "./store";
 
 // Starting new SolidWorks files from the web app: you name it here, and the add-in on this computer
-// makes it (a cvc://new link), saves it in your workspace, and checks it in, checked out to you.
+// makes it (a new link, solidWorksLink), saves it in your workspace, and checks it in, checked out to you.
 
 export type NewKind = "part" | "assembly" | "drawing";
 

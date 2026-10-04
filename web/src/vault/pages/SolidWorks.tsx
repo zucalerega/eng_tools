@@ -7,7 +7,7 @@ import { formatSize } from "../../format";
 const INSTALLER = "vault-setup.exe";
 // What the files an admin puts in the server's downloads folder are, for the ones Vault makes.
 const KNOWN: Record<string, string> = {
-    "cvc.exe": "The command line, for scripts and for working without SolidWorks (Windows).",
+    "vault.exe": "The command line, for scripts and for working without SolidWorks (Windows).",
 };
 
 /** Getting Vault into SolidWorks: download the add-in's installer, then connect it to this vault. */
@@ -119,7 +119,10 @@ export function SolidWorks() {
                 </details>
                 <details>
                     <summary>Something else</summary>
-                    <p>The add-in keeps a log in %LOCALAPPDATA%\CVC\addin.log: send it to whoever runs your vault.</p>
+                    <p>
+                        The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log (in %LOCALAPPDATA%\CVC before version
+                        0.4.0): send it to whoever runs your vault.
+                    </p>
                 </details>
             </div>
             {others.length > 0 && (

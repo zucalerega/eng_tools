@@ -47,7 +47,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     const downloads = join(data, "downloads"); // stand-ins for what the web app offers to download
     mkdirSync(downloads);
     writeFileSync(join(downloads, "Vault-Setup.exe"), "the add-in's installer");
-    writeFileSync(join(downloads, "cvc.exe"), "the command line");
+    writeFileSync(join(downloads, "vault.exe"), "the command line");
     const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",

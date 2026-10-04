@@ -1,17 +1,28 @@
-# CVC
+# YJSP
 
-CAD version control for the team's SolidWorks and STEP files: check out, check in,
-version history, and per-folder permissions, from SolidWorks, the command line, or
-the web. It replaces Kenesto. People know it as **Vault**: that's its name in the web
-app and in SolidWorks, in the Yellow Jacket Space Program's colors. The code, the `cvc`
-command, and this repository keep the name CVC. The same server also runs
-[Yorg](#yorg-test-data), which plots the team's test data.
+The Yellow Jacket Space Program's engineering tools, on one site: **Vault**, for the team's
+SolidWorks and STEP files, and **[Yorg](#yorg-test-data)**, for its test data. The switcher
+at the top left goes between them.
 
-> **Status:** early development. The server, the `cvc` command-line tool, and the web
-> app work and are tested. The SolidWorks 2025 add-in had its first run in SolidWorks in
-> September 2026. See [docs/design.md](docs/design.md) for how it works and the roadmap.
+> **Status:** early development. The server, the web app, and Vault's `vault` command-line
+> tool work and are tested. Vault's SolidWorks 2025 add-in had its first run in SolidWorks
+> in September 2026. See [docs/design.md](docs/design.md) for how the site works, and
+> [docs/vault.md](docs/vault.md) and [docs/yorg.md](docs/yorg.md) for each app and its
+> roadmap.
 
-## How it works
+## Signing in
+
+Sign in with Google: that gets you both apps. Anyone can join, unless an admin turns on
+the whitelist (Admin > People, from the account menu at the top right): then only people
+an admin invites or approves can. Admin > People also shows how many people there are and
+how many are on now, and when each joined and was last on. Change the name everyone sees
+you by from your account menu.
+
+## Vault: CAD files
+
+Version control for the team's SolidWorks and STEP files: check out, check in, version
+history, and per-folder permissions, from SolidWorks, the command line, or the web. It
+replaces Kenesto.
 
 - **Check out a file before you edit it.** While it's checked out, everyone else
   can open it read-only. Check it back in with a comment to save a new version.
@@ -22,14 +33,9 @@ command, and this repository keep the name CVC. The same server also runs
 - **Drawings stay with what they show.** A drawing is checked in only if it shows a
   part or assembly in the vault, and only if it's named after it (`Fin.SLDDRW`, or
   `Fin - machining.SLDDRW`, for `Fin.SLDPRT`), so it sits next to it in its folder.
-  Check drawings in from SolidWorks: the `cvc` command can't read what a drawing shows.
+  Check drawings in from SolidWorks: the `vault` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
-- **Sign in with Google.** Anyone can join, unless an admin turns on the whitelist
-  (Admin > People, from the account menu at the top right): then only people an admin
-  invites or approves can. Admin > People also shows how many people there are and how
-  many are on now, and when each joined and was last on. Change the name everyone sees
-  you by from your account menu.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every
@@ -65,8 +71,8 @@ command, and this repository keep the name CVC. The same server also runs
 
 ## Yorg: test data
 
-The same site has a second app, **Yorg** (the switcher is at the top left), for the
-team's test data: upload a CSV from a hotfire or cold flow, and plot its channels
+The site's second app, **Yorg** (the switcher is at the top left), is for the team's
+test data: upload a CSV from a hotfire or cold flow, and plot its channels
 together on one time axis. Help, in Yorg's top bar, has all of this on one page, with
 the keys.
 
@@ -195,14 +201,13 @@ the keys.
 
 | Path | What | Status |
 |---|---|---|
-| `server/` | API server: Python, FastAPI, SQLAlchemy; Docker image | working |
-| `client/` | C# workspace library and `cvc` CLI | working |
-| `client/src/Cvc.SolidWorks` | SolidWorks 2025 add-in ([install](client/src/Cvc.SolidWorks/README.md)) | working |
-| `client/src/Cvc.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
-| `web/` | Web app: TypeScript, React, Vite; served by the server | working |
-| `server/src/cvc_server/yorg`, `web/src/yorg` | Yorg, the test data app | working |
-| `deploy/` | The deploy script and the live server's service files | working |
-| `docs/` | Design, roadmap, and [hosting and deploying](docs/deploying.md) | |
+| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/` | working |
+| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg` | working |
+| `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
+| `client/src/Vault.SolidWorks` | Vault's SolidWorks 2025 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
+| `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
+| `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md)), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 
@@ -213,13 +218,14 @@ cd server && uv sync
 ```
 
 ```bash
-cd server && CVC_DEV_AUTH=1 CVC_BOOTSTRAP_ADMINS=you@example.com uv run cvc-server
+cd server && YJSP_DEV_AUTH=1 YJSP_BOOTSTRAP_ADMINS=you@example.com uv run yjsp-server
 ```
 
 Open http://localhost:8000 and sign in with the development form as
 `you@example.com`, which makes you an admin. The API is at
-http://localhost:8000/docs. The local database and file contents go in
-`server/data/`, which git ignores.
+http://localhost:8000/docs. The local database (`yjsp.db`) and files (`vault/`, `yorg/`)
+go in `server/data/`, which git ignores. (A database from before YJSP is `cvc.db`, with
+`blobs/` beside it: rename them to `yjsp.db` and `vault/blobs/` to keep them.)
 
 To get the web app there too, build it once. You need [Node.js](https://nodejs.org/) 24:
 
@@ -231,32 +237,32 @@ To work on the web app, `cd web && npm run dev` serves it at http://localhost:51
 updates it as you edit. Sign in at http://localhost:8000 first; the dev server passes
 API requests to it.
 
-## Use the `cvc` command
+## Use the `vault` command
 
-On Windows, download `cvc.exe` (the `cvc-windows` artifact of any CI run). It runs
-without installing anything. Otherwise you need the
+Vault's command line. On Windows, download `vault.exe` (the `vault-windows` artifact of
+any CI run). It runs without installing anything. Otherwise you need the
 [.NET 10 SDK](https://dotnet.microsoft.com/download). With the server running, sign in
 through your browser, create a workspace, and work in it:
 
 ```bash
-cd client && dotnet run --project src/Cvc.Cli -- login http://localhost:8000
+cd client && dotnet run --project src/Vault.Cli -- login http://localhost:8000
 ```
 
 ```bash
-cd client && dotnet run --project src/Cvc.Cli -- init ~/VLT --server http://localhost:8000
+cd client && dotnet run --project src/Vault.Cli -- init ~/VLT --server http://localhost:8000
 ```
 
 In the workspace (`C:\VLT` on Windows):
 
 | Command | What it does |
 |---|---|
-| `cvc status` | What's new, changed, out of date, or checked out |
-| `cvc get` | Update the files you have here to their latest versions. `cvc get <folder or file>` downloads those too, and `cvc get .` everything in the current folder. Your local changes are never overwritten unless you add `--force`, and even then they're backed up. |
-| `cvc checkout <files>` | Check files out to edit them. Everyone else sees who has them. `--force` takes over a check-out on another computer: yours, or anyone's if you're a lead there. |
-| `cvc checkin <files> -m "what changed"` | Check in changed and new files as one version |
-| `cvc undo <files>` | Give up a check-out. Local changes are backed up in `.cvc/backup`. |
-| `cvc history <file>` | Every version, with who changed it and why |
-| `cvc locks` | Who has what checked out |
+| `vault status` | What's new, changed, out of date, or checked out |
+| `vault get` | Update the files you have here to their latest versions. `vault get <folder or file>` downloads those too, and `vault get .` everything in the current folder. Your local changes are never overwritten unless you add `--force`, and even then they're backed up. |
+| `vault checkout <files>` | Check files out to edit them. Everyone else sees who has them. `--force` takes over a check-out on another computer: yours, or anyone's if you're a lead there. |
+| `vault checkin <files> -m "what changed"` | Check in changed and new files as one version |
+| `vault undo <files>` | Give up a check-out. Local changes are backed up in `.vault/backup`. |
+| `vault history <file>` | Every version, with who changed it and why |
+| `vault locks` | Who has what checked out |
 
 ## Tests
 
@@ -277,6 +283,6 @@ The client and web app tests start the real server, so they need uv too. How we 
 
 ## The live site
 
-Vault and Yorg run at https://lucazerega.tail07089c.ts.net, on an Oracle Cloud VM. How
-it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how to look after
-it are in [docs/deploying.md](docs/deploying.md).
+YJSP, with Vault and Yorg, runs at https://lucazerega.tail07089c.ts.net, on an Oracle
+Cloud VM. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
+to look after it are in [docs/deploying.md](docs/deploying.md).

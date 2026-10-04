@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from "react";
-import { api, type Folder, type Use, type VaultFile } from "../api";
+import { type Folder, type Use, type VaultFile, vaultApi } from "../api";
 import {
     CHANGED,
     compareNames,
@@ -24,12 +24,13 @@ import {
 } from "../browsing";
 import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
 import { canCheckOut } from "../checkouts";
-import { FileIcon, FolderIcon, MenuButton, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
-import { formatDate, formatSize, formatTime } from "../format";
+import { MenuButton, Notice, Time } from "../../components";
+import { FileIcon, FolderIcon, OpenInSolidWorks, StatusLabel } from "../components";
+import { formatDate, formatSize, formatTime } from "../../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
 import { fileUrl, folderUrl, kindOf, parentOf, pathKey, trashUrl, type Kind } from "../paths";
-import { Link } from "../router";
+import { Link } from "../../router";
 import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
 import { droppedFiles, pickedFiles, type Picked } from "../upload";
@@ -573,7 +574,7 @@ export function FileTable({
                 <td className="numeric">{formatSize(file.size)}</td>
                 <td className="row-actions">
                     <OpenInSolidWorks path={file.path} compact />
-                    <a className="button button-small" href={api.downloadUrl(file.id)} download>
+                    <a className="button button-small" href={vaultApi.downloadUrl(file.id)} download>
                         Download
                     </a>
                 </td>

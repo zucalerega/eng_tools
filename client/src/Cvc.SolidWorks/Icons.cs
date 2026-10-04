@@ -9,7 +9,7 @@ namespace Cvc.SolidWorks;
 
 /// <summary>
 /// Task pane tab icons, drawn at startup (so the repository holds no image files): Vault's mark, a vault
-/// door crossed by a gold orbit, on navy, as the web app draws it (VaultMark in web/src/components.tsx).
+/// door crossed by a gold orbit, on navy, as the web app draws it (VaultMark in web/src/vault/components.tsx).
 /// Vault-Setup.exe draws its window's icon with it too.
 /// </summary>
 internal static class Icons

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { fileUrl, folderUrl } from "../src/paths";
+import { fileUrl, folderUrl } from "../src/vault/paths";
 import { renderApp, table, Team } from "./team";
 
 // Deleting files and folders from the web app, and bringing them back from the trash.

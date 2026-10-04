@@ -6,7 +6,7 @@ path, and two names that differ only in case are the same file.
 
 import unicodedata
 
-from .errors import ApiError
+from ..errors import ApiError
 
 # C:\VLT\ plus 200 characters stays under Windows' 260-character limit, which SolidWorks doesn't lift.
 MAX_PATH = 200

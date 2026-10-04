@@ -1,6 +1,6 @@
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach } from "vitest";
-import { setAdminMode } from "../src/admin";
+import { setAdminMode } from "../src/vault/admin";
 import { python } from "../src/yorg/scripts/python";
 import { FakePython } from "./python";
 

@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { api, ApiError, type Folder, type VaultFile } from "./api";
-import { Dialog, Notice } from "./components";
-import { formatSize } from "./format";
+import { ApiError } from "../api";
+import { type Folder, type VaultFile, vaultApi } from "./api";
+import { Dialog, Notice } from "../components";
+import { formatSize } from "../format";
 import { fileAt } from "./newFile";
 import { nameProblem, parentOf, pathKey } from "./paths";
 import { atLeast, roleIn, useStore, useVault } from "./store";
@@ -64,7 +65,7 @@ export function NewFolderDialog({ folder, onClose }: { folder: string; onClose: 
             confirm="Create folder"
             busy={busy}
             disabled={typed === "" || invalid !== null}
-            onConfirm={() => run(() => api.createFolder(path))}
+            onConfirm={() => run(() => vaultApi.createFolder(path))}
             onCancel={onClose}
         >
             <label className="field">
@@ -255,7 +256,7 @@ export function MoveDialog({
             onConfirm={() =>
                 to !== null &&
                 run(() =>
-                    api.move(
+                    vaultApi.move(
                         files.map((file) => file.id),
                         folders.map((folder) => folder.path),
                         to,
@@ -319,7 +320,7 @@ export function RenameDialog({ file, folder, onClose }: { file?: VaultFile; fold
             confirm="Rename"
             busy={busy}
             disabled={typed === "" || typed === current || invalid !== null}
-            onConfirm={() => run(() => api.rename(file ? { file: file.id } : { folder: folder!.path }, typed))}
+            onConfirm={() => run(() => vaultApi.rename(file ? { file: file.id } : { folder: folder!.path }, typed))}
             onCancel={onClose}
         >
             <label className="field">
@@ -384,7 +385,7 @@ export function DeleteDialog({
             onConfirm={() =>
                 run(async () => {
                     try {
-                        await api.delete(
+                        await vaultApi.delete(
                             files.map((file) => file.id),
                             folders.map((folder) => folder.path),
                             anyway,

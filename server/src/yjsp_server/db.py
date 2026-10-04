@@ -1,9 +1,11 @@
-"""Database engine, migrations, and the UTC datetime column type."""
+"""Database engine, migrations, and the column types the site's and apps' tables share: UTC datetimes and enums."""
 
+import enum
 from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import DateTime, Engine, create_engine, event
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import TypeDecorator
@@ -30,6 +32,12 @@ class UTCDateTime(TypeDecorator):
         if value is None:
             return None
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def enum_column(cls: type[enum.Enum]) -> SAEnum:
+    """A column for an enum's values. Plain strings in the database (no native enum type), so adding a value needs
+    no migration."""
+    return SAEnum(cls, native_enum=False, length=16, values_callable=lambda e: [m.value for m in e])
 
 
 class Base(DeclarativeBase):

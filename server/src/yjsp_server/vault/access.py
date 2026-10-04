@@ -6,9 +6,10 @@ Both are loaded per request: a team vault has hundreds of folders, not millions.
 from collections import defaultdict
 from collections.abc import Iterable
 
+from ..errors import Forbidden, NotFound
+from ..models import User
 from . import paths
-from .errors import Forbidden, NotFound
-from .models import File, Folder, Grant, Role, User
+from .models import File, Folder, Grant, Role
 
 ADMIN_RANK = 100
 

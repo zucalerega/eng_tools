@@ -1,7 +1,7 @@
 import pytest
 
-from yjsp_server import paths
-from yjsp_server.paths import PathError
+from yjsp_server.vault import paths
+from yjsp_server.vault.paths import PathError
 
 
 @pytest.mark.parametrize("name", ["Fin.SLDPRT", "Nose cone v2.SLDASM", "Ø-ring 38mm.STEP", ".gitignore", "Rev(A)"])

@@ -5,50 +5,32 @@ takes the acting user and checks permissions through Access. Every mutating
 function starts with begin_write(); read its docstring before adding one.
 """
 
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..db import utcnow
+from ..errors import ApiError, Conflict, NotFound
+from ..models import User
 from . import paths
 from .access import Access, Tree
-from .db import utcnow
-from .errors import ApiError, Conflict, Forbidden, NotFound
-from .models import (
-    Blob,
-    Checkin,
-    Event,
-    File,
-    Folder,
-    Grant,
-    Role,
-    SiteSettings,
-    Token,
-    User,
-    UserStatus,
-    VaultState,
-    Version,
-    VersionRef,
-)
+from .models import Blob, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
 
 FileRef = int | str  # a file id, or a vault path
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # --- setup and transactions -----------------------------------------------------------
 
 
 def init_vault(db: Session) -> None:
-    """Create the vault_state and site_settings rows and the root folder if they don't exist yet."""
+    """Create the vault_state row and the root folder if they don't exist yet."""
     if db.get(VaultState, 1) is None:
         db.add(VaultState(id=1, seq=0, access_seq=0))
-    if db.get(SiteSettings, 1) is None:
-        db.add(SiteSettings(id=1, whitelist=False))
     if db.scalar(select(Folder.id).where(Folder.parent_id.is_(None))) is None:
         db.add(Folder(parent_id=None, name="", name_key="", change_seq=0))
     db.commit()
@@ -70,6 +52,12 @@ def begin_write(db: Session) -> int:
 def _bump_access(db: Session, seq: int) -> None:
     """Record a permission change: clients re-sync everything (see sync)."""
     db.execute(update(VaultState).where(VaultState.id == 1).values(access_seq=seq))
+
+
+def people_changed(db: Session, seq: int) -> None:
+    """Accounts changed (people.py): names, approval, admin rights. The index carries people's names and what they may
+    see, so every client syncs everything again."""
+    _bump_access(db, seq)
 
 
 def _context(db: Session, user: User) -> tuple[Tree, Access]:
@@ -99,6 +87,11 @@ def _event(
             detail=detail,
         )
     )
+
+
+def log(db: Session, user: User, action: str, **detail: Any) -> None:
+    """Record something that isn't about a file in the activity log: a change to accounts, say (people.py)."""
+    _event(db, user, action, **detail)
 
 
 # --- what the API gets back -------------------------------------------------------------
@@ -1265,134 +1258,7 @@ def register_blob(db: Session, sha256: str, size: int) -> None:
         db.rollback()
 
 
-# --- people and permissions -------------------------------------------------------------
-
-
-def _require_admin(user: User) -> None:
-    if not user.is_admin:
-        raise Forbidden("Only admins can do that", code="admin_only")
-
-
-def list_users(db: Session, user: User) -> list[User]:
-    """Admins see every account; everyone else sees active members (to grant access, say)."""
-    stmt = select(User).order_by(User.name, User.email)
-    if not user.is_admin:
-        stmt = stmt.where(User.status == UserStatus.ACTIVE)
-    return list(db.scalars(stmt))
-
-
-def last_active(db: Session, viewer: User) -> dict[int, datetime]:
-    """
-    When each account last used Vault, by user id: its last sign-in, or the last use of any of its sessions and
-    clients (the web app, the add-in, the CLI). Only admins see when people were on; anyone else gets nothing.
-    """
-    if not viewer.is_admin:
-        return {}
-    found: dict[int, datetime] = {}
-    uses = db.execute(select(Token.user_id, func.max(Token.last_used_at)).group_by(Token.user_id)).all()
-    logins = db.execute(select(User.id, User.last_login_at)).all()
-    for user_id, at in [*uses, *logins]:
-        if at is not None and (user_id not in found or at > found[user_id]):
-            found[user_id] = at
-    return found
-
-
-def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
-    """Pre-approve an email: the account is active from its first Google sign-in."""
-    _require_admin(admin)
-    email = email.strip().lower()
-    if not _EMAIL.match(email):
-        raise ApiError(f"{email!r} isn't an email address", code="bad_email")
-    begin_write(db)
-    if db.scalar(select(User.id).where(User.email == email)) is not None:
-        raise Conflict(f"{email} already has an account", code="exists")
-    user = User(email=email, name=name.strip(), status=UserStatus.INVITED)
-    db.add(user)
-    _event(db, admin, "invite_user", email=email)
-    db.commit()
-    return user
-
-
-def update_user(
-    db: Session,
-    admin: User,
-    user_id: int,
-    *,
-    status: UserStatus | None = None,
-    is_admin: bool | None = None,
-    name: str | None = None,
-) -> User:
-    """Approve or disable an account, make or unmake an admin, fix a name."""
-    _require_admin(admin)
-    seq = begin_write(db)
-    user = db.get(User, user_id)
-    if user is None:
-        raise NotFound(f"User {user_id} not found")
-    if user.id == admin.id and (status not in (None, UserStatus.ACTIVE) or is_admin is False):
-        raise ApiError("You can't disable yourself or drop your own admin rights", code="self_lockout")
-    changes: dict[str, Any] = {}
-    if status is not None and status != user.status:
-        if status not in (UserStatus.ACTIVE, UserStatus.DISABLED):
-            raise ApiError("An account can be set active or disabled", code="bad_status")
-        user.status = status
-        changes["status"] = status.value
-    if is_admin is not None and is_admin != user.is_admin:
-        user.is_admin = is_admin
-        changes["is_admin"] = is_admin
-    if name is not None and name.strip() != user.name:
-        user.name = name.strip()
-        changes["name"] = user.name
-    if changes:
-        _bump_access(db, seq)
-        _event(db, admin, "update_user", email=user.email, **changes)
-    db.commit()
-    return user
-
-
-def rename_self(db: Session, user: User, name: str) -> User:
-    """Change your own name: how everyone sees you. (An admin fixes anyone's with update_user; signing in with Google
-    again keeps it, auth.sign_in.)"""
-    name = name.strip()
-    if not name:
-        raise ApiError("A name can't be empty", code="bad_name")
-    if len(name) > 200:
-        raise ApiError("A name can be at most 200 characters", code="bad_name")
-    seq = begin_write(db)
-    me = db.get_one(User, user.id)
-    if name != me.name:
-        me.name = name
-        _bump_access(db, seq)  # names come with the vault's index: everyone's app picks it up
-        _event(db, me, "update_user", email=me.email, name=name)
-    db.commit()
-    return me
-
-
-def site_settings(db: Session, user: User) -> SiteSettings:
-    """What admins decide for everyone: whether new people need an invite or approval to join (the whitelist)."""
-    _require_admin(user)
-    return db.get_one(SiteSettings, 1)
-
-
-def update_site_settings(db: Session, admin: User, *, whitelist: bool | None = None) -> SiteSettings:
-    """Turn the whitelist on or off.
-
-    Accounts that already exist keep their status either way. Off, anyone who signs in joins at once
-    (auth.sign_in), so the people waiting for approval are approved now: they could sign in again to join.
-    """
-    _require_admin(admin)
-    seq = begin_write(db)
-    site = db.get_one(SiteSettings, 1)
-    if whitelist is not None and whitelist != site.whitelist:
-        site.whitelist = whitelist
-        _event(db, admin, "update_settings", whitelist=whitelist)
-        waiting = [] if whitelist else list(db.scalars(select(User).where(User.status == UserStatus.PENDING)))
-        for user in waiting:
-            user.status = UserStatus.ACTIVE
-            _event(db, admin, "update_user", email=user.email, status=user.status.value)
-        if waiting:
-            _bump_access(db, seq)
-    db.commit()
-    return site
+# --- permissions --------------------------------------------------------------------------
 
 
 def folder_grants(db: Session, user: User, path: str) -> tuple[FolderView, list[GrantView]]:

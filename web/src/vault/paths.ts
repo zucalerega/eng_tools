@@ -65,7 +65,7 @@ export function namedAfter(drawing: string, model: string): boolean {
     return name === base || (name.startsWith(base) && !/[\p{L}\p{N}]/u.test(name.charAt(base.length)));
 }
 
-const MAX_PATH = 200; // as in server/src/yjsp_server/paths.py, which has the last word
+const MAX_PATH = 200; // as in server/src/yjsp_server/vault/paths.py, which has the last word
 const RESERVED = new Set(["CON", "PRN", "AUX", "NUL", ..."123456789".split("").flatMap((n) => [`COM${n}`, `LPT${n}`])]);
 
 /** What's wrong with a new file's name and path, for the vault and for Windows, or null if nothing is. */

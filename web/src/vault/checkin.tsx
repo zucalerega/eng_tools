@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api, type VaultFile } from "./api";
+import { type VaultFile, vaultApi } from "./api";
 import { keptReferences, WEB_HOST } from "./checkouts";
-import { Dialog, Notice } from "./components";
-import { formatSize } from "./format";
+import { Dialog, Notice } from "../components";
+import { formatSize } from "../format";
 import { extension, useChange } from "./manage";
 import { kindOf } from "./paths";
 import { useVault } from "./store";
@@ -23,7 +23,7 @@ export function CheckOutDialog({ files, onClose }: { files: VaultFile[]; onClose
             busy={busy}
             onConfirm={() =>
                 run(() =>
-                    api.checkout(
+                    vaultApi.checkout(
                         files.map((file) => file.id),
                         WEB_HOST,
                     ),
@@ -80,12 +80,12 @@ export function CheckinDialog({ file, onClose }: { file: VaultFile; onClose: () 
         if (!picked) {
             return;
         }
-        if (!(await api.hasBlob(picked.sha256))) {
-            await api.uploadBlob(picked.sha256, picked.data);
+        if (!(await vaultApi.hasBlob(picked.sha256))) {
+            await vaultApi.uploadBlob(picked.sha256, picked.data);
         }
         const references = shows.map((path) => ({ path }));
         const item = { path: file.path, sha256: picked.sha256, size: picked.data.length, references };
-        await api.checkin({ comment: comment.trim(), host: WEB_HOST, items: [item] });
+        await vaultApi.checkin({ comment: comment.trim(), host: WEB_HOST, items: [item] });
     };
 
     return (
@@ -161,7 +161,7 @@ export function UndoCheckoutDialog({ files, onClose }: { files: VaultFile[]; onC
             confirm="Undo check-out"
             danger={computers.length > 0}
             busy={busy}
-            onConfirm={() => run(() => api.releaseCheckouts(files.map((file) => file.id)))}
+            onConfirm={() => run(() => vaultApi.releaseCheckouts(files.map((file) => file.id)))}
             onCancel={onClose}
         >
             <p>

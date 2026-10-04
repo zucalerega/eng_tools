@@ -2,8 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import { createHash, randomUUID } from "node:crypto";
 import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
-import { configureApi, type Account, type SiteSettings, type VaultFile } from "../src/api";
-import { StoreContext, VaultStore } from "../src/store";
+import { configureApi, type Account, type SiteSettings } from "../src/api";
+import { type VaultFile } from "../src/vault/api";
+import { SessionContext, SessionStore } from "../src/session";
+import { StoreContext, VaultStore } from "../src/vault/store";
 import type { DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -187,12 +189,18 @@ export const breadcrumbs = async () => within(await screen.findByRole("navigatio
 export function renderApp(who: Member, page: string) {
     configureApi({ baseUrl: serverUrl(), token: who.token });
     window.history.pushState(null, "", page);
-    const store = new VaultStore(150); // poll often, so changes elsewhere show up quickly
-    store.start();
-    onTestFinished(() => store.stop());
+    const session = new SessionStore();
+    session.start();
+    const store = new VaultStore(session, 150); // poll often, so changes elsewhere show up quickly
+    onTestFinished(() => {
+        store.stop();
+        session.stop();
+    });
     return render(
-        <StoreContext.Provider value={store}>
-            <App />
-        </StoreContext.Provider>,
+        <SessionContext.Provider value={session}>
+            <StoreContext.Provider value={store}>
+                <App />
+            </StoreContext.Provider>
+        </SessionContext.Provider>,
     );
 }

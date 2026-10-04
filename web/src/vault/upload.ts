@@ -1,4 +1,4 @@
-import { api, type VaultFile } from "./api";
+import { type VaultFile, vaultApi } from "./api";
 import { keptReferences, on, WEB_HOST } from "./checkouts";
 import { kindOf, nameProblem, parentOf, pathKey } from "./paths";
 import { contentsOf, type VaultState } from "./store";
@@ -202,11 +202,11 @@ export async function upload(
         progress(index, path);
         const data = await source.read();
         const hash = await sha256(data);
-        if (!(await api.hasBlob(hash))) {
-            await api.uploadBlob(hash, data);
+        if (!(await vaultApi.hasBlob(hash))) {
+            await vaultApi.uploadBlob(hash, data);
         }
         items.push({ path, sha256: hash, size: data.length, references: references.map((used) => ({ path: used })) });
     }
     progress(ready.length, "");
-    await api.checkin({ comment: comment.trim() || "Uploaded in the web app", host: WEB_HOST, items });
+    await vaultApi.checkin({ comment: comment.trim() || "Uploaded in the web app", host: WEB_HOST, items });
 }

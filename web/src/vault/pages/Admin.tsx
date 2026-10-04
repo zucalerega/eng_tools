@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Account, type Grants, type Role, type SiteSettings } from "../api";
-import { formatDate, formatTime } from "../format";
-import { Dialog, Notice, Time } from "../components";
-import { Link } from "../router";
+import { api, type Account, type SiteSettings } from "../../api";
+import { type Grants, type Role, vaultApi } from "../api";
+import { formatDate, formatTime } from "../../format";
+import { Dialog, Notice, Time } from "../../components";
+import { Link } from "../../router";
 import { atLeast, useVault, type VaultState } from "../store";
 
 // Admins manage accounts; admins and folder leads manage who can do what where.
@@ -313,7 +314,7 @@ function Access({ vault }: { vault: VaultState }) {
     const [people, setPeople] = useState<Account[]>([]);
     const [who, setWho] = useState("everyone");
     const [role, setRole] = useState<Role>("viewer");
-    const reload = useCallback(async () => setGrants(await api.grants(path)), [path]);
+    const reload = useCallback(async () => setGrants(await vaultApi.grants(path)), [path]);
     const { problem, busy, run, setProblem } = useAction(reload);
 
     useEffect(() => {
@@ -333,7 +334,7 @@ function Access({ vault }: { vault: VaultState }) {
 
     function grant(event: FormEvent) {
         event.preventDefault();
-        void run(() => api.setGrant(path, who === "everyone" ? null : Number(who), role));
+        void run(() => vaultApi.setGrant(path, who === "everyone" ? null : Number(who), role));
     }
 
     return (
@@ -383,7 +384,7 @@ function Access({ vault }: { vault: VaultState }) {
                                                 className="button-small"
                                                 disabled={busy}
                                                 onClick={() =>
-                                                    run(() => api.setGrant(path, entry.user?.id ?? null, null))
+                                                    run(() => vaultApi.setGrant(path, entry.user?.id ?? null, null))
                                                 }
                                             >
                                                 Remove

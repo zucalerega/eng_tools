@@ -8,10 +8,10 @@ from alembic.migration import MigrationContext
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from yjsp_server import vault
 from yjsp_server.db import Base, make_engine, migrate
 from yjsp_server.errors import Conflict
 from yjsp_server.models import User
+from yjsp_server.vault import vault
 
 
 def test_migrations_match_models(tmp_path):

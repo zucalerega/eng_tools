@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { Use, VaultFile } from "./api";
 import { FileIcon, StatusLabel } from "./components";
 import { fileUrl, kindOf, parentOf } from "./paths";
-import { Link } from "./router";
+import { Link } from "../router";
 import { useVault, type VaultState } from "./store";
 
 // How files fit together, from the sync feed: what an assembly uses (its parts and sub-assemblies; a

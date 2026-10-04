@@ -3,7 +3,7 @@ using System.Text;
 namespace Cvc.Client;
 
 /// <summary>
-/// Vault path rules, the same as the server's (server/src/yjsp_server/paths.py), so bad names
+/// Vault path rules, the same as the server's (server/src/yjsp_server/vault/paths.py), so bad names
 /// are caught before anything is uploaded. Paths are '/'-separated and case-insensitive.
 /// </summary>
 public static class VaultPaths

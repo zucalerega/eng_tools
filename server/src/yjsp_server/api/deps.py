@@ -1,4 +1,4 @@
-"""Request dependencies: database session, settings, blob store, and the signed-in user."""
+"""Request dependencies: database session, settings, and the signed-in user."""
 
 from collections.abc import Iterator
 from typing import Annotated
@@ -10,7 +10,6 @@ from .. import auth
 from ..config import Settings
 from ..errors import Forbidden, Unauthorized
 from ..models import User, UserStatus
-from ..storage import BlobStore
 
 SESSION_COOKIE = "yjsp_session"
 # Browsers can't add custom headers to cross-site requests without CORS (which the server
@@ -27,10 +26,6 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def get_store(request: Request) -> BlobStore:
-    return request.app.state.store
-
-
 def get_db(request: Request) -> Iterator[Session]:
     with request.app.state.sessionmaker() as db:
         yield db
@@ -38,7 +33,6 @@ def get_db(request: Request) -> Iterator[Session]:
 
 DB = Annotated[Session, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_settings)]
-Store = Annotated[BlobStore, Depends(get_store)]
 
 
 def session_secret(request: Request) -> str:

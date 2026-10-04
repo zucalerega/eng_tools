@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { fileUrl } from "../src/paths";
+import { fileUrl } from "../src/vault/paths";
 import { renderApp, Team } from "./team";
 
 test("a file's page shows its history and what it uses, and follows check-outs live", async () => {

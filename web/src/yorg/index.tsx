@@ -2,14 +2,14 @@ import { lazy, Suspense } from "react";
 import { Notice } from "../components";
 import { inPreview, sitePath } from "../preview";
 import { Link } from "../router";
-import { useVault } from "../store";
+import { useSession } from "../session";
 import { DatasetsPage } from "./Datasets";
 import { HelpPage } from "./Help";
 import { ModelsPage } from "./models/ModelsPage";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
 
-// Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and the vault.
+// Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and Vault.
 // The Python window and its editor (CodeMirror) load only when Scripts is opened.
 // Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models.
 
@@ -59,12 +59,12 @@ export function isWorkspace(pathname: string): boolean {
 }
 
 export function YorgPage({ pathname }: { pathname: string }) {
-    const vault = useVault();
+    const { me } = useSession();
     const preview = inPreview(pathname);
-    if (preview && !vault.me) {
+    if (preview && !me) {
         return <p className="muted">Loading…</p>;
     }
-    if (!preview || vault.me?.is_admin) {
+    if (!preview || me?.is_admin) {
         const page = yorgPage(sitePath(pathname).replace(/\/$/, "") || "/yorg", preview);
         if (page) {
             return page;
@@ -73,7 +73,7 @@ export function YorgPage({ pathname }: { pathname: string }) {
     return (
         <Notice tone="error">
             There&apos;s no page here. {/* Out of the preview, unless it's yours to be in. */}
-            <Link to="/yorg" exact={!vault.me?.is_admin}>
+            <Link to="/yorg" exact={!me?.is_admin}>
                 Go to the test data
             </Link>
         </Notice>

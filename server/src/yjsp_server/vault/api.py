@@ -1,15 +1,16 @@
-"""Vault API: browse, history, download, check out/in, delete/restore, move/rename, sync, and uploads."""
+"""Vault API: browse, history, download, check out/in, delete/restore, move/rename, sync, uploads, and who has access
+to each folder."""
 
 import hashlib
+from typing import Annotated
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from .. import vault
+from ..api.deps import DB, ActiveUser, Config
 from ..errors import ApiError, Forbidden, TooLarge
-from ..storage import SHA256
-from .deps import DB, ActiveUser, Config, Store
+from . import vault
 from .schemas import (
     CheckinIn,
     CheckinOut,
@@ -23,6 +24,8 @@ from .schemas import (
     FilesOut,
     FolderIn,
     FolderOut,
+    GrantIn,
+    GrantsOut,
     ListingOut,
     MovedOut,
     MoveIn,
@@ -30,8 +33,16 @@ from .schemas import (
     RevertIn,
     SyncOut,
 )
+from .storage import SHA256, BlobStore
 
 router = APIRouter(prefix="/api", tags=["vault"])
+
+
+def get_store(request: Request) -> BlobStore:
+    return request.app.state.vault_store
+
+
+Store = Annotated[BlobStore, Depends(get_store)]
 
 
 @router.get("/folders")
@@ -139,6 +150,19 @@ def get_activity(
 ) -> list[EventOut]:
     """Recent events, newest first. Page with before=<id of the last event you have>."""
     return [EventOut.of(e) for e in vault.activity(db, user, limit=limit, before=before, file_id=file_id)]
+
+
+@router.get("/grants")
+def get_grants(user: ActiveUser, db: DB, path: str = "") -> GrantsOut:
+    """Who has access to a folder, including grants inherited from the folders above it."""
+    return GrantsOut.of(*vault.folder_grants(db, user, path))
+
+
+@router.put("/grants")
+def put_grant(body: GrantIn, user: ActiveUser, db: DB) -> GrantsOut:
+    """Set (or with role=null, remove) a person's or everyone's role on a folder (leads and admins)."""
+    vault.set_grant(db, user, body.path, user_id=body.user_id, role=body.role)
+    return GrantsOut.of(*vault.folder_grants(db, user, body.path))
 
 
 def _check_sha(sha256: str) -> None:

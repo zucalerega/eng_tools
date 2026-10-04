@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, type Folder, type Listing, type UserRef, type VaultFile } from "../api";
-import { FileIcon, FolderIcon, Notice, Time } from "../components";
-import { formatSize } from "../format";
+import { type UserRef } from "../../api";
+import { type Folder, type Listing, type VaultFile, vaultApi } from "../api";
+import { Notice, Time } from "../../components";
+import { FileIcon, FolderIcon } from "../components";
+import { formatSize } from "../../format";
 import { fileUrl, folderUrl } from "../paths";
-import { Link } from "../router";
+import { Link } from "../../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
 import { Breadcrumbs } from "./Browse";
 
@@ -22,7 +24,7 @@ export function Trash({ folder }: { folder: string }) {
     // Loaded again whenever the vault changes: something deleted or restored, here or anywhere.
     useEffect(() => {
         let current = true;
-        api.trash(folder).then(
+        vaultApi.trash(folder).then(
             (loaded) => current && (setTrash(loaded), setProblem(null)),
             (error: Error) => current && setProblem(error.message),
         );
@@ -118,7 +120,7 @@ export function Trash({ folder }: { folder: string }) {
                                             `Restore ${gone.name}`,
                                             atLeast(gone.role, "lead"),
                                             "Restoring a folder takes a lead of it",
-                                            () => api.restoreFolder(gone.id),
+                                            () => vaultApi.restoreFolder(gone.id),
                                         )}
                                     </td>
                                 </tr>
@@ -135,14 +137,18 @@ export function Trash({ folder }: { folder: string }) {
                                     <td>{deleted(gone.deleted_at, gone.deleted_by)}</td>
                                     <td className="numeric">{formatSize(gone.size)}</td>
                                     <td className="row-actions">
-                                        <a className="button button-small" href={api.downloadUrl(gone.id)} download>
+                                        <a
+                                            className="button button-small"
+                                            href={vaultApi.downloadUrl(gone.id)}
+                                            download
+                                        >
                                             Download
                                         </a>
                                         {button(
                                             `Restore ${gone.name}`,
                                             canRestoreFiles,
                                             "Restoring files takes editor access here",
-                                            () => api.restore(gone.id),
+                                            () => vaultApi.restore(gone.id),
                                         )}
                                     </td>
                                 </tr>

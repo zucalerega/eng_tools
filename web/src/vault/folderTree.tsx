@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { FolderIcon } from "./components";
 import { folderUrl, parentOf, pathKey } from "./paths";
-import { Link } from "./router";
+import { Link } from "../router";
 import { contentsOf, useVault } from "./store";
 
 /** A folder and the folders above it, as path keys: the way down to it. */

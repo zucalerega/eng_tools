@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, type Download } from "../api";
-import { connectLink, Notice } from "../components";
-import { formatSize } from "../format";
+import { api, type Download } from "../../api";
+import { Notice } from "../../components";
+import { connectLink } from "../components";
+import { formatSize } from "../../format";
 
 const INSTALLER = "vault-setup.exe";
 // What the files an admin puts in the server's downloads folder are, for the ones Vault makes.

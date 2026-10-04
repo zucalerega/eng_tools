@@ -142,7 +142,11 @@ back() {
     if [ ! -f $where/backups/before-yjsp/env ]; then
         # Stopped before anything was moved: the old version just starts again.
         systemctl start vault.service vault-backup.timer
-        if healthy; then echo "Back as it was: the old version answers."; else echo "The old version doesn't answer." >&2; fi
+        if healthy; then
+            echo "Back as it was: the old version answers."
+        else
+            echo "The old version doesn't answer." >&2
+        fi
         return
     fi
     for unit in "${old_units[@]}"; do install -m 644 $where/backups/before-yjsp/$unit /etc/systemd/system/$unit; done
@@ -165,7 +169,11 @@ back() {
     fi
     systemctl enable --quiet vault.service vault-backup.timer
     systemctl start vault.service vault-backup.timer
-    if healthy; then echo "Back as it was: the old version answers."; else echo "The old version doesn't answer either." >&2; fi
+    if healthy; then
+        echo "Back as it was: the old version answers."
+    else
+        echo "The old version doesn't answer either." >&2
+    fi
 }
 
 case $mode in

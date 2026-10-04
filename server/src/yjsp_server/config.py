@@ -79,6 +79,6 @@ def refuse_old_settings(environ: Mapping[str, str] = os.environ, env_file: Path 
     if old:
         raise RuntimeError(
             f"Settings start with YJSP_ now: rename {', '.join(old)} (in the environment or {env_file}) to start with "
-            f"YJSP_ instead, and replace {_OLD_PREFIX}BLOB_DIR with YJSP_VAULT_DIR, the folder its blobs/ folder is in. "
-            "docs/deploying.md has the steps for the live server."
+            f"YJSP_ instead, and replace {_OLD_PREFIX}BLOB_DIR with YJSP_VAULT_DIR, the folder its blobs/ folder is "
+            "in. docs/deploying.md has the steps for the live server."
         )

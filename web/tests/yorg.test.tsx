@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { formatSize } from "../src/format";
 import { renderApp, Team } from "./team";
 
@@ -27,6 +27,24 @@ test("the app switcher goes between the vault and Yorg", async () => {
             .getAllByRole("link")
             .map((link) => link.textContent),
     ).toEqual(["Datasets", "Views", "Scripts", "Help", "Preview"]); // Preview: the chief's an admin (yorg-preview.test.tsx)
+});
+
+test("Yorg leaves the vault's index alone: it loads once the vault is opened", async () => {
+    const team = await Team.create();
+    const fetched = vi.spyOn(globalThis, "fetch");
+    onTestFinished(() => fetched.mockRestore());
+    const syncs = () => fetched.mock.calls.filter(([url]) => String(url).includes("/api/sync")).length;
+    renderApp(team.chief, "/yorg");
+    expect(await screen.findByRole("heading", { name: "Datasets" })).toBeTruthy();
+    // You're known (the account menu has your name): the vault's index, had it started, would have been asked for.
+    await screen.findByRole("button", { name: /^Account: ./ });
+    expect(syncs()).toBe(0);
+
+    await userEvent.click(
+        within(screen.getByRole("navigation", { name: "Apps" })).getByRole("link", { name: "Vault" }),
+    );
+    await waitFor(() => expect(syncs()).toBeGreaterThan(0));
+    expect(await screen.findByRole("heading", { name: "Files" })).toBeTruthy();
 });
 
 test("Help says what Yorg does, and how", async () => {

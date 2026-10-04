@@ -1,14 +1,15 @@
 import { useEffect, useId, useState } from "react";
 import { useAdminMode } from "../admin";
-import { api, type FileDetail, type VaultFile } from "../api";
+import { type FileDetail, type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { checkedOutHere, WEB_HOST } from "../checkouts";
-import { Dialog, FileIcon, LockLabel, Notice, OpenInSolidWorks, StatusLabel, Time } from "../components";
-import { formatSize } from "../format";
+import { Dialog, Notice, Time } from "../../components";
+import { FileIcon, LockLabel, OpenInSolidWorks, StatusLabel } from "../components";
+import { formatSize } from "../../format";
 import { DeleteDialog } from "../manage";
 import { NewFileDialog, StartedNotice } from "../newFile";
 import { fileUrl, kindOf, parentOf, trashUrl } from "../paths";
-import { Link } from "../router";
+import { Link } from "../../router";
 import { atLeast, nearestFolder, roleIn, useStore, useVault } from "../store";
 import { parentsOf, StructureTree, UsedVersion } from "../structure";
 import { Breadcrumbs } from "./Browse";
@@ -36,7 +37,7 @@ export function FilePage({ id }: { id: number }) {
     const stamp = live ? `${live.version}|${live.checked_out?.user.id ?? ""}|${live.checked_out?.since ?? ""}` : "";
     useEffect(() => {
         let current = true;
-        api.file(id).then(
+        vaultApi.file(id).then(
             (loaded) => current && (setDetail(loaded), setProblem(null)),
             (error: Error) => current && setProblem(error.message),
         );
@@ -99,7 +100,11 @@ export function FilePage({ id }: { id: number }) {
                                 {shelf !== folder && ", with its folder"}.
                             </span>
                             {canEdit && (
-                                <button type="button" disabled={busy} onClick={() => act(() => api.restore(file.id))}>
+                                <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => act(() => vaultApi.restore(file.id))}
+                                >
                                     Restore
                                 </button>
                             )}
@@ -113,7 +118,7 @@ export function FilePage({ id }: { id: number }) {
                 )}
                 <div className="actions">
                     {!file.deleted_at && <OpenInSolidWorks path={file.path} />}
-                    <a className="button" href={api.downloadUrl(file.id)} download>
+                    <a className="button" href={vaultApi.downloadUrl(file.id)} download>
                         Download
                     </a>
                     {canEdit && !file.deleted_at && !lock && (
@@ -121,7 +126,7 @@ export function FilePage({ id }: { id: number }) {
                             type="button"
                             disabled={busy}
                             title="Check it out here, to change it without SolidWorks"
-                            onClick={() => act(() => api.checkout([file.id], WEB_HOST))}
+                            onClick={() => act(() => vaultApi.checkout([file.id], WEB_HOST))}
                         >
                             Check out
                         </button>
@@ -136,7 +141,7 @@ export function FilePage({ id }: { id: number }) {
                             type="button"
                             disabled={busy}
                             onClick={() =>
-                                here ? act(() => api.releaseCheckouts([file.id])) : setAsking({ action: "undo" })
+                                here ? act(() => vaultApi.releaseCheckouts([file.id])) : setAsking({ action: "undo" })
                             }
                         >
                             Undo check-out
@@ -230,7 +235,7 @@ export function FilePage({ id }: { id: number }) {
                             <td className="row-actions">
                                 <a
                                     className="button button-small"
-                                    href={api.downloadUrl(file.id, version.number)}
+                                    href={vaultApi.downloadUrl(file.id, version.number)}
                                     download
                                 >
                                     Download
@@ -262,7 +267,7 @@ export function FilePage({ id }: { id: number }) {
                     danger
                     busy={busy}
                     onCancel={() => setAsking(null)}
-                    onConfirm={() => act(() => api.releaseCheckouts([file.id]))}
+                    onConfirm={() => act(() => vaultApi.releaseCheckouts([file.id]))}
                 >
                     <p>
                         {file.name} becomes free for anyone to check out. {holder.user.name}'s changes stay on{" "}
@@ -277,7 +282,7 @@ export function FilePage({ id }: { id: number }) {
                     danger={holder !== null}
                     busy={busy}
                     onCancel={() => setAsking(null)}
-                    onConfirm={() => act(() => api.revert(file.id, asking.version, comment, holder !== null))}
+                    onConfirm={() => act(() => vaultApi.revert(file.id, asking.version, comment, holder !== null))}
                 >
                     <p>
                         It becomes v{file.version + 1}, with v{asking.version}'s contents and the versions of the files

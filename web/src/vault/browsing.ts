@@ -1,4 +1,5 @@
-import type { Account, VaultFile } from "./api";
+import type { Account } from "../api";
+import type { VaultFile } from "./api";
 import { kindOf, type Kind } from "./paths";
 
 // Finding files, as a file explorer does: search by name, filters (kind, status, when it was last changed,

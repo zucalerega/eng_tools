@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { folderUrl } from "../src/paths";
+import { folderUrl } from "../src/vault/paths";
 import { breadcrumbs, renderApp, table, Team } from "./team";
 import { makeZip } from "./zips";
 

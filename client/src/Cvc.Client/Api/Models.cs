@@ -167,7 +167,7 @@ public sealed class VaultEvent
     public long Id { get; set; }
     public DateTimeOffset At { get; set; }
 
-    /// <summary>"checkin", "checkout", "break_lock", ... (see vault.py).</summary>
+    /// <summary>"checkin", "checkout", "break_lock", ... (see the server's vault/vault.py).</summary>
     public string Action { get; set; } = "";
     public UserRef? User { get; set; }
     public long? FileId { get; set; }

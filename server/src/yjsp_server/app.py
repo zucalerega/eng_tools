@@ -1,4 +1,4 @@
-"""The FastAPI application."""
+"""The FastAPI application: the site (sign-in, accounts, the web app) and its two apps, Vault and Yorg."""
 
 from contextlib import asynccontextmanager
 
@@ -7,13 +7,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import __version__
-from .api import admin, downloads, files, signin, web
+from . import __version__, people
+from .api import downloads, signin, web
+from .api import people as people_api
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
-from .storage import BlobStore
-from .vault import init_vault
+from .vault import api as vault_api
+from .vault.storage import BlobStore
+from .vault.vault import init_vault
 from .yorg import api as yorg_api
 from .yorg import scripts as yorg_scripts
 from .yorg.datasets import recover as recover_yorg
@@ -33,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         migrate(engine)
         with sessions() as db:
+            people.init(db)
             init_vault(db)
             recover_yorg(db)
         yield
@@ -42,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.sessionmaker = sessions
-    app.state.store = BlobStore(settings.vault_dir / "blobs")
+    app.state.vault_store = BlobStore(settings.vault_dir / "blobs")
     app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.yorg_models = Saved(settings.yorg_dir, "model", "model")
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
@@ -69,10 +72,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    app.include_router(files.router)
-    app.include_router(downloads.router)
-    app.include_router(admin.router)
     app.include_router(signin.router)
+    app.include_router(people_api.router)
+    app.include_router(downloads.router)
+    app.include_router(vault_api.router)
     app.include_router(yorg_api.router)
     app.include_router(yorg_system_api.router)
     app.include_router(yorg_scripts.router)

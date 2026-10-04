@@ -46,8 +46,8 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-# The site's two apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/components.tsx), a
-# vault door crossed by a gold orbit with a sliver of the card around it, and Yorg's (YorgMark in web/src/yorg), a
+# The site's two apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/vault/components.tsx),
+# a vault door crossed by a gold orbit with a sliver of the card around it, and Yorg's (YorgMark in web/src/yorg), a
 # signal rising across a pair of axes to its gold peak.
 _GOLD = "#e0a500"
 _VAULT_MARK = (

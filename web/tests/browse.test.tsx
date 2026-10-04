@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { folderUrl } from "../src/paths";
+import { folderUrl } from "../src/vault/paths";
 import { breadcrumbs, folderTree, renderApp, table, Team } from "./team";
 
 test("browsing shows folders, files, and whether each is checked in", async () => {

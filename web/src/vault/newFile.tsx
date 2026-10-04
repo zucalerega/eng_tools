@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { VaultFile } from "./api";
-import { Dialog, Notice, solidWorksLink } from "./components";
+import { Dialog, Notice } from "../components";
+import { solidWorksLink } from "./components";
 import { fileUrl, nameProblem, namedAfter, parentOf, pathKey } from "./paths";
-import { Link } from "./router";
+import { Link } from "../router";
 import { contentsOf, useVault, type VaultState } from "./store";
 
 // Starting new SolidWorks files from the web app: you name it here, and the add-in on this computer

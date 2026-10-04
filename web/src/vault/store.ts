@@ -1,9 +1,12 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { api, ApiError, signIn, type Account, type Folder, type Role, type Sync, type VaultFile } from "./api";
+import { ApiError, signIn, type Account } from "../api";
+import type { SessionStore } from "../session";
+import { type Folder, type Role, type Sync, type VaultFile, vaultApi } from "./api";
 import { parentOf, pathKey } from "./paths";
 
 // The vault as this browser sees it: every folder and file you can see, kept current through the
-// same sync feed the CLI and the add-in use. Browsing and searching need no further requests.
+// same sync feed the CLI and the add-in use. Browsing and searching need no further requests. It loads
+// when a page of the vault first shows, and keeps current only while one does (App starts and stops it).
 
 export interface Contents {
     folders: Folder[];
@@ -13,7 +16,7 @@ export interface Contents {
 export interface VaultState {
     status: "loading" | "ready" | "failed";
     error: string | null; // the last sync's problem; a ready vault keeps showing what it had
-    me: Account | null;
+    me: Account | null; // you, from the session (session.ts)
     rootRole: Role | null; // your role at the top of the vault
     folders: ReadonlyMap<string, Folder>; // by path key
     files: ReadonlyMap<number, VaultFile>; // by id
@@ -44,7 +47,18 @@ export class VaultStore {
     private running = false;
     private pending: Promise<void> | null = null;
 
-    constructor(private readonly pollMs = 3000) {}
+    constructor(
+        private readonly session: SessionStore,
+        private readonly pollMs = 3000,
+    ) {
+        this.state = { ...this.state, me: session.getState().me };
+        session.subscribe(() => {
+            const { me } = session.getState();
+            if (me !== this.state.me) {
+                this.set({ me });
+            }
+        });
+    }
 
     subscribe = (listener: () => void): (() => void) => {
         this.listeners.add(listener);
@@ -69,13 +83,11 @@ export class VaultStore {
         document.removeEventListener("visibilitychange", this.catchUp);
     }
 
-    /** You, as the server has you now: after you changed your name, say. */
-    updateMe(me: Account): void {
-        this.set({ me });
-    }
-
-    /** Fetch what changed, now: after this page changed something, say. */
+    /** Fetch what changed, now: after this page changed something, say. Stopped, the vault isn't asked. */
     refresh(): Promise<void> {
+        if (!this.running) {
+            return Promise.resolve();
+        }
         this.pending ??= this.sync().finally(() => (this.pending = null));
         return this.pending;
     }
@@ -107,11 +119,11 @@ export class VaultStore {
     private async sync() {
         try {
             if (!this.state.me) {
-                this.set({ me: await api.me() });
+                await this.session.refresh(); // pages need to know which check-outs are yours
             }
-            const changes = await api.sync(this.cursor);
+            const changes = await vaultApi.sync(this.cursor);
             // Your role at the top isn't in the feed; it only changes when permissions do (a full sync).
-            const rootRole = changes.full ? (await api.folder("")).folder.role : this.state.rootRole;
+            const rootRole = changes.full ? (await vaultApi.folder("")).folder.role : this.state.rootRole;
             this.apply(changes, rootRole);
         } catch (error) {
             if (error instanceof ApiError && error.status === 401) {

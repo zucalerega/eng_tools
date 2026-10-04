@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useAdminMode } from "../admin";
-import { api, type VaultFile } from "../api";
+import { type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { WEB_HOST } from "../checkouts";
-import { Dialog, FileIcon, Notice, Time } from "../components";
+import { Dialog, Notice, Time } from "../../components";
+import { FileIcon } from "../components";
 import { fileUrl, parentOf } from "../paths";
-import { Link } from "../router";
+import { Link } from "../../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
 
 export function Locks() {
@@ -26,7 +27,7 @@ export function Locks() {
     async function undoHere(file: VaultFile) {
         setBusy(true);
         try {
-            await api.releaseCheckouts([file.id]);
+            await vaultApi.releaseCheckouts([file.id]);
             await store.refresh();
         } catch (error) {
             setProblem(error instanceof Error ? error.message : String(error));
@@ -38,7 +39,7 @@ export function Locks() {
     async function release(file: VaultFile) {
         setBusy(true);
         try {
-            await api.releaseCheckouts([file.id]);
+            await vaultApi.releaseCheckouts([file.id]);
             await store.refresh();
         } catch (error) {
             setProblem(error instanceof Error ? error.message : String(error));

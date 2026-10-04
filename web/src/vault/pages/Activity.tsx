@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, type VaultEvent } from "../api";
-import { Notice, Time } from "../components";
-import { formatDay } from "../format";
+import { type VaultEvent, vaultApi } from "../api";
+import { Notice, Time } from "../../components";
+import { formatDay } from "../../format";
 import { fileUrl, folderUrl, parentOf, trashUrl } from "../paths";
-import { Link } from "../router";
+import { Link } from "../../router";
 import { useVault } from "../store";
 
 const PAGE = 50;
@@ -30,7 +30,7 @@ export function Activity() {
     // The newest events, loaded again whenever something in the vault changes.
     useEffect(() => {
         let current = true;
-        api.activity({ limit: PAGE }).then(
+        vaultApi.activity({ limit: PAGE }).then(
             (newest) => current && setFeed((shown) => withNewest(newest, shown)),
             (error: Error) => current && setProblem(error.message),
         );
@@ -41,7 +41,7 @@ export function Activity() {
 
     async function loadOlder() {
         try {
-            const older = await api.activity({ before: feed?.events.at(-1)?.id, limit: PAGE });
+            const older = await vaultApi.activity({ before: feed?.events.at(-1)?.id, limit: PAGE });
             setFeed((shown) => ({ events: [...(shown?.events ?? []), ...older], more: older.length === PAGE }));
         } catch (error) {
             setProblem(error instanceof Error ? error.message : String(error));

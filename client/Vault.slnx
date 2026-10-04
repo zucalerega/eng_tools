@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vault.Cli/Vault.Cli.csproj" />
+    <Project Path="src/Vault.Client/Vault.Client.csproj" />
+    <Project Path="src/Vault.SolidWorks/Vault.SolidWorks.csproj" />
+    <Project Path="src/Vault.SolidWorks.Open/Vault.SolidWorks.Open.csproj" />
+    <Project Path="src/Vault.Setup/Vault.Setup.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vault.Client.Tests/Vault.Client.Tests.csproj" />
+  </Folder>
+</Solution>

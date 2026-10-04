@@ -81,7 +81,7 @@ test("admins turn the whitelist off, which approves everyone waiting, and on aga
     await userEvent.click(dialog.getByRole("button", { name: "Turn it off" }));
     await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
     expect((await team.settings()).whitelist).toBe(false);
-    await screen.findByText(/Off: anyone who signs in with Google joins right away/);
+    await screen.findByText(/Off: anyone who signs in joins right away/);
 
     await userEvent.click(whitelist); // on again: nothing to ask
     await waitFor(async () => expect((await team.settings()).whitelist).toBe(true));

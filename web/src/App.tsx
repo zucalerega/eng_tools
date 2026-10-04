@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { canUseAdminMode, setAdminMode, useAdminMode } from "./admin";
-import { Dialog, Notice, usePopover, VaultMark } from "./components";
-import { WithFolderTree } from "./folderTree";
-import { folderFromUrl } from "./paths";
-import { Activity } from "./pages/Activity";
-import { Admin } from "./pages/Admin";
-import { Assemblies } from "./pages/Assemblies";
-import { Browse } from "./pages/Browse";
-import { FilePage } from "./pages/FilePage";
-import { Locks } from "./pages/Locks";
-import { SolidWorks } from "./pages/SolidWorks";
-import { Trash } from "./pages/Trash";
+import { Dialog, Notice, usePopover } from "./components";
 import { inPreview, PREVIEW, sitePath } from "./preview";
 import { Link, usePathname } from "./router";
-import { useStore, useVault, type VaultState } from "./store";
+import { useSession, useSessionStore } from "./session";
 import { setTheme, useTheme, type Theme } from "./theme";
+import { VaultMark, VaultPage, vaultSection, withFolderTree } from "./vault";
+import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
+import { useStore, useVault, type VaultState } from "./vault/store";
 import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
 
 let vaultIcon: string | null = null; // the tab's icon from index.html, put back on leaving Yorg
@@ -27,13 +19,24 @@ const THEMES: [Theme, string][] = [
 ];
 
 export function App() {
+    const { me } = useSession();
+    const store = useStore();
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
-    // Two apps share the site and its sign-in: the vault, and Yorg (test data, under /yorg). Yorg's preview (/yorg/dev,
-    // admins) is Yorg as it will be, with what's new in its top bar too.
+    // Two apps share the site and its sign-in: Vault (the CAD files), and Yorg (test data, under /yorg). Yorg's preview
+    // (/yorg/dev, admins) is Yorg as it will be, with what's new in its top bar too.
     const yorg = inYorg(pathname);
-    const preview = inPreview(pathname) && vault.me?.is_admin === true;
+    const preview = inPreview(pathname) && me?.is_admin === true;
+    // Vault's index loads when a page of the vault first shows, and keeps current only while one does: in Yorg,
+    // nothing asks for it.
+    useEffect(() => {
+        if (yorg) {
+            store.stop();
+        } else {
+            store.start();
+        }
+    }, [yorg, store]);
     useEffect(() => {
         document.title = yorg ? YORG : "Vault";
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
@@ -42,12 +45,7 @@ export function App() {
             icon.setAttribute("href", yorg ? YORG_ICON : (vaultIcon ?? ""));
         }
     }, [yorg]);
-    const section = yorg
-        ? yorgSection(pathname)
-        : pathname === "/" || pathname.startsWith("/file") || pathname.startsWith("/trash")
-          ? "files"
-          : pathname.split("/")[1];
-    const withTree = pathname === "/" || pathname.startsWith("/files") || pathname.startsWith("/trash");
+    const section = yorg ? yorgSection(pathname) : vaultSection(pathname);
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -75,7 +73,7 @@ export function App() {
                             {preview && nav("/yorg/models", "models", "Models")}
                             {nav("/yorg/scripts", "scripts", "Scripts")}
                             {nav("/yorg/help", "help", "Help")}
-                            {vault.me?.is_admin && !preview && (
+                            {me?.is_admin && !preview && (
                                 <Link
                                     to={PREVIEW}
                                     className="preview-link"
@@ -120,13 +118,8 @@ export function App() {
                     <YorgPage pathname={pathname} />
                 </main>
             ) : (
-                <main className={withTree ? "main-wide" : undefined}>
-                    {vault.error && vault.status === "ready" && (
-                        <Notice tone="warning">
-                            Can't reach the Vault server ({vault.error}). Showing what was here; trying again.
-                        </Notice>
-                    )}
-                    <Page pathname={pathname} vault={vault} />
+                <main className={withFolderTree(pathname) ? "main-wide" : undefined}>
+                    <VaultPage pathname={pathname} />
                 </main>
             )}
         </>
@@ -142,7 +135,7 @@ function AccountMenu({ vault }: { vault: VaultState }) {
     const [naming, setNaming] = useState(false);
     const theme = useTheme();
     const adminMode = useAdminMode(vault);
-    const me = vault.me;
+    const { me } = useSession();
     const initials = (me?.name ?? "")
         .split(/\s+/)
         .filter((word) => word.length > 0)
@@ -228,6 +221,7 @@ function AccountMenu({ vault }: { vault: VaultState }) {
 
 /** Your name, as everyone sees it: on your check-outs, in the activity, in Admin. */
 function NameDialog({ name: now, onClose }: { name: string; onClose: () => void }) {
+    const session = useSessionStore();
     const store = useStore();
     const [name, setName] = useState(now);
     const [busy, setBusy] = useState(false);
@@ -235,8 +229,8 @@ function NameDialog({ name: now, onClose }: { name: string; onClose: () => void 
     async function save() {
         setBusy(true);
         try {
-            store.updateMe(await api.renameMe(name.trim()));
-            void store.refresh(); // your name on files and check-outs, too
+            session.updateMe(await api.renameMe(name.trim()));
+            void store.refresh(); // your name on files and check-outs, too (if the vault's open)
             onClose();
         } catch (error) {
             setProblem(error instanceof Error ? error.message : String(error));
@@ -260,55 +254,4 @@ function NameDialog({ name: now, onClose }: { name: string; onClose: () => void 
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
-}
-
-function Page({ pathname, vault }: { pathname: string; vault: VaultState }) {
-    if (vault.status === "loading") {
-        return <p className="muted">Loading the vault…</p>;
-    }
-    if (vault.status === "failed") {
-        return <Notice tone="error">Can't load the vault: {vault.error}. Trying again every few seconds.</Notice>;
-    }
-    const file = /^\/file\/(\d+)\/?$/.exec(pathname);
-    if (file) {
-        return <FilePage key={file[1]} id={Number(file[1])} />;
-    }
-    // A folder's pages share the folder tree, which stays as it was from one to the next. A new folder's
-    // page starts afresh: nothing selected, no search.
-    if (pathname === "/" || pathname.startsWith("/files")) {
-        const folder = folderFromUrl(pathname);
-        return (
-            <WithFolderTree folder={folder}>
-                <Browse key={folder} folder={folder} />
-            </WithFolderTree>
-        );
-    }
-    if (pathname === "/trash" || pathname.startsWith("/trash/")) {
-        const folder = folderFromUrl(pathname);
-        return (
-            <WithFolderTree folder={folder}>
-                <Trash key={folder} folder={folder} />
-            </WithFolderTree>
-        );
-    }
-    switch (pathname.replace(/\/$/, "")) {
-        case "/assemblies":
-            return <Assemblies />;
-        case "/locks":
-            return <Locks />;
-        case "/activity":
-            return <Activity />;
-        case "/solidworks":
-            return <SolidWorks />;
-        case "/admin":
-            return <Admin section="people" />;
-        case "/admin/access":
-            return <Admin section="access" />;
-        default:
-            return (
-                <Notice tone="error">
-                    There's no page here. <Link to="/">Go to the vault</Link>
-                </Notice>
-            );
-    }
 }

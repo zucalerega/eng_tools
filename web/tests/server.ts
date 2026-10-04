@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { TestProject } from "vitest/node";
 
-// Starts the real CVC server (uv run cvc-server in ../server) with development sign-in and a
-// throwaway vault, once for the whole test run, and gives the tests its address.
+// Starts the real server (uv run yjsp-server in ../server) with development sign-in and a
+// throwaway vault and Yorg, once for the whole test run, and gives the tests its address.
 
 declare module "vitest" {
     export interface ProvidedContext {
@@ -43,27 +43,27 @@ function stop(server: ChildProcess): void {
 export default async function setup(project: TestProject): Promise<() => void> {
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
-    const data = mkdtempSync(join(tmpdir(), "cvc-web-tests-"));
+    const data = mkdtempSync(join(tmpdir(), "yjsp-web-tests-"));
     const downloads = join(data, "downloads"); // stand-ins for what the web app offers to download
     mkdirSync(downloads);
     writeFileSync(join(downloads, "Vault-Setup.exe"), "the add-in's installer");
-    writeFileSync(join(downloads, "cvc.exe"), "the command line");
-    const server = spawn("uv", ["run", "--quiet", "cvc-server"], {
+    writeFileSync(join(downloads, "vault.exe"), "the command line");
+    const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",
         env: {
             ...process.env,
-            CVC_ENV: "development",
-            CVC_DEV_AUTH: "1",
-            CVC_BOOTSTRAP_ADMINS: CHIEF,
-            CVC_HOST: "127.0.0.1",
-            CVC_PORT: String(port),
-            CVC_PUBLIC_URL: url,
-            CVC_DATABASE_URL: "sqlite:///" + join(data, "cvc.db").replaceAll("\\", "/"),
-            CVC_BLOB_DIR: join(data, "blobs"),
-            CVC_WEB_DIR: join(data, "web"),
-            CVC_DOWNLOADS_DIR: downloads,
-            CVC_YORG_DIR: join(data, "yorg"),
+            YJSP_ENV: "development",
+            YJSP_DEV_AUTH: "1",
+            YJSP_BOOTSTRAP_ADMINS: CHIEF,
+            YJSP_HOST: "127.0.0.1",
+            YJSP_PORT: String(port),
+            YJSP_PUBLIC_URL: url,
+            YJSP_DATABASE_URL: "sqlite:///" + join(data, "yjsp.db").replaceAll("\\", "/"),
+            YJSP_VAULT_DIR: join(data, "vault"),
+            YJSP_WEB_DIR: join(data, "web"),
+            YJSP_DOWNLOADS_DIR: downloads,
+            YJSP_YORG_DIR: join(data, "yorg"),
         },
     });
     let output = "";
@@ -73,7 +73,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     const deadline = Date.now() + 90_000;
     for (;;) {
         if (server.exitCode !== null) {
-            throw new Error(`The CVC server exited while starting:\n${output}`);
+            throw new Error(`The server exited while starting:\n${output}`);
         }
         try {
             if ((await fetch(`${url}/healthz`)).ok) {
@@ -84,7 +84,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
         }
         if (Date.now() > deadline) {
             stop(server);
-            throw new Error(`The CVC server didn't start within 90 s:\n${output}`);
+            throw new Error(`The server didn't start within 90 s:\n${output}`);
         }
         await new Promise((wait) => setTimeout(wait, 200));
     }

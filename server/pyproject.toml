@@ -1,7 +1,7 @@
 [project]
-name = "cvc-server"
+name = "yjsp-server"
 version = "0.3.0"
-description = "CVC server: check-in/check-out version control for SolidWorks and STEP files"
+description = "YJSP server: the team's site, with Vault (CAD version control) and Yorg (test data)"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
@@ -20,7 +20,7 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
-cvc-server = "cvc_server.__main__:main"
+yjsp-server = "yjsp_server.__main__:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
@@ -30,7 +30,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cvc_server"]
+packages = ["src/yjsp_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -46,4 +46,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cvc_server"]
+known-first-party = ["yjsp_server"]

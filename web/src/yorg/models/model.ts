@@ -16,7 +16,7 @@ import { ATMOSPHERE, channelToSiLinear, PSI, siToDisplayLinear } from "./units";
 
 // Editing a system model: parts added, connected, moved, changed, and deleted, each change a new model (the page
 // keeps the old one to undo). Settings are kept in SI units, as the server wants them. The rules for what connects to
-// what are the server's (server/src/cvc_server/yorg/system/spec.py), said here as you draw.
+// what are the server's (server/src/yjsp_server/yorg/system/spec.py), said here as you draw.
 
 export const EMPTY_MODEL: SystemModel = {
     version: 1,

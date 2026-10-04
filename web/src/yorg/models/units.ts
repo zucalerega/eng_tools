@@ -3,7 +3,7 @@ import type { Display, Quantity } from "./api";
 // Models keep SI units (Pa absolute, K, m, m², m³, kg/s); the page shows them in US or SI engineering units, with
 // pressures gauge (above the atmosphere) or absolute. Channels compared with a model are put in SI from their own
 // units (PT-1 (psig)), or read in the model's when they have none, as the server does with the channels a run follows
-// (server/src/cvc_server/yorg/system/channels.py).
+// (server/src/yjsp_server/yorg/system/channels.py).
 
 export const PSI = 6894.757;
 export const ATMOSPHERE = 101325;

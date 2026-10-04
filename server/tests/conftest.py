@@ -3,10 +3,10 @@ import hashlib
 import pytest
 from fastapi.testclient import TestClient
 
-from cvc_server import auth
-from cvc_server.app import create_app
-from cvc_server.config import Settings
-from cvc_server.models import User, UserStatus
+from yjsp_server import auth
+from yjsp_server.app import create_app
+from yjsp_server.config import Settings
+from yjsp_server.models import User, UserStatus
 
 BOOTSTRAP_ADMIN = "chief@rocketry.test"
 
@@ -16,8 +16,8 @@ def settings(tmp_path) -> Settings:
     return Settings(
         _env_file=None,
         env="development",
-        database_url=f"sqlite:///{tmp_path / 'cvc.db'}",
-        blob_dir=tmp_path / "blobs",
+        database_url=f"sqlite:///{tmp_path / 'yjsp.db'}",
+        vault_dir=tmp_path / "vault",
         dev_auth=True,
         bootstrap_admins=BOOTSTRAP_ADMIN,
         web_dir=tmp_path / "web",  # empty: tests that need the web app build a stand-in

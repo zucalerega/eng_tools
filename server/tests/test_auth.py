@@ -9,11 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
-from cvc_server import auth
-from cvc_server.app import create_app
-from cvc_server.config import Settings
-from cvc_server.db import utcnow
-from cvc_server.models import Token
+from yjsp_server import auth
+from yjsp_server.app import create_app
+from yjsp_server.config import Settings, refuse_old_settings
+from yjsp_server.db import utcnow
+from yjsp_server.models import Token
 
 from .conftest import BOOTSTRAP_ADMIN
 
@@ -75,7 +75,8 @@ def test_the_sign_in_page_says_what_happens_the_first_time(settings):
     # Google sign-in set up: nothing asks Google anything until someone clicks the button.
     settings.google_client_id, settings.google_client_secret = "id.apps.googleusercontent.com", "secret"
     with TestClient(create_app(settings)) as client:
-        assert "Sign in with your Google account to join" in client.get("/").text
+        page = client.get("/").text
+        assert "<title>Sign in · YJSP</title>" in page and "Sign in with your Google account to join" in page
         chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
         client.patch("/api/settings", json={"whitelist": True}, headers=chief)
         assert "an admin will approve your account" in client.get("/").text
@@ -94,7 +95,7 @@ def test_invited_people_are_active_from_their_first_sign_in(client, team):
 
 def test_unknown_or_revoked_tokens_are_rejected(client):
     assert client.get("/api/me").status_code == 401
-    assert client.get("/api/me", headers=bearer("cvc_nope")).status_code == 401
+    assert client.get("/api/me", headers=bearer("yjsp_nope")).status_code == 401
     token = client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"]
     [mine] = client.get("/api/tokens", headers=bearer(token)).json()
     assert client.delete(f"/api/tokens/{mine['id']}", headers=bearer(token)).status_code == 204
@@ -107,9 +108,25 @@ def test_browser_session_needs_the_csrf_header_to_change_things(client):
     assert client.get("/api/me").json()["email"] == BOOTSTRAP_ADMIN  # the cookie works for reads
     blocked = client.post("/api/folders", json={"path": "Payload"})
     assert (blocked.status_code, blocked.json()["error"]) == (403, "csrf")
-    assert client.post("/api/folders", json={"path": "Payload"}, headers={"X-CVC-Request": "1"}).status_code == 201
+    assert client.post("/api/folders", json={"path": "Payload"}, headers={"X-YJSP-Request": "1"}).status_code == 201
 
     client.post("/auth/logout", follow_redirects=False)
+    assert client.get("/api/me").status_code == 401
+
+
+def test_browsers_signed_in_before_yjsp_stay_signed_in(client):
+    # A browser signed in when the site was CVC has its session under the old cookie, and a tab open since then sends
+    # the old header: both still work until the session runs out, and signing out ends it.
+    client.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN}, follow_redirects=False)
+    secret = client.cookies["yjsp_session"]
+    client.cookies.clear()
+    client.cookies.set("cvc_session", secret)
+    assert client.get("/api/me").json()["email"] == BOOTSTRAP_ADMIN
+    assert client.post("/api/folders", json={"path": "Old tab"}, headers={"X-CVC-Request": "1"}).status_code == 201
+
+    signed_out = client.post("/auth/logout", follow_redirects=False)
+    assert 'cvc_session=""' in signed_out.headers["set-cookie"]
+    client.cookies.set("cvc_session", secret)  # kept anyway: it's revoked
     assert client.get("/api/me").status_code == 401
 
 
@@ -120,13 +137,13 @@ def test_sign_in_never_redirects_off_site(client):
 
 
 def _client_request(verifier: str) -> dict[str, str | int]:
-    return {"port": 51234, "state": "st4te", "challenge": auth.pkce_challenge(verifier), "name": "cvc CLI on LAB-PC"}
+    return {"port": 51234, "state": "st4te", "challenge": auth.pkce_challenge(verifier), "name": "vault CLI on LAB-PC"}
 
 
 def _approve(client: TestClient, params) -> dict[str, list[str]]:
     page = client.get("/auth/client", params=params)
     assert page.status_code == 200, page.text
-    assert "cvc CLI on LAB-PC" in page.text
+    assert "vault CLI on LAB-PC" in page.text
     approval = re.search(r'name="approval" value="([^"]+)"', page.text).group(1)
     form = {**params, "approval": approval}
     redirect = client.post("/auth/client/approve", data=form, follow_redirects=False)
@@ -140,9 +157,9 @@ def test_client_sign_in_handshake(client):
     verifier = secrets.token_urlsafe(48)
     params = _client_request(verifier)
 
-    # Not signed in yet: the browser goes to sign-in first, then comes back.
+    # Not signed in yet: the browser goes to the sign-in page first, then comes back.
     first = client.get("/auth/client", params=params, follow_redirects=False)
-    assert first.headers["location"].startswith("/auth/login?next=%2Fauth%2Fclient%3F")
+    assert first.headers["location"].startswith("/?next=%2Fauth%2Fclient%3F")
 
     client.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN}, follow_redirects=False)
     query = _approve(client, params)
@@ -160,7 +177,7 @@ def test_client_sign_in_handshake(client):
     me = client.get("/api/me", headers=bearer(issued.json()["token"])).json()
     assert me["email"] == BOOTSTRAP_ADMIN
     names = [t["name"] for t in client.get("/api/tokens", headers=bearer(issued.json()["token"])).json()]
-    assert "cvc CLI on LAB-PC" in names
+    assert "vault CLI on LAB-PC" in names
 
 
 def test_client_approval_form_cannot_be_forged(client):
@@ -174,11 +191,11 @@ def production_settings(tmp_path, **overrides) -> Settings:
     values = {
         "env": "production",
         "database_url": f"sqlite:///{tmp_path / 'prod.db'}",
-        "blob_dir": tmp_path / "blobs",
+        "vault_dir": tmp_path / "vault",
         "secret_key": "s" * 40,
         "google_client_id": "id.apps.googleusercontent.com",
         "google_client_secret": "secret",
-        "public_url": "https://cvc.rocketry.test",
+        "public_url": "https://yjsp.rocketry.test",
     }
     return Settings(_env_file=None, **(values | overrides))
 
@@ -191,11 +208,35 @@ def test_production_has_no_dev_sign_in(tmp_path):
 
 @pytest.mark.parametrize(
     "overrides",
-    [{"dev_auth": True}, {"secret_key": "short"}, {"google_client_secret": ""}, {"public_url": "http://cvc.test"}],
+    [{"dev_auth": True}, {"secret_key": "short"}, {"google_client_secret": ""}, {"public_url": "http://yjsp.test"}],
 )
 def test_production_refuses_unsafe_settings(tmp_path, overrides):
     with pytest.raises(RuntimeError):
         create_app(production_settings(tmp_path, **overrides))
+
+
+def test_production_can_offer_georgia_tech_sign_in_alone(tmp_path):
+    gt_only = {"microsoft_client_id": "app-id", "microsoft_client_secret": "secret"}
+    no_google = {"google_client_id": "", "google_client_secret": ""}
+    with TestClient(create_app(production_settings(tmp_path, **gt_only, **no_google))) as prod:
+        page = prod.get("/").text
+        assert "Sign in with Georgia Tech" in page and "Sign in with Google" not in page
+    with pytest.raises(RuntimeError, match="set both YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET"):
+        create_app(production_settings(tmp_path, microsoft_client_id="app-id"))
+    with pytest.raises(RuntimeError, match="set up a sign-in"):
+        create_app(production_settings(tmp_path, **no_google))
+
+
+def test_settings_from_before_yjsp_are_refused(tmp_path):
+    # Read as YJSP_ settings, a .env of CVC_ ones would start a development server on a new, empty database.
+    env_file = tmp_path / ".env"
+    env_file.write_text("YJSP_DEV_AUTH=1\n# CVC_ENV=production, as it was\n")
+    refuse_old_settings({"PATH": "/usr/bin"}, env_file)  # a comment isn't a setting
+    with pytest.raises(RuntimeError, match="rename CVC_PORT"):
+        refuse_old_settings({"CVC_PORT": "8100"}, env_file)
+    env_file.write_text("export CVC_ENV=production\nCVC_BLOB_DIR=/srv/data/blobs\n")
+    with pytest.raises(RuntimeError, match="rename CVC_BLOB_DIR, CVC_ENV .*YJSP_VAULT_DIR"):
+        refuse_old_settings({}, env_file)
 
 
 def test_admins_see_when_people_were_last_on_and_who_is_on_now(app, client, team):

@@ -1,0 +1,227 @@
+"""Accounts and credentials: signing in with Google or a Georgia Tech account, tokens, and the CLI/add-in browser
+sign-in."""
+
+import base64
+import hashlib
+import hmac
+import secrets
+from collections.abc import Mapping
+from datetime import datetime, timedelta
+from typing import Any, Literal
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from .config import Settings
+from .db import utcnow
+from .errors import Forbidden, NotFound
+from .models import ClientAuthCode, SiteSettings, Token, User, UserStatus
+
+SESSION = "session"  # browser cookie
+CLIENT = "client"  # CLI or SolidWorks add-in, sent as "Authorization: Bearer ..."
+CODE_TTL = timedelta(minutes=5)
+# How often a token's last_used_at is refreshed: often enough to tell who's on now (an open page asks every few
+# seconds), without a write for every request.
+_TOUCH_EVERY = timedelta(minutes=1)
+ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
+# Georgia Tech's accounts are Microsoft 365 accounts, in GT's own directory (tenant) in Microsoft Entra, which sends
+# their sign-ins to GT's login page, Duo and all. Signing in with Microsoft lets in only this tenant's people.
+GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
+GT_DOMAIN = "gatech.edu"
+
+
+def _digest(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def whitelist_on(db: Session) -> bool:
+    """Whether new people need an admin's invite or approval to join (Admin > People in the web app)."""
+    return db.get_one(SiteSettings, 1).whitelist
+
+
+def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: str, email_verified: bool) -> User:
+    """Find or create the account for a Google identity.
+
+    Anyone joins at once, unless an admin has turned the whitelist on: then a new
+    account waits for an admin (pending) unless an admin invited the email.
+    Emails in YJSP_BOOTSTRAP_ADMINS are always active admins. A disabled account
+    stays disabled.
+    """
+    if not email_verified:
+        raise Forbidden("Your Google account's email address isn't verified", code="unverified_email")
+    return _sign_in(db, settings, "google_sub", subject, [email.strip().lower()], name, "Google account")
+
+
+def sign_in_microsoft(db: Session, settings: Settings, claims: Mapping[str, Any]) -> User:
+    """Find or create the account for a Georgia Tech account, from the ID token Microsoft signed (whose signature,
+    issuer, audience, and nonce the sign-in has checked).
+
+    Only GT's own people get in: the token must come from GT's tenant, for someone with a GT address. A guest whom GT
+    invited from outside has an outside address. An account is tied to the person's Microsoft object ID, which stays
+    the same even if the app is registered again, and found the first time by any of their GT addresses: their GT
+    username's (gburdell3@gatech.edu), or an alias. The rest is as for Google (sign_in).
+    """
+    addresses = [claims.get("preferred_username"), claims.get("email")]  # the username's first, for new accounts
+    found = [a.strip().lower() for a in addresses if isinstance(a, str)]
+    gt_addresses = list(dict.fromkeys(a for a in found if _gt_address(a)))
+    subject = claims.get("oid")
+    if claims.get("tid") != GT_TENANT or not isinstance(subject, str) or not subject or not gt_addresses:
+        raise Forbidden(
+            f"Only Georgia Tech accounts sign in this way: sign in with your GT username (like gburdell3@{GT_DOMAIN})",
+            code="not_georgia_tech",
+        )
+    name = claims.get("name")
+    return _sign_in(
+        db, settings, "microsoft_oid", subject, gt_addresses, name if isinstance(name, str) else "", "GT account"
+    )
+
+
+def _gt_address(address: str) -> bool:
+    _, at, domain = address.rpartition("@")
+    return bool(at) and (domain == GT_DOMAIN or domain.endswith("." + GT_DOMAIN))
+
+
+def _sign_in(
+    db: Session,
+    settings: Settings,
+    identity: Literal["google_sub", "microsoft_oid"],
+    subject: str,
+    addresses: list[str],
+    name: str,
+    kind: str,
+) -> User:
+    """The account for an identity a sign-in vouched for, made if need be, with the approval rules of sign_in.
+
+    It's found by the identity, or else by the first of its addresses that has an account (an invite, say, or the
+    same person's account from another sign-in), which the identity is tied to from then on.
+    """
+    column = getattr(User, identity)
+    user = db.scalar(select(User).where(column == subject))
+    if user is None:
+        for address in addresses:
+            if (user := db.scalar(select(User).where(User.email == address))) is not None:
+                break
+        if user is not None and getattr(user, identity) not in (None, subject):
+            raise Forbidden(f"{user.email} belongs to a different {kind}", code="identity_mismatch")
+    if user is None:
+        user = User(email=addresses[0], name=name.strip(), status=UserStatus.PENDING)
+        db.add(user)
+    setattr(user, identity, subject)
+    user.name = user.name or name.strip()
+    if not settings.admin_emails.isdisjoint(addresses):
+        user.status, user.is_admin = UserStatus.ACTIVE, True
+    elif user.status == UserStatus.INVITED or (user.status == UserStatus.PENDING and not whitelist_on(db)):
+        user.status = UserStatus.ACTIVE
+    user.last_login_at = utcnow()
+    db.commit()
+    return user
+
+
+def issue_token(db: Session, user: User, *, kind: str, name: str, ttl: timedelta | None = None) -> str:
+    """A new secret for the user. Only its hash is stored, so it can't be shown again."""
+    secret = "yjsp_" + secrets.token_urlsafe(32)
+    now = utcnow()
+    db.add(
+        Token(
+            user_id=user.id,
+            kind=kind,
+            name=name[:200],
+            token_hash=_digest(secret),
+            created_at=now,
+            expires_at=now + ttl if ttl else None,
+        )
+    )
+    db.commit()
+    return secret
+
+
+def authenticate(db: Session, secret: str) -> User | None:
+    """The user a token belongs to, if the token is valid. Account status is the caller's check."""
+    token = db.scalar(select(Token).where(Token.token_hash == _digest(secret)))
+    now = utcnow()
+    if token is None or token.revoked_at is not None or (token.expires_at is not None and token.expires_at <= now):
+        return None
+    if token.last_used_at is None or now - token.last_used_at > _TOUCH_EVERY:
+        token.last_used_at = now
+        db.commit()
+    return db.get(User, token.user_id)
+
+
+def active_now(last_active: datetime | None) -> bool:
+    """Whether someone last active then is using the site now: a page open, the add-in, or the CLI."""
+    return last_active is not None and utcnow() - last_active <= ACTIVE_NOW
+
+
+def revoke_secret(db: Session, secret: str) -> None:
+    db.execute(
+        update(Token).where(Token.token_hash == _digest(secret), Token.revoked_at.is_(None)).values(revoked_at=utcnow())
+    )
+    db.commit()
+
+
+def list_tokens(db: Session, user: User) -> list[Token]:
+    """The user's signed-in browsers and clients that are still valid."""
+    now = utcnow()
+    tokens = db.scalars(
+        select(Token).where(Token.user_id == user.id, Token.revoked_at.is_(None)).order_by(Token.id.desc())
+    )
+    return [t for t in tokens if t.expires_at is None or t.expires_at > now]
+
+
+def revoke_token(db: Session, user: User, token_id: int) -> None:
+    token = db.get(Token, token_id)
+    if token is None or token.user_id != user.id:
+        raise NotFound(f"Token {token_id} not found")
+    token.revoked_at = token.revoked_at or utcnow()
+    db.commit()
+
+
+# --- CLI / add-in sign-in -----------------------------------------------------------------
+#
+# Like OAuth for native apps (RFC 8252 + PKCE): the client listens on
+# 127.0.0.1:<port>, opens /auth/client in the browser with a PKCE challenge, the
+# person confirms, the browser is redirected to the client with a one-time code,
+# and the client trades the code plus its PKCE verifier for a token.
+
+
+def pkce_challenge(verifier: str) -> str:
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def create_client_code(db: Session, user: User, *, challenge: str, name: str) -> str:
+    code = secrets.token_urlsafe(32)
+    now = utcnow()
+    db.add(
+        ClientAuthCode(
+            code_hash=_digest(code),
+            user_id=user.id,
+            challenge=challenge,
+            name=name[:200],
+            created_at=now,
+            expires_at=now + CODE_TTL,
+        )
+    )
+    db.commit()
+    return code
+
+
+def redeem_client_code(db: Session, code: str, verifier: str) -> tuple[str, User]:
+    """Trade a one-time code and its PKCE verifier for a client token."""
+    row = db.scalar(select(ClientAuthCode).where(ClientAuthCode.code_hash == _digest(code)))
+    now = utcnow()
+    if row is None or row.used_at is not None or row.expires_at <= now:
+        raise Forbidden("This sign-in has expired; sign in again from the client", code="invalid_code")
+    # Burn the code first, so a wrong verifier can't be retried.
+    claimed = db.execute(
+        update(ClientAuthCode)
+        .where(ClientAuthCode.id == row.id, ClientAuthCode.used_at.is_(None))
+        .values(used_at=now)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    db.commit()
+    if claimed != 1 or not hmac.compare_digest(pkce_challenge(verifier), row.challenge):
+        raise Forbidden("Sign-in verification failed; sign in again from the client", code="invalid_code")
+    user = db.get(User, row.user_id)
+    if user is None or user.status != UserStatus.ACTIVE:
+        raise Forbidden("Your account isn't active", code="pending_approval")
+    return issue_token(db, user, kind=CLIENT, name=row.name), user

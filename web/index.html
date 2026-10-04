@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="color-scheme" content="light dark" />
         <meta name="theme-color" content="#08111f" />
-        <!-- Vault's mark (VaultMark in src/components.tsx) on the top bar's navy. -->
+        <!-- Vault's mark (VaultMark in src/vault/components.tsx) on the top bar's navy. -->
         <link
             rel="icon"
             href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1b33'/%3E%3Cg fill='none' stroke='%23fff'%3E%3Cpolygon points='54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 41.2,9.8 54.2,22.8' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='12.5' stroke-width='3'/%3E%3Cpath d='M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8' stroke-width='3'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Ccircle cx='32' cy='32' r='4.5'/%3E%3Ccircle cx='32' cy='14.5' r='2.8'/%3E%3Ccircle cx='16.8' cy='40.8' r='2.8'/%3E%3Ccircle cx='47.2' cy='40.8' r='2.8'/%3E%3C/g%3E%3Cpath d='M4 57Q42 52 60 5Q36 45 4 57Z' fill='%23e0a500' stroke='%230b1b33' stroke-width='2.5' paint-order='stroke'/%3E%3C/svg%3E"
@@ -14,7 +14,7 @@
         <script>
             // The theme chosen in the account menu (src/theme.ts), set before the page draws so it never flashes.
             try {
-                var theme = localStorage.getItem("vault.theme");
+                var theme = localStorage.getItem("yjsp.theme");
                 if (theme === "light" || theme === "dark") {
                     document.documentElement.dataset.theme = theme;
                 }

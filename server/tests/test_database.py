@@ -8,10 +8,10 @@ from alembic.migration import MigrationContext
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from cvc_server import vault
-from cvc_server.db import Base, make_engine, migrate
-from cvc_server.errors import Conflict
-from cvc_server.models import User
+from yjsp_server.db import Base, make_engine, migrate
+from yjsp_server.errors import Conflict
+from yjsp_server.models import User
+from yjsp_server.vault import vault
 
 
 def test_migrations_match_models(tmp_path):
@@ -115,6 +115,37 @@ def test_upgrades_keep_views(tmp_path):
             "[3]",
             '{"panels": []}',
         )
+
+
+def test_upgrades_keep_accounts(tmp_path):
+    """Accounts got a Georgia Tech identity: those from before, and what points at them, are as they were."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0007")
+    when = "'2026-09-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, google_sub, status, is_admin, created_at) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'google-chief', 'active', 1, {when}), "
+            f"(2, 'alice@x.test', 'Alice', 'google-alice', 'active', 0, {when})"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO tokens (id, user_id, kind, name, token_hash, created_at) "
+            f"VALUES (1, 2, 'client', 'vault CLI', 'ab', {when})"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT email, google_sub, microsoft_oid FROM users ORDER BY id").all() == [
+            ("chief@x.test", "google-chief", None),
+            ("alice@x.test", "google-alice", None),
+        ]
+        assert db.exec_driver_sql("SELECT u.email FROM tokens t JOIN users u ON u.id = t.user_id").scalar() == (
+            "alice@x.test"
+        )
+    with engine.begin() as db:  # one account per Georgia Tech account
+        db.exec_driver_sql("UPDATE users SET microsoft_oid = 'oid-1' WHERE id = 1")
+    with pytest.raises(IntegrityError), engine.begin() as db:
+        db.exec_driver_sql("UPDATE users SET microsoft_oid = 'oid-1' WHERE id = 2")
 
 
 def test_concurrent_checkouts_have_one_winner(app, team):

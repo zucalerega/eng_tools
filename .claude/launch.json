@@ -2,21 +2,20 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "cvc-server",
-      "runtimeExecutable": "env",
+      "name": "yjsp-server",
+      "runtimeExecutable": "uv",
       "runtimeArgs": [
-        "CVC_DEV_AUTH=1",
-        "CVC_BOOTSTRAP_ADMINS=dev@cvc.test",
-        "uv",
         "run",
         "--directory",
         "server",
-        "cvc-server"
+        "python",
+        "-c",
+        "import os; os.environ.update(YJSP_DEV_AUTH='1', YJSP_BOOTSTRAP_ADMINS='dev@yjsp.test'); from yjsp_server.__main__ import main; main()"
       ],
       "port": 8000
     },
     {
-      "name": "cvc-web",
+      "name": "yjsp-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "web", "run", "dev", "--", "--port", "5173", "--strictPort"],
       "port": 5173

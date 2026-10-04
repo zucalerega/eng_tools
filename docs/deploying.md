@@ -14,9 +14,16 @@ before you deploy, and keep to the [rules](#rules) at the end.
   VM (Tailscale machine `lucazerega`, key expiry off) serves
   https://lucazerega.tail07089c.ts.net and passes it to the server on `127.0.0.1:8100`. Nothing
   else on the VM is reachable from the internet.
+- **Georgia Tech sign-in:** the app registered in Microsoft Entra (for many tenants,
+  limited to GT's) has the Web redirect URI
+  `https://lucazerega.tail07089c.ts.net/auth/microsoft/callback`, and
+  `http://localhost:8000/auth/microsoft/callback` for trying it on a laptop. Its client
+  secret lasts two years at most: make a new one in Entra before it runs out, and put it
+  in `.env`.
 - **Google sign-in:** the OAuth client in Google Cloud Console has the redirect URI
-  `https://lucazerega.tail07089c.ts.net/auth/callback`. If the address ever changes,
-  change it there and in `YJSP_PUBLIC_URL`.
+  `https://lucazerega.tail07089c.ts.net/auth/callback`.
+
+If the address ever changes, change both redirect URIs and `YJSP_PUBLIC_URL`.
 
 On the server:
 
@@ -52,7 +59,9 @@ YJSP_YORG_DIR=/srv/yjsp/data/yorg
 YJSP_DOWNLOADS_DIR=/srv/yjsp/downloads
 YJSP_WEB_DIR=/opt/yjsp/app/web/dist
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
-# YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS.
+# YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
+# YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
+# them the site offers Google's alone).
 ```
 
 ## Getting access
@@ -217,8 +226,9 @@ If the VM is ever lost or moved:
    (`sudo env UV_PYTHON_INSTALL_DIR=/opt/yjsp/python uv python install 3.13`).
 2. A system user `yjsp`; `/srv/yjsp` (with `data/`, `downloads/`, `backups/`) owned by it;
    `/opt/yjsp/app` with `server/` and `web/`.
-3. `/srv/yjsp/.env` with the settings above, a new `YJSP_SECRET_KEY`, the Google OAuth
-   client, and `YJSP_BOOTSTRAP_ADMINS`; `chmod 600`, owned by `yjsp`.
+3. `/srv/yjsp/.env` with the settings above, a new `YJSP_SECRET_KEY`, the Georgia Tech
+   (Microsoft) and Google sign-ins, and `YJSP_BOOTSTRAP_ADMINS`; `chmod 600`, owned by
+   `yjsp`.
 4. The files in [`deploy/`](../deploy): the units in `/etc/systemd/system/`, `yjsp-backup`
    in `/usr/local/sbin/` (executable). Then
    `sudo systemctl enable yjsp.service yjsp-backup.timer`.
@@ -226,8 +236,9 @@ If the VM is ever lost or moved:
    `web/dist` in by hand, run the `uv sync` line from `deploy/deploy.sh` there, and start the
    service. From then on, `deploy/deploy.sh` does it.
 6. Tailscale on the VM: `sudo tailscale up`, turn key expiry off for the machine in the
-   Tailscale admin console, and `sudo tailscale funnel --bg 8100`. Then point Google's
-   redirect URI and `YJSP_PUBLIC_URL` at the new address.
+   Tailscale admin console, and `sudo tailscale funnel --bg 8100`. Then point the
+   sign-ins' redirect URIs (Microsoft's and Google's) and `YJSP_PUBLIC_URL` at the new
+   address.
 7. Copy the data over (`/srv/yjsp/data`, and `downloads/`) with the service stopped on both
    machines.
 

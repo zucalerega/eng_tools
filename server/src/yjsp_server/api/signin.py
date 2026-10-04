@@ -1,4 +1,5 @@
-"""Sign-in pages: Google for people, a browser handshake for the CLI/add-in, dev shortcuts.
+"""Sign-in pages: Georgia Tech accounts (through Microsoft) and Google for people, a browser handshake for the
+CLI/add-in, dev shortcuts.
 
 The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
@@ -6,10 +7,10 @@ The home page is where people sign in; once they're signed in and approved, it's
 import html
 import re
 from datetime import timedelta
-from typing import Annotated
+from typing import Annotated, Any, Literal, NamedTuple
 from urllib.parse import quote, urlencode
 
-from authlib.integrations.starlette_client import OAuth, OAuthError
+from authlib.integrations.starlette_client import OAuth, OAuthError, StarletteOAuth2App
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from itsdangerous import BadSignature, URLSafeTimedSerializer
@@ -26,20 +27,62 @@ from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 router = APIRouter(tags=["sign-in"])
 _CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43}")
 NextPath = Annotated[str, Query(alias="next")]
+Provider = Literal["google", "microsoft"]
+
+
+class _SignIn(NamedTuple):
+    label: str  # "Sign in with ..."
+    start: str
+    callback: str  # as registered with the provider: {public_url}{callback}
+
+
+# The ways to sign in, in the order the sign-in page offers them.
+_SIGN_INS: dict[Provider, _SignIn] = {
+    "microsoft": _SignIn("Georgia Tech", "/auth/microsoft/login", "/auth/microsoft/callback"),
+    "google": _SignIn("Google", "/auth/login", "/auth/callback"),
+}
 
 
 def make_oauth(settings: Settings) -> OAuth | None:
-    if not settings.google_client_id:
+    """The ways to sign in this server has set up: Google, Georgia Tech accounts (through Microsoft), or both."""
+    if not (settings.google_client_id or settings.microsoft_client_id):
         return None
     oauth = OAuth()
-    oauth.register(
-        "google",
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-    )
+    if settings.google_client_id:
+        oauth.register(
+            "google",
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+    if settings.microsoft_client_id:
+        # GT's tenant's own endpoints: only its accounts can sign in there, and each ID token's issuer must be GT's
+        # (authlib checks it against this one). auth.sign_in_microsoft checks the rest.
+        gt = f"https://login.microsoftonline.com/{auth.GT_TENANT}"
+        oauth.register(
+            "microsoft",
+            client_id=settings.microsoft_client_id,
+            client_secret=settings.microsoft_client_secret,
+            authorize_url=f"{gt}/oauth2/v2.0/authorize",
+            # Straight on to GT's login page, without Microsoft first asking which account.
+            authorize_params={"domain_hint": auth.GT_DOMAIN},
+            access_token_url=f"{gt}/oauth2/v2.0/token",
+            issuer=f"{gt}/v2.0",
+            jwks_uri=f"{gt}/discovery/v2.0/keys",
+            client_kwargs={
+                "scope": "openid email profile",
+                "code_challenge_method": "S256",
+                "token_endpoint_auth_method": "client_secret_post",
+            },
+        )
     return oauth
+
+
+def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
+    """That way to sign in, if this server has it set up."""
+    oauth: OAuth | None = request.app.state.oauth
+    return None if oauth is None else oauth.create_client(name)
 
 
 def _esc(value: object) -> str:
@@ -141,8 +184,9 @@ def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
     )
 
 
-# Where to come back to goes through Google's round trip in the session cookie, which browsers cap at 4 KB with the
-# sign-in's own state in it too: a longer one (a link with many of Yorg's plots in its query) comes back to its page.
+# Where to come back to goes through Google's or Microsoft's round trip in the session cookie, which browsers cap at
+# 4 KB with the sign-in's own state in it too: a longer one (a link with many of Yorg's plots in its query) comes back
+# to its page.
 MOST_NEXT = 2000
 
 
@@ -184,13 +228,19 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
             "history, and Yorg, the test data, plotted.</p>"
         ]
-        if request.app.state.oauth is not None:
+        offered = [_SIGN_INS[name] for name in _SIGN_INS if _provider(request, name) is not None]
+        if offered:
             query = urlencode({"next": _safe_next(next_path)})
-            parts.append(f'<a class="button" href="/auth/login?{query}">Sign in with Google</a>')
+            buttons = "".join(
+                f'<a class="button{" secondary" if i else ""}" href="{way.start}?{query}">Sign in with {way.label}</a>'
+                for i, way in enumerate(offered)
+            )
+            parts.append(f'<div class="choices">{buttons}</div>')
             if auth.whitelist_on(db):
                 parts.append('<p class="fine">First time here? Sign in, and an admin will approve your account.</p>')
             else:
-                parts.append('<p class="fine">First time here? Sign in with your Google account to join.</p>')
+                accounts = " or ".join(way.label for way in offered)
+                parts.append(f'<p class="fine">First time here? Sign in with your {accounts} account to join.</p>')
         if settings.dev_auth and not settings.production:
             parts.append(
                 '<form class="dev" method="get" action="/auth/dev-login"><p>Development sign-in, with any email</p>'
@@ -217,27 +267,39 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
     return _page("Waiting for approval" if user.status == UserStatus.PENDING else SITE, body)
 
 
-@router.get("/auth/login", include_in_schema=False)
-async def login(request: Request, settings: Config, next_path: NextPath = "/"):
-    oauth = request.app.state.oauth
-    if oauth is None:
+async def _start_sign_in(request: Request, settings: Settings, name: Provider, next_path: str) -> Response:
+    """Off to Google or Microsoft, to come back to the callback, and then to next_path."""
+    provider = _provider(request, name)
+    if provider is None:
         if settings.dev_auth and not settings.production:
             return RedirectResponse("/?" + urlencode({"next": _safe_next(next_path)}), status_code=303)
-        raise ApiError("Google sign-in isn't set up on this server", code="signin_unavailable")
+        raise ApiError(f"{_SIGN_INS[name].label} sign-in isn't set up on this server", code="signin_unavailable")
     request.session["next"] = _safe_next(next_path)
-    return await oauth.google.authorize_redirect(request, f"{settings.public_url.rstrip('/')}/auth/callback")
+    return await provider.authorize_redirect(request, settings.public_url.rstrip("/") + _SIGN_INS[name].callback)
+
+
+async def _signed_in_as(request: Request, name: Provider) -> dict[str, Any]:
+    """The claims of the ID token Google or Microsoft sent back, once authlib has checked its signature, issuer,
+    audience, and nonce."""
+    provider = _provider(request, name)
+    if provider is None:
+        raise NotFound("Not found")
+    try:
+        token = await provider.authorize_access_token(request)
+    except OAuthError as exc:
+        message = f"{_SIGN_INS[name].label} sign-in failed: {exc.description or exc.error}"
+        raise Forbidden(message, code="signin_failed") from exc
+    return dict(token.get("userinfo") or {})
+
+
+@router.get("/auth/login", include_in_schema=False)
+async def login(request: Request, settings: Config, next_path: NextPath = "/") -> Response:
+    return await _start_sign_in(request, settings, "google", next_path)
 
 
 @router.get("/auth/callback", include_in_schema=False)
 async def callback(request: Request, db: DB, settings: Config) -> RedirectResponse:
-    oauth = request.app.state.oauth
-    if oauth is None:
-        raise NotFound("Not found")
-    try:
-        token = await oauth.google.authorize_access_token(request)
-    except OAuthError as exc:
-        raise Forbidden(f"Google sign-in failed: {exc.description or exc.error}", code="signin_failed") from exc
-    info = token.get("userinfo") or {}
+    info = await _signed_in_as(request, "google")
     user = auth.sign_in(
         db,
         settings,
@@ -246,6 +308,17 @@ async def callback(request: Request, db: DB, settings: Config) -> RedirectRespon
         name=info.get("name", ""),
         email_verified=bool(info.get("email_verified")),
     )
+    return _start_session(request, db, settings, user, request.session.pop("next", "/"))
+
+
+@router.get("/auth/microsoft/login", include_in_schema=False)
+async def microsoft_login(request: Request, settings: Config, next_path: NextPath = "/") -> Response:
+    return await _start_sign_in(request, settings, "microsoft", next_path)
+
+
+@router.get("/auth/microsoft/callback", include_in_schema=False)
+async def microsoft_callback(request: Request, db: DB, settings: Config) -> RedirectResponse:
+    user = auth.sign_in_microsoft(db, settings, await _signed_in_as(request, "microsoft"))
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -282,9 +355,9 @@ def client_start(
     """The page a client opens in the browser: sign in if needed, then confirm."""
     _check_client_request(port, state, challenge)
     user = session_user(request, db)
-    if user is None:
+    if user is None:  # to the sign-in page, which offers each way to sign in, and back here
         here = f"{request.url.path}?{request.url.query}"
-        return RedirectResponse("/auth/login?" + urlencode({"next": here}), status_code=303)
+        return RedirectResponse("/?" + urlencode({"next": here}), status_code=303)
     if user.status != UserStatus.ACTIVE:
         return _page(
             "Waiting for approval",

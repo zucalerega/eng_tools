@@ -20,14 +20,19 @@ class Settings(BaseSettings):
     env: Literal["development", "production"] = "development"
     host: str = "127.0.0.1"
     port: int = 8000
-    # Where people reach the site; Google redirects back to {public_url}/auth/callback.
+    # Where people reach the site; Google redirects back to {public_url}/auth/callback, and Microsoft to
+    # {public_url}/auth/microsoft/callback.
     public_url: str = "http://localhost:8000"
     # One database for the site: its accounts, Vault's tables, and Yorg's.
     database_url: str = "sqlite:///data/yjsp.db"
-    # Signs the Google sign-in state cookie and the client sign-in confirmation form.
+    # Signs the sign-in state cookie and the client sign-in confirmation form.
     secret_key: str = DEV_SECRET
     google_client_id: str = ""
     google_client_secret: str = ""
+    # Sign-in with Georgia Tech accounts, which are Microsoft 365 accounts: an app registered in Microsoft Entra
+    # (docs/design.md, "Deploying"). Only GT's accounts can use it (auth.sign_in_microsoft).
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
     # Comma-separated emails that become active admins when they sign in.
     bootstrap_admins: str = ""
     # /auth/dev-login and /auth/dev-token: sign in as any email, for local testing only.
@@ -53,7 +58,7 @@ class Settings(BaseSettings):
         return {e.strip().lower() for e in self.bootstrap_admins.split(",") if e.strip()}
 
     def check(self) -> None:
-        """Refuse to run production with development shortcuts or without Google sign-in."""
+        """Refuse to run production with development shortcuts or without a way to sign in."""
         if not self.production:
             return
         problems = []
@@ -61,8 +66,18 @@ class Settings(BaseSettings):
             problems.append("set YJSP_SECRET_KEY to a random string of at least 32 characters")
         if self.dev_auth:
             problems.append("turn off YJSP_DEV_AUTH")
-        if not (self.google_client_id and self.google_client_secret):
-            problems.append("set YJSP_GOOGLE_CLIENT_ID and YJSP_GOOGLE_CLIENT_SECRET")
+        sign_ins = {
+            "GOOGLE": (self.google_client_id, self.google_client_secret),
+            "MICROSOFT": (self.microsoft_client_id, self.microsoft_client_secret),
+        }
+        if not any(all(pair) for pair in sign_ins.values()):
+            problems.append(
+                "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech accounts), "
+                "or YJSP_GOOGLE_CLIENT_ID and YJSP_GOOGLE_CLIENT_SECRET"
+            )
+        for name, pair in sign_ins.items():
+            if any(pair) and not all(pair):
+                problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
         if problems:

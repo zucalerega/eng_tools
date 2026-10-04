@@ -157,9 +157,9 @@ def test_client_sign_in_handshake(client):
     verifier = secrets.token_urlsafe(48)
     params = _client_request(verifier)
 
-    # Not signed in yet: the browser goes to sign-in first, then comes back.
+    # Not signed in yet: the browser goes to the sign-in page first, then comes back.
     first = client.get("/auth/client", params=params, follow_redirects=False)
-    assert first.headers["location"].startswith("/auth/login?next=%2Fauth%2Fclient%3F")
+    assert first.headers["location"].startswith("/?next=%2Fauth%2Fclient%3F")
 
     client.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN}, follow_redirects=False)
     query = _approve(client, params)
@@ -213,6 +213,18 @@ def test_production_has_no_dev_sign_in(tmp_path):
 def test_production_refuses_unsafe_settings(tmp_path, overrides):
     with pytest.raises(RuntimeError):
         create_app(production_settings(tmp_path, **overrides))
+
+
+def test_production_can_offer_georgia_tech_sign_in_alone(tmp_path):
+    gt_only = {"microsoft_client_id": "app-id", "microsoft_client_secret": "secret"}
+    no_google = {"google_client_id": "", "google_client_secret": ""}
+    with TestClient(create_app(production_settings(tmp_path, **gt_only, **no_google))) as prod:
+        page = prod.get("/").text
+        assert "Sign in with Georgia Tech" in page and "Sign in with Google" not in page
+    with pytest.raises(RuntimeError, match="set both YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET"):
+        create_app(production_settings(tmp_path, microsoft_client_id="app-id"))
+    with pytest.raises(RuntimeError, match="set up a sign-in"):
+        create_app(production_settings(tmp_path, **no_google))
 
 
 def test_settings_from_before_yjsp_are_refused(tmp_path):

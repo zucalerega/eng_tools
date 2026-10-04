@@ -24,6 +24,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # A Georgia Tech account's object ID in GT's Microsoft tenant (auth.sign_in_microsoft). A unique index rather than
+    # a constraint, so SQLite adds it in place instead of copying the table everything points at.
+    microsoft_oid: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     status: Mapped[UserStatus] = mapped_column(enum_column(UserStatus), default=UserStatus.PENDING)
     is_admin: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -75,5 +78,5 @@ class SiteSettings(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # On: only people an admin invited join; anyone else who signs in waits for an admin to approve them.
-    # Off: anyone who signs in with Google joins at once (auth.sign_in).
+    # Off: anyone who signs in joins at once (auth.sign_in).
     whitelist: Mapped[bool] = mapped_column(default=False)

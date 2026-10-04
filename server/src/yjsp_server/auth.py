@@ -1,10 +1,13 @@
-"""Accounts and credentials: Google sign-in, tokens, and the CLI/add-in browser sign-in."""
+"""Accounts and credentials: signing in with Google or a Georgia Tech account, tokens, and the CLI/add-in browser
+sign-in."""
 
 import base64
 import hashlib
 import hmac
 import secrets
+from collections.abc import Mapping
 from datetime import datetime, timedelta
+from typing import Any, Literal
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -21,6 +24,10 @@ CODE_TTL = timedelta(minutes=5)
 # seconds), without a write for every request.
 _TOUCH_EVERY = timedelta(minutes=1)
 ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
+# Georgia Tech's accounts are Microsoft 365 accounts, in GT's own directory (tenant) in Microsoft Entra, which sends
+# their sign-ins to GT's login page, Duo and all. Signing in with Microsoft lets in only this tenant's people.
+GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
+GT_DOMAIN = "gatech.edu"
 
 
 def _digest(secret: str) -> str:
@@ -42,18 +49,66 @@ def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: 
     """
     if not email_verified:
         raise Forbidden("Your Google account's email address isn't verified", code="unverified_email")
-    email = email.strip().lower()
-    user = db.scalar(select(User).where(User.google_sub == subject))
+    return _sign_in(db, settings, "google_sub", subject, [email.strip().lower()], name, "Google account")
+
+
+def sign_in_microsoft(db: Session, settings: Settings, claims: Mapping[str, Any]) -> User:
+    """Find or create the account for a Georgia Tech account, from the ID token Microsoft signed (whose signature,
+    issuer, audience, and nonce the sign-in has checked).
+
+    Only GT's own people get in: the token must come from GT's tenant, for someone with a GT address. A guest whom GT
+    invited from outside has an outside address. An account is tied to the person's Microsoft object ID, which stays
+    the same even if the app is registered again, and found the first time by any of their GT addresses: their GT
+    username's (gburdell3@gatech.edu), or an alias. The rest is as for Google (sign_in).
+    """
+    addresses = [claims.get("preferred_username"), claims.get("email")]  # the username's first, for new accounts
+    found = [a.strip().lower() for a in addresses if isinstance(a, str)]
+    gt_addresses = list(dict.fromkeys(a for a in found if _gt_address(a)))
+    subject = claims.get("oid")
+    if claims.get("tid") != GT_TENANT or not isinstance(subject, str) or not subject or not gt_addresses:
+        raise Forbidden(
+            f"Only Georgia Tech accounts sign in this way: sign in with your GT username (like gburdell3@{GT_DOMAIN})",
+            code="not_georgia_tech",
+        )
+    name = claims.get("name")
+    return _sign_in(
+        db, settings, "microsoft_oid", subject, gt_addresses, name if isinstance(name, str) else "", "GT account"
+    )
+
+
+def _gt_address(address: str) -> bool:
+    _, at, domain = address.rpartition("@")
+    return bool(at) and (domain == GT_DOMAIN or domain.endswith("." + GT_DOMAIN))
+
+
+def _sign_in(
+    db: Session,
+    settings: Settings,
+    identity: Literal["google_sub", "microsoft_oid"],
+    subject: str,
+    addresses: list[str],
+    name: str,
+    kind: str,
+) -> User:
+    """The account for an identity a sign-in vouched for, made if need be, with the approval rules of sign_in.
+
+    It's found by the identity, or else by the first of its addresses that has an account (an invite, say, or the
+    same person's account from another sign-in), which the identity is tied to from then on.
+    """
+    column = getattr(User, identity)
+    user = db.scalar(select(User).where(column == subject))
     if user is None:
-        user = db.scalar(select(User).where(User.email == email))
-        if user is not None and user.google_sub not in (None, subject):
-            raise Forbidden(f"{email} belongs to a different Google account", code="identity_mismatch")
+        for address in addresses:
+            if (user := db.scalar(select(User).where(User.email == address))) is not None:
+                break
+        if user is not None and getattr(user, identity) not in (None, subject):
+            raise Forbidden(f"{user.email} belongs to a different {kind}", code="identity_mismatch")
     if user is None:
-        user = User(email=email, name=name.strip(), status=UserStatus.PENDING)
+        user = User(email=addresses[0], name=name.strip(), status=UserStatus.PENDING)
         db.add(user)
-    user.google_sub = subject
+    setattr(user, identity, subject)
     user.name = user.name or name.strip()
-    if email in settings.admin_emails:
+    if not settings.admin_emails.isdisjoint(addresses):
         user.status, user.is_admin = UserStatus.ACTIVE, True
     elif user.status == UserStatus.INVITED or (user.status == UserStatus.PENDING and not whitelist_on(db)):
         user.status = UserStatus.ACTIVE

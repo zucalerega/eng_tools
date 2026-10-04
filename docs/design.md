@@ -18,7 +18,8 @@ its own: [vault.md](vault.md) and [yorg.md](yorg.md).
   can install Vault's add-in, the main way people use Vault.
 - The server, the web app, and the CLI build and test on Windows, macOS, and Linux. The
   add-in only runs inside SolidWorks 2025 on Windows, where it's tested by hand.
-- People sign in with Google (decided September 2026).
+- People sign in with Google (decided September 2026), or with their Georgia Tech accounts
+  (added October 2026).
 
 ## Architecture
 
@@ -77,29 +78,44 @@ copy of them needs to keep old versions too.
 
 ## Sign-in and accounts
 
-- **People** sign in with Google, and anyone who does joins at once (decided September
-  2026, for now), unless an admin has turned on the *whitelist* (Admin > People in the web
-  app, `site_settings`). With it on, a first sign-in creates a *pending* account that an
-  admin approves, unless an admin invited that email beforehand. Emails listed in
-  `YJSP_BOOTSTRAP_ADMINS` are always active admins, and a disabled account stays disabled
-  however it signs in. Turning the whitelist off approves everyone waiting, since they
-  could sign in again to join; turning it on changes no one who already has an account.
-  While it's off, anyone with a Google account gets Yorg and what Vault grants *everyone*.
+- **People** sign in with a Georgia Tech account or with Google, and anyone who does joins
+  at once (decided September 2026, for now), unless an admin has turned on the *whitelist*
+  (Admin > People in the web app, `site_settings`). With it on, a first sign-in creates a
+  *pending* account that an admin approves, unless an admin invited that email beforehand.
+  Emails listed in `YJSP_BOOTSTRAP_ADMINS` are always active admins, and a disabled account
+  stays disabled however it signs in. Turning the whitelist off approves everyone waiting,
+  since they could sign in again to join; turning it on changes no one who already has an
+  account. While it's off, anyone with a GT or Google account gets Yorg and what Vault
+  grants *everyone*.
+- **Georgia Tech accounts** are Microsoft 365 accounts, in GT's tenant in Microsoft Entra,
+  which sends their sign-ins on to GT's own login page, Duo and all. The server signs in
+  through an app registered in Entra, at GT's tenant's endpoints, and lets in only GT's
+  people (`auth.sign_in_microsoft`): the ID token must be signed by Microsoft and issued for
+  GT's tenant, and for someone with a GT address (`gatech.edu`), which guests GT invited from
+  outside don't have. The app is registered outside GT, for many tenants but limited to
+  GT's, so the team keeps it without needing GT's IT. An account is tied to the person's
+  Microsoft object ID (`microsoft_oid`), as to a Google account (`google_sub`), and found
+  the first time by their GT addresses: their username's (`gburdell3@gatech.edu`), which a
+  new account is named by, or an alias. So people are invited by their GT address. An
+  account made with Google under another address isn't found: its owner keeps signing in
+  with Google until admins can change an account's email.
 - **Who's on:** a token notes when it was last used, at most once a minute (not a write per
   request), so Admin > People shows when each person was last on (their last sign-in, or
   the last use of a session or a client: the web app, the add-in, the CLI) and who's on
   now (within two minutes: an open page asks who you are every minute, `session.ts`). Only
   admins see it (`people.last_active`); the list others get for granting access doesn't
   say.
-- **Names:** an account's name is Google's at its first sign-in, and anyone can change
-  their own (the account menu, `people.rename_self`); signing in again keeps it.
+- **Names:** an account's name is the one GT or Google gives at its first sign-in, and
+  anyone can change their own (the account menu, `people.rename_self`); signing in again
+  keeps it.
 - **The browser** keeps an HttpOnly session cookie. Requests that change something
   must also send an `X-YJSP-Request` header, which cross-site pages can't add
   (CSRF protection). A page opened before signing in is where signing in comes back to,
   with its query (a link to Yorg's plots holds them there), and only paths on the site
-  (`_safe_next`). Google's round trip keeps that in the session cookie, which browsers cap
-  at 4 KB, so one longer than 2,000 characters comes back to its page without its query.
-  The sign-in pages are the site's: the YJSP name, with both apps' marks.
+  (`_safe_next`). The round trip to Microsoft or Google keeps that in the session cookie,
+  which browsers cap at 4 KB, so one longer than 2,000 characters comes back to its page
+  without its query. The sign-in pages are the site's: the YJSP name, with both apps'
+  marks, and Georgia Tech's sign-in first.
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
      challenge.
@@ -110,7 +126,8 @@ copy of them needs to keep old versions too.
      revoked (`GET/DELETE /api/tokens`), and the server stores only their hashes.
 - **Local development:** `YJSP_DEV_AUTH=1` enables `/auth/dev-login` and
   `/auth/dev-token`, which sign in as any email. The server refuses to start in
-  production with this on, or without Google configured.
+  production with this on, or without a way to sign in (Georgia Tech's, Google's, or
+  both) configured.
 
 ## The web app
 
@@ -197,13 +214,22 @@ user, has a health check, and keeps its database and files on a `/data` volume.
 CI builds and smoke-tests the image on every change, and publishes it to
 `ghcr.io/<owner>/yjsp-server:<tag>` for version tags. Setup, wherever it runs:
 
-1. In Google Cloud Console, create an OAuth client of type *Web application* with
-   the redirect URI `https://<your site's address>/auth/callback`. Sign-in only asks
-   for `openid email profile`, so Google doesn't need to verify the app.
+1. Set up sign-in, either or both. Each only asks for `openid email profile`.
+   - Georgia Tech accounts: in Microsoft Entra (the admin center, on a directory the team
+     keeps, not GT's), register an app for *Multiple Entra ID tenants*, with *Allow only
+     certain tenants* set to `gatech.edu`, and the *Web* redirect URI
+     `https://<your site's address>/auth/microsoft/callback`. Make it a client secret
+     (Certificates & secrets). A secret lasts two years at most: note when it runs out.
+     If GT's IT requires approving apps, their approval is needed once, before anyone
+     can sign in.
+   - Google: in Google Cloud Console, create an OAuth client of type *Web application* with
+     the redirect URI `https://<your site's address>/auth/callback`. Google doesn't need to
+     verify the app.
 2. Set `YJSP_ENV=production`, `YJSP_PUBLIC_URL`, `YJSP_SECRET_KEY`,
-   `YJSP_GOOGLE_CLIENT_ID`/`_SECRET`, and `YJSP_BOOTSTRAP_ADMINS` (see
-   `server/.env.example`). Sign-up starts open: anyone with a Google account can join
-   until an admin turns on the whitelist (Admin > People).
+   `YJSP_MICROSOFT_CLIENT_ID`/`_SECRET` (the app's *Application (client) ID* and its
+   secret), `YJSP_GOOGLE_CLIENT_ID`/`_SECRET`, and `YJSP_BOOTSTRAP_ADMINS` (see
+   `server/.env.example`). Sign-up starts open: anyone who can sign in can join until an
+   admin turns on the whitelist (Admin > People).
 3. Keep `YJSP_DATABASE_URL` (SQLite by default), `YJSP_VAULT_DIR`, and `YJSP_YORG_DIR`
    on a persistent disk, and back them up (see "Storage"). An S3/R2 store for Vault's
    blobs (Cloudflare R2: 10 GB free, no download fees) is planned.
@@ -227,5 +253,8 @@ The site's own; each app has its roadmap in its page.
 
 ## Open questions
 
-- Sign-up: open to any Google account for now (September 2026). Later: turn the whitelist
-  on, or let in only the school's Google accounts?
+- Sign-up: open to anyone who can sign in for now (September 2026). The school's accounts
+  are Microsoft's, not Google's, and can sign in since October 2026. Still open: turning
+  the whitelist on; whether Google sign-in stays, for people without GT accounts (advisors,
+  alumni); and letting admins change an account's email, so people who joined with Google
+  can move to their GT accounts and keep their check-outs and history.

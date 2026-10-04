@@ -122,8 +122,8 @@ function People() {
                         </p>
                     ) : (
                         <p className="muted">
-                            Off: anyone who signs in with Google joins right away. They get what Everyone has on the
-                            Vault Access tab, and Yorg's test data.
+                            Off: anyone who signs in joins right away. They get what Everyone has on the Vault Access
+                            tab, and Yorg's test data.
                         </p>
                     )}
                 </div>
@@ -140,8 +140,8 @@ function People() {
                     }
                 >
                     <p>
-                        Anyone with a Google account will be able to sign in and join right away. They'll get what
-                        Everyone has on the Vault Access tab, and Yorg's test data.
+                        Anyone who signs in will join right away. They'll get what Everyone has on the Vault Access tab,
+                        and Yorg's test data.
                     </p>
                     {waiting > 0 && (
                         <p>

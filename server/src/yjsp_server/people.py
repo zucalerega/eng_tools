@@ -56,7 +56,7 @@ def last_active(db: Session, viewer: User) -> dict[int, datetime]:
 
 
 def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
-    """Pre-approve an email: the account is active from its first Google sign-in."""
+    """Pre-approve an email: the account is active from its first sign-in."""
     _require_admin(admin)
     email = email.strip().lower()
     if not _EMAIL.match(email):
@@ -108,8 +108,8 @@ def update_user(
 
 
 def rename_self(db: Session, user: User, name: str) -> User:
-    """Change your own name: how everyone sees you. (An admin fixes anyone's with update_user; signing in with Google
-    again keeps it, auth.sign_in.)"""
+    """Change your own name: how everyone sees you. (An admin fixes anyone's with update_user; signing in again keeps
+    it, auth.sign_in.)"""
     name = name.strip()
     if not name:
         raise ApiError("A name can't be empty", code="bad_name")

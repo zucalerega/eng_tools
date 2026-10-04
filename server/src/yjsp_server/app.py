@@ -51,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
     app.state.yorg_runs = Runs(settings.yorg_dir)
     app.state.oauth = signin.make_oauth(settings)
-    # Carries Google sign-in state between the redirect to Google and the callback.
+    # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

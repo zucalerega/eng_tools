@@ -12,11 +12,16 @@ at the top left goes between them.
 
 ## Signing in
 
-Sign in with Google: that gets you both apps. Anyone can join, unless an admin turns on
-the whitelist (Admin > People, from the account menu at the top right): then only people
-an admin invites or approves can. Admin > People also shows how many people there are and
-how many are on now, and when each joined and was last on. Change the name everyone sees
-you by from your account menu.
+Sign in with your Georgia Tech account, on GT's own login page, or with Google: either gets
+you both apps. Anyone can join, unless an admin turns on the whitelist (Admin > People,
+from the account menu at the top right): then only people an admin invites or approves
+can. Invite people by their GT address (`gburdell3@gatech.edu`). Admin > People also shows
+how many people there are and how many are on now, and when each joined and was last on.
+Change the name everyone sees you by from your account menu.
+
+Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
+your account only if its email is your GT address; otherwise it makes a new, empty one,
+and what you have checked out stays with the old one.
 
 ## Vault: CAD files
 

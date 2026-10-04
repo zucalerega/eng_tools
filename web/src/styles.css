@@ -441,6 +441,63 @@ main {
     font-weight: 600;
 }
 
+/* --- home: the site's own page (/), with its two apps ----------------------------------------- */
+
+.home {
+    max-width: 46rem;
+    margin: 2rem auto 0;
+}
+
+.home h1 {
+    margin: 0 0 1.25rem;
+    font-size: 1.3rem;
+}
+
+.home-apps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
+}
+
+.home-app {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow);
+    color: var(--text);
+}
+
+.home-app:hover {
+    border-color: var(--accent);
+    text-decoration: none;
+}
+
+/* The marks as the top bar draws them, on the page's own colors. */
+.home-app .vault-mark {
+    color: var(--text);
+}
+
+.home-app .vault-orbit {
+    stroke: var(--surface);
+}
+
+.home-app-name {
+    font-family: var(--font-brand);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+}
+
+.home-app-what {
+    color: var(--muted);
+}
+
 /* --- page layout ----------------------------------------------------------------------------- */
 
 .page-head {

@@ -77,7 +77,7 @@ export function Browse({ folder }: { folder: string }) {
         return (
             <Notice tone="error">
                 There's no folder <strong>{folder}</strong> in the vault, or you don't have access to it.{" "}
-                <Link to="/">Back to the top</Link>
+                <Link to={folderUrl("")}>Back to the top</Link>
             </Notice>
         );
     }
@@ -416,7 +416,7 @@ export function Breadcrumbs({ path }: { path: string }) {
     const parts = path ? path.split("/") : [];
     return (
         <nav className="breadcrumbs" aria-label="Folders">
-            <Link to="/">Files</Link>
+            <Link to={folderUrl("")}>Files</Link>
             {parts.map((part, index) => {
                 const sub = parts.slice(0, index + 1).join("/");
                 return (

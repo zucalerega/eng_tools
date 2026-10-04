@@ -2,15 +2,24 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Dialog, Notice, usePopover } from "./components";
 import { inPreview, PREVIEW, sitePath } from "./preview";
-import { Link, usePathname } from "./router";
+import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { setTheme, useTheme, type Theme } from "./theme";
-import { VaultMark, VaultPage, vaultSection, withFolderTree } from "./vault";
+import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, withFolderTree } from "./vault";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
 import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
 
-let vaultIcon: string | null = null; // the tab's icon from index.html, put back on leaving Yorg
+const SITE = "YJSP";
+// The site's own icon, as on the sign-in pages (the server's signin.py): the gold orbit both marks take from the
+// team's logo, on the top bar's navy.
+const SITE_ICON =
+    "data:image/svg+xml," +
+    encodeURIComponent(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#0b1b33'/>" +
+            "<path d='M4 57Q42 52 60 5Q36 45 4 57Z' fill='#e0a500'/></svg>",
+    );
+let vaultIcon: string | null = null; // the tab's icon from index.html, put back on coming back to Vault
 
 const THEMES: [Theme, string][] = [
     ["light", "Light"],
@@ -24,28 +33,40 @@ export function App() {
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
-    // Two apps share the site and its sign-in: Vault (the CAD files), and Yorg (test data, under /yorg). Yorg's preview
-    // (/yorg/dev, admins) is Yorg as it will be, with what's new in its top bar too.
+    // Two apps share the site and its sign-in: Vault (the CAD files, under /vault), and Yorg (test data, under /yorg).
+    // The site's own page, at / (Home), goes to either. Yorg's preview (/yorg/dev, admins) is Yorg as it will be, with
+    // what's new in its top bar too.
     const yorg = inYorg(pathname);
+    const vaultApp = inVault(pathname);
     const preview = inPreview(pathname) && me?.is_admin === true;
-    // Vault's index loads when a page of the vault first shows, and keeps current only while one does: in Yorg,
+    // A link from before Vault moved under /vault goes on to the same page there, with its query.
+    const moved = movedToVault(pathname);
+    useEffect(() => {
+        if (moved !== null) {
+            navigate(moved + window.location.search + window.location.hash, { replace: true, exact: true });
+        }
+    }, [moved]);
+    // Vault's index loads when a page of the vault first shows, and keeps current only while one does: elsewhere,
     // nothing asks for it.
     useEffect(() => {
-        if (yorg) {
-            store.stop();
-        } else {
+        if (vaultApp) {
             store.start();
+        } else {
+            store.stop();
         }
-    }, [yorg, store]);
+    }, [vaultApp, store]);
     useEffect(() => {
-        document.title = yorg ? YORG : "Vault";
+        document.title = yorg ? YORG : vaultApp ? "Vault" : SITE;
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
         if (icon) {
             vaultIcon ??= icon.getAttribute("href");
-            icon.setAttribute("href", yorg ? YORG_ICON : (vaultIcon ?? ""));
+            icon.setAttribute("href", yorg ? YORG_ICON : vaultApp ? (vaultIcon ?? "") : SITE_ICON);
         }
-    }, [yorg]);
-    const section = yorg ? yorgSection(pathname) : vaultSection(pathname);
+    }, [yorg, vaultApp]);
+    if (moved !== null) {
+        return null; // for the moment it takes to go on to the page's new address
+    }
+    const section = yorg ? yorgSection(pathname) : vaultApp ? vaultSection(pathname) : "";
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -53,12 +74,16 @@ export function App() {
     );
     return (
         <>
-            <header className={`topbar ${adminMode && !yorg ? "topbar-admin" : ""}`}>
-                <Link to={yorg ? "/yorg" : "/"} className="brand" aria-label={yorg ? YORG : "Vault"}>
-                    {yorg ? <YorgMark /> : <VaultMark />}
+            <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
+                <Link
+                    to={yorg ? "/yorg" : vaultApp ? VAULT : "/"}
+                    className="brand"
+                    aria-label={yorg ? YORG : vaultApp ? "Vault" : SITE}
+                >
+                    {yorg ? <YorgMark /> : vaultApp ? <VaultMark /> : <SiteMark />}
                 </Link>
                 <nav className="apps" aria-label="Apps">
-                    <Link to="/" className="wordmark" aria-current={yorg ? undefined : "page"}>
+                    <Link to={VAULT} className="wordmark" aria-current={vaultApp ? "page" : undefined}>
                         Vault
                     </Link>
                     <Link to="/yorg" className="wordmark" aria-current={yorg ? "page" : undefined}>
@@ -84,13 +109,15 @@ export function App() {
                             )}
                         </>
                     ) : (
-                        <>
-                            {nav("/", "files", "Files")}
-                            {nav("/assemblies", "assemblies", "Assemblies")}
-                            {nav("/locks", "locks", "Checked out")}
-                            {nav("/activity", "activity", "Activity")}
-                            {nav("/solidworks", "solidworks", "SolidWorks")}
-                        </>
+                        vaultApp && (
+                            <>
+                                {nav(VAULT, "files", "Files")}
+                                {nav(`${VAULT}/assemblies`, "assemblies", "Assemblies")}
+                                {nav(`${VAULT}/locks`, "locks", "Checked out")}
+                                {nav(`${VAULT}/activity`, "activity", "Activity")}
+                                {nav(`${VAULT}/solidworks`, "solidworks", "SolidWorks")}
+                            </>
+                        )
                     )}
                 </nav>
                 <div className="topbar-end">
@@ -105,7 +132,7 @@ export function App() {
                     </Link>
                 </div>
             )}
-            {adminMode && !yorg && (
+            {adminMode && vaultApp && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.
                     <button type="button" className="button-small" onClick={() => setAdminMode(false)}>
@@ -117,12 +144,47 @@ export function App() {
                 <main className={isWorkspace(pathname) ? "main-full" : undefined}>
                     <YorgPage pathname={pathname} />
                 </main>
-            ) : (
+            ) : vaultApp ? (
                 <main className={withFolderTree(pathname) ? "main-wide" : undefined}>
                     <VaultPage pathname={pathname} />
                 </main>
+            ) : (
+                <main>
+                    <Home pathname={pathname} />
+                </main>
             )}
         </>
+    );
+}
+
+/** The site's own mark: the gold orbit both apps' marks take from the team's logo. */
+function SiteMark({ size = 30 }: { size?: number }) {
+    return (
+        <svg className="vault-mark" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+            <path className="vault-orbit" d="M4 57Q42 52 60 5Q36 45 4 57Z" />
+        </svg>
+    );
+}
+
+/** The site's own page, at its address alone: its two apps, to go to either. */
+function Home({ pathname }: { pathname: string }) {
+    return (
+        <section className="home">
+            {pathname !== "/" && <Notice tone="error">There's no page here.</Notice>}
+            <h1>The team's engineering tools</h1>
+            <div className="home-apps">
+                <Link to={VAULT} className="home-app">
+                    <VaultMark size={44} />
+                    <span className="home-app-name">Vault</span>
+                    <span className="home-app-what">Every part, assembly, and drawing, with its whole history.</span>
+                </Link>
+                <Link to="/yorg" className="home-app">
+                    <YorgMark size={44} />
+                    <span className="home-app-name">{YORG}</span>
+                    <span className="home-app-what">The test data, plotted.</span>
+                </Link>
+            </div>
+        </section>
     );
 }
 
@@ -193,7 +255,7 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                     {canUseAdminMode(vault) && (
                         <>
                             <hr />
-                            <Link to="/admin" className="menu-item" onClick={() => setOpen(false)}>
+                            <Link to={`${VAULT}/admin`} className="menu-item" onClick={() => setOpen(false)}>
                                 Admin
                             </Link>
                             <label className="check" title="Show overrides: release check-outs and force reverts">

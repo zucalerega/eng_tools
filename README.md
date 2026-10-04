@@ -1,8 +1,9 @@
 # YJSP
 
-The Yellow Jacket Space Program's engineering tools, on one site: **Vault**, for the team's
-SolidWorks and STEP files, and **[Yorg](#yorg-test-data)**, for its test data. The switcher
-at the top left goes between them.
+The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
+the team's SolidWorks and STEP files, and **[Yorg](#yorg-test-data)** (`/yorg`), for its test
+data. The site's address on its own shows both, and the switcher at the top left goes
+between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks 2025 add-in had its first run in SolidWorks

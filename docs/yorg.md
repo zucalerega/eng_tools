@@ -216,7 +216,31 @@ in `web/src/yorg/index.tsx`).
   each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30 times its start,
   within its limits), each try a run of the model; each compared channel (averaged down
   to 300 points) counts the same, its errors over its swing. The page shows a fit's best
-  run, and applies what it found only when asked. The browser compares each sensor with
+  run, and applies what it found only when asked. A **steady** run (`solver: steady`) is
+  FullFlow's quasi-steady sweep (`SteadyState` over time): each step forces every
+  dynamic part steady (a line's inertia, a gas junction's mass and energy), a regulator
+  opens to where its pressure puts it rather than lagging there, and tanks hold the
+  pressure measured (or set), since one forced steady would let no liquid out. There, the
+  solved states have no bounds and SciPy's gradient test is off (as `Transient` has it),
+  both of which stalled it. An **anchored run** (`POST /api/yorg/dev/anchors`, the same
+  kind of process as a run) pairs knobs with compared sensors: each is FullFlow's
+  `Sensor` (`components.Anchor`) whose balance FullFlow solves with the rest in each time
+  step, moving the knob until the model reads what the sensor's channel measured (as a
+  share of the channel's size, like the other residuals). Knobs are `State`s without
+  bounds (bounded, SciPy's trust region crawls toward a CdA's bound of 0), so an
+  anchor can take one past its limits, which the result notes. The channel is averaged
+  over each time step (bins of `dt`, whose edges give a millionth of a step to times that
+  are sums of `dt`) and read as a straight line between them, where FullFlow's `Sensor`
+  holds the last sample. An anchor is off outside its span and for a step shorter than
+  half `dt` (FullFlow lands on each valve command, and retries a hard step in halves),
+  where FullFlow holds the knob: otherwise a knob that acts through what a tank holds (a
+  collapse factor) would make up a whole step's difference at once. So where no
+  value of a knob matches (a valve's CdA while it's shut; in a transient run, an anchor
+  starting partway through with the model off from the test, whose line flow can't jump
+  there in a step), it holds the knob, and the result says for how much of the span. The
+  result has each knob's history (`anchored`) and, from where it was anchored, its median
+  and 10th and 90th percentiles (`anchors`), which the page applies only when asked. The
+  browser compares each sensor with
   its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
   bias; the window's times, and the plots', read from the dataset's T0 in this browser.
   Saved models are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables.

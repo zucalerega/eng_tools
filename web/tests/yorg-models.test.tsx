@@ -15,6 +15,30 @@ const COLD_FLOW = [
     }),
 ].join("\n");
 
+/** The cold flow example, against the test: its tank, main valve, and manifold linked to the test's channels. */
+async function coldFlow(dataset: string) {
+    await userEvent.click(await screen.findByRole("button", { name: "Start from an example" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Cold flow" }));
+    const diagram = within(screen.getByRole("application", { name: "P&ID" }));
+    expect(diagram.getByRole("button", { name: "Fuel tank" })).toBeTruthy();
+    expect(diagram.getByRole("button", { name: "Main valve" })).toBeTruthy();
+
+    // The test first: its channels are what the parts link to.
+    await userEvent.selectOptions(screen.getByLabelText("Test"), dataset);
+    const pick = async (part: string, link: string, channel: string) => {
+        fireEvent.pointerDown(diagram.getByRole("button", { name: part }));
+        const settings = within(await screen.findByRole("region", { name: `${part} settings` }));
+        await waitFor(() =>
+            expect(settings.getAllByRole("option", { name: new RegExp(`^${channel}`) }).length).toBeGreaterThan(0),
+        );
+        await userEvent.selectOptions(settings.getByLabelText(link), channel);
+    };
+    await pick("Fuel tank", "Pressure (it follows)", "PT-TANK");
+    await pick("Main valve", "Command (drives it)", "MOV-OX");
+    await pick("Manifold", "Pressure transducer (compared)", "PT-MANIFOLD");
+    return diagram;
+}
+
 test("system models are in the preview, for admins", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
@@ -38,25 +62,7 @@ test("a model is drawn, linked to a test, saved, run against it, and fitted to i
     expect((await screen.findByRole("link", { name: "FullFlow" })).getAttribute("href")).toBe(
         "https://github.com/saakethramoju/FullFlow",
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Start from an example" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Cold flow" }));
-    const diagram = within(screen.getByRole("application", { name: "P&ID" }));
-    expect(diagram.getByRole("button", { name: "Fuel tank" })).toBeTruthy();
-    expect(diagram.getByRole("button", { name: "Main valve" })).toBeTruthy();
-
-    // The test first: its channels are what the parts link to.
-    await userEvent.selectOptions(screen.getByLabelText("Test"), data.name);
-    const pick = async (part: string, link: string, channel: string) => {
-        fireEvent.pointerDown(diagram.getByRole("button", { name: part }));
-        const settings = within(await screen.findByRole("region", { name: `${part} settings` }));
-        await waitFor(() =>
-            expect(settings.getAllByRole("option", { name: new RegExp(`^${channel}`) }).length).toBeGreaterThan(0),
-        );
-        await userEvent.selectOptions(settings.getByLabelText(link), channel);
-    };
-    await pick("Fuel tank", "Pressure (it follows)", "PT-TANK");
-    await pick("Main valve", "Command (drives it)", "MOV-OX");
-    await pick("Manifold", "Pressure transducer (compared)", "PT-MANIFOLD");
+    const diagram = await coldFlow(data.name);
     expect(diagram.getAllByText("PT")).toHaveLength(2);
     expect(diagram.getByText("CMD")).toBeTruthy();
 
@@ -94,4 +100,35 @@ test("a model is drawn, linked to a test, saved, run against it, and fitted to i
     await userEvent.click(fit.getByRole("button", { name: "Apply to the model" }));
     await waitFor(() => expect((injector.getByLabelText(/^CdA/) as HTMLInputElement).value).not.toBe(before));
     expect(screen.getByRole("option", { name: "Stand A cold flow (changed)" })).toBeTruthy();
+});
+
+test("a model's knob is anchored to a test in one steady run, and applied", { timeout: 240_000 }, async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
+    renderApp(team.chief, "/yorg/dev/models");
+    const diagram = await coldFlow(data.name);
+
+    // The injector's CdA, moved in each time step until the manifold reads what was measured: while the main valve
+    // is open, since nothing flows to tell it while it's shut.
+    await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
+    await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+    const anchoring = within(screen.getByRole("dialog"));
+    expect(anchoring.queryByRole("option", { name: /^Fuel tank/ })).toBeNull(); // steady: tanks hold their pressure
+    await userEvent.selectOptions(anchoring.getByLabelText(/^Manifold pressure transducer/), "Injector: CdA");
+    await userEvent.type(anchoring.getByLabelText("From (s)"), "0.6");
+    await userEvent.type(anchoring.getByLabelText("To (s)"), "1.4");
+    await userEvent.click(anchoring.getByRole("button", { name: "Anchor" }));
+
+    const anchored = within(await screen.findByRole("region", { name: "Anchored" }, { timeout: 150_000 }));
+    expect(anchored.getByText(/^Done in one run: each knob's median/)).toBeTruthy();
+    expect(anchored.getByText("Injector: CdA")).toBeTruthy();
+    expect(anchored.getByRole("columnheader", { name: "10–90%" })).toBeTruthy();
+    const results = within(screen.getByRole("region", { name: "Results" }));
+    expect(results.getByText("Injector: CdA, anchored to Manifold pressure transducer")).toBeTruthy();
+
+    fireEvent.pointerDown(diagram.getByRole("button", { name: "Injector" }));
+    const injector = within(await screen.findByRole("region", { name: "Injector settings" }));
+    const before = (injector.getByLabelText(/^CdA/) as HTMLInputElement).value;
+    await userEvent.click(anchored.getByRole("button", { name: "Apply to the model" }));
+    await waitFor(() => expect((injector.getByLabelText(/^CdA/) as HTMLInputElement).value).not.toBe(before));
 });

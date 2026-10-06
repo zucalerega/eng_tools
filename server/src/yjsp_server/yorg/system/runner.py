@@ -1,8 +1,8 @@
-"""A model run's (or fit's) process: python -m yjsp_server.yorg.system.runner <folder>.
+"""A model run's (or fit's, or anchored run's) process: python -m yjsp_server.yorg.system.runner <folder>.
 
-The folder holds job.json (the checked model, the window, the time step; for a fit, what to fit) and inputs/ (each
-linked channel's times and values, as little-endian float64s). The process writes progress.json as it goes, then
-result.json or error.json.
+The folder holds job.json (the checked model, the window, the time step, the solver; for a fit, what to fit; for an
+anchored run, its anchors) and inputs/ (each linked channel's times and values, as little-endian float64s). The process
+writes progress.json as it goes, then result.json or error.json.
 """
 
 import json

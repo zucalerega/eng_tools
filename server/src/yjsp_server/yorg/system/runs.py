@@ -1,6 +1,6 @@
-"""Model runs and fits: each a process of its own (runner.py) with a folder of inputs and results, so a long
-simulation never holds up the site, and one that runs past its limit is stopped. A run's folder goes a while after
-it's done.
+"""Model runs, fits, and anchored runs: each a process of its own (runner.py) with a folder of inputs and results, so
+a long simulation never holds up the site, and one that runs past its limit is stopped. A run's folder goes a while
+after it's done.
 """
 
 import json
@@ -28,7 +28,7 @@ RUNNING_AT_ONCE = 2  # the server has one CPU: more would only slow each other
 class Run:
     id: str
     user_id: int
-    kind: str  # run or fit
+    kind: str  # run, fit, or anchor (a run with anchored knobs)
     folder: Path
     process: subprocess.Popen
     started: float

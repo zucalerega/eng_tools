@@ -11,12 +11,13 @@ import { channelPlacement, comparisons, kindOf, modelPlacement } from "./model";
 import { toDisplay, unitOf } from "./units";
 
 // A run against a test: what it started from (values taken from channels at its start), each channel the model is
-// compared with, plotted with the model's value, with how far apart they are (RMS and bias, over the run); and any
-// other output the model has, to add. The plots share their window (drag to zoom, as in Yorg's workspace) and cursor,
+// compared with, plotted with the model's value, with how far apart they are (RMS and bias, over the run); an anchored
+// run's knobs, through it; and any other output the model has, to add. The plots share their window (drag to zoom, as in Yorg's workspace) and cursor,
 // and read from T0 when the dataset has one.
 
 const MEASURED = "#2f7ed8";
 const MODELED = "#e0a500";
+const ANCHORED = "#3aa655";
 
 export interface Fit {
     rms: number;
@@ -204,6 +205,44 @@ export function Results({
             unit: unitOf(compared.quantity, display),
             series,
             fit,
+        });
+    }
+    // An anchored run's knobs, through the run: their settings until their spans, then what the sensors asked for.
+    for (const anchor of result.anchors ?? []) {
+        const key = `${anchor.part}.${anchor.key}`;
+        const part = [...model.nodes, ...model.edges].find((one) => one.id === anchor.part);
+        const sensor = [...model.nodes, ...model.edges].find((one) => one.id === anchor.sensor);
+        const values = result.anchored?.[key];
+        if (!part || !values) {
+            continue;
+        }
+        const kind = kindOf(catalog, part.type);
+        const setting = kind.settings.find((one) => one.key === anchor.key);
+        const link = sensor && kindOf(catalog, sensor.type).links.find((one) => one.key === anchor.link);
+        const quantity = setting?.quantity ?? "number";
+        const unit = unitOf(quantity, display);
+        boxes.push({
+            key: `anchor:${key}`,
+            title: `${part.name}: ${setting?.label ?? anchor.key}, anchored to ${sensor?.name ?? anchor.sensor} ${(link?.label ?? anchor.link).toLowerCase()}`,
+            unit,
+            series: [
+                {
+                    id: `${key}:anchored`,
+                    name: "Anchored",
+                    color: ANCHORED,
+                    width: 2,
+                    step: false,
+                    axis: "a",
+                    samples: new Samples(
+                        Float64Array.from(result.times),
+                        Float64Array.from(values, (value) => value ?? Number.NaN),
+                    ),
+                    placement: modelPlacement(quantity, display),
+                    unit,
+                    labels: null,
+                },
+            ],
+            fit: null,
         });
     }
     for (const key of extra) {

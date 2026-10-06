@@ -283,6 +283,7 @@ export const outputOf = (link: Link): string => (link.quantity === "mass_flow" ?
 /** A measured channel and the model's output it's compared with. */
 export interface Comparison {
     part: string; // its id
+    link: string; // the link's key: "pressure"
     name: string; // "Manifold pressure"
     output: string; // "n2.pressure": its key in a run's series
     channel: string;
@@ -303,6 +304,7 @@ export function comparisons(model: SystemModel, catalog: Catalog): Comparison[] 
             }
             found.push({
                 part: part.id,
+                link: link.key,
                 name: `${part.name} ${link.label.toLowerCase()}`,
                 output: `${part.id}.${outputOf(link)}`,
                 channel,

@@ -3,13 +3,13 @@
 // (worker.js) and the page (python.ts); this only words them.
 
 /** What a step is doing. */
-export type Phase = "python" | "server" | "packages" | "import" | "channels" | "code";
+export type Phase = "python" | "server" | "packages" | "install" | "import" | "channels" | "code";
 
 /** A step of starting Python, getting it ready, or a run. */
 export interface Step {
     phase: Phase;
     since: number; // when it started (Date.now())
-    packages?: string[]; // packages: those loading, as Pyodide names them (scipy, coolprop)
+    packages?: string[]; // packages: those loading, as Pyodide names them (scipy, coolprop); install: from PyPI
     module?: string; // import: the module (CoolProp, scipy.signal)
     channels?: string[]; // server: the channels coming, by name
     attempt?: number; // python: its download's try (the network dropped the first)
@@ -17,9 +17,9 @@ export interface Step {
 
 /** A part of a run's time: from the worker (packages, imports, channels), or the page (the server, waiting). */
 export interface Timing {
-    kind: "waiting" | "server" | "packages" | "import" | "channels";
+    kind: "waiting" | "server" | "packages" | "install" | "import" | "channels";
     seconds: number;
-    packages?: string[]; // packages: which
+    packages?: string[]; // packages, install: which
     module?: string; // import: which
     reason?: "start" | "prepare" | "tools" | "run"; // waiting: for Python to start, imports, suggestions, or a run
 }
@@ -34,11 +34,14 @@ const KNOWN_NAMES: Record<string, string> = {
     sympy: "SymPy",
     pillow: "Pillow",
     micropip: "micropip",
+    fullflow: "FullFlow",
+    thermoprop: "ThermoProp",
 };
 
-/** A package's name as people know it: SciPy for scipy, CoolProp for coolprop. */
+/** A package's name as people know it: SciPy for scipy, CoolProp for coolprop, FullFlow for fullflow==2.0.2. */
 export function packageName(name: string): string {
-    return KNOWN_NAMES[name.toLowerCase()] ?? name;
+    const bare = name.split("==")[0]!.trim();
+    return KNOWN_NAMES[bare.toLowerCase()] ?? bare;
 }
 
 /** Things in a list, as a sentence has them: "A", "A and B", "A, B, and C". */
@@ -81,6 +84,8 @@ export function stepText(step: Step, asked: string[] = []): string {
         }
         case "packages":
             return `Loading ${packagesText(step.packages ?? [], asked)}`;
+        case "install":
+            return `Installing ${listed((step.packages ?? []).map(packageName)) || "packages"} from PyPI`;
         case "import":
             return `Importing ${step.module ?? "a module"}`;
         case "channels":
@@ -94,6 +99,8 @@ export function stepText(step: Step, asked: string[] = []): string {
 const IMPORT_NOTES: Record<string, string> = {
     CoolProp:
         "CoolProp reads its whole fluid library the first time it's imported: 20 seconds to a minute, by the computer, and only once while Python stays open.",
+    yorg_models:
+        "A model's script imports FullFlow and ThermoProp, which read CoolProp's and their own property data the first time: a minute or more, by the computer, and only once while Python stays open.",
 };
 
 /** Why a step takes as long as it does, and whether it will again (null: nothing worth saying). */
@@ -105,6 +112,8 @@ export function stepNote(step: Step): string | null {
             return "Channels come from the server once; after that this tab has them.";
         case "packages":
             return "Packages load once while Python stays open. The first time on a computer they download too (SciPy is about 14 MB).";
+        case "install":
+            return "Packages from PyPI install once while Python stays open. The first time on a computer they download too, with what they need: a minute or two.";
         case "import": {
             const top = (step.module ?? "").split(".")[0] ?? "";
             return IMPORT_NOTES[top] ?? "Each module is imported once while Python stays open.";
@@ -155,6 +164,8 @@ function timingLabel(timing: Timing, asked: string[]): string {
             return "channels from the server";
         case "packages":
             return `loading ${packagesText(timing.packages ?? [], asked)}`;
+        case "install":
+            return `installing ${listed((timing.packages ?? []).map(packageName))}`;
         case "import":
             return `importing ${timing.module ?? "a module"}`;
         case "channels":

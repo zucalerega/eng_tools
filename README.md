@@ -176,6 +176,12 @@ the keys.
   with the same channel names, and go to and from files. **Start from an example** has a
   cold flow, a pressurized flow, and Vespula's prop system (Saaketh's FullFlow model) with
   its run's data, which it uploads to Yorg the first time.
+  **Script** shows the model as the FullFlow code that runs it, written from the P&ID, and
+  the code of Yorg's own it imports. Change it (say, to give the pressurant real-gas
+  properties, or to add a FullFlow component Yorg's parts don't have) and **Run in browser**
+  runs your script in your browser: FullFlow installs there the first time (a minute or
+  two), and it runs several times slower than the server. A changed script isn't saved.
+  **Reference** explains what FullFlow is and how it models a system and solves it.
 - **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all

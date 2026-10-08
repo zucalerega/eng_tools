@@ -1,7 +1,9 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { VESPULA_RUN } from "../src/yorg/models/model";
+import { fakePython } from "./python";
 import { renderApp, Team } from "./team";
 
 // Yorg's dev page (admins): a system model drawn, linked to a test's channels, saved, and run with FullFlow on the
@@ -181,4 +183,107 @@ test("the Vespula example comes with its run's data, uploaded once", { timeout: 
             Math.max(before.length, 1),
         ),
     );
+});
+
+/** The Script view's editor for a file (model.py, or one of yorg_models'), once it's on the page. */
+async function editorFor(file: string): Promise<EditorView> {
+    const script = await screen.findByRole("region", { name: "Script" });
+    const content = await within(script).findByRole("textbox", { name: file }, { timeout: 30_000 });
+    return EditorView.findFromDOM(content)!;
+}
+
+const PSIG_300 = 300 * 6894.757 + 101325; // Pa
+
+test("a model's script is shown, changed, and run in the browser", { timeout: 120_000 }, async () => {
+    const pythons = fakePython();
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
+    renderApp(team.chief, "/yorg/dev/models");
+    await coldFlow(data.name);
+
+    // The model as the FullFlow script the server runs: written from the P&ID, with what it imports beside it.
+    await userEvent.click(screen.getByRole("button", { name: "Script" }));
+    const model = await editorFor("model.py");
+    await waitFor(() => expect(model.state.doc.toString()).toContain("from fullflow import *"));
+    const written = model.state.doc.toString();
+    expect(written).toContain("main_valve = Restriction(");
+    expect(written).toContain("run.following('n1.pressure', otherwise=");
+    expect(written).toContain("'n1.pressure': ('PT-TANK', 'pressure'),");
+    const script = within(screen.getByRole("region", { name: "Script" }));
+    expect(script.getByText("Written from the P&ID: Run runs it on the server")).toBeTruthy();
+    await userEvent.click(script.getByRole("button", { name: "yorg_models/__init__.py" }));
+    const library = await editorFor("yorg_models/__init__.py");
+    expect(library.state.doc.toString()).toContain("class Run:");
+    expect(library.state.readOnly).toBe(true);
+    await userEvent.click(script.getByRole("button", { name: "model.py" }));
+
+    // Changed, it runs in the browser: Fit and Anchor stay with the P&ID's model, on the server.
+    const changed = written.replace("result = run.solve()", "print('mine')\nresult = run.solve()");
+    const view = await editorFor("model.py");
+    act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: changed } }));
+    expect(await script.findByText("Changed: Run runs it in your browser")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Fit…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Anchor…" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Run in browser" }));
+
+    // The tab's Python gets the script as model.py, FullFlow and ThermoProp to install at the server's versions,
+    // yorg_models, and the run's data from the server, in SI units.
+    const fake = pythons.latest();
+    fake.say({ type: "ready", version: "3.14.2" });
+    const sent = await fake.next("run");
+    expect(sent.code).toBe(changed);
+    expect(sent.filename).toBe("model.py");
+    expect(sent.install).toEqual([expect.stringMatching(/^fullflow==/), expect.stringMatching(/^thermoprop==/)]);
+    const files = new Map((sent.files ?? []).map((file) => [file.path, file.data]));
+    const text = (path: string) => new TextDecoder().decode(files.get(path));
+    expect(text("/tmp/yorg-model/yorg_models/__init__.py")).toContain("class Run:");
+    expect(text("/tmp/yorg-model/yorg_models/components.py")).toContain("class Restriction(");
+    expect(JSON.parse(text("/tmp/yorg-model/inputs/keys.json"))).toEqual(["n1.pressure", "n3.pressure", "e2.command"]);
+    const tank = new Float64Array(files.get("/tmp/yorg-model/inputs/n1.pressure.v.f64")!.slice().buffer);
+    expect(tank[0]).toBeCloseTo(PSIG_300, 3);
+    expect(sent.setup).toContain("data = _yorg_model_setup()");
+    expect(sent.finish).toContain('"result"');
+
+    // It says how far it's got, then what it printed, and its result shows as a run's on the server does.
+    fake.say({ type: "progress", run: sent.run, phase: "install", packages: sent.install });
+    expect(await screen.findByText(/^Installing FullFlow and ThermoProp from PyPI · \d+ s$/)).toBeTruthy();
+    fake.say({ type: "report", run: sent.run, key: "progress", value: "0.5" });
+    expect(await screen.findByText(/^Running in your browser: 0\.5 of 2 s, \d+ s so far$/)).toBeTruthy();
+    const result = {
+        times: [0, 0.5, 1.5],
+        series: { "n3.pressure": [101325, PSIG_300, 101325] },
+        liquids: {},
+        initial: [],
+        notes: ["Solved in the browser"],
+        steps: 3,
+        elapsed: 1,
+    };
+    fake.say({ type: "stdout", run: sent.run, text: "mine" });
+    fake.say({ type: "report", run: sent.run, key: "result", value: JSON.stringify(result) });
+    fake.say({ type: "done", run: sent.run, elapsed: 2, timings: [] });
+    expect(await screen.findByText(/^Done in your browser in/)).toBeTruthy();
+    const results = within(await screen.findByRole("region", { name: "Results" }));
+    expect(results.getByText("Solved in the browser")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Run in the browser" })).getByText("mine")).toBeTruthy();
+
+    // Back to the P&ID's script, Run runs it on the server again.
+    await userEvent.click(script.getByRole("button", { name: "Back to the P&ID's" }));
+    expect(await script.findByText("Written from the P&ID: Run runs it on the server")).toBeTruthy();
+    expect((await editorFor("model.py")).state.doc.toString()).toBe(written);
+    expect(screen.getByRole("button", { name: "Run" })).toBeTruthy();
+});
+
+test("the Reference says how FullFlow models a system", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/yorg/dev/models");
+    await userEvent.click(await screen.findByRole("button", { name: "Reference" }));
+    const reference = within(await screen.findByRole("complementary", { name: "Reference" }));
+    expect(reference.getByRole("heading", { name: "A network of states" })).toBeTruthy();
+    expect(reference.getByRole("heading", { name: "Solving over time" })).toBeTruthy();
+    expect(await reference.findByText(/Yorg runs it, version \d+\.\d+\.\d+, on the server/)).toBeTruthy();
+    expect(
+        reference.getByRole("cell", { name: "DarcyWeisbach: friction, and the inertia of the liquid in it" }),
+    ).toBeTruthy();
+    await userEvent.click(reference.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("complementary", { name: "Reference" })).toBeNull();
 });

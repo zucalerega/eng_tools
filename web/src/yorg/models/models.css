@@ -396,3 +396,163 @@
 .dev-anchor select {
     width: 100%;
 }
+
+/* The P&ID or the Script view, and the Reference beside either. */
+
+.dev-views {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.dev-segmented {
+    display: inline-flex;
+}
+
+.dev-segmented button,
+.dev-reference-toggle {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+.dev-segmented button {
+    border-radius: 0;
+}
+
+.dev-segmented button:first-child {
+    border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.dev-segmented button:last-child {
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.dev-segmented button + button {
+    margin-left: -1px;
+}
+
+.dev-segmented button[aria-pressed="true"],
+.dev-reference-toggle[aria-pressed="true"] {
+    position: relative; /* its border over its neighbor's */
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.dev-reference-toggle {
+    margin-left: auto;
+}
+
+.dev-editor-wide {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.dev-script {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.dev-script-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dev-script-head .dev-segmented button {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.dev-script-state,
+.dev-script-note {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.dev-script-anchors {
+    margin-left: auto;
+}
+
+.dev-script .code-editor {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    overflow: hidden;
+}
+
+.dev-script .code-editor .cm-editor {
+    height: min(70vh, 760px);
+    border-radius: var(--radius-large);
+}
+
+.dev-script .code-editor .cm-scroller {
+    overflow: auto;
+}
+
+.dev-reference-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.dev-reference h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.dev-reference p,
+.dev-reference li,
+.dev-reference dd {
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.dev-reference ul {
+    margin: 0.4rem 0;
+    padding-left: 1.1rem;
+}
+
+.dev-reference-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.dev-reference-table th,
+.dev-reference-table td {
+    padding: 0.25rem 0.35rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.dev-reference-calls {
+    margin: 0.4rem 0;
+}
+
+.dev-reference-calls div {
+    margin-bottom: 0.45rem;
+}
+
+.dev-reference-calls code {
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+.dev-reference-calls dd {
+    margin: 0.1rem 0 0 0.8rem;
+}
+
+.dev-browser-run {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}

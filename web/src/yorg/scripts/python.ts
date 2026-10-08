@@ -33,6 +33,7 @@ export interface RunOutput {
     plots: ScriptPlotData[];
     figures: string[]; // object URLs of PNGs
     files: { name: string; url: string }[];
+    reports: Record<string, string>; // what the code reported for the page that ran it (JSON), the latest by key
 }
 
 export type RunStatus = "queued" | "running" | "done" | "error" | "stopped";
@@ -81,6 +82,10 @@ export interface RunRequest {
     filename?: string; // as tracebacks name the code (a script's is script.py; a notebook's cell's, <In [3]>)
     batch?: string; // runs asked for together (run all): one that fails stops those after it
     view?: PageView; // run from a dataset's or view's page: its time in view, T0, and shifts
+    install?: string[]; // packages from PyPI ("name==version") it needs, installed before it runs
+    files?: { path: string; data: Bytes }[]; // written before it runs, where they say
+    setup?: string; // Python run before its code, in its variables
+    finish?: string; // and after it, unless it failed (to report what it made: see reports)
 }
 
 type Gathered = { inputs: Inputs; at: number; waitedFor: Busy["kind"] | null };
@@ -88,7 +93,7 @@ type RunJob = { kind: "run"; id: string; request: RunRequest; gathered: Gathered
 type Job = { kind: "prepare"; code: string; key: string } | RunJob; // what waits its turn
 type Active = Job | { kind: "tools" }; // and what Python's on (the editor's suggestions never wait: they're last)
 
-const emptyOutput = (): RunOutput => ({ lines: [], dropped: 0, plots: [], figures: [], files: [] });
+const emptyOutput = (): RunOutput => ({ lines: [], dropped: 0, plots: [], figures: [], files: [], reports: {} });
 const OFF: PythonState = { status: "off", version: null, error: null, idle: false, generation: 0, busy: null };
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
@@ -465,6 +470,10 @@ export class PythonSession {
             namespace,
             // A notebook's cell is named by its run's number, as its [3] shows it (and Jupyter names it).
             filename: job.request.filename ?? (count === null ? "script.py" : `<In [${count}]>`),
+            ...(job.request.install ? { install: job.request.install } : {}),
+            ...(job.request.files ? { files: job.request.files } : {}),
+            ...(job.request.setup ? { setup: job.request.setup } : {}),
+            ...(job.request.finish ? { finish: job.request.finish } : {}),
         });
     }
 
@@ -540,6 +549,12 @@ export class PythonSession {
                 this.output(found.run, (output) => ({ ...output, figures: [...output.figures, url] }));
                 return;
             }
+            case "report":
+                this.output(found.run, (output) => ({
+                    ...output,
+                    reports: { ...output.reports, [found.key]: found.value },
+                }));
+                return;
             case "file": {
                 const url = URL.createObjectURL(new Blob([found.data]));
                 this.output(found.run, (output) => ({

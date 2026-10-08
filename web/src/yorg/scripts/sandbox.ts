@@ -37,6 +37,10 @@ export type ToPython =
           keys: string[];
           namespace: string | null; // a notebook's: its cells share their variables (null: a script on its own)
           filename: string; // as tracebacks name it: script.py, or a notebook cell's <In [3]>
+          install?: string[]; // packages from PyPI ("name==version") to install first, with micropip
+          files?: { path: string; data: Bytes }[]; // to write where they say, before it runs
+          setup?: string; // Python to run first, in the code's variables (named <setup>)
+          finish?: string; // and after the code, unless it failed (named <finish>)
       }
     | {
           type: "service";
@@ -67,6 +71,7 @@ export type FromPython =
       }
     | { type: "figure"; run: string | null; png: Bytes }
     | { type: "file"; run: string | null; name: string; data: Bytes }
+    | { type: "report"; run: string | null; key: string; value: string } // for the page that ran it: JSON, by key
     | { type: "done"; run: string; elapsed: number; timings: Timing[] }
     | { type: "error"; run: string; text: string; line: number | null; elapsed: number; timings: Timing[] }
     | { type: "request"; id: number; run: string | null; what: string; args: Record<string, unknown> }

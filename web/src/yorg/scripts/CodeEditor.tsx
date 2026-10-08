@@ -85,6 +85,7 @@ interface Props {
     error: RunError | null;
     keys: EditorKeys;
     placeholder?: string;
+    readOnly?: boolean; // to read (and find in), not change: as it's made
     onFocus?: () => void;
     ref?: Ref<CodeEditorHandle>;
 }
@@ -266,6 +267,7 @@ function extensions(latest: RefObject<Props>, label: Compartment): Extension[] {
               ]
             : [],
         latest.current.placeholder ? placeholderText(latest.current.placeholder) : [],
+        latest.current.readOnly ? EditorState.readOnly.of(true) : [],
         Prec.high(
             keymap.of([
                 { key: "Shift-Enter", run: handled(() => keys().runNext()) },

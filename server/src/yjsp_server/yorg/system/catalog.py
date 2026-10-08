@@ -1,5 +1,5 @@
 """What a system model is made of: its parts, each part's settings (in SI units), what each can be linked to in a
-test's data, and what a run reports for it. The web app draws its P&ID and forms from this; network.py builds the
+test's data, and what a run reports for it. The web app draws its P&ID and forms from this; script.py writes the
 simulation from the same list, so the two can't drift apart.
 """
 

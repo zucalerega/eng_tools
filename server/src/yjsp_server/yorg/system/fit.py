@@ -6,6 +6,8 @@ Each compared channel counts the same, however many samples it has: its errors a
 the window (or 5% of its size, if it barely does), and by the root of how many of its samples are compared. Each
 knob is searched over its limits on a scale from 0 to 1: a CdA or a time over 1/30 to 30 times where it starts (as
 its logarithm, since they matter by ratio), one that starts at 0 (a fittings' K) over its limits.
+
+An anchored run (tune) fits what FullFlow's anchoring can't settle: knobs picked to fit, and anchors that didn't work.
 """
 
 import copy
@@ -27,6 +29,7 @@ ZERO_TOP = 100.0  # and one that starts at 0, up to this (or its limit)
 TRIES = 12  # least squares' iterations at most (each is a run for every knob, and one more)
 STEP = 0.01  # the finite-difference step for the slopes, on each knob's 0-to-1 scale
 FAILED = 2.0  # a try that didn't run: as if every sample were off by twice its channel's swing
+HELD = 0.25  # an anchor that held its knob for less of its span than this didn't work: the knob is fitted instead
 
 
 class Stop(Exception):
@@ -205,3 +208,65 @@ def fit(job: dict[str, Any], inputs: dict[str, Series], report: Callable[[dict[s
             "stopped": stopped,
         },
     }
+
+
+def _unanchored(found: dict[str, Any], part: dict[str, Any]) -> str | None:
+    """Why an anchor didn't work, in words, or None if it did: FullFlow never matched its sensor with the knob, matched
+    it for little of its span (the rest it held the knob), or only with a value the knob can't have."""
+    setting = next(one for one in BY_TYPE[part["type"]].settings if one.key == found["key"])
+    low = -math.inf if setting.minimum is None else setting.minimum
+    high = math.inf if setting.maximum is None else setting.maximum
+    if found["value"] is None:
+        return "it never matched"
+    if not low <= found["value"] <= high:
+        return "it went past its limits"
+    if found["share"] < HELD:
+        return f"it matched for {found['share']:.0%} of its span"
+    return None
+
+
+def tune(
+    job: dict[str, Any],
+    inputs: dict[str, Series],
+    progress: Callable[[float], None],
+    report: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    """An anchored run (network.run with job["anchors"]), and a fit of what anchoring didn't settle: job["knobs"],
+    picked to fit, and, with job["fallback"], each anchor that didn't work (see _unanchored). The anchors that worked
+    stay anchored in each of the fit's runs, and the fit compares the sensors they don't use (job["compared"]). The
+    result: the anchored run's, or the fit's best run, with what it found under "fit" (and the anchors it took over,
+    and why, under its "fallback")."""
+    started = time.monotonic()
+    anchored = run(job, inputs, progress)
+    parts = {**job["model"]["nodes"], **job["model"]["edges"]}
+    failed = []
+    for found in anchored["anchors"] if job.get("fallback") else []:
+        why = _unanchored(found, parts[found["part"]])
+        if why is not None:
+            failed.append((found, why))
+    knobs = [*job.get("knobs", []), *({"part": found["part"], "key": found["key"]} for found, _ in failed)]
+    if not knobs:
+        return anchored
+    dropped = {(found["part"], found["key"]) for found, _ in failed}
+    kept = [anchor for anchor in job["anchors"] if (anchor["part"], anchor["key"]) not in dropped]
+    matched = {f"{anchor['sensor']}.{anchor['link']}" for anchor in kept}
+
+    def named(part_id: str, key: str) -> str:
+        part = parts[part_id]
+        setting = next(one for one in BY_TYPE[part["type"]].settings if one.key == key)
+        return f"{part['name']}'s {in_words(setting.label)}"
+
+    notes = [
+        f"FullFlow couldn't anchor {named(found['part'], found['key'])} ({why}), so it was fitted instead."
+        for found, why in failed
+    ]
+    fitting = {
+        **job,
+        "anchors": kept,
+        "fit": {"knobs": knobs, "compared": [one for one in job["compared"] if one["input"] not in matched]},
+        "deadline": float(job["deadline"]) - (time.monotonic() - started),
+    }
+    result = fit(fitting, inputs, report)
+    result["notes"] = notes + result["notes"]
+    result["fit"]["fallback"] = [{"part": found["part"], "key": found["key"], "why": why} for found, why in failed]
+    return result

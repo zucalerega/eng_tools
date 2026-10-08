@@ -239,8 +239,14 @@ in `web/src/yorg/index.tsx`).
   starting partway through with the model off from the test, whose line flow can't jump
   there in a step), it holds the knob, and the result says for how much of the span. The
   result has each knob's history (`anchored`) and, from where it was anchored, its median
-  and 10th and 90th percentiles (`anchors`), which the page applies only when asked. The
-  browser compares each sensor with
+  and 10th and 90th percentiles (`anchors`), which the page applies only when asked. What
+  anchoring can't settle is fitted, in the same process (`fit.tune`, with the fit's time
+  limit): knobs picked to fit alongside the anchors, and, falling back (on unless asked
+  not to), each knob whose anchor didn't work: it never matched, matched for under a
+  quarter of its span, or settled past its limits. The fit is the one above, its runs
+  anchoring the anchors that worked, compared with the sensors they don't use; the
+  result is its best run, with its anchors, and the knobs it took over and why
+  (`fit.fallback`). The browser compares each sensor with
   its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
   bias; the window's times, and the plots', read from the dataset's T0 in this browser.
   Saved models are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables.

@@ -19,7 +19,8 @@ from typing import Any
 from ...errors import Conflict, NotFound
 
 TIME_LIMIT = 600.0  # seconds a run may take
-FIT_LIMIT = 1800.0  # and a fit (it stops itself a minute before, with the best it found)
+# And a fit, or an anchored run that may fit too: it stops itself a minute before, with the best it found.
+FIT_LIMIT = 1800.0
 KEEP = 1800.0  # seconds a finished run's results are kept
 RUNNING_AT_ONCE = 2  # the server has one CPU: more would only slow each other
 
@@ -52,7 +53,7 @@ class Runs:
     ) -> Run:
         """Start a run (or a fit) of job (see runner.py), with inputs: each linked channel's times and values, by
         part.link."""
-        limit = FIT_LIMIT if kind == "fit" else TIME_LIMIT
+        limit = FIT_LIMIT if kind in ("fit", "anchor") else TIME_LIMIT
         with self._lock:
             self._sweep()
             for run in list(self._runs.values()):
@@ -82,7 +83,8 @@ class Runs:
 
     def status(self, run_id: str, user_id: int) -> dict[str, Any]:
         """How a run is going: running (with how far it has got), done (with its results), or failed (and why). A
-        fit's progress (its tries, and the best it has found) comes with it, stopped or not."""
+        fit's progress (its tries, and the best it has found) comes with it, stopped or not, as does an anchored
+        run's, which may fit."""
         with self._lock:
             run = self._find(run_id, user_id)
             now = time.monotonic()
@@ -90,7 +92,7 @@ class Runs:
                 run.finished = now
             if run.finished is None and now - run.started > run.limit:
                 self._stop(run)
-                what = "fit" if run.kind == "fit" else "run"
+                what = {"fit": "fit", "anchor": "anchored run"}.get(run.kind, "run")
                 _save(
                     run.folder / "error.json",
                     {
@@ -101,7 +103,7 @@ class Runs:
             elapsed = (run.finished or now) - run.started
             progress = _load(run.folder / "progress.json") or {}
             status = {"elapsed": elapsed, "duration": run.duration}
-            if run.kind == "fit":
+            if run.kind in ("fit", "anchor"):
                 status["progress"] = progress
             if run.finished is None:
                 return {**status, "state": "running", "done": progress.get("t", 0.0)}

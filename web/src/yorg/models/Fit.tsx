@@ -121,6 +121,7 @@ export function FitSummary({
     note,
     title = "Fit",
     spread,
+    how,
     onApply,
     onDiscard,
 }: {
@@ -130,6 +131,7 @@ export function FitSummary({
     note: string; // how it went
     title?: string;
     spread?: Record<string, [number, number]>; // by part.key
+    how?: Record<string, string>; // how each knob was found (anchored, fitted), by part.key
     onApply: () => void;
     onDiscard: () => void;
 }) {
@@ -147,6 +149,7 @@ export function FitSummary({
                         <th>To</th>
                         <th>Change</th>
                         {spread && <th>10–90%</th>}
+                        {how && <th>How</th>}
                     </tr>
                 </thead>
                 <tbody>
@@ -175,6 +178,7 @@ export function FitSummary({
                                 {spread && (
                                     <td className="muted">{range ? `${number(range[0])} to ${show(range[1])}` : ""}</td>
                                 )}
+                                {how && <td className="muted">{how[`${knob.part}.${knob.key}`] ?? ""}</td>}
                             </tr>
                         );
                     })}

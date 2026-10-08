@@ -101,6 +101,8 @@ class AnchorIn(KnobIn):
 
 class AnchorRunIn(RunIn):
     anchors: list[AnchorIn] = Field(min_length=1, max_length=MAX_KNOBS)
+    knobs: list[KnobIn] = Field(default_factory=list, max_length=MAX_KNOBS)  # fitted, to the sensors not anchoring
+    fallback: bool = True  # fit each knob whose anchor doesn't work
 
 
 @router.get("/catalog")
@@ -177,6 +179,16 @@ def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dic
     return job, inputs
 
 
+def _compared(parts: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+    """The sensors a fit compares the model with: each linked channel's output, and the input holding it."""
+    return [
+        {"output": f"{part['id']}.{catalog.output_of(link)}", "input": f"{part['id']}.{link.key}"}
+        for part in parts.values()
+        for link in catalog.BY_TYPE[part["type"]].links
+        if part["links"].get(link.key) and catalog.compared(link, part["settings"])
+    ]
+
+
 def _knob(parts: dict[str, dict[str, Any]], part_id: str, key: str, verb: str) -> tuple[dict[str, Any], str]:
     """A part's tunable setting that matters as the part is set up, and how it reads (Injector's CdA)."""
     part = parts.get(part_id)
@@ -211,12 +223,7 @@ def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns
         if (knob.part, knob.key) in knobs:
             raise BadModel(f"{named} is picked twice")
         knobs.append((knob.part, knob.key))
-    compared = [
-        {"output": f"{part['id']}.{catalog.output_of(link)}", "input": f"{part['id']}.{link.key}"}
-        for part in parts.values()
-        for link in catalog.BY_TYPE[part["type"]].links
-        if part["links"].get(link.key) and catalog.compared(link, part["settings"])
-    ]
+    compared = _compared(parts)
     if not compared:
         raise BadModel("Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure")
     job, inputs = _job(body, db, files, checked, compared=True)
@@ -228,8 +235,10 @@ def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns
 def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
     """Start a run with knobs anchored to a test (FullFlow's Sensors): in each time step of an anchor's span, FullFlow
     moves its knob, with the rest of the model, until the model reads at its sensor what the sensor's channel
-    measured. Ask GET /runs/{id} how it's going; its result has each knob's history ("anchored", by part.key) and the
-    value it settled at ("anchors")."""
+    measured. Then a fit (fit.tune) of the knobs picked to fit, and, with fallback, of each knob whose anchor didn't
+    work, to the sensors not anchoring, the working anchors anchored in each of its runs. Ask GET /runs/{id} how it's
+    going; its result has each anchored knob's history ("anchored", by part.key) and the value it settled at
+    ("anchors"), and what a fit found ("fit")."""
     checked = runnable(body.model)
     parts = {**checked.nodes, **checked.edges}
     steady = body.solver == "steady"
@@ -275,8 +284,25 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
                 "end": end,
             }
         )
+    fitted: list[dict[str, str]] = []
+    for knob in body.knobs:
+        part, named = _knob(parts, knob.part, knob.key, "fit")
+        if any((one["part"], one["key"]) == (knob.part, knob.key) for one in anchors):
+            raise BadModel(f"{named} is anchored and fitted: pick one")
+        if any((one["part"], one["key"]) == (knob.part, knob.key) for one in fitted):
+            raise BadModel(f"{named} is picked twice")
+        if steady and part["type"] == "tank":
+            raise BadModel(f"{named} doesn't matter in a steady run, where tanks hold their pressure")
+        fitted.append({"part": knob.part, "key": knob.key})
+    compared = _compared(parts)
+    anchoring = {f"{one['sensor']}.{one['link']}" for one in anchors}
+    if fitted and all(one["input"] in anchoring for one in compared):
+        raise BadModel(
+            "Every sensor anchors a knob, so there's none left to fit the others to: anchor fewer, or link another "
+            "sensor"
+        )
     job, inputs = _job(body, db, files, checked, compared=True)
-    job["anchors"] = anchors
+    job.update(anchors=anchors, knobs=fitted, fallback=body.fallback, compared=compared)
     return {"id": runs.start(user.id, job, inputs, kind="anchor").id}
 
 

@@ -265,7 +265,8 @@ export function HelpPage() {
                                       through the run. Give an anchor a span where its knob counts (a valve's CdA while
                                       it's open). The <em>Steady</em> solver settles lines, junctions, and regulators at
                                       once in each step, with tanks at the pressure measured: much faster, without
-                                      inertia.
+                                      inertia. What anchoring can't settle is fitted: knobs you pick to fit alongside,
+                                      and any knob FullFlow couldn't anchor.
                                   </li>
                                   <li>
                                       <em>Model</em> on a dataset&apos;s page runs a model on it.

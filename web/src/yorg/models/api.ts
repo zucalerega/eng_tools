@@ -154,6 +154,7 @@ export interface FitFound {
     cost: number;
     tries: number;
     stopped: boolean;
+    fallback?: { part: string; key: string; why: string }[]; // an anchored run's: knobs fitted as their anchors failed
 }
 
 /** What an anchor found: its knob where FullFlow anchored it, as the median and its 10th and 90th percentiles (null
@@ -167,6 +168,7 @@ export interface AnchorFound {
     value: number | null;
     low: number | null;
     high: number | null;
+    share: number; // of its span, where FullFlow anchored it
 }
 
 export interface RunResult {
@@ -228,6 +230,8 @@ export interface AnchorPick {
 
 export interface AnchorRequest extends RunRequest {
     anchors: AnchorPick[];
+    knobs: { part: string; key: string }[]; // fitted alongside, to the sensors not anchoring
+    fallback: boolean; // fit each knob whose anchor doesn't work
 }
 
 export const devApi = {

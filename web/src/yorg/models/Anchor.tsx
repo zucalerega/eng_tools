@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Dialog } from "../../components";
 import type { Catalog, Solver, SystemModel } from "./api";
-import { MAX_KNOBS } from "./Fit";
+import { MAX_KNOBS, type Knob } from "./Fit";
 import { comparisons, knobsOf } from "./model";
 
 // Anchoring a model to a test: each sensor picked moves a knob (FullFlow's Sensors), in every time step of the run, until
 // the model reads what that sensor measured. One run, and each knob's history through it: what it settled at is then
-// yours to apply (or not).
+// yours to apply (or not). What anchoring can't settle is fitted (Fit's least squares, the anchors held in each run):
+// knobs picked to fit, and, falling back, any whose anchor didn't work.
 
 /** A sensor anchoring a knob, over a span in seconds from the run's zero (T0, or the dataset's start; blank: the run's
  * window). */
@@ -18,6 +19,15 @@ export interface AnchorChoice {
     from: string;
     to: string;
 }
+
+/** What to anchor, what to fit alongside, and whether to fit a knob whose anchor doesn't work. */
+export interface AnchorPlan {
+    anchors: AnchorChoice[];
+    knobs: Knob[];
+    fallback: boolean;
+}
+
+export const NO_PLAN: AnchorPlan = { anchors: [], knobs: [], fallback: true };
 
 const knobId = (part: string, key: string) => `${part}.${key}`;
 
@@ -33,9 +43,9 @@ export function AnchorDialog({
     model: SystemModel;
     catalog: Catalog;
     solver: Solver;
-    picked: AnchorChoice[]; // last time's, to start from
+    picked: AnchorPlan; // last time's, to start from
     window: { from: string; to: string }; // the run's, as the page shows it
-    onStart: (anchors: AnchorChoice[]) => void;
+    onStart: (plan: AnchorPlan) => void;
     onCancel: () => void;
 }) {
     // Steady, tanks hold what was measured: their knobs don't matter, and their sensors are what they follow.
@@ -45,14 +55,26 @@ export function AnchorDialog({
     const knobs = knobsOf(model, catalog).filter(({ part }) => !(steady && tanks.has(part.id)));
     const [rows, setRows] = useState<AnchorChoice[]>(() =>
         sensors.map((sensor) => {
-            const before = picked.find((one) => one.sensor === sensor.part && one.link === sensor.link);
+            const before = picked.anchors.find((one) => one.sensor === sensor.part && one.link === sensor.link);
             const known =
                 before && knobs.some(({ part, setting }) => part.id === before.part && setting.key === before.key);
             return known ? before : { part: "", key: "", sensor: sensor.part, link: sensor.link, from: "", to: "" };
         }),
     );
+    const [fitted, setFitted] = useState<Knob[]>(() =>
+        picked.knobs.filter((one) =>
+            knobs.some(({ part, setting }) => part.id === one.part && setting.key === one.key),
+        ),
+    );
+    const [fallback, setFallback] = useState(picked.fallback);
     const chosen = rows.filter((row) => row.part !== "");
     const ids = chosen.map((row) => knobId(row.part, row.key));
+    // Knobs to fit: any not anchored, fitted to the sensors that aren't anchoring.
+    const fittable = knobs.filter(({ part, setting }) => !ids.includes(knobId(part.id, setting.key)));
+    const fitting = fitted.filter((one) =>
+        fittable.some(({ part, setting }) => part.id === one.part && setting.key === one.key),
+    );
+    const nothingLeft = fitting.length > 0 && rows.every((row) => row.part !== "");
     const twice = ids.find((id, index) => ids.indexOf(id) !== index);
     const twiceName = twice && knobs.find(({ part, setting }) => knobId(part.id, setting.key) === twice);
     const badSpan = chosen.some((row) =>
@@ -64,8 +86,15 @@ export function AnchorDialog({
         <Dialog
             title="Anchor knobs to the test"
             confirm="Anchor"
-            disabled={chosen.length === 0 || chosen.length > MAX_KNOBS || twice !== undefined || badSpan}
-            onConfirm={() => onStart(chosen)}
+            disabled={
+                chosen.length === 0 ||
+                chosen.length > MAX_KNOBS ||
+                twice !== undefined ||
+                badSpan ||
+                fitting.length > MAX_KNOBS ||
+                nothingLeft
+            }
+            onConfirm={() => onStart({ anchors: chosen, knobs: fitting, fallback })}
             onCancel={onCancel}
         >
             <p className="muted dev-help">
@@ -138,6 +167,45 @@ export function AnchorDialog({
                     })}
                 </fieldset>
             )}
+            {sensors.length > 0 && fittable.length > 0 && (
+                <fieldset className="dev-knobs">
+                    <legend>Also fit, to the sensors not anchoring</legend>
+                    {fittable.map(({ part, setting }) => {
+                        const knob = { part: part.id, key: setting.key };
+                        const on = fitting.some((one) => one.part === knob.part && one.key === knob.key);
+                        return (
+                            <label key={knobId(part.id, setting.key)} className="check">
+                                <input
+                                    type="checkbox"
+                                    checked={on}
+                                    onChange={(event) =>
+                                        setFitted(
+                                            event.target.checked
+                                                ? [...fitting, knob]
+                                                : fitting.filter(
+                                                      (one) => !(one.part === knob.part && one.key === knob.key),
+                                                  ),
+                                        )
+                                    }
+                                />
+                                {part.name}: {setting.label}
+                            </label>
+                        );
+                    })}
+                </fieldset>
+            )}
+            {sensors.length > 0 && (
+                <label className="check">
+                    <input type="checkbox" checked={fallback} onChange={(event) => setFallback(event.target.checked)} />
+                    Fit any knob FullFlow can&apos;t anchor (slower: a fit takes minutes)
+                </label>
+            )}
+            {nothingLeft && (
+                <p className="notice notice-warning">
+                    Every sensor anchors a knob, so none is left to fit the others to: anchor fewer.
+                </p>
+            )}
+            {fitting.length > MAX_KNOBS && <p className="notice notice-warning">Fit {MAX_KNOBS} knobs at most.</p>}
             {twiceName && (
                 <p className="notice notice-warning">
                     {twiceName.part.name}: {twiceName.setting.label} is picked twice: give each knob one sensor.

@@ -117,6 +117,15 @@ test("a model's knob is anchored to a test in one steady run, and applied", { ti
     await userEvent.selectOptions(anchoring.getByLabelText(/^Manifold pressure transducer/), "Injector: CdA");
     await userEvent.type(anchoring.getByLabelText("From (s)"), "0.6");
     await userEvent.type(anchoring.getByLabelText("To (s)"), "1.4");
+    // Its one sensor anchors the injector, so there's nothing left to fit the line's friction to.
+    const fitToo = anchoring.getByRole("checkbox", { name: "Feed line: Friction factor f" });
+    await userEvent.click(fitToo);
+    expect(anchoring.getByText(/^Every sensor anchors a knob/)).toBeTruthy();
+    expect((anchoring.getByRole("button", { name: "Anchor" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(fitToo);
+    expect(
+        (anchoring.getByRole("checkbox", { name: /^Fit any knob FullFlow can't anchor/ }) as HTMLInputElement).checked,
+    ).toBe(true);
     await userEvent.click(anchoring.getByRole("button", { name: "Anchor" }));
 
     const anchored = within(await screen.findByRole("region", { name: "Anchored" }, { timeout: 150_000 }));

@@ -163,8 +163,14 @@ the keys.
   (CdAs, a line's friction factor and fittings' K, a valve's opening time, a regulator's
   set pressure and droop, a venturi's recovery, an ullage's exponent or wall hA and its
   collapse factor), or pick them and **Fit**: the server turns them until the model
-  matches best, and you apply what it found (or not). Models are saved for every admin,
-  run against any test with the same channel names, and go to and from files.
+  matches best, and you apply what it found (or not). Or **Anchor** them: pair a knob with
+  a sensor, and in one run FullFlow moves the knob in every time step until the sensor
+  reads what was measured; you see each knob through the run, and apply the median (or
+  not). Give an anchor a span where its knob counts, such as a valve's CdA while it's open.
+  The **Steady** solver settles the lines, junctions, and regulators at once in each time
+  step, with the tanks at the pressure measured: much faster, and without inertia, so a
+  steady anchor can start anywhere. Models are saved for every admin, run against any test
+  with the same channel names, and go to and from files.
 - **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all

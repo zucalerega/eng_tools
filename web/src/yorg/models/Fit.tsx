@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "../../components";
 import { formatValue } from "../scale";
-import type { Catalog, FitKnob, SystemModel } from "./api";
+import type { Catalog, FitKnob, Setting, SystemModel } from "./api";
 import { comparisons, kindOf, knobsOf, partOf, setSetting } from "./model";
 import { toDisplay, unitOf } from "./units";
 
@@ -20,9 +20,22 @@ export interface Knob {
 
 const same = (a: Knob, b: Knob) => a.part === b.part && a.key === b.key;
 
-/** A model with the values a fit found. */
-export function applyKnobs(model: SystemModel, found: FitKnob[]): SystemModel {
-    return found.reduce((next, knob) => setSetting(next, knob.part, knob.key, knob.value), model);
+/** A knob's setting, if the model still has it. */
+function settingOf(model: SystemModel, catalog: Catalog, knob: { part: string; key: string }): Setting | undefined {
+    const part = partOf(model, knob.part);
+    return part ? kindOf(catalog, part.type).settings.find((one) => one.key === knob.key) : undefined;
+}
+
+/** Whether a value is within its setting's limits: an anchor can take a knob past them, which no part can have. */
+function withinLimits(setting: Setting | undefined, value: number): boolean {
+    return (setting?.minimum ?? -Infinity) <= value && value <= (setting?.maximum ?? Infinity);
+}
+
+/** A model with the values a fit (or an anchored run) found, where they're within their settings' limits. */
+export function applyKnobs(model: SystemModel, catalog: Catalog, found: FitKnob[]): SystemModel {
+    return found
+        .filter((knob) => withinLimits(settingOf(model, catalog, knob), knob.value))
+        .reduce((next, knob) => setSetting(next, knob.part, knob.key, knob.value), model);
 }
 
 export function FitDialog({
@@ -97,12 +110,17 @@ export function FitDialog({
     );
 }
 
-/** What a fit found (or, stopped, the best it had found): each knob from where it started to where it ended up. */
+/**
+ * What a fit found (or, stopped, the best it had found), or what an anchored run's knobs settled at: each knob from
+ * where it started to where it ended up, and, anchored, how much it moved (its 10th to 90th percentiles).
+ */
 export function FitSummary({
     model,
     catalog,
     found,
     note,
+    title = "Fit",
+    spread,
     onApply,
     onDiscard,
 }: {
@@ -110,14 +128,16 @@ export function FitSummary({
     catalog: Catalog;
     found: FitKnob[];
     note: string; // how it went
+    title?: string;
+    spread?: Record<string, [number, number]>; // by part.key
     onApply: () => void;
     onDiscard: () => void;
 }) {
     const display = model.display;
     return (
-        <section className="dev-fit-found" aria-label="Fit">
+        <section className="dev-fit-found" aria-label={title}>
             <p>
-                <strong>Fit</strong> <span className="muted">{note}</span>
+                <strong>{title}</strong> <span className="muted">{note}</span>
             </p>
             <table className="dev-fit-table">
                 <thead>
@@ -126,19 +146,19 @@ export function FitSummary({
                         <th>From</th>
                         <th>To</th>
                         <th>Change</th>
+                        {spread && <th>10–90%</th>}
                     </tr>
                 </thead>
                 <tbody>
                     {found.map((knob) => {
                         const part = partOf(model, knob.part);
-                        const setting = part
-                            ? kindOf(catalog, part.type).settings.find((one) => one.key === knob.key)
-                            : undefined;
+                        const setting = settingOf(model, catalog, knob);
                         const quantity = setting?.quantity ?? "number";
                         const unit = unitOf(quantity, display);
-                        const show = (si: number) =>
-                            `${rounded(toDisplay(quantity, si, display))}${unit ? ` ${unit}` : ""}`;
+                        const number = (si: number) => rounded(toDisplay(quantity, si, display));
+                        const show = (si: number) => `${number(si)}${unit ? ` ${unit}` : ""}`;
                         const ratio = knob.start !== 0 ? knob.value / knob.start : null;
+                        const range = spread?.[`${knob.part}.${knob.key}`];
                         return (
                             <tr key={`${knob.part}.${knob.key}`}>
                                 <td>
@@ -147,8 +167,14 @@ export function FitSummary({
                                 <td>{show(knob.start)}</td>
                                 <td>
                                     <strong>{show(knob.value)}</strong>
+                                    {!withinLimits(setting, knob.value) && (
+                                        <span className="muted"> past its limits: not applied</span>
+                                    )}
                                 </td>
                                 <td className="muted">{ratio === null ? "" : `×${rounded(ratio)}`}</td>
+                                {spread && (
+                                    <td className="muted">{range ? `${number(range[0])} to ${show(range[1])}` : ""}</td>
+                                )}
                             </tr>
                         );
                     })}

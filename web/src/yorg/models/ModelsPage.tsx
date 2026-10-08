@@ -7,14 +7,18 @@ import { linkTarget } from "../../preview";
 import { datasetUrl, storedT0 } from "../pages";
 import { sampleAt } from "../samples";
 import { formatValue } from "../scale";
+import { AnchorDialog, type AnchorChoice } from "./Anchor";
 import {
     devApi,
+    type AnchorFound,
+    type AnchorPick,
     type Catalog,
     type FitKnob,
     type Quantity,
     type RunResult,
     type RunStatus,
     type SavedModel,
+    type Solver,
     type SystemModel,
 } from "./api";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
@@ -38,7 +42,7 @@ import "./models.css";
 
 // Yorg's system models (Models, in the preview while they're tried out). Draw a test stand's feed system, link its valves and sensors to a test's
 // channels, run it with FullFlow on the server, and compare it with what was measured; turn the knobs marked "tune"
-// until it matches, or have a fit turn them.
+// until it matches, have a fit turn them, or anchor them to sensors (FullFlow moves them in every time step).
 
 const FULLFLOW = "https://github.com/saakethramoju/FullFlow";
 
@@ -51,11 +55,18 @@ interface Current {
     dirty: boolean;
 }
 
-type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | { ask: "fit" } | null;
+type Asking =
+    | { ask: "save-as" }
+    | { ask: "delete" }
+    | { ask: "discard"; then: () => void }
+    | { ask: "fit" }
+    | { ask: "anchor" }
+    | null;
 
-/** A run or a fit on the server: what it ran (the model as it was, against which dataset), and how it's going. */
+/** A run, a fit, or an anchored run on the server: what it ran (the model as it was, against which dataset), and how
+ * it's going. */
 interface Job {
-    kind: "run" | "fit";
+    kind: "run" | "fit" | "anchor";
     id: string;
     model: SystemModel;
     datasetId: number;
@@ -63,10 +74,30 @@ interface Job {
     status: RunStatus | null;
 }
 
-/** What a fit found, to apply: the knobs from where they started, and how it went. */
+/** What a fit (or an anchored run) found, to apply: the knobs from where they started, and how it went. */
 interface Found {
     knobs: FitKnob[];
     note: string;
+    title?: string;
+    spread?: Record<string, [number, number]>; // an anchored run's: how much each knob moved, by part.key
+}
+
+/** What an anchored run's knobs settled at, to apply: those FullFlow could anchor. */
+function anchoredFound(anchors: AnchorFound[]): Found {
+    const settled = anchors.flatMap((one) =>
+        one.value === null || one.low === null || one.high === null
+            ? []
+            : [{ ...one, value: one.value, low: one.low, high: one.high }],
+    );
+    const never = anchors.length - settled.length;
+    return {
+        knobs: settled.map((one) => ({ part: one.part, key: one.key, start: one.start, value: one.value })),
+        title: "Anchored",
+        note:
+            "Done in one run: each knob's median where FullFlow anchored it." +
+            (never > 0 ? ` ${never} never could be: see the notes below.` : ""),
+        spread: Object.fromEntries(settled.map((one) => [`${one.part}.${one.key}`, [one.low, one.high]])),
+    };
 }
 
 /** A run's window on a dataset, from its T0 (or start): a second before T0 to ten after (or its first ten seconds). */
@@ -119,6 +150,8 @@ export function ModelsPage() {
     const [shown, setShown] = useState<{ result: RunResult; model: SystemModel; datasetId: number } | null>(null);
     const [found, setFound] = useState<Found | null>(null);
     const [lastKnobs, setLastKnobs] = useState<Knob[]>([]);
+    const [lastAnchors, setLastAnchors] = useState<AnchorChoice[]>([]);
+    const [solver, setSolver] = useState<Solver>("transient");
     const dragStart = useRef<SystemModel | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -169,6 +202,9 @@ export function ModelsPage() {
                         if (status.state === "done") {
                             setShown({ result: status.result, model: job.model, datasetId: job.datasetId });
                             const fit = status.result.fit;
+                            if (status.result.anchors) {
+                                setFound(anchoredFound(status.result.anchors));
+                            }
                             if (fit) {
                                 const better = fit.cost_start > 0 ? 100 * (1 - fit.cost / fit.cost_start) : 0;
                                 setFound({
@@ -313,6 +349,7 @@ export function ModelsPage() {
         end,
         dt,
         reading: readingFor(model.display),
+        solver,
     });
 
     const startRun = () =>
@@ -337,6 +374,28 @@ export function ModelsPage() {
             const started = await devApi.fit({ ...runBody(model, datasetId), knobs });
             setFound(null);
             setJob({ kind: "fit", id: started.id, model, datasetId, knobs, status: null });
+        });
+
+    const startAnchor = (choices: AnchorChoice[]) =>
+        act(async () => {
+            if (datasetId === null) {
+                return;
+            }
+            const model = current.model;
+            setAsking(null);
+            setLastAnchors(choices);
+            const at = (text: string) => (text.trim() === "" ? undefined : zero + Number(text));
+            const anchors: AnchorPick[] = choices.map((one) => ({
+                part: one.part,
+                key: one.key,
+                sensor: one.sensor,
+                link: one.link,
+                start: at(one.from),
+                end: at(one.to),
+            }));
+            const started = await devApi.anchor({ ...runBody(model, datasetId), anchors });
+            setFound(null);
+            setJob({ kind: "anchor", id: started.id, model, datasetId, knobs: [], status: null });
         });
 
     const nodeTypes = catalog.parts.filter((part) => part.kind === "node");
@@ -650,6 +709,16 @@ export function ModelsPage() {
                         onChange={(event) => setWindowText({ ...windowText, dt: event.target.value })}
                     />
                 </label>
+                <label
+                    className="field"
+                    title="Steady: FullFlow's quasi-steady sweep. In each time step, lines, junctions, and regulators settle at once, and tanks hold the pressure measured (or set) instead of draining. Much faster, without inertia."
+                >
+                    Solver
+                    <select value={solver} onChange={(event) => setSolver(event.target.value as Solver)}>
+                        <option value="transient">Transient</option>
+                        <option value="steady">Steady</option>
+                    </select>
+                </label>
                 {running ? (
                     <button type="button" onClick={() => job && void act(async () => devApi.stop(job.id))}>
                         Stop
@@ -666,6 +735,9 @@ export function ModelsPage() {
                         </button>
                         <button type="button" disabled={!windowOk} onClick={() => setAsking({ ask: "fit" })}>
                             Fit…
+                        </button>
+                        <button type="button" disabled={!windowOk} onClick={() => setAsking({ ask: "anchor" })}>
+                            Anchor…
                         </button>
                     </>
                 )}
@@ -693,8 +765,10 @@ export function ModelsPage() {
                     catalog={catalog}
                     found={found.knobs}
                     note={found.note}
+                    title={found.title}
+                    spread={found.spread}
                     onApply={() => {
-                        change(applyKnobs(current.model, found.knobs));
+                        change(applyKnobs(current.model, catalog, found.knobs));
                         setFound(null);
                     }}
                     onDiscard={() => setFound(null)}
@@ -710,6 +784,17 @@ export function ModelsPage() {
                     catalog={catalog}
                     picked={lastKnobs}
                     onStart={(knobs) => void startFit(knobs)}
+                    onCancel={() => setAsking(null)}
+                />
+            )}
+            {asking?.ask === "anchor" && (
+                <AnchorDialog
+                    model={current.model}
+                    catalog={catalog}
+                    solver={solver}
+                    picked={lastAnchors}
+                    window={{ from: windowText.from, to: windowText.to }}
+                    onStart={(choices) => void startAnchor(choices)}
                     onCancel={() => setAsking(null)}
                 />
             )}

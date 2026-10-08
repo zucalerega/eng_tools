@@ -1,6 +1,7 @@
 import { request } from "../../api";
 
-// The dev page's API (/api/yorg/dev, for admins): system models, and runs and fits of them against a test's data.
+// The dev page's API (/api/yorg/dev, for admins): system models, and runs, fits, and anchored runs of them against a
+// test's data.
 // Every value the server sends or takes is in SI units (Pa absolute, K, m, m², m³, kg/s); units.ts shows them in the
 // model's units.
 
@@ -155,6 +156,19 @@ export interface FitFound {
     stopped: boolean;
 }
 
+/** What an anchor found: its knob where FullFlow anchored it, as the median and its 10th and 90th percentiles (null
+ * if it never could). */
+export interface AnchorFound {
+    part: string;
+    key: string;
+    sensor: string;
+    link: string;
+    start: number; // the knob's setting
+    value: number | null;
+    low: number | null;
+    high: number | null;
+}
+
 export interface RunResult {
     times: number[];
     series: Record<string, (number | null)[]>; // by part.output
@@ -164,6 +178,8 @@ export interface RunResult {
     steps: number;
     elapsed: number;
     fit?: FitFound; // a fit's result: the best run, and what it found
+    anchored?: Record<string, (number | null)[]>; // an anchored run's: each knob's history, by part.key
+    anchors?: AnchorFound[];
 }
 
 /** How a fit is going: its tries so far, and the best it has found (knob values in the order asked). */
@@ -180,6 +196,12 @@ export type RunStatus =
     | { state: "done"; elapsed: number; duration: number; result: RunResult; progress?: FitProgress }
     | { state: "failed"; elapsed: number; duration: number; message: string; progress?: FitProgress };
 
+/**
+ * transient: FullFlow's transient solver. steady: its quasi-steady sweep, in which lines, junctions, and regulators
+ * settle in each time step and tanks hold the pressure measured (or set).
+ */
+export type Solver = "transient" | "steady";
+
 export interface RunRequest {
     model: SystemModel;
     dataset_id: number;
@@ -187,10 +209,25 @@ export interface RunRequest {
     end: number;
     dt: number;
     reading: { pressure: string; temperature: string; mass_flow: string };
+    solver: Solver;
 }
 
 export interface FitRequest extends RunRequest {
     knobs: { part: string; key: string }[];
+}
+
+/** A knob anchored to a sensor's channel, over a span of the run (on the dataset's clock; left out, all of it). */
+export interface AnchorPick {
+    part: string;
+    key: string;
+    sensor: string;
+    link: string;
+    start?: number;
+    end?: number;
+}
+
+export interface AnchorRequest extends RunRequest {
+    anchors: AnchorPick[];
 }
 
 export const devApi = {
@@ -204,6 +241,7 @@ export const devApi = {
     removeModel: (id: string) => request<void>("DELETE", `/api/yorg/dev/models/${id}`),
     run: (body: RunRequest) => request<{ id: string }>("POST", "/api/yorg/dev/runs", body),
     fit: (body: FitRequest) => request<{ id: string }>("POST", "/api/yorg/dev/fits", body),
+    anchor: (body: AnchorRequest) => request<{ id: string }>("POST", "/api/yorg/dev/anchors", body),
     status: (id: string) => request<RunStatus>("GET", `/api/yorg/dev/runs/${id}`),
     stop: (id: string) => request<void>("DELETE", `/api/yorg/dev/runs/${id}`),
 };

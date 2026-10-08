@@ -260,6 +260,14 @@ export function HelpPage() {
                                       you pick (CdAs, losses, a regulator's set pressure) until it matches best.
                                   </li>
                                   <li>
+                                      <em>Anchor</em> pairs knobs with sensors: in one run, FullFlow moves each knob in
+                                      every time step until its sensor reads what was measured, and plots the knob
+                                      through the run. Give an anchor a span where its knob counts (a valve's CdA while
+                                      it's open). The <em>Steady</em> solver settles lines, junctions, and regulators at
+                                      once in each step, with tanks at the pressure measured: much faster, without
+                                      inertia.
+                                  </li>
+                                  <li>
                                       <em>Model</em> on a dataset&apos;s page runs a model on it.
                                   </li>
                               </ul>

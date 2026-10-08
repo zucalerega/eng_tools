@@ -1,9 +1,14 @@
 """System models (Yorg's dev page): admins draw a feed system, and it runs with FullFlow against a test's data."""
 
+import random
+
 import pytest
+from fullflow import FullFlowError
 
 from yjsp_server.yorg.system.catalog import PSI
 from yjsp_server.yorg.system.channels import Reading, to_si
+from yjsp_server.yorg.system.network import _Builder
+from yjsp_server.yorg.system.spec import SystemModelIn, runnable
 
 ATMOSPHERE = 101325.0
 
@@ -272,6 +277,27 @@ def test_a_run_that_fails_says_why(team):
     assert status["message"].startswith("Water tank: ThermoProp can't give Water's properties at 200.0 K")
 
 
+def test_a_run_that_doesnt_settle_says_where():
+    """FullFlow lists the equations it couldn't meet, largest first, under names like tank:liquid:ullage_volume or
+    inj.cda:anchor; the page names their parts, and not those whose equations it met."""
+    checked = runnable(SystemModelIn.model_validate(cold_flow_model()))
+    job = {"model": {"nodes": checked.nodes, "edges": checked.edges}, "liquid_of": checked.liquid_of, "dt": 0.01}
+    built = _Builder({**job, "start": 10.0, "end": 12.0}, {}, lambda t: None)
+    error = FullFlowError(
+        "Transient timestep failed or converged to unacceptable residuals.\n"
+        "time = 0.51\n"
+        "Largest residuals:\n"
+        "  - line:mass_flow.integration: -1.571477e-05\n"
+        "  - inj.cda:anchor.balance[0]: 2.000000e-06\n"
+        "  - line.balance[0]: 1.500000e-06\n"
+        "  - j1.balance[0]: 0.000000e+00\n"
+    )
+    assert built.explain(error) == (
+        "The simulation didn't settle at 10.510 s, around Feed line and Injector. Try a shorter time step, or check "
+        "the settings there (a CdA of 0, a line with no length)."
+    )
+
+
 def pressurized_csv() -> str:
     """2 s at 100 Hz: the main valve open from 0.3 s, the vent from 1.5 s, the ullage starting at 250 psig and 50 °F,
     and the chamber's pressure rising from 0 to 100 psig."""
@@ -478,4 +504,264 @@ def test_a_fit_needs_something_to_compare_with(team):
     assert (response.status_code, response.json()["message"]) == (
         422,
         "Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure",
+    )
+
+
+def anchored_run(team, who, body: dict) -> dict:
+    response = team.client.post("/api/yorg/dev/anchors", json=body, headers=who)
+    assert response.status_code == 201, response.text
+    run_id = response.json()["id"]
+    team.app.state.yorg_runs.wait(run_id, timeout=300)
+    status = team.client.get(f"/api/yorg/dev/runs/{run_id}", headers=who).json()
+    assert status["state"] in ("done", "failed"), status
+    return status
+
+
+def measured_csv(result: dict, columns: dict[str, str], extra=None, noise: float = 0.0) -> str:
+    """A test's data made from a run: each column (its name and unit) from an output (pressures in psia), with noise
+    (a share of the column's largest value, the same every time), and any extra columns from extra(t)."""
+    names = list(columns) + list(extra(0.0) if extra else {})
+    scales = {name: (PSI if "psia" in name else 1.0) for name in columns}
+    largest = {name: max(abs(value) for value in result["series"][output]) for name, output in columns.items()}
+    jitter = random.Random(7)
+    rows = ["Time (s)," + ",".join(names)]
+    for index, t in enumerate(result["times"]):
+        values = [
+            (result["series"][output][index] + jitter.gauss(0.0, noise * largest[name])) / scales[name]
+            for name, output in columns.items()
+        ]
+        values += list(extra(t).values()) if extra else []
+        rows.append(f"{t:.4f}," + ",".join(f"{value:.8g}" for value in values))
+    return "\n".join(rows) + "\n"
+
+
+@pytest.mark.parametrize("solver", ["transient", "steady"])
+def test_anchors_find_the_knobs_that_made_the_data_in_one_run(team, solver):
+    chief = team.member("chief@x.test", admin=True)
+    # What the "test" measured: the model itself, with an injector CdA of 3e-5 m² and a line friction factor of 0.03.
+    blank = upload(team, chief, "Time (s),X\n0,0\n1,0\n", "Blank.csv")
+    truth = run(
+        team, chief, {"model": fit_model(3e-5, 0.03), "dataset_id": blank["id"], "start": 0.0, "end": 1.0, "dt": 0.01}
+    )
+    assert truth["state"] == "done", truth
+    columns = {"PT-MANIFOLD (psia)": "j1.pressure", "FM-01 (kg/s)": "inj.mass_flow"}
+    measured = upload(team, chief, measured_csv(truth["result"], columns), "Measured.csv")
+
+    # From knobs well off, each anchored to a sensor from 0.2 s (after the line's flow has come up to speed, which a
+    # steady run doesn't model).
+    body = {
+        "model": fit_model(2e-5, 0.015),
+        "dataset_id": measured["id"],
+        "start": 0.0,
+        "end": 1.0,
+        "dt": 0.01,
+        "solver": solver,
+        "anchors": [
+            {"part": "inj", "key": "cda", "sensor": "inj", "link": "flow", "start": 0.2},
+            {"part": "line", "key": "friction_factor", "sensor": "j1", "link": "pressure", "start": 0.2},
+        ],
+    }
+    status = anchored_run(team, chief, body)
+    assert status["state"] == "done", status
+    result = status["result"]
+    found = {(one["part"], one["key"]): one for one in result["anchors"]}
+    assert found["inj", "cda"]["start"] == 2e-5
+    assert found["inj", "cda"]["value"] == pytest.approx(3e-5, rel=1e-3)
+    assert found["line", "friction_factor"]["value"] == pytest.approx(0.03, rel=1e-2)
+    assert found["inj", "cda"]["low"] <= found["inj", "cda"]["value"] <= found["inj", "cda"]["high"]
+    # Each knob's history: its setting until its span, then what the data asked for.
+    assert at({"times": result["times"], "series": result["anchored"]}, "inj.cda", 0.1) == 2e-5
+    assert at({"times": result["times"], "series": result["anchored"]}, "inj.cda", 0.6) == pytest.approx(3e-5, rel=1e-3)
+    # And the model reads what was measured.
+    assert at(result, "inj.mass_flow", 0.6) == pytest.approx(at(truth["result"], "inj.mass_flow", 0.6), rel=1e-4)
+    assert at(result, "j1.pressure", 0.6) == pytest.approx(at(truth["result"], "j1.pressure", 0.6), rel=1e-4)
+
+
+def test_an_anchor_is_on_while_its_knob_counts_and_holds_after(team):
+    chief = team.member("chief@x.test", admin=True)
+    command = lambda t: {"MOV-01": int(0.5 <= t < 1.5)}  # noqa: E731
+    rows = "\n".join(f"{i / 100:.2f},{command(i / 100)['MOV-01']}" for i in range(201))
+    commands = upload(team, chief, "Time (s),MOV-01\n" + rows + "\n", "Commands.csv")
+    model = cold_flow_model()
+    model["nodes"][0]["links"] = {}  # the tank at its 300 psig
+    model["nodes"][2]["links"] = {"pressure": "PT-MANIFOLD"}
+    model["edges"][2]["links"] = {"flow": "FM-01"}
+    truth = run(team, chief, {"model": model, "dataset_id": commands["id"], "start": 0.0, "end": 2.0, "dt": 0.01})
+    assert truth["state"] == "done", truth
+    columns = {"PT-MANIFOLD (psia)": "j2.pressure", "FM-01 (kg/s)": "inj.mass_flow"}
+    measured = upload(team, chief, measured_csv(truth["result"], columns, command, noise=0.002), "Measured.csv")
+    model["edges"][1]["settings"]["cda"] = 3e-5  # the main valve's, from 5e-5
+    model["edges"][2]["settings"]["cda"] = 2e-5  # the injector's, from 3e-5
+    body = {"model": model, "dataset_id": measured["id"], "start": 0.0, "end": 2.0, "dt": 0.01}
+    anchors = [
+        {"part": "mov", "key": "cda", "sensor": "j2", "link": "pressure"},
+        {"part": "inj", "key": "cda", "sensor": "inj", "link": "flow"},
+    ]
+
+    # While the valve is shut, nothing flows whatever the CdAs, so no CdA matches the flow meter's noise: FullFlow
+    # holds them there, and what they're found to be comes from where it could anchor them.
+    whole = anchored_run(team, chief, {**body, "anchors": anchors})
+    assert whole["state"] == "done", whole
+    found = {(one["part"], one["key"]): one for one in whole["result"]["anchors"]}
+    assert found["mov", "cda"]["value"] == pytest.approx(5e-5, rel=0.02)
+    assert found["inj", "cda"]["value"] == pytest.approx(3e-5, rel=0.02)
+    held = [note for note in whole["result"]["notes"] if note.startswith("FullFlow anchored")]
+    assert len(held) == 2
+    assert held[1].startswith("FullFlow anchored Injector's CdA to Injector's flow meter for 5")
+
+    # Anchored while it's open, they're anchored throughout, and then hold. In a transient run, from when it opens,
+    # where the model's flow starts at nothing as the test's did: from later, the CdAs set off would have the model's
+    # flow jump to the test's, which the feed line's inertia doesn't allow. In a steady run (no inertia), from any time.
+    for solver, start in (("transient", 0.5), ("steady", 0.7)):
+        while_open = [{**anchor, "start": start, "end": 1.4} for anchor in anchors]
+        status = anchored_run(team, chief, {**body, "solver": solver, "anchors": while_open})
+        assert status["state"] == "done", status
+        assert status["result"]["notes"] == [], solver
+        found = {(one["part"], one["key"]): one for one in status["result"]["anchors"]}
+        assert found["mov", "cda"]["value"] == pytest.approx(5e-5, rel=0.02), solver
+        assert found["inj", "cda"]["value"] == pytest.approx(3e-5, rel=0.02), solver
+        # The noise moves them from step to step.
+        assert found["inj", "cda"]["low"] < found["inj", "cda"]["value"] < found["inj", "cda"]["high"]
+        history = {"times": status["result"]["times"], "series": status["result"]["anchored"]}
+        assert at(history, "inj.cda", 0.3) == 2e-5
+        assert at(history, "inj.cda", 1.9) == pytest.approx(at(history, "inj.cda", 1.4))
+
+
+def test_an_anchor_finds_a_tanks_collapse_factor_through_its_pressure(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    model = pressurized_model()
+    tank = model["nodes"][2]["settings"]
+    tank["collapse_factor"] = 1.5
+    body = {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 1.4, "dt": 0.01}
+    truth = run(team, chief, body)
+    assert truth["state"] == "done", truth
+
+    def others(t: float) -> dict:
+        return {
+            "MOV-01": int(t >= 0.3),
+            "VENT-01": int(t >= 1.5),
+            "TC-ULLAGE (F)": 50.0 - t,
+            "PT-CHAMBER (psig)": 50.0 * t,
+        }
+
+    csv = measured_csv(truth["result"], {"PT-TANK (psia)": "tank.pressure"}, others)
+    measured = upload(team, chief, csv, "Measured.csv")
+    tank["collapse_factor"] = 1.0
+    # The collapse factor moves the tank's pressure only through how fast pressurant fills it: anchored to the
+    # pressure, it's the pressure's slope that decides it, across the main valve opening at 0.3 s (where FullFlow
+    # takes a sliver of a step) and with the regulator starting shut, at its set pressure.
+    anchor = {"part": "tank", "key": "collapse_factor", "sensor": "tank", "link": "pressure"}
+    status = anchored_run(team, chief, {**body, "dataset_id": measured["id"], "anchors": [anchor]})
+    assert status["state"] == "done", status
+    found = status["result"]["anchors"][0]
+    assert found["value"] == pytest.approx(1.5, rel=1e-3)
+    assert 1.45 < found["low"] <= found["high"] < 1.55
+    assert status["result"]["notes"] == []
+
+
+def test_an_anchor_past_its_limits_says_so(team):
+    chief = team.member("chief@x.test", admin=True)
+    # Made with fittings' K of 2000 in the line, which a friction factor (at most 1) can't make up for.
+    blank = upload(team, chief, "Time (s),X\n0,0\n1,0\n", "Blank.csv")
+    lossy = fit_model(3e-5, 0.03)
+    lossy["edges"][0]["settings"]["loss_coefficient"] = 2000.0
+    truth = run(team, chief, {"model": lossy, "dataset_id": blank["id"], "start": 0.0, "end": 1.0, "dt": 0.01})
+    assert truth["state"] == "done", truth
+    columns = {"PT-MANIFOLD (psia)": "j1.pressure", "FM-01 (kg/s)": "inj.mass_flow"}
+    measured = upload(team, chief, measured_csv(truth["result"], columns), "Lossy.csv")
+    anchor = {"part": "line", "key": "friction_factor", "sensor": "j1", "link": "pressure"}
+    body = {"model": fit_model(3e-5, 0.03), "dataset_id": measured["id"], "start": 0.0, "end": 1.0, "dt": 0.01}
+    status = anchored_run(team, chief, {**body, "anchors": [anchor]})
+    assert status["state"] == "done", status
+    # What it took: f + K D / L, with K D / L = 2000 * 0.0095 / 3.
+    assert status["result"]["anchors"][0]["value"] == pytest.approx(0.03 + 2000 * 0.0095 / 3, rel=1e-3)
+    assert status["result"]["notes"] == [
+        "Feed line's friction factor f went past its limits to match Manifold's pressure transducer: no value it can "
+        "really have does. If that channel is noisy, a longer time step averages more of it (a knob that acts through "
+        "what a tank holds asks for its slope); if not, something else in the model is off."
+    ]
+
+
+def test_a_steady_run_holds_its_tanks_pressure(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    body = {"model": pressurized_model(), "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.05}
+    status = run(team, chief, {**body, "solver": "steady"})
+    assert status["state"] == "done", status
+    result = status["result"]
+    # The tank follows its pressure channel instead of draining, and pressurant flows in, which settles at once.
+    for t in (0.0, 1.0, 1.9):
+        assert at(result, "tank.pressure", t) == pytest.approx((250 - 5 * t) * PSI + ATMOSPHERE, rel=1e-3)
+    assert at(result, "cav.mass_flow", 1.0) > 0
+    assert at(result, "reg.mass_flow", 1.0) == pytest.approx(at(result, "press.mass_flow", 1.0), rel=1e-3)
+    assert "tank.liquid_volume" not in result["series"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            {"anchors": [{"part": "tank", "key": "fluid", "sensor": "j1", "link": "pressure"}]},
+            "Water tank has no knob fluid to anchor",
+        ),
+        (
+            {"anchors": [{"part": "inj", "key": "cda", "sensor": "nope", "link": "pressure"}]},
+            "There's no nope pressure to anchor Injector's CdA to",
+        ),
+        (
+            {"anchors": [{"part": "inj", "key": "cda", "sensor": "line", "link": "flow"}]},
+            "Link Feed line's flow meter to a channel to anchor Injector's CdA to it",
+        ),
+        (
+            {
+                "anchors": [
+                    {"part": "inj", "key": "cda", "sensor": "j1", "link": "pressure"},
+                    {"part": "line", "key": "friction_factor", "sensor": "j1", "link": "pressure"},
+                ]
+            },
+            "Manifold's pressure transducer anchors two knobs: give each knob a sensor of its own",
+        ),
+        (
+            {"anchors": [{"part": "inj", "key": "cda", "sensor": "inj", "link": "flow", "end": 1.5}]},
+            "Injector's CdA is anchored outside the run's window",
+        ),
+        (
+            {"anchors": [{"part": "inj", "key": "cda", "sensor": "inj", "link": "flow", "start": 0.5, "end": 0.505}]},
+            "Injector's CdA is anchored for less than a time step",
+        ),
+    ],
+)
+def test_an_anchor_says_what_it_cant_do(team, change, message):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, cold_flow_csv())
+    body = {"model": fit_model(3e-5, 0.03), "dataset_id": dataset["id"], "start": 0, "end": 1, "dt": 0.01, **change}
+    response = team.client.post("/api/yorg/dev/anchors", json=body, headers=chief)
+    assert (response.status_code, response.json()["message"]) == (422, message)
+
+
+def test_an_anchor_to_what_the_model_follows_says_so(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    body = {"model": pressurized_model(), "dataset_id": dataset["id"], "start": 0, "end": 1}
+
+    def refused(anchor: dict, solver: str = "transient") -> str:
+        response = team.client.post(
+            "/api/yorg/dev/anchors", json={**body, "solver": solver, "anchors": [anchor]}, headers=chief
+        )
+        assert response.status_code == 422, response.text
+        return response.json()["message"]
+
+    assert (
+        refused({"part": "cav", "key": "cda", "sensor": "chamber", "link": "pressure"})
+        == "The model follows Chamber's pressure, so it can't anchor Venturi's throat CdA: pick a sensor"
+    )
+    # Steady, the tank holds what was measured, so neither its knobs nor its sensors can anchor.
+    assert (
+        refused({"part": "tank", "key": "collapse_factor", "sensor": "tank", "link": "pressure"}, "steady")
+        == "Water tank's collapse factor doesn't matter in a steady run, where tanks hold their pressure"
+    )
+    assert (
+        refused({"part": "press", "key": "cda", "sensor": "tank", "link": "pressure"}, "steady")
+        == "In a steady run Water tank holds what was measured, so Water tank's pressure can't anchor Press valve's CdA when open"
     )

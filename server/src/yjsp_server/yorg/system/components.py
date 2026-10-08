@@ -9,7 +9,8 @@ the pressure drop instead, which changes nothing at the pressure drops a test ru
 
 import math
 
-from fullflow import CavitatingVenturi, Component
+import numpy as np
+from fullflow import CavitatingVenturi, Component, Sensor
 
 SMOOTH_DP = 500.0  # Pa (0.07 psi)
 
@@ -213,6 +214,36 @@ class LiquidStore(Component):
     @property
     def dynamics(self):
         return [(self.ullage_volume, self.rate)]
+
+
+class Anchor(Sensor):
+    """FullFlow's Sensor anchoring a knob to a channel, reading the channel as a straight line between its samples
+    (times, values) rather than holding the last one, over [start, end]; and off for a step shorter than shortest.
+
+    FullFlow lands a step on each change of a valve's command, and retries a hard one in halves, so some steps are a
+    sliver of the rest: anchored over one, a knob that acts through what a tank holds would make up a whole step's
+    difference from the data at once, far past anything real. Off, FullFlow holds the knob where it was."""
+
+    def __init__(self, name, network, reading, variable, data, times, values, start, end, shortest):
+        super().__init__(name, network, reading=reading, variable=variable, data=data)
+        self._times, self._values = times, values
+        self._span, self._shortest = (start, end), shortest
+        self._solved = (math.nan, math.nan)  # the step solved last: its time, and the target it was solved to
+
+    def target_value(self, time_value=None):
+        t = float(self.network.time.value if time_value is None else time_value)
+        try:
+            previous = float(self.network.time.previous)
+        except ValueError:  # no step taken yet: the run's start, which nothing is solved at
+            return math.nan
+        if t == previous:  # the step to t is done, and read for its results: as it was solved
+            return self._solved[1] if self._solved[0] == t else math.nan
+        if t - previous < self._shortest or not self._span[0] <= t <= self._span[1]:
+            target = math.nan
+        else:
+            target = float(np.interp(t, self._times, self._values))
+        self._solved = (t, target)
+        return target
 
 
 class Recorder(Component):

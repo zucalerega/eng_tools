@@ -1,7 +1,7 @@
 """The dev page's API (/api/yorg/dev), for admins: the parts a system model can have, saved models, and runs of a
-model against a test's data, and fits of its knobs to it."""
+model against a test's data, fits of its knobs to it, and runs with knobs anchored to it."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field, model_validator
@@ -66,6 +66,9 @@ class RunIn(BaseModel):
     end: float
     dt: float = Field(default=0.01, ge=0.0005, le=1.0)
     reading: ReadingIn = Field(default_factory=ReadingIn)
+    # steady: FullFlow's quasi-steady sweep, in which lines, junctions, and regulators settle in each time step and
+    # tanks hold the pressure measured (or set)
+    solver: Literal["transient", "steady"] = "transient"
 
     @model_validator(mode="after")
     def _window(self) -> "RunIn":
@@ -85,6 +88,19 @@ class KnobIn(BaseModel):
 
 class FitIn(RunIn):
     knobs: list[KnobIn] = Field(min_length=1, max_length=MAX_KNOBS)
+
+
+class AnchorIn(KnobIn):
+    """A knob, moved in each time step so the model reads what a sensor's channel measured."""
+
+    sensor: str = Field(max_length=40)  # the part the channel is linked to
+    link: str = Field(max_length=40)  # and the link it's in
+    start: float | None = None  # when it's anchored, on the dataset's clock (left out: the run's window)
+    end: float | None = None
+
+
+class AnchorRunIn(RunIn):
+    anchors: list[AnchorIn] = Field(min_length=1, max_length=MAX_KNOBS)
 
 
 @router.get("/catalog")
@@ -156,8 +172,23 @@ def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dic
         "start": body.start,
         "end": body.end,
         "dt": body.dt,
+        "solver": body.solver,
     }
     return job, inputs
+
+
+def _knob(parts: dict[str, dict[str, Any]], part_id: str, key: str, verb: str) -> tuple[dict[str, Any], str]:
+    """A part's tunable setting that matters as the part is set up, and how it reads (Injector's CdA)."""
+    part = parts.get(part_id)
+    if part is None:
+        raise BadModel(f"There's no part {part_id} to {verb}")
+    setting = next((one for one in catalog.BY_TYPE[part["type"]].settings if one.key == key), None)
+    if setting is None or not setting.tunable:
+        raise BadModel(f"{part['name']} has no knob {key} to {verb}")
+    named = f"{part['name']}'s {in_words(setting.label)}"
+    if not catalog.applies(setting.only_when, part["settings"]):
+        raise BadModel(f"{named} doesn't matter as it's set up")
+    return part, named
 
 
 @router.post("/runs", status_code=201)
@@ -176,16 +207,9 @@ def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns
     parts = {**checked.nodes, **checked.edges}
     knobs: list[tuple[str, str]] = []
     for knob in body.knobs:
-        part = parts.get(knob.part)
-        if part is None:
-            raise BadModel(f"There's no part {knob.part} to fit")
-        setting = next((one for one in catalog.BY_TYPE[part["type"]].settings if one.key == knob.key), None)
-        if setting is None or not setting.tunable:
-            raise BadModel(f"{part['name']} has no knob {knob.key} to fit")
-        if not catalog.applies(setting.only_when, part["settings"]):
-            raise BadModel(f"{part['name']}'s {in_words(setting.label)} doesn't matter as it's set up")
+        _, named = _knob(parts, knob.part, knob.key, "fit")
         if (knob.part, knob.key) in knobs:
-            raise BadModel(f"{part['name']}'s {in_words(setting.label)} is picked twice")
+            raise BadModel(f"{named} is picked twice")
         knobs.append((knob.part, knob.key))
     compared = [
         {"output": f"{part['id']}.{catalog.output_of(link)}", "input": f"{part['id']}.{link.key}"}
@@ -198,6 +222,62 @@ def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns
     job, inputs = _job(body, db, files, checked, compared=True)
     job["fit"] = {"knobs": [{"part": part, "key": key} for part, key in knobs], "compared": compared}
     return {"id": runs.start(user.id, job, inputs, kind="fit").id}
+
+
+@router.post("/anchors", status_code=201)
+def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
+    """Start a run with knobs anchored to a test (FullFlow's Sensors): in each time step of an anchor's span, FullFlow
+    moves its knob, with the rest of the model, until the model reads at its sensor what the sensor's channel
+    measured. Ask GET /runs/{id} how it's going; its result has each knob's history ("anchored", by part.key) and the
+    value it settled at ("anchors")."""
+    checked = runnable(body.model)
+    parts = {**checked.nodes, **checked.edges}
+    steady = body.solver == "steady"
+    anchors: list[dict[str, Any]] = []
+    for anchor in body.anchors:
+        part, named = _knob(parts, anchor.part, anchor.key, "anchor")
+        if any((one["part"], one["key"]) == (anchor.part, anchor.key) for one in anchors):
+            raise BadModel(f"{named} is picked twice")
+        if steady and part["type"] == "tank":
+            raise BadModel(f"{named} doesn't matter in a steady run, where tanks hold their pressure")
+        sensor = parts.get(anchor.sensor)
+        link = (
+            next((one for one in catalog.BY_TYPE[sensor["type"]].links if one.key == anchor.link), None)
+            if sensor
+            else None
+        )
+        if sensor is None or link is None or not catalog.applies(link.only_when, sensor["settings"]):
+            raise BadModel(f"There's no {anchor.sensor} {anchor.link} to anchor {named} to")
+        measured = f"{sensor['name']}'s {in_words(link.label)}"
+        if not sensor["links"].get(link.key):
+            raise BadModel(f"Link {measured} to a channel to anchor {named} to it")
+        if steady and sensor["type"] == "tank":
+            raise BadModel(
+                f"In a steady run {sensor['name']} holds what was measured, so {measured} can't anchor {named}"
+            )
+        if not catalog.compared(link, sensor["settings"]):
+            raise BadModel(f"The model follows {measured}, so it can't anchor {named}: pick a sensor")
+        if any((one["sensor"], one["link"]) == (anchor.sensor, anchor.link) for one in anchors):
+            raise BadModel(f"{measured} anchors two knobs: give each knob a sensor of its own")
+        start = body.start if anchor.start is None else anchor.start
+        end = body.end if anchor.end is None else anchor.end
+        if start < body.start or end > body.end:
+            raise BadModel(f"{named} is anchored outside the run's window")
+        if end - start < body.dt:
+            raise BadModel(f"{named} is anchored for less than a time step")
+        anchors.append(
+            {
+                "part": anchor.part,
+                "key": anchor.key,
+                "sensor": anchor.sensor,
+                "link": anchor.link,
+                "start": start,
+                "end": end,
+            }
+        )
+    job, inputs = _job(body, db, files, checked, compared=True)
+    job["anchors"] = anchors
+    return {"id": runs.start(user.id, job, inputs, kind="anchor").id}
 
 
 @router.get("/runs/{run_id}")

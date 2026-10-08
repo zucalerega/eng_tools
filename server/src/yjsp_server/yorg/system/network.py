@@ -58,6 +58,7 @@ RECORDER = "results"  # the component whose attributes are a run's outputs
 KNOB = "knob:"  # what an anchored knob is recorded under, before its part.key
 ON = "on:"  # and whether its anchor held it
 HELD = 0.9  # an anchor that held its knob for less of its span than this says so
+COMMANDED = 1e-6  # s: how long a valve's command takes to change
 # FullFlow's transient solver (and its steady sweep): a 2-point Jacobian (a 3-point one costs half as much again, for
 # nothing a test can see), and each time step solved to within rtol of its implicit equations, with SciPy's gradient
 # test off (Transient's own default; SteadyState's stops a step early, at a junction's flow of 1e-6 kg/s). Each trial
@@ -96,7 +97,9 @@ def run(
     solve = SteadyState(built.net).solve if built.steady else Transient(built.net).solve
     started = time.monotonic()
     try:
-        records = solve(dt=job["dt"], t_final=duration, save_dt=max(job["dt"], duration / max_points), **SOLVER)
+        # Results every so many steps: FullFlow lands a step on each, so they keep the steps on a grid of dt.
+        save_dt = job["dt"] * max(1, math.ceil(duration / max_points / job["dt"] - 1e-9))
+        records = solve(dt=job["dt"], t_final=duration, save_dt=save_dt, **SOLVER)
     except FullFlowError as error:
         raise ModelError(built.explain(error)) from error
     elapsed = time.monotonic() - started
@@ -464,8 +467,10 @@ class _Builder:
         points_t, points_v = [0.0], [float(commanded[before])]
         for index in np.flatnonzero(np.diff(commanded) != 0) + 1:
             t, value = float(times[index]), float(commanded[index])
-            if points_t[-1] < t - 1e-6 and t < self.duration:
-                points_t += [t - 1e-6, t]  # a step: the solver lands on it
+            if points_t[-1] < t and t + COMMANDED < self.duration:
+                # A step, a hair after the sample, which the solver lands on: the step to the sample's time is a
+                # whole one, so a run's results there (and an anchor's) are of a step like the rest.
+                points_t += [t, t + COMMANDED]
                 points_v += [points_v[-1], value]
         points_t.append(self.duration)
         points_v.append(points_v[-1])
@@ -739,7 +744,7 @@ class _Builder:
             values=means / size,
             start=max(start, float(times[0])) - hair,
             end=min(end, float(times[-1])) + hair,
-            shortest=self.dt / 2,
+            shortest=self.dt / 3,  # a retried step's halves count (a hair short of dt / 2); its quarters don't
         )
         self.recorder.add(KNOB + knob, variable)
         self.recorder.add(ON + knob, sensor_component.active)

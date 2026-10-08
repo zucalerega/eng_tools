@@ -25,20 +25,38 @@ export const EMPTY_MODEL: SystemModel = {
     display: { units: "us", gauge: true, ambient: ATMOSPHERE },
 };
 
-/** Builds a model part by part, each named and placed. */
+/** Builds a model part by part, each named, placed, set up, and linked to channels. */
 function builder(catalog: Catalog) {
     let model: SystemModel = EMPTY_MODEL;
+    const setUp = (id: string, settings: Record<string, number | string>, links: Record<string, string>) => {
+        model = Object.entries(settings).reduce((at, [key, value]) => setSetting(at, id, key, value), model);
+        model = Object.entries(links).reduce((at, [key, channel]) => setLink(at, id, key, channel), model);
+    };
     return {
-        place(type: string, x: number, y: number, name: string, settings: Record<string, number | string> = {}) {
+        place(
+            type: string,
+            x: number,
+            y: number,
+            name: string,
+            settings: Record<string, number | string> = {},
+            links: Record<string, string> = {},
+        ) {
             const [next, id] = addNode(model, catalog, type, x, y);
             model = changePart(next, id, { name });
-            model = Object.entries(settings).reduce((at, [key, value]) => setSetting(at, id, key, value), model);
+            setUp(id, settings, links);
             return id;
         },
-        connect(type: string, from: string, to: string, name: string, settings: Record<string, number | string> = {}) {
+        connect(
+            type: string,
+            from: string,
+            to: string,
+            name: string,
+            settings: Record<string, number | string> = {},
+            links: Record<string, string> = {},
+        ) {
             const [next, id] = addEdge(model, catalog, type, from, to);
             model = changePart(next, id, { name });
-            model = Object.entries(settings).reduce((at, [key, value]) => setSetting(at, id, key, value), model);
+            setUp(id, settings, links);
             return id;
         },
         get model() {
@@ -85,6 +103,106 @@ export function pressurizedExample(catalog: Catalog): SystemModel {
     draw.connect("valve", tank, inlet, "Main valve", { cda: 8e-5 });
     draw.connect("venturi", inlet, chamber, "Venturi");
     draw.connect("gas_valve", tank, stack, "Vent", { cda: 5e-6, check: "no", position: 0 });
+    return draw.model;
+}
+
+/** The Vespula run's data: the name it's uploaded to Yorg under, and its end (s). */
+export const VESPULA_RUN = { dataset: "Vespula prop system (FullFlow run)", end: 21.3 };
+
+const IN2 = 0.00064516; // m²
+const CM2 = 1e-4; // m²
+
+/**
+ * Vespula's propulsion system, as Saaketh Ramoju's FullFlow model has it (github.com/saakethramoju/Vespula,
+ * VESPULA_PROP_SYSTEM.py and VESPULA_DATA.py): a 40 L nitrogen COPV pressurizing the LOX and fuel tanks through
+ * lo-flow orifices, and through hi-flow valves once it's below 2500 psia; each tank's relief valve; and each side's
+ * system CdA, manifold, and injector into the chamber. It's linked to the channels of that model's run (vespula-run.csv,
+ * the run its repository's prop curves came from, made again with FullFlow 2.0.3 to have every channel): the hi-flow
+ * switches and relief valves drive their valves, the chamber's pressure is the injectors' outlets', and the rest is
+ * compared. The chamber is two outlets because a model carries one liquid in each connected set of lines.
+ *
+ * Yorg's gas is ideal, where Vespula's is ThermoProp's real nitrogen: the COPV starts with 13% more of it, and it
+ * doesn't cool as it throttles into the tanks, so run as it is the tanks run high. Anchoring each tank's collapse
+ * factor to its pressure (a transient run, 0.1 s steps) makes up for that, and the injectors' flows then match. In a
+ * steady run the tanks follow their pressures, and the liquid side matches Vespula's to four figures.
+ */
+export function vespulaExample(catalog: Catalog): SystemModel {
+    const draw = builder(catalog);
+    const tank = (side: "LOX" | "Fuel", x: number, settings: Record<string, number | string>) =>
+        draw.place(
+            "tank",
+            x,
+            250,
+            `${side} tank`,
+            {
+                mode: "ullage",
+                gas: "Nitrogen",
+                gas_temperature: 298.15,
+                ullage_model: "wall",
+                heat_transfer: 0, // Vespula's ullages trade no heat with their walls
+                collapse_factor: 1.2,
+                ...settings,
+            },
+            { pressure: `${side} Tank Pressure`, gas_temperature: `${side} Ullage Temperature` },
+        );
+    const copv = draw.place(
+        "gas_junction",
+        500,
+        80,
+        "COPV",
+        { volume: 0.04, pressure: 4200 * PSI, temperature: 298.15 },
+        { pressure: "COPV Pressure", temperature: "COPV Temperature" },
+    );
+    const lox = tank("LOX", 260, {
+        fluid: "Oxygen",
+        temperature: 100,
+        pressure: 357 * PSI,
+        volume: 0.08582,
+        liquid_volume: 0.07697,
+    });
+    // ThermoProp's RP1 fluid is 748 kg/m³; Vespula's RP-1 propellant, 808.4.
+    const fuel = tank("Fuel", 740, {
+        fluid: "Custom",
+        density: 808.4,
+        temperature: 298.15,
+        pressure: 416 * PSI,
+        volume: 0.05976,
+        liquid_volume: 0.05211,
+    });
+    const loxVent = draw.place("outlet", 70, 250, "LOX vent");
+    const fuelVent = draw.place("outlet", 930, 250, "Fuel vent");
+    const loxManifold = draw.place("junction", 260, 410, "LOX manifold", {}, { pressure: "LOX Manifold Pressure" });
+    const fuelManifold = draw.place("junction", 740, 410, "Fuel manifold", {}, { pressure: "Fuel Manifold Pressure" });
+    const chamber = { pressure: 285 * PSI };
+    const loxChamber = draw.place("outlet", 410, 510, "Chamber (LOX)", chamber, { pressure: "Chamber Pressure" });
+    const fuelChamber = draw.place("outlet", 590, 510, "Chamber (fuel)", chamber, { pressure: "Chamber Pressure" });
+    // Switched by a channel, at once: the hi-flow valves (COPV below 2500 psia) and the reliefs.
+    const switched = (cda: number, command: string) =>
+        [{ cda, opening_time: 0.001, position: 0 }, { command }] as const;
+    draw.connect("gas_orifice", copv, lox, "LOX lo-flow orifice", { cda: 0.005460362 * IN2 });
+    draw.connect("gas_valve", copv, lox, "LOX hi-flow valve", ...switched(0.006515668 * IN2, "LOX Hi Flow Switch"));
+    draw.connect("gas_orifice", copv, fuel, "Fuel lo-flow orifice", { cda: 0.002507537 * IN2 });
+    draw.connect("gas_valve", copv, fuel, "Fuel hi-flow valve", ...switched(0.003124906 * IN2, "Fuel Hi Flow Switch"));
+    draw.connect("gas_valve", lox, loxVent, "LOX relief valve", ...switched(0.08942 * IN2, "LOX Relief Valve"));
+    draw.connect("gas_valve", fuel, fuelVent, "Fuel relief valve", ...switched(0.0769 * IN2, "Fuel Relief Valve"));
+    draw.connect("orifice", lox, loxManifold, "LOX system", { cda: 1.51 * CM2 });
+    draw.connect(
+        "orifice",
+        loxManifold,
+        loxChamber,
+        "LOX injector",
+        { cda: 1.25 * CM2 },
+        { flow: "LOX Injector Mass Flow" },
+    );
+    draw.connect("orifice", fuel, fuelManifold, "Fuel system", { cda: 0.633 * CM2 });
+    draw.connect(
+        "orifice",
+        fuelManifold,
+        fuelChamber,
+        "Fuel injector",
+        { cda: 0.555 * CM2 },
+        { flow: "Fuel Injector Mass Flow" },
+    );
     return draw.model;
 }
 

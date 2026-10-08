@@ -1487,6 +1487,19 @@ input[type="checkbox"] {
     box-shadow: var(--shadow-pop);
 }
 
+/* A dialog that can be taller than the window scrolls its body, keeping its title and buttons in view. Only those
+   that need it: a scrolling body would clip a popup that reaches past it (a folder picker's list). */
+.dialog-tall {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%; /* of the backdrop, inside its padding */
+}
+
+.dialog-tall .dialog-body {
+    min-height: 0;
+    overflow-y: auto;
+}
+
 .dialog h2 {
     margin: 0 0 0.85rem;
     font-size: 1.15rem;

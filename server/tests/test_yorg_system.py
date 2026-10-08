@@ -665,6 +665,9 @@ def test_an_anchor_finds_a_tanks_collapse_factor_through_its_pressure(team):
     found = status["result"]["anchors"][0]
     assert found["value"] == pytest.approx(1.5, rel=1e-3)
     assert 1.45 < found["low"] <= found["high"] < 1.55
+    # Anchored in every step but the first, which FullFlow retries in quarters (the regulator starts shut, at its set
+    # pressure): not the main valve's opening, nor the halves of a step FullFlow retries.
+    assert found["share"] == pytest.approx(139 / 140)
     assert status["result"]["notes"] == []
 
 
@@ -707,13 +710,13 @@ def test_what_anchoring_cant_settle_is_fitted(team):
     body, anchors = valve_test(team, chief)
     # Anchored in a transient run from 0.7 s, after the valve opened: with the CdAs off, the model's flow would have to
     # jump to the test's, which the feed line's inertia doesn't allow, so FullFlow never anchors them. They're fitted
-    # instead, over the whole run.
-    late = [{**anchor, "start": 0.7} for anchor in anchors]
+    # instead, over the whole run. Anchored briefly: each step where an anchor can't match costs two failed solves.
+    late = [{**anchor, "start": 0.7, "end": 1.0} for anchor in anchors]
     status = anchored_run(team, chief, {**body, "anchors": late})
     assert status["state"] == "done", status
     result = status["result"]
     assert [one["part"] for one in result["fit"]["fallback"]] == ["mov", "inj"]
-    assert all(one["why"].startswith("it matched for") for one in result["fit"]["fallback"])
+    assert all(one["why"] == "it never matched" for one in result["fit"]["fallback"])
     found = {knob["part"]: knob["value"] for knob in result["fit"]["knobs"]}
     assert found["mov"] == pytest.approx(5e-5, rel=0.05)
     assert found["inj"] == pytest.approx(3e-5, rel=0.05)

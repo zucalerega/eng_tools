@@ -252,7 +252,8 @@ export function HelpPage() {
                                       <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
                                       venturis; and on the gas side, supplies, regulators, gas valves) and link it to a
                                       test's channels: commands drive its valves, pressures it follows, sensors it's
-                                      compared with.
+                                      compared with. <em>Start from an example</em> has Vespula's prop system, with its
+                                      run's data.
                                   </li>
                                   <li>
                                       <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is

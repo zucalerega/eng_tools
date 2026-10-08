@@ -6,7 +6,7 @@ import { configureApi, type Account, type SiteSettings } from "../src/api";
 import { type VaultFile } from "../src/vault/api";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
-import type { DatasetDetail, SavedView } from "../src/yorg/api";
+import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
 // Drives the real server the way the add-in and the CLI do, to set up what a test looks at.
@@ -164,6 +164,11 @@ export class Team {
             throw new Error(`There's no script called ${name}`);
         }
         return call("GET", `/api/yorg/scripts/${found.id}`, who.token);
+    }
+
+    /** Yorg's datasets, as the server lists them. */
+    async datasets(who: Member): Promise<Dataset[]> {
+        return call<Dataset[]>("GET", "/api/yorg/datasets", who.token);
     }
 
     /** A file of test data, uploaded to Yorg (named to be unique to this test). */

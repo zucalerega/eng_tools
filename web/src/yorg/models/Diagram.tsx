@@ -12,6 +12,7 @@ import { kindOf, shownLinks } from "./model";
 
 export const WIDTH = 1000;
 export const HEIGHT = 560;
+const SIDEWAYS = 64; // how far apart parts between the same two nodes are drawn
 const GRID = 10;
 
 export type Tool =
@@ -267,8 +268,40 @@ export function Diagram(props: Props) {
                 if (!from || !to) {
                     return null;
                 }
-                const [x1, y1] = edgePoint(from, to.x, to.y);
-                const [x2, y2] = edgePoint(to, from.x, from.y);
+                // Parts between the same two nodes (a lo-flow orifice beside a hi-flow valve) are drawn side by side,
+                // each bowed out from the straight line between them, the same way whichever way each flows.
+                const twins = model.edges.filter(
+                    (other) =>
+                        (other.source === edge.source && other.target === edge.target) ||
+                        (other.source === edge.target && other.target === edge.source),
+                );
+                const out = (twins.indexOf(edge) - (twins.length - 1) / 2) * SIDEWAYS;
+                const [first, second] = edge.source < edge.target ? [from, to] : [to, from];
+                const length = Math.hypot(second.x - first.x, second.y - first.y) || 1;
+                const [nx, ny] = [(first.y - second.y) / length, (second.x - first.x) / length];
+                const [sx, sy] = edgePoint(from, to.x, to.y);
+                const [ex, ey] = edgePoint(to, from.x, from.y);
+                const along = (share: number): [number, number] => [
+                    sx + (ex - sx) * share + out * nx,
+                    sy + (ey - sy) * share + out * ny,
+                ];
+                const [x1, y1] = out === 0 ? [sx, sy] : along(0.2);
+                const [x2, y2] = out === 0 ? [ex, ey] : along(0.8);
+                const points = (
+                    out === 0
+                        ? [
+                              [sx, sy],
+                              [ex, ey],
+                          ]
+                        : [
+                              [sx, sy],
+                              [x1, y1],
+                              [x2, y2],
+                              [ex, ey],
+                          ]
+                )
+                    .map((point) => point.join(","))
+                    .join(" ");
                 const mx = (x1 + x2) / 2;
                 const my = (y1 + y2) / 2;
                 const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
@@ -287,8 +320,8 @@ export function Diagram(props: Props) {
                             }
                         }}
                     >
-                        <line x1={x1} y1={y1} x2={x2} y2={y2} className="dev-hit" />
-                        <line x1={x1} y1={y1} x2={x2} y2={y2} className="dev-pipe" />
+                        <polyline points={points} fill="none" className="dev-hit" />
+                        <polyline points={points} fill="none" className="dev-pipe" />
                         {/* Which way it flows: an arrow three quarters along, clear of the valve or orifice. */}
                         <line
                             x1={x1 + (x2 - x1) * 0.72}

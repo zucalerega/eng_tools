@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { VESPULA_RUN } from "../src/yorg/models/model";
 import { renderApp, Team } from "./team";
 
 // Yorg's dev page (admins): a system model drawn, linked to a test's channels, saved, and run with FullFlow on the
@@ -140,4 +141,44 @@ test("a model's knob is anchored to a test in one steady run, and applied", { ti
     const before = (injector.getByLabelText(/^CdA/) as HTMLInputElement).value;
     await userEvent.click(anchored.getByRole("button", { name: "Apply to the model" }));
     await waitFor(() => expect((injector.getByLabelText(/^CdA/) as HTMLInputElement).value).not.toBe(before));
+});
+
+test("the Vespula example comes with its run's data, uploaded once", { timeout: 240_000 }, async () => {
+    const team = await Team.create();
+    const before = (await team.datasets(team.chief)).filter((one) => one.name === VESPULA_RUN.dataset);
+    renderApp(team.chief, "/yorg/dev/models");
+    const pick = async () => {
+        await userEvent.click(await screen.findByRole("button", { name: "Start from an example" }));
+        await userEvent.click(screen.getByRole("menuitem", { name: "Vespula prop system, with its run's data" }));
+    };
+    await pick();
+    const diagram = within(screen.getByRole("application", { name: "P&ID" }));
+    for (const part of ["COPV", "LOX tank", "Fuel tank", "LOX hi-flow valve", "LOX lo-flow orifice", "Fuel injector"]) {
+        expect(diagram.getByRole("button", { name: part })).toBeTruthy();
+    }
+    // Its data, picked as the test, over the whole run.
+    await waitFor(() =>
+        expect((screen.getByLabelText("Test") as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(
+            VESPULA_RUN.dataset,
+        ),
+    );
+    expect((screen.getByLabelText("To (s)") as HTMLInputElement).value).toBe("21.3");
+    expect((screen.getByLabelText("Time step (s)") as HTMLInputElement).value).toBe("0.1");
+
+    // Steady, its tanks follow their pressures, and its liquid side reads what Vespula's run did.
+    await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
+    await userEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText(/^Done in/, {}, { timeout: 150_000 })).toBeTruthy();
+    const results = within(screen.getByRole("region", { name: "Results" }));
+    const manifold = results.getByText("LOX manifold pressure transducer").closest(".dev-plot") as HTMLElement;
+    const rms = Number((await within(manifold).findByText(/^RMS /)).textContent!.match(/^RMS ([\d.]+)/)![1]);
+    expect(rms).toBeLessThan(0.5); // psi, of 330 to 400
+
+    // Picked again, it finds its data rather than uploading it twice.
+    await pick();
+    await waitFor(async () =>
+        expect((await team.datasets(team.chief)).filter((one) => one.name === VESPULA_RUN.dataset)).toHaveLength(
+            Math.max(before.length, 1),
+        ),
+    );
 });

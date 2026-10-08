@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { request } from "../../api";
 import { Dialog, MenuButton, Notice } from "../../components";
-import type { Dataset } from "../api";
+import { yorg, type Dataset } from "../api";
 import { dataset as loadDataset, samples as loadSamples, useLoaded } from "../data";
 import { linkTarget } from "../../preview";
 import { datasetUrl, storedT0 } from "../pages";
@@ -34,6 +34,8 @@ import {
     importModel,
     pressurizedExample,
     removePart,
+    vespulaExample,
+    VESPULA_RUN,
 } from "./model";
 import { Results } from "./Results";
 import { channelToSiLinear, readingFor } from "./units";
@@ -417,6 +419,30 @@ export function ModelsPage() {
             setJob({ kind: "anchor", id: started.id, model, datasetId, knobs: [], status: null });
         });
 
+    /** Vespula's prop system, against its run's data: uploaded to Yorg the first time, found by its name after. */
+    const openVespula = () =>
+        withSaved(
+            () =>
+                void act(async () => {
+                    open(vespulaExample(catalog), null, "Vespula prop system");
+                    let found = datasets.find((one) => one.name === VESPULA_RUN.dataset);
+                    if (!found) {
+                        const { default: csv } = await import("./vespula-run.csv?raw");
+                        const file = new File([csv], "Vespula prop system.csv", { type: "text/csv" });
+                        const uploaded = await yorg.upload(file, () => {}, VESPULA_RUN.dataset);
+                        found = uploaded;
+                        setDatasets([uploaded, ...datasets]);
+                    }
+                    setDatasetId(found.id);
+                    const origin = storedT0(found.id) ?? found.t_min ?? 0;
+                    setWindowText({
+                        from: formatValue(0 - origin),
+                        to: formatValue(VESPULA_RUN.end - origin),
+                        dt: "0.1",
+                    });
+                }),
+        );
+
     const nodeTypes = catalog.parts.filter((part) => part.kind === "node");
     const edgeTypes = catalog.parts.filter((part) => part.kind === "edge");
     const shownDetail = shown && shown.datasetId === datasetId && detail?.status === "ready" ? detail.value : null;
@@ -480,6 +506,7 @@ export function ModelsPage() {
                                 onSelect: () =>
                                     withSaved(() => open(pressurizedExample(catalog), null, "Pressurized example")),
                             },
+                            { label: "Vespula prop system, with its run's data", onSelect: openVespula },
                         ]}
                     />
                     <button

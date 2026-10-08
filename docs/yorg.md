@@ -171,7 +171,8 @@ in `web/src/yorg/index.tsx`).
   lists the parts, their settings (SI units; some only when others are set a way, as an
   ullage's wall only with wall heat transfer), links (followed, starting the model, compared,
   or commanding a valve), and outputs; the web app draws its editor from it
-  (`web/src/yorg/models`) and `spec.py` checks a model with it (saving takes a half-drawn one;
+  (`web/src/yorg/models`, parts between the same two nodes side by side) and `spec.py`
+  checks a model with it (saving takes a half-drawn one;
   running needs liquid parts between tanks, junctions, and outlets and gas parts between
   gas supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid
   parts reaching a tank, whose liquid it carries, and every set of gas parts a supply or an
@@ -232,7 +233,7 @@ in `web/src/yorg/index.tsx`).
   over each time step (bins of `dt`, whose edges give a millionth of a step to times that
   are sums of `dt`) and read as a straight line between them, where FullFlow's `Sensor`
   holds the last sample. An anchor is off outside its span and for a step shorter than
-  half `dt` (FullFlow lands on each valve command, and retries a hard step in halves),
+  a third of `dt` (FullFlow lands on each valve command, and retries a hard step in halves, then quarters),
   where FullFlow holds the knob: otherwise a knob that acts through what a tank holds (a
   collapse factor) would make up a whole step's difference at once. So where no
   value of a knob matches (a valve's CdA while it's shut; in a transient run, an anchor
@@ -250,6 +251,15 @@ in `web/src/yorg/index.tsx`).
   its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
   bias; the window's times, and the plots', read from the dataset's T0 in this browser.
   Saved models are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables.
+  The examples are built in the browser (`model.ts`). Vespula's prop system is Saaketh
+  Ramoju's FullFlow model (github.com/saakethramoju/Vespula, `VESPULA_PROP_SYSTEM.py`) in
+  Yorg's parts, linked to `vespula-run.csv`: that model's run as the repository's prop
+  curves came from it (0.1 s steps, bang-bang off), made again with FullFlow 2.0.3 (2.0.2
+  can't run it) for every channel, its curves matching to 1 part in 10⁸. Picking it uploads
+  the file as a dataset, unless one has its name. Its liquid side matches Vespula's run; its
+  gas is ideal where Vespula's is ThermoProp's real nitrogen, so its COPV holds 13% more and
+  its pressurant doesn't cool throttling into the tanks, and its tanks run high until their
+  collapse factors are anchored to their pressures.
   FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
   the site is ever given to others, the GPL applies to it.
 - **Scripts** (the Python window, everyone's):

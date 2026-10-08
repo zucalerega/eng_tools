@@ -976,7 +976,7 @@ export function ModelsPage() {
                                 <p className="muted">
                                     Pick a part to set it up and link it to the test&apos;s channels: a tank&apos;s
                                     pressure, a valve&apos;s command, a junction&apos;s pressure transducer. A tank or
-                                    gas junction linked to a sensor starts from its value at the run&apos;s start.
+                                    junction linked to a sensor starts from its value at the run&apos;s start.
                                 </p>
                             )}
                         </aside>
@@ -1036,7 +1036,7 @@ export function ModelsPage() {
                 </label>
                 <label
                     className="field"
-                    title="Steady: FullFlow's quasi-steady sweep. In each time step, lines, junctions, and regulators settle at once, and tanks hold the pressure measured (or set) instead of draining. Much faster, without inertia."
+                    title="Steady: FullFlow's quasi-steady sweep. In each time step, lines, junctions, and regulators settle at once, and tanks (and gas junctions a transducer reads) hold the pressure measured (or set) instead of draining. Much faster, without inertia."
                 >
                     Solver
                     <select value={solver} onChange={(event) => setSolver(event.target.value as Solver)}>

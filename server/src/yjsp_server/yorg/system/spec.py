@@ -6,10 +6,10 @@ channels. Saving takes any model whose parts fit together (a half-drawn one is f
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...errors import ApiError
-from .catalog import BY_TYPE, RENAMED, in_words, settings_of
+from .catalog import BY_TYPE, RENAMED, RETIRED, in_words, settings_of
 
 _ID = r"^[A-Za-z0-9_-]{1,40}$"
 # Where liquid and gas can go: an ullage tank holds both, an outlet takes either.
@@ -35,6 +35,12 @@ class PartIn(BaseModel):
     @classmethod
     def _renamed(cls, value: str) -> str:
         return RENAMED.get(value, value)
+
+    @model_validator(mode="after")
+    def _retired(self) -> "PartIn":
+        for key in RETIRED.get(self.type, ()):
+            self.settings.pop(key, None)
+        return self
 
 
 class EdgeIn(PartIn):
@@ -88,6 +94,7 @@ class Runnable:
     edges: dict[str, dict[str, Any]]
     liquid_of: dict[str, str] = field(default_factory=dict)  # liquid node or edge id: the id of the tank it's from
     gas_of: dict[str, str] = field(default_factory=dict)  # gas node or edge id: the gas in it (Nitrogen)
+    gas_model_of: dict[str, str] = field(default_factory=dict)  # and its properties: real or ideal
 
 
 def _settings(part: PartIn) -> dict[str, Any]:
@@ -228,20 +235,23 @@ def _gases(checked: Runnable, ends: dict[str, list[str]]) -> None:
             raise BadModel(
                 f"{node['name']} isn't connected to a gas supply or a tank's ullage, so nothing says what gas is there"
             )
-        by_gas: dict[str, str] = {}  # each gas: the first part holding it
+        by_gas: dict[tuple[str, str], str] = {}  # each gas, and its properties: the first part holding it
         for holder in holders:
-            by_gas.setdefault(checked.nodes[holder]["settings"]["gas"], holder)
+            settings = checked.nodes[holder]["settings"]
+            by_gas.setdefault((settings["gas"], settings["gas_model"]), holder)
         if len(by_gas) > 1:
             named = " and ".join(
-                f"{_holder(checked.nodes[holder])} ({gas})" for gas, holder in list(by_gas.items())[:2]
+                f"{_holder(checked.nodes[holder])} ({gas if model == 'real' else f'ideal {gas}'})"
+                for (gas, model), holder in list(by_gas.items())[:2]
             )
             raise BadModel(
                 f"{named} are connected, but a model carries one gas in each connected set of gas lines: make them "
                 "the same"
             )
-        gas = next(iter(by_gas))
+        gas, model = next(iter(by_gas))
         for part_id in circuit:
             checked.gas_of[part_id] = gas
+            checked.gas_model_of[part_id] = model
 
 
 def _holder(node: dict[str, Any]) -> str:

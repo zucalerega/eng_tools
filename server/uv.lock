@@ -395,7 +395,7 @@ wheels = [
 
 [[package]]
 name = "fullflow"
-version = "2.0.2"
+version = "2.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fullplot" },
@@ -404,9 +404,9 @@ dependencies = [
     { name = "rich" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/3e/f8e54c1eab46744f65d86b364fb0c032ee9bcb8d5ba5ca8dc24bc9d824a3/fullflow-2.0.2.tar.gz", hash = "sha256:7bcd2a9b8720d50e6575e4545a1bea1901b5e7a245417d92fd49d3cac5256a46", size = 345330, upload-time = "2026-09-27T22:44:00.651Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/55/0541f7820430a913e330b51c61f4986521e2c58998286a4209a852ce909d/fullflow-2.0.3.tar.gz", hash = "sha256:93e8bacf66acbc01dbb15e5e5d59e3ee0b1230ccbfb6138c43f5d17a22fe5353", size = 345594, upload-time = "2026-10-02T07:05:03.209Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/38/df770487172ccc67e60302547c849628cc9fe6d59bcef3b684133413ae55/fullflow-2.0.2-py3-none-any.whl", hash = "sha256:1026078c702237445eb459d4e22c3867abcfb6bc74ca3ba9e46c9f4cc9ff8086", size = 223394, upload-time = "2026-09-27T22:43:59.392Z" },
+    { url = "https://files.pythonhosted.org/packages/71/f9/e9f9f513ed45d0a61282123d838a25d60df96bd2ca3cd762cac1df71ea73/fullflow-2.0.3-py3-none-any.whl", hash = "sha256:651a941b9525d2bf0ea0f83d1b4e1f93bff79e8fbe184573276988bb736daccd", size = 223466, upload-time = "2026-10-02T07:05:01.893Z" },
 ]
 
 [package.optional-dependencies]
@@ -1856,7 +1856,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "authlib", specifier = ">=1.3" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fullflow", extras = ["thermo"], specifier = ">=2.0.2" },
+    { name = "fullflow", extras = ["thermo"], specifier = ">=2.0.3" },
     { name = "httpx2", specifier = ">=2.13" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },

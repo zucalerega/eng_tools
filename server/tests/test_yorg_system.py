@@ -1,16 +1,20 @@
 """System models (Yorg's dev page): admins draw a feed system, and it runs with FullFlow against a test's data."""
 
 import ast
+import csv
+import io
 import json
 import math
 import random
 import subprocess
 import sys
 from importlib import metadata
+from pathlib import Path
 
 import numpy as np
 import pytest
 from fullflow import FullFlowError
+from thermoprop import Fluid
 
 from yjsp_server.yorg.system.catalog import PSI
 from yjsp_server.yorg.system.channels import Reading, to_si
@@ -101,7 +105,10 @@ def test_the_dev_page_is_for_admins(team):
     assert "Water" in catalog["liquids"] and "Helium" in catalog["gases"]
     tank = next(part for part in catalog["parts"] if part["type"] == "tank")
     wall = next(setting for setting in tank["settings"] if setting["key"] == "heat_transfer")
-    assert wall["only_when"] == [["mode", "ullage"], ["ullage_model", "wall"]] and wall["tunable"]
+    assert wall["only_when"] == [["mode", "ullage"]] and wall["tunable"]
+    source = next(part for part in catalog["parts"] if part["type"] == "source")
+    gas = next(setting for setting in source["settings"] if setting["key"] == "gas_model")
+    assert (gas["default"], gas["choices"]) == ("real", ["real", "ideal"])
 
 
 def test_models_are_saved_changed_and_deleted(team):
@@ -123,13 +130,19 @@ def test_models_are_saved_changed_and_deleted(team):
     again = team.client.get(f"/api/yorg/dev/models/{saved['id']}", headers=chief).json()
     assert (again["name"], again["model"]["edges"][2]["settings"]["cda"]) == ("Cold flow 2", 4e-5)
 
-    # A press line saved before gas valves had their name opens as a gas valve.
+    # A press line saved before gas valves had their name opens as a gas valve; what had no FullFlow part of its own
+    # (an ullage's polytropic exponent, a regulator's lag) is left out.
     older = cold_flow_model()
+    older["nodes"][0]["settings"].update(mode="ullage", ullage_model="polytropic", polytropic_exponent=1.2)
     older["nodes"].append(node("gn2", "source", "Bottle"))
+    older["edges"].append(edge("reg", "regulator", "Regulator", "gn2", "tank", {"response_time": 0.05, "droop": 1e5}))
     older["edges"].append(edge("press", "gas_line", "Press line", "gn2", "tank"))
     response = team.client.post("/api/yorg/dev/models", json={"name": "Older", "model": older}, headers=chief)
     assert response.status_code == 201, response.text
-    assert response.json()["model"]["edges"][-1]["type"] == "gas_valve"
+    opened = team.client.get(f"/api/yorg/dev/models/{response.json()['id']}", headers=chief).json()["model"]
+    assert opened["edges"][-1]["type"] == "gas_valve"
+    assert opened["nodes"][0]["settings"] == {**cold_flow_model()["nodes"][0]["settings"], "mode": "ullage"}
+    assert opened["edges"][-2]["settings"] == {"droop": 1e5}
 
     # A half-drawn model saves; one whose edge ends nowhere doesn't.
     loose = {"nodes": [node("j", "junction", "Loose end")], "edges": [edge("l", "line", "Line", "j", "nowhere")]}
@@ -179,6 +192,15 @@ def test_models_are_saved_changed_and_deleted(team):
                 m["edges"].append(edge("press", "gas_valve", "Press valve", "ghe", "tank")),
             ),
             "Water tank's ullage (Nitrogen) and Helium bottle (Helium) are connected, but a model carries one gas in "
+            "each connected set of gas lines: make them the same",
+        ),
+        (
+            lambda m: (
+                m["nodes"][0]["settings"].update(mode="ullage", volume=0.004, liquid_volume=0.003, gas="Nitrogen"),
+                m["nodes"].append(node("gn2", "source", "Bottle", {"gas": "Nitrogen", "gas_model": "ideal"})),
+                m["edges"].append(edge("press", "gas_valve", "Press valve", "gn2", "tank")),
+            ),
+            "Water tank's ullage (Nitrogen) and Bottle (ideal Nitrogen) are connected, but a model carries one gas in "
             "each connected set of gas lines: make them the same",
         ),
         (
@@ -263,16 +285,62 @@ def test_an_ullage_tank_blows_down_and_its_knobs_turn(team):
         assert status["state"] == "done", status
         return at(status["result"], "tank.pressure", 1.45), status["result"]
 
-    isothermal, result = tank_at_end(polytropic_exponent=1.0, collapse_factor=1.0)
+    warmed, result = tank_at_end(heat_transfer=1000.0, collapse_factor=1.0)
     # Draining lowers it, from 300 psia; the press line adds back less than leaves.
     assert at(result, "tank.pressure", 0.45) == pytest.approx(300 * PSI, rel=0.01)
-    assert isothermal < 0.95 * 300 * PSI
+    assert warmed < 0.95 * 300 * PSI
     assert at(result, "tank.liquid_volume", 1.45) < 0.003
     assert at(result, "press.mass_flow", 1.45) > 0
-    # Less heat reaching the gas (a higher n) and more pressurant lost (a higher collapse factor) both leave less.
-    adiabatic, _ = tank_at_end(polytropic_exponent=1.4, collapse_factor=1.0)
-    collapsing, _ = tank_at_end(polytropic_exponent=1.0, collapse_factor=3.0)
-    assert adiabatic < isothermal and collapsing < isothermal
+    # The gas cools as it expands: kept warm by its wall, it holds more pressure than with no heat (an hA of 0).
+    assert at(result, "tank.gas_temperature", 1.45) < at(result, "tank.wall_temperature", 1.45)
+    # No heat reaching the gas, and more pressurant lost (a higher collapse factor), both leave less.
+    adiabatic, _ = tank_at_end(heat_transfer=0.0, collapse_factor=1.0)
+    collapsing, _ = tank_at_end(heat_transfer=1000.0, collapse_factor=3.0)
+    assert adiabatic < warmed and collapsing < warmed
+
+
+def test_a_gas_is_real_unless_its_set_ideal(team):
+    """A bottle of nitrogen at 4200 psia blowing down: as ThermoProp has it (12% less dense than an ideal gas, and
+    stiffer), its pressure falls along the real gas's isentrope, nearly twice as far as an ideal gas's."""
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, cold_flow_csv())
+    start, volume = Fluid("Nitrogen", pressure=4200 * PSI, temperature=298.15), 0.04
+
+    def blown_down(gas_model: str) -> tuple[float, float, float]:
+        """The bottle's pressure and temperature after 2 s, and the mass that left it."""
+        model = {
+            "nodes": [
+                node("gn2", "source", "Supply", {"gas": "Nitrogen", "gas_model": gas_model, "pressure": 4200 * PSI}),
+                node(
+                    "bottle",
+                    "gas_junction",
+                    "Bottle",
+                    {"volume": volume, "pressure": 4200 * PSI, "temperature": 298.15},
+                ),
+                node("out", "outlet", "Atmosphere"),
+            ],
+            "edges": [
+                edge("fill", "gas_valve", "Fill valve", "gn2", "bottle", {"cda": 1e-6, "position": 0}),
+                edge("vent", "gas_orifice", "Vent", "bottle", "out", {"cda": 5e-6}),
+            ],
+        }
+        status = run(team, chief, {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.05})
+        assert status["state"] == "done", status
+        result = status["result"]
+        times, flow = result["times"], result["series"]["vent.mass_flow"]
+        # Each step's flow is what held over it, as FullFlow keeps the bottle's mass.
+        left = sum((times[i] - times[i - 1]) * flow[i] for i in range(1, len(times)))
+        return at(result, "bottle.pressure", 2.0), at(result, "bottle.temperature", 2.0), left
+
+    pressure, temperature, left = blown_down("real")
+    held = Fluid("Nitrogen", density=start.density - left / volume, entropy=start.entropy)
+    assert pressure == pytest.approx(held.pressure, rel=1e-3)
+    assert temperature == pytest.approx(held.temperature, abs=0.1)
+
+    ideal, _, left = blown_down("ideal")
+    mass = 4200 * PSI * volume / (8.314462618 / 0.0280134 * 298.15)
+    assert ideal == pytest.approx(4200 * PSI * (1 - left / mass) ** 1.4, rel=1e-3)
+    assert 4200 * PSI - pressure > 1.5 * (4200 * PSI - ideal)
 
 
 def test_a_run_that_fails_says_why(team):
@@ -331,7 +399,6 @@ def pressurized_model() -> dict:
                 {
                     "fluid": "Water",
                     "mode": "ullage",
-                    "ullage_model": "wall",
                     "volume": 0.02,
                     "liquid_volume": 0.015,
                     "wall_mass": 3.0,
@@ -482,10 +549,7 @@ def test_a_fit_finds_the_knobs_that_made_the_data(team):
     ("knobs", "message"),
     [
         ([{"part": "tank", "key": "fluid"}], "Water tank has no knob fluid to fit"),
-        (
-            [{"part": "tank", "key": "polytropic_exponent"}],
-            "Water tank's ullage exponent n doesn't matter as it's set up",
-        ),
+        ([{"part": "tank", "key": "heat_transfer"}], "Water tank's wall hA doesn't matter as it's set up"),
         ([{"part": "inj", "key": "cda"}, {"part": "inj", "key": "cda"}], "Injector's CdA is picked twice"),
         ([{"part": "nope", "key": "cda"}], "There's no part nope to fit"),
     ],
@@ -673,8 +737,9 @@ def test_an_anchor_finds_a_tanks_collapse_factor_through_its_pressure(team):
     found = status["result"]["anchors"][0]
     assert found["value"] == pytest.approx(1.5, rel=1e-3)
     assert 1.45 < found["low"] <= found["high"] < 1.55
-    # Anchored in every step but the first, which FullFlow retries in quarters (the regulator starts shut, at its set
-    # pressure): not the main valve's opening, nor the halves of a step FullFlow retries.
+    # Anchored in every step but the first, which FullFlow retries (the regulator starts shut, at its set pressure):
+    # the anchor holds its knob to that step's end. Not the main valve's opening, where FullFlow takes a sliver of a
+    # step.
     assert found["share"] == pytest.approx(139 / 140)
     assert status["result"]["notes"] == []
 
@@ -718,8 +783,8 @@ def test_what_anchoring_cant_settle_is_fitted(team):
     body, anchors = valve_test(team, chief)
     # Anchored in a transient run from 0.7 s, after the valve opened: with the CdAs off, the model's flow would have to
     # jump to the test's, which the feed line's inertia doesn't allow, so FullFlow never anchors them. They're fitted
-    # instead, over the whole run. Anchored briefly: each step where an anchor can't match costs two failed solves.
-    late = [{**anchor, "start": 0.7, "end": 1.0} for anchor in anchors]
+    # instead, over the whole run. Anchored briefly: each step where an anchor can't match costs a failed solve.
+    late = [{**anchor, "start": 0.7, "end": 0.85} for anchor in anchors]
     status = anchored_run(team, chief, {**body, "anchors": late})
     assert status["state"] == "done", status
     result = status["result"]
@@ -860,6 +925,19 @@ def test_an_anchor_to_what_the_model_follows_says_so(team):
         refused({"part": "press", "key": "cda", "sensor": "tank", "link": "pressure"}, "steady")
         == "In a steady run Water tank holds what was measured, so Water tank's pressure can't anchor Press valve's CdA when open"
     )
+    # So does a gas junction a transducer reads, since a bottle draining has no steady state: its pressure and
+    # temperature both.
+    body["model"]["nodes"][1]["links"] = {"pressure": "PT-PRESS", "temperature": "TC-PRESS"}
+    assert (
+        refused({"part": "reg", "key": "cda", "sensor": "gj", "link": "temperature"}, "steady")
+        == "In a steady run Press manifold holds what was measured, so Press manifold's temperature can't anchor "
+        "Regulator's CdA fully open"
+    )
+    assert (
+        refused({"part": "reg", "key": "cda", "sensor": "gj", "link": "pressure"}, "steady")
+        == "In a steady run Press manifold holds what was measured, so Press manifold's pressure transducer can't "
+        "anchor Regulator's CdA fully open"
+    )
 
 
 # --- a model's script -------------------------------------------------------------------------------------------
@@ -896,7 +974,7 @@ def test_a_runs_script_is_what_it_runs(team):
     status = run(team, chief, body)
     assert status["state"] == "done", status
     text = script_of(team, chief, {key: value for key, value in body.items() if key != "dataset_id"})
-    assert "water_tank_gas = Volume(\n    'tank:gas',\n    net," in text
+    assert "water_tank_ullage = Volume(\n    'tank:gas',\n    net," in text
     assert "result = run.solve()" in text
     assert without_elapsed(execute(text, data_of(team, chief, body))) == without_elapsed(status["result"])
     bob = team.member("bob@x.test")
@@ -922,17 +1000,16 @@ def test_an_anchored_runs_script_anchors_its_knobs(team):
     assert (response.status_code, response.json()["message"]) == (422, "Injector's CdA is picked twice")
     model = pressurized_model()
     model["nodes"][1]["links"] = {"pressure": "PT-MANIFOLD"}
-    steady = {
+    unlinked = {  # the press valve has no command channel, so nothing moves it at its opening time
         "model": model,
         "start": 0.0,
         "end": 1.0,
-        "solver": "steady",
-        "anchors": [{"part": "reg", "key": "response_time", "sensor": "gj", "link": "pressure"}],
+        "anchors": [{"part": "press", "key": "opening_time", "sensor": "gj", "link": "pressure"}],
     }
-    response = team.client.post("/api/yorg/dev/script", json=steady, headers=chief)
+    response = team.client.post("/api/yorg/dev/script", json=unlinked, headers=chief)
     assert (response.status_code, response.json()["message"]) == (
         422,
-        "Regulator's response time doesn't change anything in this model, so it can't be anchored",
+        "Press valve's opening time doesn't change anything in this model, so it can't be anchored",
     )
 
 
@@ -950,7 +1027,12 @@ def test_a_scripts_names_and_channels_are_only_ever_data(team):
         text = script_of(team, chief, {"model": each, "start": 0.0, "end": 1.0})
         tree = ast.parse(text)
         imports = [ast.unparse(one) for one in ast.walk(tree) if isinstance(one, ast.Import | ast.ImportFrom)]
-        assert imports == ["import math", "from fullflow import *", "from yorg_models import *"]
+        assert imports == [
+            "import math",
+            "from fullflow import *",
+            "from thermoprop import Fluid, IdealGas, Propellant",
+            "from yorg_models import *",
+        ]
         assert not {one.id for one in ast.walk(tree) if isinstance(one, ast.Name)} & {"os", "__import__", "pwned"}
     assert f"'tank': {sneaky!r}," in script_of(team, chief, {"model": model, "start": 0.0, "end": 1.0})
     dataset = upload(team, chief, cold_flow_csv())
@@ -1016,3 +1098,109 @@ def test_a_runs_data_is_every_linked_channel_in_si_units(team):
     assert values[0] == pytest.approx((250.0 - 5 * 0.49) * PSI + ATMOSPHERE)
     assert data["tank.gas_temperature"][1][0] == pytest.approx((50.0 - 0.49 - 32.0) * 5 / 9 + 273.15)
     assert list(data["mov.command"][1][:2]) == [1.0, 1.0]
+
+
+# --- matching FullFlow ------------------------------------------------------------------------------------------
+
+# The Vespula example's data: Vespula's own FullFlow model's run (the web app uploads it with the example).
+VESPULA_RUN = Path(__file__).parents[2] / "web" / "src" / "yorg" / "models" / "vespula-run.csv"
+IN2, CM2 = 0.00064516, 1e-4
+
+
+def vespula_model() -> dict:
+    """Vespula's prop system, as the Models page's example draws it (web/src/yorg/models/model.ts)."""
+
+    def tank(node_id: str, side: str, settings: dict) -> dict:
+        ullage = {"mode": "ullage", "gas": "Nitrogen", "gas_temperature": 298.15, "heat_transfer": 0}
+        links = {"pressure": f"{side} Tank Pressure", "gas_temperature": f"{side} Ullage Temperature"}
+        return node(node_id, "tank", f"{side} tank", {**ullage, "collapse_factor": 1.2, **settings}, links)
+
+    def switched(edge_id: str, name: str, source: str, target: str, cda: float, command: str) -> dict:
+        settings = {"cda": cda, "opening_time": 0.001, "position": 0}
+        return edge(edge_id, "gas_valve", name, source, target, settings, {"command": command})
+
+    copv = {"volume": 0.04, "pressure": 4200 * PSI, "temperature": 298.15}
+    chamber = {"pressure": 285 * PSI}
+    return {
+        "nodes": [
+            node("n1", "gas_junction", "COPV", copv, {"pressure": "COPV Pressure", "temperature": "COPV Temperature"}),
+            tank(
+                "n2",
+                "LOX",
+                {
+                    "fluid": "Oxygen",
+                    "temperature": 100,
+                    "pressure": 357 * PSI,
+                    "volume": 0.08582,
+                    "liquid_volume": 0.07697,
+                },
+            ),
+            tank(
+                "n3",
+                "Fuel",
+                {
+                    "fluid": "RP1",
+                    "temperature": 298.15,
+                    "pressure": 416 * PSI,
+                    "volume": 0.05976,
+                    "liquid_volume": 0.05211,
+                },
+            ),
+            node("n4", "outlet", "LOX vent"),
+            node("n5", "outlet", "Fuel vent"),
+            node("n6", "junction", "LOX manifold", {}, {"pressure": "LOX Manifold Pressure"}),
+            node("n7", "junction", "Fuel manifold", {}, {"pressure": "Fuel Manifold Pressure"}),
+            node("n8", "outlet", "Chamber (LOX)", chamber, {"pressure": "Chamber Pressure"}),
+            node("n9", "outlet", "Chamber (fuel)", chamber, {"pressure": "Chamber Pressure"}),
+        ],
+        "edges": [
+            edge("e1", "gas_orifice", "LOX lo-flow orifice", "n1", "n2", {"cda": 0.005460362 * IN2}),
+            switched("e2", "LOX hi-flow valve", "n1", "n2", 0.006515668 * IN2, "LOX Hi Flow Switch"),
+            edge("e3", "gas_orifice", "Fuel lo-flow orifice", "n1", "n3", {"cda": 0.002507537 * IN2}),
+            switched("e4", "Fuel hi-flow valve", "n1", "n3", 0.003124906 * IN2, "Fuel Hi Flow Switch"),
+            switched("e5", "LOX relief valve", "n2", "n4", 0.08942 * IN2, "LOX Relief Valve"),
+            switched("e6", "Fuel relief valve", "n3", "n5", 0.0769 * IN2, "Fuel Relief Valve"),
+            edge("e7", "orifice", "LOX system", "n2", "n6", {"cda": 1.51 * CM2}),
+            edge("e8", "orifice", "LOX injector", "n6", "n8", {"cda": 1.25 * CM2}, {"flow": "LOX Injector Mass Flow"}),
+            edge("e9", "orifice", "Fuel system", "n3", "n7", {"cda": 0.633 * CM2}),
+            edge(
+                "e10", "orifice", "Fuel injector", "n7", "n9", {"cda": 0.555 * CM2}, {"flow": "Fuel Injector Mass Flow"}
+            ),
+        ],
+    }
+
+
+def test_the_vespula_example_is_its_fullflow_run(team):
+    """Built of FullFlow's components with ThermoProp's properties, as Vespula's own model is (real nitrogen, LOX, and
+    RP-1), the Vespula example run against that model's run is that run again: every pressure, temperature, and flow
+    the run recorded, to a few parts in a million (its file has seven figures, in psia of FullFlow's 6894.76 Pa)."""
+    chief = team.member("chief@x.test", admin=True)
+    text = VESPULA_RUN.read_text(encoding="utf-8")
+    dataset = upload(team, chief, text, "Vespula run.csv")
+    body = {"model": vespula_model(), "dataset_id": dataset["id"], "start": 0.0, "end": 21.3, "dt": 0.1}
+    status = run(team, chief, body)
+    assert status["state"] == "done", status
+    result = status["result"]
+    assert result["liquids"]["n3"]["fluid"] == "RP-1"
+    rows = list(csv.reader(io.StringIO(text)))
+    columns = {name: np.array([float(row[index]) for row in rows[1:]]) for index, name in enumerate(rows[0])}
+    recorded = {
+        "n1.pressure": ("COPV Pressure (psia)", PSI),
+        "n1.temperature": ("COPV Temperature (K)", 1.0),
+        "n2.pressure": ("LOX Tank Pressure (psia)", PSI),
+        "n2.gas_temperature": ("LOX Ullage Temperature (K)", 1.0),
+        "n6.pressure": ("LOX Manifold Pressure (psia)", PSI),
+        "e8.mass_flow": ("LOX Injector Mass Flow (kg/s)", 1.0),
+        "n3.pressure": ("Fuel Tank Pressure (psia)", PSI),
+        "n3.gas_temperature": ("Fuel Ullage Temperature (K)", 1.0),
+        "n3.liquid_volume": ("Fuel Liquid Volume (L)", 1e-3),
+        "n7.pressure": ("Fuel Manifold Pressure (psia)", PSI),
+        "e10.mass_flow": ("Fuel Injector Mass Flow (kg/s)", 1.0),
+    }
+    for output, (column, scale) in recorded.items():
+        modeled = np.interp(columns["Time (s)"], result["times"], result["series"][output])
+        fullflow = columns[column] * scale
+        assert np.max(np.abs(modeled - fullflow) / np.abs(fullflow)) < 1e-5, output
+    # The LOX tank runs dry at the end: there, a part in a million of what it held.
+    lox = np.interp(columns["Time (s)"], result["times"], result["series"]["n2.liquid_volume"])
+    assert np.max(np.abs(lox - columns["LOX Liquid Volume (L)"] * 1e-3)) < 1e-6 * 0.07697

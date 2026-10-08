@@ -62,10 +62,6 @@ const part = (type: string, kind: "node" | "edge", phase: PartKind["phase"], ext
 });
 
 const ULLAGE: [string, string][] = [["mode", "ullage"]];
-const WALL: [string, string][] = [
-    ["mode", "ullage"],
-    ["ullage_model", "wall"],
-];
 
 const catalog: Catalog = {
     liquids: ["Water"],
@@ -76,24 +72,19 @@ const catalog: Catalog = {
             settings: [
                 setting("mode", { quantity: "choice", default: "fixed", choices: ["fixed", "ullage"] }),
                 setting("pressure", { quantity: "pressure", default: 300 * PSI }),
-                setting("ullage_model", {
+                setting("gas_model", {
                     quantity: "choice",
-                    default: "polytropic",
-                    choices: ["polytropic", "wall"],
+                    default: "real",
+                    choices: ["real", "ideal"],
                     only_when: ULLAGE,
                 }),
-                setting("polytropic_exponent", {
-                    default: 1.2,
-                    tunable: true,
-                    only_when: [...ULLAGE, ["ullage_model", "polytropic"]],
-                }),
-                setting("heat_transfer", { quantity: "conductance", default: 20, tunable: true, only_when: WALL }),
-                setting("wall_mass", { quantity: "mass", default: 5, only_when: WALL }),
+                setting("heat_transfer", { quantity: "conductance", default: 20, tunable: true, only_when: ULLAGE }),
+                setting("wall_mass", { quantity: "mass", default: 5, only_when: ULLAGE }),
             ],
             links: [
                 link("pressure", { role: "boundary", start_when: ULLAGE }),
                 link("gas_temperature", { quantity: "temperature", role: "start", only_when: ULLAGE }),
-                link("wall_temperature", { quantity: "temperature", role: "start", only_when: WALL }),
+                link("wall_temperature", { quantity: "temperature", role: "start", only_when: ULLAGE }),
             ],
         }),
         part("source", "node", "gas", { label: "Gas supply" }),
@@ -210,13 +201,11 @@ describe("editing", () => {
         const linkKeys = () => shownLinks(kind, model.nodes[0]!.settings).map((one) => one.key);
         expect(keys()).toEqual(["mode", "pressure"]);
         expect(linkKeys()).toEqual(["pressure"]);
+        // The knobs a fit can turn are the tunable ones that matter now: no wall without an ullage.
+        expect(knobsOf(model, catalog)).toEqual([]);
         model = setSetting(model, tank, "mode", "ullage");
-        expect(keys()).toEqual(["mode", "pressure", "ullage_model", "polytropic_exponent"]);
-        expect(linkKeys()).toEqual(["pressure", "gas_temperature"]);
-        model = setSetting(model, tank, "ullage_model", "wall");
-        expect(keys()).toEqual(["mode", "pressure", "ullage_model", "heat_transfer", "wall_mass"]);
+        expect(keys()).toEqual(["mode", "pressure", "gas_model", "heat_transfer", "wall_mass"]);
         expect(linkKeys()).toEqual(["pressure", "gas_temperature", "wall_temperature"]);
-        // The knobs a fit can turn are the tunable ones that matter now.
         expect(knobsOf(model, catalog).map((one) => one.setting.key)).toEqual(["heat_transfer"]);
     });
 
@@ -225,6 +214,7 @@ describe("editing", () => {
         const [tank, inlet] = model.nodes;
         const line = model.edges[0]!;
         model = setLink(model, tank!.id, "pressure", "PT-TANK"); // followed, at a fixed pressure: nothing to compare
+        model = setLink(model, tank!.id, "gas_temperature", "TC-ULLAGE"); // and no gas over it to read
         model = setLink(model, inlet!.id, "pressure", "PT-01");
         model = setLink(model, line.id, "flow", "FM-01");
         expect(comparisons(model, catalog).map((one) => [one.output, one.channel])).toEqual([
@@ -232,8 +222,6 @@ describe("editing", () => {
             [`${line.id}.mass_flow`, "FM-01"],
         ]);
         model = setSetting(model, tank!.id, "mode", "ullage");
-        model = setLink(model, tank!.id, "gas_temperature", "TC-ULLAGE");
-        model = setLink(model, tank!.id, "wall_temperature", "TC-WALL"); // not with an exponent for its heat
         expect(comparisons(model, catalog).map((one) => one.channel)).toEqual([
             "PT-TANK",
             "TC-ULLAGE",
@@ -261,7 +249,7 @@ describe("editing", () => {
             ["venturi", "Venturi"],
             ["gas_valve", "Vent"],
         ]);
-        expect(model.nodes[2]!.settings).toMatchObject({ mode: "ullage", ullage_model: "wall" });
+        expect(model.nodes[2]!.settings).toMatchObject({ mode: "ullage" });
     });
 
     test("a model goes to a file and comes back, an old press line as a gas valve", () => {

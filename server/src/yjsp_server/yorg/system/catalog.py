@@ -9,9 +9,10 @@ from typing import Any
 PSI = 6894.757
 ATMOSPHERE = 101325.0
 
-# ThermoProp's names (Fluid for liquids, IdealGas for pressurants). "Custom" is a liquid of a density you give: IPA,
-# Jet-A, or anything ThermoProp doesn't have.
+# Liquids and gases as ThermoProp has them (script.py says which of its classes, by name). "Custom" is a liquid of a
+# density you give: IPA, Jet-A, or anything ThermoProp doesn't have.
 LIQUIDS = ("Water", "Ethanol", "Methanol", "RP1", "Oxygen", "Nitrogen", "NitrousOxide", "Methane", "Custom")
+LIQUID_LABELS = tuple("RP-1" if liquid == "RP1" else liquid for liquid in LIQUIDS)
 GASES = ("Nitrogen", "Helium", "Air")
 
 # When a setting or link matters: (setting, value) pairs that must all hold. None of them: always.
@@ -82,9 +83,24 @@ def applies(conditions: Conditions | None, settings: dict[str, Any]) -> bool:
 
 
 _ULLAGE: Conditions = (("mode", "ullage"),)
-_POLYTROPIC: Conditions = (("mode", "ullage"), ("ullage_model", "polytropic"))
-_WALL: Conditions = (("mode", "ullage"), ("ullage_model", "wall"))
 _CUSTOM: Conditions = (("fluid", "Custom"),)
+
+
+def _gas_model(only_when: Conditions = ()) -> Setting:
+    """A gas's properties, where it's held: real (ThermoProp's, at its pressure and temperature) or ideal."""
+    return Setting(
+        "gas_model",
+        "Gas properties",
+        "choice",
+        "real",
+        choices=("real", "ideal"),
+        choice_labels=("Real (ThermoProp)", "Ideal"),
+        only_when=only_when,
+        help="Real: ThermoProp's, at the gas's pressure and temperature, as FullFlow models have them. Ideal: pV = mRT, "
+        "which overstates a gas's mass at bottle pressures",
+    )
+
+
 _COMMAND = (
     Setting("opening_time", "Opening time", "time", 0.05, 0.001, 60.0, tunable=True, help="Fully closed to fully open"),
     Setting("closed_value", "Command when closed", "number", 0.0, help="The command channel's value when closed"),
@@ -112,7 +128,7 @@ PARTS: tuple[Part, ...] = (
         "ullage whose pressure falls as the liquid drains, rises with pressurant from a gas valve or regulator, and "
         "falls through a vent.",
         settings=(
-            Setting("fluid", "Liquid", "choice", "Water", choices=LIQUIDS),
+            Setting("fluid", "Liquid", "choice", "Water", choices=LIQUIDS, choice_labels=LIQUID_LABELS),
             Setting("density", "Density", "density", 1000.0, 1.0, 30000.0, only_when=_CUSTOM),
             Setting(
                 "vapor_pressure",
@@ -145,6 +161,7 @@ PARTS: tuple[Part, ...] = (
             Setting("volume", "Tank volume", "volume", 0.02, 1e-6, 1000.0, only_when=_ULLAGE),
             Setting("liquid_volume", "Liquid at the start", "volume", 0.015, 0.0, 1000.0, only_when=_ULLAGE),
             Setting("gas", "Ullage gas", "choice", "Nitrogen", choices=GASES, only_when=_ULLAGE),
+            _gas_model(_ULLAGE),
             Setting(
                 "gas_temperature",
                 "Ullage temperature at the start",
@@ -155,35 +172,13 @@ PARTS: tuple[Part, ...] = (
                 only_when=_ULLAGE,
             ),
             Setting(
-                "ullage_model",
-                "Ullage heat",
-                "choice",
-                "polytropic",
-                choices=("polytropic", "wall"),
-                choice_labels=("An exponent n", "Through the tank wall"),
-                only_when=_ULLAGE,
-                help="How heat moves between the ullage gas and the tank: a polytropic exponent, or the gas and the "
-                "wall's temperatures with an hA between them",
-            ),
-            Setting(
-                "polytropic_exponent",
-                "Ullage exponent n",
-                "ratio",
-                1.2,
-                1.0,
-                1.7,
-                tunable=True,
-                only_when=_POLYTROPIC,
-                help="1 isothermal, 1.4 (nitrogen) or 1.67 (helium) with no heat moving",
-            ),
-            Setting(
                 "wall_mass",
                 "Wall mass",
                 "mass",
                 5.0,
                 0.001,
                 1e5,
-                only_when=_WALL,
+                only_when=_ULLAGE,
                 help="Of the tank wall around the ullage",
             ),
             Setting(
@@ -193,11 +188,17 @@ PARTS: tuple[Part, ...] = (
                 900.0,
                 1.0,
                 1e5,
-                only_when=_WALL,
+                only_when=_ULLAGE,
                 help="Aluminum 900, steel 500, carbon fiber about 800 J/kg·K",
             ),
             Setting(
-                "wall_temperature", "Wall temperature at the start", "temperature", 293.15, 1.0, 2000.0, only_when=_WALL
+                "wall_temperature",
+                "Wall temperature at the start",
+                "temperature",
+                293.15,
+                1.0,
+                2000.0,
+                only_when=_ULLAGE,
             ),
             Setting(
                 "heat_transfer",
@@ -207,9 +208,9 @@ PARTS: tuple[Part, ...] = (
                 0.0,
                 1e6,
                 tunable=True,
-                only_when=_WALL,
+                only_when=_ULLAGE,
                 help="Heat transfer coefficient times the wall's area in the ullage: the more, the nearer the gas stays "
-                "to the wall's temperature",
+                "to the wall's temperature; 0, none moves",
             ),
             Setting(
                 "collapse_factor",
@@ -254,7 +255,7 @@ PARTS: tuple[Part, ...] = (
                 "temperature",
                 "start",
                 "Its value at the start is the wall's, and it's compared with the model",
-                only_when=_WALL,
+                only_when=_ULLAGE,
             ),
         ),
         outputs=(
@@ -272,6 +273,7 @@ PARTS: tuple[Part, ...] = (
         "Pressurant from a bottle or a facility line, at a fixed pressure or one you measured.",
         settings=(
             Setting("gas", "Gas", "choice", "Nitrogen", choices=GASES),
+            _gas_model(),
             Setting("pressure", "Pressure", "pressure", 2000 * PSI, 0.0, 1e9),
             Setting("temperature", "Temperature", "temperature", 293.15, 1.0, 2000.0),
         ),
@@ -452,16 +454,6 @@ PARTS: tuple[Part, ...] = (
                 help="How far below its set pressure it's fully open",
             ),
             Setting("cda", "CdA fully open", "area", 1e-5, 0.0, 1.0, tunable=True),
-            Setting(
-                "response_time",
-                "Response time",
-                "time",
-                0.05,
-                0.001,
-                60.0,
-                tunable=True,
-                help="Closed to fully open, at the fastest",
-            ),
         ),
         links=(_FLOW,),
         outputs=(_MASS_FLOW, Output("position", "Opening", "ratio")),
@@ -472,6 +464,9 @@ BY_TYPE = {part.type: part for part in PARTS}
 
 # Part types that have been renamed: saved models may still have the old names.
 RENAMED = {"gas_line": "gas_valve"}
+# Settings that have gone, with the models that had no FullFlow part of their own (an ullage's polytropic exponent, a
+# regulator's lag): saved models may still have them, and they're left out.
+RETIRED = {"tank": ("ullage_model", "polytropic_exponent"), "regulator": ("response_time",)}
 
 
 def settings_of(part_type: str, given: dict[str, Any]) -> dict[str, Any]:

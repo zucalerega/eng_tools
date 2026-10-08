@@ -252,8 +252,10 @@ export function HelpPage() {
                                       <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
                                       venturis; and on the gas side, supplies, regulators, gas valves) and link it to a
                                       test's channels: commands drive its valves, pressures it follows, sensors it's
-                                      compared with. <em>Start from an example</em> has Vespula's prop system, with its
-                                      run's data.
+                                      compared with. Every part is built of FullFlow components, with ThermoProp's
+                                      properties (a gas is real unless you set it ideal). <em>Start from an example</em>{" "}
+                                      has Vespula's prop system, with its run's data: a run of it is Vespula's run
+                                      again.
                                   </li>
                                   <li>
                                       <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is
@@ -265,9 +267,9 @@ export function HelpPage() {
                                       every time step until its sensor reads what was measured, and plots the knob
                                       through the run. Give an anchor a span where its knob counts (a valve's CdA while
                                       it's open). The <em>Steady</em> solver settles lines, junctions, and regulators at
-                                      once in each step, with tanks at the pressure measured: much faster, without
-                                      inertia. What anchoring can't settle is fitted: knobs you pick to fit alongside,
-                                      and any knob FullFlow couldn't anchor.
+                                      once in each step, with tanks (and gas junctions with a pressure transducer) at
+                                      the pressure measured: much faster, without inertia. What anchoring can't settle
+                                      is fitted: knobs you pick to fit alongside, and any knob FullFlow couldn't anchor.
                                   </li>
                                   <li>
                                       <em>Script</em> shows the model as the FullFlow code that runs it. Change it, and{" "}

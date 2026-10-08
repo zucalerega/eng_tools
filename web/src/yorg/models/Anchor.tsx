@@ -48,10 +48,16 @@ export function AnchorDialog({
     onStart: (plan: AnchorPlan) => void;
     onCancel: () => void;
 }) {
-    // Steady, tanks hold what was measured: their knobs don't matter, and their sensors are what they follow.
+    // Steady, tanks hold what was measured: their knobs don't matter, and their sensors are what they follow. So does a
+    // gas junction a transducer reads (a bottle draining has no steady state).
     const steady = solver === "steady";
     const tanks = new Set(model.nodes.filter((node) => node.type === "tank").map((node) => node.id));
-    const sensors = comparisons(model, catalog).filter((one) => !(steady && tanks.has(one.part)));
+    const held = new Set(
+        model.nodes
+            .filter((node) => node.type === "tank" || (node.type === "gas_junction" && node.links.pressure))
+            .map((node) => node.id),
+    );
+    const sensors = comparisons(model, catalog).filter((one) => !(steady && held.has(one.part)));
     const knobs = knobsOf(model, catalog).filter(({ part }) => !(steady && tanks.has(part.id)));
     const [rows, setRows] = useState<AnchorChoice[]>(() =>
         sensors.map((sensor) => {
@@ -101,7 +107,10 @@ export function AnchorDialog({
             <p className="muted dev-help">
                 In one run, FullFlow moves each knob you pick, in every time step, until the model reads what its sensor
                 measured. Where it can&apos;t (a valve&apos;s CdA while it&apos;s shut), it holds the knob: give such an
-                anchor a span. {steady ? "Steady, tanks hold the pressure measured, so they aren't here. " : ""}
+                anchor a span.{" "}
+                {steady
+                    ? "Steady, tanks (and gas junctions a transducer reads) hold the pressure measured, so they aren't here. "
+                    : ""}
                 In a transient run, an anchor starting partway through has the model jump to the test at once, which a
                 line&apos;s inertia doesn&apos;t allow: start it with the run, or anchor in a steady run.
             </p>

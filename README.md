@@ -148,39 +148,43 @@ the keys.
   it: the same data, views, scripts, and help, with Models in its top bar, and Model on a
   dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview, top right
   (no one else sees it).
-- **System models (in the preview while it's being tried out):** draw a test stand's
-  feed system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
+- **System models (in the preview while it's being tried out):** draw a test stand's feed
+  system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
   outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
   the gas side (dashed), gas supplies, gas junctions, regulators, gas valves, and gas
-  orifices: press lines into a tank's ullage, and vents out of it. Link its valves to their
-  command channels, what it follows (a tank's pressure, a chamber's, a liquid's
+  orifices: press lines into a tank's ullage, and vents out of it. Link its valves to
+  their command channels, what it follows (a tank's pressure, a chamber's, a liquid's
   temperature, whose density and vapor pressure then follow it through the run) to theirs,
-  and its sensors to what they measured; an ullage or a gas junction starts from its
-  sensors' values at the run's start (pressure, gas and wall temperatures). Run it against
-  a test (FullFlow and ThermoProp simulate it on the server) over a window from T0 (the
-  one set on the dataset's plots) to see each sensor's measured and modeled values
-  together, with how far apart they are (RMS and bias). Then tune the settings marked tune
-  (CdAs, a line's friction factor and fittings' K, a valve's opening time, a regulator's
-  set pressure and droop, a venturi's recovery, an ullage's exponent or wall hA and its
-  collapse factor), or pick them and **Fit**: the server turns them until the model
-  matches best, and you apply what it found (or not). Or **Anchor** them: pair a knob with
-  a sensor, and in one run FullFlow moves the knob in every time step until the sensor
-  reads what was measured; you see each knob through the run, and apply the median (or
-  not). Give an anchor a span where its knob counts, such as a valve's CdA while it's open.
-  What anchoring can't settle is fitted: knobs you pick to fit alongside the anchors, and
-  any knob FullFlow couldn't anchor (unless you turn that off), the working anchors held in
-  each of the fit's runs.
+  and its sensors to what they measured; a tank, a junction, or a gas junction starts from
+  its sensors' values at the run's start (pressure, gas and wall temperatures). Every part
+  is built of FullFlow's components, with ThermoProp's properties: a gas is real unless you
+  set it ideal (at bottle pressures the difference shows), and a liquid has its density at
+  each node's pressure. Run it against a test (FullFlow simulates it on the server)
+  over a window from T0 (the one set on the dataset's plots) to see each sensor's measured
+  and modeled values together, with how far apart they are (RMS and bias). Then tune the
+  settings marked tune (CdAs, a line's friction factor and fittings' K, a valve's opening
+  time, a regulator's set pressure and droop, a venturi's recovery, an ullage's wall hA
+  and its collapse factor), or pick them and **Fit**: the server turns them until the
+  model matches best, and you apply what it found (or not). Or **Anchor** them: pair a
+  knob with a sensor, and in one run FullFlow moves the knob in every time step until the
+  sensor reads what was measured; you see each knob through the run, and apply the median
+  (or not). Give an anchor a span where its knob counts, such as a valve's CdA while it's
+  open. What anchoring can't settle is fitted: knobs you pick to fit alongside the
+  anchors, and any knob FullFlow couldn't anchor (unless you turn that off), the working
+  anchors held in each of the fit's runs.
   The **Steady** solver settles the lines, junctions, and regulators at once in each time
-  step, with the tanks at the pressure measured: much faster, and without inertia, so a
-  steady anchor can start anywhere. Models are saved for every admin, run against any test
-  with the same channel names, and go to and from files. **Start from an example** has a
-  cold flow, a pressurized flow, and Vespula's prop system (Saaketh's FullFlow model) with
-  its run's data, which it uploads to Yorg the first time.
+  step, with the tanks (and gas junctions linked to a pressure transducer) at the pressure
+  measured: much faster, and without inertia, so a steady anchor can start anywhere.
+  Models are saved for every admin, run against any test with the same channel names, and
+  go to and from files. **Start from an example** has a cold flow, a pressurized flow, and
+  Vespula's prop system (Saaketh's FullFlow model) with its run's data, which it uploads
+  to Yorg the first time: built of the same FullFlow components, a run of it is Saaketh's
+  run again.
   **Script** shows the model as the FullFlow code that runs it, written from the P&ID, and
-  the code of Yorg's own it imports. Change it (say, to give the pressurant real-gas
-  properties, or to add a FullFlow component Yorg's parts don't have) and **Run in browser**
-  runs your script in your browser: FullFlow installs there the first time (a minute or
-  two), and it runs several times slower than the server. A changed script isn't saved.
+  the code of Yorg's own it imports. Change it (say, to add a FullFlow component Yorg's
+  parts don't have, or to model a part another way) and **Run in browser** runs your
+  script in your browser: FullFlow installs there the first time (a minute or two), and it
+  runs several times slower than the server. A changed script isn't saved.
   **Reference** explains what FullFlow is and how it models a system and solves it.
 - **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and

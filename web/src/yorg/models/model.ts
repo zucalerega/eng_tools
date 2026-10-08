@@ -90,11 +90,7 @@ export function pressurizedExample(catalog: Catalog): SystemModel {
     const setpoint = 300 * PSI + ATMOSPHERE;
     const bottle = draw.place("source", 110, 110, "Nitrogen bottle", { pressure: 2000 * PSI + ATMOSPHERE });
     const manifold = draw.place("gas_junction", 400, 110, "Press manifold", { pressure: setpoint });
-    const tank = draw.place("tank", 400, 340, "Fuel tank", {
-        mode: "ullage",
-        ullage_model: "wall",
-        pressure: setpoint,
-    });
+    const tank = draw.place("tank", 400, 340, "Fuel tank", { mode: "ullage", pressure: setpoint });
     const inlet = draw.place("junction", 640, 340, "Venturi inlet");
     const chamber = draw.place("outlet", 890, 340, "Chamber");
     const stack = draw.place("outlet", 130, 340, "Vent stack");
@@ -121,10 +117,9 @@ const CM2 = 1e-4; // m²
  * switches and relief valves drive their valves, the chamber's pressure is the injectors' outlets', and the rest is
  * compared. The chamber is two outlets because a model carries one liquid in each connected set of lines.
  *
- * Yorg's gas is ideal, where Vespula's is ThermoProp's real nitrogen: the COPV starts with 13% more of it, and it
- * doesn't cool as it throttles into the tanks, so run as it is the tanks run high. Anchoring each tank's collapse
- * factor to its pressure (a transient run, 0.1 s steps) makes up for that, and the injectors' flows then match. In a
- * steady run the tanks follow their pressures, and the liquid side matches Vespula's to four figures.
+ * Built of the same FullFlow components with the same ThermoProp properties (real nitrogen, LOX, and RP-1), a
+ * transient run of it at 0.1 s steps is that run again: every pressure, temperature, and flow to a few parts in a
+ * million.
  */
 export function vespulaExample(catalog: Catalog): SystemModel {
     const draw = builder(catalog);
@@ -137,8 +132,8 @@ export function vespulaExample(catalog: Catalog): SystemModel {
             {
                 mode: "ullage",
                 gas: "Nitrogen",
+                gas_model: "real",
                 gas_temperature: 298.15,
-                ullage_model: "wall",
                 heat_transfer: 0, // Vespula's ullages trade no heat with their walls
                 collapse_factor: 1.2,
                 ...settings,
@@ -160,10 +155,8 @@ export function vespulaExample(catalog: Catalog): SystemModel {
         volume: 0.08582,
         liquid_volume: 0.07697,
     });
-    // ThermoProp's RP1 fluid is 748 kg/m³; Vespula's RP-1 propellant, 808.4.
     const fuel = tank("Fuel", 740, {
-        fluid: "Custom",
-        density: 808.4,
+        fluid: "RP1", // ThermoProp's RP-1 propellant, as Vespula's
         temperature: 298.15,
         pressure: 416 * PSI,
         volume: 0.05976,

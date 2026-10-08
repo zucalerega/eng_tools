@@ -195,6 +195,35 @@ test("the Vespula example comes with its run's data, uploaded once", { timeout: 
     );
 });
 
+test("a gas junction can hold its gas in a vessel, whose wall's hA is a knob", { timeout: 120_000 }, async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/yorg/dev/models");
+    await userEvent.click(await screen.findByRole("button", { name: "Start from an example" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Vespula prop system, with its run's data" }));
+    await waitFor(() => expect((screen.getByLabelText("Test") as HTMLSelectElement).value).not.toBe(""));
+
+    // Its COPV holds its gas in tubing, with no wall, until it's a vessel.
+    fireEvent.pointerDown(
+        within(screen.getByRole("application", { name: "P&ID" })).getByRole("button", { name: "COPV" }),
+    );
+    const copv = within(await screen.findByRole("region", { name: "COPV settings" }));
+    expect(copv.queryByText("Wall hA")).toBeNull();
+    await userEvent.selectOptions(copv.getByLabelText("Holds its gas in"), "A vessel, with a wall that trades heat");
+    expect(copv.getByText("Wall hA")).toBeTruthy();
+
+    const anchorable = async () => {
+        await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+        const anchoring = within(screen.getByRole("dialog"));
+        const knobs = anchoring.getAllByRole("option").map((option) => option.textContent);
+        await userEvent.click(anchoring.getByRole("button", { name: "Cancel" }));
+        return knobs;
+    };
+    expect(await anchorable()).toContain("COPV: Wall hA");
+    // Steady, the COPV holds what its transducer measured, so its wall doesn't matter.
+    await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
+    expect(await anchorable()).not.toContain("COPV: Wall hA");
+});
+
 /** The Script view's editor for a file (model.py, or one of yorg_models'), once it's on the page. */
 async function editorFor(file: string): Promise<EditorView> {
     const script = await screen.findByRole("region", { name: "Script" });

@@ -717,8 +717,20 @@ class _Writer:
                 self.assign(self.base[node_id], junction, own=True)
             elif node["type"] == "gas_junction" and not self._holds(node):
                 self.emit("")
-                self.comment(f"{node['name']}: its gas")
-                self._gas_volume(node, _number(settings["volume"]), name=self.base[node_id])
+                vessel = settings["wall"] == "vessel"
+                walled = vessel and self._walled(node)
+                self.comment(
+                    f"{node['name']}: its gas"
+                    + (
+                        ", exchanging heat with its vessel's wall"
+                        if walled
+                        else " (no heat moves through its vessel's wall: an hA of 0)"
+                        if vessel
+                        else ""
+                    )
+                )
+                heat = self._wall(node) if walled else None
+                self._gas_volume(node, _number(settings["volume"]), name=self.base[node_id], heat=heat)
             elif node["type"] == "tank" and settings["mode"] == "ullage" and not self.steady:
                 self.emit("")
                 self._tank_storage(node, liquid_in[node_id], liquid_out[node_id])
@@ -728,8 +740,7 @@ class _Writer:
         the tank's wall (a Solid) by Convection."""
         tank_id, settings = tank["id"], tank["settings"]
         base = self.base[tank_id]
-        anchored = any((one["part"], one["key"]) == (tank_id, "heat_transfer") for one in self.job.get("anchors", []))
-        walled = settings["heat_transfer"] > 0 or anchored or self.linked(tank, "wall_temperature") is not None
+        walled = self._walled(tank)
         self.comment(
             f"{tank['name']}: its liquid, and its ullage's gas over it"
             + (", exchanging heat with its wall" if walled else " (no heat moves through its wall: an hA of 0)")
@@ -745,38 +756,7 @@ class _Writer:
             mass_flow_out=_total(liquid_out),
         )
         held = self.assign(f"{base}_liquid_node", held)
-        heat = None
-        if walled:
-            wall = self.assign(
-                f"{base}_wall_temperature",
-                self.solved(self.starting(tank, "wall_temperature", settings["wall_temperature"])),
-                self.solving(tank, "wall_temperature"),
-            )
-            heat_transfer = self.knob(tank, "heat_transfer")
-            convection = _call(
-                "Convection",
-                repr(f"{tank_id}:convection"),
-                "net",
-                surface_temperature=wall,
-                fluid_temperature=self.temperature[tank_id],
-                convective_area="1.0",
-                convection_coefficient=heat_transfer,
-            )
-            convection = self.assign(f"{base}_convection", convection)
-            self.emit(
-                _call(
-                    "Solid",
-                    repr(f"{tank_id}:wall"),
-                    "net",
-                    temperature=wall,
-                    mass=_number(settings["wall_mass"]),
-                    specific_heat=_number(settings["wall_specific_heat"]),
-                    heat_rate=f"{convection}.heat_rate",
-                ).render()
-            )
-            self.comment("Convection's heat goes into the wall, out of the gas")
-            heat = f"-{convection}.heat_rate"
-            self.outputs[f"{tank_id}.wall_temperature"] = wall
+        heat = self._wall(tank) if walled else None
         collapse = self.knob(tank, "collapse_factor")
         self.comment("The ullage is what the liquid leaves of the tank")
         ullage = self._gas_volume(
@@ -798,6 +778,50 @@ class _Writer:
         )
         self.outputs[f"{tank_id}.liquid_volume"] = f"{held}.volume"
         self.outputs[f"{tank_id}.gas_temperature"] = self.temperature[tank_id]
+
+    def _walled(self, part: dict[str, Any]) -> bool:
+        """Whether heat moves between a part's gas and its wall: its hA isn't 0, it's anchored, or the wall's
+        temperature is measured."""
+        anchored = any(
+            (one["part"], one["key"]) == (part["id"], "heat_transfer") for one in self.job.get("anchors", [])
+        )
+        return part["settings"]["heat_transfer"] > 0 or anchored or self.linked(part, "wall_temperature") is not None
+
+    def _wall(self, part: dict[str, Any]) -> str:
+        """A part's wall (a Solid) trading heat with its gas by Convection: a tank's around its ullage, or a vessel's.
+        The heat into the gas."""
+        part_id, settings = part["id"], part["settings"]
+        base = self.base[part_id]
+        wall = self.assign(
+            f"{base}_wall_temperature",
+            self.solved(self.starting(part, "wall_temperature", settings["wall_temperature"])),
+            self.solving(part, "wall_temperature"),
+        )
+        heat_transfer = self.knob(part, "heat_transfer")
+        convection = _call(
+            "Convection",
+            repr(f"{part_id}:convection"),
+            "net",
+            surface_temperature=wall,
+            fluid_temperature=self.temperature[part_id],
+            convective_area="1.0",
+            convection_coefficient=heat_transfer,
+        )
+        convection = self.assign(f"{base}_convection", convection)
+        self.emit(
+            _call(
+                "Solid",
+                repr(f"{part_id}:wall"),
+                "net",
+                temperature=wall,
+                mass=_number(settings["wall_mass"]),
+                specific_heat=_number(settings["wall_specific_heat"]),
+                heat_rate=f"{convection}.heat_rate",
+            ).render()
+        )
+        self.comment("Convection's heat goes into the wall, out of the gas")
+        self.outputs[f"{part_id}.wall_temperature"] = wall
+        return f"-{convection}.heat_rate"
 
     def _gas_volume(
         self, node: dict[str, Any], volume: str, name: str, collapse: str | None = None, heat: str | None = None

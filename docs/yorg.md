@@ -201,12 +201,15 @@ in `web/src/yorg/index.tsx`).
   tubing after a regulator. A liquid junction is a `Volume` with no room: what flows in
   flows out. A gas junction is a `Volume` of gas, whose mass and energy FullFlow keeps as
   it iterates its pressure and temperature, gas flowing in bringing the enthalpy of where
-  it came from. A tank under an ullage is two `Volume`s, its liquid and its ullage's gas
-  (the tank's volume less the liquid's, which FullFlow keeps the history of for the gas's
-  boundary work), which a `Balance` holds at one pressure; its wall is a `Solid` that
-  trades heat with the gas by `Convection` (left out at an hA of 0, unless the hA is
-  anchored or a channel reads the wall's temperature). Pressurant flowing into an ullage is
-  divided by the collapse factor. A gas is real (ThermoProp's `Fluid`) or ideal
+  it came from. It holds its gas in tubing, or in a vessel (a COPV, a bottle) with a wall
+  like an ullage's, below. A tank under an ullage is two `Volume`s, its liquid and its
+  ullage's gas (the tank's volume less the liquid's, which FullFlow keeps the history of
+  for the gas's boundary work), which a `Balance` holds at one pressure; its wall is a
+  `Solid` that trades heat with the gas by `Convection` (left out at an hA of 0, unless
+  the hA is anchored or a channel reads the wall's temperature: `script._wall`, the same
+  for a vessel's). A vessel's wall keeps its gas warmer than it would be blowing down, so
+  its hA is a knob, fitted or anchored to the vessel's temperature. Pressurant flowing into
+  an ullage is divided by the collapse factor. A gas is real (ThermoProp's `Fluid`) or ideal
   (`IdealGas`), one in each connected set of gas lines (spec.py checks); real by default,
   since at bottle pressures the difference shows (nitrogen at 4200 psia is 12% less dense
   than ideal, and cools as it throttles). A liquid is its tank's (`Fluid`; RP-1

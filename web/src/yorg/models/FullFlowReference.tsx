@@ -11,7 +11,10 @@ const PARTS: [string, string][] = [
         "a Volume of liquid and a Volume of gas, which a Balance holds at one pressure; its wall a Solid, and Convection between it and the gas",
     ],
     ["Junction", "a Volume with no room: what flows in flows out"],
-    ["Gas junction", "a Volume: the gas in the tubing around it"],
+    [
+        "Gas junction",
+        "a Volume: the gas in the tubing around it, or in a vessel (a COPV), whose wall is a Solid, with Convection between it and the gas",
+    ],
     ["Gas supply, outlet", "its pressure (and temperature), following its channels"],
     ["Line", "DarcyWeisbach: friction, and the inertia of the liquid in it"],
     ["Valve, orifice", "DischargeCoefficient; a valve's Actuator moves it to its command"],

@@ -228,6 +228,19 @@ def _knob(parts: dict[str, dict[str, Any]], part_id: str, key: str, verb: str) -
     return part, named
 
 
+def _held(part: dict[str, Any]) -> bool:
+    """Whether a part holds what was measured in a steady run (script.py), so its knobs and sensors don't matter
+    there: a tank, and a gas junction a transducer reads (a bottle draining has no steady state)."""
+    return part["type"] == "tank" or (part["type"] == "gas_junction" and bool(part["links"].get("pressure")))
+
+
+def _holding(part: dict[str, Any]) -> str:
+    """Why a part's knob doesn't matter in a steady run, for its message."""
+    if part["type"] == "tank":
+        return "tanks hold their pressure"
+    return f"{part['name']} holds what its transducer measured"
+
+
 def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """The anchors asked for, checked: each a knob that matters, anchored over a span of the run's window to a sensor
     of its own that the model is compared with (not one it follows)."""
@@ -237,8 +250,8 @@ def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> 
         part, named = _knob(parts, anchor.part, anchor.key, "anchor")
         if any((one["part"], one["key"]) == (anchor.part, anchor.key) for one in anchors):
             raise BadModel(f"{named} is picked twice")
-        if steady and part["type"] == "tank":
-            raise BadModel(f"{named} doesn't matter in a steady run, where tanks hold their pressure")
+        if steady and _held(part):
+            raise BadModel(f"{named} doesn't matter in a steady run, where {_holding(part)}")
         sensor = parts.get(anchor.sensor)
         link = (
             next((one for one in catalog.BY_TYPE[sensor["type"]].links if one.key == anchor.link), None)
@@ -250,9 +263,7 @@ def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> 
         measured = f"{sensor['name']}'s {in_words(link.label)}"
         if not sensor["links"].get(link.key):
             raise BadModel(f"Link {measured} to a channel to anchor {named} to it")
-        # Steady, a tank holds what was measured, and so does a gas junction a transducer reads (script.py).
-        held = sensor["type"] == "tank" or (sensor["type"] == "gas_junction" and bool(sensor["links"].get("pressure")))
-        if steady and held:
+        if steady and _held(sensor):
             raise BadModel(
                 f"In a steady run {sensor['name']} holds what was measured, so {measured} can't anchor {named}"
             )
@@ -326,8 +337,8 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
             raise BadModel(f"{named} is anchored and fitted: pick one")
         if any((one["part"], one["key"]) == (knob.part, knob.key) for one in fitted):
             raise BadModel(f"{named} is picked twice")
-        if steady and part["type"] == "tank":
-            raise BadModel(f"{named} doesn't matter in a steady run, where tanks hold their pressure")
+        if steady and _held(part):
+            raise BadModel(f"{named} doesn't matter in a steady run, where {_holding(part)}")
         fitted.append({"part": knob.part, "key": knob.key})
     compared = _compared(parts)
     anchoring = {f"{one['sensor']}.{one['link']}" for one in anchors}

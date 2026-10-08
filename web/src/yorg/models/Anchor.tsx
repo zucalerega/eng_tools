@@ -49,16 +49,15 @@ export function AnchorDialog({
     onCancel: () => void;
 }) {
     // Steady, tanks hold what was measured: their knobs don't matter, and their sensors are what they follow. So does a
-    // gas junction a transducer reads (a bottle draining has no steady state).
+    // gas junction a transducer reads (a bottle draining has no steady state), a vessel's wall too.
     const steady = solver === "steady";
-    const tanks = new Set(model.nodes.filter((node) => node.type === "tank").map((node) => node.id));
     const held = new Set(
         model.nodes
             .filter((node) => node.type === "tank" || (node.type === "gas_junction" && node.links.pressure))
             .map((node) => node.id),
     );
     const sensors = comparisons(model, catalog).filter((one) => !(steady && held.has(one.part)));
-    const knobs = knobsOf(model, catalog).filter(({ part }) => !(steady && tanks.has(part.id)));
+    const knobs = knobsOf(model, catalog).filter(({ part }) => !(steady && held.has(part.id)));
     const [rows, setRows] = useState<AnchorChoice[]>(() =>
         sensors.map((sensor) => {
             const before = picked.anchors.find((one) => one.sensor === sensor.part && one.link === sensor.link);

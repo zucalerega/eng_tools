@@ -173,7 +173,9 @@ the keys.
   The **Steady** solver settles the lines, junctions, and regulators at once in each time
   step, with the tanks at the pressure measured: much faster, and without inertia, so a
   steady anchor can start anywhere. Models are saved for every admin, run against any test
-  with the same channel names, and go to and from files.
+  with the same channel names, and go to and from files. **Start from an example** has a
+  cold flow, a pressurized flow, and Vespula's prop system (Saaketh's FullFlow model) with
+  its run's data, which it uploads to Yorg the first time.
 - **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all

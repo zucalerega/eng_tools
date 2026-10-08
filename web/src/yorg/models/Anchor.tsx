@@ -86,6 +86,7 @@ export function AnchorDialog({
         <Dialog
             title="Anchor knobs to the test"
             confirm="Anchor"
+            tall
             disabled={
                 chosen.length === 0 ||
                 chosen.length > MAX_KNOBS ||

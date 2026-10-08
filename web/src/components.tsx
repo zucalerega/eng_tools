@@ -174,6 +174,7 @@ export function Dialog({
     disabled = false,
     link = false,
     confirmHref,
+    tall = false,
 }: {
     title: string;
     children: ReactNode;
@@ -186,6 +187,7 @@ export function Dialog({
     disabled?: boolean;
     link?: boolean;
     confirmHref?: string;
+    tall?: boolean; // it can be taller than the window: its body scrolls, its buttons stay in view
 }) {
     const heading = useId();
     const dialog = useRef<HTMLFormElement>(null);
@@ -209,7 +211,7 @@ export function Dialog({
     return (
         <div className="dialog-backdrop">
             <form
-                className="dialog"
+                className={tall ? "dialog dialog-tall" : "dialog"}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={heading}

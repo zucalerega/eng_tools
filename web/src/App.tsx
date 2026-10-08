@@ -171,17 +171,15 @@ function Home({ pathname }: { pathname: string }) {
     return (
         <section className="home">
             {pathname !== "/" && <Notice tone="error">There's no page here.</Notice>}
-            <h1>The team's engineering tools</h1>
+            <h1>YJSP Engineering Tools Repository</h1>
             <div className="home-apps">
                 <Link to={VAULT} className="home-app">
                     <VaultMark size={44} />
                     <span className="home-app-name">Vault</span>
-                    <span className="home-app-what">Every part, assembly, and drawing, with its whole history.</span>
                 </Link>
                 <Link to="/yorg" className="home-app">
                     <YorgMark size={44} />
                     <span className="home-app-name">{YORG}</span>
-                    <span className="home-app-what">The test data, plotted.</span>
                 </Link>
             </div>
         </section>

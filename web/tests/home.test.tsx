@@ -8,7 +8,7 @@ test("the site's address shows both apps, and each goes to its own pages", async
     renderApp(team.chief, "/");
 
     const home = within(await screen.findByRole("main"));
-    expect(home.getByRole("heading", { name: "The team's engineering tools" })).toBeTruthy();
+    expect(home.getByRole("heading", { name: "YJSP Engineering Tools Repository" })).toBeTruthy();
     const vault = home.getByRole("link", { name: /^Vault/ });
     expect(vault.getAttribute("href")).toBe("/vault");
     expect(home.getByRole("link", { name: /^Yorg/ }).getAttribute("href")).toBe("/yorg");

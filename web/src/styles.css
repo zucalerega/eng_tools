@@ -461,9 +461,8 @@ main {
 
 .home-app {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.45rem;
+    align-items: center;
+    gap: 0.9rem;
     padding: 1.5rem;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -492,10 +491,6 @@ main {
     font-weight: 700;
     letter-spacing: 0.24em;
     text-transform: uppercase;
-}
-
-.home-app-what {
-    color: var(--muted);
 }
 
 /* --- page layout ----------------------------------------------------------------------------- */

@@ -232,7 +232,7 @@ in `web/src/yorg/index.tsx`).
   over each time step (bins of `dt`, whose edges give a millionth of a step to times that
   are sums of `dt`) and read as a straight line between them, where FullFlow's `Sensor`
   holds the last sample. An anchor is off outside its span and for a step shorter than
-  half `dt` (FullFlow lands on each valve command, and retries a hard step in halves),
+  a third of `dt` (FullFlow lands on each valve command, and retries a hard step in halves, then quarters),
   where FullFlow holds the knob: otherwise a knob that acts through what a tank holds (a
   collapse factor) would make up a whole step's difference at once. So where no
   value of a knob matches (a valve's CdA while it's shut; in a transient run, an anchor

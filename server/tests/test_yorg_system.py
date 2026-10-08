@@ -665,6 +665,9 @@ def test_an_anchor_finds_a_tanks_collapse_factor_through_its_pressure(team):
     found = status["result"]["anchors"][0]
     assert found["value"] == pytest.approx(1.5, rel=1e-3)
     assert 1.45 < found["low"] <= found["high"] < 1.55
+    # Anchored in every step but the first, which FullFlow retries in quarters (the regulator starts shut, at its set
+    # pressure): not the main valve's opening, nor the halves of a step FullFlow retries.
+    assert found["share"] == pytest.approx(139 / 140)
     assert status["result"]["notes"] == []
 
 

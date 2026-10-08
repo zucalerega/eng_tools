@@ -5,19 +5,19 @@ export const FULLFLOW = "https://github.com/saakethramoju/FullFlow";
 export const THERMOPROP = "https://github.com/saakethramoju/ThermoProp";
 
 const PARTS: [string, string][] = [
-    ["Tank at a pressure", "its pressure, following its channel"],
+    ["Tank at a pressure", "its pressure, following its channel; its liquid, a Lookup of ThermoProp's"],
     [
         "Tank with an ullage",
-        "UllageTank (the gas's pressure goes as its density to the n), or, with the wall, a Volume of gas, a Solid wall, and Convection between them",
+        "a Volume of liquid and a Volume of gas, which a Balance holds at one pressure; its wall a Solid, and Convection between it and the gas",
     ],
-    ["Junction", "Junction: a balance of what flows in and out"],
-    ["Gas junction", "Volume: the gas in the tubing around it"],
+    ["Junction", "a Volume with no room: what flows in flows out"],
+    ["Gas junction", "a Volume: the gas in the tubing around it"],
     ["Gas supply, outlet", "its pressure (and temperature), following its channels"],
     ["Line", "DarcyWeisbach: friction, and the inertia of the liquid in it"],
-    ["Valve, orifice", "Restriction; a valve's Actuator moves it to its command"],
-    ["Cavitating venturi", "Venturi: FullFlow's CavitatingVenturi"],
-    ["Gas valve, gas orifice", "GasRestriction: choked or not"],
-    ["Regulator", "GasRestriction, opened by Regulator from the pressure it holds"],
+    ["Valve, orifice", "DischargeCoefficient; a valve's Actuator moves it to its command"],
+    ["Cavitating venturi", "CavitatingVenturi"],
+    ["Gas valve, gas orifice", "CompressibleOrifice: choked or not"],
+    ["Regulator", "CompressibleOrifice, opened as far as the pressure it holds puts it"],
 ];
 
 const CALLS: [string, string][] = [
@@ -25,8 +25,9 @@ const CALLS: [string, string][] = [
     ["run.following(key, otherwise)", "A state that follows a channel through the run"],
     ["run.starting(key, otherwise)", "A channel's value at the run's start"],
     ["run.command(key, closed, opened, otherwise)", "A valve's command, 0 closed to 1 open"],
-    ["run.liquid(tank, fluid, ...)", "A tank's liquid: its density and vapor pressure"],
-    ["run.gas(name)", "An ideal gas: its gas constant and specific heats"],
+    ["run.liquid(tank, liquid)", "Checks ThermoProp has a tank's liquid as a liquid, for the page"],
+    ["above(pressure, boiling)", "Where a junction reads its liquid: never below where it would boil"],
+    ["eased(cd, upstream, downstream)", "A restriction's discharge coefficient, eased off within 500 Pa of no drop"],
     ["run.record({...})", "What the run reports, by part.output: what the page plots"],
     ["run.anchor(knob, reading, ...)", "A knob, anchored to a channel"],
     ["run.solve()", "Solve it: result is what the page shows"],
@@ -95,7 +96,7 @@ export function FullFlowReference({ version, onClose }: Props) {
             <p>
                 A steady run is FullFlow&apos;s quasi-steady sweep: in each time step every rate is held at zero, so
                 lines, junctions, and regulators settle at once. Nothing fills or drains, so tanks hold the pressure
-                measured (or set).
+                measured (or set), and so do gas junctions a transducer reads.
             </p>
 
             <h3>Matching a test</h3>
@@ -108,15 +109,16 @@ export function FullFlowReference({ version, onClose }: Props) {
 
             <h3>Fluids</h3>
             <p>
-                Liquids are real fluids, from ThermoProp (CoolProp underneath): each tank&apos;s liquid has the density
-                and vapor pressure of its temperature, which follows its channel if it&apos;s linked. Gases are ideal in
-                Yorg&apos;s models, with ThermoProp&apos;s gas constant and specific heats.
+                FullFlow takes a fluid&apos;s properties from anywhere: a volume is given its density, energy, and
+                enthalpy as states. A model reads them from ThermoProp (CoolProp underneath) through FullFlow&apos;s
+                Lookup, at each node&apos;s pressure and temperature, as Vespula&apos;s own model does.
             </p>
             <p>
-                FullFlow itself takes properties from anywhere: a gas&apos;s volume is given its density, energy, and
-                enthalpy as states, so a real gas plugs in through a lookup on ThermoProp&apos;s real-fluid tables, as
-                Vespula&apos;s own model does. In the Script view, those are the lines that work them out from the
-                gas&apos;s pressure and temperature.
+                A gas is real by default: ThermoProp&apos;s at its pressure and temperature, which matters at bottle
+                pressures (nitrogen at 4200 psia is 12% less dense than an ideal gas, and cools as it throttles). Set a
+                gas supply&apos;s or an ullage&apos;s gas properties to ideal for pV = mRT. A liquid is its tank&apos;s,
+                at each node&apos;s pressure and the tank&apos;s temperature (which follows its channel if it&apos;s
+                linked); RP-1 is ThermoProp&apos;s propellant.
             </p>
 
             <h3>Parts as components</h3>
@@ -137,8 +139,8 @@ export function FullFlowReference({ version, onClose }: Props) {
                 </tbody>
             </table>
             <p className="muted">
-                UllageTank, LiquidStore, Junction, Restriction, GasRestriction, and Regulator are Yorg&apos;s own, made
-                the way FullFlow makes components, where its own don&apos;t fit.
+                Every part is made of FullFlow&apos;s own components. Yorg adds only what joins a model to a test:
+                putting the test&apos;s channels in, anchoring knobs to them, and reading the results out.
             </p>
 
             <h3>The script</h3>

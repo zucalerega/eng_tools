@@ -200,7 +200,7 @@ export type RunStatus =
 
 /**
  * transient: FullFlow's transient solver. steady: its quasi-steady sweep, in which lines, junctions, and regulators
- * settle in each time step and tanks hold the pressure measured (or set).
+ * settle in each time step and tanks hold the pressure measured (or set), as do gas junctions a transducer reads.
  */
 export type Solver = "transient" | "steady";
 

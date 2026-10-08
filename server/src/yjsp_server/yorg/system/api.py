@@ -77,7 +77,7 @@ class WindowIn(BaseModel):
     end: float
     dt: float = Field(default=0.01, ge=0.0005, le=1.0)
     # steady: FullFlow's quasi-steady sweep, in which lines, junctions, and regulators settle in each time step and
-    # tanks hold the pressure measured (or set)
+    # tanks hold the pressure measured (or set), as do gas junctions a transducer reads
     solver: Literal["transient", "steady"] = "transient"
 
     @model_validator(mode="after")
@@ -166,6 +166,7 @@ def _window_job(body: WindowIn, checked: Runnable) -> dict[str, Any]:
         "model": {"nodes": checked.nodes, "edges": checked.edges},
         "liquid_of": checked.liquid_of,
         "gas_of": checked.gas_of,
+        "gas_model_of": checked.gas_model_of,
         "start": body.start,
         "end": body.end,
         "dt": body.dt,
@@ -173,10 +174,11 @@ def _window_job(body: WindowIn, checked: Runnable) -> dict[str, Any]:
     }
 
 
-def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dict[str, Any], dict[str, Any]]:
-    """What a run of a checked model needs: the model, its window, and the channels it uses from the dataset (by
-    name, so a model runs against any test that has them), cut to the window and in SI units. The channels it's
-    only compared with come too for a fit: a run's are compared in the browser, which has their data."""
+def _job(body: RunIn, db, files, checked: Runnable, strict: bool) -> tuple[dict[str, Any], dict[str, Any]]:
+    """What a run of a checked model needs: the model, its window, and every channel it's linked to in the dataset (by
+    name, so a model runs against any test that has them), cut to the window and in SI units. Those it's compared with
+    come too, where the test has them (strict: a fit's and an anchored run's must): a junction starts from its pressure
+    transducer's reading, an anchor anchors to one, a fit fits to them."""
     dataset = datasets.dataset(db, body.dataset_id)
     if dataset.deleted_at is not None or dataset.status != DatasetStatus.READY or dataset.data_version is None:
         raise BadModel(f"{dataset.name} isn't ready to run against: open it in Yorg first")
@@ -190,9 +192,9 @@ def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dic
             name = part["links"].get(link.key, "")
             if not name or not catalog.applies(link.only_when, part["settings"]):
                 continue
-            if catalog.link_role(link, part["settings"]) == "sensor" and not compared:
-                continue
             channel = by_name.get(name)
+            if channel is None and not strict and catalog.link_role(link, part["settings"]) == "sensor":
+                continue  # compared on the page, which says the test hasn't it
             if channel is None:
                 raise channels.NoSuchChannel(
                     f"{part['name']}'s {in_words(link.label)} is {name}, which {dataset.name} doesn't have"
@@ -248,7 +250,9 @@ def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> 
         measured = f"{sensor['name']}'s {in_words(link.label)}"
         if not sensor["links"].get(link.key):
             raise BadModel(f"Link {measured} to a channel to anchor {named} to it")
-        if steady and sensor["type"] == "tank":
+        # Steady, a tank holds what was measured, and so does a gas junction a transducer reads (script.py).
+        held = sensor["type"] == "tank" or (sensor["type"] == "gas_junction" and bool(sensor["links"].get("pressure")))
+        if steady and held:
             raise BadModel(
                 f"In a steady run {sensor['name']} holds what was measured, so {measured} can't anchor {named}"
             )
@@ -278,7 +282,7 @@ def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> 
 @router.post("/runs", status_code=201)
 def post_run(body: RunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
     """Start running a model over a window of a dataset. Ask GET /runs/{id} how it's going."""
-    job, inputs = _job(body, db, files, runnable(body.model), compared=False)
+    job, inputs = _job(body, db, files, runnable(body.model), strict=False)
     return {"id": runs.start(user.id, job, inputs).id}
 
 
@@ -298,7 +302,7 @@ def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns
     compared = _compared(parts)
     if not compared:
         raise BadModel("Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure")
-    job, inputs = _job(body, db, files, checked, compared=True)
+    job, inputs = _job(body, db, files, checked, strict=True)
     job["fit"] = {"knobs": [{"part": part, "key": key} for part, key in knobs], "compared": compared}
     return {"id": runs.start(user.id, job, inputs, kind="fit").id}
 
@@ -332,7 +336,7 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
             "Every sensor anchors a knob, so there's none left to fit the others to: anchor fewer, or link another "
             "sensor"
         )
-    job, inputs = _job(body, db, files, checked, compared=True)
+    job, inputs = _job(body, db, files, checked, strict=True)
     job.update(anchors=anchors, knobs=fitted, fallback=body.fallback, compared=compared)
     return {"id": runs.start(user.id, job, inputs, kind="anchor").id}
 
@@ -365,7 +369,7 @@ def get_library(user: AdminUser) -> dict[str, Any]:
 def post_inputs(body: RunIn, user: AdminUser, db: DB, files: Files) -> Response:
     """A run's data, as a script gets it: each channel the model is linked to (by part.link), its samples in the
     run's window (and one each side) on the dataset's clock, in SI units. A sample that's missing is null."""
-    _, inputs = _job(body, db, files, runnable(body.model), compared=True)
+    _, inputs = _job(body, db, files, runnable(body.model), strict=False)
 
     def floats(values) -> list[float | None]:
         return [value if math.isfinite(value) else None for value in values]

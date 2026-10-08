@@ -182,87 +182,106 @@ in `web/src/yorg/index.tsx`).
   the server cuts the channels the model uses (valve commands, what it follows, what starts
   it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
   it's going. The FullFlow network is a script (`script.py` writes it from the checked
-  model; see a model's script, below): a fixed tank, supply, or outlet is a
-  pressure that follows its channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K
-  folded into f); valves and orifices are a CdA law smoothed near zero flow
-  (`components.py`: plain square roots leave a node between a closed valve and an orifice
-  hard to solve), venturis FullFlow's `CavitatingVenturi` smoothed the same way (and made
-  continuous where it starts to cavitate, its noncavitating Cd the cavitating one over
-  sqrt(1 - R)); gas valves and orifices are an ideal-gas orifice, choked or not, taking the
-  temperature of where they flow from; a regulator is such an orifice whose opening
-  (`Regulator`: fully open at its droop below set pressure, on the pressure where it flows
-  to, reached as a first-order lag of its response time) is a state FullFlow solves in each
-  step: FullFlow's `PID` and `Actuator` move once a step, on the last step's pressure, a step
-  behind the little volume of tubing after a regulator. A gas junction's small volume makes
-  a run several times slower (SciPy creeps through each step's last digits), so leave one
-  out where no sensor or branch needs it. Liquid junctions balance their flows in kg/s. Gas
-  junctions and wall-heated ullages are FullFlow `Volume`s of ideal gas (density,
-  internal energy, and enthalpy derived from pressure and temperature, which FullFlow
-  iterates while it keeps mass and energy), with gas flowing in bringing the enthalpy of
-  where it came from; a wall-heated ullage trades heat with a `Solid` (the tank wall) by
-  `Convection`, and its liquid is kept by `LiquidStore`, the ullage's volume a stored
-  state for the gas's boundary work. An exponent-heated ullage keeps p = p0 (rho /
-  rho0)^n (`UllageTank`). Pressurant flowing into either is divided by the collapse
-  factor. Commands step between 0 and 1 (by the command's open and closed values) and a
-  rate limit opens a valve over its opening time. Liquids are ThermoProp's at the tank's
-  temperature, or, linked to a channel, tabulated over the temperatures it reads and
-  following it through the run (density and vapor pressure); a custom one has its
-  density and vapor pressure given. What starts from a channel (an ullage's pressure and
-  temperatures, a gas junction's) takes its value at the run's start, and the result says
-  what it took. All the outputs go to one `Recorder` component's exports, and components
-  are added in the order values flow, so FullFlow's settling needs one pass per trial:
-  together several times faster than a probe for each output and its default passes.
-  FullFlow's transient solver runs with two-point Jacobians and 1e-8 tolerances; results
-  come back at up to 2,000 points. A **fit** (`fit.py`, the same kind of process, stopped
-  after 30 minutes with the best it found) is SciPy's least squares over the knobs picked,
-  each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30 times its start,
-  within its limits), each try a run of the model; each compared channel (averaged down
-  to 300 points) counts the same, its errors over its swing. The page shows a fit's best
-  run, and applies what it found only when asked. A **steady** run (`solver: steady`) is
-  FullFlow's quasi-steady sweep (`SteadyState` over time): each step forces every
-  dynamic part steady (a line's inertia, a gas junction's mass and energy), a regulator
-  opens to where its pressure puts it rather than lagging there, and tanks hold the
-  pressure measured (or set), since one forced steady would let no liquid out. There, the
-  solved states have no bounds and SciPy's gradient test is off (as `Transient` has it),
-  both of which stalled it. An **anchored run** (`POST /api/yorg/dev/anchors`, the same
-  kind of process as a run) pairs knobs with compared sensors: each is FullFlow's
-  `Sensor` (`components.Anchor`) whose balance FullFlow solves with the rest in each time
-  step, moving the knob until the model reads what the sensor's channel measured (as a
-  share of the channel's size, like the other residuals). Knobs are `State`s without
-  bounds (bounded, SciPy's trust region crawls toward a CdA's bound of 0), so an
-  anchor can take one past its limits, which the result notes. The channel is averaged
-  over each time step (bins of `dt`, whose edges give a millionth of a step to times that
-  are sums of `dt`) and read as a straight line between them, where FullFlow's `Sensor`
-  holds the last sample. An anchor is off outside its span and for a step shorter than
-  a third of `dt` (FullFlow lands on each valve command, and retries a hard step in halves, then quarters),
-  where FullFlow holds the knob: otherwise a knob that acts through what a tank holds (a
-  collapse factor) would make up a whole step's difference at once. So where no
-  value of a knob matches (a valve's CdA while it's shut; in a transient run, an anchor
-  starting partway through with the model off from the test, whose line flow can't jump
-  there in a step), it holds the knob, and the result says for how much of the span. The
-  result has each knob's history (`anchored`) and, from where it was anchored, its median
-  and 10th and 90th percentiles (`anchors`), which the page applies only when asked. What
-  anchoring can't settle is fitted, in the same process (`fit.tune`, with the fit's time
-  limit): knobs picked to fit alongside the anchors, and, falling back (on unless asked
-  not to), each knob whose anchor didn't work: it never matched, matched for under a
-  quarter of its span, or settled past its limits. The fit is the one above, its runs
-  anchoring the anchors that worked, compared with the sensors they don't use; the
-  result is its best run, with its anchors, and the knobs it took over and why
-  (`fit.fallback`). The browser compares each sensor with
-  its output in the model's units (`units.ts`, like `channels.py`) and says the RMS and
-  bias; the window's times, and the plots', read from the dataset's T0 in this browser.
-  Saved models are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables.
-  The examples are built in the browser (`model.ts`). Vespula's prop system is Saaketh
-  Ramoju's FullFlow model (github.com/saakethramoju/Vespula, `VESPULA_PROP_SYSTEM.py`) in
-  Yorg's parts, linked to `vespula-run.csv`: that model's run as the repository's prop
-  curves came from it (0.1 s steps, bang-bang off), made again with FullFlow 2.0.3 (2.0.2
-  can't run it) for every channel, its curves matching to 1 part in 10⁸. Picking it uploads
-  the file as a dataset, unless one has its name. Its liquid side matches Vespula's run; its
-  gas is ideal where Vespula's is ThermoProp's real nitrogen, so its COPV holds 13% more and
-  its pressurant doesn't cool throttling into the tanks, and its tanks run high until their
-  collapse factors are anchored to their pressures.
-  FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
-  the site is ever given to others, the GPL applies to it.
+  model; see a model's script, below), written as FullFlow's own models are: FullFlow's
+  components, each fluid's properties from ThermoProp through FullFlow's `Lookup`. Yorg
+  adds only what joins a model to a test (`library.py`, `components.py`: the channels in,
+  anchors, the results out). A fixed tank, supply, or outlet is a pressure that follows its
+  channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K folded into f); liquid
+  valves and orifices `DischargeCoefficient`s (a valve's position its discharge
+  coefficient); venturis `CavitatingVenturi`s (continuous where they start to cavitate, the
+  noncavitating Cd the cavitating one over sqrt(1 - R)); gas valves, orifices, and
+  regulators `CompressibleOrifice`s, choked or not, with the gas constant, specific heat
+  ratio, and enthalpy of where they flow from (a check valve's discharge coefficient 0
+  where gas would flow back). Every one's discharge coefficient is eased off within 500 Pa
+  of no pressure drop (`library.eased`): a flow that goes as the root of its pressure drop
+  has no slope at none, and a junction between a shut valve and an orifice wouldn't settle;
+  it's a part in a million off at 0.25 MPa. A regulator opens as far as the pressure where
+  it flows to puts it (fully open at its droop below set pressure), solved with the rest in
+  each step: FullFlow's `Actuator` moves once a step, a step behind the little volume of
+  tubing after a regulator. A liquid junction is a `Volume` with no room: what flows in
+  flows out. A gas junction is a `Volume` of gas, whose mass and energy FullFlow keeps as
+  it iterates its pressure and temperature, gas flowing in bringing the enthalpy of where
+  it came from. A tank under an ullage is two `Volume`s, its liquid and its ullage's gas
+  (the tank's volume less the liquid's, which FullFlow keeps the history of for the gas's
+  boundary work), which a `Balance` holds at one pressure; its wall is a `Solid` that
+  trades heat with the gas by `Convection` (left out at an hA of 0, unless the hA is
+  anchored or a channel reads the wall's temperature). Pressurant flowing into an ullage is
+  divided by the collapse factor. A gas is real (ThermoProp's `Fluid`) or ideal
+  (`IdealGas`), one in each connected set of gas lines (spec.py checks); real by default,
+  since at bottle pressures the difference shows (nitrogen at 4200 psia is 12% less dense
+  than ideal, and cools as it throttles). A liquid is its tank's (`Fluid`; RP-1
+  ThermoProp's `Propellant`), at each node's pressure (never below where it boils, so a
+  drained junction still holds liquid as far as the model knows) and its tank's
+  temperature, which follows its channel if it's linked; a custom one has its density and
+  vapor pressure given. Models saved with what had no FullFlow part of its own, an ullage's
+  polytropic exponent or a regulator's response time, open without them
+  (`catalog.RETIRED`). Commands step between 0 and 1 (by the command's open and closed
+  values), each change a hair after the sample before it: a sample says what held since the
+  one before, as FullFlow records a run, so a FullFlow run fed back as a test gets its
+  commands when it had them. A rate limit opens a valve over its opening time. What starts
+  from a channel (an ullage's pressure and temperatures, a gas junction's, a junction's
+  pressure transducer) takes its value at the run's start, and the result says what it
+  took; a run reads every channel the model is linked to that the test has (a fit and an
+  anchored run need them all). All the outputs go to one `Recorder` component's exports,
+  and components are added in the order values flow, so FullFlow's settling needs one pass
+  per trial. Solved states have no bounds, as in FullFlow's own models: bounded, SciPy's
+  trust region took steps the size of the distance to a bound, a third slower in every
+  step. FullFlow's transient solver runs with two-point Jacobians and 1e-8 tolerances;
+  results come back at up to 2,000 points. Built this way, the Vespula example is its
+  FullFlow run again: every pressure, temperature, and flow to a few parts in a million
+  (`test_the_vespula_example_is_its_fullflow_run`). A **fit** (`fit.py`, the same kind of
+  process, stopped after 30 minutes with the best it found) is SciPy's least squares over
+  the knobs picked, each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30
+  times its start, within its limits), each try a run of the model; each compared channel
+  (averaged down to 300 points) counts the same, its errors over its swing. The page shows
+  a fit's best run, and applies what it found only when asked. A **steady** run
+  (`solver: steady`) is FullFlow's quasi-steady sweep (`SteadyState` over time): each step
+  forces every dynamic part steady (a line's inertia, a gas junction's mass and energy),
+  and tanks hold the pressure measured (or set), since one forced steady would let no
+  liquid out. So does a gas junction linked to a pressure transducer (a bottle draining has
+  no steady state), its temperature following its channel too, so steady, neither of their
+  sensors can anchor a knob. There,
+  SciPy's gradient test is off (as `Transient` has it), which stalled it. An **anchored
+  run** (`POST /api/yorg/dev/anchors`, the same kind of process as a run) pairs knobs with
+  compared sensors: each is FullFlow's `Sensor` (`components.Anchor`) whose balance
+  FullFlow solves with the rest in each time step, moving the knob until the model reads
+  what the sensor's channel measured (as a share of the channel's size, like the other
+  residuals). Knobs are `State`s without bounds (bounded, SciPy's trust region crawls
+  toward a CdA's bound of 0), so an anchor can take one past its limits, which the result
+  notes. The channel is averaged over each time step (bins of `dt`, whose edges give a
+  millionth of a step to times that are sums of `dt`) and read as a straight line between
+  them, where FullFlow's `Sensor` holds the last sample. An anchor is off outside its span
+  and for a step shorter than a third of `dt` (FullFlow lands on each valve command, and
+  retries a hard step in halves), where FullFlow holds the knob: otherwise a knob that acts
+  through what a tank holds (a collapse factor) would make up a whole step's difference at
+  once. Where no value of a knob matches (a valve's CdA while it's shut; in a transient
+  run, an anchor starting partway through with the model off from the test, whose line flow
+  can't jump there in a step), FullFlow's solve of the step fails after SciPy has tried all
+  it may, and FullFlow retries it in halves: the anchor is off for those, up to the end of
+  the step it failed (anchored, each would fail as long again), so it holds the knob, and
+  the result says for how much of the span. The result has each knob's history (`anchored`)
+  and, from where it was anchored, its median and 10th and 90th percentiles (`anchors`),
+  which the page applies only when asked. What anchoring can't settle is fitted, in the
+  same process (`fit.tune`, with the fit's time limit): knobs picked to fit alongside the
+  anchors, and, falling back (on unless asked not to), each knob whose anchor didn't work:
+  it never matched, matched for under a quarter of its span, or settled past its limits.
+  The fit is the one above, its runs anchoring the anchors that worked, compared with the
+  sensors they don't use; the result is its best run, with its anchors, and the knobs it
+  took over and why (`fit.fallback`). The browser compares each sensor with its output in
+  the model's units (`units.ts`, like `channels.py`) and says the RMS and bias; the
+  window's times, and the plots', read from the dataset's T0 in this browser. Saved models
+  are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables. The examples are
+  built in the browser (`model.ts`). Vespula's prop system is Saaketh Ramoju's FullFlow
+  model (github.com/saakethramoju/Vespula, `VESPULA_PROP_SYSTEM.py`) in Yorg's parts,
+  linked to `vespula-run.csv`: that model's run as the repository's prop curves came from
+  it (0.1 s steps, bang-bang off), made again with FullFlow 2.0.3 for every channel, its
+  curves matching to 1 part in 10⁸. Picking it uploads the file as a dataset, unless one
+  has its name. Built of the same FullFlow components and ThermoProp properties (real
+  nitrogen, LOX, RP-1), a transient run of it is that run again, to a few parts in a
+  million; the hi-flow switches and relief valves come from their channels, where Vespula
+  works them out (a relief valve opens for single steps). FullFlow, ThermoProp, and
+  FullPlot are GPL-3.0: fine for the team's own server, but if the site is ever given to
+  others, the GPL applies to it.
 - **A model's script** (the Models page's Script view): a run's code is a FullFlow script
   that `script.py` writes from the checked model and how it runs (window, time step,
   solver, anchors), so the page can show the code that runs, and change it. All that comes

@@ -1,14 +1,14 @@
-"""yorg_models: what a Yorg model's script needs besides FullFlow.
+"""yorg_models: what a Yorg model's script needs besides FullFlow and ThermoProp.
 
 Yorg writes each model as a FullFlow script (script.py) and runs it: on the server for the Models page's Run, and in your
 browser for a script you've changed there, where this file and components.py are the package yorg_models. The script
-builds the network from FullFlow's components and Yorg's own (components.py: valves and orifices, gas restrictions,
-junctions, tanks' liquid and ullage); Run does the rest. It reads the test's channels into the model (data["part.link"]:
-a linked channel's times on the test's clock, and its values in SI units), keeps what the page says about the run (where
-it started from, its liquids, its notes), and solves it.
+builds the model from FullFlow's own components, with ThermoProp's properties through FullFlow's Lookup; Run does the
+rest. It reads the test's channels into the model (data["part.link"]: a linked channel's times on the test's clock, and
+its values in SI units), keeps what the page says about the run (where it started from, its liquids, its notes), anchors
+knobs (components.Anchor), and solves it.
 
 The network runs on its own clock from 0 at the window's start: channels are put on that clock, and results go back on
-the test's. Gas is ideal, its gas constant and specific heats from ThermoProp; liquids are ThermoProp's.
+the test's.
 
 It imports nothing of the server's, since it runs in the browser too: ATMOSPHERE and PSI are catalog.py's.
 """
@@ -17,41 +17,24 @@ import math
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from fullflow import FullFlowError, Network, Sequence, State, SteadyState, Transient
 from fullplot import Trace
-from thermoprop import Fluid, IdealGas
 
-from .components import (
-    Anchor,
-    GasRestriction,
-    Junction,
-    LiquidStore,
-    Recorder,
-    Regulator,
-    Restriction,
-    UllageTank,
-    Venturi,
-)
+from .components import Anchor, Recorder
 
 __all__ = [
     "ATMOSPHERE",
     "OUTSIDE",
     "Anchor",
-    "Gas",
-    "GasRestriction",
-    "Junction",
-    "LiquidStore",
     "ModelError",
     "Recorder",
-    "Regulator",
-    "Restriction",
     "Run",
-    "UllageTank",
-    "Venturi",
+    "above",
+    "cavitating",
+    "eased",
     "enthalpy_in",
     "entering",
     "leaving",
@@ -61,7 +44,8 @@ ATMOSPHERE = 101325.0  # Pa
 PSI = 6894.757  # Pa
 OUTSIDE = 293.15  # K: gas that flows back in from an outlet
 MAX_POINTS = 2000  # results per output: plenty to plot, small to send
-TABLE = 25  # temperatures a liquid's properties are tabulated at, over those its temperature channel goes through
+BOILING = 1.0001  # a liquid's properties are read this much above where it would boil, if its node's pressure is below
+EASE = 500.0  # Pa (0.07 psi): within this pressure drop of none, a restriction's flow turns linear (see eased)
 RECORDER = "results"  # the component whose attributes are a run's outputs
 KNOB = "knob:"  # what an anchored knob is recorded under, before its part.key
 ON = "on:"  # and whether its anchor held it
@@ -93,36 +77,66 @@ class ModelError(Exception):
     """What's wrong with a model or its run, in words, for the Models page."""
 
 
-@dataclass(frozen=True)
-class Gas:
-    """An ideal gas: its gas constant (J/kg·K), its ratio of specific heats, and its specific heats (J/kg·K)."""
-
-    gas_constant: float
-    gamma: float
-    cp: float
-    cv: float
+# A gas node's lines: each (its flow, 1.0 if it flows into the node or -1.0 if out of it, the enthalpy of the gas at
+# its other end). Gas flowing in brings the enthalpy of where it came from; gas flowing out takes the node's own.
 
 
-# A gas node's lines: each (its flow, 1.0 if it flows into the node or -1.0 if out of it, the temperature of the node
-# at its other end). Gas flowing in brings the enthalpy of where it came from; gas flowing out takes the node's own.
-
-
-def entering(edges: list[tuple[State, float, State]]) -> float:
+def entering(edges: list[tuple[Any, float, Any]]) -> float:
     """What flows into a gas node, kg/s."""
     return sum(max(sign * flow.value, 0.0) for flow, sign, _ in edges)
 
 
-def leaving(edges: list[tuple[State, float, State]]) -> float:
+def leaving(edges: list[tuple[Any, float, Any]]) -> float:
     """What flows out of a gas node, kg/s."""
     return sum(max(-sign * flow.value, 0.0) for flow, sign, _ in edges)
 
 
-def enthalpy_in(edges: list[tuple[State, float, State]], gas: Gas, temperature: State) -> float:
-    """The enthalpy of what flows into a gas node (the node's own, when nothing does), J/kg."""
-    mass = entering(edges)
-    if mass <= 0.0:
-        return gas.cp * temperature.value
-    return sum(max(sign * flow.value, 0.0) * gas.cp * source.value for flow, sign, source in edges) / mass
+def enthalpy_in(edges: list[tuple[Any, float, Any]], own: Any) -> float:
+    """The enthalpy of what flows into a gas node (own: the node's, when nothing does), J/kg."""
+    mass = energy = 0.0
+    for flow, sign, enthalpy in edges:
+        inflow = max(sign * flow.value, 0.0)
+        if inflow > 0.0:  # a line that can't bring gas in has no enthalpy to read
+            mass += inflow
+            energy += inflow * enthalpy.value
+    return energy / mass if mass > 0.0 else own.value
+
+
+def above(pressure: Any, boiling: Any) -> State:
+    """Where to read a liquid's properties at a node: its pressure, or, below where the liquid would boil (boiling:
+    its saturation pressure, None above its critical point), just above that. A junction drained to the atmosphere
+    still holds liquid, as far as the model knows, and ThermoProp's vapor there would be no liquid's density."""
+
+    def value() -> float:
+        floor = boiling.value
+        if floor is None or not math.isfinite(floor):
+            return pressure.value
+        return max(pressure.value, floor * BOILING)
+
+    return State(value()).derive_from(value)
+
+
+def eased(coefficient: Any, upstream: Any, downstream: Any) -> State:
+    """A restriction's discharge coefficient, eased off within EASE of no pressure drop across it. A restriction's flow
+    goes as the root of its pressure drop, which has no slope at none: a junction between a shut valve and an orifice
+    then gives the solver nothing to settle it with. Eased, the flow turns linear in the pressure drop there instead,
+    and is a part in a million less at 0.25 MPa."""
+
+    def value() -> float:
+        drop = abs(upstream.value - downstream.value)
+        return coefficient.value * math.sqrt(drop / math.sqrt(drop * drop + EASE * EASE))
+
+    return State(value()).derive_from(value)
+
+
+def cavitating(upstream: Any, downstream: Any, vapor: Any, recovery: Any) -> float:
+    """1 while a cavitating venturi cavitates, as FullFlow's CavitatingVenturi decides it (and doesn't say), else 0."""
+    p1, p2, pv = upstream.value, downstream.value, vapor.value
+    return 1.0 if p1 > p2 and p2 <= pv + recovery.value * (p1 - pv) else 0.0
+
+
+def _start(state: Any) -> float:
+    return float(state.value if hasattr(state, "value") else state)
 
 
 class Run:
@@ -155,7 +169,6 @@ class Run:
         self.initial: list[dict[str, Any]] = []  # values the run started from, taken from channels
         self.probes: dict[str, State] = {}  # what it reports, by part.output
         self.anchors: list[dict[str, Any]] = []
-        self.gases: dict[str, Gas] = {}
         self.recorder = Recorder(RECORDER, self.net)
         self.recorder.on_progress(progress)
 
@@ -194,9 +207,11 @@ class Run:
         return state
 
     def command(self, key: str, closed: float, opened: float, otherwise: float) -> State:
-        """A valve's command, 0 closed to 1 open, from its channel (data[key], read closed to opened): each change a
-        step the solver lands on, a hair after its sample, so the step to the sample's time is a whole one and a run's
-        results there (and an anchor's) are of a step like the rest. With no samples, otherwise."""
+        """A valve's command, 0 closed to 1 open, from its channel (data[key], read closed to opened). A sample says
+        what the command was since the sample before it, as FullFlow records a run (each step's states at its end): so
+        each change is a step the solver lands on, a hair after the sample before it, and the step from there to the
+        sample is a whole one, as a run's results there (and an anchor's) want. A run of FullFlow's, fed back as a
+        test, gets its commands when it had them. With no samples, otherwise."""
         found = self.series(key)
         if found is None:
             return State(float(otherwise))
@@ -206,13 +221,17 @@ class Run:
             raise ModelError(f"{self.names.get(part, part)}: its command's open and closed values are the same")
         times, raw = found
         commanded = np.round(np.clip((raw - closed) / span, 0.0, 1.0), 2)
-        before = max(int(np.searchsorted(times, 0.0, side="right")) - 1, 0)
-        points_t, points_v = [0.0], [float(commanded[before])]
+        first = min(int(np.searchsorted(times, 0.0, side="left")), len(times) - 1)  # what holds from the start
+        points_t, points_v = [0.0], [float(commanded[first])]
         for index in np.flatnonzero(np.diff(commanded) != 0) + 1:
-            t, value = float(times[index]), float(commanded[index])
-            if points_t[-1] < t and t + COMMANDED < self.duration:
-                points_t += [t, t + COMMANDED]
-                points_v += [points_v[-1], value]
+            t, value = float(times[index - 1]), float(commanded[index])
+            if t < points_t[-1] or t + COMMANDED >= self.duration:
+                continue
+            if t > points_t[-1]:
+                points_t.append(t)
+                points_v.append(points_v[-1])
+            points_t.append(t + COMMANDED)
+            points_v.append(value)
         points_t.append(self.duration)
         points_v.append(points_v[-1])
         state = State(points_v[0])
@@ -221,73 +240,54 @@ class Run:
 
     # --- properties ----------------------------------------------------------------------------------------------
 
-    def liquid(
-        self, tank: str, fluid: str, temperature: float, pressure: State, follows: str | None = None
-    ) -> tuple[State, State]:
-        """A tank's liquid's density and vapor pressure, from ThermoProp at its temperature: temperature, or, with
-        follows (the key of a temperature channel), following it through the run, tabulated over the temperatures it
-        reads."""
+    def liquid(self, tank: str, properties: Any) -> None:
+        """Note a tank's liquid for the page (properties: its Lookup of ThermoProp's): what it is, and its temperature,
+        density, and vapor pressure at the run's start, as ThermoProp has them there; and, where its temperature follows
+        a channel, over the temperatures that reads. ThermoProp says, in words, where it hasn't the liquid at all (below
+        its freezing point, out of its range); where it has it as something else, the run says so."""
         name = self.names.get(tank, tank)
-        pressure_pa = max(pressure.value, 1000.0)
-        found = self.series(follows) if follows else None
-        if found is None:
-            temperatures = np.array([float(temperature)])
-        else:
+        fluid = str(properties.args[0])
+        pressure, temperature = (_start(properties.kwargs[key]) for key in ("pressure", "temperature"))
+        follows = f"{tank}.temperature"
+        found = self.series(follows)
+        temperatures = [temperature]
+        if found is not None:
             times, values = found
             inside = values[(times >= 0.0) & (times <= self.duration)]
-            inside = inside if len(inside) else np.array([np.interp(0.0, times, values)])
-            low, high = float(inside.min()), float(inside.max())
-            temperatures = np.linspace(low, high, TABLE) if high - low > 0.01 else np.array([low])
-        densities, vapors, phases = [], [], set()
-        for each in temperatures:
+            temperatures = [float(inside.min()), float(inside.max())] if len(inside) else temperatures
+        states, phases = [], set()
+        for each in [temperature, *temperatures]:
             try:
-                state = Fluid(fluid, pressure=pressure_pa, temperature=float(each))
-                densities.append(float(state.density))
+                state = properties.callable(fluid, pressure=pressure, temperature=each)
+                states.append(state)
                 phases.add(str(state.phase))
             except Exception as error:  # ThermoProp says why: below its freezing point, out of range
                 raise ModelError(
-                    f"{name}: ThermoProp can't give {fluid}'s properties at {each:.1f} K and {pressure_pa / PSI:.0f} "
-                    f"psia ({error}). Check the liquid's temperature."
+                    f"{name}: ThermoProp can't give {fluid}'s properties at {each:.1f} K and {pressure / PSI:.0f} psia "
+                    f"({error}). Check the liquid's temperature."
                 ) from error
-            try:
-                vapors.append(float(state.saturation_pressure))
-            except Exception:  # above its critical point: no vapor pressure (and no venturi can use it)
-                vapors.append(math.nan)
+        try:
+            vapor = float(states[0].saturation_pressure)
+        except Exception:  # above its critical point: no vapor pressure (and no venturi can use it)
+            vapor = math.nan
         for phase in sorted(phases):
             if "liquid" not in phase.lower():
                 self.notes.append(
-                    f"{name}: {fluid} is {phase.lower()} at {temperatures.min():.1f}–{temperatures.max():.1f} K, not "
-                    "liquid: check the liquid's temperature."
+                    f"{name}: {fluid} is {phase.lower()} at {min(temperatures):.1f}–{max(temperatures):.1f} K and "
+                    f"{pressure / PSI:.0f} psia, not liquid: check the liquid's temperature."
                 )
-        table_t, table_rho, table_pv = temperatures, np.array(densities), np.array(vapors)
-        start = float(np.interp(0.0, *found)) if found else float(temperatures[0])
-        density = State(float(np.interp(start, table_t, table_rho)))
-        vapor = State(float(np.interp(start, table_t, table_pv)))
-        if found and len(table_t) > 1:
-            times, values = found
-            Sequence(
-                f"{tank}:density",
-                self.net,
-                target=density,
-                function=lambda t: float(np.interp(np.interp(t, times, values), table_t, table_rho)),
-            )
-            Sequence(
-                f"{tank}:vapor",
-                self.net,
-                target=vapor,
-                function=lambda t: float(np.interp(np.interp(t, times, values), table_t, table_pv)),
-            )
         self.liquids[tank] = {
             "fluid": fluid,
-            "temperature": start,
-            "density": density.value,
-            "vapor_pressure": vapor.value,
+            "temperature": temperature,
+            "density": float(states[0].density),
+            "vapor_pressure": vapor,
             "phase": ", ".join(sorted(phases)),
-            "follows": self.channels.get(follows, ("", ""))[0] if found else None,
-            "temperatures": [float(table_t.min()), float(table_t.max())],
-            "densities": [float(table_rho.min()), float(table_rho.max())],
+            "follows": self.channels.get(follows, ("", ""))[0] if found is not None else None,
         }
-        return density, vapor
+        if found is not None:
+            self.liquids[tank]["temperatures"] = [min(temperatures), max(temperatures)]
+            densities = [float(state.density) for state in states[1:]]
+            self.liquids[tank]["densities"] = [min(densities), max(densities)]
 
     def custom_liquid(
         self, tank: str, density: float, vapor_pressure: float, temperature: float
@@ -303,21 +303,23 @@ class Run:
         }
         return State(float(density)), State(float(vapor_pressure))
 
-    def gas(self, name: str) -> Gas:
-        """A gas, as an ideal gas: its gas constant and ratio of specific heats from ThermoProp."""
-        if name not in self.gases:
-            try:
-                ideal = IdealGas(name, pressure=ATMOSPHERE, temperature=293.15)
-                gas_constant, gamma = float(ideal.gas_constant), float(ideal.specific_heat_ratio)
-            except Exception as error:
-                raise ModelError(f"ThermoProp can't give {name}'s properties ({error})") from error
-            cp = gamma * gas_constant / (gamma - 1.0)
-            self.gases[name] = Gas(gas_constant, gamma, cp, cp - gas_constant)
-        return self.gases[name]
+    def gas(self, part: str, properties: Any) -> None:
+        """Check ThermoProp has a node's gas (properties: its Lookup) at the run's start: where it hasn't, the run says
+        why in words, before FullFlow would find it can't."""
+        gas = str(properties.args[0])
+        pressure, temperature = (_start(properties.kwargs[key]) for key in ("pressure", "temperature"))
+        try:
+            float(properties.callable(gas, pressure=pressure, temperature=temperature).density)
+        except Exception as error:
+            raise ModelError(
+                f"{self.names.get(part, part)}: ThermoProp can't give {gas}'s properties at {temperature:.1f} K and "
+                f"{pressure / PSI:.0f} psia ({error})"
+            ) from error
 
-    def needs_vapor_pressure(self, venturi: str, tank: str, vapor: State) -> None:
+    def needs_vapor_pressure(self, venturi: str, tank: str, vapor: Any) -> None:
         """A cavitating venturi chokes at its liquid's vapor pressure, which one above its critical point hasn't."""
-        if not math.isfinite(vapor.value):
+        value = vapor.value
+        if value is None or not math.isfinite(value):
             raise ModelError(
                 f"{self.names.get(venturi, venturi)}: {self.names.get(tank, tank)}'s liquid is above its critical "
                 "point, so it has no vapor pressure to cavitate at"
@@ -330,11 +332,16 @@ class Run:
         junctions: dict[str, State],
         known: dict[str, State],
         edges: list[tuple[str, str, State | None]],
+        readings: dict[str, str] | None = None,
     ) -> None:
-        """Start each liquid junction (junctions, by id) at the average of its neighbors through paths open at the
-        start (edges: each one's ends, and its valve's position if it has one), spreading out from the pressures
-        known (tanks, outlets): the solver then settles it in the first time step."""
+        """Start each liquid junction (junctions, by id) where its pressure transducer read at the start (readings: its
+        channel's key, where it has one and the test has it); or else at the average of its neighbors through paths
+        open at the start (edges: each one's ends, and its valve's position if it has one), spreading out from the
+        pressures known (tanks, outlets). The solver then settles it in the first time step."""
         values = {node: state.value for node, state in known.items()}
+        for node, key in (readings or {}).items():
+            if self.series(key) is not None:
+                values[node] = self.starting(key, ATMOSPHERE)
         for _ in range(len(junctions)):
             changed = False
             for node in junctions:

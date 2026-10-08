@@ -167,14 +167,24 @@ test("the Vespula example comes with its run's data, uploaded once", { timeout: 
     expect((screen.getByLabelText("To (s)") as HTMLInputElement).value).toBe("21.3");
     expect((screen.getByLabelText("Time step (s)") as HTMLInputElement).value).toBe("0.1");
 
-    // Steady, its tanks follow their pressures, and its liquid side reads what Vespula's run did.
+    // Steady, its tanks and its COPV hold their pressures, so they can't anchor a knob; its manifolds can.
     await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
+    await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+    const anchoring = within(screen.getByRole("dialog"));
+    expect(anchoring.getByLabelText(/^LOX manifold pressure transducer/)).toBeTruthy();
+    for (const held of [/^COPV/, /^LOX tank/, /^Fuel tank/]) {
+        expect(anchoring.queryByLabelText(held)).toBeNull();
+    }
+    await userEvent.click(anchoring.getByRole("button", { name: "Cancel" }));
+
+    // And its liquid side reads what Vespula's run did: built of the same FullFlow components with the same ThermoProp
+    // properties, to a part in a million.
     await userEvent.click(screen.getByRole("button", { name: "Run" }));
     expect(await screen.findByText(/^Done in/, {}, { timeout: 150_000 })).toBeTruthy();
     const results = within(screen.getByRole("region", { name: "Results" }));
     const manifold = results.getByText("LOX manifold pressure transducer").closest(".dev-plot") as HTMLElement;
-    const rms = Number((await within(manifold).findByText(/^RMS /)).textContent!.match(/^RMS ([\d.]+)/)![1]);
-    expect(rms).toBeLessThan(0.5); // psi, of 330 to 400
+    const rms = Number((await within(manifold).findByText(/^RMS /)).textContent!.match(/^RMS ([\d.e+-]+)/)![1]);
+    expect(rms).toBeLessThan(0.001); // psi, of 330 to 400
 
     // Picked again, it finds its data rather than uploading it twice.
     await pick();
@@ -206,7 +216,7 @@ test("a model's script is shown, changed, and run in the browser", { timeout: 12
     const model = await editorFor("model.py");
     await waitFor(() => expect(model.state.doc.toString()).toContain("from fullflow import *"));
     const written = model.state.doc.toString();
-    expect(written).toContain("main_valve = Restriction(");
+    expect(written).toContain("main_valve = DischargeCoefficient(");
     expect(written).toContain("run.following('n1.pressure', otherwise=");
     expect(written).toContain("'n1.pressure': ('PT-TANK', 'pressure'),");
     const script = within(screen.getByRole("region", { name: "Script" }));
@@ -237,7 +247,7 @@ test("a model's script is shown, changed, and run in the browser", { timeout: 12
     const files = new Map((sent.files ?? []).map((file) => [file.path, file.data]));
     const text = (path: string) => new TextDecoder().decode(files.get(path));
     expect(text("/tmp/yorg-model/yorg_models/__init__.py")).toContain("class Run:");
-    expect(text("/tmp/yorg-model/yorg_models/components.py")).toContain("class Restriction(");
+    expect(text("/tmp/yorg-model/yorg_models/components.py")).toContain("class Anchor(Sensor):");
     expect(JSON.parse(text("/tmp/yorg-model/inputs/keys.json"))).toEqual(["n1.pressure", "n3.pressure", "e2.command"]);
     const tank = new Float64Array(files.get("/tmp/yorg-model/inputs/n1.pressure.v.f64")!.slice().buffer);
     expect(tank[0]).toBeCloseTo(PSIG_300, 3);

@@ -1,7 +1,7 @@
 import { request } from "../../api";
 
 // The dev page's API (/api/yorg/dev, for admins): system models, and runs, fits, and anchored runs of them against a
-// test's data.
+// test's data; and, for the Script view, the FullFlow script a run runs, what it imports, and a run's data.
 // Every value the server sends or takes is in SI units (Pa absolute, K, m, m², m³, kg/s); units.ts shows them in the
 // model's units.
 
@@ -234,6 +234,30 @@ export interface AnchorRequest extends RunRequest {
     fallback: boolean; // fit each knob whose anchor doesn't work
 }
 
+/** A run as its script has it: the model, its window (on the dataset's clock) and time step, its solver, and, for an
+ * anchored run's script, its anchors. */
+export interface ScriptRequest {
+    model: SystemModel;
+    start: number;
+    end: number;
+    dt: number;
+    solver: Solver;
+    anchors?: AnchorPick[];
+}
+
+/** What a model's script imports besides FullFlow: yorg_models, its files by path; and the packages ("name==version")
+ * to install from PyPI to run it as the server does. */
+export interface ScriptLibrary {
+    files: Record<string, string>;
+    packages: string[];
+}
+
+/** A run's data, as its script takes it: each channel the model is linked to, by part.link, in the run's window (and
+ * a sample each side) on the dataset's clock, in SI units. A missing sample is null. */
+export interface RunInputs {
+    inputs: Record<string, { times: (number | null)[]; values: (number | null)[] }>;
+}
+
 export const devApi = {
     catalog: () => request<Catalog>("GET", "/api/yorg/dev/catalog"),
     models: () => request<SavedModel[]>("GET", "/api/yorg/dev/models"),
@@ -248,4 +272,7 @@ export const devApi = {
     anchor: (body: AnchorRequest) => request<{ id: string }>("POST", "/api/yorg/dev/anchors", body),
     status: (id: string) => request<RunStatus>("GET", `/api/yorg/dev/runs/${id}`),
     stop: (id: string) => request<void>("DELETE", `/api/yorg/dev/runs/${id}`),
+    script: (body: ScriptRequest) => request<{ script: string }>("POST", "/api/yorg/dev/script", body),
+    library: () => request<ScriptLibrary>("GET", "/api/yorg/dev/library"),
+    inputs: (body: RunRequest) => request<RunInputs>("POST", "/api/yorg/dev/inputs", body),
 };

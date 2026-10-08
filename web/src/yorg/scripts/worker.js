@@ -6,7 +6,9 @@
 //
 // From the page (python.ts), done one after another: init (with the yorg module's source), prepare (a script's code:
 // its slow imports, ahead of its run), tools (the editor's suggestions, got ready), run (a script or a notebook's cell:
-// its code, its tests as JSON, the keys of the channels it names, the notebook whose variables it runs in), service
+// its code, its tests as JSON, the keys of the channels it names, the notebook whose variables it runs in; and, for a
+// page that runs code of its own, packages to install from PyPI, files to write, and code to run before and after
+// it, which can report values to the page), service
 // (for the editor: suggestions, what a name is, the code's syntax); and, any time, response (to a request). To the
 // page: progress (each step as it starts: starting Python, loading packages, importing a module, taking channels,
 // running the code), ready, prepared (a prepare or tools done), stdout/stderr and plot/figure/file (each with the run
@@ -18,6 +20,7 @@ const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 let pyodide = null;
 let yorg = null; // the yorg module (yorg.py), once Python is ready
 let current = null; // the run whose output and steps these are (null: getting a script's imports ready)
+let quiet = false; // while packages install: what micropip prints is no run's output
 let asked = 0;
 const waiting = new Map();
 let queue = Promise.resolve(); // what the page asked for, one thing after another
@@ -70,7 +73,7 @@ async function start(moduleSource) {
         (attempt) => import(`${PYODIDE}pyodide.mjs${attempt > 1 ? `?try=${attempt}` : ""}`),
     );
     pyodide = await withRetries(() => loadPyodide({ indexURL: PYODIDE }));
-    pyodide.setStdout({ batched: (text) => post({ type: "stdout", run: current, text }) });
+    pyodide.setStdout({ batched: (text) => quiet || post({ type: "stdout", run: current, text }) });
     pyodide.setStderr({ batched: (text) => post({ type: "stderr", run: current, text }) });
     pyodide.setStdin({
         stdin: () => {
@@ -114,14 +117,15 @@ async function loadImports(code, timings) {
     }
 }
 
-// Where code the page runs comes from, in tracebacks: a script, or a notebook's cell, by its run ("<In [3]>").
-const OURS = /File "(script\.py|<In \[\d+\]>)"/;
+// Where code the page runs comes from, in tracebacks: a script, or a notebook's cell, by its run ("<In [3]>"), and
+// what a page runs before and after it.
+const OURS = /File "(script\.py|<In \[\d+\]>|<setup>|<finish>)"/;
 
 /** A Python error's traceback from the first of our frames on (Pyodide's frames above them say nothing useful). */
-function traceback(error) {
+function traceback(error, file) {
     const text = errorText(error);
     const lines = text.split("\n");
-    const first = lines.findIndex((line) => OURS.test(line));
+    const first = lines.findIndex((line) => OURS.test(line) || line.includes(`File "${file}"`));
     return first < 0 ? text.trim() : ["Traceback (most recent call last):", ...lines.slice(first)].join("\n").trim();
 }
 
@@ -172,7 +176,25 @@ function service({ id, what, namespace, code, line, column }) {
     post({ type: "answer", id, value });
 }
 
-async function run({ run: id, code, context, keys, namespace, filename }) {
+/** Install packages from PyPI (each "name==version"), with micropip: those installed already, at once. */
+async function install(packages, timings) {
+    progress("install", { packages });
+    const since = performance.now();
+    await pyodide.loadPackage(["micropip"], { messageCallback: () => {} });
+    const micropip = pyodide.pyimport("micropip");
+    quiet = true;
+    try {
+        await micropip.install(packages);
+    } catch (error) {
+        throw new Error(`Couldn't install ${packages.join(", ")} from PyPI: ${errorText(error)}`);
+    } finally {
+        quiet = false;
+        micropip.destroy();
+    }
+    timings.push({ kind: "install", packages, seconds: secondsSince(since) });
+}
+
+async function run({ run: id, code, context, keys, namespace, filename, ...more }) {
     current = id;
     const file = filename || "script.py";
     const started = performance.now();
@@ -180,6 +202,13 @@ async function run({ run: id, code, context, keys, namespace, filename }) {
     const imports = () => JSON.parse(yorg._import_times());
     let globals = null;
     try {
+        if (more.install && more.install.length) {
+            await install(more.install, timings);
+        }
+        for (const { path, data } of more.files ?? []) {
+            pyodide.FS.mkdirTree(path.slice(0, path.lastIndexOf("/")) || "/");
+            pyodide.FS.writeFile(path, data);
+        }
         try {
             await loadImports(code, timings);
         } catch (error) {
@@ -205,7 +234,13 @@ async function run({ run: id, code, context, keys, namespace, filename }) {
             globals = pyodide.toPy({ __name__: "__main__" });
             globals.set("yorg", yorg);
         }
+        if (more.setup) {
+            await pyodide.runPythonAsync(more.setup, { globals, filename: "<setup>" });
+        }
         await pyodide.runPythonAsync(code, { globals, filename: file });
+        if (more.finish) {
+            await pyodide.runPythonAsync(more.finish, { globals, filename: "<finish>" });
+        }
         yorg._finish();
         post({ type: "done", run: id, elapsed: secondsSince(started), timings: [...timings, ...imports()] });
     } catch (error) {
@@ -217,7 +252,7 @@ async function run({ run: id, code, context, keys, namespace, filename }) {
         post({
             type: "error",
             run: id,
-            text: traceback(error),
+            text: traceback(error, file),
             line: lineOf(error, file),
             elapsed: secondsSince(started),
             timings: [...timings, ...imports()],

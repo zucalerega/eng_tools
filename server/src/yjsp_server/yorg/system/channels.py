@@ -1,5 +1,5 @@
 """A run's inputs: the channels its model follows (pressures, temperatures, valve commands), cut to the run's window
-and put in SI units, as network.py expects them.
+and put in SI units, as a model's script reads them (data["part.link"]).
 
 A channel's unit comes from its file (PT-1 (psig)); one without a unit is read in the units the model is shown in.
 Plain psi and bar are gauge or absolute as the model's pressures are.

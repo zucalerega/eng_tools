@@ -270,6 +270,12 @@ export function HelpPage() {
                                       and any knob FullFlow couldn't anchor.
                                   </li>
                                   <li>
+                                      <em>Script</em> shows the model as the FullFlow code that runs it. Change it, and{" "}
+                                      <em>Run in browser</em> runs your script in your browser (FullFlow installs there
+                                      the first time: a minute or two). <em>Reference</em> explains how FullFlow models
+                                      a system.
+                                  </li>
+                                  <li>
                                       <em>Model</em> on a dataset&apos;s page runs a model on it.
                                   </li>
                               </ul>

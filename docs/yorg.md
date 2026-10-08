@@ -181,7 +181,8 @@ in `web/src/yorg/index.tsx`).
   time, a new one of yours replacing the last), so a long simulation never slows the site:
   the server cuts the channels the model uses (valve commands, what it follows, what starts
   it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
-  it's going. `network.py` builds the FullFlow network: a fixed tank, supply, or outlet is a
+  it's going. The FullFlow network is a script (`script.py` writes it from the checked
+  model; see a model's script, below): a fixed tank, supply, or outlet is a
   pressure that follows its channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K
   folded into f); valves and orifices are a CdA law smoothed near zero flow
   (`components.py`: plain square roots leave a node between a closed valve and an orifice
@@ -262,8 +263,34 @@ in `web/src/yorg/index.tsx`).
   collapse factors are anchored to their pressures.
   FullFlow, ThermoProp, and FullPlot are GPL-3.0: fine for the team's own server, but if
   the site is ever given to others, the GPL applies to it.
+- **A model's script** (the Models page's Script view): a run's code is a FullFlow script
+  that `script.py` writes from the checked model and how it runs (window, time step,
+  solver, anchors), so the page can show the code that runs, and change it. All that comes
+  from the model goes in as a literal (a name as `repr`, a comment on one line): the server
+  runs only code it wrote, the runner's `network.run` writing the script and running it
+  (`exec`, the run's channels its `data`). Its variables are named for the parts. The script
+  imports FullFlow and `yorg_models`: `library.py` (`Run`: the test's channels into the
+  network, as `following`, `starting`, `command`, and `liquid`; the outputs recorded;
+  knobs anchored; the network solved, and the result the page shows) and `components.py`,
+  which import nothing of the server's, so a browser can have them. The page asks for the
+  script (`POST /api/yorg/dev/script`, anchors checked as an anchored run's), for
+  `yorg_models` and the versions of FullFlow and ThermoProp the server has
+  (`GET /api/yorg/dev/library`), and for a run's channels as the runner gets them
+  (`POST /api/yorg/dev/inputs`, a missing sample null). Run runs the script as it's shown:
+  as written, on the server (with anchors, as an anchored run without the fit of what they
+  don't settle); changed, in the tab's Python (Scripts, below), with FullFlow and
+  ThermoProp installed from PyPI at the server's versions, `yorg_models` and the channels
+  written to its files, and `data` read from them; the script reports the run's time as it
+  goes, and its result as JSON. Unchanged, the browser's run is the server's to the last
+  digit (`test_a_runs_script_is_what_it_runs` runs the page's script with the page's data).
+  Installing takes a minute or two the first time, and importing FullFlow and ThermoProp
+  a minute or more (CoolProp's and ThermoProp's data). A changed script isn't saved, and Fit
+  and Anchor run the P&ID's model. The Reference (`FullFlowReference.tsx`) is background:
+  what FullFlow is, how it models a system and solves it, how Yorg's parts become its
+  components, and what a script is made of.
 - **Scripts** (the Python window, everyone's):
-  Python runs in the browser, never on the server: Pyodide (CPython in WebAssembly, pinned
+  Python people write runs in the browser, never on the server (which runs only the model
+  scripts it writes itself): Pyodide (CPython in WebAssembly, pinned
   in `web/src/yorg/scripts/worker.js`, from jsDelivr), in a module worker started from a
   `data:` URL inside an iframe sandboxed to scripts alone (Pyodide 314 runs only in module
   workers, and a sandboxed frame can't start one from a blob). The frame's origin is its
@@ -292,7 +319,11 @@ in `web/src/yorg/index.tsx`).
   `yorg.py` reports, taking channels, running the code), and the page shows it with how long
   it's been going and why the slow ones are slow (`progress.ts`); a run that's over says how
   long it took and where the time went, from the page (the server, waiting for Python) and
-  the worker (packages, imports, channels), the rest being the script's own. Stopping a run
+  the worker (packages, imports, channels), the rest being the script's own. A page can also
+  give a run packages to install from PyPI (micropip, whose messages aren't the run's
+  output), files to write, and code to run before and after its own, and code can report
+  values back to the page (`report`): that's how the Models page runs a changed script.
+  Stopping a run
   that Python has started ends the worker (a browser can interrupt Python only with a
   `SharedArrayBuffer`, which needs the whole site cross-origin isolated), and Python starts
   again without what it had. The tests can't run Pyodide (jsdom), so there Python is a

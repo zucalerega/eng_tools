@@ -7,6 +7,9 @@ import { linkTarget } from "../../preview";
 import { datasetUrl, storedT0 } from "../pages";
 import { sampleAt } from "../samples";
 import { formatValue } from "../scale";
+import { isTicking, RunView, useTicking } from "../scripts/Output";
+import { formatSeconds } from "../scripts/progress";
+import { python, usePython, useRun } from "../scripts/python";
 import { AnchorDialog, NO_PLAN, type AnchorPlan } from "./Anchor";
 import {
     devApi,
@@ -17,11 +20,15 @@ import {
     type RunResult,
     type RunStatus,
     type SavedModel,
+    type ScriptLibrary,
+    type ScriptRequest,
     type Solver,
     type SystemModel,
 } from "./api";
+import { browserProgress, browserResult, browserRun } from "./browserRun";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
 import { applyKnobs, FitDialog, FitSummary, type Knob } from "./Fit";
+import { FULLFLOW, FullFlowReference } from "./FullFlowReference";
 import { Inspector } from "./Inspector";
 import {
     addEdge,
@@ -38,16 +45,19 @@ import {
     VESPULA_RUN,
 } from "./model";
 import { Results } from "./Results";
+import { ScriptView } from "./ScriptView";
 import { channelToSiLinear, readingFor } from "./units";
 import "./models.css";
 
 // Yorg's system models (Models, in the preview while they're tried out). Draw a test stand's feed system, link its valves and sensors to a test's
 // channels, run it with FullFlow on the server, and compare it with what was measured; turn the knobs marked "tune"
-// until it matches, have a fit turn them, or anchor them to sensors (FullFlow moves them in every time step).
-
-const FULLFLOW = "https://github.com/saakethramoju/FullFlow";
+// until it matches, have a fit turn them, or anchor them to sensors (FullFlow moves them in every time step). The
+// Script view shows the model as the FullFlow script that runs it, to change and run in the browser; the Reference,
+// how FullFlow models a system.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const PID_ONLY = "Fits and anchored runs run the P&ID's model on the server, not a changed script";
 
 interface Current {
     id: string | null; // saved as, if it is
@@ -63,6 +73,28 @@ type Asking =
     | { ask: "fit" }
     | { ask: "anchor" }
     | null;
+
+/** The script written from the P&ID, for the run as it's set up (by its request, as JSON), or why there isn't one. */
+interface Written {
+    key: string;
+    script: string | null;
+    problem: string | null;
+}
+
+/** A changed script: the one it was changed from, and what it is now. */
+interface Edits {
+    base: string;
+    text: string;
+}
+
+/** A changed script's run in the browser (the tab's Python): what it ran against, and whether it's been shown. */
+interface BrowserJob {
+    id: string;
+    model: SystemModel;
+    datasetId: number;
+    duration: number; // simulated seconds
+    shown: boolean;
+}
 
 /** A run, a fit, or an anchored run on the server: what it ran (the model as it was, against which dataset), and how
  * it's going. */
@@ -169,8 +201,19 @@ export function ModelsPage() {
     const [lastKnobs, setLastKnobs] = useState<Knob[]>([]);
     const [lastAnchors, setLastAnchors] = useState<AnchorPlan>(NO_PLAN);
     const [solver, setSolver] = useState<Solver>("transient");
+    const [view, setView] = useState<"pid" | "script">("pid");
+    const [reference, setReference] = useState(false);
+    const [written, setWritten] = useState<Written | null>(null);
+    const [edits, setEdits] = useState<Edits | null>(null);
+    const [library, setLibrary] = useState<ScriptLibrary | null>(null);
+    const [withAnchors, setWithAnchors] = useState(false);
+    const [browser, setBrowser] = useState<BrowserJob | null>(null);
+    const browserRecord = useRun(browser?.id ?? null);
+    const pythonState = usePython();
+    const now = useTicking(isTicking(pythonState, browserRecord));
     const dragStart = useRef<SystemModel | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
+    const wanted = useRef<string | null>(null); // the script asked for last
 
     useEffect(() => {
         Promise.all([devApi.catalog(), devApi.models(), request<Dataset[]>("GET", "/api/yorg/datasets")]).then(
@@ -205,6 +248,105 @@ export function ModelsPage() {
             setWindowText({ ...windowText, ...windowFor(found) });
         }
     }
+
+    const from = Number(windowText.from);
+    const to = Number(windowText.to);
+    const dt = Number(windowText.dt);
+    const start = zero + from;
+    const end = zero + to;
+    const windowOk =
+        datasetId !== null &&
+        windowText.from.trim() !== "" &&
+        windowText.to.trim() !== "" &&
+        Number.isFinite(from) &&
+        Number.isFinite(to) &&
+        to > from &&
+        dt > 0;
+
+    /** An anchor plan's anchors, as the server takes them: their spans on the dataset's clock. */
+    const anchorPicks = (plan: AnchorPlan): AnchorPick[] => {
+        const at = (text: string) => (text.trim() === "" ? undefined : zero + Number(text));
+        return plan.anchors.map((one) => ({
+            part: one.part,
+            key: one.key,
+            sensor: one.sensor,
+            link: one.link,
+            start: at(one.from),
+            end: at(one.to),
+        }));
+    };
+
+    // The script, as the server writes it for the run as it's set up (over 0 to 10 s, until there's a window): asked
+    // for while the Script view's open, a moment after the model or the run's settings last changed.
+    const anchoring = withAnchors && lastAnchors.anchors.length > 0;
+    const scriptRequest: ScriptRequest = {
+        model: current.model,
+        start: windowOk ? start : 0,
+        end: windowOk ? end : 10,
+        dt: dt > 0 ? dt : 0.01,
+        solver,
+        ...(anchoring ? { anchors: anchorPicks(lastAnchors) } : {}),
+    };
+    const scriptKey = view === "script" && catalog ? JSON.stringify(scriptRequest) : null;
+    useEffect(() => {
+        if (scriptKey === null) {
+            return;
+        }
+        wanted.current = scriptKey;
+        const timer = window.setTimeout(() => {
+            const keep = (found: Written) => {
+                if (wanted.current === found.key) {
+                    setWritten(found);
+                }
+            };
+            devApi.script(JSON.parse(scriptKey) as ScriptRequest).then(
+                (found) => keep({ key: scriptKey, script: found.script, problem: null }),
+                (error) => keep({ key: scriptKey, script: null, problem: message(error) }),
+            );
+        }, 300);
+        return () => window.clearTimeout(timer);
+    }, [scriptKey]);
+
+    // What the script imports from Yorg, to read beside it and to run it in the browser; and FullFlow's version.
+    useEffect(() => {
+        if ((view === "script" || reference) && !library) {
+            devApi.library().then(setLibrary, (error) => setProblem(message(error)));
+        }
+    }, [view, reference, library]);
+
+    const script = written?.script ?? null;
+    const changed = edits !== null && edits.text !== edits.base;
+    const stale = changed && script !== null && edits.base !== script;
+
+    // A changed script keeps the tab's Python, which runs it, from stopping for want of use.
+    useEffect(() => (changed ? python.acquire() : undefined), [changed]);
+
+    // Leaving the page lets its run in the browser go (stopped, if it's on): its result would have nowhere to go.
+    const browserId = useRef<string | null>(null);
+    browserId.current = browser?.id ?? null;
+    useEffect(
+        () => () => {
+            if (browserId.current) {
+                python.forget(browserId.current);
+            }
+        },
+        [],
+    );
+
+    // A run in the browser that's done: its result, shown as a run's on the server is.
+    useEffect(() => {
+        if (!browser || browser.shown || browserRecord?.status !== "done") {
+            return;
+        }
+        const result = browserResult(browserRecord.output.reports);
+        setBrowser({ ...browser, shown: true });
+        if (result) {
+            setShown({ result, model: browser.model, datasetId: browser.datasetId });
+            if (result.anchors?.length) {
+                setFound(anchoredFound(result));
+            }
+        }
+    }, [browser, browserRecord]);
 
     // While a run or a fit goes, ask how it's doing.
     useEffect(() => {
@@ -276,7 +418,7 @@ export function ModelsPage() {
     }
 
     function withSaved(then: () => void) {
-        if (current.dirty) {
+        if (current.dirty || changed) {
             setAsking({ ask: "discard", then });
         } else {
             then();
@@ -290,6 +432,7 @@ export function ModelsPage() {
         setTool({ mode: "select" });
         setShown(null);
         setFound(null);
+        setEdits(null);
     }
 
     async function act(action: () => Promise<void>) {
@@ -325,20 +468,23 @@ export function ModelsPage() {
         withSaved(() => open(imported.model, null, imported.name));
     }
 
-    const from = Number(windowText.from);
-    const to = Number(windowText.to);
-    const dt = Number(windowText.dt);
-    const start = zero + from;
-    const end = zero + to;
-    const running = job !== null && (job.status === null || job.status.state === "running");
-    const windowOk =
-        datasetId !== null &&
-        windowText.from.trim() !== "" &&
-        windowText.to.trim() !== "" &&
-        Number.isFinite(from) &&
-        Number.isFinite(to) &&
-        to > from &&
-        dt > 0;
+    const inBrowser =
+        browserRecord !== null && (browserRecord.status === "queued" || browserRecord.status === "running");
+    const scriptOnly = view === "script" && changed; // Fit and Anchor run the P&ID's model, not a changed script
+    const simulated = browserRecord ? browserProgress(browserRecord.output.reports) : null;
+    const browserTotal = browserRecord ? ((browserRecord.finished ?? now) - browserRecord.requested) / 1000 : 0;
+    const browserStatus = !browserRecord
+        ? ""
+        : inBrowser
+          ? simulated !== null && browser
+              ? `Running in your browser: ${formatValue(simulated)} of ${formatValue(browser.duration)} s, ${Math.round(browserTotal)} s so far`
+              : "Running in your browser…"
+          : browserRecord.status === "done"
+            ? `Done in your browser in ${formatSeconds(browserTotal)}`
+            : browserRecord.status === "error"
+              ? "Failed in your browser"
+              : "Stopped";
+    const running = inBrowser || (job !== null && (job.status === null || job.status.state === "running"));
     const status = job?.status;
 
     /** A channel's value at the run's start, in SI, from the picked test (null until its samples are in). */
@@ -358,6 +504,14 @@ export function ModelsPage() {
         return sampleAt(loaded.value, start, { shift: 0, scale, offset })?.y ?? null;
     }
 
+    /** Let the last run in the browser go: a run on the server is the one shown now. */
+    function forgetBrowser() {
+        if (browser) {
+            python.forget(browser.id);
+            setBrowser(null);
+        }
+    }
+
     const runBody = (model: SystemModel, id: number) => ({
         model,
         dataset_id: id,
@@ -375,6 +529,7 @@ export function ModelsPage() {
             }
             const model = current.model;
             const started = await devApi.run(runBody(model, datasetId));
+            forgetBrowser();
             setFound(null);
             setJob({ kind: "run", id: started.id, model, datasetId, knobs: [], status: null });
         });
@@ -388,6 +543,7 @@ export function ModelsPage() {
             setAsking(null);
             setLastKnobs(knobs);
             const started = await devApi.fit({ ...runBody(model, datasetId), knobs });
+            forgetBrowser();
             setFound(null);
             setJob({ kind: "fit", id: started.id, model, datasetId, knobs, status: null });
         });
@@ -400,23 +556,50 @@ export function ModelsPage() {
             const model = current.model;
             setAsking(null);
             setLastAnchors(plan);
-            const at = (text: string) => (text.trim() === "" ? undefined : zero + Number(text));
-            const anchors: AnchorPick[] = plan.anchors.map((one) => ({
-                part: one.part,
-                key: one.key,
-                sensor: one.sensor,
-                link: one.link,
-                start: at(one.from),
-                end: at(one.to),
-            }));
             const started = await devApi.anchor({
                 ...runBody(model, datasetId),
-                anchors,
+                anchors: anchorPicks(plan),
                 knobs: plan.knobs,
                 fallback: plan.fallback,
             });
+            forgetBrowser();
             setFound(null);
             setJob({ kind: "anchor", id: started.id, model, datasetId, knobs: [], status: null });
+        });
+
+    /**
+     * Run the script as it's shown: on the server while it's as written from the P&ID (with anchors, the anchored
+     * run's, without a fit of what they don't settle), and in the browser once it's changed.
+     */
+    const startScript = () =>
+        act(async () => {
+            if (datasetId === null) {
+                return;
+            }
+            const model = current.model;
+            if (edits === null || edits.text === edits.base) {
+                if (!anchoring) {
+                    await startRun();
+                    return;
+                }
+                const body = { ...runBody(model, datasetId), anchors: anchorPicks(lastAnchors) };
+                const started = await devApi.anchor({ ...body, knobs: [], fallback: false });
+                forgetBrowser();
+                setFound(null);
+                setJob({ kind: "anchor", id: started.id, model, datasetId, knobs: [], status: null });
+                return;
+            }
+            const text = edits.text;
+            const [imported, data] = await Promise.all([
+                library ?? devApi.library(),
+                devApi.inputs(runBody(model, datasetId)),
+            ]);
+            setLibrary(imported);
+            forgetBrowser();
+            setJob(null);
+            setFound(null);
+            const id = python.run(browserRun(text, imported, data));
+            setBrowser({ id, model, datasetId, duration: end - start, shown: false });
         });
 
     /** Vespula's prop system, against its run's data: uploaded to Yorg the first time, found by its name after. */
@@ -560,149 +743,245 @@ export function ModelsPage() {
             </div>
             {problem && <Notice tone="error">{problem}</Notice>}
 
-            <div className="dev-toolbar" role="toolbar" aria-label="Tools">
-                <button type="button" aria-pressed={tool.mode === "select"} onClick={() => setTool({ mode: "select" })}>
-                    Select
-                </button>
-                <span className="dev-divider" />
-                {nodeTypes.map((kind) => (
-                    <button
-                        key={kind.type}
-                        type="button"
-                        aria-pressed={tool.mode === "place" && tool.type === kind.type}
-                        title={kind.help}
-                        onClick={() => setTool({ mode: "place", type: kind.type })}
-                    >
-                        + {kind.label}
+            <div className="dev-views">
+                <div className="dev-segmented" role="group" aria-label="View">
+                    <button type="button" aria-pressed={view === "pid"} onClick={() => setView("pid")}>
+                        P&amp;ID
                     </button>
-                ))}
-                <span className="dev-divider" />
-                {edgeTypes.map((kind) => (
                     <button
-                        key={kind.type}
                         type="button"
-                        className={kind.phase === "gas" ? "dev-gas-tool" : undefined}
-                        aria-pressed={tool.mode === "connect" && tool.type === kind.type}
-                        title={`${kind.help} Click where it starts, then where it ends.`}
-                        onClick={() => setTool({ mode: "connect", type: kind.type, from: null })}
+                        aria-pressed={view === "script"}
+                        onClick={() => setView("script")}
+                        title="The model as the FullFlow script that runs it: to read, change, and run"
                     >
-                        ↦ {kind.label}
+                        Script
                     </button>
-                ))}
-                <span className="dev-divider" />
-                <button type="button" disabled={undo.length === 0} onClick={undoLast} title="Ctrl+Z">
-                    Undo
-                </button>
-                <label className="check" title="Show pressures above the atmosphere (psig), or absolute (psia)">
-                    <input
-                        type="checkbox"
-                        checked={display.gauge}
-                        onChange={(event) =>
-                            change({ ...current.model, display: { ...display, gauge: event.target.checked } }, false)
-                        }
-                    />
-                    Gauge
-                </label>
-                <select
-                    aria-label="Units"
-                    value={display.units}
-                    onChange={(event) =>
-                        change(
-                            { ...current.model, display: { ...display, units: event.target.value as "us" | "si" } },
-                            false,
-                        )
-                    }
+                </div>
+                <button
+                    type="button"
+                    className="dev-reference-toggle"
+                    aria-pressed={reference}
+                    onClick={() => setReference(!reference)}
+                    title="What FullFlow is, and how it models a system"
                 >
-                    <option value="us">psi, °F, in, gal</option>
-                    <option value="si">bar, K, mm, L</option>
-                </select>
+                    Reference
+                </button>
             </div>
-            <p className="muted dev-hint" role="status">
-                {tool.mode === "place"
-                    ? "Click where it goes."
-                    : tool.mode === "connect"
-                      ? tool.from
-                          ? "Now click where it flows to (Esc to stop)."
-                          : "Click where it flows from."
-                      : current.model.nodes.length === 0
-                        ? "Add tanks, junctions, and outlets, then connect them with lines, valves, and orifices (gas parts, dashed, for pressurant)."
-                        : "Click a part to set it up; drag to move it; Delete removes it."}
-            </p>
 
-            <div className="dev-editor">
-                <Diagram
-                    model={current.model}
-                    catalog={catalog}
-                    selected={selected}
-                    tool={tool}
-                    onSelect={setSelected}
-                    onMove={(id, x, y, done) => {
-                        if (!dragStart.current) {
-                            dragStart.current = current.model;
+            {view === "pid" && (
+                <>
+                    <div className="dev-toolbar" role="toolbar" aria-label="Tools">
+                        <button
+                            type="button"
+                            aria-pressed={tool.mode === "select"}
+                            onClick={() => setTool({ mode: "select" })}
+                        >
+                            Select
+                        </button>
+                        <span className="dev-divider" />
+                        {nodeTypes.map((kind) => (
+                            <button
+                                key={kind.type}
+                                type="button"
+                                aria-pressed={tool.mode === "place" && tool.type === kind.type}
+                                title={kind.help}
+                                onClick={() => setTool({ mode: "place", type: kind.type })}
+                            >
+                                + {kind.label}
+                            </button>
+                        ))}
+                        <span className="dev-divider" />
+                        {edgeTypes.map((kind) => (
+                            <button
+                                key={kind.type}
+                                type="button"
+                                className={kind.phase === "gas" ? "dev-gas-tool" : undefined}
+                                aria-pressed={tool.mode === "connect" && tool.type === kind.type}
+                                title={`${kind.help} Click where it starts, then where it ends.`}
+                                onClick={() => setTool({ mode: "connect", type: kind.type, from: null })}
+                            >
+                                ↦ {kind.label}
+                            </button>
+                        ))}
+                        <span className="dev-divider" />
+                        <button type="button" disabled={undo.length === 0} onClick={undoLast} title="Ctrl+Z">
+                            Undo
+                        </button>
+                        <label className="check" title="Show pressures above the atmosphere (psig), or absolute (psia)">
+                            <input
+                                type="checkbox"
+                                checked={display.gauge}
+                                onChange={(event) =>
+                                    change(
+                                        { ...current.model, display: { ...display, gauge: event.target.checked } },
+                                        false,
+                                    )
+                                }
+                            />
+                            Gauge
+                        </label>
+                        <select
+                            aria-label="Units"
+                            value={display.units}
+                            onChange={(event) =>
+                                change(
+                                    {
+                                        ...current.model,
+                                        display: { ...display, units: event.target.value as "us" | "si" },
+                                    },
+                                    false,
+                                )
+                            }
+                        >
+                            <option value="us">psi, °F, in, gal</option>
+                            <option value="si">bar, K, mm, L</option>
+                        </select>
+                    </div>
+                    <p className="muted dev-hint" role="status">
+                        {tool.mode === "place"
+                            ? "Click where it goes."
+                            : tool.mode === "connect"
+                              ? tool.from
+                                  ? "Now click where it flows to (Esc to stop)."
+                                  : "Click where it flows from."
+                              : current.model.nodes.length === 0
+                                ? "Add tanks, junctions, and outlets, then connect them with lines, valves, and orifices (gas parts, dashed, for pressurant)."
+                                : "Click a part to set it up; drag to move it; Delete removes it."}
+                    </p>
+                </>
+            )}
+
+            <div className={`dev-editor${view === "script" && !reference ? " dev-editor-wide" : ""}`}>
+                {view === "script" ? (
+                    <ScriptView
+                        script={script}
+                        problem={written?.problem ?? null}
+                        text={changed ? edits.text : (script ?? "")}
+                        onChange={(text) =>
+                            setEdits(text === script ? null : { base: edits?.base ?? script ?? "", text })
                         }
-                        const moved = changePart(current.model, id, { x, y });
-                        if (done) {
-                            setUndo([...undo.slice(-99), dragStart.current]);
-                            dragStart.current = null;
+                        changed={changed}
+                        stale={stale}
+                        onReset={() => setEdits(null)}
+                        library={library}
+                        note={
+                            windowOk
+                                ? null
+                                : "Pick a test and the run's window: until then, the script is written for 0 to 10 s."
                         }
-                        setCurrent({ ...current, model: moved, dirty: true });
-                    }}
-                    onPlace={(type, x, y) => {
-                        const [model, id] = addNode(
-                            current.model,
-                            catalog,
-                            type,
-                            Math.min(x, WIDTH - 40),
-                            Math.min(y, HEIGHT - 60),
-                        );
-                        change(model);
-                        setSelected(id);
-                        setTool({ mode: "select" });
-                    }}
-                    onConnect={(from, to) => {
-                        if (tool.mode !== "connect") {
-                            return;
+                        anchors={{
+                            offered: lastAnchors.anchors.length > 0,
+                            on: anchoring,
+                            onChange: setWithAnchors,
+                        }}
+                        error={
+                            browserRecord?.status === "error" && browserRecord.line !== null
+                                ? {
+                                      line: browserRecord.line,
+                                      message: browserRecord.error ?? "",
+                                      code: browserRecord.code,
+                                  }
+                                : null
                         }
-                        const wrong = connectProblem(current.model, catalog, tool.type, from, to);
-                        if (wrong) {
-                            setProblem(wrong);
-                            setTool({ ...tool, from: null });
-                            return;
+                        onRun={() => {
+                            if (windowOk && !running) {
+                                void startScript();
+                            }
+                        }}
+                    />
+                ) : (
+                    <Diagram
+                        model={current.model}
+                        catalog={catalog}
+                        selected={selected}
+                        tool={tool}
+                        onSelect={(id) => {
+                            setSelected(id);
+                            if (id !== null) {
+                                setReference(false); // a part picked: its settings, where the Reference was
+                            }
+                        }}
+                        onMove={(id, x, y, done) => {
+                            if (!dragStart.current) {
+                                dragStart.current = current.model;
+                            }
+                            const moved = changePart(current.model, id, { x, y });
+                            if (done) {
+                                setUndo([...undo.slice(-99), dragStart.current]);
+                                dragStart.current = null;
+                            }
+                            setCurrent({ ...current, model: moved, dirty: true });
+                        }}
+                        onPlace={(type, x, y) => {
+                            const [model, id] = addNode(
+                                current.model,
+                                catalog,
+                                type,
+                                Math.min(x, WIDTH - 40),
+                                Math.min(y, HEIGHT - 60),
+                            );
+                            change(model);
+                            setSelected(id);
+                            setTool({ mode: "select" });
+                        }}
+                        onConnect={(from, to) => {
+                            if (tool.mode !== "connect") {
+                                return;
+                            }
+                            const wrong = connectProblem(current.model, catalog, tool.type, from, to);
+                            if (wrong) {
+                                setProblem(wrong);
+                                setTool({ ...tool, from: null });
+                                return;
+                            }
+                            setProblem(null);
+                            const [model, id] = addEdge(current.model, catalog, tool.type, from, to);
+                            change(model);
+                            setSelected(id);
+                            setTool({ ...tool, from: to }); // on from there, for the next part in the run
+                        }}
+                        onTool={setTool}
+                        onDelete={(id) => {
+                            change(removePart(current.model, id));
+                            setSelected(null);
+                        }}
+                    />
+                )}
+                {reference ? (
+                    <FullFlowReference
+                        version={
+                            library?.packages
+                                .find((one) => one.toLowerCase().startsWith("fullflow=="))
+                                ?.split("==")[1] ?? null
                         }
-                        setProblem(null);
-                        const [model, id] = addEdge(current.model, catalog, tool.type, from, to);
-                        change(model);
-                        setSelected(id);
-                        setTool({ ...tool, from: to }); // on from there, for the next part in the run
-                    }}
-                    onTool={setTool}
-                    onDelete={(id) => {
-                        change(removePart(current.model, id));
-                        setSelected(null);
-                    }}
-                />
-                <aside className="dev-side">
-                    {selected ? (
-                        <Inspector
-                            model={current.model}
-                            catalog={catalog}
-                            id={selected}
-                            channels={channels}
-                            startValue={startValue}
-                            onChange={change}
-                            onDelete={(id) => {
-                                change(removePart(current.model, id));
-                                setSelected(null);
-                            }}
-                        />
-                    ) : (
-                        <p className="muted">
-                            Pick a part to set it up and link it to the test&apos;s channels: a tank&apos;s pressure, a
-                            valve&apos;s command, a junction&apos;s pressure transducer. A tank or gas junction linked
-                            to a sensor starts from its value at the run&apos;s start.
-                        </p>
-                    )}
-                </aside>
+                        onClose={() => setReference(false)}
+                    />
+                ) : (
+                    view === "pid" && (
+                        <aside className="dev-side">
+                            {selected ? (
+                                <Inspector
+                                    model={current.model}
+                                    catalog={catalog}
+                                    id={selected}
+                                    channels={channels}
+                                    startValue={startValue}
+                                    onChange={change}
+                                    onDelete={(id) => {
+                                        change(removePart(current.model, id));
+                                        setSelected(null);
+                                    }}
+                                />
+                            ) : (
+                                <p className="muted">
+                                    Pick a part to set it up and link it to the test&apos;s channels: a tank&apos;s
+                                    pressure, a valve&apos;s command, a junction&apos;s pressure transducer. A tank or
+                                    gas junction linked to a sensor starts from its value at the run&apos;s start.
+                                </p>
+                            )}
+                        </aside>
+                    )
+                )}
             </div>
 
             <div className="dev-run" role="group" aria-label="Run">
@@ -766,7 +1045,14 @@ export function ModelsPage() {
                     </select>
                 </label>
                 {running ? (
-                    <button type="button" onClick={() => job && void act(async () => devApi.stop(job.id))}>
+                    <button
+                        type="button"
+                        onClick={() =>
+                            inBrowser && browser
+                                ? python.stop(browser.id)
+                                : job && void act(async () => devApi.stop(job.id))
+                        }
+                    >
                         Stop
                     </button>
                 ) : (
@@ -775,28 +1061,47 @@ export function ModelsPage() {
                             type="button"
                             className="button-primary"
                             disabled={!windowOk}
-                            onClick={() => void startRun()}
+                            onClick={() => void (view === "script" ? startScript() : startRun())}
+                            title={
+                                view === "script"
+                                    ? changed
+                                        ? "Run the script as it is, in your browser"
+                                        : "Run the script on the server, as it's written"
+                                    : undefined
+                            }
                         >
-                            Run
+                            {view === "script" && changed ? "Run in browser" : "Run"}
                         </button>
-                        <button type="button" disabled={!windowOk} onClick={() => setAsking({ ask: "fit" })}>
+                        <button
+                            type="button"
+                            disabled={!windowOk || scriptOnly}
+                            title={scriptOnly ? PID_ONLY : undefined}
+                            onClick={() => setAsking({ ask: "fit" })}
+                        >
                             Fit…
                         </button>
-                        <button type="button" disabled={!windowOk} onClick={() => setAsking({ ask: "anchor" })}>
+                        <button
+                            type="button"
+                            disabled={!windowOk || scriptOnly}
+                            title={scriptOnly ? PID_ONLY : undefined}
+                            onClick={() => setAsking({ ask: "anchor" })}
+                        >
                             Anchor…
                         </button>
                     </>
                 )}
                 <span className="muted" role="status">
-                    {status?.state === "running" && (job?.kind === "fit" || progress?.tries !== undefined)
-                        ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${better.toFixed(1)}% smaller`}, ${Math.round(status.elapsed)} s so far`
-                        : status?.state === "running"
-                          ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
-                          : running
-                            ? "Starting…"
-                            : status?.state === "done"
-                              ? `Done in ${Math.round(status.elapsed)} s`
-                              : ""}
+                    {browserRecord && job === null
+                        ? browserStatus
+                        : status?.state === "running" && (job?.kind === "fit" || progress?.tries !== undefined)
+                          ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${better.toFixed(1)}% smaller`}, ${Math.round(status.elapsed)} s so far`
+                          : status?.state === "running"
+                            ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
+                            : running
+                              ? "Starting…"
+                              : status?.state === "done"
+                                ? `Done in ${Math.round(status.elapsed)} s`
+                                : ""}
                 </span>
                 {datasetId !== null && (
                     <span className="muted dev-zero">
@@ -805,6 +1110,11 @@ export function ModelsPage() {
                 )}
             </div>
             {status?.state === "failed" && <Notice tone="error">{status.message}</Notice>}
+            {browserRecord && job === null && (
+                <div className="dev-browser-run" aria-label="Run in the browser" role="region">
+                    <RunView run={browserRecord} python={pythonState} now={now} />
+                </div>
+            )}
             {found && (
                 <FitSummary
                     model={current.model}
@@ -894,7 +1204,15 @@ export function ModelsPage() {
                     }}
                     onCancel={() => setAsking(null)}
                 >
-                    <p>{current.name} has changes that aren&apos;t saved.</p>
+                    <p>
+                        {current.dirty
+                            ? `${current.name} has changes that aren't saved.`
+                            : `${current.name}'s script has changes.`}
+                        {current.dirty && changed ? " Its script's changes go too." : ""}{" "}
+                        {changed
+                            ? "A changed script isn't saved with the model: copy it somewhere first to keep it."
+                            : ""}
+                    </p>
                 </Dialog>
             )}
         </section>

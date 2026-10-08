@@ -1,13 +1,21 @@
 """System models (Yorg's dev page): admins draw a feed system, and it runs with FullFlow against a test's data."""
 
+import ast
+import json
+import math
 import random
+import subprocess
+import sys
+from importlib import metadata
 
+import numpy as np
 import pytest
 from fullflow import FullFlowError
 
 from yjsp_server.yorg.system.catalog import PSI
 from yjsp_server.yorg.system.channels import Reading, to_si
-from yjsp_server.yorg.system.network import _Builder
+from yjsp_server.yorg.system.library import Run
+from yjsp_server.yorg.system.network import execute
 from yjsp_server.yorg.system.spec import SystemModelIn, runnable
 
 ATMOSPHERE = 101325.0
@@ -281,8 +289,8 @@ def test_a_run_that_doesnt_settle_says_where():
     """FullFlow lists the equations it couldn't meet, largest first, under names like tank:liquid:ullage_volume or
     inj.cda:anchor; the page names their parts, and not those whose equations it met."""
     checked = runnable(SystemModelIn.model_validate(cold_flow_model()))
-    job = {"model": {"nodes": checked.nodes, "edges": checked.edges}, "liquid_of": checked.liquid_of, "dt": 0.01}
-    built = _Builder({**job, "start": 10.0, "end": 12.0}, {}, lambda t: None)
+    names = {part["id"]: part["name"] for part in [*checked.nodes.values(), *checked.edges.values()]}
+    built = Run({}, start=10.0, end=12.0, dt=0.01, names=names)
     error = FullFlowError(
         "Transient timestep failed or converged to unacceptable residuals.\n"
         "time = 0.51\n"
@@ -852,3 +860,159 @@ def test_an_anchor_to_what_the_model_follows_says_so(team):
         refused({"part": "press", "key": "cda", "sensor": "tank", "link": "pressure"}, "steady")
         == "In a steady run Water tank holds what was measured, so Water tank's pressure can't anchor Press valve's CdA when open"
     )
+
+
+# --- a model's script -------------------------------------------------------------------------------------------
+
+
+def script_of(team, who, body: dict) -> str:
+    response = team.client.post("/api/yorg/dev/script", json=body, headers=who)
+    assert response.status_code == 200, response.text
+    return response.json()["script"]
+
+
+def data_of(team, who, body: dict) -> dict:
+    """A run's data as POST /inputs gives it, as a script takes it: arrays, a missing sample NaN."""
+    response = team.client.post("/api/yorg/dev/inputs", json=body, headers=who)
+    assert response.status_code == 200, response.text
+    return {
+        key: tuple(
+            np.array([math.nan if value is None else value for value in found[side]]) for side in ("times", "values")
+        )
+        for key, found in response.json()["inputs"].items()
+    }
+
+
+def without_elapsed(result: dict) -> dict:
+    return {key: value for key, value in result.items() if key != "elapsed"}
+
+
+def test_a_runs_script_is_what_it_runs(team):
+    """The script the page shows, run with the data the page gets, is the server's run of the model: the same numbers,
+    to the last digit."""
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    body = {"model": pressurized_model(), "dataset_id": dataset["id"], "start": 0.0, "end": 1.0, "dt": 0.01}
+    status = run(team, chief, body)
+    assert status["state"] == "done", status
+    text = script_of(team, chief, {key: value for key, value in body.items() if key != "dataset_id"})
+    assert "water_tank_gas = Volume(\n    'tank:gas',\n    net," in text
+    assert "result = run.solve()" in text
+    assert without_elapsed(execute(text, data_of(team, chief, body))) == without_elapsed(status["result"])
+    bob = team.member("bob@x.test")
+    for path in ("/api/yorg/dev/script", "/api/yorg/dev/inputs"):
+        assert team.client.post(path, json=body, headers=bob).status_code == 403
+
+
+def test_an_anchored_runs_script_anchors_its_knobs(team):
+    chief = team.member("chief@x.test", admin=True)
+    body = {
+        "model": fit_model(3e-5, 0.03),
+        "start": 0.0,
+        "end": 1.0,
+        "anchors": [{"part": "inj", "key": "cda", "sensor": "inj", "link": "flow", "start": 0.5}],
+    }
+    text = script_of(team, chief, body)
+    assert (
+        "run.anchor(\n    injector_cda,\n    injector.mass_flow,\n    key='inj.flow',\n    start=0.5,\n    end=1.0,"
+    ) in text
+    # Its anchors are checked as an anchored run's are, and a knob that's not in the model as it runs says so.
+    twice = {**body, "anchors": body["anchors"] * 2}
+    response = team.client.post("/api/yorg/dev/script", json=twice, headers=chief)
+    assert (response.status_code, response.json()["message"]) == (422, "Injector's CdA is picked twice")
+    model = pressurized_model()
+    model["nodes"][1]["links"] = {"pressure": "PT-MANIFOLD"}
+    steady = {
+        "model": model,
+        "start": 0.0,
+        "end": 1.0,
+        "solver": "steady",
+        "anchors": [{"part": "reg", "key": "response_time", "sensor": "gj", "link": "pressure"}],
+    }
+    response = team.client.post("/api/yorg/dev/script", json=steady, headers=chief)
+    assert (response.status_code, response.json()["message"]) == (
+        422,
+        "Regulator's response time doesn't change anything in this model, so it can't be anchored",
+    )
+
+
+def test_a_scripts_names_and_channels_are_only_ever_data(team):
+    """What a model's parts are called, and the channels they're linked to, go into its script as strings and
+    comments, never as code; and the script runs, saying them as they were given."""
+    chief = team.member("chief@x.test", admin=True)
+    sneaky = 'x"""\nimport os; os.system("echo pwned") # \u2028\\'
+    model = cold_flow_model()
+    model["nodes"][0]["name"] = sneaky
+    model["edges"][2]["name"] = "class"  # a word of Python's: its variable is named around it
+    linked = cold_flow_model()
+    linked["nodes"][0]["links"] = {"pressure": "PT'\n__import__('os')#"}
+    for each in (model, linked):
+        text = script_of(team, chief, {"model": each, "start": 0.0, "end": 1.0})
+        tree = ast.parse(text)
+        imports = [ast.unparse(one) for one in ast.walk(tree) if isinstance(one, ast.Import | ast.ImportFrom)]
+        assert imports == ["import math", "from fullflow import *", "from yorg_models import *"]
+        assert not {one.id for one in ast.walk(tree) if isinstance(one, ast.Name)} & {"os", "__import__", "pwned"}
+    assert f"'tank': {sneaky!r}," in script_of(team, chief, {"model": model, "start": 0.0, "end": 1.0})
+    dataset = upload(team, chief, cold_flow_csv())
+    body = {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 1.0}
+    assert run(team, chief, body)["state"] == "done"
+    model["nodes"][0]["settings"]["temperature"] = 200.0  # frozen water
+    status = run(team, chief, body)
+    assert status["message"].startswith(f"{sneaky}: ThermoProp can't give Water's properties at 200.0 K")
+
+
+def test_a_scripts_library_runs_it_on_its_own(team, tmp_path):
+    """yorg_models, as the page gets it, is all a script needs besides FullFlow and ThermoProp (at the versions the
+    server has, which it says): a Python of their own runs the script with it, as the browser does."""
+    chief = team.member("chief@x.test", admin=True)
+    bob = team.member("bob@x.test")
+    assert team.client.get("/api/yorg/dev/library", headers=bob).status_code == 403
+    library = team.client.get("/api/yorg/dev/library", headers=chief).json()
+    assert library["packages"] == [f"{name}=={metadata.version(name)}" for name in ("fullflow", "thermoprop")]
+    assert sorted(library["files"]) == ["yorg_models/__init__.py", "yorg_models/components.py"]
+    for name, text in library["files"].items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    dataset = upload(team, chief, cold_flow_csv())
+    body = {"model": cold_flow_model(), "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.01}
+    window = {key: value for key, value in body.items() if key != "dataset_id"}
+    (tmp_path / "model.py").write_text(script_of(team, chief, window), encoding="utf-8")
+    response = team.client.post("/api/yorg/dev/inputs", json=body, headers=chief)
+    (tmp_path / "data.json").write_text(response.text, encoding="utf-8")
+    runner = (
+        "import json, sys\n"
+        "import numpy as np\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "inputs = json.load(open(sys.argv[1] + '/data.json'))['inputs']\n"
+        "data = {key: (np.array(one['times'], dtype=float), np.array(one['values'], dtype=float)) for key, one in inputs.items()}\n"
+        "namespace = {'__name__': '__main__', 'data': data}\n"
+        "exec(compile(open(sys.argv[1] + '/model.py').read(), 'model.py', 'exec'), namespace)\n"
+        "print(json.dumps(namespace['result']['series']['inj.mass_flow']))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", runner, str(tmp_path)], capture_output=True, text=True, timeout=300, cwd=tmp_path
+    )
+    assert done.returncode == 0, done.stderr
+    status = run(team, chief, body)
+    assert json.loads(done.stdout) == status["result"]["series"]["inj.mass_flow"]
+
+
+def test_a_runs_data_is_every_linked_channel_in_si_units(team):
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    model = pressurized_model()
+    model["nodes"][3]["links"] = {"pressure": "PT-CHAMBER"}  # a sensor: compared with the model, never followed
+    data = data_of(team, chief, {"model": model, "dataset_id": dataset["id"], "start": 0.5, "end": 1.0})
+    assert sorted(data) == [
+        "chamber.pressure",
+        "j1.pressure",
+        "mov.command",
+        "tank.gas_temperature",
+        "tank.pressure",
+        "vent.command",
+    ]
+    times, values = data["tank.pressure"]
+    assert times[0] == pytest.approx(0.49) and times[-1] == pytest.approx(1.01)  # a sample each side of the window
+    assert values[0] == pytest.approx((250.0 - 5 * 0.49) * PSI + ATMOSPHERE)
+    assert data["tank.gas_temperature"][1][0] == pytest.approx((50.0 - 0.49 - 32.0) * 5 / 9 + 273.15)
+    assert list(data["mov.command"][1][:2]) == [1.0, 1.0]

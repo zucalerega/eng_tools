@@ -1,6 +1,12 @@
 """The dev page's API (/api/yorg/dev), for admins: the parts a system model can have, saved models, and runs of a
-model against a test's data, fits of its knobs to it, and runs with knobs anchored to it."""
+model against a test's data, fits of its knobs to it, and runs with knobs anchored to it; and, for the page's Script
+view, the FullFlow script a run runs, what the script imports, and a run's data, to run a changed script in the
+browser."""
 
+import json
+import math
+from importlib import metadata
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -16,6 +22,7 @@ from ..saved import Saved
 from . import catalog, channels
 from .catalog import in_words
 from .runs import Runs
+from .script import Unrunnable, script
 from .spec import BadModel, Runnable, SystemModelIn, check_shape, runnable
 
 router = APIRouter(prefix="/api/yorg/dev", tags=["yorg-dev"])
@@ -23,6 +30,9 @@ router = APIRouter(prefix="/api/yorg/dev", tags=["yorg-dev"])
 MAX_DURATION = 600.0  # simulated seconds in one run
 MAX_STEPS = 200_000
 MAX_KNOBS = 8  # a fit's: each costs a run per try
+# What a script imports as yorg_models, a package (library.py is its __init__.py): its files, by where they go in it.
+LIBRARY = {"yorg_models/__init__.py": "library.py", "yorg_models/components.py": "components.py"}
+PACKAGES = ("fullflow", "thermoprop")  # and what to install from PyPI to run it, as the server has them
 
 
 def admin_user(user: ActiveUser) -> User:
@@ -59,19 +69,19 @@ class ReadingIn(BaseModel):
     mass_flow: str = Field(default="lbm/s", max_length=16)
 
 
-class RunIn(BaseModel):
+class WindowIn(BaseModel):
+    """A model, and how it runs: over a window of a test's clock, in time steps of dt."""
+
     model: SystemModelIn
-    dataset_id: int
     start: float  # seconds, on the dataset's clock
     end: float
     dt: float = Field(default=0.01, ge=0.0005, le=1.0)
-    reading: ReadingIn = Field(default_factory=ReadingIn)
     # steady: FullFlow's quasi-steady sweep, in which lines, junctions, and regulators settle in each time step and
     # tanks hold the pressure measured (or set)
     solver: Literal["transient", "steady"] = "transient"
 
     @model_validator(mode="after")
-    def _window(self) -> "RunIn":
+    def _window(self) -> "WindowIn":
         if not self.end > self.start:
             raise ValueError("end must be after start")
         if self.end - self.start > MAX_DURATION:
@@ -79,6 +89,11 @@ class RunIn(BaseModel):
         if (self.end - self.start) / self.dt > MAX_STEPS:
             raise ValueError(f"that's more than {MAX_STEPS} time steps: make the time step longer")
         return self
+
+
+class RunIn(WindowIn):
+    dataset_id: int
+    reading: ReadingIn = Field(default_factory=ReadingIn)
 
 
 class KnobIn(BaseModel):
@@ -103,6 +118,10 @@ class AnchorRunIn(RunIn):
     anchors: list[AnchorIn] = Field(min_length=1, max_length=MAX_KNOBS)
     knobs: list[KnobIn] = Field(default_factory=list, max_length=MAX_KNOBS)  # fitted, to the sensors not anchoring
     fallback: bool = True  # fit each knob whose anchor doesn't work
+
+
+class ScriptIn(WindowIn):
+    anchors: list[AnchorIn] = Field(default_factory=list, max_length=MAX_KNOBS)  # an anchored run's script
 
 
 @router.get("/catalog")
@@ -141,6 +160,19 @@ def delete_model(model_id: str, user: AdminUser, models: SavedModels) -> Respons
     return Response(status_code=204)
 
 
+def _window_job(body: WindowIn, checked: Runnable) -> dict[str, Any]:
+    """A run's job, but for its data: the checked model, its window and time step, and its solver."""
+    return {
+        "model": {"nodes": checked.nodes, "edges": checked.edges},
+        "liquid_of": checked.liquid_of,
+        "gas_of": checked.gas_of,
+        "start": body.start,
+        "end": body.end,
+        "dt": body.dt,
+        "solver": body.solver,
+    }
+
+
 def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dict[str, Any], dict[str, Any]]:
     """What a run of a checked model needs: the model, its window, and the channels it uses from the dataset (by
     name, so a model runs against any test that has them), cut to the window and in SI units. The channels it's
@@ -167,16 +199,7 @@ def _job(body: RunIn, db, files, checked: Runnable, compared: bool) -> tuple[dic
                 )
             times, values = channels.load(folder, channel, body.start, body.end)
             inputs[f"{part['id']}.{link.key}"] = (times, channels.to_si(link.quantity, channel.unit, values, reading))
-    job = {
-        "model": {"nodes": checked.nodes, "edges": checked.edges},
-        "liquid_of": checked.liquid_of,
-        "gas_of": checked.gas_of,
-        "start": body.start,
-        "end": body.end,
-        "dt": body.dt,
-        "solver": body.solver,
-    }
-    return job, inputs
+    return _window_job(body, checked), inputs
 
 
 def _compared(parts: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
@@ -203,44 +226,9 @@ def _knob(parts: dict[str, dict[str, Any]], part_id: str, key: str, verb: str) -
     return part, named
 
 
-@router.post("/runs", status_code=201)
-def post_run(body: RunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
-    """Start running a model over a window of a dataset. Ask GET /runs/{id} how it's going."""
-    job, inputs = _job(body, db, files, runnable(body.model), compared=False)
-    return {"id": runs.start(user.id, job, inputs).id}
-
-
-@router.post("/fits", status_code=201)
-def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
-    """Start fitting a model's knobs (settings marked tunable) to what its compared channels measured over a window
-    of a dataset: the model runs again and again, its knobs turned until it matches best. Ask GET /runs/{id} how
-    it's going; its result is the best run, with what the fit found."""
-    checked = runnable(body.model)
-    parts = {**checked.nodes, **checked.edges}
-    knobs: list[tuple[str, str]] = []
-    for knob in body.knobs:
-        _, named = _knob(parts, knob.part, knob.key, "fit")
-        if (knob.part, knob.key) in knobs:
-            raise BadModel(f"{named} is picked twice")
-        knobs.append((knob.part, knob.key))
-    compared = _compared(parts)
-    if not compared:
-        raise BadModel("Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure")
-    job, inputs = _job(body, db, files, checked, compared=True)
-    job["fit"] = {"knobs": [{"part": part, "key": key} for part, key in knobs], "compared": compared}
-    return {"id": runs.start(user.id, job, inputs, kind="fit").id}
-
-
-@router.post("/anchors", status_code=201)
-def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
-    """Start a run with knobs anchored to a test (FullFlow's Sensors): in each time step of an anchor's span, FullFlow
-    moves its knob, with the rest of the model, until the model reads at its sensor what the sensor's channel
-    measured. Then a fit (fit.tune) of the knobs picked to fit, and, with fallback, of each knob whose anchor didn't
-    work, to the sensors not anchoring, the working anchors anchored in each of its runs. Ask GET /runs/{id} how it's
-    going; its result has each anchored knob's history ("anchored", by part.key) and the value it settled at
-    ("anchors"), and what a fit found ("fit")."""
-    checked = runnable(body.model)
-    parts = {**checked.nodes, **checked.edges}
+def _anchors(body: ScriptIn | AnchorRunIn, parts: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """The anchors asked for, checked: each a knob that matters, anchored over a span of the run's window to a sensor
+    of its own that the model is compared with (not one it follows)."""
     steady = body.solver == "steady"
     anchors: list[dict[str, Any]] = []
     for anchor in body.anchors:
@@ -284,6 +272,49 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
                 "end": end,
             }
         )
+    return anchors
+
+
+@router.post("/runs", status_code=201)
+def post_run(body: RunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
+    """Start running a model over a window of a dataset. Ask GET /runs/{id} how it's going."""
+    job, inputs = _job(body, db, files, runnable(body.model), compared=False)
+    return {"id": runs.start(user.id, job, inputs).id}
+
+
+@router.post("/fits", status_code=201)
+def post_fit(body: FitIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
+    """Start fitting a model's knobs (settings marked tunable) to what its compared channels measured over a window
+    of a dataset: the model runs again and again, its knobs turned until it matches best. Ask GET /runs/{id} how
+    it's going; its result is the best run, with what the fit found."""
+    checked = runnable(body.model)
+    parts = {**checked.nodes, **checked.edges}
+    knobs: list[tuple[str, str]] = []
+    for knob in body.knobs:
+        _, named = _knob(parts, knob.part, knob.key, "fit")
+        if (knob.part, knob.key) in knobs:
+            raise BadModel(f"{named} is picked twice")
+        knobs.append((knob.part, knob.key))
+    compared = _compared(parts)
+    if not compared:
+        raise BadModel("Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure")
+    job, inputs = _job(body, db, files, checked, compared=True)
+    job["fit"] = {"knobs": [{"part": part, "key": key} for part, key in knobs], "compared": compared}
+    return {"id": runs.start(user.id, job, inputs, kind="fit").id}
+
+
+@router.post("/anchors", status_code=201)
+def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: ModelRuns) -> dict[str, Any]:
+    """Start a run with knobs anchored to a test (FullFlow's Sensors): in each time step of an anchor's span, FullFlow
+    moves its knob, with the rest of the model, until the model reads at its sensor what the sensor's channel
+    measured. Then a fit (fit.tune) of the knobs picked to fit, and, with fallback, of each knob whose anchor didn't
+    work, to the sensors not anchoring, the working anchors anchored in each of its runs. Ask GET /runs/{id} how it's
+    going; its result has each anchored knob's history ("anchored", by part.key) and the value it settled at
+    ("anchors"), and what a fit found ("fit")."""
+    checked = runnable(body.model)
+    parts = {**checked.nodes, **checked.edges}
+    steady = body.solver == "steady"
+    anchors = _anchors(body, parts)
     fitted: list[dict[str, str]] = []
     for knob in body.knobs:
         part, named = _knob(parts, knob.part, knob.key, "fit")
@@ -304,6 +335,44 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
     job, inputs = _job(body, db, files, checked, compared=True)
     job.update(anchors=anchors, knobs=fitted, fallback=body.fallback, compared=compared)
     return {"id": runs.start(user.id, job, inputs, kind="anchor").id}
+
+
+@router.post("/script")
+def post_script(body: ScriptIn, user: AdminUser) -> dict[str, str]:
+    """The FullFlow script a run of the model runs over the window (with anchors, an anchored run's: before any fit of
+    what they don't settle). The server runs it as it is; the Models page shows it, and runs it changed in the
+    browser, with GET /library and POST /inputs."""
+    checked = runnable(body.model)
+    job = {**_window_job(body, checked), "anchors": _anchors(body, {**checked.nodes, **checked.edges})}
+    try:
+        return {"script": script(job)}
+    except Unrunnable as error:
+        raise BadModel(str(error)) from error
+
+
+@router.get("/library")
+def get_library(user: AdminUser) -> dict[str, Any]:
+    """What a model's script imports besides FullFlow: yorg_models, a package of two files (by path), and the
+    packages to install from PyPI to run it as the server does (FullFlow and ThermoProp, at the server's versions)."""
+    folder = Path(__file__).parent
+    return {
+        "files": {name: (folder / source).read_text(encoding="utf-8") for name, source in LIBRARY.items()},
+        "packages": [f"{package}=={metadata.version(package)}" for package in PACKAGES],
+    }
+
+
+@router.post("/inputs")
+def post_inputs(body: RunIn, user: AdminUser, db: DB, files: Files) -> Response:
+    """A run's data, as a script gets it: each channel the model is linked to (by part.link), its samples in the
+    run's window (and one each side) on the dataset's clock, in SI units. A sample that's missing is null."""
+    _, inputs = _job(body, db, files, runnable(body.model), compared=True)
+
+    def floats(values) -> list[float | None]:
+        return [value if math.isfinite(value) else None for value in values]
+
+    found = {key: {"times": floats(times), "values": floats(values)} for key, (times, values) in inputs.items()}
+    # Written here rather than by FastAPI, which goes through every number on its way: channels have a lot of them.
+    return Response(json.dumps({"inputs": found}, allow_nan=False), media_type="application/json")
 
 
 @router.get("/runs/{run_id}")

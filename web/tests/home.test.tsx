@@ -1,0 +1,56 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, onTestFinished, test, vi } from "vitest";
+import { renderApp, Team } from "./team";
+
+test("the site's address shows both apps, and each goes to its own pages", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+
+    const home = within(await screen.findByRole("main"));
+    expect(home.getByRole("heading", { name: "The team's engineering tools" })).toBeTruthy();
+    const vault = home.getByRole("link", { name: /^Vault/ });
+    expect(vault.getAttribute("href")).toBe("/vault");
+    expect(home.getByRole("link", { name: /^Yorg/ }).getAttribute("href")).toBe("/yorg");
+    expect(document.title).toBe("YJSP");
+    // Neither app's pages are open, so the top bar has no section of either.
+    expect(screen.queryByRole("navigation", { name: "Main" })?.textContent ?? "").toBe("");
+
+    await userEvent.click(vault);
+    expect(await screen.findByRole("navigation", { name: "Folder tree" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/vault");
+    expect(document.title).toBe("Vault");
+});
+
+test("the site's own page leaves the vault's index alone", async () => {
+    const team = await Team.create();
+    const fetched = vi.spyOn(globalThis, "fetch");
+    onTestFinished(() => fetched.mockRestore());
+    renderApp(team.chief, "/");
+    // You're known (the account menu has your name): the vault's index, had it started, would have been asked for.
+    await screen.findByRole("button", { name: /^Account: ./ });
+    expect(fetched.mock.calls.filter(([url]) => String(url).includes("/api/sync")).length).toBe(0);
+});
+
+test("links from before Vault moved under /vault go on to the same page there", async () => {
+    const team = await Team.create();
+    const [fin] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" }, { comment: "first fin" });
+
+    renderApp(team.chief, `/file/${fin!.id}?tab=history`);
+    expect(await screen.findByText("first fin")).toBeTruthy();
+    expect(window.location.pathname + window.location.search).toBe(`/vault/file/${fin!.id}?tab=history`);
+});
+
+test("an old link to a page of the vault's that isn't a file goes there too", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/locks");
+    await waitFor(() => expect(window.location.pathname).toBe("/vault/locks"));
+    expect(await screen.findByRole("link", { name: "Checked out", current: "page" })).toBeTruthy();
+});
+
+test("an address that's no page says so, and offers both apps", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/nowhere");
+    expect(await screen.findByText("There's no page here.")).toBeTruthy();
+    expect(within(screen.getByRole("main")).getByRole("link", { name: /^Vault/ })).toBeTruthy();
+});

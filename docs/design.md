@@ -51,11 +51,11 @@ Web app (React): the frame, Vault's pages, Yorg's pages ────────
 sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg), the account
 menu, and the theme. Each app has its own tables (Vault's are named without a prefix, from
 before Yorg; Yorg's are `yorg_*`), its own folder of files, its own API, and its own pages:
-Vault at `/` (`/files/...`, `/file/5`, `/locks`, ...), as it was before the site had Yorg
-too, and Yorg under `/yorg`. Neither app imports the other, and the site's own code imports
-neither, except where it puts them together (`app.py` and `migrations/env.py` on the
-server, `App.tsx` and `main.tsx` in the web app) and where accounts change (`people.py`,
-below).
+Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`, `/vault/locks`, ...) and Yorg's
+under `/yorg`, with the site's own page at `/`, which goes to either. Neither app imports
+the other, and the site's own code imports neither, except where it puts them together
+(`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx` in the web app)
+and where accounts change (`people.py`, below).
 
 The one tie between them is people. Accounts are the site's (`models.py`, `auth.py`,
 `people.py`), and both apps refer to them. Vault's index carries people's names and what
@@ -139,11 +139,13 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **The frame** (`App.tsx`): the top bar, with the app switcher, each app's own pages in
   it, and the account menu (your name, the theme, Admin and Vault's admin mode for those
   who have them, and signing out). Each app's pages come from its own folder: Vault's
-  (`web/src/vault`, `VaultPage`) and Yorg's (`web/src/yorg`, `YorgPage`).
+  (`web/src/vault`, `VaultPage`, under `/vault`) and Yorg's (`web/src/yorg`, `YorgPage`,
+  under `/yorg`). The site's own page (`Home`, at `/`, where signing in lands) has both
+  apps on it.
 - **Who you are** (`session.ts`) is the site's, for both apps: loaded when the page opens
   and asked again every minute while it's visible. Vault's index (`vault/store.ts`, the
   sync feed) loads when a page of Vault first shows and keeps current only while one
-  does; Yorg's pages never ask for it.
+  does; Yorg's pages and the site's own never ask for it.
 - **Light and dark:** light, dark, or the computer's setting, chosen in the account menu
   and remembered per browser (`theme.ts`, `yjsp.theme`, as `data-theme` on the page). The
   sign-in pages follow the same choice.
@@ -195,6 +197,7 @@ ones are still accepted for a while:
 | `/srv/vault`, `/opt/vault`, the `vault` user, `vault.service`, `vault.db` on the live server | `/srv/yjsp`, `/opt/yjsp`, `yjsp`, `yjsp.service`, `yjsp.db` | moved once, by `deploy/migrate-to-yjsp.sh` ([deploying.md](deploying.md#moving-to-yjsp)); the script goes in the release after |
 | The `cvc_session` cookie, the `X-CVC-Request` header | `yjsp_session`, `X-YJSP-Request` | still accepted, so browsers stay signed in and open tabs can save; drop them in 0.5.0, once sessions from before have run out (30 days) |
 | Tokens starting `cvc_` | `yjsp_` | work until they expire or are signed out |
+| Vault's pages at the site's own paths, until October 2026: `/files/...`, `/file/5`, `/locks`, `/admin` | under `/vault`: `/vault/files/...`, `/vault/file/5`, ... | followed, as bookmarks and shared links have them: the web app goes on to the same page under `/vault`, with its query (`movedToVault` in `web/src/vault/paths.ts`). `/` is the site's own page now |
 | `X-CVC-Version`, `X-CVC-SHA256`, `X-CVC-Size` on downloads | `X-Vault-*` | gone: no client read them |
 | The `cvc` command, `cvc.exe` | `vault`, `vault.exe` | `cvc.exe` keeps working against the server; replace it |
 | `cvc://` links, `cvc-open.exe` | `vault://`, `vault-open.exe` | Vault for SolidWorks 0.4.0 follows both, and its setup registers both. The web app makes `cvc://` links until every laptop has 0.4.0 (`LINK_SCHEME` in `web/src/vault/components.tsx`): switch it in 0.5.0, and stop registering `cvc://` in the release after |

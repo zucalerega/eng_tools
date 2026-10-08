@@ -83,7 +83,7 @@ export function FolderTree({ current }: { current: string }) {
             <p className="tree-heading">Folders</p>
             <span className="tree-node">
                 <span className="disclosure-space" />
-                <Link to="/" aria-current={here === "" ? "page" : undefined}>
+                <Link to={folderUrl("")} aria-current={here === "" ? "page" : undefined}>
                     <FolderIcon />
                     <span className="tree-name">Files</span>
                 </Link>

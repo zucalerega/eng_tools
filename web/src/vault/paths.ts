@@ -6,19 +6,35 @@ export const parentOf = (path: string): string => (path.includes("/") ? path.sli
 
 const encoded = (path: string) => path.split("/").map(encodeURIComponent).join("/");
 
-/** The page for a folder: /files/Structures/Fins, or / for the top of the vault. */
+/** Where Vault's pages are, as Yorg's are under /yorg. */
+export const VAULT = "/vault";
+
+/** Whether a path is one of Vault's pages. */
+export const inVault = (pathname: string): boolean => pathname === VAULT || pathname.startsWith(`${VAULT}/`);
+
+/** A page of Vault's as Vault's routes see it, without /vault: /vault/locks is /locks, and /vault is /. */
+export const vaultRoute = (pathname: string): string => pathname.slice(VAULT.length) || "/";
+
+// Until October 2026, Vault's pages were the site's own paths (/files/..., /file/5, /locks), and links to them live
+// on in bookmarks and messages. They still work: each goes to the same page under /vault.
+const MOVED = /^\/(files|file|trash|assemblies|locks|activity|solidworks|admin)(\/|$)/;
+
+/** Where a link from before Vault moved under /vault goes now, or null for any other path. */
+export const movedToVault = (pathname: string): string | null => (MOVED.test(pathname) ? VAULT + pathname : null);
+
+/** The page for a folder: /vault/files/Structures/Fins, or /vault for the top of the vault. */
 export function folderUrl(path: string): string {
-    return path ? "/files/" + encoded(path) : "/";
+    return path ? `${VAULT}/files/${encoded(path)}` : VAULT;
 }
 
-/** The page for a folder's trash: /trash/Structures/Fins, or /trash for the top of the vault's. */
+/** The page for a folder's trash: /vault/trash/Structures/Fins, or /vault/trash for the top of the vault's. */
 export function trashUrl(path: string): string {
-    return path ? "/trash/" + encoded(path) : "/trash";
+    return path ? `${VAULT}/trash/${encoded(path)}` : `${VAULT}/trash`;
 }
 
-/** The folder a folder's page (/files/...) or its trash's page (/trash/...) is for. */
-export function folderFromUrl(pathname: string): string {
-    return pathname
+/** The folder a folder's route (/files/...) or its trash's (/trash/...) is for (vaultRoute). */
+export function folderFromUrl(route: string): string {
+    return route
         .replace(/^\/(files|trash)\/?/, "")
         .split("/")
         .filter((part) => part.length > 0)
@@ -26,7 +42,7 @@ export function folderFromUrl(pathname: string): string {
         .join("/");
 }
 
-export const fileUrl = (id: number): string => `/file/${id}`;
+export const fileUrl = (id: number): string => `${VAULT}/file/${id}`;
 
 export type Kind = "part" | "assembly" | "drawing" | "model" | "file";
 

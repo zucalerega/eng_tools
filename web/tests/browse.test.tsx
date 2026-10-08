@@ -69,7 +69,7 @@ test("the assemblies page starts from the top-level assemblies", async () => {
         { refs: { "Rocket.SLDASM": ["Fins/Fin Can.SLDASM"], "Fins/Fin Can.SLDASM": ["Fins/Fin.SLDPRT"] } },
     );
 
-    renderApp(team.chief, "/assemblies");
+    renderApp(team.chief, "/vault/assemblies");
     expect(await screen.findByRole("link", { name: `${team.folder}/Rocket.SLDASM` })).toBeTruthy();
     expect(screen.queryByRole("link", { name: `${team.folder}/Fins/Fin Can.SLDASM` })).toBeNull(); // Rocket uses it
     await userEvent.click(screen.getByRole("button", { name: `Show what ${team.folder}/Rocket.SLDASM uses` }));
@@ -104,7 +104,7 @@ test("search finds files anywhere in the vault", async () => {
     const team = await Team.create();
     await team.checkin(team.chief, { "Recovery/Drogue/Chute.SLDPRT": "chute", "Recovery/Harness.SLDPRT": "harness" });
 
-    renderApp(team.chief, "/");
+    renderApp(team.chief, "/vault");
     await userEvent.type(await screen.findByRole("searchbox", { name: "Search files" }), "drogue/chu");
     expect(await screen.findByRole("link", { name: `${team.folder}/Recovery/Drogue/Chute.SLDPRT` })).toBeTruthy();
     expect(screen.queryByText(/Harness/)).toBeNull();

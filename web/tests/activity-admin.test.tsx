@@ -8,7 +8,7 @@ test("the activity feed says what each check-in was for", async () => {
     const alice = await team.member("Alice");
     await team.checkin(alice, { "Avionics/Sled.SLDASM": "sled" }, { comment: "sled for the flight computer" });
 
-    renderApp(team.chief, "/activity");
+    renderApp(team.chief, "/vault/activity");
     const comment = await screen.findByText("sled for the flight computer");
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
@@ -17,7 +17,7 @@ test("admins approve people waiting for it", async () => {
     const team = await Team.create();
     const newbie = await team.stranger();
 
-    renderApp(team.chief, "/admin");
+    renderApp(team.chief, "/vault/admin");
     const row = (await screen.findByText(newbie.user.email)).closest("tr")!;
     expect(within(row).getByText("waiting for approval")).toBeTruthy();
     await userEvent.click(within(row).getByRole("button", { name: "Approve" }));
@@ -27,7 +27,7 @@ test("admins approve people waiting for it", async () => {
 test("admins see when each person was last on, and who's on now", async () => {
     const team = await Team.create();
     const alice = await team.member("Alice"); // signed in just now
-    renderApp(team.chief, "/admin");
+    renderApp(team.chief, "/vault/admin");
     expect(await screen.findByRole("columnheader", { name: "Last active" })).toBeTruthy();
     const lastActive = (email: string) => {
         const row = screen.getAllByText(email)[0]!.closest("tr")!; // its name is its email, until it has one
@@ -56,7 +56,7 @@ test("admins see when each person was last on, and who's on now", async () => {
 test("people change their own name from their account menu", async () => {
     const team = await Team.create();
     const member = await team.member(`Renamer-${team.folder}`);
-    renderApp(member, "/");
+    renderApp(member, "/vault");
     await userEvent.click(await screen.findByRole("button", { name: /^Account: / }));
     await userEvent.click(screen.getByRole("button", { name: "Change your name…" }));
     const dialog = within(screen.getByRole("dialog", { name: "Change your name" }));
@@ -72,7 +72,7 @@ test("admins turn the whitelist off, which approves everyone waiting, and on aga
     const team = await Team.create();
     const newbie = await team.stranger(); // with the whitelist on
 
-    renderApp(team.chief, "/admin");
+    renderApp(team.chief, "/vault/admin");
     const whitelist = await screen.findByRole<HTMLInputElement>("checkbox", { name: "Whitelist" });
     expect(whitelist.checked).toBe(true);
     await userEvent.click(whitelist);
@@ -92,13 +92,13 @@ test("the activity feed says who turned the whitelist on", async () => {
     const team = await Team.create();
     await team.whitelist(true);
 
-    renderApp(team.chief, "/activity");
+    renderApp(team.chief, "/vault/activity");
     expect(await screen.findAllByText("chief turned the whitelist on")).not.toHaveLength(0);
 });
 
 test("admins open the admin pages from their account menu", async () => {
     const team = await Team.create();
-    renderApp(team.chief, "/");
+    renderApp(team.chief, "/vault");
     await (await table()).findByRole("link", { name: team.folder });
     expect(within(screen.getByRole("navigation", { name: "Main" })).queryByRole("link", { name: "Admin" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
@@ -110,7 +110,7 @@ test("admins open the admin pages from their account menu", async () => {
 test("people who aren't admins or leads don't get the admin pages", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
-    renderApp(bob, "/");
+    renderApp(bob, "/vault");
     await (await table()).findByRole("link", { name: team.folder });
     await userEvent.click(screen.getByRole("button", { name: /^Account/ }));
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();

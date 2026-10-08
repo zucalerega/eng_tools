@@ -15,7 +15,7 @@ const HOTFIRE = [
 
 test("the app switcher goes between the vault and Yorg", async () => {
     const team = await Team.create();
-    renderApp(team.chief, "/");
+    renderApp(team.chief, "/vault");
     const apps = await screen.findByRole("navigation", { name: "Apps" });
     expect(within(apps).getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
 

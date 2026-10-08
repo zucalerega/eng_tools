@@ -4,6 +4,7 @@ import { type Grants, type Role, vaultApi } from "../api";
 import { formatDate, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
+import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
 
 // Admins manage accounts; admins and folder leads manage who can do what where.
@@ -18,11 +19,11 @@ export function Admin({ section }: { section: "people" | "access" }) {
                 <h1>Admin</h1>
                 <nav className="tabs" aria-label="Admin">
                     {isAdmin && (
-                        <Link to="/admin" aria-current={shown === "people" ? "page" : undefined}>
+                        <Link to={`${VAULT}/admin`} aria-current={shown === "people" ? "page" : undefined}>
                             People
                         </Link>
                     )}
-                    <Link to="/admin/access" aria-current={shown === "access" ? "page" : undefined}>
+                    <Link to={`${VAULT}/admin/access`} aria-current={shown === "access" ? "page" : undefined}>
                         Vault Access
                     </Link>
                 </nav>

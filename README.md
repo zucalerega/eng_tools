@@ -167,6 +167,9 @@ the keys.
   a sensor, and in one run FullFlow moves the knob in every time step until the sensor
   reads what was measured; you see each knob through the run, and apply the median (or
   not). Give an anchor a span where its knob counts, such as a valve's CdA while it's open.
+  What anchoring can't settle is fitted: knobs you pick to fit alongside the anchors, and
+  any knob FullFlow couldn't anchor (unless you turn that off), the working anchors held in
+  each of the fit's runs.
   The **Steady** solver settles the lines, junctions, and regulators at once in each time
   step, with the tanks at the pressure measured: much faster, and without inertia, so a
   steady anchor can start anywhere. Models are saved for every admin, run against any test

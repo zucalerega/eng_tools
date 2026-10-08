@@ -7,10 +7,9 @@ import { linkTarget } from "../../preview";
 import { datasetUrl, storedT0 } from "../pages";
 import { sampleAt } from "../samples";
 import { formatValue } from "../scale";
-import { AnchorDialog, type AnchorChoice } from "./Anchor";
+import { AnchorDialog, NO_PLAN, type AnchorPlan } from "./Anchor";
 import {
     devApi,
-    type AnchorFound,
     type AnchorPick,
     type Catalog,
     type FitKnob,
@@ -80,23 +79,39 @@ interface Found {
     note: string;
     title?: string;
     spread?: Record<string, [number, number]>; // an anchored run's: how much each knob moved, by part.key
+    how?: Record<string, string>; // and how each was found (anchored, fitted), by part.key
 }
 
-/** What an anchored run's knobs settled at, to apply: those FullFlow could anchor. */
-function anchoredFound(anchors: AnchorFound[]): Found {
-    const settled = anchors.flatMap((one) =>
+/** What an anchored run found, to apply: its anchored knobs (where FullFlow could anchor them), and what it fitted. */
+function anchoredFound(result: RunResult): Found {
+    const settled = (result.anchors ?? []).flatMap((one) =>
         one.value === null || one.low === null || one.high === null
             ? []
             : [{ ...one, value: one.value, low: one.low, high: one.high }],
     );
-    const never = anchors.length - settled.length;
+    const fit = result.fit;
+    const id = (one: { part: string; key: string }) => `${one.part}.${one.key}`;
+    const fitted = fit?.knobs ?? [];
+    const better = fit && fit.cost_start > 0 ? 100 * (1 - fit.cost / fit.cost_start) : 0;
     return {
-        knobs: settled.map((one) => ({ part: one.part, key: one.key, start: one.start, value: one.value })),
-        title: "Anchored",
-        note:
-            "Done in one run: each knob's median where FullFlow anchored it." +
-            (never > 0 ? ` ${never} never could be: see the notes below.` : ""),
-        spread: Object.fromEntries(settled.map((one) => [`${one.part}.${one.key}`, [one.low, one.high]])),
+        knobs: [
+            ...settled.map((one) => ({ part: one.part, key: one.key, start: one.start, value: one.value })),
+            ...fitted,
+        ],
+        title: fit ? "Anchored and fitted" : "Anchored",
+        note: fit
+            ? `Done: ${settled.length} anchored, each its median where FullFlow anchored it; ${fitted.length} fitted in ${fit.tries} runs, the error ${better.toFixed(1)}% smaller${fit.stopped ? " (stopped at the time limit)" : ""}.`
+            : "Done in one run: each knob's median where FullFlow anchored it.",
+        spread: Object.fromEntries(settled.map((one) => [id(one), [one.low, one.high]])),
+        how: Object.fromEntries([
+            ...settled.map((one) => [id(one), "anchored"]),
+            ...fitted.map((one) => [
+                id(one),
+                fit?.fallback?.some((failed) => failed.part === one.part && failed.key === one.key)
+                    ? "fitted (its anchor didn't work)"
+                    : "fitted",
+            ]),
+        ]),
     };
 }
 
@@ -150,7 +165,7 @@ export function ModelsPage() {
     const [shown, setShown] = useState<{ result: RunResult; model: SystemModel; datasetId: number } | null>(null);
     const [found, setFound] = useState<Found | null>(null);
     const [lastKnobs, setLastKnobs] = useState<Knob[]>([]);
-    const [lastAnchors, setLastAnchors] = useState<AnchorChoice[]>([]);
+    const [lastAnchors, setLastAnchors] = useState<AnchorPlan>(NO_PLAN);
     const [solver, setSolver] = useState<Solver>("transient");
     const dragStart = useRef<SystemModel | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
@@ -202,10 +217,9 @@ export function ModelsPage() {
                         if (status.state === "done") {
                             setShown({ result: status.result, model: job.model, datasetId: job.datasetId });
                             const fit = status.result.fit;
-                            if (status.result.anchors) {
-                                setFound(anchoredFound(status.result.anchors));
-                            }
-                            if (fit) {
+                            if (job.kind === "anchor") {
+                                setFound(anchoredFound(status.result));
+                            } else if (fit) {
                                 const better = fit.cost_start > 0 ? 100 * (1 - fit.cost / fit.cost_start) : 0;
                                 setFound({
                                     knobs: fit.knobs,
@@ -376,16 +390,16 @@ export function ModelsPage() {
             setJob({ kind: "fit", id: started.id, model, datasetId, knobs, status: null });
         });
 
-    const startAnchor = (choices: AnchorChoice[]) =>
+    const startAnchor = (plan: AnchorPlan) =>
         act(async () => {
             if (datasetId === null) {
                 return;
             }
             const model = current.model;
             setAsking(null);
-            setLastAnchors(choices);
+            setLastAnchors(plan);
             const at = (text: string) => (text.trim() === "" ? undefined : zero + Number(text));
-            const anchors: AnchorPick[] = choices.map((one) => ({
+            const anchors: AnchorPick[] = plan.anchors.map((one) => ({
                 part: one.part,
                 key: one.key,
                 sensor: one.sensor,
@@ -393,7 +407,12 @@ export function ModelsPage() {
                 start: at(one.from),
                 end: at(one.to),
             }));
-            const started = await devApi.anchor({ ...runBody(model, datasetId), anchors });
+            const started = await devApi.anchor({
+                ...runBody(model, datasetId),
+                anchors,
+                knobs: plan.knobs,
+                fallback: plan.fallback,
+            });
             setFound(null);
             setJob({ kind: "anchor", id: started.id, model, datasetId, knobs: [], status: null });
         });
@@ -742,7 +761,7 @@ export function ModelsPage() {
                     </>
                 )}
                 <span className="muted" role="status">
-                    {status?.state === "running" && job?.kind === "fit"
+                    {status?.state === "running" && (job?.kind === "fit" || progress?.tries !== undefined)
                         ? `Fitting: ${progress?.tries ?? 0} runs${better === null ? "" : `, the error ${better.toFixed(1)}% smaller`}, ${Math.round(status.elapsed)} s so far`
                         : status?.state === "running"
                           ? `Running: ${formatValue(status.done)} of ${formatValue(status.duration)} s, ${Math.round(status.elapsed)} s so far`
@@ -767,6 +786,7 @@ export function ModelsPage() {
                     note={found.note}
                     title={found.title}
                     spread={found.spread}
+                    how={found.how}
                     onApply={() => {
                         change(applyKnobs(current.model, catalog, found.knobs));
                         setFound(null);
@@ -794,7 +814,7 @@ export function ModelsPage() {
                     solver={solver}
                     picked={lastAnchors}
                     window={{ from: windowText.from, to: windowText.to }}
-                    onStart={(choices) => void startAnchor(choices)}
+                    onStart={(plan) => void startAnchor(plan)}
                     onCancel={() => setAsking(null)}
                 />
             )}

@@ -1,8 +1,8 @@
 """A model run's (or fit's, or anchored run's) process: python -m yjsp_server.yorg.system.runner <folder>.
 
 The folder holds job.json (the checked model, the window, the time step, the solver; for a fit, what to fit; for an
-anchored run, its anchors) and inputs/ (each linked channel's times and values, as little-endian float64s). The process
-writes progress.json as it goes, then result.json or error.json.
+anchored run, its anchors and what to fit if they don't work) and inputs/ (each linked channel's times and values, as
+little-endian float64s). The process writes progress.json as it goes, then result.json or error.json.
 """
 
 import json
@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from .fit import fit
+from .fit import fit, tune
 from .network import ModelError, run
 
 
@@ -56,7 +56,12 @@ def main(folder: Path) -> None:
         _save(progress, state)
 
     try:
-        result = fit(job, inputs, report) if job.get("kind") == "fit" else run(job, inputs, _Progress(progress))
+        if job.get("kind") == "fit":
+            result = fit(job, inputs, report)
+        elif job.get("kind") == "anchor":
+            result = tune(job, inputs, _Progress(progress), report)
+        else:
+            result = run(job, inputs, _Progress(progress))
     except ModelError as error:
         _save(folder / "error.json", {"message": str(error)})
         return

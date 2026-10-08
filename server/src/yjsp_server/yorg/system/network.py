@@ -789,6 +789,7 @@ class _Builder:
             "value": percentile(50),
             "low": percentile(10),
             "high": percentile(90),
+            "share": len(found) / len(span) if span else 0.0,  # of its span, where it held the knob
         }
 
     # --- saying what happened -------------------------------------------------------------------------------------

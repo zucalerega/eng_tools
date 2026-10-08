@@ -10,33 +10,21 @@ internal sealed class AddinSettings
     private static readonly string AppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
     private static readonly string FilePath = Path.Combine(AppData, "Vault", "addin.json");
 
-    // Where they were before 0.4.0, when the add-in was CVC's: taken from there once, so the add-in keeps its
-    // workspace and server.
-    private static readonly string OldFilePath = Path.Combine(AppData, "CVC", "addin.json");
-
     public string WorkspaceRoot { get; set; } = @"C:\VLT";
 
     public string? Server { get; set; }
 
     public static AddinSettings Load()
     {
-        var old = !File.Exists(FilePath) && File.Exists(OldFilePath);
-        var path = old ? OldFilePath : FilePath;
         try
         {
-            var settings = File.Exists(path)
-                ? JsonSerializer.Deserialize<AddinSettings>(File.ReadAllText(path)) ?? new AddinSettings()
+            return File.Exists(FilePath)
+                ? JsonSerializer.Deserialize<AddinSettings>(File.ReadAllText(FilePath)) ?? new AddinSettings()
                 : new AddinSettings();
-            if (old)
-            {
-                settings.Save();
-                Log.Info($"Moved the add-in's settings from {OldFilePath} to {FilePath}");
-            }
-            return settings;
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
-            Log.Error("Couldn't read " + path + "; using defaults", e);
+            Log.Error("Couldn't read " + FilePath + "; using defaults", e);
             return new AddinSettings();
         }
     }

@@ -250,12 +250,9 @@ on top of it.
   changes are still on their computer.
 - **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,
   `Thumbs.db`, `desktop.ini`, `.DS_Store`, and downloads still under way
-  (`*.vault-download`, or `*.cvc-download` from before 0.4.0).
+  (`*.vault-download`).
 - **Saved sign-ins:** `%APPDATA%\Vault\tokens.json`, encrypted with Windows DPAPI.
   Elsewhere, `~/.config/vault/tokens.json`, readable only by its owner.
-- **From before 0.4.0** (when it was CVC): opening a workspace renames its `.cvc` folder to
-  `.vault`, backups and all, and sign-ins saved in `%APPDATA%\CVC` (or `~/.config/cvc`) are
-  read from there when there are none in the new place (design.md, "Names from before YJSP").
 - **Assemblies:** the add-in asks SolidWorks for an assembly's references
   (`GetDocumentDependencies2`). Referenced files that are new, or checked out to you with
   changes, go into the same check-in. Every reference is pinned to the version this
@@ -274,11 +271,9 @@ COM add-in, registered with RegAsm.
 - **Installing.** `Vault-Setup.exe` (`client/src/Vault.Setup`, built by CI) is the one
   download: it carries the add-in's files, and after Windows asks for administrator
   rights, puts them in `C:\Program Files\Vault for SolidWorks`, registers the add-in
-  (RegAsm, which runs its own registration with SolidWorks) and `vault://` links (and
-  `cvc://`, which the web app still makes for older add-ins), and lists itself in Windows'
-  installed apps to remove all that again. Over a version from before 0.4.0, it first
-  unregisters that one and deletes its `Cvc.*` files. It isn't signed yet, so Windows'
-  SmartScreen warns about it once. The server offers it to members from
+  (RegAsm, which runs its own registration with SolidWorks) and `vault://` links, and
+  lists itself in Windows' installed apps to remove all that again. It isn't signed yet,
+  so Windows' SmartScreen warns about it once. The server offers it to members from
   `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
   Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
@@ -310,9 +305,8 @@ COM add-in, registered with RegAsm.
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 - **Links from the web app.** "Open in SolidWorks" is a `vault://open?server=…&path=…`
-  link (`OpenLink`; the web app makes them `cvc://` until every laptop has 0.4.0, and
-  both work). Setup (or install.ps1) registers `vault-open.exe`, in the add-in's folder,
-  for them. It starts SolidWorks if needed and hands the link to the add-in over a named
+  link (`OpenLink`). Setup (or install.ps1) registers `vault-open.exe`, in the add-in's
+  folder, for them. It starts SolidWorks if needed and hands the link to the add-in over a named
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.

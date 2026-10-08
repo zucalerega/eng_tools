@@ -72,7 +72,6 @@ public static class VaultPaths
         || name.StartsWith(".~", StringComparison.Ordinal)
         || name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
         || name.EndsWith(Workspace.DownloadSuffix, StringComparison.Ordinal)
-        || name.EndsWith(Workspace.OldDownloadSuffix, StringComparison.Ordinal)
         || string.Equals(name, "Thumbs.db", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name, "desktop.ini", StringComparison.OrdinalIgnoreCase)
         || name == ".DS_Store";

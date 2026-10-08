@@ -67,8 +67,7 @@ While you work:
 2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
    click **More info**, then **Run anyway**. It asks for administrator rights, then installs
    the add-in in `C:\Program Files\Vault for SolidWorks`. Running a newer one updates it,
-   even over a version from before 0.4.0 (when it was CVC's): setup takes that one away
-   first, and the add-in keeps your settings, sign-in, and workspace.
+   and the add-in keeps your settings, sign-in, and workspace.
 3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
    with the Vault tab open, and your browser asks you to confirm. (Or type the web app's
    address into the Vault tab yourself, and sign in.)
@@ -158,20 +157,10 @@ these on SolidWorks 2025:
     Browse tab, double-click the assembly: its parts come down, it opens with them, and the
     tab names the part left out. Close it, delete a part from `C:\VLT`, and double-click the
     assembly again: that part comes back, and nothing else downloads.
-19. Over 0.3.0 (when it was CVC's): with 0.3.0's add-in installed and signed in, a part
-    checked out with changes, and a backup in `C:\VLT\.cvc\backup`, run 0.4.0's
-    Vault-Setup.exe. Tools > Add-ins lists Vault once, and `C:\Program Files\Vault for
-    SolidWorks` has no `Cvc.*` files and no `cvc-open.exe`. SolidWorks starts with the Vault
-    tab signed in, on `C:\VLT`, and the part still checked out to you with its changes;
-    `C:\VLT\.vault\backup` has the backup, and there's no `C:\VLT\.cvc`. Open in SolidWorks
-    works from the web app (a `cvc://` link), and so does a `vault://open?server=...&path=...`
-    link typed into the browser. Remove Vault for SolidWorks in Settings > Apps: both kinds of
-    link stop opening anything.
 
 ## When something goes wrong
 
 The add-in logs to `%LOCALAPPDATA%\Vault\addin.log`. Settings are in
 `%APPDATA%\Vault\addin.json`, and saved sign-ins (encrypted) are in
-`%APPDATA%\Vault\tokens.json` (before 0.4.0, all of them were in `CVC` folders instead). The
-`vault` CLI uses the same workspace and sign-in, so `vault status` in `C:\VLT` is a good second
-opinion.
+`%APPDATA%\Vault\tokens.json`. The `vault` CLI uses the same workspace and sign-in, so
+`vault status` in `C:\VLT` is a good second opinion.

@@ -20,9 +20,8 @@ internal sealed class SetupException : Exception
 /// <summary>
 /// What setup does, as install.ps1 and uninstall.ps1 do by hand: puts the add-in's files (carried in this exe)
 /// in Program Files, registers the add-in with COM (RegAsm), which also tells SolidWorks about it, and
-/// registers vault:// (and cvc://) links for vault-open.exe. It copies itself there too, and lists itself in
-/// Windows' installed apps, to remove all of that again. Workspaces, sign-ins, and settings are the user's: they
-/// stay. Over an install from before 0.4.0, when the add-in was CVC's, it first takes that one away (RemoveOld).
+/// registers vault:// links for vault-open.exe. It copies itself there too, and lists itself in Windows' installed
+/// apps, to remove all of that again. Workspaces, sign-ins, and settings are the user's: they stay.
 /// </summary>
 internal static class Installer
 {
@@ -32,14 +31,8 @@ internal static class Installer
     private const string AddInDll = "Vault.SolidWorks.dll";
     private const string LinkExe = "vault-open.exe";
     private const string SetupExe = "Vault-Setup.exe";
-    // vault:// links, and cvc:// ones, which the web app makes until every laptop has an add-in that follows
-    // vault:// (docs/design.md, "Names from before YJSP"): both go to vault-open.exe.
-    private static readonly string[] LinkKeys = { @"SOFTWARE\Classes\vault", @"SOFTWARE\Classes\cvc" };
+    private const string LinkKey = @"SOFTWARE\Classes\vault";
     private const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\VaultForSolidWorks";
-
-    // The add-in's files before 0.4.0, when it was CVC's (without its debug symbols, which setup never carried).
-    private const string OldAddInDll = "Cvc.SolidWorks.dll";
-    private static readonly string[] OldFiles = { OldAddInDll, "Cvc.Client.dll", "cvc-open.exe", "cvc-open.exe.config" };
 
     public static string Folder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Product);
@@ -75,7 +68,6 @@ internal static class Installer
 
     public static void Install(Action<string> progress)
     {
-        RemoveOld(progress);
         progress("Copying the add-in to " + Folder);
         Directory.CreateDirectory(Folder);
         long size = 0;
@@ -107,14 +99,13 @@ internal static class Installer
         Directory.CreateDirectory(VaultFolder);
 
         progress("Registering Vault links, for Open in SolidWorks");
-        foreach (var key in LinkKeys)
+        using (var link = Registry.LocalMachine.CreateSubKey(LinkKey))
         {
-            using (var link = Registry.LocalMachine.CreateSubKey(key))
-            {
-                link.SetValue(null, "URL:Vault");
-                link.SetValue("URL Protocol", "");
-            }
-            using var command = Registry.LocalMachine.CreateSubKey(key + @"\shell\open\command");
+            link.SetValue(null, "URL:Vault");
+            link.SetValue("URL Protocol", "");
+        }
+        using (var command = Registry.LocalMachine.CreateSubKey(LinkKey + @"\shell\open\command"))
+        {
             command.SetValue(null, $"\"{Path.Combine(Folder, LinkExe)}\" \"%1\"");
         }
 
@@ -139,9 +130,9 @@ internal static class Installer
             progress("Removing the add-in from SolidWorks");
             RegAsm("/unregister", dll);
         }
-        foreach (var key in LinkKeys.Where(key => Here(Registry.LocalMachine, key + @"\shell\open\command", null)))
+        if (Here(Registry.LocalMachine, LinkKey + @"\shell\open\command", null))
         {
-            Registry.LocalMachine.DeleteSubKeyTree(key, throwOnMissingSubKey: false);
+            Registry.LocalMachine.DeleteSubKeyTree(LinkKey, throwOnMissingSubKey: false);
         }
 
         progress("Deleting its files");
@@ -152,35 +143,7 @@ internal static class Installer
                 File.Delete(Target(entry));
             }
         }
-        foreach (var name in OldFiles)
-        {
-            File.Delete(Path.Combine(Folder, name)); // left by an install from before 0.4.0, if one was
-        }
         Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
-    }
-
-    /// <summary>
-    /// The add-in as installed before 0.4.0, when it was CVC's (Cvc.SolidWorks.dll, cvc-open.exe), taken away before
-    /// this one goes in: unregistered, so its COM entries don't stay behind, and its files deleted. This one registers
-    /// the same COM class (AddInClass), so SolidWorks sees one add-in throughout. Its settings, sign-ins, and
-    /// workspaces are the user's, and the add-in takes them over (AddinSettings, TokenStore, Workspace).
-    /// </summary>
-    private static void RemoveOld(Action<string> progress)
-    {
-        var old = Path.Combine(Folder, OldAddInDll);
-        if (!File.Exists(old))
-        {
-            return;
-        }
-        progress("Removing the add-in's version from before 0.4.0");
-        if (Here(Registry.ClassesRoot, $@"CLSID\{AddInClass}\InprocServer32", "CodeBase"))
-        {
-            RegAsm("/unregister", old);
-        }
-        foreach (var name in OldFiles)
-        {
-            File.Delete(Path.Combine(Folder, name));
-        }
     }
 
     /// <summary>

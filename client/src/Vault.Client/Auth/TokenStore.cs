@@ -13,43 +13,25 @@ public sealed class TokenStore
 {
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("vault-token");
 
-    // Before 0.4.0, when the client was CVC's, sign-ins were kept in %APPDATA%\CVC (or ~/.config/cvc) and encrypted
-    // with this. They're read from there once, when there are none here yet, so nobody has to sign in again; the old
-    // file stays, for a cvc.exe still on the computer.
-    private static readonly byte[] OldEntropy = Encoding.UTF8.GetBytes("cvc-token");
-    private readonly string? _oldFilePath;
-
-    /// <summary>
-    /// The sign-ins at filePath (default: DefaultPath()), taking over those at oldFilePath (default: where they were
-    /// before 0.4.0) while it has none.
-    /// </summary>
-    public TokenStore(string? filePath = null, string? oldFilePath = null)
-    {
-        FilePath = filePath ?? DefaultPath();
-        _oldFilePath = filePath == null ? OldDefaultPath() : oldFilePath;
-    }
+    public TokenStore(string? filePath = null) => FilePath = filePath ?? DefaultPath();
 
     public string FilePath { get; }
 
-    public static string DefaultPath() => PathIn("Vault", "vault");
-
-    private static string OldDefaultPath() => PathIn("CVC", "cvc");
-
-    private static string PathIn(string windowsFolder, string configFolder)
+    public static string DefaultPath()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), windowsFolder, "tokens.json");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vault", "tokens.json");
         }
         var config = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
         if (string.IsNullOrEmpty(config))
         {
             config = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
         }
-        return Path.Combine(config, configFolder, "tokens.json");
+        return Path.Combine(config, "vault", "tokens.json");
     }
 
-    public string? Load(Uri server) => Read().TryGetValue(Key(server), out var stored) ? Unprotect(stored, Entropy) : null;
+    public string? Load(Uri server) => Read().TryGetValue(Key(server), out var stored) ? Unprotect(stored) : null;
 
     public void Save(Uri server, string token)
     {
@@ -73,38 +55,11 @@ public sealed class TokenStore
 
     private Dictionary<string, string> Read()
     {
-        if (!File.Exists(FilePath) && _oldFilePath != null && File.Exists(_oldFilePath))
-        {
-            return TakeOverOld(_oldFilePath);
-        }
-        return ReadFile(FilePath);
-    }
-
-    /// <summary>
-    /// The sign-ins saved before 0.4.0, encrypted again and saved here. Any that can't be read are left out: sign in
-    /// again.
-    /// </summary>
-    private Dictionary<string, string> TakeOverOld(string oldFilePath)
-    {
-        var tokens = new Dictionary<string, string>();
-        foreach (var saved in ReadFile(oldFilePath))
-        {
-            if (Unprotect(saved.Value, OldEntropy) is { } token)
-            {
-                tokens[saved.Key] = Protect(token);
-            }
-        }
-        Write(tokens);
-        return tokens;
-    }
-
-    private static Dictionary<string, string> ReadFile(string path)
-    {
-        if (!File.Exists(path))
+        if (!File.Exists(FilePath))
         {
             return new Dictionary<string, string>();
         }
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path))
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(FilePath))
             ?? new Dictionary<string, string>();
     }
 
@@ -141,7 +96,7 @@ public sealed class TokenStore
         return "plain:" + token;
     }
 
-    private static string? Unprotect(string stored, byte[] entropy)
+    private static string? Unprotect(string stored)
     {
         if (stored.StartsWith("plain:", StringComparison.Ordinal))
         {
@@ -154,7 +109,7 @@ public sealed class TokenStore
         try
         {
             var encrypted = Convert.FromBase64String(stored.Substring("dpapi:".Length));
-            return Encoding.UTF8.GetString(ProtectedData.Unprotect(encrypted, entropy, DataProtectionScope.CurrentUser));
+            return Encoding.UTF8.GetString(ProtectedData.Unprotect(encrypted, Entropy, DataProtectionScope.CurrentUser));
         }
         catch (Exception e) when (e is CryptographicException or FormatException)
         {

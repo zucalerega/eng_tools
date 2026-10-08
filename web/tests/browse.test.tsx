@@ -96,7 +96,7 @@ test("a new part is named here, then started in SolidWorks", async () => {
     await userEvent.type(name, "Fin Bracket");
     const start = within(dialog).getByRole("link", { name: "Start it in SolidWorks" });
     const link = new URL(start.getAttribute("href")!);
-    expect([link.protocol, link.host]).toEqual(["cvc:", "new"]);
+    expect([link.protocol, link.host]).toEqual(["vault:", "new"]);
     expect(link.searchParams.get("path")).toBe(`${team.folder}/Fins/Fin Bracket.SLDPRT`);
 });
 

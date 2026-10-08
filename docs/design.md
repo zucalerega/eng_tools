@@ -200,9 +200,12 @@ ones are still accepted for a while:
 | Vault's pages at the site's own paths, until October 2026: `/files/...`, `/file/5`, `/locks`, `/admin` | under `/vault`: `/vault/files/...`, `/vault/file/5`, ... | followed, as bookmarks and shared links have them: the web app goes on to the same page under `/vault`, with its query (`movedToVault` in `web/src/vault/paths.ts`). `/` is the site's own page now |
 | `X-CVC-Version`, `X-CVC-SHA256`, `X-CVC-Size` on downloads | `X-Vault-*` | gone: no client read them |
 | The `cvc` command, `cvc.exe` | `vault`, `vault.exe` | `cvc.exe` keeps working against the server; replace it |
-| `cvc://` links, `cvc-open.exe` | `vault://`, `vault-open.exe` | Vault for SolidWorks 0.4.0 follows both, and its setup registers both. The web app makes `cvc://` links until every laptop has 0.4.0 (`LINK_SCHEME` in `web/src/vault/components.tsx`): switch it in 0.5.0, and stop registering `cvc://` in the release after |
-| A workspace's `.cvc` folder; sign-ins and the add-in's settings in `%APPDATA%\CVC` (`~/.config/cvc`); its log in `%LOCALAPPDATA%\CVC` | `.vault`; `%APPDATA%\Vault` (`~/.config/vault`); `%LOCALAPPDATA%\Vault` | the 0.4.0 CLI and add-in rename `.cvc` to `.vault` the first time they open a workspace (its backups go with it), and take sign-ins and settings from the old folder when the new one has none |
-| `Cvc.SolidWorks.dll`, `Cvc.Client.dll` in `C:\Program Files\Vault for SolidWorks` | `Vault.SolidWorks.dll`, `Vault.Client.dll` | Setup 0.4.0 unregisters the old add-in and deletes its files first. The add-in's COM GUID stays the same, so SolidWorks sees one add-in throughout |
+
+The SolidWorks add-in, its setup, and the client library they share with the CLI keep none
+of their old names from 0.5.0: they know only `vault://` links, `.vault` workspace folders,
+and the `Vault` folders in `%APPDATA%` and `%LOCALAPPDATA%`, and the web app makes only
+`vault://` links. A laptop that never ran 0.4.0 installs `Vault-Setup.exe` again and signs
+in again, and whatever its old workspace had checked out is sorted out by hand.
 
 ## Deploying
 

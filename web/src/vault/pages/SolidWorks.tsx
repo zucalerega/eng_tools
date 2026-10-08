@@ -119,10 +119,7 @@ export function SolidWorks() {
                 </details>
                 <details>
                     <summary>Something else</summary>
-                    <p>
-                        The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log (in %LOCALAPPDATA%\CVC before version
-                        0.4.0): send it to whoever runs your vault.
-                    </p>
+                    <p>The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log: send it to whoever runs your vault.</p>
                 </details>
             </div>
             {others.length > 0 && (

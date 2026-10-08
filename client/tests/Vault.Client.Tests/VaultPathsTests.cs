@@ -56,7 +56,6 @@ public sealed class VaultPathsTests
     [InlineData(".DS_Store", true)]
     [InlineData("scratch.TMP", true)]
     [InlineData("Fin.SLDPRT.vault-download", true)]
-    [InlineData("Fin.SLDPRT.cvc-download", true)] // a download a client from before 0.4.0 was interrupted in
     [InlineData("Fin.SLDPRT", false)]
     public void IgnoredFiles(string name, bool ignored) => Assert.Equal(ignored, VaultPaths.IsIgnored(name));
 }

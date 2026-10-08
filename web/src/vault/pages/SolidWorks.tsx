@@ -80,7 +80,7 @@ export function SolidWorks() {
                     new and changed parts with it.
                 </li>
                 <li>
-                    <strong>Update my files</strong> gets the latest versions of the files on your computer.
+                    <strong>Update downloaded files</strong> gets the latest versions of the files on your computer.
                 </li>
                 <li>
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts

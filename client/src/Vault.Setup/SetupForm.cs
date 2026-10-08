@@ -16,8 +16,8 @@ internal sealed class SetupForm : Form
     private readonly Label _text = new Label { AutoSize = true, MaximumSize = new Size(440, 0), Margin = new Padding(0, 0, 0, 12) };
     private readonly Label _status = new Label { AutoSize = true, MaximumSize = new Size(440, 0), ForeColor = SystemColors.GrayText };
     private readonly ProgressBar _progress = new ProgressBar { Style = ProgressBarStyle.Marquee, Width = 440, Visible = false };
-    private readonly Button _go = new Button { AutoSize = true, MinimumSize = new Size(96, 0) };
-    private readonly Button _close = new Button { AutoSize = true, MinimumSize = new Size(96, 0), Text = "Cancel" };
+    private readonly FlatButton _go = new FlatButton("") { Primary = true, MinimumSize = new Size(96, 30), Margin = new Padding(8, 0, 0, 0) };
+    private readonly FlatButton _close = new FlatButton("Cancel") { MinimumSize = new Size(96, 30), Margin = new Padding(8, 0, 0, 0) };
     private bool _done;
 
     /// <summary>Whether the add-in was removed, so setup's own copy can go once it closes.</summary>

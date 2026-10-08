@@ -3,28 +3,50 @@
 Check files in and out without leaving SolidWorks. The add-in adds a **Vault** tab to the
 task pane with these parts:
 
-- **Active document:** its version and who has it checked out, with Check out,
-  Check in, Undo check-out and Get latest buttons, and Open drawing when it has one.
-- **Needs attention:** your new, changed, and checked-out files, plus files that are
-  out of date or checked out by others. Right-click for actions; double-click to open.
+- **The header:** Vault's mark, a refresh button, and your name. Click your name for your
+  account, the vault's address, and the workspace folder, to open the web app or the
+  workspace folder, or to sign out.
+- **The active document's card:** what state the file is in (up to date, checked out to
+  you, out of date, checked out by someone else, new, ...), what that means, and buttons
+  for only what you can do with it now, the likeliest first, in navy: Check in, Check
+  out, Get latest, Undo check-out, Take over (Move check-out here, for your own check-out
+  on another computer), and Open drawing when it has one. Hover over a button for what it
+  does.
+- **Needs attention:** the files on this computer that need you: your check-outs, new
+  files, files that changed or are out of date, conflicts, files deleted in the vault, and
+  files here that someone else has checked out. Each has a colored dot, and its folder.
+  Right-click for actions; double-click, or Enter, to open.
 - **Browse:** the whole vault as a tree, folder by folder. Every file says whether it's
-  checked in, or who has it checked out and where; every folder how many of its files
-  are checked out. Assemblies open up to show their parts and sub-assemblies (with the
-  version each was checked in with), and parts and assemblies list their drawings. Hover
-  for where a file is used. Double-click to open: a file that isn't here yet is
+  here and up to date, or who has it checked out and where; every folder how many of its
+  files are checked out. Assemblies open up to show their parts and sub-assemblies (with
+  the version each was checked in with), and parts and assemblies list their drawings.
+  Hover for where a file is used. Double-click to open: a file that isn't here yet is
   downloaded first, with the parts it uses, and one that is gets the parts it uses that
-  aren't. Right-click for actions; on a folder, Get
-  latest (it says how many files that downloads, and how big, first), Check in, or Show
-  in File Explorer.
-- **Update my files** gets the latest versions of the files on this computer, and any
-  parts they've started to use, and nothing else. **Download everything...** gets every
-  file you have access to, after saying how many files and how much space that is.
+  aren't. Right-click for actions; on a folder, Get latest, Check in, or Show in File
+  Explorer.
+- **Update downloaded files** and **Download everything...**, under the files (see
+  "Getting files").
 - **Sign-in and workspace:** set once. The workspace is `C:\VLT` on every computer, so
   assembly references resolve for everyone (setup makes it). It has a folder for each of
   the vault's folders, to save new parts in, but only the files you've opened, checked
   out, or got: the rest of the vault stays on the server until you need it.
 
-The tab keeps up with the vault by itself, every 20 seconds and after anything you do.
+The tab keeps up with the vault by itself, every 20 seconds and after anything you do. A
+thin bar under the header runs while Vault is working, and the line at the bottom says
+how the last thing went.
+
+### Getting files
+
+| Button | What it downloads |
+|---|---|
+| **Get latest**, on the card or a file's right-click menu | The newest version of that file, and of every part and sub-assembly it uses. Open files update in place. |
+| **Get latest**, on a folder's right-click menu in Browse | The newest version of every file in the folder and the folders in it. If that's files you don't have yet, it says how many and how big, and asks first. |
+| **Update downloaded files** | The newest version of every vault file already on this computer, and parts they've started to use. Nothing else. |
+| **Download everything...** | Every file in the vault you have access to. It says how many files that is, how big, and how much room the drive has, and asks first; No is the default, so Enter doesn't start it. |
+
+None of them replace a file you've changed here: it's skipped, and the line at the bottom
+says so (the CLI's `vault get --force` replaces it, keeping a copy). Nor do they replace an
+open file with unsaved changes.
 
 While you work:
 - **Start editing a file you haven't checked out** and Vault offers to check it out (or,
@@ -100,9 +122,9 @@ these on SolidWorks 2025:
 
 1. After installing, SolidWorks starts with the Vault tab, and `addin.log` says the add-in
    started.
-2. Sign in: your browser opens, you confirm, and the tab shows your name and
-   `C:\VLT`.
-3. Save a new part into `C:\VLT\Test`. The tab says "New". Check it in with a comment,
+2. Sign in: your browser opens, you confirm, and the header shows your name. Click it: the
+   menu shows the vault's address and `C:\VLT`.
+3. Save a new part into `C:\VLT\Test`. The card says "New". Check it in with a comment,
    and the part turns read-only in SolidWorks.
 4. Start editing it. Vault offers a check-out; accept, save, and check in: it's now v2.
 5. As a second person (another PC, or `vault checkout` as someone else), check the part
@@ -118,14 +140,15 @@ these on SolidWorks 2025:
    undo, and with an open assembly that uses the file: both work the same way.
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
    the Vault tab and the Check in dialog look as they do at 100%, only larger: no text is
-   cut off, and the comment box is full size.
+   cut off, the dots, folders, and the card's badge are sharp, and the comment box is full
+   size.
 10. Create a new part, save it into `C:\VLT\Test`, and check it in. Without switching
     windows, start editing it: Vault offers the check-out.
 11. Change a checked-in file, answer No when Vault offers the check-out, then save
     (Ctrl+S). Vault offers the check-out again; Yes saves the file in place, with no Save
     As dialog.
 12. As an admin (or a lead of the folder), open a file someone else has checked out: the
-    tab offers Take over. Take it over; it's checked out to you. When they try to check it
+    card offers Take over. Take it over; it's checked out to you. When they try to check it
     in (`vault checkin` as them), Vault says you took it over. Someone who isn't a lead doesn't
     see Take over.
 13. In the web app, click Open in SolidWorks on an assembly that isn't downloaded here:
@@ -148,15 +171,24 @@ these on SolidWorks 2025:
     Settings > Apps: SolidWorks starts without it, and `C:\Program Files\Vault for
     SolidWorks` is gone.
 17. With a part and an assembly downloaded here, and newer versions of both checked in
-    elsewhere (the assembly now using a new part), click Update my files: both update, the
-    new part comes down, and nothing else does. Click Download everything...: it says how
-    many files and how big, and No downloads nothing. Right-click a folder that isn't here
-    in Browse and choose Get latest: it asks first too.
+    elsewhere (the assembly now using a new part), click Update downloaded files: both
+    update, the new part comes down, and nothing else does. Click Download everything...: it
+    says how many files and how big, and No downloads nothing; No is chosen to start with,
+    so Enter downloads nothing either. Right-click a folder that isn't here in Browse and
+    choose Get latest: it asks first too.
 18. Upload a folder from Kenesto in the web app, keeping its folders (an assembly with parts
     in the same folder and in subfolders, and a sub-assembly), leaving one part out. On the
     Browse tab, double-click the assembly: its parts come down, it opens with them, and the
     tab names the part left out. Close it, delete a part from `C:\VLT`, and double-click the
     assembly again: that part comes back, and nothing else downloads.
+19. Watch the card as a part changes state. Up to date: Check out (in navy) and Get
+    latest. Checked out to you: Check in (in navy) and Undo check-out. Out of date: Get
+    latest first. Checked out by someone else: who, on which computer, and since when, and
+    no button for what you can't do. While Vault works, the bar under the header runs and
+    the buttons gray out; each button's tooltip says what it does. Needs attention lists
+    only files on this computer and your check-outs, and says so when it's empty.
+20. Click your name in the header: Open the web app opens the vault in your browser, Open
+    the workspace folder opens `C:\VLT`, and Sign out signs you out.
 
 ## When something goes wrong
 

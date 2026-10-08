@@ -151,11 +151,11 @@ assembly brings its references along), not the whole vault. Each workspace holds
 whole vault's index, and a folder for each of its folders (`MirrorFolders`: somewhere to
 save new parts where they belong; folders gone from the vault go once they're empty), but
 only the files someone there has opened, checked out, or asked for, at their latest
-versions; history stays on the server. Updating
-(`Workspace.UpdateAsync`: the add-in's Update my files, `vault get` with no paths) brings
-the files that are here up to date, with any parts they've started to use, and nothing
-else. Downloading everything, or a folder's files that aren't here yet, is its own
-step, and the add-in says how many files and how much space first (`SizeOfGetAsync`).
+versions; history stays on the server. Updating (`Workspace.UpdateAsync`: the add-in's
+Update downloaded files, `vault get` with no paths) brings the files that are here up to
+date, with any parts they've started to use, and nothing else. Downloading everything, or
+a folder's files that aren't here yet, is its own step, and the add-in says how many
+files and how much space first (`SizeOfGetAsync`), and asks, with No as the default.
 
 ## Permissions
 
@@ -278,12 +278,16 @@ COM add-in, registered with RegAsm.
   Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
 
-- **Task pane.** Everything is in the Vault tab: sign-in, the active document's status
-  and actions (including opening its drawing), and two views: the files that need
-  attention, and Browse, the whole vault as a tree (`Workspace.BrowseAsync`, a
-  `VaultTree`) in which every file says whether it's checked in, assemblies open up into
-  their parts, and parts and assemblies list their drawings. It refreshes every 20
-  seconds and after every action, and redraws only when something changed, so what you
+- **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
+  menu (the vault, the workspace, the web app, sign out); a card for the active document,
+  with its status and buttons for only what you can do with it now, the likeliest in navy;
+  and two views: the files on this computer that need attention, and Browse, the whole
+  vault as a tree (`Workspace.BrowseAsync`, a `VaultTree`) in which assemblies open up
+  into their parts, and parts and assemblies list their drawings. One wording and color for
+  each status serves the card, the list, and the tree (`VaultPane.Describe`); the look is
+  in `Theme.cs` and `PaneControls.cs` (flat WinForms controls, and File Explorer's theme for
+  the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
+  20 seconds and after every action, and redraws only when something changed, so what you
   opened in the tree stays open.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per

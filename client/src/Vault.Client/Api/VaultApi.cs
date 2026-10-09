@@ -104,6 +104,18 @@ public sealed class VaultApi : IDisposable
     public Task<Moved> RenameAsync(string? file, string? folder, string name, CancellationToken ct = default) =>
         PostAsync<Moved>("api/rename", new { file, folder, name }, ct);
 
+    /// <summary>A file's 3D models for Caliper: each version's, newest first, in each configuration.</summary>
+    public async Task<List<CaliperModelInfo>> CaliperModelsAsync(long fileId, CancellationToken ct = default) =>
+        (await GetAsync<CaliperModelList>("api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/caliper", ct).ConfigureAwait(false)).Models;
+
+    /// <summary>Which of these versions, in these configurations, have no 3D model yet (of files you can see).</summary>
+    internal async Task<List<CaliperModelKey>> MissingCaliperModelsAsync(List<CaliperModelKey> models, CancellationToken ct = default) =>
+        (await PostAsync<CaliperMissing>("api/caliper/missing", new { models }, ct).ConfigureAwait(false)).Missing;
+
+    /// <summary>Save a version's 3D model: a part's mesh (uploaded first) or an assembly's components.</summary>
+    internal Task<CaliperModelInfo> PutCaliperModelAsync(long fileId, CaliperModelRequest request, CancellationToken ct = default) =>
+        SendAsync<CaliperModelInfo>(HttpMethod.Put, "api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/caliper", request, ct);
+
     /// <summary>The last step of browser sign-in (see BrowserSignIn).</summary>
     public Task<IssuedToken> RedeemSignInCodeAsync(string code, string verifier, CancellationToken ct = default) =>
         PostAsync<IssuedToken>("auth/client/token", new { code, verifier }, ct);
@@ -121,10 +133,15 @@ public sealed class VaultApi : IDisposable
         return await ReadAsync<T>(response).ConfigureAwait(false);
     }
 
-    private async Task<T> PostAsync<T>(string uri, object body, CancellationToken ct)
+    private Task<T> PostAsync<T>(string uri, object body, CancellationToken ct) => SendAsync<T>(HttpMethod.Post, uri, body, ct);
+
+    private async Task<T> SendAsync<T>(HttpMethod method, string uri, object body, CancellationToken ct)
     {
-        using var content = new StringContent(JsonSerializer.Serialize(body, Json.Options), Encoding.UTF8, "application/json");
-        using var response = await _http.PostAsync(uri, content, ct).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(method, uri)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, Json.Options), Encoding.UTF8, "application/json"),
+        };
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         return await ReadAsync<T>(response).ConfigureAwait(false);
     }
 

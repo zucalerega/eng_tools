@@ -185,3 +185,61 @@ internal sealed class FileList
 {
     public List<VaultFile> Files { get; set; } = new List<VaultFile>();
 }
+
+/// <summary>A version's 3D model in one configuration, for Caliper, the web app's 3D viewer.</summary>
+public sealed class CaliperModelInfo
+{
+    public int Version { get; set; }
+    public string Configuration { get; set; } = "";
+
+    /// <summary>"part" (a mesh) or "assembly" (its components).</summary>
+    public string Kind { get; set; } = "";
+    public string Units { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public UserRef CreatedBy { get; set; } = new UserRef();
+}
+
+/// <summary>A file's version, in a configuration: what a 3D model is of.</summary>
+internal sealed class CaliperModelKey
+{
+    public long FileId { get; set; }
+    public int Version { get; set; }
+    public string Configuration { get; set; } = "";
+}
+
+internal sealed class CaliperModelRequest
+{
+    public int Version { get; set; }
+    public string Configuration { get; set; } = "";
+    public string Units { get; set; } = "mm";
+
+    /// <summary>A part's: the SHA-256 of its mesh, uploaded first.</summary>
+    public string? Mesh { get; set; }
+
+    /// <summary>An assembly's.</summary>
+    public List<CaliperComponentRequest>? Components { get; set; }
+}
+
+internal sealed class CaliperComponentRequest
+{
+    public string Name { get; set; } = "";
+    public long? FileId { get; set; }
+    public int? Version { get; set; }
+    public string Configuration { get; set; } = "";
+    public double[] Transform { get; set; } = CaliperTransforms.Identity;
+    public bool Hidden { get; set; }
+    public double[]? Color { get; set; }
+    public double Opacity { get; set; } = 1;
+    public string? Mesh { get; set; }
+    public List<CaliperComponentRequest> Children { get; set; } = new List<CaliperComponentRequest>();
+}
+
+internal sealed class CaliperModelList
+{
+    public List<CaliperModelInfo> Models { get; set; } = new List<CaliperModelInfo>();
+}
+
+internal sealed class CaliperMissing
+{
+    public List<CaliperModelKey> Missing { get; set; } = new List<CaliperModelKey>();
+}

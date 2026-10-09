@@ -27,11 +27,13 @@ internal static class Program
                                          on another computer: yours, or anyone's if you're a lead there)
           checkin <paths> -m "what"      Check in changed and new files (alias: ci; --keep: stay checked out)
           undo <paths>                   Undo your check-out; local changes are backed up in .vault/backup
+          free [paths]                   Free up space: remove the copies here of files you haven't changed and
+                                         don't have checked out (they stay in the vault; get brings them back)
           history <file>                 A file's versions (alias: log)
           locks [--mine]                 Who has what checked out
 
         Paths are files or folders inside the workspace; a folder means everything in it.
-        With no paths, status and get use the current folder: get updates the files you have in it,
+        With no paths, status, get, and free use the current folder: get updates the files you have in it,
         and `get .` downloads everything in it.
         """;
 
@@ -59,6 +61,7 @@ internal static class Program
                 "checkout" or "co" => await CheckoutAsync(options),
                 "checkin" or "ci" => await CheckinAsync(options),
                 "undo" => await UndoAsync(options),
+                "free" => await FreeAsync(options),
                 "history" or "log" => await HistoryAsync(options),
                 "locks" => await LocksAsync(options),
                 _ => throw new UsageException($"Unknown command '{args[0]}'. Run `vault help` for the list."),
@@ -210,6 +213,22 @@ internal static class Program
         return 0;
     }
 
+    private static async Task<int> FreeAsync(Options options)
+    {
+        using var workspace = OpenWorkspace();
+        var result = await workspace.FreeUpAsync(PathsOrHere(options));
+        foreach (var status in result.Removed)
+        {
+            Console.WriteLine($"  freed        {Show(status.LocalPath)}");
+        }
+        foreach (var failure in result.Failures)
+        {
+            Console.WriteLine($"  kept         {failure}");
+        }
+        Console.WriteLine($"Freed {Megabytes(result.Bytes)}: {Count(result.Removed.Count, "file")} in the vault only, until you get them again.");
+        return result.Failures.Count > 0 ? 1 : 0;
+    }
+
     private static async Task<int> UndoAsync(Options options)
     {
         using var workspace = OpenWorkspace();
@@ -331,6 +350,8 @@ internal static class Program
         time.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    private static string Megabytes(long bytes) => (bytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
 
     private static void OpenBrowser(Uri url)
     {

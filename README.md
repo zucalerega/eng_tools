@@ -288,6 +288,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault checkout <files>` | Check files out to edit them. Everyone else sees who has them. `--force` takes over a check-out on another computer: yours, or anyone's if you're a lead there. |
 | `vault checkin <files> -m "what changed"` | Check in changed and new files as one version |
 | `vault undo <files>` | Give up a check-out. Local changes are backed up in `.vault/backup`. |
+| `vault free` | Free up space: remove the copies here of files you haven't changed and don't have checked out. They stay in the vault, and `vault get` brings them back. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
 

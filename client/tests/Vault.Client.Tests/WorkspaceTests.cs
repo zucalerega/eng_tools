@@ -556,6 +556,67 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task FreeingUpSpaceRemovesOnlyCopiesTheVaultHasAsTheyAre()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        Write(alice, "Fins/Fin.SLDPRT", "fin");
+        Write(alice, "Fins/Can.SLDASM", "can");
+        Write(alice, "Nose.SLDPRT", "nose");
+        Write(alice, "Tail.SLDPRT", "tail");
+        await alice.CheckinAsync([Folder(alice)], "the airframe");
+        await bob.GetLatestAsync([Folder(bob)]);
+        await bob.CheckoutAsync([Local(bob, "Nose.SLDPRT"), Local(bob, "Tail.SLDPRT")]);
+        File.WriteAllText(Local(bob, "Nose.SLDPRT"), "bob's nose"); // changed; the tail he hasn't changed yet
+        var bracket = Write(bob, "Fins/Bracket.SLDPRT", "bracket"); // only his so far
+        // A newer fin: Bob's copy is out of date, but still as it came, so it can go too.
+        await alice.CheckoutAsync([Local(alice, "Fins/Fin.SLDPRT")]);
+        File.WriteAllText(Local(alice, "Fins/Fin.SLDPRT"), "fin v2");
+        await alice.CheckinAsync([Local(alice, "Fins/Fin.SLDPRT")], "a longer fin");
+
+        Assert.Equal((2, 6L), await bob.SizeOfFreeUpAsync([Folder(bob)]));
+        var freed = await bob.FreeUpAsync([Folder(bob)]);
+        Assert.Equal(["Can.SLDASM", "Fin.SLDPRT"], freed.Removed.Select(s => Path.GetFileName(s.LocalPath)).Order());
+        Assert.Equal(6, freed.Bytes);
+        Assert.Empty(freed.Failures);
+        Assert.False(File.Exists(Local(bob, "Fins/Fin.SLDPRT")));
+        Assert.Equal("bob's nose", File.ReadAllText(Local(bob, "Nose.SLDPRT")));
+        Assert.True(File.Exists(Local(bob, "Tail.SLDPRT")));
+        Assert.True(File.Exists(bracket));
+        var fin = (await bob.StatusAsync([Folder(bob)])).Single(s => s.VaultPath.EndsWith("/Fins/Fin.SLDPRT", StringComparison.Ordinal));
+        Assert.Equal(FileState.Missing, fin.State);
+
+        // Updating what's here leaves freed files in the vault; getting one brings it back, at its latest.
+        await bob.UpdateAsync([Folder(bob)]);
+        Assert.False(File.Exists(Local(bob, "Fins/Fin.SLDPRT")));
+        await bob.GetLatestAsync([Local(bob, "Fins/Fin.SLDPRT")]);
+        Assert.Equal("fin v2", File.ReadAllText(Local(bob, "Fins/Fin.SLDPRT")));
+        Assert.True(IsReadOnly(Local(bob, "Fins/Fin.SLDPRT")));
+    }
+
+    [Fact]
+    public async Task FreeingUpSpaceLeavesWhatsInUse()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var open = Write(alice, "Open.SLDPRT", "open");
+        var held = Write(alice, "Held.SLDPRT", "held");
+        var elsewhere = Write(alice, "Elsewhere/Other.SLDPRT", "other");
+        await alice.CheckinAsync([Folder(alice)], "three parts");
+
+        Assert.Equal((1, 5L), await alice.SizeOfFreeUpAsync([Path.GetDirectoryName(elsewhere)!])); // only under the paths named
+        // What the add-in says SolidWorks has open stays; so does a copy something holds, with why.
+        using (HoldOpen(held))
+        {
+            var freed = await alice.FreeUpAsync([Folder(alice)], inUse: path => Path.GetFileName(path) == "Open.SLDPRT");
+            Assert.Equal(["Other.SLDPRT"], freed.Removed.Select(s => Path.GetFileName(s.LocalPath)));
+            Assert.Contains("Held.SLDPRT", Assert.Single(freed.Failures), StringComparison.Ordinal);
+        }
+        Assert.True(File.Exists(open));
+        Assert.True(IsReadOnly(held)); // still there, and still not checked out
+        Assert.Equal(FileState.UpToDate, Assert.Single(await alice.StatusAsync([held])).State);
+    }
+
+    [Fact]
     public async Task BadNamesAreRejectedBeforeUploading()
     {
         var alice = await WorkspaceAsync("alice");

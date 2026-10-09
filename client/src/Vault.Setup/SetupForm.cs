@@ -9,10 +9,15 @@ using Vault.SolidWorks;
 
 namespace Vault.Setup;
 
-/// <summary>Setup's one window: what it's about to do, a button to do it, then how it went.</summary>
+/// <summary>
+/// Setup's one window: what it's about to do, a button to do it, then how it went. Started by the add-in's Update
+/// button, it goes ahead by itself as soon as SolidWorks closes.
+/// </summary>
 internal sealed class SetupForm : Form
 {
     private readonly bool _uninstall;
+    private readonly bool _updating; // the add-in is here already
+    private readonly bool _fromAddIn; // started by its Update button: goes ahead when SolidWorks closes
     private readonly Label _text = new Label { AutoSize = true, MaximumSize = new Size(440, 0), Margin = new Padding(0, 0, 0, 12) };
     private readonly Label _status = new Label { AutoSize = true, MaximumSize = new Size(440, 0), ForeColor = SystemColors.GrayText };
     private readonly ProgressBar _progress = new ProgressBar { Style = ProgressBarStyle.Marquee, Width = 440, Visible = false };
@@ -23,7 +28,7 @@ internal sealed class SetupForm : Form
     /// <summary>Whether the add-in was removed, so setup's own copy can go once it closes.</summary>
     public bool Uninstalled => _uninstall && _done;
 
-    public SetupForm(bool uninstall)
+    public SetupForm(bool uninstall, bool update = false)
     {
         _uninstall = uninstall;
         Text = uninstall ? "Remove " + Installer.Product : Installer.Product + " setup";
@@ -41,21 +46,47 @@ internal sealed class SetupForm : Form
         }
 
         var installed = Installer.InstalledVersion;
+        var year = Installer.SolidWorksYear;
         if (uninstall)
         {
             _text.Text = "This removes the Vault add-in from SolidWorks, and the Vault links from this computer. "
                 + "Your workspace folder (C:\\VLT, unless you chose another), the files in it, and your sign-in stay.";
             _go.Text = "Remove";
         }
+        else if (!Installer.AddInInstalled && !Installer.HasSolidWorks(year))
+        {
+            // A new install is for the team's SolidWorks only: files saved in it don't open in older ones.
+            _text.Text = $"The Vault add-in needs SolidWorks {year}, and this computer doesn't have it. The team works in "
+                + $"SolidWorks {year}, and files saved in it don't open in older versions. Install SolidWorks {year}, then run this again.";
+            _go.Text = "Install";
+            _go.Enabled = false;
+            _close.Text = "Close";
+        }
+        else if (Installer.AddInInstalled)
+        {
+            _updating = true;
+            _fromAddIn = update;
+            _text.Text = $"This updates the Vault add-in to version {Installer.Version}"
+                + (installed == null || installed == Installer.Version ? "" : $", from version {installed}")
+                + $", in {Installer.Folder}. Your sign-in, settings, and workspace stay."
+                + (update ? "\n\nSetup finishes as soon as SolidWorks closes: save your work, then close SolidWorks." : "");
+            _go.Text = installed == Installer.Version ? "Reinstall" : "Update";
+        }
         else
         {
-            _text.Text = "This installs the Vault add-in for SolidWorks 2025, in " + Installer.Folder + ". "
-                + "Vault gets a tab in SolidWorks' task pane, and the web app's Open in SolidWorks buttons start working."
-                + (installed == null ? "" : $"\n\nVersion {installed} is installed now: this puts version {Installer.Version} in its place.");
-            _go.Text = installed == null ? "Install" : installed == Installer.Version ? "Reinstall" : "Update";
+            _text.Text = $"This installs the Vault add-in for SolidWorks {year}, in {Installer.Folder}. "
+                + "Vault gets a tab in SolidWorks' task pane, and the web app's Open in SolidWorks buttons start working.";
+            _go.Text = "Install";
         }
         _go.Click += async (_, _) => await RunAsync();
         _close.Click += (_, _) => Close();
+        Shown += async (_, _) =>
+        {
+            if (_fromAddIn)
+            {
+                await RunAsync();
+            }
+        };
         AcceptButton = _go;
         CancelButton = _close;
 
@@ -161,6 +192,37 @@ internal sealed class SetupForm : Form
         return true;
     }
 
+    /// <summary>
+    /// For an update the add-in started: wait, without asking, for SolidWorks to close in this session, where the add-in
+    /// is loaded. Setup can be cancelled meanwhile; false then.
+    /// </summary>
+    private async Task<bool> SolidWorksClosedAsync()
+    {
+        var session = Process.GetCurrentProcess().SessionId;
+        _go.Enabled = false;
+        _progress.Visible = true;
+        _status.Text = "Waiting for SolidWorks to close...";
+        while (true)
+        {
+            var running = Installer.SolidWorks();
+            var waiting = running.Any(p => p.SessionId == session);
+            Array.ForEach(running, p => p.Dispose());
+            if (!waiting)
+            {
+                break;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            if (IsDisposed)
+            {
+                return false; // closed: no update
+            }
+        }
+        _status.Text = "";
+        _progress.Visible = false;
+        _go.Enabled = true;
+        return true;
+    }
+
     private async Task RunAsync()
     {
         if (_done)
@@ -168,7 +230,7 @@ internal sealed class SetupForm : Form
             Close();
             return;
         }
-        if (!SolidWorksClosed())
+        if ((_fromAddIn && !await SolidWorksClosedAsync()) || !SolidWorksClosed())
         {
             return;
         }
@@ -190,6 +252,8 @@ internal sealed class SetupForm : Form
             });
             _text.Text = _uninstall
                 ? "Vault is removed from SolidWorks."
+                : _updating
+                ? $"Vault is updated to version {Installer.Version}. Start SolidWorks: the Vault tab is the new one."
                 : $"Vault is installed. Your vault's files will be in {Installer.VaultFolder}, in the vault's folders.\n\n"
                     + "Next, connect it to your team's vault: in the Vault web app, go to SolidWorks (at the top) "
                     + "and click Connect SolidWorks. Or start SolidWorks, open the Vault tab in the task pane on the right, "

@@ -14,7 +14,7 @@ page is Vault's own.
 | In the web app: its pages, and the vault's index (`store.ts`) | `web/src/vault` |
 | The workspace library | `client/src/Vault.Client` (netstandard2.0 + net10.0) |
 | The `vault` command | `client/src/Vault.Cli` (.NET 10) |
-| The SolidWorks 2025 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
+| The SolidWorks 2026 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
 | `Vault-Setup.exe`, the add-in's installer | `client/src/Vault.Setup` |
 
 The add-in has to be .NET Framework, because SolidWorks add-ins are .NET Framework COM
@@ -264,19 +264,31 @@ on top of it.
 
 ## The SolidWorks add-in
 
-`client/src/Vault.SolidWorks` targets SolidWorks 2025 (API version 33) and is built
-against the `Visiativ.SOLIDWORKS.Interop` 33.0.0 package. It is a .NET Framework 4.8
-COM add-in, registered with RegAsm.
+`client/src/Vault.SolidWorks` is for SolidWorks 2026, the team's, and runs in SolidWorks
+2025 too, for laptops still moving over: it's built against the 2025 API (version 33, the
+`Visiativ.SOLIDWORKS.Interop` 33.0.0 package), which SolidWorks 2026 runs, so one build
+serves both. It is a .NET Framework 4.8 COM add-in, registered with RegAsm. Its log says
+which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
 
 - **Installing.** `Vault-Setup.exe` (`client/src/Vault.Setup`, built by CI) is the one
   download: it carries the add-in's files, and after Windows asks for administrator
   rights, puts them in `C:\Program Files\Vault for SolidWorks`, registers the add-in
   (RegAsm, which runs its own registration with SolidWorks) and `vault://` links, and
-  lists itself in Windows' installed apps to remove all that again. It isn't signed yet,
-  so Windows' SmartScreen warns about it once. The server offers it to members from
+  lists itself in Windows' installed apps to remove all that again. It installs new only
+  where SolidWorks 2026 is (files saved in 2026 don't open in older versions, so the team
+  stays on one); where the add-in is already, it updates it, on 2025 too. It isn't signed
+  yet, so Windows' SmartScreen warns about it once. The server offers it to members from
   `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
   Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
+- **Updates.** Every few hours the add-in asks the server what it offers for download
+  (`GET /api/downloads`, which reads each program's version from its version resource and
+  gives each file's SHA-256). When `Vault-Setup.exe` installs a newer version than the
+  add-in's own (`AddInUpdate.Newer`), Update appears in the task pane's header. It downloads
+  setup, checked against its size and SHA-256, and starts it with `/update`; Windows asks
+  for administrator rights, and setup waits for SolidWorks to close in that Windows
+  session, which has the add-in loaded, then installs, keeping sign-in, settings, and
+  workspaces. Add-ins before this one have no Update: run setup by hand once.
 
 - **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
   menu (the vault, the workspace, the web app, sign out); a card for the active document,
@@ -428,9 +440,9 @@ are in [design.md](design.md#api).
 2. **Client library + `vault` CLI** (done): workspace, status, get latest, check
    out/in, undo with backups, history, locks, browser sign-in. Tested against the
    real server.
-3. **SolidWorks 2025 add-in** (done; first run in SolidWorks in September 2026): task
-   pane with status and actions, check-out offers when you edit, save checks, and
-   check-ins that include an assembly's references.
+3. **SolidWorks add-in** (done; first run in SolidWorks in September 2026, for 2026 since
+   October 2026): task pane with status and actions, check-out offers when you edit, save
+   checks, check-ins that include an assembly's references, and updates from the server.
 4. **Web app** (done): browse and search, history, download, who-has-what, activity,
    admin (approvals, permissions), admin mode (releasing check-outs, forced reverts),
    and opening files in SolidWorks.
@@ -442,6 +454,8 @@ are in [design.md](design.md#api).
 
 ## Open questions
 
-- SolidWorks version: 2025 (decided September 2026). The add-in targets API version 33.
+- SolidWorks version: 2026 (decided October 2026; 2025 in September). New installs need
+  2026, and laptops on 2025 keep updating the add-in while they move over. The add-in is
+  built against API version 33 (2025), which 2026 runs.
 - Kenesto: the plan is to import the current files from a synced Kenesto folder
   and keep Kenesto read-only as the archive of old history.

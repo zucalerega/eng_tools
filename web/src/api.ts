@@ -39,6 +39,9 @@ export interface Download {
     name: string;
     size: number;
     modified_at: string;
+    /** A Windows program's version, like "0.5.0", read from the program; null for other files. */
+    version: string | null;
+    sha256: string;
 }
 
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test

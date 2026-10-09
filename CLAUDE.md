@@ -20,7 +20,7 @@ something both apps need belongs to the site.
 | Path | What |
 |---|---|
 | `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `api/` sign-in, people, downloads, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). |
-| `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2025 add-in (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
+| `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2026 add-in, which runs in 2025 too (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
 | `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open. `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). Tests run against the real server. |
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
@@ -45,8 +45,8 @@ cd web && npm ci && npm run check && npm test && npm run build
 - `cd web && npm run build`: build the web app; the local server then serves it at
   http://localhost:8000. `npm run dev` serves it at http://localhost:5173 and reloads as you
   edit (sign in at http://localhost:8000 first). `npm run format`: format the TypeScript.
-- The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks 2025 on
-  Windows. CI uploads each build as the `vault-setup` artifact (`Vault-Setup.exe`, which
+- The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks (2026, and
+  2025 for laptops moving over) on Windows. CI uploads each build as the `vault-setup` artifact (`Vault-Setup.exe`, which
   installs it; the server offers it from `YJSP_DOWNLOADS_DIR`), the `vault-solidworks-addin`
   artifact (its files, for install.ps1), and `vault-windows` (a self-contained `vault.exe`).
   Install and manual-testing steps are in `client/src/Vault.SolidWorks/README.md`.
@@ -101,7 +101,7 @@ cd web && npm ci && npm run check && npm test && npm run build
 - `tests/test_database.py` fails if models and migrations disagree. Keep it green.
 - The add-in has no automated tests, because they would need SolidWorks. Keep its logic in
   `Vault.Client`, where it is tested, and keep the add-in a thin layer over SolidWorks. Before
-  releasing it, run the manual checks in its README on SolidWorks 2025.
+  releasing it, run the manual checks in its README on SolidWorks 2026.
 
 ## Invariants
 

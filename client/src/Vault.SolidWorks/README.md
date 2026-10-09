@@ -1,11 +1,14 @@
-# Vault add-in for SolidWorks 2025
+# Vault add-in for SolidWorks 2026
 
-Check files in and out without leaving SolidWorks. The add-in adds a **Vault** tab to the
-task pane with these parts:
+Check files in and out without leaving SolidWorks. The add-in is for SolidWorks 2026, the
+team's version: files saved in 2026 don't open in older versions, so everyone works in one.
+It runs in SolidWorks 2025 too, so laptops that had it there keep getting updates while they
+move over. It adds a **Vault** tab to the task pane with these parts:
 
-- **The header:** Vault's mark, a refresh button, and your name. Click your name for your
-  account, the vault's address, and the workspace folder, to open the web app or the
-  workspace folder, or to sign out.
+- **The header:** Vault's mark, **Update** when there's a newer add-in (see "Updates"), a
+  refresh button, and your name. Click your name for your account, the vault's address,
+  the workspace folder, and the add-in's version, to open the web app or the workspace
+  folder, or to sign out.
 - **The active document's card:** what state the file is in (up to date, checked out to
   you, out of date, checked out by someone else, new, ...), what that means, and buttons
   for only what you can do with it now, the likeliest first, in navy: Check in, Check
@@ -96,7 +99,8 @@ While you work:
    `YJSP_DOWNLOADS_DIR`.)
 2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
    click **More info**, then **Run anyway**. It asks for administrator rights, then installs
-   the add-in in `C:\Program Files\Vault for SolidWorks`. Running a newer one updates it,
+   the add-in in `C:\Program Files\Vault for SolidWorks`. It installs the add-in new only
+   where SolidWorks 2026 is; where the add-in is already, on 2026 or 2025, it updates it,
    and the add-in keeps your settings, sign-in, and workspace.
 3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
    with the Vault tab open, and your browser asks you to confirm. (Or type the web app's
@@ -112,6 +116,20 @@ somewhere permanent, and run `powershell -ExecutionPolicy Bypass -File install.p
 as administrator (`uninstall.ps1` removes it). To update, close SolidWorks and replace the
 folder's files.
 
+## Updates
+
+When the server offers a newer add-in, **Update** appears at the top of the Vault tab (the
+add-in looks every few hours). Click it and say Yes: Vault downloads the new
+`Vault-Setup.exe`, checks it against the SHA-256 the server gives, and starts it. Windows
+asks to let it make changes, then setup waits: save your work and close SolidWorks, and it
+finishes the update. Start SolidWorks again, and the Vault tab is the new version. Your
+sign-in, settings, and workspace stay.
+
+An admin offers an update by putting the new `Vault-Setup.exe` in the server's
+`YJSP_DOWNLOADS_DIR` (see docs/deploying.md): the server reads the version from the program.
+Add-ins from before Update (0.4.0 and older) don't have the button: run the new
+`Vault-Setup.exe` once, by hand, from the web app's SolidWorks page.
+
 ## Testing against a development server
 
 A dev server on another computer can serve a Windows PC on the same network:
@@ -126,7 +144,7 @@ the development form as `you@example.com`.
 ## Manual checks before a release
 
 The add-in can't be tested automatically (that would need SolidWorks), so run through
-these on SolidWorks 2025:
+these on SolidWorks 2026, and 22 to 24 on 2025 as well:
 
 1. After installing, SolidWorks starts with the Vault tab, and `addin.log` says the add-in
    started.
@@ -203,6 +221,18 @@ these on SolidWorks 2025:
     assembly in: `vault history` on it lists the part with its version. Do it again with a
     sub-assembly that isn't here: its parts come down too, and it goes in whole. With a part
     active instead, the menu says to open an assembly first; a drawing has no Insert.
+22. On a PC with SolidWorks 2025 and no add-in, run Vault-Setup.exe: it says it needs
+    SolidWorks 2026, and installs nothing. On a PC with SolidWorks 2025 and an older add-in,
+    it offers Update, and updates it; SolidWorks 2025 starts with the new Vault tab, and
+    `addin.log` says which SolidWorks it started in.
+23. Put a Vault-Setup.exe with a newer version than the installed add-in in the server's
+    downloads folder, then start SolidWorks: Update appears in the tab's header, and the web
+    app's SolidWorks page shows the new version. Click Update and say Yes, but No to
+    Windows' question: the tab says the update needs permission, and Update stays. Click
+    it again and say Yes to both: setup waits for SolidWorks; close it, and setup updates the
+    add-in. Start SolidWorks: your name's menu shows the new version, and there's no Update.
+24. Close SolidWorks and click Open in SolidWorks in the web app: SolidWorks starts (2026,
+    on a PC with both 2025 and 2026), and opens the file.
 
 ## When something goes wrong
 

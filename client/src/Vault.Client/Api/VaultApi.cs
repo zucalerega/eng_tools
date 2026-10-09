@@ -51,6 +51,18 @@ public sealed class VaultApi : IDisposable
         await body.CopyToAsync(destination, 81920, ct).ConfigureAwait(false);
     }
 
+    /// <summary>What the server offers for download, like the add-in's installer.</summary>
+    public Task<List<Download>> DownloadsAsync(CancellationToken ct = default) => GetAsync<List<Download>>("api/downloads", ct);
+
+    /// <summary>One of the downloads, by name.</summary>
+    public async Task DownloadSoftwareAsync(string name, Stream destination, CancellationToken ct = default)
+    {
+        using var response = await _http.GetAsync("api/downloads/" + Uri.EscapeDataString(name), HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var body = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        await body.CopyToAsync(destination, 81920, ct).ConfigureAwait(false);
+    }
+
     /// <summary>Whether the server already has these contents, so the upload can be skipped.</summary>
     public async Task<bool> HasBlobAsync(string sha256, CancellationToken ct = default)
     {

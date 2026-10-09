@@ -43,7 +43,7 @@ jobs:
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
-      # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2025: put it in the server's
+      # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2026: put it in the server's
       # YJSP_DOWNLOADS_DIR, and the web app offers it to members.
       - uses: actions/upload-artifact@v7
         with:

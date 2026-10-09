@@ -1,4 +1,4 @@
-# Registers the Vault add-in with SolidWorks 2025. Run from the add-in's folder, as administrator:
+# Registers the Vault add-in with SolidWorks (2026, and 2025). Run from the add-in's folder, as administrator:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'

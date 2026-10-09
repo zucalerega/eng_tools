@@ -17,7 +17,8 @@ its own: [vault.md](vault.md) and [yorg.md](yorg.md).
 - The team runs SolidWorks on their own Windows laptops, with admin rights, so each person
   can install Vault's add-in, the main way people use Vault.
 - The server, the web app, and the CLI build and test on Windows, macOS, and Linux. The
-  add-in only runs inside SolidWorks 2025 on Windows, where it's tested by hand.
+  add-in only runs inside SolidWorks (2026; 2025 while laptops move over) on Windows, where
+  it's tested by hand.
 - People sign in with Google (decided September 2026), or with their Georgia Tech accounts
   (added October 2026).
 
@@ -43,7 +44,7 @@ Web app (React): the frame, Vault's pages, Yorg's pages ────────
 | Vault in the web app | `web/src/vault` | working |
 | Vault's client library | `client/src/Vault.Client` (netstandard2.0 + net10.0) | working |
 | Vault's CLI (`vault`) | `client/src/Vault.Cli` (.NET 10) | working |
-| Vault's SolidWorks 2025 add-in | `client/src/Vault.SolidWorks` (.NET Framework 4.8) | working; first run in SolidWorks September 2026 |
+| Vault's SolidWorks add-in | `client/src/Vault.SolidWorks` (.NET Framework 4.8) | working; first run in SolidWorks September 2026; for SolidWorks 2026 since October 2026 |
 | Yorg on the server | `server/src/yjsp_server/yorg` | working |
 | Yorg in the web app | `web/src/yorg` | working |
 
@@ -182,7 +183,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
-| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR` |
+| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
 
 ## Names from before YJSP
 

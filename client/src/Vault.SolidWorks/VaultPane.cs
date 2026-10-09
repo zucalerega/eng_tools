@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -38,8 +39,12 @@ internal sealed class VaultPane : UserControl
     private string _shown = ""; // what the lists show, to redraw them only when it changes
     private bool _busy;
     private bool _doubleClicking;
+    private Download? _newerAddIn; // the server's installer, when it's newer than this add-in
+    private DateTime _checkedForUpdate = DateTime.MinValue;
 
-    // The header, over both views: Vault's mark, and once you're signed in, refresh and your account.
+    // The header, over both views: Vault's mark, and once you're signed in, an update when there is one, refresh, and
+    // your account.
+    private readonly FlatButton _newVersionButton;
     private readonly FlatButton _refreshButton;
     private readonly FlatButton _accountButton;
     private readonly ContextMenuStrip _accountMenu = new ContextMenuStrip { Renderer = Theme.MenuRenderer };
@@ -47,6 +52,11 @@ internal sealed class VaultPane : UserControl
     private readonly ToolStripLabel _accountEmail = new ToolStripLabel { ForeColor = Theme.Muted };
     private readonly ToolStripLabel _accountServer = new ToolStripLabel { ForeColor = Theme.Muted };
     private readonly ToolStripLabel _accountFolder = new ToolStripLabel { ForeColor = Theme.Muted };
+    private readonly ToolStripLabel _accountVersion = new ToolStripLabel
+    {
+        ForeColor = Theme.Muted,
+        Text = "Vault add-in " + Release(typeof(VaultPane).Assembly.GetName().Version),
+    };
     private readonly ActivityBar _activity = new ActivityBar();
 
     // Signing in.
@@ -102,6 +112,8 @@ internal sealed class VaultPane : UserControl
         BackColor = Theme.Background;
         ForeColor = Theme.Text;
 
+        _newVersionButton = new FlatButton("Update") { Primary = true, Visible = false, MinimumSize = new Size(0, 26), Margin = new Padding(2, 0, 4, 0) };
+        _newVersionButton.Click += (_, _) => Safely(UpdateAddInAsync);
         _refreshButton = IconButton("\uE72C", "Refresh", (_, _) => RefreshSoon());
         _tips.SetToolTip(_refreshButton, "Refresh now. Vault also refreshes every 20 seconds, and after everything you do.");
         _accountButton = new FlatButton("Account ▾") { Quiet = true, Margin = new Padding(2, 0, 0, 0) };
@@ -114,6 +126,7 @@ internal sealed class VaultPane : UserControl
             new ToolStripSeparator(),
             _accountServer,
             _accountFolder,
+            _accountVersion,
             new ToolStripSeparator(),
             new ToolStripMenuItem("Open the web app", null, (_, _) => Guarded(OpenWebApp)),
             new ToolStripMenuItem("Open the workspace folder", null, (_, _) => Guarded(OpenFolder)),
@@ -692,6 +705,61 @@ internal sealed class VaultPane : UserControl
         });
     }
 
+    // Every few hours, after a refresh: whether the server offers a newer add-in than this one. Quiet if it can't say.
+    private async Task CheckForUpdateAsync(Workspace workspace)
+    {
+        if (DateTime.UtcNow - _checkedForUpdate < TimeSpan.FromHours(4))
+        {
+            return;
+        }
+        _checkedForUpdate = DateTime.UtcNow;
+        try
+        {
+            _newerAddIn = AddInUpdate.Newer(await workspace.Api.DownloadsAsync(), typeof(VaultPane).Assembly.GetName().Version);
+        }
+        catch (Exception e) when (IsExpected(e))
+        {
+            Log.Info("Couldn't check for a newer add-in: " + e.Message);
+        }
+        _newVersionButton.Visible = _newerAddIn != null;
+        if (_newerAddIn != null)
+        {
+            _tips.SetToolTip(_newVersionButton, $"Vault {_newerAddIn.Version} is ready. Click to update: setup finishes when you close SolidWorks.");
+        }
+    }
+
+    /// <summary>
+    /// Update the add-in to the newer one the server offers: download its installer, checked against its SHA-256, and
+    /// start it. Windows asks to let it make changes; setup then waits for SolidWorks to close, since SolidWorks has
+    /// this add-in loaded, and installs the update. Sign-in, settings, and the workspace stay.
+    /// </summary>
+    private async Task UpdateAddInAsync()
+    {
+        if (_newerAddIn is not { } installer
+            || Ask($"Update Vault to version {installer.Version}? Vault downloads it, then Windows asks to let setup make changes. "
+                + "Setup finishes the update when you close SolidWorks, so save your work first. Your sign-in, settings, and workspace stay.")
+                != DialogResult.Yes)
+        {
+            return;
+        }
+        await RunAsync($"Downloading Vault {installer.Version}", async workspace =>
+        {
+            var setup = await AddInUpdate.DownloadAsync(workspace.Api, installer, Path.Combine(Path.GetTempPath(), "Vault"));
+            try
+            {
+                Process.Start(new ProcessStartInfo(setup, "/update") { UseShellExecute = true, Verb = "runas" })?.Dispose();
+            }
+            catch (Win32Exception e) when (e.NativeErrorCode == 1223) // ERROR_CANCELLED: Windows' question was answered No
+            {
+                return "The update needs Windows' permission to install. Click Update again when you're ready.";
+            }
+            return $"Vault {installer.Version} is ready to install: close SolidWorks, and setup finishes the update.";
+        });
+    }
+
+    // "0.5.0": a version as releases are numbered.
+    private static string Release(Version? version) => version == null ? "" : $"{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
+
     // The active document, if it's an assembly: what Insert puts files in.
     private string? ActiveAssembly() => _sw.ActiveDocumentPath is { } path && SolidWorksHost.IsAssembly(path) ? path : null;
 
@@ -941,6 +1009,7 @@ internal sealed class VaultPane : UserControl
                 ShowBrowse(vault);
             }
             ShowActiveDocument();
+            await CheckForUpdateAsync(workspace);
         }
         catch (VaultApiException e) when (e.StatusCode == 401)
         {
@@ -1136,6 +1205,7 @@ internal sealed class VaultPane : UserControl
         _setupView.Visible = _workspace == null;
         _workView.Visible = _workspace != null;
         _refreshButton.Visible = _accountButton.Visible = _workspace != null;
+        _newVersionButton.Visible = _workspace != null && _newerAddIn != null;
         _accountButton.Text = "Account ▾"; // until a refresh says who
         _vault = null;
         _shown = "";
@@ -1863,7 +1933,7 @@ internal sealed class VaultPane : UserControl
             Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 5,
+            ColumnCount = 6,
             RowCount = 1,
             BackColor = Theme.Surface,
             Padding = new Padding(10, 6, 6, 6),
@@ -1871,6 +1941,7 @@ internal sealed class VaultPane : UserControl
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.Controls.Add(
@@ -1889,9 +1960,10 @@ internal sealed class VaultPane : UserControl
         title.Anchor = AnchorStyles.Left;
         title.Margin = new Padding(0);
         header.Controls.Add(title, 1, 0);
-        _refreshButton.Anchor = _accountButton.Anchor = AnchorStyles.Right;
-        header.Controls.Add(_refreshButton, 3, 0);
-        header.Controls.Add(_accountButton, 4, 0);
+        _newVersionButton.Anchor = _refreshButton.Anchor = _accountButton.Anchor = AnchorStyles.Right;
+        header.Controls.Add(_newVersionButton, 3, 0);
+        header.Controls.Add(_refreshButton, 4, 0);
+        header.Controls.Add(_accountButton, 5, 0);
         return header;
     }
 

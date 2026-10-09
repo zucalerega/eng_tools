@@ -152,11 +152,6 @@
 
 /* --- the workspace: channels on the left, plots on the right ------------------------------------------------- */
 
-main.main-full {
-    max-width: none;
-    padding: 0;
-}
-
 .yorg-workspace {
     display: grid;
     grid-template-columns: 17rem minmax(0, 1fr);

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Notice } from "../components";
 import { Link } from "../router";
 import { WithFolderTree } from "./folderTree";
@@ -19,12 +20,20 @@ import { useVault } from "./store";
 export { VaultMark } from "./components";
 export { inVault, movedToVault, VAULT } from "./paths";
 
+// Caliper, the 3D viewer, and three.js with it, load only when a file is opened in it.
+const CaliperPage = lazy(() => import("./caliper/CaliperPage").then((module) => ({ default: module.CaliperPage })));
+
 /** Which of Vault's sections a page is in, for the top bar. */
 export function vaultSection(pathname: string): string {
     const route = vaultRoute(pathname);
-    return route === "/" || route.startsWith("/file") || route.startsWith("/trash")
+    return route === "/" || route.startsWith("/file") || route.startsWith("/trash") || route.startsWith("/caliper")
         ? "files"
         : (route.split("/")[1] ?? "");
+}
+
+/** Whether a page takes the whole window under the top bar: Caliper's 3D view. */
+export function wholeWindow(pathname: string): boolean {
+    return vaultRoute(pathname).startsWith("/caliper/");
 }
 
 /** Whether a page has the folder tree beside it, and so takes the window's width. */
@@ -57,6 +66,14 @@ function page(route: string) {
     const file = /^\/file\/(\d+)\/?$/.exec(route);
     if (file) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
+    }
+    const caliper = /^\/caliper\/(\d+)\/?$/.exec(route);
+    if (caliper) {
+        return (
+            <Suspense fallback={<p className="muted caliper-page-message">Loading Caliper…</p>}>
+                <CaliperPage key={caliper[1]} id={Number(caliper[1])} />
+            </Suspense>
+        );
     }
     // A folder's pages share the folder tree, which stays as it was from one to the next. A new folder's
     // page starts afresh: nothing selected, no search.

@@ -31,6 +31,11 @@ export function usePathname(): string {
     return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
+/** The current query, like ?version=3: for a page that keeps what it shows there. */
+export function useSearch(): string {
+    return useSyncExternalStore(subscribe, () => window.location.search);
+}
+
 export function Link({
     to,
     exact = false,

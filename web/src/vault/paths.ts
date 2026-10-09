@@ -44,6 +44,18 @@ export function folderFromUrl(route: string): string {
 
 export const fileUrl = (id: number): string => `${VAULT}/file/${id}`;
 
+/** A file in Caliper, the 3D viewer: its latest version (or the one given), in a configuration if one is given. */
+export function caliperUrl(id: number, version?: number, configuration?: string): string {
+    const query = new URLSearchParams();
+    if (version !== undefined) {
+        query.set("version", String(version));
+    }
+    if (configuration) {
+        query.set("configuration", configuration);
+    }
+    return `${VAULT}/caliper/${id}` + (query.size > 0 ? `?${query}` : "");
+}
+
 export type Kind = "part" | "assembly" | "drawing" | "model" | "file";
 
 export function kindOf(name: string): Kind {
@@ -68,6 +80,19 @@ export function kindOf(name: string): Kind {
 
 /** Whether "Open in SolidWorks" applies: SolidWorks' own files, which the add-in opens. */
 export const opensInSolidWorks = (name: string): boolean => ["part", "assembly", "drawing"].includes(kindOf(name));
+
+/** Which of the formats Caliper reads in the browser a file is in, by its name: STEP or IGES; null for others. */
+export function cadFormat(name: string): "step" | "iges" | null {
+    const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    if (extension === "step" || extension === "stp") {
+        return "step";
+    }
+    return extension === "igs" || extension === "iges" ? "iges" : null;
+}
+
+/** Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models), and STEP and IGES files. */
+export const opensInCaliper = (name: string): boolean =>
+    ["part", "assembly"].includes(kindOf(name)) || cadFormat(name) !== null;
 
 const stem = (name: string) =>
     (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).normalize("NFC").toLowerCase();

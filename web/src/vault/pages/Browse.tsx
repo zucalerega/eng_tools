@@ -25,7 +25,7 @@ import {
 import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
 import { canCheckOut } from "../checkouts";
 import { MenuButton, Notice, Time } from "../../components";
-import { FileIcon, FolderIcon, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileIcon, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatDate, formatSize, formatTime } from "../../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
@@ -574,6 +574,7 @@ export function FileTable({
                 <td className="numeric">{formatSize(file.size)}</td>
                 <td className="row-actions">
                     <OpenInSolidWorks path={file.path} compact />
+                    <OpenInCaliper file={file} compact />
                     <a className="button button-small" href={vaultApi.downloadUrl(file.id)} download>
                         Download
                     </a>

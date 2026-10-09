@@ -12,6 +12,7 @@ page is Vault's own.
 |---|---|
 | On the server: every operation (`vault.py`), the folder tree and permissions (`access.py`), path rules (`paths.py`), file contents (`storage.py`), tables, routes | `server/src/yjsp_server/vault` |
 | In the web app: its pages, and the vault's index (`store.ts`) | `web/src/vault` |
+| Caliper, the 3D viewer: in the web app, and its models on the server (`caliper.py`, the mesh format) | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
 | The workspace library | `client/src/Vault.Client` (netstandard2.0 + net10.0) |
 | The `vault` command | `client/src/Vault.Cli` (.NET 10) |
 | The SolidWorks 2025 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
@@ -32,6 +33,8 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
 - **Permissions per subteam folder.**
 - **Works inside SolidWorks** through an add-in. A web app covers browsing,
   history and admin.
+- **See it without SolidWorks.** Caliper shows any part or assembly in 3D in the browser,
+  to turn, cut, and measure, on any computer.
 - **Cheap, and easy to hand over.** It runs in the site's one small server. A student can
   read Vault's part of it in an afternoon.
 
@@ -350,6 +353,8 @@ the site gives both apps (design.md, "The web app").
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
     the top-level ones, its drawings, and its history, with downloads.
+  - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
+    in Caliper, beside Open in SolidWorks on a file's page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.
   - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
     add-in").
@@ -393,6 +398,62 @@ the site gives both apps (design.md, "The web app").
   a drawing named after its model), then links to SolidWorks (a `new` link), which makes
   it on this computer. It shows up in the vault a few seconds later, checked out to you.
 
+## Caliper: 3D in the browser
+
+Caliper (`web/src/vault/caliper`, at `/vault/caliper/<file id>?version=&configuration=`)
+shows a part or assembly in 3D, to look at and measure, not to change: like SpaceX's
+TotalView, on any computer, without SolidWorks. It draws with WebGL (three.js), and loads
+only when a file is opened in it.
+
+- **Looking around**, as in a CAD program: drag to turn it about the point under the mouse,
+  scroll to zoom where the mouse points, right-drag or shift-drag to pan, double-click a part
+  to zoom to it; the standard views (front, top, right, isometric, ...), with SolidWorks' Y
+  up; the axes in the corner (click one to look along it), and at the origin if you like;
+  perspective or not (not, by default, as in SolidWorks).
+- **Sections** across X, Y, and Z, each where you slide it and either way round. With two
+  or three, what's past all of them is cut away, as a SolidWorks section view does, and
+  where a plane cuts a solid it's filled in (stencil-buffer caps, `viewer.ts`).
+- **Measuring** faces, edges, and corners. One shows what it is: a plane's area, a
+  cylinder's or sphere's diameter, a cone's angle (a countersink's), an edge's length or a
+  circle's diameter, a corner's coordinates. Two show what they are to each other: the
+  distance between parallel faces, axes, or lines; between centers; from a point to a face;
+  or the angle between them. Meshes have only triangles, but their vertices lie on the true
+  surfaces, so fitting them (`geometry.ts`) gives exact sizes, to the float32 the meshes
+  keep: a cylinder's area is the cylinder's, not its facets'. Faces and edges no fit
+  explains get the closest their vertices come, marked as about. In mm, cm, m, inches, or
+  feet; the document's own units first.
+- **An assembly's components**, as a tree beside the view: show or hide each (hidden as
+  SolidWorks had them, to start with), isolate one (show only it), or open one in its own
+  Caliper page, at the version the assembly uses. A STEP file's products are its tree, and
+  open where they are.
+
+Where the 3D comes from:
+
+- **SolidWorks parts and assemblies:** only SolidWorks can read them, so Vault for
+  SolidWorks makes a **3D model** of each version it checks in (and of any it has open, on
+  request), in each configuration (`caliper_models`). A part's is a mesh: its bodies'
+  triangles, in runs that are their faces, in millimeters in the part's coordinates, with
+  their colors (`vault/caliper.py` has the format; the server checks every one, and sends it
+  gzip-compressed as it keeps it). An assembly's is its components: each names its file
+  (a part or sub-assembly) at the version the assembly was checked in with, and in the
+  configuration it uses; where it is (a 3 x 4 transform to the top assembly's coordinates,
+  as SolidWorks' `Transform2` gives); whether SolidWorks hid it; its color over its part's;
+  and a sub-assembly's own components. A virtual part, kept inside the assembly, carries its
+  own mesh. Caliper draws each part's own model wherever its components put it, fetching
+  each once (six at a time). A version without a model (checked in from the web or the
+  `vault` command, or before Caliper) says so, and how to make one; with no version asked
+  for, Caliper shows the newest one that has a model, and says so.
+- **STEP and IGES files** are read as they are, in the browser, by OpenCascade compiled to
+  WebAssembly (occt-import-js, LGPL-2.1: 7 MB, fetched the first time and cached), in a
+  worker, so a big file doesn't freeze the page.
+
+A model shows what the vault lets you see: a component in a file you can't see is left
+out, with everything in it, and the page says how many were. Anyone who may upload (an
+editor anywhere) and can see a file can add a model its version doesn't have yet, as the
+add-in does for every part of an assembly it checks in; making one again, in place of the
+one there, takes editor rights to the file's folder. A model is made from its version and
+describes it: making one changes nothing in the file's history.
+
 ## API
 
 Vault's endpoints. Every one needs sign-in; how errors look, and the site's own endpoints,
@@ -416,6 +477,11 @@ are in [design.md](design.md#api).
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
+| `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration |
+| `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
+| `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see, and how many are left out |
+| `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 
 ## Roadmap
 
@@ -432,9 +498,12 @@ are in [design.md](design.md#api).
    and opening files in SolidWorks.
 5. **Moving in** (to do): the current files imported from Kenesto, and the blobs in an
    R2 store, with backups off the host (design.md, "Storage").
-6. **Later**: thumbnails and a 3D STEP preview in the browser, check-in
-   notifications to team chat, released revisions (A, B, C) for flight hardware,
-   and rename/move with reference repair.
+6. **Caliper** (October 2026): parts, assemblies, and STEP files in 3D in the browser, to
+   turn, cut, and measure; the 3D models of SolidWorks files made by the add-in.
+7. **Later**: thumbnails, check-in notifications to team chat, released revisions (A, B,
+   C) for flight hardware, and rename/move with reference repair. In Caliper: drawings,
+   exploded views, and models made on a computer that only makes them (for the files
+   brought from Kenesto at once).
 
 ## Open questions
 

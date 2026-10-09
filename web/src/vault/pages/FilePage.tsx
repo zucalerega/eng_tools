@@ -4,7 +4,7 @@ import { type FileDetail, type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { checkedOutHere, WEB_HOST } from "../checkouts";
 import { Dialog, Notice, Time } from "../../components";
-import { FileIcon, LockLabel, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileIcon, LockLabel, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatSize } from "../../format";
 import { DeleteDialog } from "../manage";
 import { NewFileDialog, StartedNotice } from "../newFile";
@@ -118,6 +118,7 @@ export function FilePage({ id }: { id: number }) {
                 )}
                 <div className="actions">
                     {!file.deleted_at && <OpenInSolidWorks path={file.path} />}
+                    <OpenInCaliper file={file} />
                     <a className="button" href={vaultApi.downloadUrl(file.id)} download>
                         Download
                     </a>

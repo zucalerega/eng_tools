@@ -1,6 +1,6 @@
 // Vault's part of the server's API (server/src/yjsp_server/vault/schemas.py, or /docs on a running server).
 
-import { apiUrl, ApiError, Bytes, query, request, type UserRef } from "../api";
+import { apiUrl, ApiError, Bytes, query, request, requestBytes, type UserRef } from "../api";
 
 export type Role = "admin" | "lead" | "editor" | "viewer";
 
@@ -118,6 +118,37 @@ export interface CheckinRequest {
     items: { path: string; sha256: string; size: number; references: { path: string }[] }[];
 }
 
+/** A version's 3D model in one configuration, for Caliper (made by Vault for SolidWorks). */
+export interface CaliperModel {
+    version: number;
+    configuration: string;
+    kind: "part" | "assembly"; // a part's is a mesh; an assembly's, its components
+    units: "mm" | "cm" | "m" | "in" | "ft"; // the document's length unit
+    created_at: string;
+    created_by: UserRef;
+}
+
+/** A component of an assembly's model: a part or sub-assembly, where the assembly has it. */
+export interface CaliperComponent {
+    name: string;
+    file_id: number | null; // null: a virtual part, which the assembly keeps (its mesh is the assembly's)
+    version: number | null;
+    configuration: string;
+    transform: number[]; // rows of a 3 x 4 matrix to the assembly's coordinates (mm)
+    hidden: boolean;
+    color: [number, number, number] | null;
+    opacity: number;
+    mesh: string | null;
+    model: boolean; // whether its file has a model of its own, at its version and in its configuration
+    children: CaliperComponent[];
+}
+
+export interface CaliperAssembly {
+    model: CaliperModel;
+    components: CaliperComponent[];
+    left_out: number; // components in files you can't see
+}
+
 export const vaultApi = {
     folder: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path })),
     /** A folder's trash: the folders and files deleted from it. */
@@ -168,4 +199,11 @@ export const vaultApi = {
         request<unknown>("PUT", `/api/blobs/${sha256}`, new Bytes(data)),
     checkin: (body: CheckinRequest) =>
         request<{ files: { status: string; file: VaultFile }[] }>("POST", "/api/checkin", body),
+    /** A file's 3D models for Caliper: each version's, newest first, in each configuration. */
+    caliperModels: (fileId: number) => request<{ models: CaliperModel[] }>("GET", `/api/files/${fileId}/caliper`),
+    caliperAssembly: (fileId: number, version: number, configuration: string) =>
+        request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
+    /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */
+    caliperMesh: (fileId: number, version: number, configuration: string, mesh?: string) =>
+        requestBytes(`/api/files/${fileId}/caliper/mesh?` + query({ version, configuration, mesh })),
 };

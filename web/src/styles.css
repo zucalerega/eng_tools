@@ -968,6 +968,12 @@ main.main-wide {
     max-width: 1520px;
 }
 
+/* A page that takes the whole window under the top bar: Yorg's plots, Caliper's 3D view. */
+main.main-full {
+    max-width: none;
+    padding: 0;
+}
+
 .files-layout {
     display: grid;
     grid-template-columns: 16rem minmax(0, 1fr);

@@ -3,10 +3,11 @@
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
 
 from ..api.schemas import UserRef
 from . import vault
+from .caliper import Color
 from .models import Role
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -325,3 +326,83 @@ class GrantIn(BaseModel):
     path: str = ""
     user_id: int | None = None  # null: everyone
     role: Role | None  # null: remove the grant
+
+
+class CaliperModelOut(BaseModel):
+    version: int
+    configuration: str
+    kind: Literal["part", "assembly"]  # a part's model is a mesh; an assembly's, its components
+    units: str  # the document's length unit, for measurements: mm, cm, m, in, or ft
+    created_at: datetime
+    created_by: UserRef
+
+    @classmethod
+    def of(cls, view: vault.ModelView) -> "CaliperModelOut":
+        model = view.model
+        return cls(
+            version=view.version,
+            configuration=model.configuration,
+            kind=view.kind,
+            units=model.units,
+            created_at=model.created_at,
+            created_by=UserRef.of(view.created_by),
+        )
+
+
+class CaliperModelsOut(BaseModel):
+    models: list[CaliperModelOut]  # newest version first; in a version, the first made first
+
+
+class CaliperComponentIn(BaseModel):
+    name: str = Field(max_length=255)  # SolidWorks' name for it in the assembly: "Bracket-2"
+    file_id: int | None = None  # its part's or sub-assembly's file; none for a virtual one, kept in the assembly
+    version: int | None = Field(default=None, ge=1)  # of its file: the one the assembly was made with
+    configuration: str = Field(default="", max_length=255)
+    # Where it is: the rows of a 3 x 4 matrix to the top assembly's coordinates, rotation then translation (mm).
+    transform: Annotated[list[FiniteFloat], Field(min_length=12, max_length=12)]
+    hidden: bool = False  # hidden in SolidWorks
+    color: Color | None = None  # its own, over its part's
+    opacity: float = Field(default=1, ge=0, le=1)
+    mesh: Sha256 | None = None  # its shape, when the assembly keeps it (a virtual part's)
+    children: list["CaliperComponentIn"] = []  # a sub-assembly's components
+
+
+class CaliperModelIn(BaseModel):
+    version: int = Field(ge=1)
+    configuration: str = Field(min_length=1, max_length=255)
+    units: vault.Units
+    mesh: Sha256 | None = None  # a part's: upload it first (PUT /api/blobs/{sha256})
+    components: list[CaliperComponentIn] | None = None  # an assembly's
+
+
+class CaliperComponentOut(CaliperComponentIn):
+    model: bool  # whether its file has a model of its own, at its version and in its configuration
+    children: list["CaliperComponentOut"] = []
+
+
+class CaliperAssemblyOut(BaseModel):
+    model: CaliperModelOut
+    components: list[CaliperComponentOut]  # the ones in files you can see
+    left_out: int  # components in files you can't see, left out with everything in them
+
+    @classmethod
+    def of(cls, assembly: vault.AssemblyModel) -> "CaliperAssemblyOut":
+        return cls(
+            model=CaliperModelOut.of(assembly.view),
+            components=[CaliperComponentOut.model_validate(c) for c in assembly.components],
+            left_out=assembly.left_out,
+        )
+
+
+class CaliperWantIn(BaseModel):
+    file_id: int
+    version: int
+    configuration: str = Field(max_length=255)
+
+
+class CaliperMissingIn(BaseModel):
+    models: list[CaliperWantIn] = Field(max_length=20_000)
+
+
+class CaliperMissingOut(BaseModel):
+    missing: list[CaliperWantIn]  # those that have no model yet, of files you can see

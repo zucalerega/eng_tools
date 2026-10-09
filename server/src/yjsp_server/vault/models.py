@@ -133,6 +133,25 @@ class VersionRef(Base):
     child_version: Mapped[int]
 
 
+class CaliperModel(Base):
+    """A version's 3D model in one of its configurations, for Caliper, the web app's 3D viewer: a part's shape (a mesh,
+    in the blob store), or an assembly's components (which files, in which configurations, where). Only SolidWorks can
+    read SolidWorks files, so Vault for SolidWorks makes them (docs/vault.md, "Caliper"). A model is made from its
+    version and describes it: making it again changes no version."""
+
+    __tablename__ = "caliper_models"
+    __table_args__ = (UniqueConstraint("version_id", "configuration", name="uq_caliper_models_version_configuration"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("versions.id"))
+    configuration: Mapped[str] = mapped_column(String(255))  # SolidWorks' name for it: "Default"
+    units: Mapped[str] = mapped_column(String(8))  # the document's length unit, for measurements: mm, in, ...
+    mesh_sha256: Mapped[str | None] = mapped_column(ForeignKey("blobs.sha256"))  # a part's (vault/caliper.py)
+    components: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)  # an assembly's
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
 class Grant(Base):
     """A role on a folder and everything under it, for one user or (user_id None) everyone."""
 

@@ -635,8 +635,8 @@ internal sealed class VaultPane : UserControl
     private Task GetLatestAsync(string path) =>
         RunAsync("Getting the latest version", async workspace => await GetLatestHereAsync(workspace, path));
 
-    // The file and the parts it uses are updated in place, open or not.
-    private async Task<string> GetLatestHereAsync(Workspace workspace, string path)
+    // The file and the parts it uses are updated in place, open or not. Quiet: nothing to say if nothing came down.
+    private async Task<string> GetLatestHereAsync(Workspace workspace, string path, bool quiet = false)
     {
         var involved = new List<string> { path };
         involved.AddRange(_sw.AllReferences(path));
@@ -649,8 +649,51 @@ internal sealed class VaultPane : UserControl
             await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
             return got;
         });
-        return Summary(result) + NotInVaultNote(notInVault);
+        var nothing = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count + notInVault.Count == 0;
+        return quiet && nothing ? "" : Summary(result) + NotInVaultNote(notInVault);
     }
+
+    /// <summary>
+    /// Insert a part or assembly from the vault into the active assembly, in one step: its latest version, and the
+    /// parts it uses, come down first if they aren't here (as Get latest gets them), then SolidWorks adds it beside the
+    /// assembly, selected, to drag into place and mate. Changing the assembly then offers its check-out, as any change does.
+    /// </summary>
+    private Task InsertAsync(string path)
+    {
+        if (ActiveAssembly() is not { } assembly)
+        {
+            Warn("Open the assembly to insert it into, so it's the active document, then try again.");
+            return Task.CompletedTask;
+        }
+        var name = Path.GetFileName(path);
+        var into = Path.GetFileName(assembly);
+        // Someone else's assembly can take the part, but not be saved with it: say so first, and only once.
+        if (StatusOf(assembly) is { Lock: { } other, CheckedOutByMe: false } && other.User.Id != _me?.Id)
+        {
+            if (Ask($"{into} is checked out by {other.User.Name} {On(other.Host)}, so you won't be able to save it with {name} in it. Insert it anyway?")
+                != DialogResult.Yes)
+            {
+                return Task.CompletedTask;
+            }
+            _offered.Add(assembly);
+        }
+        return RunAsync($"Inserting {name}", async workspace =>
+        {
+            var got = await GetLatestHereAsync(workspace, path, quiet: true);
+            if (!File.Exists(path))
+            {
+                throw new WorkspaceException($"{name} isn't in the vault, or you don't have access to it.");
+            }
+            if (_sw.InsertComponent(assembly, path) is { } problem)
+            {
+                throw new WorkspaceException(problem);
+            }
+            return $"Inserted {name} into {into}: drag it into place and mate it." + (got.Length > 0 ? " " + got : "");
+        });
+    }
+
+    // The active document, if it's an assembly: what Insert puts files in.
+    private string? ActiveAssembly() => _sw.ActiveDocumentPath is { } path && SolidWorksHost.IsAssembly(path) ? path : null;
 
     // Before opening a file that's here: the files it uses that aren't. Nothing to say if they all are.
     private Task GetWhatItUsesAsync(string path) =>
@@ -1496,6 +1539,7 @@ internal sealed class VaultPane : UserControl
         var open = menu.Items.Add("Open", null, (_, _) => Safely(() => OpenAsync(SelectedPaths())));
         var drawing = new ToolStripMenuItem("Open drawing");
         menu.Items.Add(drawing);
+        var insert = menu.Items.Add("Insert into assembly", null, (_, _) => Safely(() => InsertAsync(SelectedPaths()[0])));
         var checkOut = menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
         var checkIn = menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
         var undo = menu.Items.Add("Undo check-out", null, (_, _) => Safely(() => UndoAsync(SelectedPaths()[0])));
@@ -1533,6 +1577,16 @@ internal sealed class VaultPane : UserControl
             }
             drawing.Available = !folder && drawing.DropDownItems.Count > 0;
             drawing.Enabled = !_busy;
+            // A part or assembly goes in the active assembly; files deleted in the vault, or in conflict, couldn't be
+            // checked in with it.
+            var assembly = ActiveAssembly();
+            var component = files.Count == 1 && SolidWorksHost.IsComponent(files[0].VaultPath) ? files[0] : null;
+            insert.Available = !folder && component != null;
+            insert.Text = assembly == null ? "Insert into an assembly (open one first)" : $"Insert into {Path.GetFileName(assembly)}";
+            insert.Enabled = !_busy && assembly != null && component != null
+                && component.State is not (FileState.DeletedInVault or FileState.Conflict)
+                && !string.Equals(component.LocalPath, assembly, StringComparison.OrdinalIgnoreCase);
+            insert.ToolTipText = "Download it if it isn't here, with the parts it uses, and add it to the assembly, ready to mate.";
         };
         return menu;
     }

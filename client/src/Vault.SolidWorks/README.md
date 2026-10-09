@@ -22,7 +22,8 @@ task pane with these parts:
   the version each was checked in with), and parts and assemblies list their drawings.
   Hover for where a file is used. Double-click to open: a file that isn't here yet is
   downloaded first, with the parts it uses, and one that is gets the parts it uses that
-  aren't. Right-click for actions; on a folder, Get latest, Check in, or Show in File
+  aren't. Right-click for actions: on a part or assembly, Insert into the assembly you
+  have open (see "While you work"); on a folder, Get latest, Check in, or Show in File
   Explorer.
 - **Update downloaded files** and **Download everything...**, under the files (see
   "Getting files").
@@ -49,6 +50,13 @@ says so (the CLI's `vault get --force` replaces it, keeping a copy). Nor do they
 open file with unsaved changes.
 
 While you work:
+- **Insert a part from the vault** into the assembly you're working on, in one step,
+  whether it's on this computer or not: right-click it in Browse (or Needs attention) and
+  choose **Insert into** your assembly. Vault gets its latest version, and the parts it
+  uses if it's an assembly, and SolidWorks adds it beside the assembly, selected and in
+  view: drag it into place and mate it. As with any change, Vault then offers to check
+  the assembly out if it isn't yours, and asks first if someone else has it checked out.
+  When you check the assembly in, the part is recorded with the version it went in at.
 - **Start editing a file you haven't checked out** and Vault offers to check it out (or,
   if it's checked out to you in the web app or on another computer, to move the check-out
   here).
@@ -189,6 +197,12 @@ these on SolidWorks 2025:
     only files on this computer and your check-outs, and says so when it's empty.
 20. Click your name in the header: Open the web app opens the vault in your browser, Open
     the workspace folder opens `C:\VLT`, and Sign out signs you out.
+21. Open an assembly that's checked in. In Browse, right-click a part that isn't downloaded
+    here and choose Insert into (the assembly): it downloads, appears beside the assembly,
+    selected, and Vault offers to check the assembly out. Mate it, save, and check the
+    assembly in: `vault history` on it lists the part with its version. Do it again with a
+    sub-assembly that isn't here: its parts come down too, and it goes in whole. With a part
+    active instead, the menu says to open an assembly first; a drawing has no Insert.
 
 ## When something goes wrong
 

@@ -31,6 +31,11 @@ internal sealed class SolidWorksHost
     public static bool IsSolidWorksFile(string path) =>
         SolidWorksExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
 
+    public static bool IsAssembly(string path) => Path.GetExtension(path).Equals(".sldasm", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether a file can go in an assembly: a part, or another assembly.</summary>
+    public static bool IsComponent(string path) => IsAssembly(path) || Path.GetExtension(path).Equals(".sldprt", StringComparison.OrdinalIgnoreCase);
+
     public IReadOnlyList<ModelDoc2> OpenDocuments()
     {
         var documents = new List<ModelDoc2>();
@@ -169,6 +174,96 @@ internal sealed class SolidWorksHost
         // Opening a file that's already open doesn't bring its window forward; this does.
         _app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
     }
+
+    /// <summary>
+    /// Add a part or assembly to an open assembly, beside what's in it already, selected and in view, ready to be dragged
+    /// into place and mated. SolidWorks adds only files it has open, so one that isn't is opened without a window, and
+    /// closed again once it's in (the assembly keeps it loaded). Returns what went wrong, or null.
+    /// </summary>
+    public string? InsertComponent(string assemblyPath, string componentPath)
+    {
+        var name = Path.GetFileName(componentPath);
+        if (OpenDocument(assemblyPath) is not AssemblyDoc assembly)
+        {
+            return $"{Path.GetFileName(assemblyPath)} isn't open in SolidWorks.";
+        }
+        var component = OpenDocument(componentPath);
+        var opened = component == null;
+        if (opened)
+        {
+            var type = (int)DocumentType(componentPath);
+            int errors = 0, warnings = 0;
+            _app.DocumentVisible(false, type);
+            try
+            {
+                component = _app.OpenDoc6(componentPath, type, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings);
+            }
+            finally
+            {
+                _app.DocumentVisible(true, type);
+            }
+            if (component == null)
+            {
+                return $"SolidWorks couldn't open {name} (error {errors}), so it isn't in the assembly.";
+            }
+        }
+        try
+        {
+            int activating = 0;
+            _app.ActivateDoc3(assemblyPath, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref activating);
+            var (x, y, z) = Beside(assembly, component!);
+            var added = assembly.AddComponent5(
+                componentPath, (int)swAddComponentConfigOptions_e.swAddComponentConfigOptions_CurrentSelectedConfig, "", false, "", x, y, z);
+            if (added == null)
+            {
+                return $"SolidWorks couldn't add {name} to {Path.GetFileName(assemblyPath)}. An assembly can't go in itself, or in one it's used in.";
+            }
+            var model = (ModelDoc2)assembly;
+            model.ClearSelection2(true);
+            added.Select4(false, null, false);
+            model.ViewZoomtofit2();
+            return null;
+        }
+        finally
+        {
+            if (opened)
+            {
+                _app.CloseDoc(componentPath);
+            }
+        }
+    }
+
+    // Where a new component's center goes: past the right of what the assembly has, level with its middle, so it doesn't
+    // land inside another part. The assembly's origin if either has no size to go by.
+    private static (double X, double Y, double Z) Beside(AssemblyDoc assembly, ModelDoc2 component)
+    {
+        try
+        {
+            var around = Box(assembly.GetBox(0));
+            var size = Box(component switch
+            {
+                PartDoc part => part.GetPartBox(true),
+                AssemblyDoc subassembly => subassembly.GetBox(0),
+                _ => null,
+            });
+            if (around == null || size == null)
+            {
+                return (0, 0, 0);
+            }
+            var width = size[3] - size[0];
+            var gap = Math.Max(0.01, 0.25 * Math.Max(width, around[3] - around[0]));
+            return (around[3] + gap + (width / 2), (around[1] + around[4]) / 2, (around[2] + around[5]) / 2);
+        }
+        catch (COMException e)
+        {
+            Log.Error("Couldn't measure the assembly to place a component beside it", e);
+            return (0, 0, 0);
+        }
+    }
+
+    // A bounding box, [xmin, ymin, zmin, xmax, ymax, zmax] in meters, or null for one with nothing in it.
+    private static double[]? Box(object? box) =>
+        box is double[] { Length: 6 } corners && corners[3] - corners[0] + corners[4] - corners[1] + corners[5] - corners[2] > 0 ? corners : null;
 
     /// <summary>
     /// Start a new part, assembly, or drawing from SolidWorks' default template for it (a drawing with a view

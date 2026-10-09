@@ -306,6 +306,12 @@ COM add-in, registered with RegAsm.
   it was being replaced keeps its changes and isn't reloaded. These decisions use the
   vault's current state, not the task pane's last refresh. Check-out and check-in
   switch open documents between read-only and editable (`SetReadOnlyState`).
+- **Inserting from the vault.** Insert into (the active assembly), on a part's or an
+  assembly's right-click menu in the task pane, gets its latest version and the parts it
+  uses, as Get latest does, then adds it to the assembly (`AddComponent5`, which takes only
+  documents SolidWorks has open, so the file is opened without a window and closed again),
+  beside the assembly's bounding box, selected. That's how a file that isn't here yet goes
+  into an assembly in one step: SolidWorks' own Insert Components only sees files on disk.
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 - **Links from the web app.** "Open in SolidWorks" is a `vault://open?server=…&path=…`

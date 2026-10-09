@@ -72,6 +72,11 @@ export function SolidWorks() {
                     An assembly brings the parts it uses along; nothing else is downloaded until you need it.
                 </li>
                 <li>
+                    <strong>Insert</strong> a part or assembly from the vault into the assembly you have open:
+                    right-click it in the Browse list and choose Insert into. It's downloaded first if it isn't on your
+                    computer.
+                </li>
+                <li>
                     <strong>Check out</strong> a file before you change it, so nobody else changes it at the same time.
                     Start editing one and Vault offers to.
                 </li>

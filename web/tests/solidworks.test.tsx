@@ -9,6 +9,7 @@ test("the SolidWorks page has the add-in's installer, and connects SolidWorks to
 
     const installer = await screen.findByRole("link", { name: "Download Vault-Setup.exe" });
     expect(installer.getAttribute("href")).toMatch(/\/api\/downloads\/Vault-Setup\.exe$/);
+    expect(screen.getByText(/Version 0\.5\.0, .* for SolidWorks 2026 on Windows/)).toBeTruthy(); // read from the program
     const connect = screen.getByRole("link", { name: "Connect SolidWorks" });
     expect(connect.getAttribute("href")).toBe("vault://connect?server=" + encodeURIComponent(window.location.origin));
     expect(screen.getByRole("link", { name: "vault.exe" })).toBeTruthy(); // the other downloads

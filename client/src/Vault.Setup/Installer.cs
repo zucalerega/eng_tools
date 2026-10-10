@@ -34,6 +34,12 @@ internal static class Installer
     private const string LinkKey = @"SOFTWARE\Classes\vault";
     private const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\VaultForSolidWorks";
 
+    /// <summary>
+    /// The SolidWorks a new install needs: the team works in it, and files saved in it don't open in older versions. A
+    /// computer that has the add-in already updates it on SolidWorks 2025 too, while it moves over.
+    /// </summary>
+    public const int SolidWorksYear = 2026;
+
     public static string Folder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Product);
 
@@ -62,6 +68,14 @@ internal static class Installer
             return app?.GetValue("DisplayVersion") as string;
         }
     }
+
+    /// <summary>Whether the add-in is installed here already, by setup or by install.ps1 into this folder.</summary>
+    public static bool AddInInstalled => InstalledVersion != null || File.Exists(Path.Combine(Folder, AddInDll));
+
+    /// <summary>Whether this year's SolidWorks is installed, where its own setup says.</summary>
+    public static bool HasSolidWorks(int year) =>
+        Registry.GetValue($@"HKEY_LOCAL_MACHINE\SOFTWARE\SolidWorks\SOLIDWORKS {year}\Setup", "SolidWorks Folder", null) is string folder
+        && File.Exists(Path.Combine(folder, "SLDWORKS.exe"));
 
     /// <summary>SolidWorks, running: it has the add-in loaded, so its files can't be replaced or removed.</summary>
     public static Process[] SolidWorks() => Process.GetProcessesByName("SLDWORKS");
@@ -193,7 +207,7 @@ internal static class Installer
             Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe");
         if (!File.Exists(regasm))
         {
-            throw new SetupException("This computer doesn't have the .NET Framework 4.8 that SolidWorks needs: install SolidWorks 2025 first.");
+            throw new SetupException($"This computer doesn't have the .NET Framework 4.8 that SolidWorks needs: install SolidWorks {SolidWorksYear} first.");
         }
         var start = new ProcessStartInfo(regasm, $"{action} \"{dll}\"")
         {

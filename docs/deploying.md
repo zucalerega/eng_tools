@@ -169,6 +169,10 @@ sudo install -o yjsp -g yjsp -m 644 /tmp/Vault-Setup.exe /srv/yjsp/downloads/.Va
 sudo mv /srv/yjsp/downloads/.Vault-Setup.exe.part /srv/yjsp/downloads/Vault-Setup.exe
 ```
 
+A newer `Vault-Setup.exe` there is also how laptops get an add-in update: within a few
+hours, the Vault tab in SolidWorks offers **Update** (the server reads the version from the
+program). So put in only a build CI made from `main` or a release tag, as for a deploy.
+
 ### Putting back a database backup
 
 Only with the owner's say-so: this replaces the live database, and whatever changed since

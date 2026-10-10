@@ -40,7 +40,7 @@ public sealed class AddIn : ISwAddin
         try
         {
             _session = Start(ThisSW);
-            Log.Info($"Vault add-in {typeof(AddIn).Assembly.GetName().Version} started");
+            Log.Info($"Vault add-in {typeof(AddIn).Assembly.GetName().Version} started in SolidWorks {Revision(ThisSW)}");
             return true;
         }
         catch (Exception e)
@@ -70,6 +70,10 @@ public sealed class AddIn : ISwAddin
     // A separate method, so Vault.Client and its dependencies load only after the resolver is installed.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static IDisposable Start(object app) => new Session((SldWorks)app);
+
+    // "34.1.0" in SolidWorks 2026, "33..." in 2025: which one a log is from.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static string Revision(object app) => ((SldWorks)app).RevisionNumber();
 
     [ComRegisterFunction]
     public static void Register(Type type)

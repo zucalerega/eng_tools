@@ -175,6 +175,20 @@ public sealed class VaultEvent
     public string? Comment { get; set; }
 }
 
+/// <summary>A file the server offers for download (GET /api/downloads), like the add-in's installer.</summary>
+public sealed class Download
+{
+    public string Name { get; set; } = "";
+    public long Size { get; set; }
+    public DateTimeOffset ModifiedAt { get; set; }
+
+    /// <summary>A Windows program's version, like "0.5.0", from the program itself; null for other files, and from servers before 0.5.0.</summary>
+    public string? Version { get; set; }
+
+    /// <summary>Null from servers before 0.5.0.</summary>
+    public string? Sha256 { get; set; }
+}
+
 public sealed class IssuedToken
 {
     public string Token { get; set; } = "";

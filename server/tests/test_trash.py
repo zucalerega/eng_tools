@@ -1,5 +1,8 @@
 """The trash: files and whole folders deleted, and brought back as they were."""
 
+import hashlib
+import struct
+
 from yjsp_server.models import UserStatus
 
 
@@ -126,3 +129,41 @@ def test_members_download_the_software(settings, tmp_path, team, client):
     waiting = team.member("new@x.test", status=UserStatus.PENDING)
     assert client.get("/api/downloads", headers=waiting).status_code == 403
     assert client.get("/api/downloads/Vault-Setup.exe").status_code == 401
+
+
+def program(version: tuple[int, int, int], carrying: bytes = b"") -> bytes:
+    """A stand-in Windows program with a version resource (VS_VERSIONINFO), after anything it carries inside it."""
+    major, minor, build = version
+    fixed = struct.pack("<IIII", 0xFEEF04BD, 0x10000, (major << 16) | minor, build << 16)
+    return b"MZ" + carrying + b"\0" * 64 + "VS_VERSION_INFO".encode("utf-16-le") + b"\0\0" + fixed + b"\0" * 36
+
+
+def test_downloads_say_their_hash_and_programs_their_version(settings, tmp_path, team, client):
+    # The add-in compares the installer's version with its own to offer an update, and checks the installer's hash
+    # before running it.
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    old = program((0, 4, 0))
+    setup = program((0, 5, 1), carrying=old)  # as Vault-Setup.exe carries the add-in: its own version comes last
+    (downloads / "Vault-Setup.exe").write_bytes(setup)
+    (downloads / "vault.exe").write_bytes(b"MZ without a version")
+    (downloads / "README.txt").write_bytes(program((9, 9, 9)))  # not a program, whatever it holds
+    settings.downloads_dir = downloads
+    chief = team.member("chief@x.test", admin=True)
+
+    listed = {d["name"]: d for d in client.get("/api/downloads", headers=chief).json()}
+    assert {name: d["version"] for name, d in listed.items()} == {
+        "README.txt": None,
+        "Vault-Setup.exe": "0.5.1",
+        "vault.exe": None,
+    }
+    assert listed["Vault-Setup.exe"]["sha256"] == hashlib.sha256(setup).hexdigest()
+
+    # A new installer in its place says so at once.
+    newer = program((0, 6, 0))
+    (downloads / "Vault-Setup.exe").write_bytes(newer)
+    listed = {d["name"]: d for d in client.get("/api/downloads", headers=chief).json()}
+    assert (listed["Vault-Setup.exe"]["version"], listed["Vault-Setup.exe"]["sha256"]) == (
+        "0.6.0",
+        hashlib.sha256(newer).hexdigest(),
+    )

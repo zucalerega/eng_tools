@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- SolidWorks 2025 loads add-ins as 64-bit .NET Framework 4.8 COM components. -->
+    <!-- SolidWorks loads add-ins as 64-bit .NET Framework 4.8 COM components. -->
     <TargetFramework>net48</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
     <RootNamespace>Vault.SolidWorks</RootNamespace>
@@ -12,7 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- SolidWorks 2025 API (version 33) interop assemblies. -->
+    <!-- SolidWorks 2025 API (version 33) interop assemblies: 2026, the team's, runs add-ins built against them, so
+         one build serves both while laptops move to 2026. -->
     <PackageReference Include="Visiativ.SOLIDWORKS.Interop" Version="33.0.0" />
   </ItemGroup>
 

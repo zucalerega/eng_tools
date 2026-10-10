@@ -61,7 +61,8 @@ replaces Kenesto.
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
   part on its own. Nothing in it changes a file. STEP and IGES files open as they are;
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in.
+  version it checks in (for files from before, open them in SolidWorks and click Make 3D
+  view on the Vault tab).
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

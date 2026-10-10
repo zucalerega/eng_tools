@@ -349,6 +349,16 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   checks it in at once as version 1, kept checked out to you, so everyone sees it and
   the name is taken. Changes to the model that you haven't checked in stay out of that
   check-in.
+- **3D views for Caliper.** After a check-in, the add-in makes the 3D models (see
+  "Caliper") of each checked-in part or assembly that SolidWorks has open, and of the parts
+  and rigid sub-assemblies it uses that have none, each of the vault version that's here
+  (`CaliperModels` in Vault.Client: it asks the server which are missing, then saves those).
+  Make 3D view does it for the active document. SolidWorks gives what it draws (each face's
+  display triangles, `IFace2.GetTessTriangles`; a component's bodies come in its part's
+  coordinates, in the configuration it uses) and where each component is (`Transform2`,
+  relative to the top assembly; a sub-assembly's own model has them relative to it). A part
+  with unsaved changes, or loaded lightweight (its bodies aren't), gets no model, and the
+  tab says so; making models never undoes the check-in before it.
 
 ## In the web app
 

@@ -84,7 +84,17 @@ internal static class Hashing
         // Share read/write: SolidWorks keeps files open while you work on them.
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16);
         using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(stream);
+        return Hex(sha.ComputeHash(stream));
+    }
+
+    public static string Sha256(byte[] data)
+    {
+        using var sha = SHA256.Create();
+        return Hex(sha.ComputeHash(data));
+    }
+
+    private static string Hex(byte[] hash)
+    {
         var hex = new StringBuilder(hash.Length * 2);
         foreach (var b in hash)
         {

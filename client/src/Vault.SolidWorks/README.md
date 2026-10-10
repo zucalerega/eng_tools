@@ -103,6 +103,13 @@ While you work:
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
   yours; design it, then check it in.
+- **3D views for Caliper**, the web app's 3D viewer: checking in a part or an assembly makes
+  its 3D view (what SolidWorks shows of it, and for an assembly, where each part is), and
+  those of the parts and sub-assemblies it uses that have none yet, from what SolidWorks has
+  open. **Make 3D view**, on the tab, does the same for the active document: for files
+  brought from Kenesto, or checked in from the web. A part changed and not checked in, or
+  with changes not saved, gets none until it is; one loaded lightweight needs the assembly
+  set to resolved first. The tab says what it made, and why anything wasn't.
 
 ## Install
 
@@ -251,6 +258,25 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     part stay; everything else here turns Not downloaded in Browse and is gone from
     `C:\VLT`. Double-click a freed part: it downloads and opens. Right-click a folder and
     choose Free up space: only that folder's copies go.
+26. Caliper, a part: make a part with a hole, a fillet, a countersink, and one face colored
+    red (Appearance on the face), in inches. Check it in: the tab says it made a 3D view. In
+    the web app, Open in Caliper shows it in its colors, red face and all, with its edges,
+    and measures in inches. Measure the hole, the countersink, and the distance between two
+    faces: the same as SolidWorks' Measure gives.
+27. Caliper, an assembly: put that part in an assembly twice, the second turned 90° and
+    moved, with a sub-assembly of two other parts, a virtual part, and a component colored
+    blue in the assembly (its appearance there). Hide one component, then check the
+    assembly in. In Caliper, every component is where SolidWorks has it (compare the front,
+    top, and isometric views), the blue one blue, the hidden one unticked in the tree and
+    not drawn, the virtual part there. Open the sub-assembly from the tree: it shows on its
+    own. Cut it with a section: what SolidWorks' section view shows.
+28. Configurations: use two configurations of one part in an assembly and check it in:
+    Caliper shows each configuration's shape, and the part's page offers both.
+29. Make 3D view: open an assembly uploaded from the web (it has no 3D view), resolve it
+    if it opened lightweight, and click Make 3D view: the tab says how many 3D views it
+    made, and Caliper shows the assembly. Click it again: it says it has them already.
+    Change a part without saving, open another assembly that uses it, and click Make 3D
+    view: the tab says that part's wasn't made, and why.
 
 ## When something goes wrong
 

@@ -156,6 +156,12 @@ Update downloaded files, `vault get` with no paths) brings the files that are he
 date, with any parts they've started to use, and nothing else. Downloading everything, or
 a folder's files that aren't here yet, is its own step, and the add-in says how many
 files and how much space first (`SizeOfGetAsync`), and asks, with No as the default.
+Freeing up space (`Workspace.FreeUpAsync`: the add-in's Free up space, `vault free`) goes
+the other way: it removes the copies here of files that are just as they came, at any
+version, and not checked out to you, so nothing is lost, and they're not downloaded again
+until someone opens or gets them. The add-in keeps what SolidWorks has open, and every file
+that uses, and asks first; it never frees anything by itself, since freed files need a
+connection to come back.
 
 ## Permissions
 

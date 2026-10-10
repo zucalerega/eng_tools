@@ -26,10 +26,10 @@ move over. It adds a **Vault** tab to the task pane with these parts:
   Hover for where a file is used. Double-click to open: a file that isn't here yet is
   downloaded first, with the parts it uses, and one that is gets the parts it uses that
   aren't. Right-click for actions: on a part or assembly, Insert into the assembly you
-  have open (see "While you work"); on a folder, Get latest, Check in, or Show in File
-  Explorer.
-- **Update downloaded files** and **Download everything...**, under the files (see
-  "Getting files").
+  have open (see "While you work"); on a folder, Get latest, Check in, Free up space, or
+  Show in File Explorer.
+- **Update downloaded files**, **Download everything...**, and **Free up space...**, under
+  the files (see "Getting files" and "Freeing up space").
 - **Sign-in and workspace:** set once. The workspace is `C:\VLT` on every computer, so
   assembly references resolve for everyone (setup makes it). It has a folder for each of
   the vault's folders, to save new parts in, but only the files you've opened, checked
@@ -51,6 +51,18 @@ how the last thing went.
 None of them replace a file you've changed here: it's skipped, and the line at the bottom
 says so (the CLI's `vault get --force` replaces it, keeping a copy). Nor do they replace an
 open file with unsaved changes.
+
+### Freeing up space
+
+A file stays on the computer once it's downloaded, so `C:\VLT` grows with everything
+you've opened. **Free up space...** (under the files, or on a folder's or a file's
+right-click menu) removes the copies on this computer of files that are just as they came
+from the vault, at any version, and that aren't checked out to you: nothing is lost. It
+says how many files and how much space first, and asks; No is the default. Files you've
+changed, new files, your check-outs, and anything open in SolidWorks (with every file it
+uses) stay. Freed files show as Not downloaded, and come back when you open or get them,
+which needs a connection to the vault: keep what you'll need where there's no internet.
+It never happens by itself. `vault free` does the same from the command line.
 
 While you work:
 - **Insert a part from the vault** into the assembly you're working on, in one step,
@@ -233,6 +245,12 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     add-in. Start SolidWorks: your name's menu shows the new version, and there's no Update.
 24. Close SolidWorks and click Open in SolidWorks in the web app: SolidWorks starts (2026,
     on a PC with both 2025 and 2026), and opens the file.
+25. With an assembly open (its parts came with it), a part checked out to you, and a part
+    you've changed, click Free up space...: it says how many files and how much space, and
+    No changes nothing. Yes: the assembly and its parts, your check-out, and the changed
+    part stay; everything else here turns Not downloaded in Browse and is gone from
+    `C:\VLT`. Double-click a freed part: it downloads and opens. Right-click a folder and
+    choose Free up space: only that folder's copies go.
 
 ## When something goes wrong
 

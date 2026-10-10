@@ -201,6 +201,9 @@ export const vaultApi = {
         request<{ files: { status: string; file: VaultFile }[] }>("POST", "/api/checkin", body),
     /** A file's 3D models for Caliper: each version's, newest first, in each configuration. */
     caliperModels: (fileId: number) => request<{ models: CaliperModel[] }>("GET", `/api/files/${fileId}/caliper`),
+    /** Make a version's 3D model from the 3D view SolidWorks saved in the file; or the model it has already. */
+    makeCaliperModel: (fileId: number, version: number) =>
+        request<CaliperModel>("POST", `/api/files/${fileId}/caliper/make`, { version }),
     caliperAssembly: (fileId: number, version: number, configuration: string) =>
         request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */

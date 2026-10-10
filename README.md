@@ -59,10 +59,12 @@ replaces Kenesto.
   cut it with section planes across X, Y, and Z, and measure: a face's area, a hole's
   diameter, an edge's length, and the distance or angle between two faces, edges, or
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
-  part on its own. Nothing in it changes a file. STEP and IGES files open as they are;
+  part on its own. Nothing in it changes a file. STEP and IGES files open as they are.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in (for files from before, open them in SolidWorks and click Make 3D
-  view on the Vault tab).
+  version it checks in; for any other version, the server reads the 3D view SolidWorks
+  saved in the file, in the configuration it was saved in. If it can't (a file from
+  SolidWorks 2014 or older, say), Caliper says why: open the file in SolidWorks and click
+  Make 3D view on the Vault tab.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

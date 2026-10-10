@@ -99,15 +99,15 @@ export class Team {
         return `${this.folder}/${relative}`;
     }
 
-    /** Check files in as one check-in; refs says which files each one uses. */
+    /** Check files in as one check-in, each its text or its bytes; refs says which files each one uses. */
     async checkin(
         who: Member,
-        files: Record<string, string>,
+        files: Record<string, string | Uint8Array>,
         options: { comment?: string; host?: string; refs?: Record<string, string[]> } = {},
     ): Promise<VaultFile[]> {
         const items = [];
-        for (const [relative, text] of Object.entries(files)) {
-            const data = new TextEncoder().encode(text);
+        for (const [relative, contents] of Object.entries(files)) {
+            const data = typeof contents === "string" ? new TextEncoder().encode(contents) : contents;
             const sha256 = createHash("sha256").update(data).digest("hex");
             await call("PUT", `/api/blobs/${sha256}`, who.token, data);
             const references = (options.refs?.[relative] ?? []).map((used) => ({ path: this.path(used) }));

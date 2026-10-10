@@ -5,6 +5,8 @@ takes the acting user and checks permissions through Access. Every mutating
 function starts with begin_write(); read its docstring before adding one.
 """
 
+import hashlib
+import re
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -18,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
-from . import caliper, paths
+from . import caliper, paths, solidworks
 from .access import Access, Tree
 from .models import Blob, CaliperModel, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
 from .storage import BlobStore
@@ -1455,6 +1457,154 @@ def put_caliper_model(
     model.created_at, model.created_by = utcnow(), user.id
     db.commit()
     return ModelView(model, version, user)
+
+
+_MAX_READ = 1 << 28  # bigger files aren't read for their 3D view here: Vault for SolidWorks makes theirs
+
+
+def _keep(store: BlobStore, data: bytes) -> tuple[str, int]:
+    """Put bytes the server made in the blob store, under their SHA-256 (not yet recorded in blobs)."""
+    sha = hashlib.sha256(data).hexdigest()
+    if not store.exists(sha):
+        temp = store.temp_path()
+        try:
+            temp.write_bytes(data)
+            store.commit(sha, temp)
+        finally:
+            temp.unlink(missing_ok=True)
+    return sha, len(data)
+
+
+def _file_of(path: str, refs: list[tuple[File, int]], tree: Tree) -> tuple[File, int] | None:
+    """Which of a version's references a component's file is, by the path SolidWorks saved for it: the one with its
+    name, and if several have it, the one whose folders end the same way."""
+    names = [name for name in re.split(r"[\\/]", path) if name]
+    if not names:
+        return None
+    same = [(file, version) for file, version in refs if file.name_key == paths.key(names[-1])]
+    if len(same) <= 1:
+        return same[0] if same else None
+
+    def common(file: File) -> int:
+        theirs = [paths.key(name) for name in paths.split(tree.file_path(file))]
+        mine = [paths.key(name) for name in names]
+        n = 0
+        while n < min(len(theirs), len(mine)) and theirs[-1 - n] == mine[-1 - n]:
+            n += 1
+        return n
+
+    ranked = sorted(same, key=lambda ref: common(ref[0]), reverse=True)
+    return ranked[0] if common(ranked[0][0]) > common(ranked[1][0]) else None
+
+
+def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
+    rows = db.execute(
+        select(File, VersionRef.child_version)
+        .join(VersionRef, VersionRef.child_file_id == File.id)
+        .where(VersionRef.version_id == version.id)
+    )
+    return [(file, number) for file, number in rows]
+
+
+def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
+    """Make a version's 3D model from the 3D view SolidWorks saved in the file itself (vault/solidworks.py), in the
+    configuration it was saved in: so Caliper shows SolidWorks files that Vault for SolidWorks made no model of. A
+    version that has a model keeps it, and that one comes back.
+
+    Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
+    version references (each with its shape as the assembly shows it), so its model is whole even where its parts
+    have no model of their own; who sees which is decided when it's shown (caliper_assembly)."""
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    kind = _caliper_kind(file.name)
+    if kind is None:
+        raise ApiError(f"Caliper's models are of SolidWorks parts and assemblies: {path} isn't one", code="bad_model")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    made = db.scalar(select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id))
+    if made is not None:
+        return ModelView(made, version, _users(db, {made.created_by})[made.created_by])
+    if target.size > _MAX_READ:
+        raise solidworks.Unreadable(
+            f"{path} v{version} is over {_MAX_READ >> 20} MB, too big to read here: make its 3D view in SolidWorks "
+            "(Make 3D view, on the Vault tab)"
+        )
+
+    # Versions never change, so reading one, which takes a moment, comes before the write lock.
+    data = store.path(target.blob_sha256).read_bytes()
+    kept: dict[str, int] = {}  # blobs made, with their sizes
+    mesh: str | None = None
+    components: list[dict[str, Any]] | None = None
+    try:
+        if kind == "part":
+            part = solidworks.read_part(data)
+            configuration, units = part.configuration[:255], part.units
+            mesh, size = _keep(store, caliper.write_mesh(part.bodies))
+            kept[mesh] = size
+        else:
+            assembly = solidworks.read_assembly(data)
+            configuration, units = assembly.configuration[:255], assembly.units
+
+            def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:
+                out = []
+                for component in found:
+                    match = None if component.virtual else _file_of(component.path, refs, tree)
+                    shape = None
+                    if component.shape is not None:
+                        shape, size = _keep(store, caliper.write_mesh(component.shape))
+                        kept[shape] = size
+                    inner: list[tuple[File, int]] = []
+                    if match is not None and component.children:
+                        inner = _refs_of(db, _version(db, match[0].id, match[1]))
+                    children = place(component.children, inner)
+                    if match is None and shape is None and not children:
+                        continue  # nothing to show or open
+                    out.append(
+                        {
+                            "name": component.name[:255],
+                            "file_id": match[0].id if match else None,
+                            "version": match[1] if match else None,
+                            "configuration": component.configuration[:255],
+                            "transform": component.transform,
+                            "hidden": component.hidden,
+                            "color": None,
+                            "opacity": 1.0,
+                            "mesh": shape,
+                            "children": children,
+                        }
+                    )
+                return out
+
+            components = place(assembly.components, _refs_of(db, target))
+            if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
+                raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
+    except solidworks.Unreadable as e:
+        raise solidworks.Unreadable(f"{path} v{version}: {e.message}") from e
+
+    begin_write(db)
+    tree, access = _context(db, user)
+    _resolve(db, tree, access, file_id, deleted_ok=True)  # still theirs to see
+    made = db.scalar(
+        select(CaliperModel).where(CaliperModel.version_id == target.id, CaliperModel.configuration == configuration)
+    )
+    if made is None:  # else someone made it meanwhile
+        for sha, size in kept.items():
+            if db.get(Blob, sha) is None:
+                db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
+        made = CaliperModel(
+            version_id=target.id,
+            configuration=configuration,
+            units=units,
+            mesh_sha256=mesh,
+            components=components,
+            created_at=utcnow(),
+            created_by=user.id,
+        )
+        db.add(made)
+    db.commit()
+    return ModelView(made, version, _users(db, {made.created_by})[made.created_by])
 
 
 def caliper_assembly(db: Session, user: User, file_id: int, version: int, configuration: str) -> AssemblyModel:

@@ -353,6 +353,10 @@ class CaliperModelsOut(BaseModel):
     models: list[CaliperModelOut]  # newest version first; in a version, the first made first
 
 
+class CaliperMakeIn(BaseModel):
+    version: int = Field(ge=1)
+
+
 class CaliperComponentIn(BaseModel):
     name: str = Field(max_length=255)  # SolidWorks' name for it in the assembly: "Bracket-2"
     file_id: int | None = None  # its part's or sub-assembly's file; none for a virtual one, kept in the assembly

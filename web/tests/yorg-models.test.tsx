@@ -89,8 +89,9 @@ test("a model is drawn, linked to a test, saved, run against it, and fitted to i
     // A fit: the injector's CdA turned until the manifold reads what was measured, then applied to the model.
     await userEvent.clear(screen.getByLabelText("Time step (s)"));
     await userEvent.type(screen.getByLabelText("Time step (s)"), "0.02");
-    await userEvent.click(screen.getByRole("button", { name: "Fit…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Tune…" }));
     const fitting = within(screen.getByRole("dialog"));
+    await userEvent.click(fitting.getByRole("radio", { name: "Fit" }));
     expect(fitting.getByText("PT-MANIFOLD")).toBeTruthy();
     await userEvent.click(fitting.getByRole("checkbox", { name: /^Injector: CdA/ }));
     await userEvent.click(fitting.getByRole("button", { name: "Fit" }));
@@ -105,6 +106,60 @@ test("a model is drawn, linked to a test, saved, run against it, and fitted to i
     expect(screen.getByRole("option", { name: "Stand A cold flow (changed)" })).toBeTruthy();
 });
 
+test("the P&ID's tools are menus of parts and connections, and the units one choice", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/yorg/dev/models");
+    const tools = within(await screen.findByRole("toolbar", { name: "Tools" }));
+    await userEvent.click(tools.getByRole("button", { name: "+ Add part" }));
+    await userEvent.click(
+        within(screen.getByRole("menu", { name: "Add part" })).getByRole("menuitemradio", { name: "Tank" }),
+    );
+    expect(tools.getByRole("button", { name: "+ Tank" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Click where it goes.")).toBeTruthy();
+
+    // Connections come in liquid and gas: the gas ones, dashed on the P&ID, under their own heading.
+    await userEvent.click(tools.getByRole("button", { name: "↦ Connect" }));
+    const gas = within(screen.getByRole("group", { name: "Gas (dashed)" }));
+    expect(gas.getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual([
+        "Gas valve",
+        "Gas orifice",
+        "Regulator",
+    ]);
+    await userEvent.click(gas.getByRole("menuitemradio", { name: "Regulator" }));
+    expect(tools.getByRole("button", { name: "↦ Regulator" }).getAttribute("aria-pressed")).toBe("true");
+    expect(tools.getByRole("button", { name: "+ Add part" }).getAttribute("aria-pressed")).toBe("false");
+    await userEvent.click(tools.getByRole("button", { name: "Select" }));
+    expect(tools.getByRole("button", { name: "↦ Connect" })).toBeTruthy();
+
+    // Units and gauge or absolute pressures are one choice.
+    const units = tools.getByLabelText("Units") as HTMLSelectElement;
+    expect(units.selectedOptions[0]?.textContent).toBe("psig, °F, in, gal");
+    await userEvent.selectOptions(units, "bar abs, K, mm, L");
+    expect(units.selectedOptions[0]?.textContent).toBe("bar abs, K, mm, L");
+});
+
+test("Tune puts fitting and anchoring side by side, each saying what it does", async () => {
+    const team = await Team.create();
+    const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
+    renderApp(team.chief, "/yorg/dev/models");
+    await coldFlow(data.name);
+    await userEvent.click(screen.getByRole("button", { name: "Tune…" }));
+    const tuning = within(screen.getByRole("dialog", { name: "Tune the model to the test" }));
+    const fit = tuning.getByRole("radio", { name: "Fit" });
+    expect((fit as HTMLInputElement).checked).toBe(true); // first time: a fit
+    expect(tuning.getByText(/^Runs the model again and again/)).toBeTruthy();
+    expect(tuning.getByText(/^One run: FullFlow moves each knob, at every time step/)).toBeTruthy();
+    expect(tuning.getByRole("group", { name: "Knobs to fit" })).toBeTruthy();
+    expect(tuning.getByRole("button", { name: "Fit" })).toBeTruthy();
+
+    await userEvent.click(tuning.getByRole("radio", { name: "Anchor" }));
+    expect(tuning.getByRole("columnheader", { name: "Knob it moves" })).toBeTruthy();
+    expect(tuning.queryByRole("group", { name: "Knobs to fit" })).toBeNull();
+    expect((tuning.getByRole("button", { name: "Anchor" }) as HTMLButtonElement).disabled).toBe(true); // none picked
+    await userEvent.selectOptions(tuning.getByLabelText(/^Manifold pressure transducer/), "Injector: CdA");
+    expect((tuning.getByRole("button", { name: "Anchor" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 test("a model's knob is anchored to a test in one steady run, and applied", { timeout: 240_000 }, async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Cold flow", COLD_FLOW);
@@ -114,8 +169,9 @@ test("a model's knob is anchored to a test in one steady run, and applied", { ti
     // The injector's CdA, moved in each time step until the manifold reads what was measured: while the main valve
     // is open, since nothing flows to tell it while it's shut.
     await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
-    await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Tune…" }));
     const anchoring = within(screen.getByRole("dialog"));
+    await userEvent.click(anchoring.getByRole("radio", { name: "Anchor" }));
     expect(anchoring.queryByRole("option", { name: /^Fuel tank/ })).toBeNull(); // steady: tanks hold their pressure
     await userEvent.selectOptions(anchoring.getByLabelText(/^Manifold pressure transducer/), "Injector: CdA");
     await userEvent.type(anchoring.getByLabelText("From (s)"), "0.6");
@@ -127,7 +183,11 @@ test("a model's knob is anchored to a test in one steady run, and applied", { ti
     expect((anchoring.getByRole("button", { name: "Anchor" }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(fitToo);
     expect(
-        (anchoring.getByRole("checkbox", { name: /^Fit any knob FullFlow can't anchor/ }) as HTMLInputElement).checked,
+        (
+            anchoring.getByRole("checkbox", {
+                name: /^If FullFlow can't anchor a knob, fit it instead/,
+            }) as HTMLInputElement
+        ).checked,
     ).toBe(true);
     await userEvent.click(anchoring.getByRole("button", { name: "Anchor" }));
 
@@ -169,8 +229,9 @@ test("the Vespula example comes with its run's data, uploaded once", { timeout: 
 
     // Steady, its tanks and its COPV hold their pressures, so they can't anchor a knob; its manifolds can.
     await userEvent.selectOptions(screen.getByLabelText("Solver"), "Steady");
-    await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Tune…" }));
     const anchoring = within(screen.getByRole("dialog"));
+    await userEvent.click(anchoring.getByRole("radio", { name: "Anchor" }));
     expect(anchoring.getByLabelText(/^LOX manifold pressure transducer/)).toBeTruthy();
     for (const held of [/^COPV/, /^LOX tank/, /^Fuel tank/]) {
         expect(anchoring.queryByLabelText(held)).toBeNull();
@@ -212,8 +273,9 @@ test("a gas junction can hold its gas in a vessel, whose wall's hA is a knob", {
     expect(copv.getByText("Wall hA")).toBeTruthy();
 
     const anchorable = async () => {
-        await userEvent.click(screen.getByRole("button", { name: "Anchor…" }));
+        await userEvent.click(screen.getByRole("button", { name: "Tune…" }));
         const anchoring = within(screen.getByRole("dialog"));
+        await userEvent.click(anchoring.getByRole("radio", { name: "Anchor" }));
         const knobs = anchoring.getAllByRole("option").map((option) => option.textContent);
         await userEvent.click(anchoring.getByRole("button", { name: "Cancel" }));
         return knobs;
@@ -261,8 +323,7 @@ test("a model's script is shown, changed, and run in the browser", { timeout: 12
     const view = await editorFor("model.py");
     act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: changed } }));
     expect(await script.findByText("Changed: Run runs it in your browser")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Fit…" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Anchor…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Tune…" }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "Run in browser" }));
 
     // The tab's Python gets the script as model.py, FullFlow and ThermoProp to install at the server's versions,
@@ -320,9 +381,14 @@ test("the Reference says how FullFlow models a system", async () => {
     expect(reference.getByRole("heading", { name: "A network of states" })).toBeTruthy();
     expect(reference.getByRole("heading", { name: "Solving over time" })).toBeTruthy();
     expect(await reference.findByText(/Yorg runs it, version \d+\.\d+\.\d+, on the server/)).toBeTruthy();
-    expect(
-        reference.getByRole("cell", { name: "DarcyWeisbach: friction, and the inertia of the liquid in it" }),
-    ).toBeTruthy();
+    // How each part is built, with the knobs the catalog gives it: a vessel's wall hA as well.
+    expect(reference.getByRole("heading", { name: "How each part is built" })).toBeTruthy();
+    const line = reference.getByText("Line").closest("div") as HTMLElement;
+    expect(line.textContent).toContain("DarcyWeisbach: friction over its length and inner diameter");
+    expect(line.textContent).toContain("Knobs: Friction factor f, Fittings' K.");
+    expect((reference.getByText("Gas junction").closest("div") as HTMLElement).textContent).toContain(
+        "Knobs: Wall hA.",
+    );
     await userEvent.click(reference.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("complementary", { name: "Reference" })).toBeNull();
 });

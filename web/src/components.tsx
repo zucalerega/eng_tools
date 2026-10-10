@@ -175,6 +175,7 @@ export function Dialog({
     link = false,
     confirmHref,
     tall = false,
+    wide = false,
 }: {
     title: string;
     children: ReactNode;
@@ -188,6 +189,7 @@ export function Dialog({
     link?: boolean;
     confirmHref?: string;
     tall?: boolean; // it can be taller than the window: its body scrolls, its buttons stay in view
+    wide?: boolean; // for choices side by side, or a table
 }) {
     const heading = useId();
     const dialog = useRef<HTMLFormElement>(null);
@@ -211,7 +213,7 @@ export function Dialog({
     return (
         <div className="dialog-backdrop">
             <form
-                className={tall ? "dialog dialog-tall" : "dialog"}
+                className={["dialog", tall && "dialog-tall", wide && "dialog-wide"].filter(Boolean).join(" ")}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={heading}

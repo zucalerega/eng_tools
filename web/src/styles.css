@@ -1544,6 +1544,11 @@ input[type="checkbox"] {
     box-shadow: var(--shadow-pop);
 }
 
+/* A wide dialog: for choices side by side, or a table. */
+.dialog-wide {
+    width: min(46rem, 100%);
+}
+
 /* A dialog that can be taller than the window scrolls its body, keeping its title and buttons in view. Only those
    that need it: a scrolling body would clip a popup that reaches past it (a folder picker's list). */
 .dialog-tall {

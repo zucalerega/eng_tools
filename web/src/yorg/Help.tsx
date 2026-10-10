@@ -259,17 +259,20 @@ export function HelpPage() {
                                   </li>
                                   <li>
                                       <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is
-                                      plotted with the model, and how far apart they are. <em>Fit</em> turns the knobs
-                                      you pick (CdAs, losses, a regulator's set pressure) until it matches best.
+                                      plotted with the model, and how far apart they are. <em>Tune</em> matches the
+                                      knobs (settings marked tune) to the test, one of two ways. <em>Fit</em> runs the
+                                      model again and again, turning the knobs you pick (CdAs, losses, a regulator's set
+                                      pressure) until it matches best.
                                   </li>
                                   <li>
-                                      <em>Anchor</em> pairs knobs with sensors: in one run, FullFlow moves each knob in
-                                      every time step until its sensor reads what was measured, and plots the knob
-                                      through the run. Give an anchor a span where its knob counts (a valve's CdA while
-                                      it's open). The <em>Steady</em> solver settles lines, junctions, and regulators at
-                                      once in each step, with tanks (and gas junctions with a pressure transducer) at
-                                      the pressure measured: much faster, without inertia. What anchoring can't settle
-                                      is fitted: knobs you pick to fit alongside, and any knob FullFlow couldn't anchor.
+                                      <em>Anchor</em> pairs knobs with sensors instead: in one run, FullFlow moves each
+                                      knob in every time step until its sensor reads what was measured, and plots the
+                                      knob through the run. Give an anchor a span where its knob counts (a valve's CdA
+                                      while it's open). The <em>Steady</em> solver settles lines, junctions, and
+                                      regulators at once in each step, with tanks (and gas junctions with a pressure
+                                      transducer) at the pressure measured: much faster, without inertia. What anchoring
+                                      can't settle is fitted: knobs you pick to fit alongside, and any knob FullFlow
+                                      couldn't anchor.
                                   </li>
                                   <li>
                                       <em>Script</em> shows the model as the FullFlow code that runs it. Change it, and{" "}

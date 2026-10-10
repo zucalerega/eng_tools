@@ -10,7 +10,7 @@ import { formatValue } from "../scale";
 import { isTicking, RunView, useTicking } from "../scripts/Output";
 import { formatSeconds } from "../scripts/progress";
 import { python, usePython, useRun } from "../scripts/python";
-import { AnchorDialog, NO_PLAN, type AnchorPlan } from "./Anchor";
+import { NO_PLAN, type AnchorPlan } from "./Anchor";
 import {
     devApi,
     type AnchorPick,
@@ -27,7 +27,7 @@ import {
 } from "./api";
 import { browserProgress, browserResult, browserRun } from "./browserRun";
 import { Diagram, HEIGHT, WIDTH, type Tool } from "./Diagram";
-import { applyKnobs, FitDialog, FitSummary, type Knob } from "./Fit";
+import { applyKnobs, FitSummary, type Knob } from "./Fit";
 import { FULLFLOW, FullFlowReference } from "./FullFlowReference";
 import { Inspector } from "./Inspector";
 import {
@@ -46,6 +46,8 @@ import {
 } from "./model";
 import { Results } from "./Results";
 import { ScriptView } from "./ScriptView";
+import { Toolbar } from "./Toolbar";
+import { type Method, TuneDialog } from "./Tune";
 import { channelToSiLinear, readingFor } from "./units";
 import "./models.css";
 
@@ -66,13 +68,7 @@ interface Current {
     dirty: boolean;
 }
 
-type Asking =
-    | { ask: "save-as" }
-    | { ask: "delete" }
-    | { ask: "discard"; then: () => void }
-    | { ask: "fit" }
-    | { ask: "anchor" }
-    | null;
+type Asking = { ask: "save-as" } | { ask: "delete" } | { ask: "discard"; then: () => void } | { ask: "tune" } | null;
 
 /** The script written from the P&ID, for the run as it's set up (by its request, as JSON), or why there isn't one. */
 interface Written {
@@ -200,6 +196,7 @@ export function ModelsPage() {
     const [found, setFound] = useState<Found | null>(null);
     const [lastKnobs, setLastKnobs] = useState<Knob[]>([]);
     const [lastAnchors, setLastAnchors] = useState<AnchorPlan>(NO_PLAN);
+    const [lastMethod, setLastMethod] = useState<Method>("fit");
     const [solver, setSolver] = useState<Solver>("transient");
     const [view, setView] = useState<"pid" | "script">("pid");
     const [reference, setReference] = useState(false);
@@ -770,73 +767,16 @@ export function ModelsPage() {
 
             {view === "pid" && (
                 <>
-                    <div className="dev-toolbar" role="toolbar" aria-label="Tools">
-                        <button
-                            type="button"
-                            aria-pressed={tool.mode === "select"}
-                            onClick={() => setTool({ mode: "select" })}
-                        >
-                            Select
-                        </button>
-                        <span className="dev-divider" />
-                        {nodeTypes.map((kind) => (
-                            <button
-                                key={kind.type}
-                                type="button"
-                                aria-pressed={tool.mode === "place" && tool.type === kind.type}
-                                title={kind.help}
-                                onClick={() => setTool({ mode: "place", type: kind.type })}
-                            >
-                                + {kind.label}
-                            </button>
-                        ))}
-                        <span className="dev-divider" />
-                        {edgeTypes.map((kind) => (
-                            <button
-                                key={kind.type}
-                                type="button"
-                                className={kind.phase === "gas" ? "dev-gas-tool" : undefined}
-                                aria-pressed={tool.mode === "connect" && tool.type === kind.type}
-                                title={`${kind.help} Click where it starts, then where it ends.`}
-                                onClick={() => setTool({ mode: "connect", type: kind.type, from: null })}
-                            >
-                                ↦ {kind.label}
-                            </button>
-                        ))}
-                        <span className="dev-divider" />
-                        <button type="button" disabled={undo.length === 0} onClick={undoLast} title="Ctrl+Z">
-                            Undo
-                        </button>
-                        <label className="check" title="Show pressures above the atmosphere (psig), or absolute (psia)">
-                            <input
-                                type="checkbox"
-                                checked={display.gauge}
-                                onChange={(event) =>
-                                    change(
-                                        { ...current.model, display: { ...display, gauge: event.target.checked } },
-                                        false,
-                                    )
-                                }
-                            />
-                            Gauge
-                        </label>
-                        <select
-                            aria-label="Units"
-                            value={display.units}
-                            onChange={(event) =>
-                                change(
-                                    {
-                                        ...current.model,
-                                        display: { ...display, units: event.target.value as "us" | "si" },
-                                    },
-                                    false,
-                                )
-                            }
-                        >
-                            <option value="us">psi, °F, in, gal</option>
-                            <option value="si">bar, K, mm, L</option>
-                        </select>
-                    </div>
+                    <Toolbar
+                        tool={tool}
+                        onTool={setTool}
+                        nodes={nodeTypes}
+                        edges={edgeTypes}
+                        canUndo={undo.length > 0}
+                        onUndo={undoLast}
+                        display={display}
+                        onDisplay={(next) => change({ ...current.model, display: next }, false)}
+                    />
                     <p className="muted dev-hint" role="status">
                         {tool.mode === "place"
                             ? "Click where it goes."
@@ -949,6 +889,7 @@ export function ModelsPage() {
                 )}
                 {reference ? (
                     <FullFlowReference
+                        catalog={catalog}
                         version={
                             library?.packages
                                 .find((one) => one.toLowerCase().startsWith("fullflow=="))
@@ -1075,18 +1016,10 @@ export function ModelsPage() {
                         <button
                             type="button"
                             disabled={!windowOk || scriptOnly}
-                            title={scriptOnly ? PID_ONLY : undefined}
-                            onClick={() => setAsking({ ask: "fit" })}
+                            title={scriptOnly ? PID_ONLY : "Fit or anchor the knobs (settings marked tune) to the test"}
+                            onClick={() => setAsking({ ask: "tune" })}
                         >
-                            Fit…
-                        </button>
-                        <button
-                            type="button"
-                            disabled={!windowOk || scriptOnly}
-                            title={scriptOnly ? PID_ONLY : undefined}
-                            onClick={() => setAsking({ ask: "anchor" })}
-                        >
-                            Anchor…
+                            Tune…
                         </button>
                     </>
                 )}
@@ -1135,23 +1068,23 @@ export function ModelsPage() {
                 <Results model={shown.model} catalog={catalog} result={shown.result} detail={shownDetail} zero={t0} />
             )}
 
-            {asking?.ask === "fit" && (
-                <FitDialog
-                    model={current.model}
-                    catalog={catalog}
-                    picked={lastKnobs}
-                    onStart={(knobs) => void startFit(knobs)}
-                    onCancel={() => setAsking(null)}
-                />
-            )}
-            {asking?.ask === "anchor" && (
-                <AnchorDialog
+            {asking?.ask === "tune" && (
+                <TuneDialog
                     model={current.model}
                     catalog={catalog}
                     solver={solver}
-                    picked={lastAnchors}
+                    method={lastMethod}
+                    knobs={lastKnobs}
+                    plan={lastAnchors}
                     window={{ from: windowText.from, to: windowText.to }}
-                    onStart={(plan) => void startAnchor(plan)}
+                    onFit={(knobs) => {
+                        setLastMethod("fit");
+                        void startFit(knobs);
+                    }}
+                    onAnchor={(plan) => {
+                        setLastMethod("anchor");
+                        void startAnchor(plan);
+                    }}
                     onCancel={() => setAsking(null)}
                 />
             )}

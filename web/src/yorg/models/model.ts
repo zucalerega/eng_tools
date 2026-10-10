@@ -426,6 +426,19 @@ export function comparisons(model: SystemModel, catalog: Catalog): Comparison[] 
     return found;
 }
 
+/**
+ * The parts that hold what was measured in a steady run (the server's api._held): tanks, and gas junctions a
+ * transducer reads, since a bottle draining has no steady state. There, their knobs don't matter, and their sensors
+ * are what they follow.
+ */
+export function heldInSteady(model: SystemModel): Set<string> {
+    return new Set(
+        model.nodes
+            .filter((node) => node.type === "tank" || (node.type === "gas_junction" && node.links.pressure))
+            .map((node) => node.id),
+    );
+}
+
 /** The knobs a fit can turn: each part's tunable settings, as it's set up. */
 export function knobsOf(model: SystemModel, catalog: Catalog): { part: Part; setting: Setting }[] {
     return [...model.nodes, ...model.edges].flatMap((part) =>

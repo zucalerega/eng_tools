@@ -306,10 +306,11 @@ in `web/src/yorg/index.tsx`).
   goes, and its result as JSON. Unchanged, the browser's run is the server's to the last
   digit (`test_a_runs_script_is_what_it_runs` runs the page's script with the page's data).
   Installing takes a minute or two the first time, and importing FullFlow and ThermoProp
-  a minute or more (CoolProp's and ThermoProp's data). A changed script isn't saved, and Fit
-  and Anchor run the P&ID's model. The Reference (`FullFlowReference.tsx`) is background:
-  what FullFlow is, how it models a system and solves it, how Yorg's parts become its
-  components, and what a script is made of.
+  a minute or more (CoolProp's and ThermoProp's data). A changed script isn't saved, and
+  Tune (`Tune.tsx`: a fit or an anchored run, side by side in one dialog, each saying what
+  it does) runs the P&ID's model. The Reference (`FullFlowReference.tsx`) is background:
+  what FullFlow is, how each part is built of its components (with the knobs it has, from
+  the catalog), how it models a system and solves it, and what a script is made of.
 - **Scripts** (the Python window, everyone's):
   Python people write runs in the browser, never on the server (which runs only the model
   scripts it writes itself): Pyodide (CPython in WebAssembly, pinned

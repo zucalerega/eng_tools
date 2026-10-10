@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Dialog } from "../../components";
 import { formatValue } from "../scale";
-import type { Catalog, FitKnob, Setting, SystemModel } from "./api";
-import { comparisons, kindOf, knobsOf, partOf, setSetting } from "./model";
+import type { Catalog, FitKnob, Setting, Solver, SystemModel } from "./api";
+import { comparisons, heldInSteady, kindOf, knobsOf, partOf, setSetting } from "./model";
 import { toDisplay, unitOf } from "./units";
 
-// Fitting a model to a test: pick the knobs (settings marked tune), and the server turns them until the model matches
-// the channels it's compared with, run after run. What it found is then yours to apply (or not).
+// Fitting a model to a test (one of Tune's two ways, Tune.tsx): pick the knobs (settings marked tune), and the server
+// turns them until the model matches the channels it's compared with, run after run. What it found is then yours to
+// apply (or not).
 
 export const MAX_KNOBS = 8; // the server's: each costs a run per try
 
@@ -38,40 +38,37 @@ export function applyKnobs(model: SystemModel, catalog: Catalog, found: FitKnob[
         .reduce((next, knob) => setSetting(next, knob.part, knob.key, knob.value), model);
 }
 
-export function FitDialog({
-    model,
-    catalog,
-    picked,
-    onStart,
-    onCancel,
-}: {
-    model: SystemModel;
-    catalog: Catalog;
-    picked: Knob[]; // last time's, to start from
-    onStart: (knobs: Knob[]) => void;
-    onCancel: () => void;
-}) {
-    const knobs = knobsOf(model, catalog);
+/** What a fit is asked to do, as the Tune dialog sets it up: the knobs picked, of those that matter in this run. */
+export function useFitChoice(model: SystemModel, catalog: Catalog, solver: Solver, picked: Knob[]) {
+    // Steady, a part holding what was measured has no knob that matters.
+    const held = solver === "steady" ? heldInSteady(model) : new Set<string>();
+    const knobs = knobsOf(model, catalog).filter(({ part }) => !held.has(part.id));
     const [chosen, setChosen] = useState<Knob[]>(
         picked.filter((one) => knobs.some((knob) => same({ part: knob.part.id, key: knob.setting.key }, one))),
     );
+    const picking = chosen.filter((one) =>
+        knobs.some((knob) => same({ part: knob.part.id, key: knob.setting.key }, one)),
+    );
     const compared = comparisons(model, catalog);
-    const display = model.display;
     const toggle = (knob: Knob, on: boolean) =>
         setChosen(on ? [...chosen.filter((one) => !same(one, knob)), knob] : chosen.filter((one) => !same(one, knob)));
+    return {
+        knobs,
+        chosen: picking,
+        toggle,
+        compared,
+        ready: picking.length > 0 && picking.length <= MAX_KNOBS && compared.length > 0,
+    };
+}
+
+export type FitChoice = ReturnType<typeof useFitChoice>;
+
+/** The knobs to fit, and what they're fitted to. */
+export function FitChoices({ model, choice }: { model: SystemModel; choice: FitChoice }) {
+    const { knobs, chosen, toggle, compared } = choice;
+    const display = model.display;
     return (
-        <Dialog
-            title="Fit the model to the test"
-            confirm="Fit"
-            disabled={chosen.length === 0 || chosen.length > MAX_KNOBS || compared.length === 0}
-            onConfirm={() => onStart(chosen)}
-            onCancel={onCancel}
-        >
-            <p className="muted dev-help">
-                The model runs again and again over the run&apos;s window, the knobs you pick turned until it matches
-                what was measured best. Each try is a run for every knob picked, so fewer knobs (and a longer time step)
-                fit faster; it stops after 30 minutes with the best it found.
-            </p>
+        <>
             {compared.length === 0 ? (
                 <p className="notice notice-warning">
                     Nothing to fit to: link a sensor first (a junction&apos;s pressure transducer, a flow meter, an
@@ -79,12 +76,14 @@ export function FitDialog({
                 </p>
             ) : (
                 <p className="dev-help">
-                    Fits to <strong>{compared.map((one) => one.channel).join(", ")}</strong>.
+                    Matched to <strong>{compared.map((one) => one.channel).join(", ")}</strong>. Each try is a run for
+                    every knob picked, so fewer knobs (and a longer time step) fit faster; it stops after 30 minutes
+                    with the best it found.
                 </p>
             )}
             <fieldset className="dev-knobs">
-                <legend>Knobs</legend>
-                {knobs.length === 0 && <p className="muted">This model has no knobs to tune.</p>}
+                <legend>Knobs to fit</legend>
+                {knobs.length === 0 && <p className="muted">This model has no knobs that matter in this run.</p>}
                 {knobs.map(({ part, setting }) => {
                     const knob = { part: part.id, key: setting.key };
                     const value = Number(part.settings[setting.key] ?? setting.default);
@@ -106,7 +105,7 @@ export function FitDialog({
                 })}
             </fieldset>
             {chosen.length > MAX_KNOBS && <p className="notice notice-warning">Pick {MAX_KNOBS} knobs at most.</p>}
-        </Dialog>
+        </>
     );
 }
 

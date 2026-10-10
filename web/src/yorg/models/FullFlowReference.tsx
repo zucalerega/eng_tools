@@ -1,27 +1,93 @@
-// The Models page's Reference: what FullFlow is, how it models a system and solves it, how Yorg's parts become its
-// components, and what a model's script (the Script view) is made of. Background, not a list of all FullFlow can do.
+import type { Catalog } from "./api";
+import { kindOf, shownSettings } from "./model";
+
+// The Models page's Reference: what FullFlow is, how each of Yorg's parts is built of its components (as the server's
+// script.py writes them), how it models a system and solves it, and what a model's script (the Script view) is made
+// of. Background, not a list of all FullFlow can do.
 
 export const FULLFLOW = "https://github.com/saakethramoju/FullFlow";
 export const THERMOPROP = "https://github.com/saakethramoju/ThermoProp";
 
-const PARTS: [string, string][] = [
-    ["Tank at a pressure", "its pressure, following its channel; its liquid, a Lookup of ThermoProp's"],
-    [
-        "Tank with an ullage",
-        "a Volume of liquid and a Volume of gas, which a Balance holds at one pressure; its wall a Solid, and Convection between it and the gas",
-    ],
-    ["Junction", "a Volume with no room: what flows in flows out"],
-    [
-        "Gas junction",
-        "a Volume: the gas in the tubing around it, or in a vessel (a COPV), whose wall is a Solid, with Convection between it and the gas",
-    ],
-    ["Gas supply, outlet", "its pressure (and temperature), following its channels"],
-    ["Line", "DarcyWeisbach: friction, and the inertia of the liquid in it"],
-    ["Valve, orifice", "DischargeCoefficient; a valve's Actuator moves it to its command"],
-    ["Cavitating venturi", "CavitatingVenturi"],
-    ["Gas valve, gas orifice", "CompressibleOrifice: choked or not"],
-    ["Regulator", "CompressibleOrifice, opened as far as the pressure it holds puts it"],
+/** A part as FullFlow has it: its type in the catalog, set up as (an ullage tank, a vessel), for the knobs it has. */
+const BUILT: { part: string; type: string; when?: Record<string, string>; how: string }[] = [
+    {
+        part: "Tank, at a fixed pressure",
+        type: "tank",
+        when: { mode: "fixed" },
+        how: "Its pressure is a state that follows its channel through the run, or stays where it's set. Its liquid's density and vapor pressure come from ThermoProp through a Lookup, at each node's pressure and the liquid's temperature.",
+    },
+    {
+        part: "Tank, with a gas ullage",
+        type: "tank",
+        when: { mode: "ullage" },
+        how: "Two Volumes, its liquid and the ullage's gas over it, which a Balance holds at one pressure: the ullage is the tank's volume less the liquid's. Its wall is a Solid trading heat with the gas by Convection, the wall hA being the coefficient times the area. Pressurant flowing in is divided by the collapse factor before it counts as gas.",
+    },
+    {
+        part: "Gas supply",
+        type: "source",
+        how: "Its pressure and temperature follow their channels, or stay where they're set; its gas is ThermoProp's at them, or an ideal gas.",
+    },
+    {
+        part: "Junction",
+        type: "junction",
+        how: "A Volume with no room: FullFlow solves its pressure so that what flows in flows out.",
+    },
+    {
+        part: "Gas junction",
+        type: "gas_junction",
+        when: { wall: "vessel" },
+        how: "A Volume of gas, whose mass and energy FullFlow keeps as it solves the gas's pressure and temperature, the gas flowing in bringing the enthalpy of where it came from. Held in a vessel (a COPV, a bottle), its wall is a Solid trading heat with the gas by Convection, as an ullage's.",
+    },
+    {
+        part: "Outlet",
+        type: "outlet",
+        how: "Its pressure follows its channel (a chamber's), or stays where it's set.",
+    },
+    {
+        part: "Line",
+        type: "line",
+        how: "DarcyWeisbach: friction over its length and inner diameter, with the fittings' K folded in as f + K·D/L. Its flow is a dynamic state, so the liquid in it has inertia.",
+    },
+    {
+        part: "Valve",
+        type: "valve",
+        how: "DischargeCoefficient: its CdA times its position, which an Actuator moves toward its command channel no faster than its opening time allows.",
+    },
+    {
+        part: "Orifice",
+        type: "orifice",
+        how: "DischargeCoefficient: its CdA, fixed.",
+    },
+    {
+        part: "Cavitating venturi",
+        type: "venturi",
+        how: "CavitatingVenturi: its throat CdA, and the pressure recovery that decides when it cavitates, after which its flow follows the pressure before it and the liquid's vapor pressure alone.",
+    },
+    {
+        part: "Gas valve",
+        type: "gas_valve",
+        how: "CompressibleOrifice, choked or not, with the gas's gas constant and heat capacity ratio from ThermoProp where it comes from: its CdA times its position, which moves as a valve's does. As a check valve, it shuts to gas flowing back.",
+    },
+    {
+        part: "Gas orifice",
+        type: "gas_orifice",
+        how: "CompressibleOrifice, as a gas valve's: its CdA, fixed.",
+    },
+    {
+        part: "Regulator",
+        type: "regulator",
+        how: "CompressibleOrifice, opened from 0 to 1 as (set pressure − the pressure it holds) ÷ droop, solved with the rest of the model in each step. No gas flows back through it.",
+    },
 ];
+
+/** The labels of a part's knobs, set up as given (the rest at their defaults). */
+function knobsOf(catalog: Catalog, type: string, when: Record<string, string> = {}): string[] {
+    const kind = kindOf(catalog, type);
+    const settings = { ...Object.fromEntries(kind.settings.map((setting) => [setting.key, setting.default])), ...when };
+    return shownSettings(kind, settings)
+        .filter((setting) => setting.tunable)
+        .map((setting) => setting.label);
+}
 
 const CALLS: [string, string][] = [
     ["Run(data, start, end, dt, ...)", "The run: its network (run.net), and the test's channels, data['part.link']"],
@@ -37,11 +103,12 @@ const CALLS: [string, string][] = [
 ];
 
 interface Props {
+    catalog: Catalog;
     version: string | null; // FullFlow's, as the server runs it
     onClose: () => void;
 }
 
-export function FullFlowReference({ version, onClose }: Props) {
+export function FullFlowReference({ catalog, version, onClose }: Props) {
     return (
         <aside className="dev-side dev-reference" aria-label="Reference">
             <div className="dev-reference-head">
@@ -60,6 +127,30 @@ export function FullFlowReference({ version, onClose }: Props) {
                     ThermoProp
                 </a>{" "}
                 (Saaketh Ramoju&apos;s too) for fluids&apos; properties.
+            </p>
+
+            <h3>How each part is built</h3>
+            <p>
+                Each part on the P&amp;ID is made of FullFlow&apos;s own components, as the Script view writes them out:
+            </p>
+            <dl className="dev-reference-parts">
+                {BUILT.map((one) => {
+                    const knobs = knobsOf(catalog, one.type, one.when);
+                    return (
+                        <div key={one.part}>
+                            <dt>{one.part}</dt>
+                            <dd>
+                                {one.how}
+                                {knobs.length > 0 && <span className="muted"> Knobs: {knobs.join(", ")}.</span>}
+                            </dd>
+                        </div>
+                    );
+                })}
+            </dl>
+            <p className="muted">
+                A restriction&apos;s discharge coefficient eases off within 500 Pa of no pressure drop, so a junction
+                between a shut valve and an orifice still settles. Yorg adds two components of its own: an Anchor, a
+                FullFlow Sensor that pins a knob to a channel, and a Recorder, which collects what a run reports.
             </p>
 
             <h3>A network of states</h3>
@@ -104,10 +195,11 @@ export function FullFlowReference({ version, onClose }: Props) {
 
             <h3>Matching a test</h3>
             <p>
-                Anchoring uses FullFlow&apos;s sensors. A sensor adds one balance, the model&apos;s reading less what
-                its channel measured, and frees one knob for the solver to move to meet it, in every time step: the
-                knob&apos;s history is what the model needed to read what was measured. A fit instead runs the whole
-                model again and again, turning its knobs until the runs match the test best.
+                Tune… matches a model&apos;s knobs to a test one of two ways. Anchoring uses FullFlow&apos;s sensors: a
+                sensor adds one balance, the model&apos;s reading less what its channel measured, and frees one knob for
+                the solver to move to meet it, in every time step, so the knob&apos;s history is what the model needed
+                to read what was measured. A fit instead runs the whole model again and again, turning its knobs until
+                the runs match the test best.
             </p>
 
             <h3>Fluids</h3>
@@ -122,28 +214,6 @@ export function FullFlowReference({ version, onClose }: Props) {
                 gas supply&apos;s or an ullage&apos;s gas properties to ideal for pV = mRT. A liquid is its tank&apos;s,
                 at each node&apos;s pressure and the tank&apos;s temperature (which follows its channel if it&apos;s
                 linked); RP-1 is ThermoProp&apos;s propellant.
-            </p>
-
-            <h3>Parts as components</h3>
-            <table className="dev-reference-table">
-                <thead>
-                    <tr>
-                        <th>Part</th>
-                        <th>In FullFlow</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {PARTS.map(([part, components]) => (
-                        <tr key={part}>
-                            <td>{part}</td>
-                            <td>{components}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-            <p className="muted">
-                Every part is made of FullFlow&apos;s own components. Yorg adds only what joins a model to a test:
-                putting the test&apos;s channels in, anchoring knobs to them, and reading the results out.
             </p>
 
             <h3>The script</h3>
@@ -164,8 +234,8 @@ export function FullFlowReference({ version, onClose }: Props) {
             <p>
                 As it&apos;s written, Run runs it on the server. Changed, it runs in your browser: Python there, with
                 FullFlow and ThermoProp installed from PyPI at the server&apos;s versions, which takes a minute or two
-                the first time; and it runs several times slower than on the server. Fit… and Anchor… run the
-                P&amp;ID&apos;s model on the server.
+                the first time; and it runs several times slower than on the server. Tune… runs the P&amp;ID&apos;s
+                model on the server, its fits and anchored runs alike.
             </p>
         </aside>
     );

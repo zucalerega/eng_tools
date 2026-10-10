@@ -72,6 +72,11 @@ export function SolidWorks() {
                     An assembly brings the parts it uses along; nothing else is downloaded until you need it.
                 </li>
                 <li>
+                    <strong>Insert</strong> a part or assembly from the vault into the assembly you have open:
+                    right-click it in the Browse list and choose Insert into. It's downloaded first if it isn't on your
+                    computer.
+                </li>
+                <li>
                     <strong>Check out</strong> a file before you change it, so nobody else changes it at the same time.
                     Start editing one and Vault offers to.
                 </li>
@@ -80,7 +85,7 @@ export function SolidWorks() {
                     new and changed parts with it.
                 </li>
                 <li>
-                    <strong>Update my files</strong> gets the latest versions of the files on your computer.
+                    <strong>Update downloaded files</strong> gets the latest versions of the files on your computer.
                 </li>
                 <li>
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts
@@ -119,10 +124,7 @@ export function SolidWorks() {
                 </details>
                 <details>
                     <summary>Something else</summary>
-                    <p>
-                        The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log (in %LOCALAPPDATA%\CVC before version
-                        0.4.0): send it to whoever runs your vault.
-                    </p>
+                    <p>The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log: send it to whoever runs your vault.</p>
                 </details>
             </div>
             {others.length > 0 && (

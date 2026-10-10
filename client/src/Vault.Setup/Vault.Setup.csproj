@@ -25,8 +25,9 @@
   <ItemGroup>
     <!-- Built first, then packed in; setup doesn't load it. -->
     <ProjectReference Include="..\Vault.SolidWorks\Vault.SolidWorks.csproj" ReferenceOutputAssembly="false" Private="false" />
-    <!-- Vault's mark, drawn as the add-in draws its tab icon. -->
+    <!-- Vault's mark, drawn as the add-in draws its tab icon, and the add-in's buttons. -->
     <Compile Include="..\Vault.SolidWorks\Icons.cs" Link="Icons.cs" />
+    <Compile Include="..\Vault.SolidWorks\Theme.cs" Link="Theme.cs" />
   </ItemGroup>
 
   <!-- The add-in's build, without its debug symbols, zipped into this exe as the resource addin.zip. -->

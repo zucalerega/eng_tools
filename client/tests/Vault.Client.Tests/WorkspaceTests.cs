@@ -563,43 +563,6 @@ public sealed class WorkspaceTests : IDisposable
         await Assert.ThrowsAsync<VaultPathException>(() => alice.CheckinAsync([bad], "bad name"));
     }
 
-    [Fact]
-    public async Task AWorkspaceFromBeforeTheRenameIsTakenOverWithItsBackups()
-    {
-        // As a client from before 0.4.0 left it: everything in .cvc, with a check-out undone and its changes backed up.
-        var alice = await WorkspaceAsync("alice");
-        var bulkhead = Write(alice, "Bulkhead.SLDPRT", "v1");
-        await alice.CheckinAsync([bulkhead], "add bulkhead");
-        await alice.CheckoutAsync([bulkhead]);
-        File.WriteAllText(bulkhead, "changes worth keeping");
-        var backup = Assert.Single((await alice.UndoCheckoutAsync([bulkhead])).BackedUp);
-        Directory.Move(Path.Combine(alice.Root, Workspace.MetaFolder), Path.Combine(alice.Root, ".cvc"));
-
-        Assert.Equal(alice.Root, Workspace.FindRoot(bulkhead));
-        Assert.Equal(_server.Url, Workspace.ServerOf(alice.Root)); // which renames it, as opening does
-        var again = Workspace.Open(alice.Root, await _server.MemberTokenAsync("alice@rocketry.test"));
-        _workspaces.Add(again);
-        Assert.False(Directory.Exists(Path.Combine(alice.Root, ".cvc")));
-        Assert.Equal("changes worth keeping", File.ReadAllText(backup)); // in .vault/backup, where it was
-        Assert.Equal(FileState.UpToDate, Assert.Single(await again.StatusAsync([bulkhead])).State);
-    }
-
-    [Fact]
-    public async Task AnOldWorkspaceFolderBesideTheNewOneIsLeftAlone()
-    {
-        // A cvc.exe from before 0.4.0, run in a workspace that has moved on, makes a .cvc beside .vault: it stays as
-        // it is, and nothing in it is taken for the vault's files.
-        var alice = await WorkspaceAsync("alice");
-        var stray = Path.Combine(alice.Root, ".cvc", "config.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(stray)!);
-        File.WriteAllText(stray, "{}");
-
-        var again = Workspace.Open(alice.Root, await _server.MemberTokenAsync("alice@rocketry.test"));
-        _workspaces.Add(again);
-        Assert.True(File.Exists(stray));
-        Assert.DoesNotContain(await again.StatusAsync([again.Root]), s => s.VaultPath.StartsWith(".", StringComparison.Ordinal));
-    }
-
     private async Task<Workspace> WorkspaceAsync(string person, HttpMessageHandler? handler = null)
     {
         var token = await _server.MemberTokenAsync($"{person}@rocketry.test");

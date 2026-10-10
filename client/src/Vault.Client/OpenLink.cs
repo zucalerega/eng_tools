@@ -45,12 +45,6 @@ public sealed class LinkRequest
 public static class OpenLink
 {
     public const string Scheme = "vault";
-
-    /// <summary>
-    /// The scheme before 0.4.0, when the add-in was CVC's. The web app makes these until every laptop has an add-in
-    /// that follows vault:// (docs/design.md, "Names from before YJSP"), so they're followed the same.
-    /// </summary>
-    public const string OldScheme = "cvc";
     private static readonly string[] NewKinds = { ".sldprt", ".sldasm", ".slddrw" };
     private static readonly string[] Models = { ".sldprt", ".sldasm" };
 
@@ -66,8 +60,7 @@ public static class OpenLink
     public static LinkRequest Parse(string link)
     {
         if (!Uri.TryCreate(link.Trim(), UriKind.Absolute, out var uri)
-            || !(string.Equals(uri.Scheme, Scheme, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(uri.Scheme, OldScheme, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(uri.Scheme, Scheme, StringComparison.OrdinalIgnoreCase)
             || uri.AbsolutePath.Trim('/').Length > 0)
         {
             throw new WorkspaceException("That isn't a Vault link: " + link);

@@ -151,11 +151,11 @@ assembly brings its references along), not the whole vault. Each workspace holds
 whole vault's index, and a folder for each of its folders (`MirrorFolders`: somewhere to
 save new parts where they belong; folders gone from the vault go once they're empty), but
 only the files someone there has opened, checked out, or asked for, at their latest
-versions; history stays on the server. Updating
-(`Workspace.UpdateAsync`: the add-in's Update my files, `vault get` with no paths) brings
-the files that are here up to date, with any parts they've started to use, and nothing
-else. Downloading everything, or a folder's files that aren't here yet, is its own
-step, and the add-in says how many files and how much space first (`SizeOfGetAsync`).
+versions; history stays on the server. Updating (`Workspace.UpdateAsync`: the add-in's
+Update downloaded files, `vault get` with no paths) brings the files that are here up to
+date, with any parts they've started to use, and nothing else. Downloading everything, or
+a folder's files that aren't here yet, is its own step, and the add-in says how many
+files and how much space first (`SizeOfGetAsync`), and asks, with No as the default.
 
 ## Permissions
 
@@ -250,12 +250,9 @@ on top of it.
   changes are still on their computer.
 - **Some files are never added:** `~$*` (SolidWorks lock files), `*.tmp`,
   `Thumbs.db`, `desktop.ini`, `.DS_Store`, and downloads still under way
-  (`*.vault-download`, or `*.cvc-download` from before 0.4.0).
+  (`*.vault-download`).
 - **Saved sign-ins:** `%APPDATA%\Vault\tokens.json`, encrypted with Windows DPAPI.
   Elsewhere, `~/.config/vault/tokens.json`, readable only by its owner.
-- **From before 0.4.0** (when it was CVC): opening a workspace renames its `.cvc` folder to
-  `.vault`, backups and all, and sign-ins saved in `%APPDATA%\CVC` (or `~/.config/cvc`) are
-  read from there when there are none in the new place (design.md, "Names from before YJSP").
 - **Assemblies:** the add-in asks SolidWorks for an assembly's references
   (`GetDocumentDependencies2`). Referenced files that are new, or checked out to you with
   changes, go into the same check-in. Every reference is pinned to the version this
@@ -274,21 +271,23 @@ COM add-in, registered with RegAsm.
 - **Installing.** `Vault-Setup.exe` (`client/src/Vault.Setup`, built by CI) is the one
   download: it carries the add-in's files, and after Windows asks for administrator
   rights, puts them in `C:\Program Files\Vault for SolidWorks`, registers the add-in
-  (RegAsm, which runs its own registration with SolidWorks) and `vault://` links (and
-  `cvc://`, which the web app still makes for older add-ins), and lists itself in Windows'
-  installed apps to remove all that again. Over a version from before 0.4.0, it first
-  unregisters that one and deletes its `Cvc.*` files. It isn't signed yet, so Windows'
-  SmartScreen warns about it once. The server offers it to members from
+  (RegAsm, which runs its own registration with SolidWorks) and `vault://` links, and
+  lists itself in Windows' installed apps to remove all that again. It isn't signed yet,
+  so Windows' SmartScreen warns about it once. The server offers it to members from
   `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
   Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
 
-- **Task pane.** Everything is in the Vault tab: sign-in, the active document's status
-  and actions (including opening its drawing), and two views: the files that need
-  attention, and Browse, the whole vault as a tree (`Workspace.BrowseAsync`, a
-  `VaultTree`) in which every file says whether it's checked in, assemblies open up into
-  their parts, and parts and assemblies list their drawings. It refreshes every 20
-  seconds and after every action, and redraws only when something changed, so what you
+- **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
+  menu (the vault, the workspace, the web app, sign out); a card for the active document,
+  with its status and buttons for only what you can do with it now, the likeliest in navy;
+  and two views: the files on this computer that need attention, and Browse, the whole
+  vault as a tree (`Workspace.BrowseAsync`, a `VaultTree`) in which assemblies open up
+  into their parts, and parts and assemblies list their drawings. One wording and color for
+  each status serves the card, the list, and the tree (`VaultPane.Describe`); the look is
+  in `Theme.cs` and `PaneControls.cs` (flat WinForms controls, and File Explorer's theme for
+  the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
+  20 seconds and after every action, and redraws only when something changed, so what you
   opened in the tree stays open.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
@@ -307,12 +306,17 @@ COM add-in, registered with RegAsm.
   it was being replaced keeps its changes and isn't reloaded. These decisions use the
   vault's current state, not the task pane's last refresh. Check-out and check-in
   switch open documents between read-only and editable (`SetReadOnlyState`).
+- **Inserting from the vault.** Insert into (the active assembly), on a part's or an
+  assembly's right-click menu in the task pane, gets its latest version and the parts it
+  uses, as Get latest does, then adds it to the assembly (`AddComponent5`, which takes only
+  documents SolidWorks has open, so the file is opened without a window and closed again),
+  beside the assembly's bounding box, selected. That's how a file that isn't here yet goes
+  into an assembly in one step: SolidWorks' own Insert Components only sees files on disk.
 - **Sharing with the CLI.** The add-in shares the workspace and the saved sign-in with
   the CLI.
 - **Links from the web app.** "Open in SolidWorks" is a `vault://open?server=…&path=…`
-  link (`OpenLink`; the web app makes them `cvc://` until every laptop has 0.4.0, and
-  both work). Setup (or install.ps1) registers `vault-open.exe`, in the add-in's folder,
-  for them. It starts SolidWorks if needed and hands the link to the add-in over a named
+  link (`OpenLink`). Setup (or install.ps1) registers `vault-open.exe`, in the add-in's
+  folder, for them. It starts SolidWorks if needed and hands the link to the add-in over a named
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.

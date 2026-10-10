@@ -150,7 +150,7 @@ keep working with older clients:
 - A breaking change gets a new endpoint (or `/api/v2`). The old one stays until no
   client release still in use needs it.
 - Error `code` values are part of the API, because clients branch on them.
-- So are the names a client or a browser keeps: the `cvc://` link scheme, cookie and
+- So are the names a client or a browser keeps: the `vault://` link scheme, cookie and
   header names, where clients keep their files. Renaming one means accepting the old name
   until no client needs it, as docs/design.md, "Names from before YJSP", does.
 

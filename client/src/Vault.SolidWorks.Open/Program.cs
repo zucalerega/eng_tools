@@ -14,8 +14,7 @@ namespace Vault.SolidWorks.Open;
 /// <summary>
 /// vault-open.exe "vault://open?server=...&amp;path=...": opens a vault file in SolidWorks, for the web app's
 /// "Open in SolidWorks", or (vault://new) starts a new part, assembly, or drawing there, or (vault://connect)
-/// signs SolidWorks in to that vault. It takes the same links as cvc:// too, as the web app makes them until
-/// every laptop has this version (docs/design.md, "Names from before YJSP"). It hands the link to the Vault add-in, starting SolidWorks first if
+/// signs SolidWorks in to that vault. It hands the link to the Vault add-in, starting SolidWorks first if
 /// it isn't running; the add-in does the rest.
 /// </summary>
 internal static class Program
@@ -23,7 +22,7 @@ internal static class Program
     private static readonly TimeSpan Answer = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan Startup = TimeSpan.FromMinutes(3); // SolidWorks, then its add-ins
     private static readonly string[] Actions = { "open", "new", "connect" };
-    private static readonly string[] Schemes = { "vault", "cvc" }; // OpenLink.Scheme and OpenLink.OldScheme
+    private const string Scheme = "vault"; // OpenLink.Scheme
 
     [STAThread]
     private static int Main(string[] args)
@@ -33,7 +32,7 @@ internal static class Program
         {
             var link = args.Length == 1 ? args[0] : "";
             // Only Vault's links: anything else shouldn't start SolidWorks. The add-in checks the rest.
-            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || !Schemes.Contains(uri.Scheme)
+            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Scheme != Scheme
                 || !Actions.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
             {
                 return Fail("This follows links from the Vault web app (Open in SolidWorks, New part, Connect SolidWorks). It was given: " + (link.Length > 0 ? link : "nothing"));

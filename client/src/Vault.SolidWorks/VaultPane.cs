@@ -17,23 +17,19 @@ using Timer = System.Windows.Forms.Timer;
 namespace Vault.SolidWorks;
 
 /// <summary>
-/// The Vault task pane: sign-in, the active document's status and actions, the workspace files that
-/// need attention, and the whole vault to browse. It runs on SolidWorks' main thread and awaits
-/// resume there, so SolidWorks calls after an await are safe. Workspace isn't thread-safe, so the
-/// gate lets one operation run at a time.
+/// The Vault task pane: sign-in, the active document's status and what you can do with it, the files here that need
+/// attention, and the whole vault to browse. It runs on SolidWorks' main thread and awaits resume there, so SolidWorks
+/// calls after an await are safe. Workspace isn't thread-safe, so the gate lets one operation run at a time.
 /// </summary>
 internal sealed class VaultPane : UserControl
 {
-    private static readonly Color Good = Color.FromArgb(26, 127, 55);
-    private static readonly Color Attention = Color.FromArgb(154, 103, 0);
-    private static readonly Color Problem = Color.FromArgb(207, 34, 46);
-
     private readonly SolidWorksHost _sw;
     private readonly AddinSettings _settings = AddinSettings.Load();
     private readonly TokenStore _tokens = new TokenStore();
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
     private readonly Timer _poll = new Timer { Interval = 20_000 };
     private readonly Timer _debounce = new Timer { Interval = 400 };
+    private readonly ToolTip _tips = new ToolTip { AutoPopDelay = 20_000 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private Workspace? _workspace;
     private Account? _me;
@@ -43,31 +39,57 @@ internal sealed class VaultPane : UserControl
     private bool _busy;
     private bool _doubleClicking;
 
-    private readonly TextBox _serverBox = new TextBox { Dock = DockStyle.Fill };
-    private readonly TextBox _rootBox = new TextBox { Dock = DockStyle.Fill };
-    private readonly Button _signInButton;
+    // The header, over both views: Vault's mark, and once you're signed in, refresh and your account.
+    private readonly FlatButton _refreshButton;
+    private readonly FlatButton _accountButton;
+    private readonly ContextMenuStrip _accountMenu = new ContextMenuStrip { Renderer = Theme.MenuRenderer };
+    private readonly ToolStripLabel _accountName = new ToolStripLabel { Font = Theme.Bold };
+    private readonly ToolStripLabel _accountEmail = new ToolStripLabel { ForeColor = Theme.Muted };
+    private readonly ToolStripLabel _accountServer = new ToolStripLabel { ForeColor = Theme.Muted };
+    private readonly ToolStripLabel _accountFolder = new ToolStripLabel { ForeColor = Theme.Muted };
+    private readonly ActivityBar _activity = new ActivityBar();
+
+    // Signing in.
+    private readonly TextBox _serverBox = Field();
+    private readonly TextBox _rootBox = Field();
+    private readonly FlatButton _signInButton;
     private readonly Control _setupView;
 
-    private readonly Label _account = Caption("");
-    private readonly Label _activeName = Heading("");
-    private readonly Label _activeState = Caption("");
-    private readonly Button _checkOutButton;
-    private readonly Button _checkInButton;
-    private readonly Button _undoButton;
-    private readonly Button _getButton;
-    private readonly Button _takeOverButton;
-    private readonly Button _drawingButton;
-    private readonly ListView _changes = new ListView
+    // The active document's card.
+    private readonly Card _documentCard = new Card();
+    private readonly Label _documentName = Words("", Theme.Heading);
+    private readonly Pill _documentStatus = new Pill();
+    private readonly Label _documentDetail = Words("", color: Theme.Muted);
+    private readonly FlowLayoutPanel _documentActions = Row();
+    private readonly FlatButton _checkOutButton;
+    private readonly FlatButton _checkInButton;
+    private readonly FlatButton _undoButton;
+    private readonly FlatButton _getButton;
+    private readonly FlatButton _takeOverButton;
+    private readonly FlatButton _drawingButton;
+
+    // The files that need attention, or the whole vault, by the tab that's chosen.
+    private readonly ImageList _images;
+    private readonly RadioButton _changesTab = Tab("Needs attention");
+    private readonly RadioButton _browseTab = Tab("Browse");
+    private readonly ThemedList _changes = new ThemedList();
+    private readonly Label _changesEmpty = new Label
     {
-        View = View.Details,
-        FullRowSelect = true,
-        HideSelection = false,
         Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleCenter,
+        ForeColor = Theme.Muted,
+        BackColor = Theme.Surface,
+        UseCompatibleTextRendering = false,
     };
-    private readonly TreeView _tree = new TreeView { Dock = DockStyle.Fill, HideSelection = false, ShowNodeToolTips = true };
-    private readonly TabControl _views = new TabControl { Dock = DockStyle.Fill, MinimumSize = new Size(0, 180) };
+    private readonly ThemedTree _tree = new ThemedTree();
+    private readonly Card _lists = new Card { AutoSize = false, Padding = new Padding(4), MinimumSize = new Size(0, 180) };
+    private readonly FlatButton _updateButton;
+    private readonly FlatButton _everythingButton;
     private readonly Control _workView;
-    private readonly Label _message = new Label { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
+
+    // The line at the bottom: what Vault is doing, or how the last thing went.
+    private readonly Label _message = Words("");
+    private readonly Control _statusBar;
 
     /// <summary>Brings the Vault tab to the front of SolidWorks' task pane; the session that made the tab sets it.</summary>
     public Action? ShowTab { get; set; }
@@ -76,32 +98,80 @@ internal sealed class VaultPane : UserControl
     {
         _sw = sw;
         SuspendLayout();
-        Font = SystemFonts.MessageBoxFont;
-        Padding = new Padding(8);
+        Font = Theme.Base;
+        BackColor = Theme.Background;
+        ForeColor = Theme.Text;
 
-        _signInButton = MakeButton("Sign in", (_, _) => Safely(SignInAsync));
-        _setupView = Stack(
-            null,
-            Heading("Vault"),
-            Caption("Sign in to the team's Vault server to check SolidWorks files in and out."),
-            Caption("Server address"),
-            _serverBox,
-            Caption("Workspace folder (use the same one on every computer)"),
-            _rootBox,
-            Row(_signInButton));
+        _refreshButton = IconButton("\uE72C", "Refresh", (_, _) => RefreshSoon());
+        _tips.SetToolTip(_refreshButton, "Refresh now. Vault also refreshes every 20 seconds, and after everything you do.");
+        _accountButton = new FlatButton("Account ▾") { Quiet = true, Margin = new Padding(2, 0, 0, 0) };
+        _accountButton.Click += (_, _) =>
+            _accountMenu.Show(_accountButton, new Point(_accountButton.Width, _accountButton.Height), ToolStripDropDownDirection.BelowLeft);
+        _accountMenu.Items.AddRange(new ToolStripItem[]
+        {
+            _accountName,
+            _accountEmail,
+            new ToolStripSeparator(),
+            _accountServer,
+            _accountFolder,
+            new ToolStripSeparator(),
+            new ToolStripMenuItem("Open the web app", null, (_, _) => Guarded(OpenWebApp)),
+            new ToolStripMenuItem("Open the workspace folder", null, (_, _) => Guarded(OpenFolder)),
+            new ToolStripSeparator(),
+            new ToolStripMenuItem("Sign out", null, (_, _) => Guarded(SignOut)),
+        });
 
-        _checkOutButton = MakeButton("Check out", (_, _) => OnActiveDocument(path => CheckOutAsync(new[] { path })));
-        _checkInButton = MakeButton("Check in...", (_, _) => OnActiveDocument(path => CheckInAsync(new[] { path })));
-        _undoButton = MakeButton("Undo check-out", (_, _) => OnActiveDocument(UndoAsync));
-        _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
-        _takeOverButton = MakeButton("Take over...", (_, _) => OnActiveDocument(TakeOverAsync));
-        _drawingButton = MakeButton("Open drawing", (sender, _) => OnActiveDocument(path => OpenDrawingAsync(path, (Control)sender!)));
-        _changes.Columns.Add("File");
-        _changes.Columns.Add("State");
-        _changes.Columns.Add("Checked out by");
+        _signInButton = MakeButton("Sign in", (_, _) => Safely(SignInAsync), "Sign in in your browser, then come back here.");
+        _signInButton.Primary = true;
+        _setupView = SignInView();
+
+        _checkOutButton = MakeButton(
+            "Check out",
+            (_, _) => OnActiveDocument(path => CheckOutAsync(new[] { path })),
+            "Check it out to change it: nobody else can check it in meanwhile. If yours is out of date, the latest version comes first.");
+        _checkInButton = MakeButton(
+            "Check in...",
+            (_, _) => OnActiveDocument(path => CheckInAsync(new[] { path })),
+            "Save your changes as a new version for everyone, with a comment. New parts, and parts you changed, that it uses go in too.");
+        _undoButton = MakeButton(
+            "Undo check-out",
+            (_, _) => OnActiveDocument(UndoAsync),
+            "Give the file back as it is in the vault. Your changes are thrown away, with a copy kept in the workspace's .vault\\backup folder.");
+        _getButton = MakeButton(
+            "Get latest",
+            (_, _) => OnActiveDocument(GetLatestAsync),
+            "Download the newest version of this file and of the parts it uses. Open files update in place.");
+        _takeOverButton = MakeButton(
+            "Take over...",
+            (_, _) => OnActiveDocument(TakeOverAsync),
+            "Move the check-out to this computer, to change the file here. Vault asks first.");
+        _drawingButton = MakeButton(
+            "Open drawing",
+            (sender, _) => OnActiveDocument(path => OpenDrawingAsync(path, (Control)sender!)),
+            "Open this part's or assembly's drawing.");
+        _documentActions.Controls.AddRange(new Control[] { _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton });
+        _documentActions.Margin = new Padding(0, 6, 0, 0);
+        _documentCard.SizeChanged += (_, _) =>
+            _documentStatus.MaximumSize = new Size(Math.Max(1, _documentCard.ClientSize.Width - _documentCard.Padding.Horizontal), 0);
+
+        _images = Theme.StatusImages(LogicalToDeviceUnits(20));
+        _changes.SmallImageList = _images;
+        _changes.Columns.Add("Name");
+        _changes.Columns.Add("Status");
+        _changes.Columns.Add("Folder");
         _changes.ClientSizeChanged += (_, _) => FitColumns();
         _changes.DoubleClick += (_, _) => Safely(() => OpenAsync(SelectedPaths()));
+        _changes.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled = true;
+                Safely(() => OpenAsync(SelectedPaths()));
+            }
+        };
         _changes.ContextMenuStrip = ItemMenu();
+        _tree.ImageList = _images;
+        _tree.ImageKey = _tree.SelectedImageKey = Theme.NoImage;
         _tree.BeforeExpand += (_, e) => Guarded(() => Expanding(e));
         _tree.BeforeCollapse += (_, e) => e.Cancel = TakeDoubleClick();
         _tree.MouseDown += (_, e) => Guarded(() => PointAt(e));
@@ -115,26 +185,25 @@ internal sealed class VaultPane : UserControl
             }
         };
         _tree.ContextMenuStrip = ItemMenu();
-        _views.TabPages.Add(Page("Needs attention", _changes));
-        _views.TabPages.Add(Page("Browse", _tree));
-        _workView = Stack(
-            _views,
-            _account,
-            Row(MakeButton("Open folder", (_, _) => OpenFolder()), MakeButton("Sign out", (_, _) => SignOut())),
-            Heading("Active document"),
-            _activeName,
-            _activeState,
-            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton, _drawingButton),
-            _views,
-            Row(
-                MakeButton("Check in selected...", (_, _) => Safely(() => CheckInAsync(SelectedPaths()))),
-                MakeButton("Update my files", (_, _) => Safely(UpdateMineAsync)),
-                MakeButton("Download everything...", (_, _) => Safely(DownloadEverythingAsync)),
-                MakeButton("Refresh", (_, _) => RefreshSoon())));
+        _changesTab.CheckedChanged += (_, _) => ShowView();
+        _changesTab.Checked = true;
+        _updateButton = MakeButton(
+            "Update downloaded files",
+            (_, _) => Safely(UpdateMineAsync),
+            "Get the newest version of every vault file on this computer, and any new parts they've started to use. Nothing else is downloaded.");
+        _everythingButton = MakeButton(
+            "Download everything...",
+            (_, _) => Safely(DownloadEverythingAsync),
+            "Download every file in the vault you have access to. Vault says how many files that is, and how much space, and asks first.");
+        _workView = WorkView();
+        _statusBar = StatusBar();
 
+        // Docked last to first: the status bar, the header, and the line under it, then the view that fills the rest.
         Controls.Add(_workView);
         Controls.Add(_setupView);
-        Controls.Add(_message);
+        Controls.Add(_activity);
+        Controls.Add(Header());
+        Controls.Add(_statusBar);
         // Sizes in this file are for a 100% (96 DPI) display. SolidWorks is DPI-aware, so Windows
         // doesn't scale the pane for us; this does, once the layout is built.
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -158,7 +227,7 @@ internal sealed class VaultPane : UserControl
         catch (Exception e) when (IsExpected(e))
         {
             Log.Error("Couldn't open the workspace", e);
-            ShowMessage(Reason(e), Problem);
+            ShowMessage(Reason(e), Tone.Problem);
         }
         _poll.Start();
         ShowActiveDocument();
@@ -326,7 +395,7 @@ internal sealed class VaultPane : UserControl
         {
             if (SameServer(workspace.Server, server))
             {
-                ShowMessage("SolidWorks is connected to this vault.", Good);
+                ShowMessage("SolidWorks is connected to this vault.", Tone.Good);
                 return "";
             }
             return $"SolidWorks is connected to the vault at {workspace.Server}. To switch, sign out in the Vault tab, then connect again.";
@@ -340,7 +409,7 @@ internal sealed class VaultPane : UserControl
         catch (Exception e) when (IsExpected(e) || e is UriFormatException)
         {
             Log.Error($"Connecting to {server} failed", e);
-            ShowMessage(Reason(e), Problem);
+            ShowMessage(Reason(e), Tone.Problem);
             return Reason(e);
         }
     }
@@ -415,7 +484,7 @@ internal sealed class VaultPane : UserControl
         _signInButton.Enabled = false;
         try
         {
-            ShowMessage("Finish signing in in your browser...", Attention);
+            ShowMessage("Finish signing in in your browser...", Tone.Info);
             var issued = await BrowserSignIn.SignInAsync(
                 server, $"SolidWorks add-in on {Environment.MachineName}", OpenInBrowser, TimeSpan.FromMinutes(5));
             _tokens.Save(server, issued.Token);
@@ -427,7 +496,7 @@ internal sealed class VaultPane : UserControl
             _settings.Server = server.AbsoluteUri;
             _settings.Save();
             OpenWorkspace();
-            ShowMessage($"Signed in as {issued.User.Name}.", Good);
+            ShowMessage($"Signed in as {issued.User.Name}.", Tone.Good);
             RefreshSoon();
         }
         finally
@@ -443,7 +512,7 @@ internal sealed class VaultPane : UserControl
             _tokens.Remove(_workspace.Server);
         }
         OpenWorkspace();
-        ShowMessage("Signed out.", Attention);
+        ShowMessage("Signed out.", Tone.Neutral);
     }
 
     private async Task OfferCheckoutAsync(string path)
@@ -566,8 +635,8 @@ internal sealed class VaultPane : UserControl
     private Task GetLatestAsync(string path) =>
         RunAsync("Getting the latest version", async workspace => await GetLatestHereAsync(workspace, path));
 
-    // The file and the parts it uses are updated in place, open or not.
-    private async Task<string> GetLatestHereAsync(Workspace workspace, string path)
+    // The file and the parts it uses are updated in place, open or not. Quiet: nothing to say if nothing came down.
+    private async Task<string> GetLatestHereAsync(Workspace workspace, string path, bool quiet = false)
     {
         var involved = new List<string> { path };
         involved.AddRange(_sw.AllReferences(path));
@@ -580,8 +649,51 @@ internal sealed class VaultPane : UserControl
             await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
             return got;
         });
-        return Summary(result) + NotInVaultNote(notInVault);
+        var nothing = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count + notInVault.Count == 0;
+        return quiet && nothing ? "" : Summary(result) + NotInVaultNote(notInVault);
     }
+
+    /// <summary>
+    /// Insert a part or assembly from the vault into the active assembly, in one step: its latest version, and the
+    /// parts it uses, come down first if they aren't here (as Get latest gets them), then SolidWorks adds it beside the
+    /// assembly, selected, to drag into place and mate. Changing the assembly then offers its check-out, as any change does.
+    /// </summary>
+    private Task InsertAsync(string path)
+    {
+        if (ActiveAssembly() is not { } assembly)
+        {
+            Warn("Open the assembly to insert it into, so it's the active document, then try again.");
+            return Task.CompletedTask;
+        }
+        var name = Path.GetFileName(path);
+        var into = Path.GetFileName(assembly);
+        // Someone else's assembly can take the part, but not be saved with it: say so first, and only once.
+        if (StatusOf(assembly) is { Lock: { } other, CheckedOutByMe: false } && other.User.Id != _me?.Id)
+        {
+            if (Ask($"{into} is checked out by {other.User.Name} {On(other.Host)}, so you won't be able to save it with {name} in it. Insert it anyway?")
+                != DialogResult.Yes)
+            {
+                return Task.CompletedTask;
+            }
+            _offered.Add(assembly);
+        }
+        return RunAsync($"Inserting {name}", async workspace =>
+        {
+            var got = await GetLatestHereAsync(workspace, path, quiet: true);
+            if (!File.Exists(path))
+            {
+                throw new WorkspaceException($"{name} isn't in the vault, or you don't have access to it.");
+            }
+            if (_sw.InsertComponent(assembly, path) is { } problem)
+            {
+                throw new WorkspaceException(problem);
+            }
+            return $"Inserted {name} into {into}: drag it into place and mate it." + (got.Length > 0 ? " " + got : "");
+        });
+    }
+
+    // The active document, if it's an assembly: what Insert puts files in.
+    private string? ActiveAssembly() => _sw.ActiveDocumentPath is { } path && SolidWorksHost.IsAssembly(path) ? path : null;
 
     // Before opening a file that's here: the files it uses that aren't. Nothing to say if they all are.
     private Task GetWhatItUsesAsync(string path) =>
@@ -663,17 +775,19 @@ internal sealed class VaultPane : UserControl
 
     // The files here, at their latest versions (with any new parts they use): nothing else comes down.
     private Task UpdateMineAsync() =>
-        RunAsync("Updating your files", async workspace =>
+        RunAsync("Updating downloaded files", async workspace =>
         {
             var result = await GetUpdatingOpenAsync(workspace, () => workspace.UpdateAsync());
             var quiet = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count == 0;
-            return quiet ? "Your files are up to date." : Summary(result);
+            return quiet ? "Everything here is up to date." : Summary(result);
         });
 
-    // Every file you have access to: only after saying how much that is, and how much room there is.
+    // Every file you have access to: only after saying how much that is, and how much room there is, and you saying
+    // yes (No is the default, so Enter doesn't start it).
     private Task DownloadEverythingAsync() =>
         RunAsync("Getting everything", async workspace =>
         {
+            ShowMessage("Checking how much that is...", Tone.Info);
             var size = await workspace.SizeOfGetAsync();
             if (size.Files == 0)
             {
@@ -683,7 +797,12 @@ internal sealed class VaultPane : UserControl
             var question = $"Download every file in the vault you have access to? That's {Count(size.NewFiles, "file")} not on "
                 + $"this computer yet{updates}: {FormatSize(size.Bytes)}.{RoomLeft(workspace.Root)}\n\nTo get just what you "
                 + "work on, open it (the parts it uses come along), or right-click its folder in Browse and choose Get latest.";
-            return Ask(question) == DialogResult.Yes ? Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync())) : null;
+            if (Ask(question, defaultNo: true) != DialogResult.Yes)
+            {
+                return null;
+            }
+            ShowMessage($"Downloading {Count(size.Files, "file")} ({FormatSize(size.Bytes)})...", Tone.Info);
+            return Summary(await GetUpdatingOpenAsync(workspace, () => workspace.GetLatestAsync()));
         });
 
     // Get latest on what's selected: files with what they use. A folder's files that aren't here yet come down after
@@ -692,8 +811,10 @@ internal sealed class VaultPane : UserControl
         RunAsync("Getting the latest versions", async workspace =>
         {
             if (folder && await workspace.SizeOfGetAsync(paths) is { NewFiles: > 0 } size
-                && Ask($"Get {Count(size.NewFiles, "file")} from {Path.GetFileName(paths[0].TrimEnd('\\'))} that aren't on this computer yet "
-                    + $"({FormatSize(size.Bytes)})?{RoomLeft(workspace.Root)}") != DialogResult.Yes)
+                && Ask(
+                    $"Get {Count(size.NewFiles, "file")} from {Path.GetFileName(paths[0].TrimEnd('\\'))} that aren't on this computer yet "
+                        + $"({FormatSize(size.Bytes)})?{RoomLeft(workspace.Root)}",
+                    defaultNo: true) != DialogResult.Yes)
             {
                 return null;
             }
@@ -764,27 +885,27 @@ internal sealed class VaultPane : UserControl
         }
         await _gate.WaitAsync();
         SetBusy(true);
-        ShowMessage(doing + "...", Attention);
+        ShowMessage(doing + "...", Tone.Info);
         try
         {
-            ShowMessage(await action(workspace) ?? "", Good);
+            ShowMessage(await action(workspace) ?? "", Tone.Good);
         }
         catch (VaultApiException e) when (e.StatusCode == 401)
         {
             _tokens.Remove(workspace.Server);
             OpenWorkspace();
-            ShowMessage("Your sign-in expired. Sign in again.", Attention);
+            ShowMessage("Your sign-in expired. Sign in again.", Tone.Attention);
         }
         catch (Exception e) when (IsExpected(e))
         {
             Log.Error(doing + " failed", e);
-            ShowMessage(Reason(e), Problem);
+            ShowMessage(Reason(e), Tone.Problem);
             Warn(Reason(e));
         }
         catch (Exception e)
         {
             Log.Error(doing + " failed", e);
-            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Problem);
+            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Tone.Problem);
         }
         finally
         {
@@ -810,7 +931,7 @@ internal sealed class VaultPane : UserControl
             {
                 _statuses[VaultPaths.Key(status.VaultPath)] = status;
             }
-            _account.Text = $"{me.Name} ({me.Email}) on {workspace.Host}\n{workspace.Server}\n{workspace.Root}";
+            ShowAccount(workspace, me);
             // Redrawn only when something changed, so a refresh doesn't close what you had open in the tree.
             var shown = Signature(vault);
             if (shown != _shown)
@@ -825,11 +946,11 @@ internal sealed class VaultPane : UserControl
         {
             _tokens.Remove(workspace.Server);
             OpenWorkspace();
-            ShowMessage("Your sign-in expired. Sign in again.", Attention);
+            ShowMessage("Your sign-in expired. Sign in again.", Tone.Attention);
         }
         catch (Exception e) when (IsExpected(e))
         {
-            ShowMessage("Couldn't refresh: " + e.Message, Problem);
+            ShowMessage("Couldn't refresh: " + e.Message, Tone.Problem);
         }
         catch (Exception e)
         {
@@ -941,12 +1062,12 @@ internal sealed class VaultPane : UserControl
         catch (Exception e) when (IsExpected(e) || e is UriFormatException)
         {
             Log.Error("A task pane action failed", e);
-            ShowMessage(Reason(e), Problem);
+            ShowMessage(Reason(e), Tone.Problem);
         }
         catch (Exception e)
         {
             Log.Error("A task pane action failed", e);
-            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Problem);
+            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Tone.Problem);
         }
     }
 
@@ -960,7 +1081,7 @@ internal sealed class VaultPane : UserControl
         catch (Exception e)
         {
             Log.Error("A task pane action failed", e);
-            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Problem);
+            ShowMessage($"Something went wrong. Details are in {Log.FilePath}", Tone.Problem);
         }
     }
 
@@ -997,6 +1118,7 @@ internal sealed class VaultPane : UserControl
     {
         _workspace?.Dispose();
         _workspace = null;
+        _me = null;
         _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
         Uri? server = null;
         var root = Workspace.FindRoot(_settings.WorkspaceRoot);
@@ -1013,10 +1135,14 @@ internal sealed class VaultPane : UserControl
         _rootBox.Text = root ?? _settings.WorkspaceRoot;
         _setupView.Visible = _workspace == null;
         _workView.Visible = _workspace != null;
+        _refreshButton.Visible = _accountButton.Visible = _workspace != null;
+        _accountButton.Text = "Account ▾"; // until a refresh says who
         _vault = null;
         _shown = "";
         _changes.Items.Clear();
+        _changesTab.Text = "Needs attention";
         _tree.Nodes.Clear();
+        ShowView();
         ShowActiveDocument();
     }
 
@@ -1080,82 +1206,190 @@ internal sealed class VaultPane : UserControl
         ? _tree.SelectedNode?.Tag is BrowseItem item ? new List<FileStatus> { item.File } : new List<FileStatus>()
         : _changes.SelectedItems.Cast<ListViewItem>().Select(i => (FileStatus)i.Tag).ToList();
 
-    private bool BrowseShown => _views.SelectedTab?.Controls.Contains(_tree) == true;
+    private bool BrowseShown => _browseTab.Checked;
 
     // --- showing ------------------------------------------------------------------------------
 
-    private void ShowActiveDocument()
+    private void ShowActiveDocument() => ShowDocument(_sw.ActiveDocumentPath);
+
+    /// <summary>
+    /// The active document's card: its name, its status, what that means, and buttons for what you can do with it
+    /// now, the one you're most likely to want first, in navy. Buttons that don't apply are hidden.
+    /// </summary>
+    private void ShowDocument(string? path)
     {
-        var path = _sw.ActiveDocumentPath;
         var status = path == null ? null : StatusOf(path);
-        _activeName.Text = path == null ? "No document open" : Path.GetFileName(path);
-        (_activeState.Text, _activeState.ForeColor) = Describe(path, status);
+        _documentName.Text = path == null ? "No document open" : Path.GetFileName(path);
+        _documentName.ForeColor = path == null ? Theme.Muted : Theme.Text;
+        var (text, tone, detail) = DescribeDocument(path, status);
+        _documentStatus.Show(text, tone);
+        _documentStatus.Visible = text.Length > 0;
+        _documentDetail.Text = detail;
+        _documentDetail.Visible = detail.Length > 0;
+
         var inVault = status?.FileId != null;
-        _checkOutButton.Enabled = !_busy && inVault && status!.Lock == null
-            && status.State is FileState.UpToDate or FileState.Outdated or FileState.Modified;
-        _checkInButton.Enabled = !_busy && status != null && (status.State == FileState.New || status.CheckedOutByMe);
-        _undoButton.Enabled = !_busy && status?.CheckedOutByMe == true;
-        _getButton.Enabled = !_busy && inVault;
+        var mine = status?.CheckedOutByMe == true;
+        var canCheckIn = status != null && (status.State == FileState.New || mine);
+        var canCheckOut = inVault && status!.Lock == null && status.State is FileState.UpToDate or FileState.Outdated or FileState.Modified;
+        var canGet = inVault && status!.State != FileState.DeletedInVault;
         // Only where you may: most people never see it.
-        _takeOverButton.Visible = status != null && _workspace?.CanTakeOver(status) == true;
-        _takeOverButton.Enabled = !_busy;
-        _drawingButton.Visible = status != null && _vault?.Drawings(status).Count > 0;
-        _drawingButton.Enabled = !_busy;
+        var canTakeOver = status != null && _workspace?.CanTakeOver(status) == true;
+        var yoursElsewhere = canTakeOver && status!.Lock!.User.Id == _me?.Id;
+        var drawings = status != null && _vault != null ? _vault.Drawings(status) : Array.Empty<FileStatus>();
+        _takeOverButton.Text = yoursElsewhere ? "Move check-out here..." : "Take over...";
+        _drawingButton.Text = drawings.Count > 1 ? "Open drawing ▾" : "Open drawing";
+        var primary = canCheckIn ? _checkInButton
+            : canGet && status!.State == FileState.Outdated ? _getButton
+            : canCheckOut ? _checkOutButton
+            : yoursElsewhere ? _takeOverButton
+            : null;
+        ShowActions(
+            primary,
+            (_checkInButton, canCheckIn),
+            (_checkOutButton, canCheckOut),
+            (_getButton, canGet),
+            (_undoButton, mine),
+            (_takeOverButton, canTakeOver),
+            (_drawingButton, drawings.Count > 0));
     }
 
-    private (string Text, Color Color) Describe(string? path, FileStatus? status)
+    private void ShowActions(FlatButton? primary, params (FlatButton Button, bool Shown)[] actions)
+    {
+        var order = actions.Select(a => a.Button).OrderBy(b => b == primary ? 0 : 1).ToList();
+        for (var i = 0; i < order.Count; i++)
+        {
+            if (_documentActions.Controls.GetChildIndex(order[i]) != i)
+            {
+                _documentActions.Controls.SetChildIndex(order[i], i);
+            }
+        }
+        foreach (var (button, shown) in actions)
+        {
+            button.Visible = shown;
+            button.Primary = button == primary;
+            button.Enabled = !_busy;
+        }
+        _documentActions.Visible = actions.Any(a => a.Shown);
+    }
+
+    // What the card says about the active document: a few words for its badge, and what they mean.
+    private (string Text, Tone Tone, string Detail) DescribeDocument(string? path, FileStatus? status)
     {
         if (path == null || _workspace == null)
         {
-            return ("", ForeColor);
+            return ("", Tone.Neutral, "Open a part, assembly, or drawing to see its status here, and check it out or in.");
         }
         if (!IsInWorkspace(path))
         {
-            return ($"Not in the Vault workspace. Save it under {_workspace.Root} to version it.", Attention);
+            return ("Not in the vault", Tone.Muted, $"It's outside the workspace: save it in {_workspace.Root} to check it in.");
         }
         if (status == null)
         {
-            return ("Not checked in yet (refreshing...)", ForeColor);
+            return ("Checking...", Tone.Muted, "");
         }
-        var version = status.RemoteVersion is int v ? $"v{v}: " : "";
-        return status switch
+        var (text, tone) = Describe(status);
+        return (text, tone, Explain(status));
+    }
+
+    /// <summary>A file's status in a few words, and its tone: the same on the card, in the list, and in the tree.</summary>
+    private (string Text, Tone Tone) Describe(FileStatus file) => file switch
+    {
+        { State: FileState.DeletedInVault } => ("Deleted in the vault", Tone.Problem),
+        { State: FileState.Conflict } => ("Conflict", Tone.Problem),
+        { State: FileState.New } => ("New", Tone.Info),
+        { CheckedOutByMe: true, State: FileState.Modified } => ("Checked out to you, changed", Tone.Good),
+        { CheckedOutByMe: true } => ("Checked out to you", Tone.Good),
+        { Lock: { } yours } when yours.User.Id == _me?.Id => ("Checked out to you " + On(yours.Host), Tone.Attention),
+        { Lock: { } other } => ($"Checked out by {other.User.Name} {On(other.Host)}", Tone.Attention),
+        { State: FileState.Outdated } => ("Out of date", Tone.Attention),
+        { State: FileState.Modified } => ("Changed, not checked out", Tone.Attention),
+        { State: FileState.Missing } => ("Not downloaded", Tone.Muted),
+        _ => ("Up to date", Tone.Neutral),
+    };
+
+    /// <summary>What a file's status means, and what to do about it: on the card, and over the lists' files.</summary>
+    private string Explain(FileStatus file)
+    {
+        var version = file.RemoteVersion is int latest ? $"Version {latest}. " : "";
+        return file switch
         {
-            { CheckedOutByMe: true, State: FileState.Modified } => (version + "checked out to you, with changes", Good),
-            { CheckedOutByMe: true } => (version + "checked out to you", Good),
-            { Lock: { } other } => (version + $"checked out by {other.User.Name} on {other.Host}", Attention),
-            { State: FileState.New } => ("New: check it in to add it to the vault", Attention),
-            { State: FileState.UpToDate } => (version + "up to date; read-only until you check it out", ForeColor),
-            { State: FileState.Outdated } => ($"v{status.LocalVersion} here, v{status.RemoteVersion} in the vault: get the latest", Attention),
-            { State: FileState.Modified } => (version + "changed, but not checked out: check it out to keep your changes", Attention),
-            { State: FileState.Conflict } => ("Conflict: changed here, but someone checked in a newer version", Problem),
-            { State: FileState.DeletedInVault } => ("Deleted in the vault", Problem),
-            _ => (status.State.ToString(), ForeColor),
+            { State: FileState.DeletedInVault } => "Deleted from the vault since you got it. Restore it from the trash in the web app to keep working on it.",
+            { State: FileState.Conflict } => $"Changed here, but version {file.RemoteVersion} was checked in since. Save your changes under another name; "
+                + "the CLI's vault get --force then brings the vault's version, keeping a copy of yours.",
+            { State: FileState.New } => "Not in the vault yet: check it in to add it.",
+            { CheckedOutByMe: true, State: FileState.Modified } => version + "Check it in to share your changes as a new version.",
+            { CheckedOutByMe: true } => version + "It's yours to change: check it in when you're done.",
+            { Lock: { } yours } when yours.User.Id == _me?.Id =>
+                version + $"You checked it out {On(yours.Host)}{Since(yours)}. Move the check-out here to change it on this computer.",
+            { Lock: { } other } => version + $"{other.User.Name} checked it out {On(other.Host)}{Since(other)}, so you can't save changes to it."
+                + (_workspace?.CanTakeOver(file) == true ? " As a lead here, you can take it over." : ""),
+            { State: FileState.Outdated } => $"Version {file.LocalVersion} here, version {file.RemoteVersion} in the vault: get the latest to update it.",
+            { State: FileState.Modified } => version + "Changed here, but not checked out: check it out to keep your changes.",
+            { State: FileState.Missing } => version + "In the vault, not on this computer: opening it downloads it.",
+            _ => version + "Read-only until you check it out.",
         };
     }
 
+    // " since Oct 3 at 14:05", when a check-out started.
+    private static string Since(FileLock fileLock) =>
+        fileLock.Since == default ? "" : " since " + fileLock.Since.ToLocalTime().ToString("MMM d 'at' HH:mm", CultureInfo.InvariantCulture);
+
+    private void ShowAccount(Workspace workspace, Account me)
+    {
+        var first = me.Name.Split(' ').FirstOrDefault(name => name.Length > 0) ?? "";
+        _accountButton.Text = (first.Length > 0 ? first : "Account") + " ▾";
+        _accountName.Text = me.Name;
+        _accountEmail.Text = me.Email;
+        _accountServer.Text = "Vault: " + workspace.Server.AbsoluteUri;
+        _accountFolder.Text = $"Workspace: {workspace.Root}, on {workspace.Host}";
+        _tips.SetToolTip(_accountButton, $"Signed in as {me.Name} ({me.Email}), on {workspace.Host}");
+    }
+
+    /// <summary>
+    /// The files that need attention: yours, new ones, ones that are changed, out of date, or in trouble, and ones here
+    /// that someone else has checked out. Files that aren't on this computer and aren't yours don't need you.
+    /// </summary>
     private void ShowChanges(IReadOnlyList<FileStatus> statuses)
     {
         var attention = statuses
-            .Where(s => s.Lock != null || s.State is FileState.New or FileState.Modified or FileState.Conflict or FileState.Outdated or FileState.DeletedInVault)
-            .OrderBy(s => s.CheckedOutByMe ? 0 : s.State == FileState.New ? 1 : 2)
-            .ThenBy(s => s.VaultPath, StringComparer.OrdinalIgnoreCase);
+            .Where(s => s.CheckedOutByMe
+                || s.State is FileState.New or FileState.Modified or FileState.Conflict or FileState.Outdated or FileState.DeletedInVault
+                || (s.Lock != null && s.State != FileState.Missing))
+            .OrderBy(s => s.CheckedOutByMe ? 0 : s.State == FileState.New ? 1 : s.State is FileState.Conflict or FileState.DeletedInVault ? 2 : 3)
+            .ThenBy(s => s.VaultPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var selected = new HashSet<string>(
             _changes.SelectedItems.Cast<ListViewItem>().Select(i => ((FileStatus)i.Tag).VaultPath), StringComparer.OrdinalIgnoreCase);
         _changes.BeginUpdate();
         _changes.Items.Clear();
         foreach (var status in attention)
         {
-            var who = status.Lock == null ? "" : status.CheckedOutByMe ? "you" : $"{status.Lock.User.Name} ({status.Lock.Host})";
-            _changes.Items.Add(new ListViewItem(new[] { status.VaultPath, StateText(status.State), who })
+            var (text, tone) = Describe(status);
+            var item = new ListViewItem(NameOf(status.VaultPath), tone.ToString())
             {
                 Tag = status,
-                ForeColor = status.State is FileState.Conflict or FileState.DeletedInVault ? Problem
-                    : status.State == FileState.Outdated || (status.Lock != null && !status.CheckedOutByMe) ? Attention
-                    : _changes.ForeColor,
+                ToolTipText = status.VaultPath + "\n" + Explain(status),
+                UseItemStyleForSubItems = false,
                 Selected = selected.Contains(status.VaultPath),
-            });
+            };
+            item.SubItems.Add(text, tone == Tone.Neutral ? Theme.Muted : Theme.Ink(tone), _changes.BackColor, _changes.Font);
+            item.SubItems.Add(FolderPath(status.VaultPath), Theme.Muted, _changes.BackColor, _changes.Font);
+            _changes.Items.Add(item);
         }
         _changes.EndUpdate();
+        _changesTab.Text = attention.Count == 0 ? "Needs attention" : $"Needs attention ({attention.Count})";
+        ShowView();
+    }
+
+    // The list or the tree, by the tab that's chosen. An empty list says so.
+    private void ShowView()
+    {
+        var browse = _browseTab.Checked;
+        var empty = _changes.Items.Count == 0;
+        _tree.Visible = browse;
+        _changes.Visible = !browse && !empty;
+        _changesEmpty.Visible = !browse && empty;
+        _changesEmpty.Text = _vault == null ? "Loading..." : "Nothing needs your attention.\nEverything here is up to date.";
     }
 
     // The task pane's width depends on SolidWorks and the display, so the columns share whatever
@@ -1163,21 +1397,10 @@ internal sealed class VaultPane : UserControl
     private void FitColumns()
     {
         var width = _changes.ClientSize.Width;
-        _changes.Columns[0].Width = width / 2;
-        _changes.Columns[1].Width = width / 5;
+        _changes.Columns[0].Width = width * 2 / 5;
+        _changes.Columns[1].Width = width * 2 / 5;
         _changes.Columns[2].Width = width - _changes.Columns[0].Width - _changes.Columns[1].Width;
     }
-
-    private static string StateText(FileState state) => state switch
-    {
-        FileState.New => "new",
-        FileState.Modified => "changed",
-        FileState.Conflict => "conflict",
-        FileState.Outdated => "out of date",
-        FileState.DeletedInVault => "deleted in vault",
-        FileState.Missing => "not downloaded",
-        _ => "up to date",
-    };
 
     private static string Summary(GetResult result)
     {
@@ -1204,20 +1427,31 @@ internal sealed class VaultPane : UserControl
     {
         _busy = busy;
         UseWaitCursor = busy;
-        _views.Enabled = !busy;
+        _activity.Running = busy;
+        _lists.Enabled = !busy;
+        _refreshButton.Enabled = _updateButton.Enabled = _everythingButton.Enabled = !busy;
         ShowActiveDocument();
     }
 
     // Only the first line: a list after it is for the message box.
-    private void ShowMessage(string text, Color color)
+    private void ShowMessage(string text, Tone tone)
     {
         _message.Text = text.Split('\n')[0].TrimEnd('\r');
-        _message.ForeColor = color;
+        _message.ForeColor = tone == Tone.Neutral ? Theme.Muted : Theme.Ink(tone);
+        _statusBar.Visible = _message.Text.Length > 0;
     }
 
     private void Warn(string text) => MessageBox.Show(this, text, "Vault", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
-    private DialogResult Ask(string question) => MessageBox.Show(this, question, "Vault", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+    // For a question with a big answer (a download of many files), No is the default, so Enter doesn't start it.
+    private DialogResult Ask(string question, bool defaultNo = false) =>
+        MessageBox.Show(
+            this,
+            question,
+            "Vault",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            defaultNo ? MessageBoxDefaultButton.Button2 : MessageBoxDefaultButton.Button1);
 
     /// <summary>
     /// Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses; one
@@ -1260,7 +1494,7 @@ internal sealed class VaultPane : UserControl
         }
         if (drawings.Count > 1)
         {
-            var choice = new ContextMenuStrip();
+            var choice = new ContextMenuStrip { Renderer = Theme.MenuRenderer };
             foreach (var drawing in drawings)
             {
                 var local = drawing.LocalPath;
@@ -1280,6 +1514,14 @@ internal sealed class VaultPane : UserControl
         }
     }
 
+    private void OpenWebApp()
+    {
+        if (_workspace != null)
+        {
+            OpenInBrowser(_workspace.Server);
+        }
+    }
+
     private static void OpenInBrowser(Uri url) => Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true });
 
     private static Uri ParseServer(string text) =>
@@ -1293,10 +1535,11 @@ internal sealed class VaultPane : UserControl
     /// <summary>Right-click actions on what's selected in the list or the tree (a folder in the tree gets its own few).</summary>
     private ContextMenuStrip ItemMenu()
     {
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip { Renderer = Theme.MenuRenderer, ShowItemToolTips = true };
         var open = menu.Items.Add("Open", null, (_, _) => Safely(() => OpenAsync(SelectedPaths())));
         var drawing = new ToolStripMenuItem("Open drawing");
         menu.Items.Add(drawing);
+        var insert = menu.Items.Add("Insert into assembly", null, (_, _) => Safely(() => InsertAsync(SelectedPaths()[0])));
         var checkOut = menu.Items.Add("Check out", null, (_, _) => Safely(() => CheckOutAsync(SelectedPaths())));
         var checkIn = menu.Items.Add("Check in...", null, (_, _) => Safely(() => CheckInAsync(SelectedPaths())));
         var undo = menu.Items.Add("Undo check-out", null, (_, _) => Safely(() => UndoAsync(SelectedPaths()[0])));
@@ -1321,6 +1564,9 @@ internal sealed class VaultPane : UserControl
             checkIn.Enabled = !_busy && (folder || files.Any(s => s.State == FileState.New || s.CheckedOutByMe));
             undo.Enabled = !_busy && files.Count == 1 && files[0].CheckedOutByMe;
             get.Enabled = !_busy && (folder || files.Any(s => s.FileId != null));
+            get.ToolTipText = folder
+                ? "Download the newest version of every file in this folder. Vault asks first if that's files you don't have yet."
+                : "Download the newest version, with the parts it uses. Open files update in place.";
             takeOver.Available = takeOver.Available && files.Count == 1 && _workspace?.CanTakeOver(files[0]) == true;
             takeOver.Enabled = !_busy;
             drawing.DropDownItems.Clear();
@@ -1331,6 +1577,16 @@ internal sealed class VaultPane : UserControl
             }
             drawing.Available = !folder && drawing.DropDownItems.Count > 0;
             drawing.Enabled = !_busy;
+            // A part or assembly goes in the active assembly; files deleted in the vault, or in conflict, couldn't be
+            // checked in with it.
+            var assembly = ActiveAssembly();
+            var component = files.Count == 1 && SolidWorksHost.IsComponent(files[0].VaultPath) ? files[0] : null;
+            insert.Available = !folder && component != null;
+            insert.Text = assembly == null ? "Insert into an assembly (open one first)" : $"Insert into {Path.GetFileName(assembly)}";
+            insert.Enabled = !_busy && assembly != null && component != null
+                && component.State is not (FileState.DeletedInVault or FileState.Conflict)
+                && !string.Equals(component.LocalPath, assembly, StringComparison.OrdinalIgnoreCase);
+            insert.ToolTipText = "Download it if it isn't here, with the parts it uses, and add it to the assembly, ready to mate.";
         };
         return menu;
     }
@@ -1357,6 +1613,8 @@ internal sealed class VaultPane : UserControl
 
     // Stands in for what's under a tree node until it's opened.
     private static readonly object Unfilled = new object();
+
+    private static TreeNode Placeholder() => new TreeNode("...") { Tag = Unfilled, ImageKey = Theme.NoImage, SelectedImageKey = Theme.NoImage };
 
     /// <summary>
     /// Draw the Browse tree from a refresh, with the same folders and assemblies open, the same node
@@ -1410,12 +1668,16 @@ internal sealed class VaultPane : UserControl
     {
         foreach (var child in folder.Folders)
         {
-            var node = nodes.Add("d:" + VaultPaths.Key(child.VaultPath), child.CheckedOut > 0 ? $"{child.Name}   ({child.CheckedOut} checked out)" : child.Name);
+            var node = nodes.Add(
+                "d:" + VaultPaths.Key(child.VaultPath),
+                child.CheckedOut > 0 ? $"{child.Name}   ({child.CheckedOut} checked out)" : child.Name,
+                Theme.FolderImage,
+                Theme.FolderImage);
             node.Tag = child;
             node.ToolTipText = child.VaultPath;
             if (child.Folders.Count + child.Files.Count > 0)
             {
-                node.Nodes.Add(new TreeNode("...") { Tag = Unfilled });
+                node.Nodes.Add(Placeholder());
             }
         }
         foreach (var file in folder.Files)
@@ -1438,12 +1700,22 @@ internal sealed class VaultPane : UserControl
         var version = used == null
             ? file.RemoteVersion is int latest ? $"v{latest}" : ""
             : file.RemoteVersion is int now && now != used.Version ? $"v{used.Version} (now v{now})" : $"v{used.Version}";
-        text.Append("   ").Append(version.Length > 0 ? version + " · " : "").Append(BrowseState(file));
-        var node = new TreeNode(text.ToString()) { Name = key, Tag = new BrowseItem(file), ForeColor = ColorOf(file), ToolTipText = TipFor(file) };
+        var (state, tone) = Describe(file);
+        text.Append("   ").Append(version.Length > 0 ? version + " · " : "").Append(state);
+        var node = new TreeNode(text.ToString())
+        {
+            Name = key,
+            Tag = new BrowseItem(file),
+            ImageKey = tone.ToString(),
+            SelectedImageKey = tone.ToString(),
+            // The dot says the rest; only trouble, and files that aren't here, change the text's color.
+            ForeColor = tone is Tone.Problem or Tone.Muted ? Theme.Ink(tone) : _tree.ForeColor,
+            ToolTipText = TipFor(file),
+        };
         // A drawing listed under its model is a link to it: what it shows is already there, above it.
         if (!drawing && _vault != null && ((_vault.Uses(file)?.Count ?? 0) > 0 || _vault.Drawings(file).Count > 0))
         {
-            node.Nodes.Add(new TreeNode("...") { Tag = Unfilled });
+            node.Nodes.Add(Placeholder());
         }
         return node;
     }
@@ -1484,7 +1756,13 @@ internal sealed class VaultPane : UserControl
         {
             if (used.File == null)
             {
-                node.Nodes.Add(new TreeNode("A file deleted from the vault") { Name = $"{node.Name}/{used.FileId}", ForeColor = SystemColors.GrayText });
+                node.Nodes.Add(new TreeNode("A file deleted from the vault")
+                {
+                    Name = $"{node.Name}/{used.FileId}",
+                    ImageKey = Theme.NoImage,
+                    SelectedImageKey = Theme.NoImage,
+                    ForeColor = Theme.Muted,
+                });
             }
             else if (!trail.Contains(used.FileId))
             {
@@ -1524,32 +1802,9 @@ internal sealed class VaultPane : UserControl
         return node.Tag is BrowseItem item ? new[] { item.File.LocalPath } : Array.Empty<string>();
     }
 
-    private static string BrowseState(FileStatus file) => file switch
-    {
-        { State: FileState.New } => "new: not checked in yet",
-        { State: FileState.DeletedInVault } => "deleted in the vault",
-        { CheckedOutByMe: true, State: FileState.Modified } => "checked out to you, changed",
-        { CheckedOutByMe: true } => "checked out to you",
-        { Lock: { } other } => $"checked out by {other.User.Name} on {other.Host}",
-        { State: FileState.Outdated } => "checked in; a newer version is in the vault",
-        { State: FileState.Missing } => "checked in; not downloaded here",
-        { State: FileState.Modified } => "checked in; changed here",
-        { State: FileState.Conflict } => "checked in; conflict: changed here and in the vault",
-        _ => "checked in",
-    };
-
-    private Color ColorOf(FileStatus file) => file switch
-    {
-        { State: FileState.Conflict or FileState.DeletedInVault } => Problem,
-        { CheckedOutByMe: true } => Good,
-        { Lock: not null } or { State: FileState.New or FileState.Modified or FileState.Outdated } => Attention,
-        { State: FileState.Missing } => SystemColors.GrayText,
-        _ => _tree.ForeColor,
-    };
-
     private string TipFor(FileStatus file)
     {
-        var lines = new List<string> { file.VaultPath, BrowseState(file) };
+        var lines = new List<string> { file.VaultPath, Explain(file) };
         if (_vault != null)
         {
             var usedIn = _vault.UsedBy(file).Where(f => !VaultTree.IsDrawing(f.VaultPath)).Select(f => NameOf(f.VaultPath)).ToList();
@@ -1594,13 +1849,121 @@ internal sealed class VaultPane : UserControl
 
     private static string NameOf(string vaultPath) => vaultPath.Substring(vaultPath.LastIndexOf('/') + 1);
 
-    private static string FolderOf(string vaultPath) => vaultPath.LastIndexOf('/') is var slash and > 0 ? vaultPath.Substring(0, slash) : "the top folder";
+    private static string FolderOf(string vaultPath) => FolderPath(vaultPath) is { Length: > 0 } folder ? folder : "the top folder";
+
+    private static string FolderPath(string vaultPath) => vaultPath.LastIndexOf('/') is var slash and > 0 ? vaultPath.Substring(0, slash) : "";
 
     // --- layout -------------------------------------------------------------------------------
 
+    // Vault's mark and name, and once you're signed in, refresh and your account's menu.
+    private Control Header()
+    {
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 5,
+            RowCount = 1,
+            BackColor = Theme.Surface,
+            Padding = new Padding(10, 6, 6, 6),
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.Controls.Add(
+            new PictureBox
+            {
+                Image = Icons.Draw(64),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Size = new Size(22, 22),
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 8, 0),
+            },
+            0,
+            0);
+        var title = Words("Vault", Theme.Title, Theme.Accent);
+        title.Dock = DockStyle.None;
+        title.Anchor = AnchorStyles.Left;
+        title.Margin = new Padding(0);
+        header.Controls.Add(title, 1, 0);
+        _refreshButton.Anchor = _accountButton.Anchor = AnchorStyles.Right;
+        header.Controls.Add(_refreshButton, 3, 0);
+        header.Controls.Add(_accountButton, 4, 0);
+        return header;
+    }
+
+    private Control SignInView()
+    {
+        var card = new Card();
+        card.Add(Words("Sign in to Vault", Theme.Heading));
+        card.Add(Words("Check SolidWorks files in and out of the team's vault, see who's changing what, and open assemblies with everything they use."));
+        card.Add(Words("Quickest: on the web app's SolidWorks page, click Connect SolidWorks.", color: Theme.Muted));
+        card.Add(Spaced(Words("Server address", Theme.Bold)));
+        card.Add(_serverBox);
+        card.Add(Words("Workspace folder", Theme.Bold));
+        card.Add(_rootBox);
+        card.Add(Words("Use the same folder on every computer, so assemblies find their parts.", color: Theme.Muted));
+        card.Add(Spaced(Row(_signInButton)));
+        return Stack(null, card);
+    }
+
+    // The active document's card, the tabs over the files, the files, and what gets files for the whole workspace.
+    private Control WorkView()
+    {
+        _documentCard.Add(Words("Active document", Theme.Caption, Theme.Muted));
+        _documentCard.Add(_documentName);
+        var status = Row(_documentStatus);
+        status.Margin = new Padding(0, 2, 0, 4);
+        _documentCard.Add(status);
+        _documentCard.Add(_documentDetail);
+        _documentCard.Add(_documentActions);
+
+        var files = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Margin = new Padding(0) };
+        files.Controls.Add(_tree);
+        files.Controls.Add(_changes);
+        files.Controls.Add(_changesEmpty);
+        _lists.Add(files, fill: true);
+
+        var tabs = Row(_changesTab, _browseTab);
+        var footer = Row(_updateButton, _everythingButton);
+        return Stack(_lists, _documentCard, tabs, _lists, footer);
+    }
+
+    private Control StatusBar()
+    {
+        var bar = new TableLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            BackColor = Theme.Surface,
+            Padding = new Padding(10, 6, 10, 4),
+            Visible = false,
+        };
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bar.Controls.Add(_message);
+        bar.Paint += (_, e) =>
+        {
+            using var line = new Pen(Theme.Border);
+            e.Graphics.DrawLine(line, 0, 0, bar.Width, 0);
+        };
+        return bar;
+    }
+
     private static TableLayoutPanel Stack(Control? fill, params Control[] controls)
     {
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, AutoScroll = true };
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            AutoScroll = true,
+            BackColor = Theme.Background,
+            Padding = new Padding(8, 8, 8, 2),
+        };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var control in controls)
         {
@@ -1610,34 +1973,98 @@ internal sealed class VaultPane : UserControl
         return table;
     }
 
-    private static TabPage Page(string title, Control content)
-    {
-        var page = new TabPage(title);
-        page.Controls.Add(content);
-        return page;
-    }
-
     private static FlowLayoutPanel Row(params Control[] controls)
     {
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true };
+        var row = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true,
+            Margin = new Padding(0),
+        };
         row.Controls.AddRange(controls);
         return row;
     }
 
-    // Buttons (at least Windows' standard 75x23) and rows are sized by their text, which already scales
-    // with the display. GrowAndShrink keeps the pane's DPI scaling from leaving them enlarged, as
-    // GrowOnly (the default) would.
-    private static Button MakeButton(string text, EventHandler onClick)
+    private static T Spaced<T>(T control)
+        where T : Control
     {
-        var button = new Button { Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(75, 23) };
+        control.Margin = new Padding(control.Margin.Left, control.Margin.Top + 8, control.Margin.Right, control.Margin.Bottom);
+        return control;
+    }
+
+    // Text that wraps to the width it's given, which already scales with the display.
+    private static Label Words(string text, Font? font = null, Color? color = null) =>
+        new Label
+        {
+            Text = text,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            Font = font ?? Theme.Base,
+            ForeColor = color ?? Theme.Text,
+            UseCompatibleTextRendering = false,
+            Margin = new Padding(0, 0, 0, 4),
+        };
+
+    private static TextBox Field() => new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 2, 0, 8) };
+
+    // A tab over the files: the chosen one is white, like the files under it.
+    private static RadioButton Tab(string text)
+    {
+        var tab = new RadioButton
+        {
+            Text = text,
+            Appearance = Appearance.Button,
+            FlatStyle = FlatStyle.Flat,
+            AutoSize = true,
+            TextAlign = ContentAlignment.MiddleCenter,
+            MinimumSize = new Size(0, 28),
+            Padding = new Padding(8, 0, 8, 0),
+            Margin = new Padding(0, 0, 4, 6),
+            UseCompatibleTextRendering = false,
+            BackColor = Theme.Background,
+            ForeColor = Theme.Muted,
+        };
+        tab.FlatAppearance.BorderSize = 1;
+        tab.FlatAppearance.BorderColor = Theme.Background;
+        tab.FlatAppearance.CheckedBackColor = Theme.Surface;
+        tab.FlatAppearance.MouseOverBackColor = Theme.Hover;
+        tab.FlatAppearance.MouseDownBackColor = Theme.Pressed;
+        tab.CheckedChanged += (_, _) =>
+        {
+            tab.ForeColor = tab.Checked ? Theme.Accent : Theme.Muted;
+            tab.FlatAppearance.BorderColor = tab.Checked ? Theme.Border : Theme.Background;
+        };
+        return tab;
+    }
+
+    private FlatButton MakeButton(string text, EventHandler onClick, string tip)
+    {
+        var button = new FlatButton(text);
         button.Click += onClick;
+        _tips.SetToolTip(button, tip);
         return button;
     }
 
-    private static Label Caption(string text) => new Label { Text = text, AutoSize = true, Dock = DockStyle.Fill };
-
-    private static Label Heading(string text) =>
-        new Label { Text = text, AutoSize = true, Dock = DockStyle.Fill, Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Bold), Padding = new Padding(0, 8, 0, 2) };
+    // A button in the header: an icon from Windows' icon font, or its name where that font is missing.
+    private static FlatButton IconButton(string glyph, string name, EventHandler onClick)
+    {
+        var button = new FlatButton(Theme.Glyphs == null ? name : glyph)
+        {
+            Quiet = true,
+            AccessibleName = name,
+            MinimumSize = new Size(28, 28),
+            Padding = new Padding(0),
+            Margin = new Padding(2, 0, 0, 0),
+        };
+        if (Theme.Glyphs != null)
+        {
+            button.Font = Theme.Glyphs;
+        }
+        button.Click += onClick;
+        return button;
+    }
 }
 
 /// <summary>What to do when SolidWorks is about to show Save As (see <see cref="VaultPane.BeforeSaveAs"/>).</summary>

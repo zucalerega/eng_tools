@@ -73,12 +73,8 @@ export function StatusLabel({ file, me }: { file: VaultFile; me: Account | null 
     );
 }
 
-/**
- * The scheme of the links SolidWorks follows. The add-in's installer registers vault:// from 0.4.0, and cvc://, the
- * only one before; until every laptop has 0.4.0 the links are cvc://, which both follow. Then this is "vault"
- * (docs/design.md, "Names from before YJSP").
- */
-export const LINK_SCHEME = "cvc";
+/** The scheme of the links SolidWorks follows: the add-in's installer registers vault-open.exe for it. */
+const LINK_SCHEME = "vault";
 
 /**
  * A link that SolidWorks on this computer follows, through the links the add-in's installer registers: open a

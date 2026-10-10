@@ -15,19 +15,9 @@ public sealed class Workspace : IDisposable
 {
     public const string MetaFolder = ".vault";
 
-    /// <summary>
-    /// What MetaFolder was before 0.4.0, when the client was CVC's. A workspace that still has it gets it renamed
-    /// the first time it's opened (MoveOldMetaFolder), backups and all; meanwhile FindRoot finds it, and it's never
-    /// taken for files of the vault.
-    /// </summary>
-    internal const string OldMetaFolder = ".cvc";
-
     /// <summary>What the web app calls itself where a computer's name goes: check-outs and check-ins there are on it.</summary>
     public const string WebHost = "web";
     internal const string DownloadSuffix = ".vault-download";
-
-    /// <summary>What DownloadSuffix was before 0.4.0: a download an older client didn't finish is never added either.</summary>
-    internal const string OldDownloadSuffix = ".cvc-download";
     private const string ConfigFile = "config.json";
     private const string StateFile = "state.json";
     private static readonly string[] MayReference = { ".sldasm", ".slddrw", ".sldprt" };
@@ -83,7 +73,6 @@ public sealed class Workspace : IDisposable
     public static Workspace Open(string root, string token, HttpMessageHandler? handler = null)
     {
         root = Path.GetFullPath(root);
-        MoveOldMetaFolder(root);
         var config = ReadJson<WorkspaceConfig>(Path.Combine(root, MetaFolder, ConfigFile))
             ?? throw new WorkspaceException($"{root} is not a vault workspace");
         var statePath = Path.Combine(root, MetaFolder, StateFile);
@@ -98,7 +87,7 @@ public sealed class Workspace : IDisposable
         var full = Path.GetFullPath(path);
         for (var dir = File.Exists(full) ? Path.GetDirectoryName(full) : full; dir != null; dir = Path.GetDirectoryName(dir))
         {
-            if (File.Exists(Path.Combine(dir, MetaFolder, ConfigFile)) || File.Exists(Path.Combine(dir, OldMetaFolder, ConfigFile)))
+            if (File.Exists(Path.Combine(dir, MetaFolder, ConfigFile)))
             {
                 return dir;
             }
@@ -106,35 +95,9 @@ public sealed class Workspace : IDisposable
         return null;
     }
 
-    public static Uri ServerOf(string root)
-    {
-        MoveOldMetaFolder(root);
-        return new Uri((ReadJson<WorkspaceConfig>(Path.Combine(root, MetaFolder, ConfigFile))
+    public static Uri ServerOf(string root) =>
+        new Uri((ReadJson<WorkspaceConfig>(Path.Combine(root, MetaFolder, ConfigFile))
             ?? throw new WorkspaceException($"{root} is not a vault workspace")).Server);
-    }
-
-    /// <summary>
-    /// A workspace from before 0.4.0 keeps its state and its backups in .cvc: the folder is renamed .vault, with
-    /// everything in it as it was (one rename, so nothing is copied or lost). A workspace that has both keeps .vault,
-    /// and .cvc stays as it is.
-    /// </summary>
-    private static void MoveOldMetaFolder(string root)
-    {
-        var old = Path.Combine(root, OldMetaFolder);
-        if (!File.Exists(Path.Combine(old, ConfigFile)) || Directory.Exists(Path.Combine(root, MetaFolder)))
-        {
-            return;
-        }
-        try
-        {
-            Directory.Move(old, Path.Combine(root, MetaFolder));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw new WorkspaceException(
-                $"{old} needs renaming to {MetaFolder}, and something has it open ({e.Message}). Close it (a cvc.exe from before 0.4.0, say) and try again.");
-        }
-    }
 
     // --- paths ------------------------------------------------------------------------------
 
@@ -1164,7 +1127,7 @@ public sealed class Workspace : IDisposable
         return true;
     }
 
-    /// <summary>Workspace files in scope, by vault key. Skips the workspace's own folder (and .cvc) and ignored files.</summary>
+    /// <summary>Workspace files in scope, by vault key. Skips the workspace's own folder and ignored files.</summary>
     private Dictionary<string, string> LocalFiles(List<string> scope)
     {
         var found = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1186,7 +1149,7 @@ public sealed class Workspace : IDisposable
             foreach (var folder in folders)
             {
                 var name = Path.GetFileName(folder);
-                if (!(dir == Root && (name == MetaFolder || name == OldMetaFolder)) && !VaultPaths.IsIgnored(name))
+                if (!(dir == Root && name == MetaFolder) && !VaultPaths.IsIgnored(name))
                 {
                     pending.Push(folder);
                 }

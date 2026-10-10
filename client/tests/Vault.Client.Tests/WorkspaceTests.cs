@@ -103,6 +103,114 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task KeepingMineChecksItOutToCheckInOnTopOfTheirs()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var aliceTank = Write(alice, "Tank.SLDPRT", "v1");
+        await alice.CheckinAsync([aliceTank], "add tank");
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobTank = Local(bob, "Tank.SLDPRT");
+        MakeWritable(bobTank);
+        File.WriteAllText(bobTank, "bob's thicker wall");
+        await alice.CheckoutAsync([aliceTank]);
+        File.WriteAllText(aliceTank, "alice's v2");
+        await alice.CheckinAsync([aliceTank], "alice's change");
+        Assert.Equal(FileState.Conflict, Assert.Single(await bob.StatusAsync([bobTank])).State);
+
+        var kept = Assert.Single(await bob.KeepMineAsync([bobTank]));
+        Assert.Equal((FileState.Modified, true), (kept.State, kept.CheckedOutByMe));
+        Assert.Equal("bob's thicker wall", File.ReadAllText(bobTank));
+        Assert.False(IsReadOnly(bobTank));
+        var status = Assert.Single(await bob.StatusAsync([bobTank]));
+        Assert.Equal((FileState.Modified, true, 2), (status.State, status.CheckedOutByMe, status.LocalVersion));
+
+        var checkedIn = await bob.CheckinAsync([bobTank], "bob's wall, on top of alice's");
+        Assert.Equal(3, Assert.Single(checkedIn.Files).File.Version);
+        await alice.GetLatestAsync([aliceTank]);
+        Assert.Equal("bob's thicker wall", File.ReadAllText(aliceTank));
+        var history = await alice.HistoryAsync(aliceTank);
+        Assert.Equal(["bob's wall, on top of alice's", "alice's change", "add tank"], history.Versions.Select(v => v.Comment));
+    }
+
+    [Fact]
+    public async Task UsingTheVaultsVersionReplacesOnlyWhatsInConflict()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var aliceRing = Write(alice, "Ring.SLDPRT", "ring v1");
+        var aliceFin = Write(alice, "Fin.SLDPRT", "fin v1");
+        await alice.CheckinAsync([aliceRing, aliceFin], "add ring and fin");
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobRing = Local(bob, "Ring.SLDPRT");
+        var bobFin = Local(bob, "Fin.SLDPRT");
+        MakeWritable(bobRing);
+        File.WriteAllText(bobRing, "bob's ring");
+        await bob.CheckoutAsync([bobFin]);
+        File.WriteAllText(bobFin, "bob's fin, checked out");
+        await alice.CheckoutAsync([aliceRing]);
+        File.WriteAllText(aliceRing, "alice's ring");
+        await alice.CheckinAsync([aliceRing], "alice's ring");
+
+        // The whole folder: the ring is in conflict; the fin, checked out to Bob with his change, isn't.
+        var replaced = await bob.UseVaultVersionAsync([Folder(bob)]);
+        Assert.Equal(bobRing, Assert.Single(replaced.Downloaded).LocalPath);
+        Assert.Equal("alice's ring", File.ReadAllText(bobRing));
+        Assert.True(IsReadOnly(bobRing));
+        Assert.Equal("bob's ring", File.ReadAllText(Assert.Single(replaced.BackedUp)));
+        Assert.Equal(FileState.UpToDate, Assert.Single(await bob.StatusAsync([bobRing])).State);
+        Assert.Equal("bob's fin, checked out", File.ReadAllText(bobFin));
+    }
+
+    [Fact]
+    public async Task OnlyFilesInConflictAreSettled()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var aliceNozzle = Write(alice, "Nozzle.SLDPRT", "v1");
+        await alice.CheckinAsync([aliceNozzle], "add nozzle");
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobNozzle = Local(bob, "Nozzle.SLDPRT");
+
+        var upToDate = await Assert.ThrowsAsync<WorkspaceException>(() => bob.KeepMineAsync([bobNozzle]));
+        Assert.Contains("Nozzle.SLDPRT isn't in conflict: it's up to date", upToDate.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<WorkspaceException>(() => bob.UseVaultVersionAsync([bobNozzle]));
+
+        // In conflict, but Alice kept it checked out: keeping Bob's copy needs the check-out, so nothing changes.
+        MakeWritable(bobNozzle);
+        File.WriteAllText(bobNozzle, "bob's nozzle");
+        await alice.CheckoutAsync([aliceNozzle]);
+        File.WriteAllText(aliceNozzle, "alice's nozzle");
+        await alice.CheckinAsync([aliceNozzle], "alice's nozzle", keepCheckedOut: true);
+        var taken = await Assert.ThrowsAsync<VaultApiException>(() => bob.KeepMineAsync([bobNozzle]));
+        Assert.Equal("checked_out", taken.Code);
+        Assert.Equal(FileState.Conflict, Assert.Single(await bob.StatusAsync([bobNozzle])).State);
+        Assert.Equal("bob's nozzle", File.ReadAllText(bobNozzle));
+    }
+
+    [Fact]
+    public async Task CopiesThatDidntComeFromTheVaultAreSettledToo()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        Write(alice, "Mount.SLDASM", "the vault's mount");
+        Write(alice, "Barrel.SLDPRT", "the barrel");
+        await alice.CheckinAsync([Folder(alice)], "add mount and barrel");
+
+        // Bob's copies came another way (an old workspace's, say): one as the vault has it, one with his later work.
+        var bobMount = Write(bob, "Mount.SLDASM", "bob's later mount");
+        var bobBarrel = Write(bob, "Barrel.SLDPRT", "the barrel");
+        var statuses = await bob.StatusAsync([Folder(bob)]);
+        Assert.Equal(FileState.UpToDate, statuses.Single(s => s.LocalPath == bobBarrel).State);
+        Assert.Equal(FileState.Conflict, statuses.Single(s => s.LocalPath == bobMount).State);
+
+        await bob.KeepMineAsync([bobMount]);
+        var checkedIn = Assert.Single((await bob.CheckinAsync([bobMount], "my mount, from before")).Files);
+        Assert.Equal(("updated", 2), (checkedIn.Status, checkedIn.File.Version));
+        Assert.Equal(FileState.UpToDate, Assert.Single(await bob.StatusAsync([bobMount])).State);
+    }
+
+    [Fact]
     public async Task UndoCheckoutBacksUpAndRestores()
     {
         var alice = await WorkspaceAsync("alice");

@@ -298,6 +298,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault checkin <files> -m "what changed"` | Check in changed and new files as one version |
 | `vault undo <files>` | Give up a check-out. Local changes are backed up in `.vault/backup`. |
 | `vault free` | Free up space: remove the copies here of files you haven't changed and don't have checked out. They stay in the vault, and `vault get` brings them back. |
+| `vault resolve <files> --mine` | Settle a conflict (you changed a file here, and someone checked in a newer version since) by keeping yours: it's checked out to you as it is, to check in on top. `--vault` takes the vault's version instead, with yours backed up. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
 

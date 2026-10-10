@@ -250,7 +250,15 @@ on top of it.
   version back before it releases the lock, so a file that can't be replaced (it's
   open in SolidWorks) stays checked out to you.
 - **Checking out updates first.** Checking out a file whose local copy is out of date
-  downloads the latest version. A conflict has to be resolved before checking out.
+  downloads the latest version. A conflict has to be settled before checking out.
+- **Settling a conflict** (`vault resolve --mine` or `--vault`; the add-in's Keep mine and
+  Use the vault's version): keeping yours checks the file out and records the copy as a
+  change to the latest version, without downloading anything, so checking it in makes the
+  next version on top of the latest, which stays in the history. Taking the vault's backs
+  yours up and downloads the latest. Either acts only on files in conflict, and naming one
+  that isn't is refused. A copy that didn't come from the vault (put there by hand, or from
+  a workspace whose state is gone) is in conflict when it differs from the latest version,
+  and settles the same way.
 - **Taking over** (`vault checkout --force`, the add-in's Take over): a check-out on
   another computer, yours or, for leads and admins, someone else's. The workspace knows
   your role in each folder from the sync feed, so the add-in only offers it where the

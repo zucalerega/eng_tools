@@ -27,6 +27,9 @@ internal static class Program
                                          on another computer: yours, or anyone's if you're a lead there)
           checkin <paths> -m "what"      Check in changed and new files (alias: ci; --keep: stay checked out)
           undo <paths>                   Undo your check-out; local changes are backed up in .vault/backup
+          resolve <paths> --mine|--vault Settle conflicts (changed here, and a newer version in the vault since):
+                                         --mine checks your copies out as they are, to check in on top; --vault
+                                         takes the vault's versions (yours are backed up in .vault/backup)
           free [paths]                   Free up space: remove the copies here of files you haven't changed and
                                          don't have checked out (they stay in the vault; get brings them back)
           history <file>                 A file's versions (alias: log)
@@ -61,6 +64,7 @@ internal static class Program
                 "checkout" or "co" => await CheckoutAsync(options),
                 "checkin" or "ci" => await CheckinAsync(options),
                 "undo" => await UndoAsync(options),
+                "resolve" => await ResolveAsync(options),
                 "free" => await FreeAsync(options),
                 "history" or "log" => await HistoryAsync(options),
                 "locks" => await LocksAsync(options),
@@ -245,6 +249,40 @@ internal static class Program
         return 0;
     }
 
+    private static async Task<int> ResolveAsync(Options options)
+    {
+        if (options.Mine == options.VaultVersion)
+        {
+            throw new UsageException("Say which to keep: vault resolve <paths> --mine for your copies, or --vault for the vault's versions");
+        }
+        using var workspace = OpenWorkspace();
+        if (options.Mine)
+        {
+            var kept = await workspace.KeepMineAsync(RequirePaths(options));
+            foreach (var status in kept)
+            {
+                Console.WriteLine($"  kept mine    {Show(status.LocalPath)}  (on top of v{status.RemoteVersion})");
+            }
+            Console.WriteLine($"Kept {Count(kept.Count, "file")} as yours, checked out to you on {workspace.Host}: check them in when they're ready.");
+            return 0;
+        }
+        var result = await workspace.UseVaultVersionAsync(RequirePaths(options));
+        foreach (var status in result.Downloaded)
+        {
+            Console.WriteLine($"  got      v{status.LocalVersion}  {Show(status.LocalPath)}");
+        }
+        foreach (var copy in result.BackedUp)
+        {
+            Console.WriteLine($"  backed up    {Show(copy)}");
+        }
+        foreach (var failure in result.Failures)
+        {
+            Console.WriteLine($"  failed       {failure}");
+        }
+        Console.WriteLine($"Replaced {Count(result.Downloaded.Count, "file")} with the vault's version.");
+        return result.Failures.Count > 0 ? 1 : 0;
+    }
+
     private static async Task<int> HistoryAsync(Options options)
     {
         if (options.Paths.Count != 1)
@@ -384,6 +422,7 @@ internal sealed class Options
     public bool Keep { get; private set; }
     public bool Force { get; private set; }
     public bool Mine { get; private set; }
+    public bool VaultVersion { get; private set; }
     public bool All { get; private set; }
 
     public static Options Parse(IEnumerable<string> args)
@@ -409,6 +448,9 @@ internal sealed class Options
                     break;
                 case "--mine":
                     options.Mine = true;
+                    break;
+                case "--vault":
+                    options.VaultVersion = true;
                     break;
                 case "--all":
                     options.All = true;

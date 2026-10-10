@@ -49,8 +49,23 @@ how the last thing went.
 | **Download everything...** | Every file in the vault you have access to. It says how many files that is, how big, and how much room the drive has, and asks first; No is the default, so Enter doesn't start it. |
 
 None of them replace a file you've changed here: it's skipped, and the line at the bottom
-says so (the CLI's `vault get --force` replaces it, keeping a copy). Nor do they replace an
-open file with unsaved changes.
+says so. Nor do they replace an open file with unsaved changes.
+
+### Conflicts
+
+A file you've changed here, when someone has checked in a newer version since, is in
+conflict: Vault won't check it in or out until you choose which copy to go on with. Its
+card, and its right-click menu in Needs attention or Browse, offer both:
+
+- **Keep mine...** checks your copy out as it is. Checking it in makes it the next version,
+  on top of the vault's, which stays in the history.
+- **Use the vault's version...** replaces your copy with the latest version. Yours is kept
+  in `C:\VLT\.vault\backup` first, and changes you haven't saved in SolidWorks are lost, as
+  it says before it starts.
+
+A copy that didn't come from the vault (copied in by hand, or there before Vault was
+installed) is in conflict too when it differs from the vault's latest version, and settles
+the same way.
 
 ### Freeing up space
 
@@ -277,6 +292,15 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     made, and Caliper shows the assembly. Click it again: it says it has them already.
     Change a part without saving, open another assembly that uses it, and click Make 3D
     view: the tab says that part's wasn't made, and why.
+30. Conflicts: with a part downloaded here, make it writable in File Explorer (Properties,
+    untick Read-only), change it in SolidWorks and save, while someone else checks in a
+    new version of it. Refresh: the card says Conflict, with Keep mine... and Use the
+    vault's version... and no Get latest. Keep mine: it's checked out to you with your
+    change; check it in, and its history has your version on top of theirs. Make another
+    conflict and choose Use the vault's version, with an unsaved change open: the
+    question says that change is lost; Yes, and the part shows their version, read-only,
+    with yours in `C:\VLT\.vault\backup`. Both are on the right-click menu in Needs
+    attention too.
 
 ## When something goes wrong
 

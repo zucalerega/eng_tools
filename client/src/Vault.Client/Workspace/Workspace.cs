@@ -729,7 +729,7 @@ public sealed class Workspace : IDisposable
         {
             throw new WorkspaceException(
                 "Changed here, but someone checked in a newer version since: " + string.Join(", ", conflicts)
-                + ". Get the latest with force to take theirs (yours is backed up), then check out.");
+                + ". Keep your copy (it's checked out to you, to check in on top), or use the vault's version (yours is backed up).");
         }
 
         var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force, ct).ConfigureAwait(false);
@@ -753,6 +753,68 @@ public sealed class Workspace : IDisposable
         SaveState();
         return targets;
     }
+
+    /// <summary>
+    /// Settle conflicts (changed here, and a newer version in the vault since) by keeping the copies here: the files are
+    /// checked out, and each copy counts as your change to the latest version, so checking it in makes the next version.
+    /// The latest stays in the history. Nothing here is downloaded or changed. All or nothing, as checking out is.
+    /// </summary>
+    public async Task<IReadOnlyList<FileStatus>> KeepMineAsync(IEnumerable<string> localPaths, CancellationToken ct = default)
+    {
+        var targets = await ConflictsAsync(localPaths, "keep", ct).ConfigureAwait(false);
+        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force: false, ct).ConfigureAwait(false);
+        foreach (var file in locked)
+        {
+            _state.Remote[file.Id] = RemoteEntry.From(file);
+        }
+        foreach (var status in targets)
+        {
+            var remote = _state.Remote[status.FileId!.Value];
+            // Came from the latest version, as far as the workspace knows: the copy differs from it, so it's a change.
+            _state.Local[status.FileId.Value] = new LocalEntry { Path = remote.Path, Version = remote.Version, Sha256 = remote.Sha256, Size = remote.Size };
+            status.Lock = remote.Lock;
+            status.CheckedOutByMe = true;
+            status.LocalVersion = remote.Version;
+            status.State = FileState.Modified;
+            SetReadOnly(status.LocalPath, false);
+        }
+        SaveState();
+        return targets;
+    }
+
+    /// <summary>
+    /// Settle conflicts by taking the vault's latest version: each copy here is backed up (BackedUp), then replaced. Only
+    /// the files in conflict change; the files they use stay as they are.
+    /// </summary>
+    public async Task<GetResult> UseVaultVersionAsync(IEnumerable<string> localPaths, CancellationToken ct = default) =>
+        await GetAsync(await ConflictsAsync(localPaths, "replace", ct).ConfigureAwait(false), force: true, ct).ConfigureAwait(false);
+
+    // The files in conflict under these paths. A file named that isn't in conflict is a mistake: say so, rather than
+    // check it out or replace it.
+    private async Task<List<FileStatus>> ConflictsAsync(IEnumerable<string> localPaths, string action, CancellationToken ct)
+    {
+        var scope = Scope(RequirePaths(localPaths, action));
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var all = Compute(scope);
+        var settled = all.FirstOrDefault(s => s.State != FileState.Conflict && scope.Contains(VaultPaths.Key(s.VaultPath)));
+        if (settled != null)
+        {
+            throw new WorkspaceException($"{settled.VaultPath} isn't in conflict: {Describe(settled.State)}");
+        }
+        var conflicts = all.Where(s => s.State == FileState.Conflict).ToList();
+        return conflicts.Count > 0 ? conflicts : throw new WorkspaceException("Nothing there is in conflict");
+    }
+
+    private static string Describe(FileState state) => state switch
+    {
+        FileState.UpToDate => "it's up to date",
+        FileState.Outdated => "it's unchanged here, and getting the latest version updates it",
+        FileState.Modified => "it changed here, and nothing newer is in the vault",
+        FileState.Missing => "it isn't on this computer",
+        FileState.New => "it isn't in the vault yet",
+        FileState.DeletedInVault => "it was deleted in the vault",
+        _ => "it's " + state,
+    };
 
     /// <summary>
     /// Check in new files and your checked-out files under the given paths, as one check-in.
@@ -785,7 +847,8 @@ public sealed class Workspace : IDisposable
             {
                 if (status.State == FileState.Conflict)
                 {
-                    throw new WorkspaceException($"{status.VaultPath} changed here, but someone checked in a newer version since");
+                    throw new WorkspaceException(
+                        $"{status.VaultPath} changed here, but someone checked in a newer version since. Keep your copy to check it in on top.");
                 }
                 items.Add(status);
             }

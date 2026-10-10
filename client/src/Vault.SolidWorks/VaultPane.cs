@@ -22,7 +22,7 @@ namespace Vault.SolidWorks;
 /// resume there, so SolidWorks calls after an await are safe. Workspace isn't thread-safe, so the
 /// gate lets one operation run at a time.
 /// </summary>
-internal sealed class VaultPane : UserControl
+internal sealed partial class VaultPane : UserControl
 {
     private static readonly Color Good = Color.FromArgb(26, 127, 55);
     private static readonly Color Attention = Color.FromArgb(154, 103, 0);
@@ -57,6 +57,7 @@ internal sealed class VaultPane : UserControl
     private readonly Button _getButton;
     private readonly Button _takeOverButton;
     private readonly Button _drawingButton;
+    private readonly Button _caliperButton;
     private readonly ListView _changes = new ListView
     {
         View = View.Details,
@@ -96,6 +97,7 @@ internal sealed class VaultPane : UserControl
         _getButton = MakeButton("Get latest", (_, _) => OnActiveDocument(GetLatestAsync));
         _takeOverButton = MakeButton("Take over...", (_, _) => OnActiveDocument(TakeOverAsync));
         _drawingButton = MakeButton("Open drawing", (sender, _) => OnActiveDocument(path => OpenDrawingAsync(path, (Control)sender!)));
+        _caliperButton = MakeButton("Make 3D view", (_, _) => OnActiveDocument(MakeModelsHereAsync));
         _changes.Columns.Add("File");
         _changes.Columns.Add("State");
         _changes.Columns.Add("Checked out by");
@@ -124,7 +126,7 @@ internal sealed class VaultPane : UserControl
             Heading("Active document"),
             _activeName,
             _activeState,
-            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton, _drawingButton),
+            Row(_checkOutButton, _checkInButton, _undoButton, _getButton, _takeOverButton, _drawingButton, _caliperButton),
             _views,
             Row(
                 MakeButton("Check in selected...", (_, _) => Safely(() => CheckInAsync(SelectedPaths()))),
@@ -543,7 +545,13 @@ internal sealed class VaultPane : UserControl
             {
                 _sw.SetReadOnly(workspace.ToLocalPath(file.File.Path), true);
             }
-            return $"Checked in {Count(result.Files.Count, "file")}.";
+            var checkedIn = $"Checked in {Count(result.Files.Count, "file")}.";
+            // The 3D views of what's checked in, for Caliper in the web app: SolidWorks has it all open now.
+            foreach (var path in paths)
+            {
+                checkedIn = $"{checkedIn} {await MakeModelsAsync(workspace, path)}".TrimEnd();
+            }
+            return checkedIn;
         });
     }
 
@@ -1101,6 +1109,9 @@ internal sealed class VaultPane : UserControl
         _takeOverButton.Enabled = !_busy;
         _drawingButton.Visible = status != null && _vault?.Drawings(status).Count > 0;
         _drawingButton.Enabled = !_busy;
+        // Caliper's 3D view, for parts and assemblies in the vault (check-ins make it too).
+        _caliperButton.Visible = inVault && Path.GetExtension(path ?? "").ToLowerInvariant() is ".sldprt" or ".sldasm";
+        _caliperButton.Enabled = !_busy;
     }
 
     private (string Text, Color Color) Describe(string? path, FileStatus? status)

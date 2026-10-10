@@ -1,0 +1,477 @@
+/* Caliper: the 3D view, in the whole window under the top bar. The tree on the left, the view beside it, with its
+   toolbar along the top, the axes at the bottom left, and what's measured at the bottom right. */
+
+.caliper {
+    --caliper-stage-top: #f7f9fc;
+    --caliper-stage-bottom: #d9e1ec;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--caliper-top, 3.5rem));
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .caliper {
+        --caliper-stage-top: #1b2434;
+        --caliper-stage-bottom: #070b12;
+    }
+}
+
+:root[data-theme="dark"] .caliper {
+    --caliper-stage-top: #1b2434;
+    --caliper-stage-bottom: #070b12;
+}
+
+.caliper > .notice {
+    margin: 0.5rem 1rem 0;
+}
+
+.caliper-page-message {
+    max-width: 52rem;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.caliper-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.55rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.caliper-head h1 {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.caliper-head h1 a {
+    color: inherit;
+}
+
+.caliper-choice {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.caliper-head-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.caliper-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 19rem minmax(0, 1fr);
+}
+
+/* --- the tree ------------------------------------------------------------------------------------------------- */
+
+.caliper-side {
+    overflow: auto;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding-bottom: 1rem;
+}
+
+.caliper-side-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.55rem 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.caliper-side-head h2 {
+    margin: 0;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.caliper-isolated,
+.caliper-side-note {
+    margin: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+}
+
+.caliper-isolated {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+}
+
+.caliper-tree,
+.caliper-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.caliper-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 1.9rem;
+    padding-right: 0.5rem;
+    font-size: 0.86rem;
+}
+
+.caliper-row:hover {
+    background: var(--row-hover);
+}
+
+.caliper-row-selected,
+.caliper-row-selected:hover {
+    background: var(--accent-soft);
+}
+
+.caliper-eye {
+    margin: 0;
+}
+
+.caliper-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.1rem 0.2rem;
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: none;
+}
+
+.caliper-name:hover:not(:disabled) {
+    background: none;
+    text-decoration: underline;
+}
+
+.caliper-name-hidden {
+    color: var(--muted);
+}
+
+.caliper-kind {
+    flex: none;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 2px solid var(--accent);
+    border-radius: 2px;
+}
+
+.caliper-kind-assembly {
+    border-radius: 50%;
+    background: var(--accent-soft);
+}
+
+.caliper-kind-body {
+    border-color: var(--muted);
+}
+
+.caliper-version {
+    flex: none;
+    font-size: 0.76rem;
+}
+
+/* Over the end of the row, on hover or focus: they take no room from the name otherwise. */
+.caliper-row-actions {
+    position: absolute;
+    top: 50%;
+    right: 0.35rem;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 0.25rem;
+    padding-left: 0.6rem;
+    background: linear-gradient(to right, transparent, var(--row-hover) 0.6rem);
+    visibility: hidden;
+}
+
+.caliper-row-selected .caliper-row-actions {
+    background: linear-gradient(to right, transparent, var(--accent-soft) 0.6rem);
+}
+
+.caliper-row-actions-on,
+.caliper-row:focus-within .caliper-row-actions {
+    visibility: visible;
+}
+
+/* --- the view ------------------------------------------------------------------------------------------------- */
+
+.caliper-stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: linear-gradient(var(--caliper-stage-top), var(--caliper-stage-bottom));
+}
+
+.caliper-viewport {
+    position: absolute;
+    inset: 0;
+}
+
+.caliper-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+}
+
+.caliper-canvas:active {
+    cursor: grabbing;
+}
+
+.caliper-canvas.caliper-measuring {
+    cursor: crosshair;
+}
+
+.caliper-toolbar {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.35rem;
+    pointer-events: none;
+}
+
+.caliper-toolbar > * {
+    pointer-events: auto;
+}
+
+.caliper-toolbar button,
+.caliper-toolbar select {
+    box-shadow: var(--shadow);
+}
+
+.caliper-toolbar .caliper-on,
+.caliper-toolbar .caliper-on:hover:not(:disabled) {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.caliper-units {
+    margin-left: auto;
+}
+
+.menu .menu-check {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    white-space: nowrap;
+}
+
+.caliper-sections {
+    width: 22rem;
+    padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.caliper-sections p {
+    margin: 0.2rem 0 0.6rem;
+    font-size: 0.8rem;
+}
+
+.caliper-section-row {
+    display: grid;
+    grid-template-columns: 2.6rem minmax(0, 1fr) 6.2rem auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.caliper-section-row input[type="range"] {
+    width: 100%;
+}
+
+.caliper-section-at {
+    font: 0.78rem var(--font-mono);
+    text-align: right;
+    color: var(--muted);
+}
+
+.caliper-triad {
+    position: absolute;
+    left: 0.4rem;
+    bottom: 0.4rem;
+    width: 96px;
+    height: 96px;
+    overflow: visible;
+}
+
+.caliper-triad g {
+    cursor: pointer;
+}
+
+.caliper-triad text {
+    fill: #fff;
+    font: 700 10px var(--font-brand);
+    pointer-events: none;
+}
+
+.caliper-annotation {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background: var(--topbar);
+    color: #fff;
+    font: 600 0.78rem var(--font-mono);
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow);
+}
+
+.caliper-loading-model,
+.caliper-stage-message {
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    transform: translate(-50%, -50%);
+    max-width: min(32rem, 90%);
+    margin: 0;
+}
+
+.caliper-loading-model {
+    padding: 0.5rem 0.9rem;
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--muted);
+}
+
+.caliper-measure {
+    position: absolute;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    width: 16rem;
+    max-height: calc(100% - 4.5rem);
+    overflow: auto;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    font-size: 0.84rem;
+}
+
+.caliper-measure-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.35rem;
+}
+
+.caliper-measure p {
+    margin: 0.3rem 0;
+}
+
+.caliper-measure h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.55rem 0 0.2rem;
+    font-size: 0.84rem;
+}
+
+.caliper-picked-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.caliper-pick-number {
+    display: inline-grid;
+    place-items: center;
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 50%;
+    background: var(--gold);
+    color: #0b1b33;
+    font-size: 0.7rem;
+}
+
+.caliper-measure dl {
+    margin: 0;
+}
+
+.caliper-measure dl div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.08rem 0;
+}
+
+.caliper-measure dt {
+    color: var(--muted);
+}
+
+.caliper-measure dd {
+    margin: 0;
+    font-family: var(--font-mono);
+}
+
+.caliper-result {
+    margin-top: 0.5rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--border);
+}
+
+.caliper-result dd {
+    font-weight: 700;
+}
+
+@media (max-width: 760px) {
+    .caliper-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .caliper-side {
+        max-height: 22vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .caliper-head-actions {
+        margin-left: 0;
+    }
+
+    .caliper-measure {
+        left: 0.6rem;
+        width: auto;
+        max-height: 45%;
+    }
+
+    .caliper-sections {
+        width: min(22rem, calc(100vw - 2rem));
+    }
+}

@@ -68,7 +68,7 @@ site's only one.
 | What | Setting (default) | Backed up |
 |---|---|---|
 | The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days |
-| Vault's files: every version of every file, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | not yet |
+| Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | not yet |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | not yet |
 | Software to download (the add-in's installer) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
 

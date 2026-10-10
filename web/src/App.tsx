@@ -5,7 +5,7 @@ import { inPreview, PREVIEW, sitePath } from "./preview";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { setTheme, useTheme, type Theme } from "./theme";
-import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, withFolderTree } from "./vault";
+import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, wholeWindow, withFolderTree } from "./vault";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
 import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
@@ -145,7 +145,9 @@ export function App() {
                     <YorgPage pathname={pathname} />
                 </main>
             ) : vaultApp ? (
-                <main className={withFolderTree(pathname) ? "main-wide" : undefined}>
+                <main
+                    className={wholeWindow(pathname) ? "main-full" : withFolderTree(pathname) ? "main-wide" : undefined}
+                >
                     <VaultPage pathname={pathname} />
                 </main>
             ) : (

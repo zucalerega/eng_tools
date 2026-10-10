@@ -1,9 +1,10 @@
 import type { Account } from "../api";
 import { Time } from "../components";
 import { formatTime } from "../format";
+import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
-import { kindOf, opensInSolidWorks } from "./paths";
+import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -101,5 +102,22 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
         >
             {compact ? "Open" : "Open in SolidWorks"}
         </a>
+    );
+}
+
+/** Caliper, the 3D viewer, for a part, an assembly, or a STEP or IGES file: right beside Open in SolidWorks. */
+export function OpenInCaliper({ file, compact = false }: { file: { id: number; name: string }; compact?: boolean }) {
+    if (!opensInCaliper(file.name)) {
+        return null;
+    }
+    return (
+        <Link
+            className={compact ? "button button-small" : "button"}
+            to={caliperUrl(file.id)}
+            aria-label="Open in Caliper"
+            title="See it in 3D, in the browser: turn it, cut it, measure it"
+        >
+            {compact ? "Caliper" : "Open in Caliper"}
+        </Link>
     );
 }

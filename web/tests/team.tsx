@@ -1,9 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
 import { createHash, randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
 import { configureApi, type Account, type SiteSettings } from "../src/api";
 import { type VaultFile } from "../src/vault/api";
+import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
@@ -118,6 +120,29 @@ export class Team {
 
     async checkout(who: Member, relative: string, host: string): Promise<void> {
         await call("POST", "/api/checkout", who.token, { files: [this.path(relative)], host });
+    }
+
+    /** A mesh uploaded as Vault for SolidWorks uploads them, gzip-compressed: its SHA-256. */
+    async mesh(who: Member, mesh: Mesh): Promise<string> {
+        const data = gzipSync(writeMesh(mesh));
+        const sha256 = createHash("sha256").update(data).digest("hex");
+        await call("PUT", `/api/blobs/${sha256}`, who.token, data);
+        return sha256;
+    }
+
+    /** A version's 3D model, as Vault for SolidWorks makes them: a part's mesh, or an assembly's components. */
+    async model(
+        who: Member,
+        file: VaultFile,
+        model: { mesh?: Mesh; components?: unknown[]; configuration?: string; units?: string },
+    ): Promise<void> {
+        await call("PUT", `/api/files/${file.id}/caliper`, who.token, {
+            version: file.version,
+            configuration: model.configuration ?? "Default",
+            units: model.units ?? "mm",
+            mesh: model.mesh ? await this.mesh(who, model.mesh) : undefined,
+            components: model.components,
+        });
     }
 
     async file(id: number): Promise<VaultFile> {

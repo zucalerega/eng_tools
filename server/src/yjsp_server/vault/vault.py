@@ -6,20 +6,22 @@ function starts with begin_write(); read its docstring before adding one.
 """
 
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import utcnow
-from ..errors import ApiError, Conflict, NotFound
+from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
-from . import paths
+from . import caliper, paths
 from .access import Access, Tree
-from .models import Blob, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
+from .models import Blob, CaliperModel, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
+from .storage import BlobStore
 
 FileRef = int | str  # a file id, or a vault path
 
@@ -1256,6 +1258,260 @@ def register_blob(db: Session, sha256: str, size: int) -> None:
         db.commit()
     except IntegrityError:  # the same contents were uploaded concurrently
         db.rollback()
+
+
+# --- Caliper: versions' 3D models ---------------------------------------------------------
+
+Units = Literal["mm", "cm", "m", "in", "ft"]  # a document's length unit, which Caliper measures in
+_MAX_COMPONENTS = 20_000  # a big assembly has a few thousand
+_MAX_DEPTH = 32
+
+
+@dataclass
+class ModelView:
+    """A version's 3D model in one configuration, for Caliper."""
+
+    model: CaliperModel
+    version: int
+    created_by: User
+
+    @property
+    def kind(self) -> Literal["part", "assembly"]:
+        return "part" if self.model.mesh_sha256 is not None else "assembly"
+
+
+@dataclass
+class AssemblyModel:
+    view: ModelView
+    # The components the user can see, each with "model": whether its file has a model of its own, at its version and
+    # in its configuration.
+    components: list[dict[str, Any]]
+    left_out: int  # components of files the user can't see, left out with everything in them
+
+
+def _caliper_kind(name: str) -> Literal["part", "assembly"] | None:
+    extension = paths.extension(name)
+    return "part" if extension == ".sldprt" else "assembly" if extension == ".sldasm" else None
+
+
+def _walk(components: list[dict[str, Any]], depth: int = 1) -> Iterator[tuple[dict[str, Any], int]]:
+    """Every component of an assembly's model, at every level, with how deep it is (1: the assembly's own)."""
+    for component in components:
+        yield component, depth
+        yield from _walk(component.get("children") or [], depth + 1)
+
+
+def _files_by_id(db: Session, ids: set[int]) -> dict[int, File]:
+    found: dict[int, File] = {}
+    wanted = sorted(ids)
+    for start in range(0, len(wanted), _BATCH):
+        found.update((f.id, f) for f in db.scalars(select(File).where(File.id.in_(wanted[start : start + _BATCH]))))
+    return found
+
+
+def _find_model(db: Session, tree: Tree, file: File, version: int, configuration: str) -> CaliperModel:
+    model = db.scalar(
+        select(CaliperModel)
+        .join(Version, Version.id == CaliperModel.version_id)
+        .where(Version.file_id == file.id, Version.number == version, CaliperModel.configuration == configuration)
+    )
+    if model is None:
+        raise NotFound(
+            f"{tree.file_path(file)} v{version} has no 3D model in its {configuration} configuration", code="no_model"
+        )
+    return model
+
+
+def caliper_models(db: Session, user: User, file_id: int) -> list[ModelView]:
+    """A file's 3D models for Caliper: each version's, in each configuration, newest version first, and in a version
+    the first one made first (the configuration SolidWorks had open)."""
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    rows = db.execute(
+        select(CaliperModel, Version.number)
+        .join(Version, Version.id == CaliperModel.version_id)
+        .where(Version.file_id == file.id)
+        .order_by(Version.number.desc(), CaliperModel.id)
+    ).all()
+    users = _users(db, {model.created_by for model, _ in rows})
+    return [ModelView(model, number, users[model.created_by]) for model, number in rows]
+
+
+def caliper_missing(db: Session, user: User, wanted: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Which of these (file id, version, configuration) have no 3D model yet, of files the user can see: what Vault for
+    SolidWorks asks before making models, so it makes only those."""
+    _, access = _context(db, user)
+    files = _files_by_id(db, {file_id for file_id, _, _ in wanted})
+    have: set[tuple[int, int, str]] = set()
+    ids = sorted(files)
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(Version.file_id, Version.number, CaliperModel.configuration)
+            .join(Version, Version.id == CaliperModel.version_id)
+            .where(Version.file_id.in_(ids[start : start + _BATCH]))
+        )
+        have.update((file_id, number, configuration) for file_id, number, configuration in rows)
+
+    def needs(file_id: int, version: int, configuration: str) -> bool:
+        file = files.get(file_id)
+        return (
+            file is not None
+            and access.can(file.folder_id, Role.VIEWER)
+            and 1 <= version <= file.latest_version
+            and (file_id, version, configuration) not in have
+        )
+
+    return [model for model in dict.fromkeys(wanted) if needs(*model)]
+
+
+def _check_components(db: Session, tree: Tree, access: Access, components: list[dict[str, Any]]) -> None:
+    """An assembly's components name files the user can see, at versions those have, or carry shapes of their own."""
+    walked = list(_walk(components))
+    if len(walked) > _MAX_COMPONENTS:
+        raise ApiError(f"An assembly's model has at most {_MAX_COMPONENTS} components", code="bad_model")
+    if max((depth for _, depth in walked), default=0) > _MAX_DEPTH:
+        raise ApiError(f"An assembly's model is at most {_MAX_DEPTH} levels deep", code="bad_model")
+    files = _files_by_id(db, {c["file_id"] for c, _ in walked if c.get("file_id") is not None})
+    for component, _ in walked:
+        name, file_id, version = component["name"], component.get("file_id"), component.get("version")
+        if file_id is None:
+            if not component.get("mesh") and not component.get("children"):
+                raise ApiError(f"Component {name} has no file, shape, or components", code="bad_model")
+            continue
+        file = files.get(file_id)
+        if file is None or not access.can(file.folder_id, Role.VIEWER):
+            raise ApiError(f"Component {name} is of file {file_id}, which isn't in the vault", code="bad_model")
+        if version is None or version > file.latest_version:
+            raise ApiError(
+                f"Component {name} is of {tree.file_path(file)} v{version}, which it doesn't have", code="bad_model"
+            )
+
+
+def put_caliper_model(
+    db: Session,
+    store: BlobStore,
+    user: User,
+    file_id: int,
+    *,
+    version: int,
+    configuration: str,
+    units: str,
+    mesh: str | None = None,
+    components: list[dict[str, Any]] | None = None,
+) -> ModelView:
+    """Save a version's 3D model in one configuration, for Caliper: a part's mesh (vault/caliper.py; upload it first,
+    PUT /api/blobs/{sha256}), or an assembly's components.
+
+    Anyone who may upload contents and can see the file may add a model its version doesn't have yet, as Vault for
+    SolidWorks does for each part of an assembly it checks in. Making one again, in place of the one there, takes
+    editor rights to the file's folder. An assembly's components are a tree. Each names its file, a part or a
+    sub-assembly, at a version and in a configuration; or carries its shape (mesh: a virtual part's, which the
+    assembly keeps); and says where it is (transform: the rows of a 3 x 4 matrix to the assembly's coordinates,
+    rotation and then translation in millimeters), whether SolidWorks hid it, its color over its part's, and a
+    sub-assembly's own components (children, placed in the same coordinates).
+    """
+    meshes = list(
+        dict.fromkeys(([mesh] if mesh else []) + [c["mesh"] for c, _ in _walk(components or []) if c.get("mesh")])
+    )
+    # Blobs never change, so checking their contents, which takes a moment, can come before the write lock.
+    for sha in meshes:
+        if not store.exists(sha):
+            raise ApiError("Upload the mesh first (PUT /api/blobs/{sha256})", code="blob_missing", sha256=sha)
+        caliper.check_mesh(store.path(sha))
+    begin_write(db)
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    if not can_upload(db, user):
+        raise Forbidden("You need editor access somewhere to add 3D models")
+    kind = _caliper_kind(file.name)
+    if kind is None:
+        raise ApiError(f"Caliper's models are of SolidWorks parts and assemblies: {path} isn't one", code="bad_model")
+    if (kind == "part") != (mesh is not None) or (kind == "assembly") != (components is not None):
+        raise ApiError(
+            f"A part's model is a mesh, and an assembly's is its components: {path} is a{'n' if kind == 'assembly' else ''} "
+            f"{kind}",
+            code="bad_model",
+        )
+    if units not in get_args(Units):
+        raise ApiError(f"Caliper measures in {', '.join(get_args(Units))}, not {units}", code="bad_model")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    for sha in meshes:
+        if db.get(Blob, sha) is None:  # in the store, but its upload was never recorded
+            raise ApiError("Upload the mesh again (PUT /api/blobs/{sha256})", code="blob_missing", sha256=sha)
+    if components is not None:
+        _check_components(db, tree, access, components)
+    model = db.scalar(
+        select(CaliperModel).where(CaliperModel.version_id == target.id, CaliperModel.configuration == configuration)
+    )
+    if model is None:
+        model = CaliperModel(version_id=target.id, configuration=configuration)
+        db.add(model)
+    else:
+        access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
+    model.units, model.mesh_sha256, model.components = units, mesh, components
+    model.created_at, model.created_by = utcnow(), user.id
+    db.commit()
+    return ModelView(model, version, user)
+
+
+def caliper_assembly(db: Session, user: User, file_id: int, version: int, configuration: str) -> AssemblyModel:
+    """An assembly's model, with the components the user can see: one of a file they can't see is left out, with
+    everything in it, as the rest of the vault leaves out such files."""
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    model = _find_model(db, tree, file, version, configuration)
+    if model.components is None:
+        raise ApiError(f"{tree.file_path(file)} is a part: its model is a mesh", code="bad_model")
+    walked = [component for component, _ in _walk(model.components)]
+    files = _files_by_id(db, {c["file_id"] for c in walked if c.get("file_id") is not None})
+    have: set[tuple[int, int, str]] = set()  # (file id, version, configuration) with models of their own
+    ids = sorted(files)
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(Version.file_id, Version.number, CaliperModel.configuration)
+            .join(Version, Version.id == CaliperModel.version_id)
+            .where(Version.file_id.in_(ids[start : start + _BATCH]))
+        )
+        have.update((file_id, number, configuration) for file_id, number, configuration in rows)
+    left_out = 0
+
+    def visible(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        nonlocal left_out
+        kept = []
+        for component in components:
+            file_id = component.get("file_id")
+            file = files.get(file_id) if file_id is not None else None
+            if file_id is not None and (file is None or not access.can(file.folder_id, Role.VIEWER)):
+                left_out += 1
+                continue
+            own = (file_id, component.get("version"), component.get("configuration")) in have
+            kept.append({**component, "model": own, "children": visible(component.get("children") or [])})
+        return kept
+
+    components = visible(model.components)
+    creator = _users(db, {model.created_by})[model.created_by]
+    return AssemblyModel(ModelView(model, version, creator), components, left_out)
+
+
+def caliper_mesh(
+    db: Session, user: User, file_id: int, version: int, configuration: str, mesh: str | None = None
+) -> str:
+    """The blob of a part's mesh; or, given mesh, of a shape an assembly's model carries (a virtual part's), if a
+    component the user can see has it."""
+    if mesh is not None:
+        assembly = caliper_assembly(db, user, file_id, version, configuration)
+        if not any(component.get("mesh") == mesh for component, _ in _walk(assembly.components)):
+            raise NotFound("No component of the assembly that you can see has that shape", code="no_model")
+        return mesh
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    model = _find_model(db, tree, file, version, configuration)
+    if model.mesh_sha256 is None:
+        raise ApiError(f"{tree.file_path(file)} is an assembly: its parts have the meshes", code="bad_model")
+    return model.mesh_sha256
 
 
 # --- permissions --------------------------------------------------------------------------

@@ -24,6 +24,9 @@ public sealed class ServerFixture : IAsyncLifetime
 
     public string ChiefToken { get; private set; } = "";
 
+    /// <summary>The server's YJSP_DOWNLOADS_DIR: what's put here is offered for download.</summary>
+    public string DownloadsFolder => Path.Combine(_data, "downloads");
+
     public async Task InitializeAsync()
     {
         var port = FreePort();
@@ -47,6 +50,8 @@ public sealed class ServerFixture : IAsyncLifetime
         start.Environment["YJSP_DATABASE_URL"] = "sqlite:///" + Path.Combine(_data, "yjsp.db");
         start.Environment["YJSP_VAULT_DIR"] = Path.Combine(_data, "vault");
         start.Environment["YJSP_YORG_DIR"] = Path.Combine(_data, "yorg");
+        Directory.CreateDirectory(DownloadsFolder);
+        start.Environment["YJSP_DOWNLOADS_DIR"] = DownloadsFolder;
         _server = Process.Start(start) ?? throw new InvalidOperationException("Couldn't start the server with uv");
         _server.OutputDataReceived += (_, e) => Log(e.Data);
         _server.ErrorDataReceived += (_, e) => Log(e.Data);

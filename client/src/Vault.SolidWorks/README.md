@@ -1,11 +1,14 @@
-# Vault add-in for SolidWorks 2025
+# Vault add-in for SolidWorks 2026
 
-Check files in and out without leaving SolidWorks. The add-in adds a **Vault** tab to the
-task pane with these parts:
+Check files in and out without leaving SolidWorks. The add-in is for SolidWorks 2026, the
+team's version: files saved in 2026 don't open in older versions, so everyone works in one.
+It runs in SolidWorks 2025 too, so laptops that had it there keep getting updates while they
+move over. It adds a **Vault** tab to the task pane with these parts:
 
-- **The header:** Vault's mark, a refresh button, and your name. Click your name for your
-  account, the vault's address, and the workspace folder, to open the web app or the
-  workspace folder, or to sign out.
+- **The header:** Vault's mark, **Update** when there's a newer add-in (see "Updates"), a
+  refresh button, and your name. Click your name for your account, the vault's address,
+  the workspace folder, and the add-in's version, to open the web app or the workspace
+  folder, or to sign out.
 - **The active document's card:** what state the file is in (up to date, checked out to
   you, out of date, checked out by someone else, new, ...), what that means, and buttons
   for only what you can do with it now, the likeliest first, in navy: Check in, Check
@@ -23,10 +26,10 @@ task pane with these parts:
   Hover for where a file is used. Double-click to open: a file that isn't here yet is
   downloaded first, with the parts it uses, and one that is gets the parts it uses that
   aren't. Right-click for actions: on a part or assembly, Insert into the assembly you
-  have open (see "While you work"); on a folder, Get latest, Check in, or Show in File
-  Explorer.
-- **Update downloaded files** and **Download everything...**, under the files (see
-  "Getting files").
+  have open (see "While you work"); on a folder, Get latest, Check in, Free up space, or
+  Show in File Explorer.
+- **Update downloaded files**, **Download everything...**, and **Free up space...**, under
+  the files (see "Getting files" and "Freeing up space").
 - **Sign-in and workspace:** set once. The workspace is `C:\VLT` on every computer, so
   assembly references resolve for everyone (setup makes it). It has a folder for each of
   the vault's folders, to save new parts in, but only the files you've opened, checked
@@ -48,6 +51,18 @@ how the last thing went.
 None of them replace a file you've changed here: it's skipped, and the line at the bottom
 says so (the CLI's `vault get --force` replaces it, keeping a copy). Nor do they replace an
 open file with unsaved changes.
+
+### Freeing up space
+
+A file stays on the computer once it's downloaded, so `C:\VLT` grows with everything
+you've opened. **Free up space...** (under the files, or on a folder's or a file's
+right-click menu) removes the copies on this computer of files that are just as they came
+from the vault, at any version, and that aren't checked out to you: nothing is lost. It
+says how many files and how much space first, and asks; No is the default. Files you've
+changed, new files, your check-outs, and anything open in SolidWorks (with every file it
+uses) stay. Freed files show as Not downloaded, and come back when you open or get them,
+which needs a connection to the vault: keep what you'll need where there's no internet.
+It never happens by itself. `vault free` does the same from the command line.
 
 While you work:
 - **Insert a part from the vault** into the assembly you're working on, in one step,
@@ -88,6 +103,13 @@ While you work:
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
   yours; design it, then check it in.
+- **3D views for Caliper**, the web app's 3D viewer: checking in a part or an assembly makes
+  its 3D view (what SolidWorks shows of it, and for an assembly, where each part is), and
+  those of the parts and sub-assemblies it uses that have none yet, from what SolidWorks has
+  open. **Make 3D view**, on the tab, does the same for the active document: for files
+  brought from Kenesto, or checked in from the web. A part changed and not checked in, or
+  with changes not saved, gets none until it is; one loaded lightweight needs the assembly
+  set to resolved first. The tab says what it made, and why anything wasn't.
 
 ## Install
 
@@ -96,7 +118,8 @@ While you work:
    `YJSP_DOWNLOADS_DIR`.)
 2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
    click **More info**, then **Run anyway**. It asks for administrator rights, then installs
-   the add-in in `C:\Program Files\Vault for SolidWorks`. Running a newer one updates it,
+   the add-in in `C:\Program Files\Vault for SolidWorks`. It installs the add-in new only
+   where SolidWorks 2026 is; where the add-in is already, on 2026 or 2025, it updates it,
    and the add-in keeps your settings, sign-in, and workspace.
 3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
    with the Vault tab open, and your browser asks you to confirm. (Or type the web app's
@@ -112,6 +135,20 @@ somewhere permanent, and run `powershell -ExecutionPolicy Bypass -File install.p
 as administrator (`uninstall.ps1` removes it). To update, close SolidWorks and replace the
 folder's files.
 
+## Updates
+
+When the server offers a newer add-in, **Update** appears at the top of the Vault tab (the
+add-in looks every few hours). Click it and say Yes: Vault downloads the new
+`Vault-Setup.exe`, checks it against the SHA-256 the server gives, and starts it. Windows
+asks to let it make changes, then setup waits: save your work and close SolidWorks, and it
+finishes the update. Start SolidWorks again, and the Vault tab is the new version. Your
+sign-in, settings, and workspace stay.
+
+An admin offers an update by putting the new `Vault-Setup.exe` in the server's
+`YJSP_DOWNLOADS_DIR` (see docs/deploying.md): the server reads the version from the program.
+Add-ins from before Update (0.4.0 and older) don't have the button: run the new
+`Vault-Setup.exe` once, by hand, from the web app's SolidWorks page.
+
 ## Testing against a development server
 
 A dev server on another computer can serve a Windows PC on the same network:
@@ -126,7 +163,7 @@ the development form as `you@example.com`.
 ## Manual checks before a release
 
 The add-in can't be tested automatically (that would need SolidWorks), so run through
-these on SolidWorks 2025:
+these on SolidWorks 2026, and 22 to 24 on 2025 as well:
 
 1. After installing, SolidWorks starts with the Vault tab, and `addin.log` says the add-in
    started.
@@ -203,6 +240,43 @@ these on SolidWorks 2025:
     assembly in: `vault history` on it lists the part with its version. Do it again with a
     sub-assembly that isn't here: its parts come down too, and it goes in whole. With a part
     active instead, the menu says to open an assembly first; a drawing has no Insert.
+22. On a PC with SolidWorks 2025 and no add-in, run Vault-Setup.exe: it says it needs
+    SolidWorks 2026, and installs nothing. On a PC with SolidWorks 2025 and an older add-in,
+    it offers Update, and updates it; SolidWorks 2025 starts with the new Vault tab, and
+    `addin.log` says which SolidWorks it started in.
+23. Put a Vault-Setup.exe with a newer version than the installed add-in in the server's
+    downloads folder, then start SolidWorks: Update appears in the tab's header, and the web
+    app's SolidWorks page shows the new version. Click Update and say Yes, but No to
+    Windows' question: the tab says the update needs permission, and Update stays. Click
+    it again and say Yes to both: setup waits for SolidWorks; close it, and setup updates the
+    add-in. Start SolidWorks: your name's menu shows the new version, and there's no Update.
+24. Close SolidWorks and click Open in SolidWorks in the web app: SolidWorks starts (2026,
+    on a PC with both 2025 and 2026), and opens the file.
+25. With an assembly open (its parts came with it), a part checked out to you, and a part
+    you've changed, click Free up space...: it says how many files and how much space, and
+    No changes nothing. Yes: the assembly and its parts, your check-out, and the changed
+    part stay; everything else here turns Not downloaded in Browse and is gone from
+    `C:\VLT`. Double-click a freed part: it downloads and opens. Right-click a folder and
+    choose Free up space: only that folder's copies go.
+26. Caliper, a part: make a part with a hole, a fillet, a countersink, and one face colored
+    red (Appearance on the face), in inches. Check it in: the tab says it made a 3D view. In
+    the web app, Open in Caliper shows it in its colors, red face and all, with its edges,
+    and measures in inches. Measure the hole, the countersink, and the distance between two
+    faces: the same as SolidWorks' Measure gives.
+27. Caliper, an assembly: put that part in an assembly twice, the second turned 90° and
+    moved, with a sub-assembly of two other parts, a virtual part, and a component colored
+    blue in the assembly (its appearance there). Hide one component, then check the
+    assembly in. In Caliper, every component is where SolidWorks has it (compare the front,
+    top, and isometric views), the blue one blue, the hidden one unticked in the tree and
+    not drawn, the virtual part there. Open the sub-assembly from the tree: it shows on its
+    own. Cut it with a section: what SolidWorks' section view shows.
+28. Configurations: use two configurations of one part in an assembly and check it in:
+    Caliper shows each configuration's shape, and the part's page offers both.
+29. Make 3D view: open an assembly uploaded from the web (it has no 3D view), resolve it
+    if it opened lightweight, and click Make 3D view: the tab says how many 3D views it
+    made, and Caliper shows the assembly. Click it again: it says it has them already.
+    Change a part without saving, open another assembly that uses it, and click Make 3D
+    view: the tab says that part's wasn't made, and why.
 
 ## When something goes wrong
 

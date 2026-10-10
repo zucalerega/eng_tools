@@ -22,6 +22,9 @@ internal static class Program
     private static readonly TimeSpan Answer = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan Startup = TimeSpan.FromMinutes(3); // SolidWorks, then its add-ins
     private static readonly string[] Actions = { "open", "new", "connect" };
+
+    // The SolidWorks a link starts when none is running: 2026, the team's, or 2025 on a computer that hasn't moved yet.
+    private static readonly int[] Years = { 2026, 2025 };
     private const string Scheme = "vault"; // OpenLink.Scheme
 
     [STAThread]
@@ -55,7 +58,7 @@ internal static class Program
         {
             if (Start() is not { } started)
             {
-                return "SolidWorks 2025 isn't installed on this computer.";
+                return "SolidWorks 2026 isn't installed on this computer.";
             }
             solidWorks = started;
             wait = Startup;
@@ -75,9 +78,16 @@ internal static class Program
 
     private static Process? Start()
     {
-        var folder = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\SolidWorks\SOLIDWORKS 2025\Setup", "SolidWorks Folder", null) as string;
-        var exe = folder == null ? null : Path.Combine(folder, "SLDWORKS.exe");
-        return exe != null && File.Exists(exe) ? Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }) : null;
+        foreach (var year in Years)
+        {
+            var folder = Registry.GetValue($@"HKEY_LOCAL_MACHINE\SOFTWARE\SolidWorks\SOLIDWORKS {year}\Setup", "SolidWorks Folder", null) as string;
+            var exe = folder == null ? null : Path.Combine(folder, "SLDWORKS.exe");
+            if (exe != null && File.Exists(exe))
+            {
+                return Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+            }
+        }
+        return null;
     }
 
     private static NamedPipeClientStream? Connect(string name, TimeSpan wait, Process solidWorks)

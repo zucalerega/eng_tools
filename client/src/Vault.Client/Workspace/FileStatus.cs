@@ -101,6 +101,19 @@ public sealed class DownloadSize
     }
 }
 
+/// <summary>What freeing up space removed (see <see cref="Workspace.FreeUpAsync"/>).</summary>
+public sealed class FreeUpResult
+{
+    /// <summary>No longer here: still in the vault, and downloaded again when they're opened or got.</summary>
+    public List<FileStatus> Removed { get; } = new List<FileStatus>();
+
+    /// <summary>The space their copies took.</summary>
+    public long Bytes { get; internal set; }
+
+    /// <summary>Copies that couldn't be removed (open in SolidWorks, say), and why.</summary>
+    public List<string> Failures { get; } = new List<string>();
+}
+
 public sealed class UndoResult
 {
     public List<FileStatus> Released { get; } = new List<FileStatus>();

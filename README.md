@@ -6,8 +6,8 @@ data. The site's address on its own shows both, and the switcher at the top left
 between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
-> tool work and are tested. Vault's SolidWorks 2025 add-in had its first run in SolidWorks
-> in September 2026. See [docs/design.md](docs/design.md) for how the site works, and
+> tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
+> in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
 > [docs/vault.md](docs/vault.md) and [docs/yorg.md](docs/yorg.md) for each app and its
 > roadmap.
 
@@ -61,7 +61,8 @@ replaces Kenesto.
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
   part on its own. Nothing in it changes a file. STEP and IGES files open as they are;
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in.
+  version it checks in (for files from before, open them in SolidWorks and click Make 3D
+  view on the Vault tab).
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or
@@ -239,7 +240,7 @@ the keys.
 | `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/` | working |
 | `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg` | working |
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
-| `client/src/Vault.SolidWorks` | Vault's SolidWorks 2025 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
+| `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
 | `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md)), and [hosting and deploying](docs/deploying.md) | |
@@ -296,6 +297,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault checkout <files>` | Check files out to edit them. Everyone else sees who has them. `--force` takes over a check-out on another computer: yours, or anyone's if you're a lead there. |
 | `vault checkin <files> -m "what changed"` | Check in changed and new files as one version |
 | `vault undo <files>` | Give up a check-out. Local changes are backed up in `.vault/backup`. |
+| `vault free` | Free up space: remove the copies here of files you haven't changed and don't have checked out. They stay in the vault, and `vault get` brings them back. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
 

@@ -12,7 +12,7 @@ namespace Vault.SolidWorks;
 /// <summary>
 /// The few SolidWorks API calls the add-in needs, in one place. Call only on SolidWorks' main thread.
 /// </summary>
-internal sealed class SolidWorksHost
+internal sealed partial class SolidWorksHost
 {
     private static readonly string[] SolidWorksExtensions = { ".sldprt", ".sldasm", ".slddrw" };
     private readonly SldWorks _app;

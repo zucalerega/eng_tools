@@ -23,7 +23,7 @@ export function SolidWorks() {
         <section className="software">
             <h1>SolidWorks</h1>
             <p className="lead">
-                The add-in puts a Vault tab in SolidWorks 2025: check files out and in, open assemblies with everything
+                The add-in puts a Vault tab in SolidWorks 2026: check files out and in, open assemblies with everything
                 they use, and see who has what checked out, without leaving SolidWorks. The Open in SolidWorks and New
                 part buttons here use it too.
             </p>
@@ -37,12 +37,21 @@ export function SolidWorks() {
                                 <a className="button button-primary" href={api.downloadsUrl(installer.name)} download>
                                     Download {installer.name}
                                 </a>{" "}
-                                <span className="muted">{formatSize(installer.size)}, for Windows</span>
+                                <span className="muted">
+                                    {installer.version && `Version ${installer.version}, `}
+                                    {formatSize(installer.size)}, for SolidWorks 2026 on Windows
+                                </span>
                             </p>
                             <p>
                                 Close SolidWorks, then run it. It asks for administrator rights, to register the add-in
                                 with SolidWorks. If Windows says it protected your PC, click <strong>More info</strong>,
                                 then <strong>Run anyway</strong>.
+                            </p>
+                            <p>
+                                Have the add-in already? When there's a newer one, <strong>Update</strong> appears at
+                                the top of the Vault tab. Running this setup again updates it too, and keeps your
+                                sign-in and workspace. It installs the add-in new only with SolidWorks 2026; with
+                                SolidWorks 2025, it only updates one that's there.
                             </p>
                         </>
                     ) : downloads ? (

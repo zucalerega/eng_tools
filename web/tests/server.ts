@@ -40,13 +40,24 @@ function stop(server: ChildProcess): void {
     }
 }
 
+/** A stand-in Windows program, with the version resource the server reads its version from. */
+function program([major, minor, build]: [number, number, number], content: string): Buffer {
+    const fixed = Buffer.alloc(16); // VS_FIXEDFILEINFO, up to the file version
+    fixed.writeUInt32LE(0xfeef04bd, 0);
+    fixed.writeUInt32LE(0x10000, 4);
+    fixed.writeUInt32LE(((major << 16) | minor) >>> 0, 8);
+    fixed.writeUInt32LE((build << 16) >>> 0, 12);
+    const key = Buffer.from("VS_VERSION_INFO\0", "utf16le");
+    return Buffer.concat([Buffer.from("MZ " + content), Buffer.alloc(16), key, fixed, Buffer.alloc(36)]);
+}
+
 export default async function setup(project: TestProject): Promise<() => void> {
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
     const data = mkdtempSync(join(tmpdir(), "yjsp-web-tests-"));
     const downloads = join(data, "downloads"); // stand-ins for what the web app offers to download
     mkdirSync(downloads);
-    writeFileSync(join(downloads, "Vault-Setup.exe"), "the add-in's installer");
+    writeFileSync(join(downloads, "Vault-Setup.exe"), program([0, 5, 0], "the add-in's installer"));
     writeFileSync(join(downloads, "vault.exe"), "the command line");
     const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),

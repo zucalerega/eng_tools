@@ -549,6 +549,78 @@ public sealed class Workspace : IDisposable
         return size;
     }
 
+    /// <summary>What freeing up space under these paths would remove: how many files, and the space they take.</summary>
+    public async Task<(int Files, long Bytes)> SizeOfFreeUpAsync(
+        IEnumerable<string>? localPaths = null, Func<string, bool>? inUse = null, CancellationToken ct = default)
+    {
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var freeable = Freeable(Scope(localPaths), inUse);
+        return (freeable.Count, freeable.Sum(s => _state.Local[s.FileId!.Value].Size));
+    }
+
+    /// <summary>
+    /// Free up space: remove the copies here of the files under these paths (default: the whole workspace) that are
+    /// just as they came from the vault, at any version, and not checked out to you, so nothing is lost. They stay in the
+    /// vault and show as not downloaded: opening or getting them downloads them again, and updating what's here leaves
+    /// them be. Files changed here, new files, files checked out to you, and the files inUse says are open stay, and so
+    /// does any copy that can't be removed (open in SolidWorks, say), with why in Failures.
+    /// </summary>
+    public async Task<FreeUpResult> FreeUpAsync(IEnumerable<string>? localPaths = null, Func<string, bool>? inUse = null, CancellationToken ct = default)
+    {
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var result = new FreeUpResult();
+        try
+        {
+            foreach (var status in Freeable(Scope(localPaths), inUse))
+            {
+                var id = status.FileId!.Value;
+                try
+                {
+                    SetReadOnly(status.LocalPath, false);
+                    File.Delete(status.LocalPath);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    result.Failures.Add($"{status.VaultPath}: {e.Message}");
+                    StayReadOnly(status.LocalPath);
+                    continue;
+                }
+                result.Bytes += _state.Local[id].Size;
+                _state.Local.Remove(id);
+                result.Removed.Add(status);
+            }
+        }
+        finally
+        {
+            SaveState();
+        }
+        return result;
+    }
+
+    // A copy that stays isn't checked out to you, so it's read-only again, as far as it can be.
+    private static void StayReadOnly(string path)
+    {
+        try
+        {
+            SetReadOnly(path, true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left writable: the next get puts it right.
+        }
+    }
+
+    // Copies here that are as they came from the vault, at any version, and not checked out to you here: removing them
+    // loses nothing.
+    private List<FileStatus> Freeable(List<string> scope, Func<string, bool>? inUse) =>
+        Compute(scope)
+            .Where(s => s.FileId is { } id
+                && (s.State is FileState.UpToDate or FileState.Outdated)
+                && !s.CheckedOutByMe
+                && _state.Local.ContainsKey(id)
+                && inUse?.Invoke(s.LocalPath) != true)
+            .ToList();
+
     // What getting these paths involves: the files under them, and the files the ones named use.
     private async Task<List<FileStatus>> PlanGetAsync(IEnumerable<string>? localPaths, CancellationToken ct)
     {

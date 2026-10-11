@@ -16,7 +16,8 @@ SESSION_COOKIE = "yjsp_session"
 # doesn't allow), so requiring one on cookie-authenticated writes stops CSRF.
 CSRF_HEADER = "x-yjsp-request"
 # The names from before the site was YJSP (0.3.0), still accepted so browsers signed in then stay signed in and tabs
-# opened then can still save. Sessions last 30 days (Settings.session_days): drop these a release after 0.4.0.
+# opened then can still save. Sessions last 30 days (Settings.session_days), so those from before 0.4.0 (live on
+# 2026-10-04) have run out by 2026-11-03: drop these in 0.6.0.
 OLD_SESSION_COOKIE = "cvc_session"
 OLD_CSRF_HEADER = "x-cvc-request"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}

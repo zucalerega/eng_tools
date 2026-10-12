@@ -78,6 +78,8 @@ internal sealed partial class VaultPane : UserControl
     private readonly FlatButton _takeOverButton;
     private readonly FlatButton _drawingButton;
     private readonly FlatButton _caliperButton;
+    private readonly FlatButton _keepMineButton;
+    private readonly FlatButton _useVaultButton;
 
     // The files that need attention, or the whole vault, by the tab that's chosen.
     private readonly ImageList _images;
@@ -168,7 +170,18 @@ internal sealed partial class VaultPane : UserControl
             "Make 3D view",
             (_, _) => OnActiveDocument(MakeModelsHereAsync),
             "Make the 3D views that Caliper shows in the web app, of this file and of what it uses, where they're missing. Check-ins make them too.");
-        _documentActions.Controls.AddRange(new Control[] { _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton });
+        _keepMineButton = MakeButton(
+            "Keep mine...",
+            (_, _) => OnActiveDocument(path => KeepMineAsync(new[] { path })),
+            "Keep your copy: it's checked out to you as it is, and checking it in makes it the next version. The vault's stays in the history.");
+        _useVaultButton = MakeButton(
+            "Use the vault's version...",
+            (_, _) => OnActiveDocument(path => UseVaultVersionAsync(new[] { path })),
+            "Replace your copy with the vault's latest version. Yours is kept in the workspace's .vault\\backup folder.");
+        _documentActions.Controls.AddRange(new Control[]
+        {
+            _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton, _keepMineButton, _useVaultButton,
+        });
         _documentActions.Margin = new Padding(0, 6, 0, 0);
         _documentCard.SizeChanged += (_, _) =>
             _documentStatus.MaximumSize = new Size(Math.Max(1, _documentCard.ClientSize.Width - _documentCard.Padding.Horizontal), 0);
@@ -593,6 +606,72 @@ internal sealed partial class VaultPane : UserControl
         }
         return paths.Count == 1 ? $"Checked out {Path.GetFileName(paths[0])}." : $"Checked out {Count(paths.Count, "file")}.";
     });
+
+    /// <summary>
+    /// Keep your copies of files in conflict, after asking: they're checked out to you as they are, and checking them in
+    /// makes them the next versions, on top of the vault's, which stay in the history (Workspace.KeepMineAsync).
+    /// </summary>
+    private async Task KeepMineAsync(IReadOnlyList<string> paths)
+    {
+        var conflicts = InConflict(paths);
+        if (conflicts.Count == 0)
+        {
+            return;
+        }
+        var question = conflicts.Count == 1
+            ? $"Keep your copy of {Path.GetFileName(conflicts[0].LocalPath)}? It's checked out to you as it is, and checking it in makes "
+                + $"it version {conflicts[0].RemoteVersion + 1}. Version {conflicts[0].RemoteVersion}, the vault's now, stays in its history."
+            : $"Keep your copies of {Count(conflicts.Count, "file")}? They're checked out to you as they are, and checking them in makes "
+                + "them the next versions. The vault's versions stay in their history.";
+        if (Ask(question) != DialogResult.Yes)
+        {
+            return;
+        }
+        var local = conflicts.Select(s => s.LocalPath).ToList();
+        await RunAsync("Keeping your copy", async workspace =>
+        {
+            await workspace.KeepMineAsync(local);
+            foreach (var path in local)
+            {
+                _sw.SetReadOnly(path, false);
+            }
+            return local.Count == 1
+                ? $"Kept your copy of {Path.GetFileName(local[0])}: it's checked out to you, to check in when it's ready."
+                : $"Kept your copies of {Count(local.Count, "file")}: they're checked out to you, to check in when they're ready.";
+        });
+    }
+
+    /// <summary>
+    /// Replace your copies of files in conflict with the vault's latest versions, after asking. Yours are backed up first
+    /// (Workspace.UseVaultVersionAsync); unsaved changes in SolidWorks are lost, and the question says so.
+    /// </summary>
+    private async Task UseVaultVersionAsync(IReadOnlyList<string> paths)
+    {
+        var conflicts = InConflict(paths);
+        if (conflicts.Count == 0 || _workspace == null)
+        {
+            return;
+        }
+        var local = conflicts.Select(s => s.LocalPath).ToList();
+        var backup = $"{_workspace.Root}\\.vault\\backup";
+        var unsaved = local.Any(_sw.HasUnsavedChanges) ? " Changes you haven't saved in SolidWorks are lost." : "";
+        var question = conflicts.Count == 1
+            ? $"Replace your copy of {Path.GetFileName(local[0])} with version {conflicts[0].RemoteVersion} from the vault? Yours is kept in {backup}.{unsaved}"
+            : $"Replace your copies of {Count(local.Count, "file")} with the vault's versions? Yours are kept in {backup}.{unsaved}";
+        if (Ask(question) != DialogResult.Yes)
+        {
+            return;
+        }
+        await RunAsync("Getting the vault's version", async workspace =>
+        {
+            var result = await ReplacingAsync(local, () => workspace.UseVaultVersionAsync(local), discardChanges: true);
+            var kept = result.BackedUp.Count == 1 ? $" Yours is in {result.BackedUp[0]}." : result.BackedUp.Count > 1 ? $" Yours are in {backup}." : "";
+            return Summary(result) + kept;
+        });
+    }
+
+    private List<FileStatus> InConflict(IEnumerable<string> paths) =>
+        paths.Select(StatusOf).OfType<FileStatus>().Where(s => s.State == FileState.Conflict).ToList();
 
     private async Task CheckInAsync(IReadOnlyList<string> paths)
     {
@@ -1361,9 +1440,11 @@ internal sealed partial class VaultPane : UserControl
 
         var inVault = status?.FileId != null;
         var mine = status?.CheckedOutByMe == true;
-        var canCheckIn = status != null && (status.State == FileState.New || mine);
+        // In conflict, only Keep mine and Use the vault's version settle it: Check in and Get latest would refuse or skip it.
+        var conflict = status?.State == FileState.Conflict;
+        var canCheckIn = status != null && (status.State == FileState.New || mine) && !conflict;
         var canCheckOut = inVault && status!.Lock == null && status.State is FileState.UpToDate or FileState.Outdated or FileState.Modified;
-        var canGet = inVault && status!.State != FileState.DeletedInVault;
+        var canGet = inVault && status!.State != FileState.DeletedInVault && !conflict;
         // Only where you may: most people never see it.
         var canTakeOver = status != null && _workspace?.CanTakeOver(status) == true;
         var yoursElsewhere = canTakeOver && status!.Lock!.User.Id == _me?.Id;
@@ -1385,7 +1466,9 @@ internal sealed partial class VaultPane : UserControl
             (_undoButton, mine),
             (_takeOverButton, canTakeOver),
             (_drawingButton, drawings.Count > 0),
-            (_caliperButton, canMakeModel));
+            (_caliperButton, canMakeModel),
+            (_keepMineButton, conflict),
+            (_useVaultButton, conflict));
     }
 
     private void ShowActions(FlatButton? primary, params (FlatButton Button, bool Shown)[] actions)
@@ -1449,8 +1532,8 @@ internal sealed partial class VaultPane : UserControl
         return file switch
         {
             { State: FileState.DeletedInVault } => "Deleted from the vault since you got it. Restore it from the trash in the web app to keep working on it.",
-            { State: FileState.Conflict } => $"Changed here, but version {file.RemoteVersion} was checked in since. Save your changes under another name; "
-                + "the CLI's vault get --force then brings the vault's version, keeping a copy of yours.",
+            { State: FileState.Conflict } => $"Changed here, but version {file.RemoteVersion} was checked in since. Keep mine checks your copy "
+                + "out, to check in on top of it; Use the vault's version replaces yours, keeping a copy of it.",
             { State: FileState.New } => "Not in the vault yet: check it in to add it.",
             { CheckedOutByMe: true, State: FileState.Modified } => version + "Check it in to share your changes as a new version.",
             { CheckedOutByMe: true } => version + "It's yours to change: check it in when you're done.",
@@ -1546,7 +1629,7 @@ internal sealed partial class VaultPane : UserControl
         }
         if (result.Skipped.Count > 0)
         {
-            parts.Add($"Skipped {Count(result.Skipped.Count, "file")} changed here (use the CLI's get --force to replace them).");
+            parts.Add($"Skipped {Count(result.Skipped.Count, "file")} changed here: Needs attention says what to do with each.");
         }
         if (result.Failures.Count > 0)
         {
@@ -1681,6 +1764,8 @@ internal sealed partial class VaultPane : UserControl
         var get = menu.Items.Add("Get latest", null, (_, _) => Safely(() =>
             GetSelectedAsync(SelectedPaths(), BrowseShown && _tree.SelectedNode?.Tag is TreeFolder)));
         var takeOver = menu.Items.Add("Take over...", null, (_, _) => Safely(() => TakeOverAsync(SelectedPaths()[0])));
+        var keepMine = menu.Items.Add("Keep mine...", null, (_, _) => Safely(() => KeepMineAsync(SelectedPaths())));
+        var useVault = menu.Items.Add("Use the vault's version...", null, (_, _) => Safely(() => UseVaultVersionAsync(SelectedPaths())));
         var freeUp = menu.Items.Add("Free up space...", null, (_, _) => Safely(() => FreeUpSpaceAsync(SelectedPaths())));
         var explorer = menu.Items.Add("Show in File Explorer", null, (_, _) => Guarded(() => ShowInExplorer(SelectedPaths())));
         menu.Opening += (_, e) =>
@@ -1727,6 +1812,11 @@ internal sealed partial class VaultPane : UserControl
             freeUp.Enabled = !_busy && (folder || files.Any(s => s.FileId != null && !s.CheckedOutByMe
                 && s.State is FileState.UpToDate or FileState.Outdated));
             freeUp.ToolTipText = "Remove the copies on this computer. They stay in the vault, and download again when you open them.";
+            // Changed here, and a newer version in the vault since: keep yours, or take the vault's.
+            keepMine.Available = useVault.Available = !folder && files.Any(s => s.State == FileState.Conflict);
+            keepMine.Enabled = useVault.Enabled = !_busy;
+            keepMine.ToolTipText = "Check your copy out as it is, to check it in on top of the vault's version, which stays in the history.";
+            useVault.ToolTipText = "Replace your copy with the vault's latest version. Yours is kept in the workspace's .vault\\backup folder.";
         };
         return menu;
     }

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -30,6 +31,9 @@ internal sealed partial class VaultPane : UserControl
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
     private readonly Timer _poll = new Timer { Interval = 20_000 };
     private readonly Timer _debounce = new Timer { Interval = 400 };
+    // SolidWorks shows the pane in its task pane's window, but doesn't always size it to that window: on some PCs it stays
+    // as small as it was made, with everything crammed into it. So the pane follows that window's size itself.
+    private readonly Timer _fit = new Timer { Interval = 250 };
     private readonly ToolTip _tips = new ToolTip { AutoPopDelay = 20_000 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private Workspace? _workspace;
@@ -501,10 +505,60 @@ internal sealed partial class VaultPane : UserControl
         {
             _poll.Dispose();
             _debounce.Dispose();
+            _fit.Dispose();
             _workspace?.Dispose();
             _gate.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// Fill the window SolidWorks shows the pane in (its parent, since DisplayWindowFromHandlex64), now and whenever that
+    /// window changes size.
+    /// </summary>
+    public void FillHostWindow()
+    {
+        _fit.Tick += (_, _) => FitToHostWindow();
+        FitToHostWindow();
+        _fit.Start();
+    }
+
+    private void FitToHostWindow()
+    {
+        try
+        {
+            var host = GetParent(Handle);
+            if (host == IntPtr.Zero || !GetClientRect(host, out var area))
+            {
+                return;
+            }
+            var fill = new Rectangle(0, 0, area.Right - area.Left, area.Bottom - area.Top);
+            if (fill.Width > 0 && fill.Height > 0 && Bounds != fill)
+            {
+                Bounds = fill;
+            }
+        }
+        catch (Exception e)
+        {
+            // Never into SolidWorks, and not four times a second: stop, log it, and leave the size to SolidWorks.
+            _fit.Stop();
+            Log.Error("Fitting the Vault tab to the task pane failed", e);
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetClientRect(IntPtr window, out NativeRect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 
     // --- actions ------------------------------------------------------------------------------

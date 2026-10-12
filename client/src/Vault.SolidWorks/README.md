@@ -201,7 +201,8 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
 9. On a display scaled above 100% (most laptops; Settings > System > Display > Scale),
    the Vault tab and the Check in dialog look as they do at 100%, only larger: no text is
    cut off, the dots, folders, and the card's badge are sharp, and the comment box is full
-   size.
+   size. The tab fills the task pane from top to bottom, and follows it when you drag the
+   task pane's edge or undock it.
 10. Create a new part, save it into `C:\VLT\Test`, and check it in. Without switching
     windows, start editing it: Vault offers the check-out.
 11. Change a checked-in file, answer No when Vault offers the check-out, then save

@@ -179,7 +179,7 @@ test("a version with no model says why; with none asked for, the newest that has
     await team.checkin(team.chief, { "Fin.SLDPRT": "fin v2" }, { host: "CHIEF-PC", comment: "from the web" });
 
     // v2's model would be read from the file, which isn't a real SolidWorks part.
-    renderApp(team.chief, caliperUrl(fin!.id));
+    const finPage = renderApp(team.chief, caliperUrl(fin!.id));
     expect(await screen.findByText("v2, the latest version, has no 3D model, so this is v1.")).toBeTruthy();
     expect(screen.getByText(/v2: It isn't a SolidWorks part that Caliper can read/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fin" })).toBeTruthy();
@@ -190,6 +190,8 @@ test("a version with no model says why; with none asked for, the newest that has
     expect(await screen.findByText("v2 of Fin.SLDPRT has no 3D model.")).toBeTruthy();
     expect(screen.getByText(/Vault for SolidWorks makes models too/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "v1" }).getAttribute("href")).toBe(caliperUrl(fin!.id, 1));
+
+    finPage.unmount(); // or it follows the next page too, and shows it twice
 
     // Drawings and other files aren't Caliper's.
     const [drawing] = await team.checkin(

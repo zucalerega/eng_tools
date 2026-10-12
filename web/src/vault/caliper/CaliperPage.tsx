@@ -584,8 +584,8 @@ function tallyMissing(model: Model): Record<Why, number> {
 }
 
 /**
- * What an assembly doesn't show, by why: and what makes the models SolidWorks can (a part's other configurations, or a
- * file without a 3D view Caliper reads), where there are such; parts not in the vault, only checking them in can.
+ * What an assembly doesn't show, by why, and how to show it: Make 3D view in SolidWorks makes the models of parts in
+ * other configurations and of files without a 3D view Caliper reads; parts not in the vault need checking in.
  */
 function NotShown({ tally }: { tally: Record<Why, number> }) {
     const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

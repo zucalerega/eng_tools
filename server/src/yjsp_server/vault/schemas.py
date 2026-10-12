@@ -381,7 +381,8 @@ class CaliperModelIn(BaseModel):
 
 class CaliperComponentOut(CaliperComponentIn):
     model: bool  # whether its file has a model of its own, at its version and in its configuration
-    # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: no file.
+    # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: it has
+    # no file (a virtual part), or one that isn't a SolidWorks part or assembly.
     kind: Literal["part", "assembly"] | None = None
     children: list["CaliperComponentOut"] = []
 

@@ -1008,10 +1008,17 @@ public sealed class Workspace : IDisposable
                     user ??= item.VaultPath;
                     continue;
                 }
-                if (used.State is FileState.Conflict or FileState.DeletedInVault)
+                if (used.State == FileState.Conflict)
                 {
-                    var problem = used.State == FileState.Conflict ? "changed here after someone checked in a newer version" : "was deleted in the vault";
-                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which {problem}");
+                    // Which version the assembly was built against can't be said: the one here isn't the vault's.
+                    throw new WorkspaceException(
+                        $"{item.VaultPath} uses {vaultPath}, which changed here after someone checked in a newer version. Settle that first: "
+                        + "Keep mine (vault resolve --mine) checks your copy out, to go in with this check-in; Use the vault's version "
+                        + "(--vault) replaces it, keeping a copy of yours.");
+                }
+                if (used.State == FileState.DeletedInVault)
+                {
+                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which was deleted in the vault");
                 }
                 var joins = used.State == FileState.New || (withChanged && used.CheckedOutByMe && used.State == FileState.Modified);
                 if (joins && included.Add(key))

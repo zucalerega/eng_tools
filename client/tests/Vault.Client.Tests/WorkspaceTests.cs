@@ -568,6 +568,36 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task AReferenceInConflictStopsTheCheckinAndSaysHowToSettleIt()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var aliceMount = Write(alice, "Mount.SLDASM", "mount v1");
+        await alice.CheckinAsync([aliceMount], "add mount");
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobMount = Local(bob, "Mount.SLDASM");
+        MakeWritable(bobMount);
+        File.WriteAllText(bobMount, "bob's mount");
+        await alice.CheckoutAsync([aliceMount]);
+        File.WriteAllText(aliceMount, "alice's mount");
+        await alice.CheckinAsync([aliceMount], "alice's mount");
+        var vehicle = Write(bob, "Vehicle.SLDASM", "vehicle");
+        Func<string, IEnumerable<string>> uses = path => path == vehicle ? [bobMount] : [];
+
+        var error = await Assert.ThrowsAsync<WorkspaceException>(() => bob.CheckinAsync([vehicle], "vehicle", referencesOf: uses));
+        Assert.Contains("Mount.SLDASM, which changed here after someone checked in a newer version", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Keep mine (vault resolve --mine)", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Use the vault's version (--vault)", error.Message, StringComparison.Ordinal);
+
+        // Kept, the mount goes in with the vehicle, as its next version.
+        await bob.KeepMineAsync([bobMount]);
+        var result = await bob.CheckinAsync([vehicle], "vehicle", referencesOf: uses);
+        var checkedIn = result.Files.ToDictionary(f => Path.GetFileName(f.File.Path), f => (f.Status, f.File.Version));
+        Assert.Equal(("created", 1), checkedIn["Vehicle.SLDASM"]);
+        Assert.Equal(("updated", 3), checkedIn["Mount.SLDASM"]);
+    }
+
+    [Fact]
     public async Task PathsKeptInFilesFromElsewhereMeanTheVaultFilesTheyEndLike()
     {
         // A folder brought over from Kenesto: its files keep the paths their parts had on Kenesto's drive.

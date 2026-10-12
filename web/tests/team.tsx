@@ -145,6 +145,17 @@ export class Team {
         });
     }
 
+    /** A file's 3D models, as Caliper lists them. */
+    async caliperModels(id: number): Promise<{ version: number; configuration: string }[]> {
+        return (
+            await call<{ models: { version: number; configuration: string }[] }>(
+                "GET",
+                `/api/files/${id}/caliper`,
+                this.chief.token,
+            )
+        ).models;
+    }
+
     async file(id: number): Promise<VaultFile> {
         return (await call<{ file: VaultFile }>("GET", `/api/files/${id}`, this.chief.token)).file;
     }

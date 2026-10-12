@@ -481,11 +481,23 @@ Where the 3D comes from:
     colors (and faces' own colors, where the file says which), the units, and the
     configuration SolidWorks had open when it saved the file, which is the only one saved.
     An assembly also keeps its components in XML (each one's file, configuration, place,
-    and whether SolidWorks hid or suppressed it), and each part's triangles as the assembly
-    shows them, which its model carries. Its components are the files its version
-    references, matched by name, so they open on their own as usual. None of this is
-    documented: it was worked out from files saved by SolidWorks 2015 to 2019, and checked
-    against their STL exports and the bounding boxes SolidWorks keeps. So the server refuses
+    and whether SolidWorks hid or suppressed it), and sometimes each part's triangles as
+    the assembly shows them, which its model then carries. From SolidWorks 2024 on it never
+    does, and many older ones don't either, nor has every assembly a 3D view at all: its
+    components are still read from the XML, and each part shows its own model, which
+    Caliper has the server make from the part's file as the assembly loads. Its components
+    are the files its version references, matched by name; a version that references
+    nothing (checked in from the web app, or brought over from Kenesto) has the vault's files
+    with those names in folders of the names of the folders SolidWorks saved them in (a name
+    alone, as STEP imports' SOLID-1, could be any file's): the one whose path ends most like
+    the saved one, and none where two end alike, each at the version it had when the
+    assembly's version was made, or its first. So they open on their own as usual. Parts
+    that were never put in the vault, and parts kept inside the assembly (virtual
+    components, as routed tubes are) without triangles, aren't shown, and Caliper lists them.
+    None of this is documented: it was worked out from files saved by SolidWorks 2015 to
+    2019, checked against their STL exports and the bounding boxes SolidWorks keeps, then
+    from the team's own files saved by SolidWorks 2024 and 2025 (whose faces have 32 more
+    bytes), checked against the previews SolidWorks saves in them. So the server refuses
     (`unreadable_file`, saying why) whatever doesn't fit, rather than guess: a file from
     SolidWorks 2014 or older, one saved without its triangles, or a layout it doesn't
     know. Caliper says so, and the add-in can make that version's model instead. A flexible

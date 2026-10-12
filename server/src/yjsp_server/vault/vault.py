@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, get_args
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1475,26 +1475,55 @@ def _keep(store: BlobStore, data: bytes) -> tuple[str, int]:
     return sha, len(data)
 
 
-def _file_of(path: str, refs: list[tuple[File, int]], tree: Tree) -> tuple[File, int] | None:
-    """Which of a version's references a component's file is, by the path SolidWorks saved for it: the one with its
-    name, and if several have it, the one whose folders end the same way."""
-    names = [name for name in re.split(r"[\\/]", path) if name]
-    if not names:
+def _by_path[T](names: list[str], same: list[tuple[File, T]], tree: Tree, least: int = 0) -> tuple[File, T] | None:
+    """Of files with a component's name, the one whose path ends most like the one SolidWorks saved for it (names), if
+    at least `least` of their names agree; none when two end alike."""
+    if not same:
         return None
-    same = [(file, version) for file, version in refs if file.name_key == paths.key(names[-1])]
-    if len(same) <= 1:
-        return same[0] if same else None
+    mine = [paths.key(name) for name in names]
 
     def common(file: File) -> int:
         theirs = [paths.key(name) for name in paths.split(tree.file_path(file))]
-        mine = [paths.key(name) for name in names]
         n = 0
         while n < min(len(theirs), len(mine)) and theirs[-1 - n] == mine[-1 - n]:
             n += 1
         return n
 
-    ranked = sorted(same, key=lambda ref: common(ref[0]), reverse=True)
-    return ranked[0] if common(ranked[0][0]) > common(ranked[1][0]) else None
+    if len(same) == 1:
+        return same[0] if least == 0 or common(same[0][0]) >= least else None
+    ranked = sorted(same, key=lambda found: common(found[0]), reverse=True)
+    best = common(ranked[0][0])
+    return ranked[0] if best > common(ranked[1][0]) and best >= least else None
+
+
+class _Finder:
+    """Which file a component of an assembly's version is, by the path SolidWorks saved for it: one of the version's
+    references with its name; else, as versions from the web app and from Kenesto reference nothing, the vault's file
+    with its name in a folder of its folder's name (not deleted: a name alone, as STEP imports' SOLID-1, could be any
+    file's), at the version it had when the assembly's version was made, or its first."""
+
+    def __init__(self, db: Session, tree: Tree, when: datetime) -> None:
+        self._db, self._tree, self._when = db, tree, when
+        self._named: dict[str, list[File]] = {}
+
+    def file_of(self, path: str, refs: list[tuple[File, int]]) -> tuple[File, int] | None:
+        names = [name for name in re.split(r"[\\/]", path) if name]
+        if not names:
+            return None
+        key = paths.key(names[-1])
+        found = _by_path(names, [(file, version) for file, version in refs if file.name_key == key], self._tree)
+        if found is not None:
+            return found
+        if key not in self._named:
+            alive = select(File).where(File.name_key == key, File.deleted_at.is_(None))
+            self._named[key] = list(self._db.scalars(alive))
+        named = _by_path(names, [(file, 0) for file in self._named[key]], self._tree, least=min(2, len(names)))
+        if named is None:
+            return None
+        then = self._db.scalar(
+            select(func.max(Version.number)).where(Version.file_id == named[0].id, Version.created_at <= self._when)
+        )
+        return named[0], then or 1
 
 
 def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
@@ -1512,8 +1541,9 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
     version that has a model keeps it, and that one comes back.
 
     Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
-    version references (each with its shape as the assembly shows it), so its model is whole even where its parts
-    have no model of their own; who sees which is decided when it's shown (caliper_assembly)."""
+    version references, or else the vault's files with their names (_Finder), each with its shape as the assembly
+    shows it where SolidWorks saved one; the others show their own models. Who sees which is decided when it's shown
+    (caliper_assembly)."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     path = tree.file_path(file)
@@ -1546,11 +1576,12 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
         else:
             assembly = solidworks.read_assembly(data)
             configuration, units = assembly.configuration[:255], assembly.units
+            finder = _Finder(db, tree, target.created_at)
 
             def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:
                 out = []
                 for component in found:
-                    match = None if component.virtual else _file_of(component.path, refs, tree)
+                    match = None if component.virtual else finder.file_of(component.path, refs)
                     shape = None
                     if component.shape is not None:
                         shape, size = _keep(store, caliper.write_mesh(component.shape))
@@ -1578,6 +1609,11 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                 return out
 
             components = place(assembly.components, _refs_of(db, target))
+            if not components:
+                raise solidworks.Unreadable(
+                    "Caliper found none of its parts: they aren't in the vault, or they're kept inside it (virtual "
+                    "components) without a 3D view. Make its 3D view in SolidWorks (Make 3D view, on the Vault tab)"
+                )
             if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
                 raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
     except solidworks.Unreadable as e:

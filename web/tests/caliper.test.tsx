@@ -233,6 +233,42 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
     expect(screen.queryByText(/no 3D model/)).toBeNull();
 });
 
+test("an assembly's parts without models of their own have them made from their files", async () => {
+    // SparkFun's servo again, its assembly without a 3D view of its own (its display list renamed: SolidWorks stores a
+    // stream's name with each byte's halves swapped), checked in as the web app does, with no references. Its parts are
+    // found by the paths SolidWorks saved for them, ...\Servomoteur SM-S4303R\, and each is read from its own file.
+    const servo = (name: string) =>
+        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
+    const swapped = (name: string) => Buffer.from([...Buffer.from(name)].map((b) => ((b << 4) | (b >> 4)) & 0xff));
+    const viewless = (data: Buffer) => {
+        const [from, to] = [swapped("Contents/DisplayLists"), swapped("Contents/DisplayListz")];
+        const out = Buffer.from(data);
+        for (let at = out.indexOf(from); at >= 0; at = out.indexOf(from, at + 1)) {
+            to.copy(out, at);
+        }
+        return out;
+    };
+    const team = await Team.create();
+    const [assembly, spline, caseFile] = await team.checkin(team.chief, {
+        "Servo/9347.SLDASM": viewless(await servo("9347.SLDASM")),
+        "Servomoteur SM-S4303R/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+        "Servomoteur SM-S4303R/Servomoteur.SLDPRT": await servo("Servomoteur.SLDPRT"),
+    });
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    // The tree comes once every part's shape has, so nothing says it's missing.
+    expect(await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Show Embout-1" })).toBeTruthy();
+    expect(screen.queryByText(/no 3D model|didn't load/)).toBeNull();
+    expect(tree().getByRole("link", { name: "Open Embout-1 in Caliper" }).getAttribute("href")).toBe(
+        caliperUrl(spline!.id, 1, "Default"),
+    );
+    // The parts' models were made on the way, as opening each on its own would.
+    for (const part of [spline!, caseFile!]) {
+        expect((await team.caliperModels(part.id)).map((model) => model.configuration)).toEqual(["Default"]);
+    }
+});
+
 test("a STEP file is read as it is, its products the tree", async () => {
     const team = await Team.create();
     const step = await readFile(resolve(import.meta.dirname, "fixtures/tab.step"), "utf8");

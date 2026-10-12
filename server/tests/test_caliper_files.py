@@ -145,6 +145,165 @@ def test_an_assembly_is_read_with_its_components(team, client):
     assert own.headers["etag"] == f'"{found["Embout-1"]["mesh"]}"'
 
 
+def by_path(response) -> dict[str, dict]:
+    assert response.status_code == 200, response.text
+    return {entry["file"]["path"]: entry["file"] for entry in response.json()["files"]}
+
+
+def swapped(name: bytes) -> bytes:
+    """A stream's name as SolidWorks stores it: each byte's halves swapped."""
+    return bytes(((b << 4) | (b >> 4)) & 0xFF for b in name)
+
+
+def without_3d_view(data: bytes) -> bytes:
+    """A file in which SolidWorks saved no display list: its streams of that name, renamed."""
+    return data.replace(swapped(b"Contents/DisplayLists"), swapped(b"Contents/DisplayListz"))
+
+
+def in_2024_layout(display: bytes, first: int = 1) -> bytes:
+    """A display list as SolidWorks 2024 and later write it: 32 bytes between each face's counts and its arrays, the
+    uint32s 1, 0, 0, a number of the face's, and four 0s (first: something other than the 1, which no SolidWorks
+    wrote)."""
+    strips = struct.pack("<3I", 4, 8, 2)
+    places = []
+    at = display.find(strips)
+    while at >= 0:
+        triangles, count = struct.unpack_from("<2I", display, at - 8)
+        if 0 < count < 1 << 16 and count == struct.unpack_from("<I", display, at + 12)[0]:
+            lengths = struct.unpack_from(f"<{count}I", display, at + 16)
+            if triangles == sum(lengths) - 2 * count:
+                places.append(at)
+        at = display.find(strips, at + 1)
+    assert places
+    changed = bytearray(display)
+    for i, at in reversed(list(enumerate(places))):
+        changed[at:at] = struct.pack("<8I", first, 0, 0, 0x201A94 + i, 0, 0, 0, 0)
+    return bytes(changed)
+
+
+def test_a_part_saved_by_solidworks_2024_or_later_is_read(team, client):
+    """From SolidWorks 2024 on, 32 more bytes come in each face of a part's 3D view (vault/solidworks.py): the case
+    saved that way reads as the very same mesh, the same blob."""
+    chief = team.member("chief@x.test", admin=True)
+    case = contents("Servomoteur.SLDPRT")
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servomoteur.SLDPRT": case,
+                "Servomoteur 2025.SLDPRT": repacked(case, "Contents/DisplayLists", in_2024_layout),
+            },
+        )
+    )
+    meshes = []
+    for file in checked.values():
+        made = make(client, chief, file)
+        assert made.status_code == 200, made.text
+        assert (made.json()["kind"], made.json()["units"]) == ("part", "mm")
+        params = {"version": 1, "configuration": "Default"}
+        meshes.append(client.get(f"/api/files/{file['id']}/caliper/mesh", params=params, headers=chief).headers["etag"])
+    assert meshes[0] == meshes[1]
+
+
+def test_a_3d_view_caliper_cant_follow_isnt_called_empty(team, client):
+    """A view with faces the reader can't find in it is in a layout it doesn't know, and says so; only a part without a
+    view says SolidWorks saved none."""
+    chief = team.member("chief@x.test", admin=True)
+    case = contents("Servomoteur.SLDPRT")
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Odd.SLDPRT": repacked(case, "Contents/DisplayLists", lambda d: in_2024_layout(d, first=7)),
+                "Bare.SLDPRT": without_3d_view(case),
+            },
+        )
+    )
+    odd, bare = (make(client, chief, checked[name]) for name in ("Odd.SLDPRT", "Bare.SLDPRT"))
+    assert (odd.status_code, odd.json()["error"]) == (422, "unreadable_file")
+    assert "can't make sense of the 3D view SolidWorks saved in it" in odd.json()["message"]
+    assert (bare.status_code, bare.json()["error"]) == (422, "unreadable_file")
+    assert "SolidWorks saved no 3D view in it" in bare.json()["message"]
+
+
+def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, client):
+    """Versions checked in from the web app, or brought over from Kenesto, record no references: an assembly's parts are
+    found in the vault by the paths SolidWorks saved for them, at the versions they had when the assembly's version was
+    made. Without a 3D view of its own, the assembly is read from its XML, each part to show its own model."""
+    chief = team.member("chief@x.test", admin=True)
+    # SolidWorks saved the parts as C:\Users\...\Desktop\Servomoteur SM-S4303R\: of the two splines, the one in a folder
+    # of that name is the assembly's.
+    folder = "Servo/Servomoteur SM-S4303R"
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                f"{folder}/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Spares/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                f"{folder}/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+        )
+    )
+    servo, spline, case = (
+        checked[p] for p in ("Servo/9347.SLDASM", f"{folder}/Embout.SLDPRT", f"{folder}/Servomoteur.SLDPRT")
+    )
+    # The case changes after the assembly's version: that version still has the case it had.
+    assert team.checkout(chief, f"{folder}/Servomoteur.SLDPRT").status_code == 200
+    by_path(team.checkin(chief, {f"{folder}/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT") + b" "}))
+
+    made = make(client, chief, servo)
+    assert made.status_code == 200, made.text
+    params = {"version": 1, "configuration": "Default"}
+    assembly = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=chief).json()
+    found = {c["name"]: (c["file_id"], c["version"], c["mesh"], c["model"]) for c in assembly["components"]}
+    assert found == {"Embout-1": (spline["id"], 1, None, False), "Servomoteur-1": (case["id"], 1, None, False)}
+    # Each part's own model is made from its file, as Caliper asks for it.
+    assert make(client, chief, spline).status_code == 200
+
+
+def test_an_assembly_whose_parts_caliper_cant_tell_apart_or_find(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    # Two splines in folders of the name SolidWorks saved (Servomoteur SM-S4303R): neither is taken for the other.
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                "A/Servomoteur SM-S4303R/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "B/Servomoteur SM-S4303R/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servomoteur SM-S4303R/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+        )
+    )
+    servo = checked["Servo/9347.SLDASM"]
+    assert make(client, chief, servo).status_code == 200
+    params = {"version": 1, "configuration": "Default"}
+    assembly = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=chief).json()
+    assert [c["name"] for c in assembly["components"]] == ["Servomoteur-1"]
+
+
+def test_an_assembly_with_nothing_to_show_says_so(team, client):
+    """No 3D view of its own, and none of its parts in the vault: nothing is made, and the reason says what to do. Files
+    with the parts' names, in folders of other names, aren't taken for them: a name alone could be any file's."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                "Elsewhere/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Elsewhere/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+        )
+    )
+    servo = checked["Servo/9347.SLDASM"]
+    refused = make(client, chief, servo)
+    assert (refused.status_code, refused.json()["error"]) == (422, "unreadable_file")
+    assert refused.json()["message"].startswith("Servo/9347.SLDASM v1: Caliper found none of its parts")
+    assert client.get(f"/api/files/{servo['id']}/caliper", headers=chief).json() == {"models": []}
+
+
 def test_who_may_read_and_see_a_files_model(team, client):
     chief = team.member("chief@x.test", admin=True)
     bob = team.member("bob@x.test")
@@ -260,12 +419,14 @@ def test_a_damaged_3d_view_is_refused_or_read_never_an_error(team, client):
                 damaged[at:at] = damaged[pick.randrange(len(damaged)) :][:200]
         return bytes(damaged)
 
-    originals = [contents("Servomoteur.SLDPRT"), contents("9347.SLDASM")]
+    case = contents("Servomoteur.SLDPRT")
+    # The case as 2015 and 2024 save it, and the assembly.
+    originals = [case, contents("9347.SLDASM"), repacked(case, "Contents/DisplayLists", in_2024_layout)]
     damaged = {
-        f"Damaged-{i}.{'SLDPRT' if i % 2 == 0 else 'SLDASM'}": repacked(
-            originals[i % 2], "Contents/DisplayLists", damage
+        f"Damaged-{i}.{'SLDASM' if i % 3 == 1 else 'SLDPRT'}": repacked(
+            originals[i % 3], "Contents/DisplayLists", damage
         )
-        for i in range(40)
+        for i in range(60)
     }
     for file in files(team.checkin(chief, damaged)).values():
         made = make(client, chief, file)

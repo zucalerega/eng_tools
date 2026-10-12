@@ -4,9 +4,10 @@
 SolidWorks saves in each part and assembly the triangles it draws on screen, which is how eDrawings shows SolidWorks
 files without SolidWorks (Document Properties > Image Quality > "Save tessellation with part document", on unless
 someone turns it off). Caliper shows them too. SolidWorks documents none of this: it was worked out from files saved by
-SolidWorks 2015 to 2019, and checked against their STL exports. So reading is strict. Whatever doesn't fit is refused
-(Unreadable), never guessed at, and Vault for SolidWorks can make the model instead. Only the colors are read on a best
-effort, and fall back to SolidWorks' default when they don't add up.
+SolidWorks 2015 to 2019, checked against their STL exports, then from the team's own files saved by SolidWorks 2024 to
+2026, checked against the preview SolidWorks saves in each and each part's size. So reading is strict. Whatever doesn't
+fit is refused (Unreadable), never guessed at, and Vault for SolidWorks can make the model instead. Only the colors are
+read on a best effort, and fall back to SolidWorks' default when they don't add up.
 
 The file. A part or assembly saved by SolidWorks 2015 or later is a run of streams. Each is the bytes 14 00 06 00 08 00;
 a tag, the CRC-32 of its contents, its packed size, its size, and its name's length (uint32s, little-endian, as is
@@ -29,16 +30,19 @@ and UTF-16.
 A part's shape is a count of its bodies, then the bodies (uoTempBodyTessData_c). A body is a count of its faces, its
 faces (uoTempFaceTessData_c), and its properties (uoBodyPropInfo_c), which name it. A face is a uint32 count of
 triangles, a uint32 count of strips, and arrays: the strips' lengths (uint32), their vertices (float32 x, y, z, in
-meters), and the vertices' normals. Then come its edges, and, after 01 00 00 00 ff ff ff ff, the appearance
-(moVisualProperties_c) it has of its own, if any. A strip of n vertices makes n - 2 triangles, each wound the other way
-from the one before. An appearance starts with its color (bytes red, green, blue, 0), and after two strings come its
-ambient, diffuse, specular, shininess, transparency, and emission (doubles). After the bodies comes the part's own
-appearance.
+meters), and the vertices' normals. From SolidWorks 2024 on, 32 bytes come between the counts and the arrays: the
+uint32s 1, 0, and 0, a number that differs from face to face, and four 0s. Then come its edges, and, after 01 00 00 00
+ff ff ff ff, the appearance (moVisualProperties_c) it has of its own, if any. A strip of n vertices makes n - 2
+triangles, each wound the other way from the one before. An appearance starts with its color (bytes red, green, blue,
+0), and after two strings come its ambient, diffuse, specular, shininess, transparency, and emission (doubles). After
+the bodies comes the part's own appearance.
 
 An assembly's display list has a node (uoTempAssemblySHDData_c) for each component that's a part, at every level: its
 name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (SolidWorks' 13 numbers: a rotation by
 columns, a translation in meters, and a scale), its configuration, its part's name and path, and then the part's
-shape, as above, in the part's own coordinates.
+shape, as above, in the part's own coordinates. Often there's no shape after a node, and from SolidWorks 2024 on there
+never is: only which of the part's faces it shows. Nor has every assembly a display list. Its components are still in
+its XML, and their parts' shapes are in their own files (vault.py finds them).
 """
 
 import re
@@ -157,6 +161,7 @@ def _units(info: bytes | None) -> str:
 
 
 def _open(data: bytes, kind: Literal["part", "assembly"]) -> dict[str, bytes]:
+    """The streams a part or assembly is read from. A part needs its display list; an assembly, only its XML."""
     if data.startswith(_OLE):
         raise Unreadable(
             "It was saved by SolidWorks 2014 or older, which Caliper can't read: save it in a newer SolidWorks, or "
@@ -166,7 +171,7 @@ def _open(data: bytes, kind: Literal["part", "assembly"]) -> dict[str, bytes]:
     found = _streams(data, wanted)
     if not found:
         raise Unreadable(f"It isn't a SolidWorks {kind} that Caliper can read")
-    if _DISPLAY not in found:
+    if kind == "part" and _DISPLAY not in found:
         raise Unreadable(_NO_VIEW)
     return found
 
@@ -224,13 +229,22 @@ class _Face:
     normals: memoryview
 
 
-def _face_at(data: bytes, at: int) -> _Face | None:
-    if at < 0 or at + 24 > len(data):
+# What a face's counts and its arrays have between them: nothing before SolidWorks 2024, these 32 bytes since.
+_GAPS = (0, 32)
+
+
+def _face_at(data: bytes, at: int, gap: int = 0) -> _Face | None:
+    if at < 0 or at + 24 + gap > len(data):
         return None
-    triangles, strips, size, _grow, two, count = struct.unpack_from("<6I", data, at)
+    triangles, strips = struct.unpack_from("<2I", data, at)
+    if gap:
+        block = struct.unpack_from("<8I", data, at + 8)
+        if block[:3] != (1, 0, 0) or block[4:] != (0, 0, 0, 0):
+            return None
+    size, _grow, two, count = _ARRAY.unpack_from(data, at + 8 + gap)
     if not (size == 4 and two == 2 and 0 < strips == count <= 1 << 24 and triangles > 0):
         return None
-    lengths_at = at + 24
+    lengths_at = at + 24 + gap
     if lengths_at + 4 * strips > len(data):
         return None
     lengths = struct.unpack_from(f"<{strips}I", data, lengths_at)
@@ -255,7 +269,11 @@ def _faces(data: bytes) -> list[_Face]:
     found = []
     hit = data.find(_STRIPS)
     while hit >= 0:
-        face = _face_at(data, hit - 8)
+        face = None
+        for gap in _GAPS:
+            face = _face_at(data, hit - 8 - gap, gap)
+            if face is not None:
+                break
         if face is None:
             hit = data.find(_STRIPS, hit + 1)
         else:
@@ -647,7 +665,8 @@ def _read_part(data: bytes) -> Part:
     faces = _faces(display)
     shapes = _shapes(display, faces)
     if not shapes:
-        raise Unreadable(_NO_VIEW)
+        # Faces it can't find, in a view that has them, are a layout it doesn't know: not an empty view.
+        raise Unreadable(_ODD if _FACE in display else _NO_VIEW)
     if len(shapes) > 1:
         raise Unreadable(_ODD)
     shape = shapes[0]
@@ -765,7 +784,7 @@ def _read_assembly(data: bytes) -> Assembly:
     if top is None:
         raise Unreadable(_ODD)
 
-    display = found[_DISPLAY]
+    display = found.get(_DISPLAY, b"")  # none: no shapes or places of SolidWorks' own, only the XML's
     faces = _faces(display)
     shapes = _shapes(display, faces)
     nodes = _nodes(display)

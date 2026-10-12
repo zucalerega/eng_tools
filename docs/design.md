@@ -196,7 +196,7 @@ ones are still accepted for a while:
 |---|---|---|
 | `CVC_*` settings; `CVC_BLOB_DIR` | `YJSP_*`; `YJSP_VAULT_DIR`, the folder `blobs/` is in | refused: the server won't start while one is set (`config.refuse_old_settings`), rather than start on its defaults |
 | `/srv/vault`, `/opt/vault`, the `vault` user, `vault.service`, `vault.db` on the live server | `/srv/yjsp`, `/opt/yjsp`, `yjsp`, `yjsp.service`, `yjsp.db` | moved once, by `deploy/migrate-to-yjsp.sh` ([deploying.md](deploying.md#moving-to-yjsp)); the script goes in the release after |
-| The `cvc_session` cookie, the `X-CVC-Request` header | `yjsp_session`, `X-YJSP-Request` | still accepted, so browsers stay signed in and open tabs can save; drop them in 0.5.0, once sessions from before have run out (30 days) |
+| The `cvc_session` cookie, the `X-CVC-Request` header | `yjsp_session`, `X-YJSP-Request` | still accepted, so browsers stay signed in and open tabs can save; drop them in 0.6.0, once sessions from before have run out (30 days from 0.4.0's deploy: November 3, 2026) |
 | Tokens starting `cvc_` | `yjsp_` | work until they expire or are signed out |
 | Vault's pages at the site's own paths, until October 2026: `/files/...`, `/file/5`, `/locks`, `/admin` | under `/vault`: `/vault/files/...`, `/vault/file/5`, ... | followed, as bookmarks and shared links have them: the web app goes on to the same page under `/vault`, with its query (`movedToVault` in `web/src/vault/paths.ts`). `/` is the site's own page now |
 | `X-CVC-Version`, `X-CVC-SHA256`, `X-CVC-Size` on downloads | `X-Vault-*` | gone: no client read them |
@@ -255,8 +255,9 @@ The site's own; each app has its roadmap in its page.
    Still to do: Vault's blobs and Yorg's files backed up off the host (Yorg's scripts and
    models with their old versions), and an R2 store for the blobs.
 2. **YJSP** (0.4.0): the site renamed from CVC, Vault and Yorg side by side in the code,
-   and the live server moved to its YJSP layout. Then (0.5.0) the old names stop being
-   accepted, as "Names from before YJSP" says.
+   and the live server moved to its YJSP layout. Then the old names stop being accepted, as
+   "Names from before YJSP" says: Vault's clients dropped theirs in 0.5.0, and the server
+   drops the old cookie and header in 0.6.0.
 
 ## Open questions
 

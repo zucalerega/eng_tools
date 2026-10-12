@@ -13,8 +13,9 @@ import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
 
 // Caliper: a part or assembly in 3D, in the browser, to look at and measure, not to change. SolidWorks parts and
-// assemblies show the 3D models Vault for SolidWorks makes of their versions; STEP and IGES files are read as they are.
-// At /vault/caliper/<file id>, with ?version= and ?configuration= for which.
+// assemblies show their versions' 3D models: the ones Vault for SolidWorks makes, or else the server reads one from the
+// 3D view SolidWorks saved in the file. STEP and IGES files are read as they are. At /vault/caliper/<file id>, with
+// ?version= and ?configuration= for which.
 
 export function CaliperPage({ id }: { id: number }) {
     const search = useSearch();
@@ -24,6 +25,10 @@ export function CaliperPage({ id }: { id: number }) {
     const [detail, setDetail] = useState<FileDetail | null>(null);
     const [models, setModels] = useState<CaliperModel[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    // Versions the server couldn't read a model from ("<file id>:<version>"), with why; and the ones asked for, once
+    // each.
+    const [unreadable, setUnreadable] = useState<ReadonlyMap<string, string>>(new Map());
+    const asked = useRef(new Set<string>());
     const page = useRef<HTMLDivElement>(null);
 
     // The page takes the rest of the window, under the top bar, however tall that is (it wraps on a phone).
@@ -55,6 +60,34 @@ export function CaliperPage({ id }: { id: number }) {
         };
     }, [id]);
 
+    // A SolidWorks version without a model: the server reads one from the file, once.
+    const current = detail?.file.id === id ? detail : null;
+    const kindHere = current ? kindOf(current.file.name) : null;
+    const wanted = current ? (askedVersion ?? current.file.version) : null;
+    const why = (version: number) => unreadable.get(`${id}:${version}`);
+    const reading =
+        models !== null &&
+        wanted !== null &&
+        (kindHere === "part" || kindHere === "assembly") &&
+        !models.some((model) => model.version === wanted) &&
+        why(wanted) === undefined;
+    useEffect(() => {
+        const key = `${id}:${wanted}`;
+        if (!reading || wanted === null || asked.current.has(key)) {
+            return;
+        }
+        asked.current.add(key);
+        vaultApi.makeCaliperModel(id, wanted).then(
+            (model) =>
+                setModels((found) =>
+                    [...(found ?? []).filter((m) => m.version !== model.version), model].sort(
+                        (a, b) => b.version - a.version,
+                    ),
+                ),
+            (error: Error) => setUnreadable((found) => new Map([...found, [key, error.message]])),
+        );
+    }, [reading, id, wanted]);
+
     if (problem) {
         return (
             <div className="caliper-page-message">
@@ -79,7 +112,16 @@ export function CaliperPage({ id }: { id: number }) {
         );
     }
 
-    // The version asked for, or the latest; with none asked for, a SolidWorks file's newest version with a model.
+    if (reading) {
+        return (
+            <p className="muted caliper-page-message">
+                Reading the 3D view SolidWorks saved in v{wanted} of {file.name}…
+            </p>
+        );
+    }
+
+    // The version asked for, or the latest; with none asked for, and the latest unreadable, a SolidWorks file's newest
+    // version with a model.
     let version = askedVersion ?? file.version;
     const latestHasNone = !cad && !models.some((model) => model.version === version);
     const fellBack = askedVersion === null && latestHasNone && models.length > 0;
@@ -108,7 +150,7 @@ export function CaliperPage({ id }: { id: number }) {
                         {detail.versions.map((v) => (
                             <option key={v.number} value={v.number}>
                                 v{v.number}
-                                {!cad && !withModels.includes(v.number) ? " (no 3D model)" : ""}
+                                {!cad && why(v.number) !== undefined ? " (no 3D model)" : ""}
                             </option>
                         ))}
                     </select>
@@ -136,11 +178,21 @@ export function CaliperPage({ id }: { id: number }) {
             </header>
             {fellBack && (
                 <Notice tone="info">
-                    v{file.version}, the latest version, has no 3D model yet, so this is v{version}.
+                    <p>
+                        v{file.version}, the latest version, has no 3D model, so this is v{version}.
+                    </p>
+                    {why(file.version) && <p>{why(file.version)}</p>}
                 </Notice>
             )}
             {!cad && !chosen ? (
-                <NoModel name={file.name} path={file.path} version={version} withModels={withModels} id={file.id} />
+                <NoModel
+                    name={file.name}
+                    path={file.path}
+                    version={version}
+                    why={why(version) ?? null}
+                    withModels={withModels}
+                    id={file.id}
+                />
             ) : (
                 <CaliperView
                     key={`${version}|${chosen?.configuration ?? ""}`}
@@ -159,21 +211,26 @@ function NoModel({
     name,
     path,
     version,
+    why,
     withModels,
 }: {
     id: number;
     name: string;
     path: string;
     version: number;
+    why: string | null; // what the server said when it couldn't read one from the file
     withModels: number[];
 }) {
     return (
         <div className="caliper-page-message">
             <Notice tone="info">
                 <p>
-                    v{version} of {name} has no 3D model yet. Only SolidWorks can read SolidWorks files, so Vault for
-                    SolidWorks makes the models: when it checks a part or assembly in, or when you open it in SolidWorks
-                    and click Make 3D view on the Vault tab.
+                    v{version} of {name} has no 3D model.
+                </p>
+                {why && <p>{why}</p>}
+                <p>
+                    Vault for SolidWorks makes models too: when it checks a part or assembly in, or when you open it in
+                    SolidWorks and click Make 3D view on the Vault tab.
                 </p>
                 <p>
                     <OpenInSolidWorks path={path} />

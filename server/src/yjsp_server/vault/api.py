@@ -13,6 +13,7 @@ from ..errors import ApiError, Forbidden, TooLarge
 from . import vault
 from .schemas import (
     CaliperAssemblyOut,
+    CaliperMakeIn,
     CaliperMissingIn,
     CaliperMissingOut,
     CaliperModelIn,
@@ -102,6 +103,13 @@ def put_caliper(file_id: int, body: CaliperModelIn, user: ActiveUser, db: DB, st
         components=components,
     )
     return CaliperModelOut.of(view)
+
+
+@router.post("/files/{file_id}/caliper/make")
+def post_caliper_make(file_id: int, body: CaliperMakeIn, user: ActiveUser, db: DB, store: Store) -> CaliperModelOut:
+    """Make a version's 3D model from the 3D view SolidWorks saved in the file, in the configuration it was saved in,
+    for anyone who can see the file; or the model the version has already. 422 unreadable_file says why not."""
+    return CaliperModelOut.of(vault.make_caliper_model(db, store, user, file_id, body.version))
 
 
 @router.post("/caliper/missing")

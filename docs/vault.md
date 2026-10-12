@@ -12,7 +12,7 @@ page is Vault's own.
 |---|---|
 | On the server: every operation (`vault.py`), the folder tree and permissions (`access.py`), path rules (`paths.py`), file contents (`storage.py`), tables, routes | `server/src/yjsp_server/vault` |
 | In the web app: its pages, and the vault's index (`store.ts`) | `web/src/vault` |
-| Caliper, the 3D viewer: in the web app, and its models on the server (`caliper.py`, the mesh format) | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
+| Caliper, the 3D viewer: in the web app, and its models on the server (`caliper.py`, the mesh format; `solidworks.py`, reading SolidWorks files' 3D view) | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
 | The workspace library | `client/src/Vault.Client` (netstandard2.0 + net10.0) |
 | The `vault` command | `client/src/Vault.Cli` (.NET 10) |
 | The SolidWorks 2026 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
@@ -461,9 +461,29 @@ only when a file is opened in it.
 
 Where the 3D comes from:
 
-- **SolidWorks parts and assemblies:** only SolidWorks can read them, so Vault for
-  SolidWorks makes a **3D model** of each version it checks in (and of any it has open, on
-  request), in each configuration (`caliper_models`). A part's is a mesh: its bodies'
+- **SolidWorks parts and assemblies** show a **3D model** of each version, in each
+  configuration (`caliper_models`), which comes from one of two places:
+  - Vault for SolidWorks makes one of each version it checks in (and of any it has open, on
+    request), from what SolidWorks has open.
+  - Otherwise, when Caliper opens a version that has none, the server reads one from the
+    file itself (`POST /api/files/{id}/caliper/make`, `vault/solidworks.py`). SolidWorks
+    saves the triangles it draws inside each part and assembly, which is how eDrawings
+    shows files without SolidWorks (Document Properties > Image Quality > Save tessellation
+    with part document, on by default). The server reads them, with the bodies' names and
+    colors (and faces' own colors, where the file says which), the units, and the
+    configuration SolidWorks had open when it saved the file, which is the only one saved.
+    An assembly also keeps its components in XML (each one's file, configuration, place,
+    and whether SolidWorks hid or suppressed it), and each part's triangles as the assembly
+    shows them, which its model carries. Its components are the files its version
+    references, matched by name, so they open on their own as usual. None of this is
+    documented: it was worked out from files saved by SolidWorks 2015 to 2019, and checked
+    against their STL exports and the bounding boxes SolidWorks keeps. So the server refuses
+    (`unreadable_file`, saying why) whatever doesn't fit, rather than guess: a file from
+    SolidWorks 2014 or older, one saved without its triangles, or a layout it doesn't
+    know. Caliper says so, and the add-in can make that version's model instead. A flexible
+    sub-assembly's components show where the sub-assembly itself places them.
+
+  A part's model is a mesh: its bodies'
   triangles, in runs that are their faces, in millimeters in the part's coordinates, with
   their colors (`vault/caliper.py` has the format; the server checks every one, and sends it
   gzip-compressed as it keeps it). An assembly's is its components: each names its file
@@ -472,9 +492,9 @@ Where the 3D comes from:
   as SolidWorks' `Transform2` gives); whether SolidWorks hid it; its color over its part's;
   and a sub-assembly's own components. A virtual part, kept inside the assembly, carries its
   own mesh. Caliper draws each part's own model wherever its components put it, fetching
-  each once (six at a time). A version without a model (checked in from the web or the
-  `vault` command, or before Caliper) says so, and how to make one; with no version asked
-  for, Caliper shows the newest one that has a model, and says so.
+  each once (six at a time). A version the server can't read a model from says why, and
+  how to make one; with no version asked for, Caliper then shows the newest one that has a
+  model, and says so.
 - **STEP and IGES files** are read as they are, in the browser, by OpenCascade compiled to
   WebAssembly (occt-import-js, LGPL-2.1: 7 MB, fetched the first time and cached), in a
   worker, so a big file doesn't freeze the page.
@@ -483,8 +503,9 @@ A model shows what the vault lets you see: a component in a file you can't see i
 out, with everything in it, and the page says how many were. Anyone who may upload (an
 editor anywhere) and can see a file can add a model its version doesn't have yet, as the
 add-in does for every part of an assembly it checks in; making one again, in place of the
-one there, takes editor rights to the file's folder. A model is made from its version and
-describes it: making one changes nothing in the file's history.
+one there, takes editor rights to the file's folder. Anyone who can see a file can have the
+server read its model from the file, as that adds nothing the file doesn't say. A model is
+made from its version and describes it: making one changes nothing in the file's history.
 
 ## API
 
@@ -511,6 +532,7 @@ are in [design.md](design.md#api).
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
 | `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration |
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
+| `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see, and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
@@ -531,11 +553,12 @@ are in [design.md](design.md#api).
 5. **Moving in** (to do): the current files imported from Kenesto, and the blobs in an
    R2 store, with backups off the host (design.md, "Storage").
 6. **Caliper** (October 2026): parts, assemblies, and STEP files in 3D in the browser, to
-   turn, cut, and measure; the 3D models of SolidWorks files made by the add-in.
+   turn, cut, and measure; the 3D models of SolidWorks files made by the add-in, or read
+   by the server from the files themselves.
 7. **Later**: thumbnails, check-in notifications to team chat, released revisions (A, B,
    C) for flight hardware, and rename/move with reference repair. In Caliper: drawings,
-   exploded views, and models made on a computer that only makes them (for the files
-   brought from Kenesto at once).
+   exploded views, and models of the files from Kenesto that the server can't read (from
+   SolidWorks 2014 and before), made on a computer that only makes them.
 
 ## Open questions
 

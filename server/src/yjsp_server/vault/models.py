@@ -135,9 +135,9 @@ class VersionRef(Base):
 
 class CaliperModel(Base):
     """A version's 3D model in one of its configurations, for Caliper, the web app's 3D viewer: a part's shape (a mesh,
-    in the blob store), or an assembly's components (which files, in which configurations, where). Only SolidWorks can
-    read SolidWorks files, so Vault for SolidWorks makes them (docs/vault.md, "Caliper"). A model is made from its
-    version and describes it: making it again changes no version."""
+    in the blob store), or an assembly's components (which files, in which configurations, where). Vault for SolidWorks
+    makes them; or the server reads one from the 3D view SolidWorks saved in the file (vault/solidworks.py; docs/vault.md,
+    "Caliper"). A model is made from its version and describes it: making it again changes no version."""
 
     __tablename__ = "caliper_models"
     __table_args__ = (UniqueConstraint("version_id", "configuration", name="uq_caliper_models_version_configuration"),)

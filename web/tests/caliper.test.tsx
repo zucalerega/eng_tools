@@ -151,7 +151,9 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     );
     await userEvent.click(tree().getByRole("link", { name: "Open Motor-1 in Caliper" }));
     expect(await screen.findByRole("heading", { name: "Motor.SLDASM" })).toBeTruthy();
-    expect(await screen.findByText(/v1 of Motor.SLDASM has no 3D model yet/)).toBeTruthy();
+    // Its model would be read from the file, which isn't a real SolidWorks assembly.
+    expect(await screen.findByText("v1 of Motor.SLDASM has no 3D model.")).toBeTruthy();
+    expect(screen.getByText(/v1: It isn't a SolidWorks assembly that Caliper can read/)).toBeTruthy();
 });
 
 test("components in folders you can't see are left out, with what's in them", async () => {
@@ -169,22 +171,24 @@ test("components in folders you can't see are left out, with what's in them", as
     expect(tree().queryByRole("checkbox", { name: "Show Motor-1" })).toBeNull();
 });
 
-test("a version with no model says how to make one; with none asked for, the newest that has one shows", async () => {
+test("a version with no model says why; with none asked for, the newest that has one shows", async () => {
     const team = await Team.create();
     const [fin] = await team.checkin(team.chief, { "Fin.SLDPRT": "fin v1" });
     await team.model(team.chief, fin!, { mesh: tetrahedra("Fin") });
     await team.checkout(team.chief, "Fin.SLDPRT", "CHIEF-PC");
     await team.checkin(team.chief, { "Fin.SLDPRT": "fin v2" }, { host: "CHIEF-PC", comment: "from the web" });
 
+    // v2's model would be read from the file, which isn't a real SolidWorks part.
     renderApp(team.chief, caliperUrl(fin!.id));
-    expect(await screen.findByText("v2, the latest version, has no 3D model yet, so this is v1.")).toBeTruthy();
+    expect(await screen.findByText("v2, the latest version, has no 3D model, so this is v1.")).toBeTruthy();
+    expect(screen.getByText(/v2: It isn't a SolidWorks part that Caliper can read/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fin" })).toBeTruthy();
     const version = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
     expect([...version.options].map((option) => option.textContent)).toEqual(["v2 (no 3D model)", "v1"]);
 
     await userEvent.selectOptions(version, "2");
-    expect(await screen.findByText(/v2 of Fin.SLDPRT has no 3D model yet/)).toBeTruthy();
-    expect(screen.getByText(/Vault for SolidWorks makes the models/)).toBeTruthy();
+    expect(await screen.findByText("v2 of Fin.SLDPRT has no 3D model.")).toBeTruthy();
+    expect(screen.getByText(/Vault for SolidWorks makes models too/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "v1" }).getAttribute("href")).toBe(caliperUrl(fin!.id, 1));
 
     // Drawings and other files aren't Caliper's.
@@ -196,6 +200,35 @@ test("a version with no model says how to make one; with none asked for, the new
     renderApp(team.chief, caliperUrl(drawing!.id));
     expect(await screen.findByText(/Caliper shows SolidWorks parts and assemblies/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Back to Fin.SLDDRW" }).getAttribute("href")).toBe(fileUrl(drawing!.id));
+});
+
+test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it", async () => {
+    // SparkFun's servo (server/tests/fixtures/solidworks/README.md): a part of two bodies, and its assembly.
+    const servo = (name: string) =>
+        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
+    const team = await Team.create();
+    const [assembly, spline] = await team.checkin(
+        team.chief,
+        {
+            "Servo/9347.SLDASM": await servo("9347.SLDASM"),
+            "Servo/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+            "Servo/Servomoteur.SLDPRT": await servo("Servomoteur.SLDPRT"),
+        },
+        { refs: { "Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"] } },
+    );
+
+    const part = renderApp(team.chief, caliperUrl(spline!.id));
+    expect(await screen.findByText(/Reading the 3D view SolidWorks saved in v1 of Embout.SLDPRT/)).toBeTruthy();
+    expect(await screen.findByRole("checkbox", { name: "Show Fillet3" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Show Boss-Extrude2" })).toBeTruthy();
+    part.unmount();
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    expect(await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).toBeTruthy();
+    expect(tree().getByRole("link", { name: "Open Embout-1 in Caliper" }).getAttribute("href")).toBe(
+        caliperUrl(spline!.id, 1, "Default"),
+    );
+    expect(screen.queryByText(/no 3D model/)).toBeNull();
 });
 
 test("a STEP file is read as it is, its products the tree", async () => {

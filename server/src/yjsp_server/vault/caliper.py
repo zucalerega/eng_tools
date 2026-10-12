@@ -12,14 +12,17 @@ header:
 Each face is a run of the triangles, one face of the body as SolidWorks has it (a plane, a cylinder): the web app
 measures faces, and draws the edges between them. Faces don't share vertices, so each is shaded on its own. Colors are
 red, green, and blue from 0 to 1. The web app reads meshes (web/src/vault/caliper/format.ts), and Vault.Client writes
-them. The server reads only enough to refuse one the web app couldn't draw.
+them, and so does the server, from the 3D view SolidWorks saves in a file (vault/solidworks.py). The server reads only
+enough to refuse one the web app couldn't draw.
 """
 
+import gzip
 import json
 import struct
 import sys
 import zlib
 from array import array
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -33,6 +36,7 @@ FORMAT = 1
 MAX_UNPACKED = 1 << 30
 
 Color = Annotated[list[Annotated[float, Field(ge=0, le=1)]], Field(min_length=3, max_length=3)]
+Rgb = tuple[float, float, float]  # red, green, and blue, from 0 to 1
 
 
 class BadMesh(ApiError):
@@ -110,3 +114,55 @@ def check_mesh(path: Path) -> None:
         for face in body.faces:
             if face.first + face.count > header.triangles:
                 raise BadMesh(f"A face of {body.name or 'a body'} goes past the mesh's last triangle")
+
+
+@dataclass
+class MeshFace:
+    positions: array  # float32 x, y, z, in mm
+    triangles: array  # uint32 indices of its positions, three for each triangle
+    color: Rgb | None = None  # its own, over its body's
+
+
+@dataclass
+class MeshBody:
+    name: str
+    color: Rgb
+    faces: list[MeshFace]
+    opacity: float = 1
+    solid: bool = True
+
+
+def write_mesh(bodies: list[MeshBody]) -> bytes:
+    """A mesh of these bodies, gzipped. The same bodies make the same bytes, so the blob store keeps them once."""
+    positions, indices = array("f"), array("I")
+    header_bodies = []
+    for body in bodies:
+        faces = []
+        for face in body.faces:
+            first, base = len(indices) // 3, len(positions) // 3
+            positions.extend(face.positions)
+            indices.extend(map(base.__add__, face.triangles))
+            entry: dict[str, object] = {"first": first, "count": len(face.triangles) // 3}
+            if face.color is not None:
+                entry["color"] = [round(c, 4) for c in face.color]
+            faces.append(entry)
+        header_bodies.append(
+            {
+                "name": body.name,
+                "solid": body.solid,
+                "color": [round(c, 4) for c in body.color],
+                "opacity": round(body.opacity, 4),
+                "faces": faces,
+            }
+        )
+    header = json.dumps(
+        {"vertices": len(positions) // 3, "triangles": len(indices) // 3, "bodies": header_bodies},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    header += b" " * (-len(header) % 4)
+    if sys.byteorder == "big":
+        positions.byteswap()
+        indices.byteswap()
+    data = MAGIC + struct.pack("<II", FORMAT, len(header)) + header + positions.tobytes() + indices.tobytes()
+    return gzip.compress(data, mtime=0)

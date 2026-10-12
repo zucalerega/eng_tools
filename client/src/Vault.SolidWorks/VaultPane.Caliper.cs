@@ -7,8 +7,9 @@ using Vault.Client;
 namespace Vault.SolidWorks;
 
 /// <summary>
-/// Caliper's 3D models, which the web app shows parts and assemblies in: only SolidWorks can read SolidWorks files, so
-/// the add-in makes them, of what it checks in and (Make 3D view) of the active document, from what SolidWorks has open.
+/// Caliper's 3D models, which the web app shows parts and assemblies in: the add-in makes them, of what it checks in and
+/// (Make 3D view) of the active document, from what SolidWorks has open. (The server reads one from the 3D view
+/// SolidWorks saved in a file only where a version has none.)
 /// </summary>
 internal sealed partial class VaultPane
 {

@@ -140,6 +140,7 @@ export interface CaliperComponent {
     opacity: number;
     mesh: string | null;
     model: boolean; // whether its file has a model of its own, at its version and in its configuration
+    kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
     children: CaliperComponent[];
 }
 

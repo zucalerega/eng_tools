@@ -8,7 +8,7 @@ import { ComponentTree } from "./ComponentTree";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
-import { initiallyHidden, shownNodes, type Model, type Units } from "./model";
+import { initiallyHidden, shownNodes, type Model, type Units, type Why } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
 
@@ -445,7 +445,7 @@ function CaliperView({
         setSelected(id);
         viewer.current?.fit(new Set([id]));
     };
-    const missing = loaded ? countMissing(loaded.model) : 0;
+    const missing = loaded ? tallyMissing(loaded.model) : null;
     const isolatedName = isolated && loaded ? nameOf(loaded.model, [...isolated][0]!) : null;
 
     return (
@@ -479,13 +479,7 @@ function CaliperView({
                         can't see, so they're left out.
                     </p>
                 )}
-                {missing > 0 && (
-                    <p className="caliper-side-note muted">
-                        {missing === 1 ? "1 part has" : `${missing} parts have`} no 3D model yet, so{" "}
-                        {missing === 1 ? "it isn't" : "they aren't"} shown. Open the assembly in SolidWorks and click
-                        Make 3D view on the Vault tab to make them.
-                    </p>
-                )}
+                {missing && <NotShown tally={missing} />}
                 {loaded && (
                     <ComponentTree
                         nodes={loaded.model.nodes}
@@ -575,15 +569,57 @@ function CaliperView({
     );
 }
 
-function countMissing(model: Model): number {
-    let count = 0;
+/** How many components draw nothing, for each sort of reason. */
+function tallyMissing(model: Model): Record<Why, number> {
+    const tally: Record<Why, number> = { elsewhere: 0, configuration: 0, unreadable: 0, failed: 0 };
     const visit = (nodes: Model["nodes"]) =>
         nodes.forEach((node) => {
-            count += node.problem ? 1 : 0;
+            if (node.problem) {
+                tally[node.why ?? "unreadable"] += 1;
+            }
             visit(node.children);
         });
     visit(model.nodes);
-    return count;
+    return tally;
+}
+
+/**
+ * What an assembly doesn't show, by why: and what makes the models SolidWorks can (a part's other configurations, or a
+ * file without a 3D view Caliper reads), where there are such; parts not in the vault, only checking them in can.
+ */
+function NotShown({ tally }: { tally: Record<Why, number> }) {
+    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const { configuration, unreadable, elsewhere, failed } = tally;
+    const theirFiles = configuration === 1 ? "its file has" : "their files have";
+    const theirParts = elsewhere === 1 ? "its" : "their";
+    const reasons = [
+        configuration > 0 &&
+            `${count(configuration, "part is", "parts are")} in a configuration ${theirFiles} no 3D view of`,
+        unreadable > 0 && `${count(unreadable, "part's file has", "parts' files have")} no 3D view Caliper can read`,
+        elsewhere > 0 &&
+            `${count(elsewhere, "sub-assembly has", "sub-assemblies have")} none of ${theirParts} parts in the vault`,
+        failed > 0 && `${count(failed, "part", "parts")} didn't load`,
+    ].filter((reason): reason is string => Boolean(reason));
+    const total = configuration + unreadable + elsewhere + failed;
+    if (total === 0) {
+        return null;
+    }
+    return (
+        <div className="caliper-side-note muted">
+            <p>{count(total, "component isn't", "components aren't")} shown:</p>
+            <ul>
+                {reasons.map((reason) => (
+                    <li key={reason}>{reason}.</li>
+                ))}
+            </ul>
+            {configuration + unreadable > 0 && (
+                <p>
+                    Open the assembly in SolidWorks and click Make 3D view on the Vault tab to make those parts' models.
+                </p>
+            )}
+            {elsewhere > 0 && <p>Parts that aren't in the vault show once someone checks them in.</p>}
+        </div>
+    );
 }
 
 function nameOf(model: Model, id: string): string {

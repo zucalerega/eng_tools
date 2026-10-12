@@ -1,7 +1,7 @@
 import { requestBytes } from "../../api";
 import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
 import { readMesh, type Mesh } from "./format";
-import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape } from "./model";
+import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
 import { cadFormat } from "../paths";
 import { modelFromCad, readCadFile } from "./step";
 
@@ -10,8 +10,15 @@ import { modelFromCad, readCadFile } from "./step";
 
 export type Progress = (done: number, total: number) => void;
 
-/** Why a component's part has no model to show: the server's reason, said as it is. */
-class NoModel extends Error {}
+/** Why a component's part has no model to show: the server's reason, said as it is, and what sort of reason. */
+class NoModel extends Error {
+    constructor(
+        message: string,
+        readonly why: Why,
+    ) {
+        super(message);
+    }
+}
 
 /** A mesh's bodies, each with just its own vertices and triangles, its faces in order. */
 export function bodiesOf(mesh: Mesh): Body[] {
@@ -95,13 +102,13 @@ export async function assemblyModel(
             if (c.mesh) {
                 const mesh = c.mesh;
                 wanted.set(keyOf(c), () => vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh));
-            } else if (c.children.length === 0 && c.file_id !== null && c.version !== null) {
+            } else if (c.children.length === 0 && c.file_id !== null && c.version !== null && c.kind !== "assembly") {
                 const [id, version, configuration, own] = [c.file_id, c.version, c.configuration, c.model];
                 wanted.set(keyOf(c), async () => {
                     let shown = configuration;
                     if (!own) {
                         const ready = await make(id, version).catch((error: unknown) => {
-                            throw new NoModel(error instanceof Error ? error.message : String(error));
+                            throw new NoModel(error instanceof Error ? error.message : String(error), "unreadable");
                         });
                         // A part's file has the 3D view of the configuration it was saved in: only that one is made,
                         // which an assembly that doesn't say which it uses shows.
@@ -109,6 +116,7 @@ export async function assemblyModel(
                         if (configuration && shown !== configuration) {
                             throw new NoModel(
                                 `v${version} has a 3D view of its ${shown} configuration, not ${configuration}`,
+                                "configuration",
                             );
                         }
                     }
@@ -131,13 +139,33 @@ export async function assemblyModel(
         progress(++done, wanted.size);
     });
 
+    const problem = (c: CaliperComponent, found: Shape | Error | undefined): Pick<Node, "problem" | "why"> => {
+        if (c.children.length > 0 || (found && !(found instanceof Error))) {
+            return {};
+        }
+        if (c.kind === "assembly") {
+            // Nothing under it: none of its parts were found in the vault (or it keeps them inside, without triangles).
+            return { problem: "Caliper found none of its parts in the vault", why: "elsewhere" };
+        }
+        if (found instanceof NoModel) {
+            return { problem: found.message, why: found.why };
+        }
+        if (found instanceof Error) {
+            return { problem: `Its 3D model didn't load: ${found.message}`, why: "failed" };
+        }
+        return {
+            problem: `v${c.version} has no 3D model in ${c.configuration || "this configuration"} yet`,
+            why: "unreadable",
+        };
+    };
+
     const node = (c: CaliperComponent, id: string): Node => {
         const leaf = c.children.length === 0;
         const found = leaf ? shapes.get(keyOf(c)) : undefined;
         return {
             id,
             name: c.name,
-            kind: leaf ? "part" : "assembly",
+            kind: leaf && c.kind !== "assembly" ? "part" : "assembly",
             ...(c.file_id !== null && c.version !== null
                 ? { file: { id: c.file_id, version: c.version, configuration: c.configuration } }
                 : {}),
@@ -147,13 +175,7 @@ export async function assemblyModel(
             ...(c.color ? { color: c.color } : {}),
             ...(c.opacity < 1 ? { opacity: c.opacity } : {}),
             children: c.children.map((child, i) => node(child, `${id}/${i}`)),
-            ...(leaf && !found
-                ? { problem: `v${c.version} has no 3D model in ${c.configuration || "this configuration"} yet` }
-                : found instanceof NoModel
-                  ? { problem: found.message }
-                  : found instanceof Error
-                    ? { problem: `Its 3D model didn't load: ${found.message}` }
-                    : {}),
+            ...problem(c, found),
         };
     };
     return {

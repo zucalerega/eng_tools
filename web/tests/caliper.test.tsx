@@ -137,7 +137,9 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     expect((finOne as HTMLInputElement).checked).toBe(true);
     expect((tree().getByRole("checkbox", { name: "Show Fin-2" }) as HTMLInputElement).checked).toBe(false);
     await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1 (now v2)")).toBeTruthy());
-    expect(screen.getByText(/1 part has no 3D model yet/)).toBeTruthy();
+    // Grain's file isn't a real SolidWorks part, so it has no 3D view to read.
+    expect(screen.getByText("1 component isn't shown:")).toBeTruthy();
+    expect(screen.getByText("1 part's file has no 3D view Caliper can read.")).toBeTruthy();
     await userEvent.click(tree().getByRole("button", { name: "Show what's in Motor-1" }));
     const grainRow = tree().getByRole("checkbox", { name: "Show Grain-1" }).closest("li")!;
     expect(within(grainRow).getByText("No 3D model")).toBeTruthy();
@@ -154,6 +156,48 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     // Its model would be read from the file, which isn't a real SolidWorks assembly.
     expect(await screen.findByText("v1 of Motor.SLDASM has no 3D model.")).toBeTruthy();
     expect(screen.getByText(/v1: It isn't a SolidWorks assembly that Caliper can read/)).toBeTruthy();
+});
+
+test("what an assembly doesn't show is summed up by why, with what to do about it", async () => {
+    const team = await Team.create();
+    const servo = (name: string) =>
+        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
+    // A part with a model; SparkFun's spline, whose file has a 3D view of its Default configuration only; and a
+    // sub-assembly none of whose parts were found.
+    const [fin, spline, tail] = await team.checkin(team.chief, {
+        "Fins/Fin.SLDPRT": "fin",
+        "Servo/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+        "Tail/Tail.SLDASM": "tail",
+    });
+    const [assembly] = await team.checkin(
+        team.chief,
+        { "Rocket/Rocket.SLDASM": "rocket" },
+        { refs: { "Rocket/Rocket.SLDASM": ["Fins/Fin.SLDPRT", "Servo/Embout.SLDPRT", "Tail/Tail.SLDASM"] } },
+    );
+    await team.model(team.chief, fin!, { mesh: tetrahedra("Fin") });
+    await team.model(team.chief, assembly!, {
+        components: [
+            component("Fin-1", fin!),
+            component("Embout-1", spline!, { configuration: "Long" }),
+            component("Tail-1", tail!),
+        ],
+    });
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    expect(await screen.findByText("2 components aren't shown:")).toBeTruthy();
+    expect(screen.getByText("1 part is in a configuration its file has no 3D view of.")).toBeTruthy();
+    expect(screen.getByText("1 sub-assembly has none of its parts in the vault.")).toBeTruthy();
+    expect(screen.getByText(/click Make 3D view on the Vault tab to make those parts' models/)).toBeTruthy();
+    expect(screen.getByText("Parts that aren't in the vault show once someone checks them in.")).toBeTruthy();
+    const row = (name: string) =>
+        tree()
+            .getByRole("checkbox", { name: `Show ${name}` })
+            .closest("li")!;
+    expect(within(row("Embout-1")).getByText("Other configuration").getAttribute("title")).toBe(
+        "v1 has a 3D view of its Default configuration, not Long",
+    );
+    expect(within(row("Tail-1")).getByText("Parts not in the vault")).toBeTruthy();
+    expect(within(row("Fin-1")).queryByText(/No 3D model|Other configuration/)).toBeNull();
 });
 
 test("components in folders you can't see are left out, with what's in them", async () => {

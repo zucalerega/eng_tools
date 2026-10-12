@@ -1,6 +1,6 @@
 [project]
 name = "yjsp-server"
-version = "0.5.0"
+version = "0.5.1"
 description = "YJSP server: the team's site, with Vault (CAD version control) and Yorg (test data)"
 requires-python = ">=3.12"
 dependencies = [

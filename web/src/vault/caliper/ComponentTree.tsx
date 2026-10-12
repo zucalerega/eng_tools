@@ -2,7 +2,15 @@ import { useState } from "react";
 import { Link } from "../../router";
 import { caliperUrl } from "../paths";
 import { useVault } from "../store";
-import type { Node } from "./model";
+import type { Node, Why } from "./model";
+
+// What a component that draws nothing says beside its name (its full reason is the tag's title).
+const TAGS: Record<Why, string> = {
+    elsewhere: "Parts not in the vault",
+    configuration: "Other configuration",
+    unreadable: "No 3D model",
+    failed: "Didn't load",
+};
 
 // The model's tree, beside the view: an assembly's components (a part's bodies), each with a box to show or hide it,
 // and ways to isolate it (show only it) or open it on its own. Clicking one selects it in the view.
@@ -87,7 +95,7 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                 )}
                 {node.problem && (
                     <span className="tag tag-warning" title={node.problem}>
-                        No 3D model
+                        {TAGS[node.why ?? "unreadable"]}
                     </span>
                 )}
                 <span

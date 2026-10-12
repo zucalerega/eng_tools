@@ -36,8 +36,16 @@ export interface Node {
     color?: RGB; // its own, over its shape's
     opacity?: number;
     children: Node[];
-    problem?: string; // why there's nothing to draw: a part without a model yet, a mesh that didn't load
+    problem?: string; // why there's nothing to draw, in full: the server's reason, a mesh that didn't load
+    why?: Why; // and what sort of reason, for the page to sum up
 }
+
+/** Why a component draws nothing: what SolidWorks can fix (configuration, unreadable), and what it can't. */
+export type Why =
+    | "elsewhere" // a sub-assembly none of whose parts are in the vault
+    | "configuration" // a part used in a configuration its file has no 3D view of
+    | "unreadable" // a part whose file has no 3D view Caliper can read
+    | "failed"; // a model that didn't load
 
 export interface Model {
     units: Units; // what measurements start in

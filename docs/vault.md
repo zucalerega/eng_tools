@@ -514,7 +514,11 @@ Where the 3D comes from:
   own mesh. Caliper draws each part's own model wherever its components put it, fetching
   each once (six at a time). A version the server can't read a model from says why, and
   how to make one; with no version asked for, Caliper then shows the newest one that has a
-  model, and says so.
+  model, and says so. A component that draws nothing says why beside its name, and the
+  page sums them up by why: parts in a configuration their files have no 3D view of, and
+  files with no 3D view Caliper reads (both of which Make 3D view in SolidWorks makes);
+  sub-assemblies none of whose parts are in the vault (each component says what its file
+  is, so one with nothing under it isn't taken for a part); and models that didn't load.
 - **STEP and IGES files** are read as they are, in the browser, by OpenCascade compiled to
   WebAssembly (occt-import-js, LGPL-2.1: 7 MB, fetched the first time and cached), in a
   worker, so a big file doesn't freeze the page.
@@ -554,7 +558,7 @@ are in [design.md](design.md#api).
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see, and how many are left out |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 
 ## Roadmap

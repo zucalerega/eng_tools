@@ -101,9 +101,10 @@ def test_meshes_are_checked(team, client, monkeypatch):
 
 def test_an_assembly_model_places_its_parts(team, client):
     chief = team.member("chief@x.test", admin=True)
-    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin"}))
-    can = files(team.checkin(chief, {"Fins/Fin Can.SLDASM": b"can"}, refs={"Fins/Fin Can.SLDASM": ["Fins/Fin.SLDPRT"]}))
-    fin, assembly = made["Fin.SLDPRT"], can["Fin Can.SLDASM"]
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Tail.SLDASM": b"tail"}))
+    uses = {"Fins/Fin Can.SLDASM": ["Fins/Fin.SLDPRT", "Fins/Tail.SLDASM"]}
+    can = files(team.checkin(chief, {"Fins/Fin Can.SLDASM": b"can"}, refs=uses))
+    fin, tail, assembly = made["Fin.SLDPRT"], made["Tail.SLDASM"], can["Fin Can.SLDASM"]
     assert put_model(team, chief, fin, mesh=team.upload(chief, mesh())).status_code == 200
     bracket = team.upload(chief, mesh([(c[0] + 1, c[1], c[2]) for c in CORNERS]))  # a virtual part, kept in the can
     moved = [1.0, 0.0, 0.0, 50.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, -2.5]
@@ -112,6 +113,7 @@ def test_an_assembly_model_places_its_parts(team, client):
         component("Fin-2", fin, transform=moved, hidden=True, color=[1, 0, 0]),
         component("Fin-3", fin, configuration="Long"),
         {"name": "Bracket^Fin Can", "transform": IDENTITY, "mesh": bracket},
+        component("Tail-1", tail),  # a sub-assembly with nothing under it: none of its parts were found
     ]
     response = put_model(team, chief, assembly, components=components, units="in")
     assert response.status_code == 200, response.text
@@ -120,7 +122,9 @@ def test_an_assembly_model_places_its_parts(team, client):
     params = {"version": 1, "configuration": "Default"}
     got = client.get(f"/api/files/{assembly['id']}/caliper/assembly", params=params, headers=chief).json()
     assert (got["model"]["units"], got["left_out"]) == ("in", 0)
-    one, two, three, virtual = got["components"]
+    # Each says what its file is, so a sub-assembly with nothing under it isn't taken for a part.
+    assert [c["kind"] for c in got["components"]] == ["part", "part", "part", None, "assembly"]
+    one, two, three, virtual, _ = got["components"]
     assert (one["name"], one["file_id"], one["version"], one["model"]) == ("Fin-1", fin["id"], 1, True)
     assert (two["transform"], two["hidden"], two["color"]) == (moved, True, [1, 0, 0])
     assert three["model"] is False  # Fin has no model in its Long configuration

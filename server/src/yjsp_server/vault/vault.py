@@ -1674,7 +1674,9 @@ def caliper_assembly(db: Session, user: User, file_id: int, version: int, config
                 left_out += 1
                 continue
             own = (file_id, component.get("version"), component.get("configuration")) in have
-            kept.append({**component, "model": own, "children": visible(component.get("children") or [])})
+            kind = _caliper_kind(file.name) if file is not None else None
+            children = visible(component.get("children") or [])
+            kept.append({**component, "model": own, "kind": kind, "children": children})
         return kept
 
     components = visible(model.components)

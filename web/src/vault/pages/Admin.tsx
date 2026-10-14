@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Account, type SiteSettings } from "../../api";
 import { type Grants, type Role, vaultApi } from "../api";
-import { formatDate, formatTime } from "../../format";
+import { formatDate, formatDuration, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
@@ -52,6 +52,17 @@ function useAction(reload: () => Promise<void>) {
 }
 
 const STATUS_ORDER = { pending: 0, invited: 1, active: 2, disabled: 3 };
+// What the list of people can be sorted by: the status column (who needs an admin first), or a column's header.
+type PeopleSort = { key: "status" | "joined" | "active" | "time"; descending: boolean };
+const PEOPLE_SORTS: Record<PeopleSort["key"], (a: Account, b: Account) => number> = {
+    status: (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
+    joined: (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
+    // Who's on now is the most recent; who's never been on, the least.
+    active: (a, b) => lastOn(a) - lastOn(b),
+    time: (a, b) => (a.site_seconds ?? 0) - (b.site_seconds ?? 0),
+};
+const lastOn = (person: Account) =>
+    person.active_now ? Infinity : person.last_active_at ? Date.parse(person.last_active_at) : -Infinity;
 const PEOPLE_REFRESH_MS = 30_000; // how often the list of people is fetched again, for who's on now
 
 function People() {
@@ -67,6 +78,7 @@ function People() {
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
     const [opening, setOpening] = useState(false); // asking before the whitelist goes off
+    const [sort, setSort] = useState<PeopleSort>({ key: "status", descending: false });
 
     useEffect(() => {
         reload().catch((error: Error) => setProblem(error.message));
@@ -92,8 +104,26 @@ function People() {
     }
 
     const sorted = [...(people ?? [])].sort(
-        (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name),
+        (a, b) => (sort.descending ? -1 : 1) * PEOPLE_SORTS[sort.key](a, b) || a.name.localeCompare(b.name),
     );
+    // A column that sorts the list: click once to sort by it (newest or most first, for dates and time), again to
+    // turn the order around.
+    const heading = (label: string, key: PeopleSort["key"]) => {
+        const on = sort.key === key;
+        return (
+            <th aria-sort={on ? (sort.descending ? "descending" : "ascending") : undefined}>
+                <button
+                    type="button"
+                    className="sort-button"
+                    onClick={() =>
+                        setSort(on ? { key, descending: !sort.descending } : { key, descending: key !== "status" })
+                    }
+                >
+                    {label}
+                </button>
+            </th>
+        );
+    };
     const waiting = sorted.filter((person) => person.status === "pending").length;
     const onNow = sorted.filter((person) => person.active_now).length;
     return (
@@ -185,9 +215,10 @@ function People() {
                             <tr>
                                 <th>Name</th>
                                 <th>Email</th>
-                                <th>Status</th>
-                                <th>Joined</th>
-                                <th>Last active</th>
+                                {heading("Status", "status")}
+                                {heading("Joined", "joined")}
+                                {heading("Last active", "active")}
+                                {heading("Time on site", "time")}
                                 <th>Last sign-in</th>
                                 <th>
                                     <span className="visually-hidden">Actions</span>
@@ -221,6 +252,13 @@ function People() {
                                                 <Time at={person.last_active_at} />
                                             ) : (
                                                 <span className="muted">never</span>
+                                            )}
+                                        </td>
+                                        <td title="Time with the web app open">
+                                            {person.site_seconds ? (
+                                                formatDuration(person.site_seconds)
+                                            ) : (
+                                                <span className="muted">none</span>
                                             )}
                                         </td>
                                         <td>

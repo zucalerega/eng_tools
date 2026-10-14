@@ -31,6 +31,8 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Time spent with the web app open, in seconds (auth.authenticate adds it up). Admins see it.
+    site_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
 
     @property
     def display_name(self) -> str:

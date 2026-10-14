@@ -16,6 +16,8 @@ export interface Account extends UserRef {
     // For admins (Admin > People): when they last used the site (the web app, the add-in, the CLI), and if they're on now.
     last_active_at?: string | null;
     active_now?: boolean;
+    // For admins: how long they've had the web app open, in seconds (not the add-in or the CLI).
+    site_seconds?: number | null;
 }
 
 /** What admins decide for everyone. */

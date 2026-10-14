@@ -53,6 +53,40 @@ test("admins see when each person was last on, and who's on now", async () => {
     expect(screen.getByRole("link", { name: "Vault Access" })).toBeTruthy();
 });
 
+test("admins sort people by when they joined, when they were last on, and their time on the site", async () => {
+    const team = await Team.create();
+    const first = await team.member(`First-${team.folder}`);
+    const second = await team.member(`Second-${team.folder}`);
+    renderApp(team.chief, "/vault/admin");
+    await screen.findByText(second.user.email);
+    const rowOf = (email: string) => {
+        const rows = [...document.querySelectorAll("tbody tr")];
+        return rows.findIndex((row) => row.textContent!.includes(email));
+    };
+
+    // Newest first, then oldest first.
+    const joined = screen.getByRole("button", { name: "Joined" });
+    await userEvent.click(joined);
+    expect(screen.getByRole("columnheader", { name: "Joined" }).getAttribute("aria-sort")).toBe("descending");
+    expect(rowOf(second.user.email)).toBeLessThan(rowOf(first.user.email));
+    await userEvent.click(joined);
+    expect(screen.getByRole("columnheader", { name: "Joined" }).getAttribute("aria-sort")).toBe("ascending");
+    expect(rowOf(first.user.email)).toBeLessThan(rowOf(second.user.email));
+
+    // Who's on now comes before someone invited and never on.
+    const email = `idle-${team.folder.toLowerCase()}@rocketry.test`;
+    await userEvent.type(screen.getByLabelText("Invite by email"), email);
+    await userEvent.click(screen.getByRole("button", { name: "Invite" }));
+    await screen.findAllByText(email); // its name is its email, until it has one
+    await userEvent.click(screen.getByRole("button", { name: "Last active" }));
+    expect(rowOf(team.chief.user.email)).toBeLessThan(rowOf(email));
+
+    // Nobody here has had the web app open for long yet.
+    await userEvent.click(screen.getByRole("button", { name: "Time on site" }));
+    expect(screen.getByRole("columnheader", { name: "Time on site" }).getAttribute("aria-sort")).toBe("descending");
+    expect(screen.getAllByText("none").length).toBeGreaterThan(0);
+});
+
 test("people change their own name from their account menu", async () => {
     const team = await Team.create();
     const member = await team.member(`Renamer-${team.folder}`);

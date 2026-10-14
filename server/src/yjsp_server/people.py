@@ -55,6 +55,11 @@ def last_active(db: Session, viewer: User) -> dict[int, datetime]:
     return found
 
 
+def time_on_site(viewer: User, user: User) -> int | None:
+    """How long the account has had the web app open, in seconds (auth.authenticate counts it). Only for admins."""
+    return user.site_seconds if viewer.is_admin else None
+
+
 def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
     """Pre-approve an email: the account is active from its first sign-in."""
     _require_admin(admin)

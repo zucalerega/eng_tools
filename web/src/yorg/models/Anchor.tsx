@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { Dialog } from "../../components";
 import type { Catalog, Solver, SystemModel } from "./api";
 import { MAX_KNOBS, type Knob } from "./Fit";
-import { comparisons, knobsOf } from "./model";
+import { comparisons, heldInSteady, knobsOf } from "./model";
 
-// Anchoring a model to a test: each sensor picked moves a knob (FullFlow's Sensors), in every time step of the run, until
-// the model reads what that sensor measured. One run, and each knob's history through it: what it settled at is then
-// yours to apply (or not). What anchoring can't settle is fitted (Fit's least squares, the anchors held in each run):
-// knobs picked to fit, and, falling back, any whose anchor didn't work.
+// Anchoring a model to a test (one of Tune's two ways, Tune.tsx): each sensor picked moves a knob (FullFlow's
+// Sensors), in every time step of the run, until the model reads what that sensor measured. One run, and each knob's
+// history through it: what it settled at is then yours to apply (or not). What anchoring can't settle is fitted (Fit's
+// least squares, the anchors held in each run): knobs picked to fit, and, falling back, any whose anchor didn't work.
 
 /** A sensor anchoring a knob, over a span in seconds from the run's zero (T0, or the dataset's start; blank: the run's
  * window). */
@@ -31,34 +30,12 @@ export const NO_PLAN: AnchorPlan = { anchors: [], knobs: [], fallback: true };
 
 const knobId = (part: string, key: string) => `${part}.${key}`;
 
-export function AnchorDialog({
-    model,
-    catalog,
-    solver,
-    picked,
-    window,
-    onStart,
-    onCancel,
-}: {
-    model: SystemModel;
-    catalog: Catalog;
-    solver: Solver;
-    picked: AnchorPlan; // last time's, to start from
-    window: { from: string; to: string }; // the run's, as the page shows it
-    onStart: (plan: AnchorPlan) => void;
-    onCancel: () => void;
-}) {
-    // Steady, tanks hold what was measured: their knobs don't matter, and their sensors are what they follow. So does a
-    // gas junction a transducer reads (a bottle draining has no steady state).
-    const steady = solver === "steady";
-    const tanks = new Set(model.nodes.filter((node) => node.type === "tank").map((node) => node.id));
-    const held = new Set(
-        model.nodes
-            .filter((node) => node.type === "tank" || (node.type === "gas_junction" && node.links.pressure))
-            .map((node) => node.id),
-    );
-    const sensors = comparisons(model, catalog).filter((one) => !(steady && held.has(one.part)));
-    const knobs = knobsOf(model, catalog).filter(({ part }) => !(steady && tanks.has(part.id)));
+/** What an anchored run is asked to do, as the Tune dialog sets it up, and what's wrong with it, if anything. */
+export function useAnchorPlan(model: SystemModel, catalog: Catalog, solver: Solver, picked: AnchorPlan) {
+    // Steady, a part holding what was measured has neither a knob that matters nor a sensor to anchor to.
+    const held = solver === "steady" ? heldInSteady(model) : new Set<string>();
+    const sensors = comparisons(model, catalog).filter((one) => !held.has(one.part));
+    const knobs = knobsOf(model, catalog).filter(({ part }) => !held.has(part.id));
     const [rows, setRows] = useState<AnchorChoice[]>(() =>
         sensors.map((sensor) => {
             const before = picked.anchors.find((one) => one.sensor === sensor.part && one.link === sensor.link);
@@ -80,55 +57,87 @@ export function AnchorDialog({
     const fitting = fitted.filter((one) =>
         fittable.some(({ part, setting }) => part.id === one.part && setting.key === one.key),
     );
-    const nothingLeft = fitting.length > 0 && rows.every((row) => row.part !== "");
     const twice = ids.find((id, index) => ids.indexOf(id) !== index);
     const twiceName = twice && knobs.find(({ part, setting }) => knobId(part.id, setting.key) === twice);
-    const badSpan = chosen.some((row) =>
-        [row.from, row.to].some((text) => text.trim() !== "" && !Number.isFinite(Number(text))),
-    );
-    const change = (index: number, next: Partial<AnchorChoice>) =>
-        setRows(rows.map((row, at) => (at === index ? { ...row, ...next } : row)));
-    return (
-        <Dialog
-            title="Anchor knobs to the test"
-            confirm="Anchor"
-            tall
-            disabled={
-                chosen.length === 0 ||
-                chosen.length > MAX_KNOBS ||
-                twice !== undefined ||
-                badSpan ||
-                fitting.length > MAX_KNOBS ||
-                nothingLeft
-            }
-            onConfirm={() => onStart({ anchors: chosen, knobs: fitting, fallback })}
-            onCancel={onCancel}
-        >
-            <p className="muted dev-help">
-                In one run, FullFlow moves each knob you pick, in every time step, until the model reads what its sensor
-                measured. Where it can&apos;t (a valve&apos;s CdA while it&apos;s shut), it holds the knob: give such an
-                anchor a span.{" "}
-                {steady
-                    ? "Steady, tanks (and gas junctions a transducer reads) hold the pressure measured, so they aren't here. "
-                    : ""}
-                In a transient run, an anchor starting partway through has the model jump to the test at once, which a
-                line&apos;s inertia doesn&apos;t allow: start it with the run, or anchor in a steady run.
+    const problems = [
+        fitting.length > 0 &&
+            rows.every((row) => row.part !== "") &&
+            "Every sensor anchors a knob, so none is left to fit the others to: anchor fewer.",
+        fitting.length > MAX_KNOBS && `Fit ${MAX_KNOBS} knobs at most.`,
+        twiceName && `${twiceName.part.name}: ${twiceName.setting.label} is picked twice: give each knob one sensor.`,
+        chosen.length > MAX_KNOBS && `Anchor ${MAX_KNOBS} knobs at most.`,
+        chosen.some((row) => [row.from, row.to].some((text) => text.trim() !== "" && !Number.isFinite(Number(text)))) &&
+            "A span's From and To are seconds, or blank.",
+    ].filter((one): one is string => typeof one === "string");
+    return {
+        steady: solver === "steady",
+        sensors,
+        knobs,
+        rows,
+        change: (index: number, next: Partial<AnchorChoice>) =>
+            setRows(rows.map((row, at) => (at === index ? { ...row, ...next } : row))),
+        fittable,
+        fitting,
+        toggleFit: (knob: Knob, on: boolean) =>
+            setFitted(
+                on ? [...fitting, knob] : fitting.filter((one) => !(one.part === knob.part && one.key === knob.key)),
+            ),
+        fallback,
+        setFallback,
+        problems,
+        ready: chosen.length > 0 && problems.length === 0,
+        plan: { anchors: chosen, knobs: fitting, fallback } as AnchorPlan,
+    };
+}
+
+export type AnchorPlanChoice = ReturnType<typeof useAnchorPlan>;
+
+/** Which sensor moves which knob, over what span; what to fit alongside; and what to do with a knob FullFlow can't
+ * anchor. */
+export function AnchorChoices({ choice, window }: { choice: AnchorPlanChoice; window: { from: string; to: string } }) {
+    const { steady, sensors, knobs, rows, change, fittable, fitting, toggleFit, fallback, setFallback, problems } =
+        choice;
+    if (sensors.length === 0) {
+        return (
+            <p className="notice notice-warning">
+                Nothing to anchor to: link a sensor first (a junction&apos;s pressure transducer, a flow meter
+                {steady ? "" : ", an ullage tank's pressure"}).
             </p>
-            {sensors.length === 0 ? (
-                <p className="notice notice-warning">
-                    Nothing to anchor to: link a sensor first (a junction&apos;s pressure transducer, a flow meter
-                    {steady ? "" : ", an ullage tank's pressure"}).
-                </p>
-            ) : (
-                <fieldset className="dev-anchors">
-                    <legend>Sensors, and the knob each moves</legend>
+        );
+    }
+    return (
+        <>
+            <p className="muted dev-help">
+                Give an anchor a span where its knob counts: a valve&apos;s CdA while it&apos;s open, since nothing
+                flows to tell it while it&apos;s shut. In a transient run, an anchor starting partway through jumps the
+                model to the test at once, which a line&apos;s inertia doesn&apos;t allow: start it with the run, or
+                anchor in a steady run.
+                {steady
+                    ? " Steady, tanks (and gas junctions a transducer reads) hold the pressure measured, so they aren't here."
+                    : ""}
+            </p>
+            <table className="dev-anchor-table">
+                <thead>
+                    <tr>
+                        <th>Sensor</th>
+                        <th>Knob it moves</th>
+                        <th>From (s)</th>
+                        <th>To (s)</th>
+                    </tr>
+                </thead>
+                <tbody>
                     {sensors.map((sensor, index) => {
                         const row = rows[index]!;
+                        const named = `${sensor.name} (${sensor.channel})`;
                         return (
-                            <div key={`${sensor.part}.${sensor.link}`} className="dev-anchor">
-                                <label className="field">
-                                    {sensor.name} <span className="muted">({sensor.channel})</span>
+                            <tr key={`${sensor.part}.${sensor.link}`}>
+                                <td>
+                                    {sensor.name}
+                                    <span className="muted dev-anchor-channel">{sensor.channel}</span>
+                                </td>
+                                <td>
                                     <select
+                                        aria-label={named}
                                         value={row.part ? knobId(row.part, row.key) : ""}
                                         onChange={(event) => {
                                             const found = knobs.find(
@@ -141,7 +150,7 @@ export function AnchorDialog({
                                             });
                                         }}
                                     >
-                                        <option value="">Nothing</option>
+                                        <option value="">None</option>
                                         {knobs.map(({ part, setting }) => (
                                             <option
                                                 key={knobId(part.id, setting.key)}
@@ -151,52 +160,43 @@ export function AnchorDialog({
                                             </option>
                                         ))}
                                     </select>
-                                </label>
-                                <label className="field">
-                                    From (s)
+                                </td>
+                                <td>
                                     <input
+                                        aria-label="From (s)"
                                         inputMode="decimal"
                                         placeholder={window.from}
                                         disabled={!row.part}
                                         value={row.from}
                                         onChange={(event) => change(index, { from: event.target.value })}
                                     />
-                                </label>
-                                <label className="field">
-                                    To (s)
+                                </td>
+                                <td>
                                     <input
+                                        aria-label="To (s)"
                                         inputMode="decimal"
                                         placeholder={window.to}
                                         disabled={!row.part}
                                         value={row.to}
                                         onChange={(event) => change(index, { to: event.target.value })}
                                     />
-                                </label>
-                            </div>
+                                </td>
+                            </tr>
                         );
                     })}
-                </fieldset>
-            )}
-            {sensors.length > 0 && fittable.length > 0 && (
+                </tbody>
+            </table>
+            {fittable.length > 0 && (
                 <fieldset className="dev-knobs">
-                    <legend>Also fit, to the sensors not anchoring</legend>
+                    <legend>Fit alongside, to the sensors not anchoring</legend>
                     {fittable.map(({ part, setting }) => {
                         const knob = { part: part.id, key: setting.key };
-                        const on = fitting.some((one) => one.part === knob.part && one.key === knob.key);
                         return (
                             <label key={knobId(part.id, setting.key)} className="check">
                                 <input
                                     type="checkbox"
-                                    checked={on}
-                                    onChange={(event) =>
-                                        setFitted(
-                                            event.target.checked
-                                                ? [...fitting, knob]
-                                                : fitting.filter(
-                                                      (one) => !(one.part === knob.part && one.key === knob.key),
-                                                  ),
-                                        )
-                                    }
+                                    checked={fitting.some((one) => one.part === knob.part && one.key === knob.key)}
+                                    onChange={(event) => toggleFit(knob, event.target.checked)}
                                 />
                                 {part.name}: {setting.label}
                             </label>
@@ -204,25 +204,15 @@ export function AnchorDialog({
                     })}
                 </fieldset>
             )}
-            {sensors.length > 0 && (
-                <label className="check">
-                    <input type="checkbox" checked={fallback} onChange={(event) => setFallback(event.target.checked)} />
-                    Fit any knob FullFlow can&apos;t anchor (slower: a fit takes minutes)
-                </label>
-            )}
-            {nothingLeft && (
-                <p className="notice notice-warning">
-                    Every sensor anchors a knob, so none is left to fit the others to: anchor fewer.
+            <label className="check">
+                <input type="checkbox" checked={fallback} onChange={(event) => setFallback(event.target.checked)} />
+                If FullFlow can&apos;t anchor a knob, fit it instead (slower: a fit takes minutes)
+            </label>
+            {problems.map((problem) => (
+                <p key={problem} className="notice notice-warning">
+                    {problem}
                 </p>
-            )}
-            {fitting.length > MAX_KNOBS && <p className="notice notice-warning">Fit {MAX_KNOBS} knobs at most.</p>}
-            {twiceName && (
-                <p className="notice notice-warning">
-                    {twiceName.part.name}: {twiceName.setting.label} is picked twice: give each knob one sensor.
-                </p>
-            )}
-            {chosen.length > MAX_KNOBS && <p className="notice notice-warning">Anchor {MAX_KNOBS} knobs at most.</p>}
-            {badSpan && <p className="notice notice-warning">A span&apos;s From and To are seconds, or blank.</p>}
-        </Dialog>
+            ))}
+        </>
     );
 }

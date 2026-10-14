@@ -343,6 +343,40 @@ def test_a_gas_is_real_unless_its_set_ideal(team):
     assert 4200 * PSI - pressure > 1.5 * (4200 * PSI - ideal)
 
 
+def test_a_vessels_wall_keeps_its_gas_warmer_as_it_blows_down(team):
+    """A gas junction holding its gas in a vessel (a COPV) trades heat with the vessel's wall (FullFlow's Solid, by
+    Convection): blowing down, the expanding gas cools, and the wall warms it back, so it holds more pressure. Its
+    tubing, or a wall with an hA of 0, is the gas alone, as a gas junction always was."""
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, cold_flow_csv())
+
+    def blown_down(**copv) -> dict:
+        model = {
+            "nodes": [
+                node("gn2", "source", "Supply", {"gas": "Nitrogen", "pressure": 4200 * PSI}),
+                node("copv", "gas_junction", "COPV", {"volume": 0.001, "pressure": 4200 * PSI, **copv}),
+                node("out", "outlet", "Atmosphere"),
+            ],
+            "edges": [
+                edge("fill", "gas_valve", "Fill valve", "gn2", "copv", {"cda": 1e-6, "position": 0}),
+                edge("vent", "gas_orifice", "Vent", "copv", "out", {"cda": 5e-7}),
+            ],
+        }
+        status = run(team, chief, {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 2.0, "dt": 0.05})
+        assert status["state"] == "done", status
+        return status["result"]
+
+    tubing = blown_down()
+    unheated = blown_down(wall="vessel", heat_transfer=0.0)
+    warmed = blown_down(wall="vessel", heat_transfer=50.0, wall_mass=10.0, wall_temperature=293.15)
+    assert "copv.wall_temperature" not in tubing["series"]
+    assert at(unheated, "copv.pressure", 2.0) == pytest.approx(at(tubing, "copv.pressure", 2.0), rel=1e-9)
+    assert at(warmed, "copv.temperature", 2.0) > at(tubing, "copv.temperature", 2.0) + 2.0
+    assert at(warmed, "copv.pressure", 2.0) > at(tubing, "copv.pressure", 2.0)
+    # The heat is the wall's: it cools, and stays warmer than the gas.
+    assert at(warmed, "copv.temperature", 2.0) < at(warmed, "copv.wall_temperature", 2.0) < 293.15
+
+
 def test_a_run_that_fails_says_why(team):
     chief = team.member("chief@x.test", admin=True)
     dataset = upload(team, chief, cold_flow_csv())
@@ -932,6 +966,17 @@ def test_an_anchor_to_what_the_model_follows_says_so(team):
         refused({"part": "reg", "key": "cda", "sensor": "gj", "link": "temperature"}, "steady")
         == "In a steady run Press manifold holds what was measured, so Press manifold's temperature can't anchor "
         "Regulator's CdA fully open"
+    )
+    # Tubing has no wall to anchor; a vessel's wall doesn't matter in a steady run, where it holds what was measured.
+    assert (
+        refused({"part": "gj", "key": "heat_transfer", "sensor": "gj", "link": "temperature"})
+        == "Press manifold's wall hA doesn't matter as it's set up"
+    )
+    body["model"]["nodes"][1]["settings"]["wall"] = "vessel"
+    assert (
+        refused({"part": "gj", "key": "heat_transfer", "sensor": "tank", "link": "pressure"}, "steady")
+        == "Press manifold's wall hA doesn't matter in a steady run, where Press manifold holds what its transducer "
+        "measured"
     )
     assert (
         refused({"part": "reg", "key": "cda", "sensor": "gj", "link": "pressure"}, "steady")

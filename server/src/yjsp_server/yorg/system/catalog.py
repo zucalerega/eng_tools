@@ -84,6 +84,56 @@ def applies(conditions: Conditions | None, settings: dict[str, Any]) -> bool:
 
 _ULLAGE: Conditions = (("mode", "ullage"),)
 _CUSTOM: Conditions = (("fluid", "Custom"),)
+_WALL: Conditions = (("wall", "vessel"),)
+
+
+def _wall(only_when: Conditions, mass: float, mass_help: str) -> tuple[Setting, ...]:
+    """The wall around a gas, which trades heat with it: an ullage's tank, or a vessel like a COPV."""
+    return (
+        Setting("wall_mass", "Wall mass", "mass", mass, 0.001, 1e5, only_when=only_when, help=mass_help),
+        Setting(
+            "wall_specific_heat",
+            "Wall specific heat",
+            "specific_heat",
+            900.0,
+            1.0,
+            1e5,
+            only_when=only_when,
+            help="Aluminum 900, steel 500, carbon fiber about 800 J/kg·K",
+        ),
+        Setting(
+            "wall_temperature",
+            "Wall temperature at the start",
+            "temperature",
+            293.15,
+            1.0,
+            2000.0,
+            only_when=only_when,
+        ),
+        Setting(
+            "heat_transfer",
+            "Wall hA",
+            "conductance",
+            20.0,
+            0.0,
+            1e6,
+            tunable=True,
+            only_when=only_when,
+            help="Heat transfer coefficient times the wall's area the gas touches: the more, the nearer the gas stays "
+            "to the wall's temperature; 0, none moves",
+        ),
+    )
+
+
+def _wall_link(only_when: Conditions) -> Link:
+    return Link(
+        "wall_temperature",
+        "Wall temperature",
+        "temperature",
+        "start",
+        "Its value at the start is the wall's, and it's compared with the model",
+        only_when=only_when,
+    )
 
 
 def _gas_model(only_when: Conditions = ()) -> Setting:
@@ -171,47 +221,7 @@ PARTS: tuple[Part, ...] = (
                 2000.0,
                 only_when=_ULLAGE,
             ),
-            Setting(
-                "wall_mass",
-                "Wall mass",
-                "mass",
-                5.0,
-                0.001,
-                1e5,
-                only_when=_ULLAGE,
-                help="Of the tank wall around the ullage",
-            ),
-            Setting(
-                "wall_specific_heat",
-                "Wall specific heat",
-                "specific_heat",
-                900.0,
-                1.0,
-                1e5,
-                only_when=_ULLAGE,
-                help="Aluminum 900, steel 500, carbon fiber about 800 J/kg·K",
-            ),
-            Setting(
-                "wall_temperature",
-                "Wall temperature at the start",
-                "temperature",
-                293.15,
-                1.0,
-                2000.0,
-                only_when=_ULLAGE,
-            ),
-            Setting(
-                "heat_transfer",
-                "Wall hA",
-                "conductance",
-                20.0,
-                0.0,
-                1e6,
-                tunable=True,
-                only_when=_ULLAGE,
-                help="Heat transfer coefficient times the wall's area in the ullage: the more, the nearer the gas stays "
-                "to the wall's temperature; 0, none moves",
-            ),
+            *_wall(_ULLAGE, 5.0, "Of the tank wall around the ullage"),
             Setting(
                 "collapse_factor",
                 "Collapse factor",
@@ -249,14 +259,7 @@ PARTS: tuple[Part, ...] = (
                 "Its value at the start is the ullage gas's, and it's compared with the model",
                 only_when=_ULLAGE,
             ),
-            Link(
-                "wall_temperature",
-                "Wall temperature",
-                "temperature",
-                "start",
-                "Its value at the start is the wall's, and it's compared with the model",
-                only_when=_ULLAGE,
-            ),
+            _wall_link(_ULLAGE),
         ),
         outputs=(
             Output("pressure", "Pressure", "pressure"),
@@ -299,11 +302,30 @@ PARTS: tuple[Part, ...] = (
         "node",
         "gas",
         "A point in the gas lines: between a regulator and a valve, a press manifold, where a pressure transducer "
-        "sits. It holds the gas in the tubing around it.",
+        "sits. It holds the gas in the tubing around it, or in a vessel (a COPV, a bottle) whose wall warms it as it "
+        "blows down.",
         settings=(
-            Setting("volume", "Volume of its tubing", "volume", 0.0002, 1e-8, 10.0, help="1 m of 1/2 in tube: 0.1 L"),
+            Setting(
+                "wall",
+                "Holds its gas in",
+                "choice",
+                "tubing",
+                choices=("tubing", "vessel"),
+                choice_labels=("Tubing: no heat moves", "A vessel, with a wall that trades heat"),
+                help="A vessel's wall (a COPV's, a bottle's) keeps its gas warmer than it would be as it blows down",
+            ),
+            Setting(
+                "volume",
+                "Volume",
+                "volume",
+                0.0002,
+                1e-8,
+                10.0,
+                help="The tubing's (1 m of 1/2 in tube: 0.1 L), or the vessel's",
+            ),
             Setting("pressure", "Pressure at the start", "pressure", ATMOSPHERE, 0.0, 1e9),
             Setting("temperature", "Temperature at the start", "temperature", 293.15, 1.0, 2000.0),
+            *_wall(_WALL, 10.0, "Of the vessel: its liner and overwrap"),
         ),
         links=(
             Link(
@@ -320,8 +342,13 @@ PARTS: tuple[Part, ...] = (
                 "start",
                 "Its value at the start is the gas's, and it's compared with the model",
             ),
+            _wall_link(_WALL),
         ),
-        outputs=(Output("pressure", "Pressure", "pressure"), Output("temperature", "Temperature", "temperature")),
+        outputs=(
+            Output("pressure", "Pressure", "pressure"),
+            Output("temperature", "Temperature", "temperature"),
+            Output("wall_temperature", "Wall temperature", "temperature"),
+        ),
     ),
     Part(
         "outlet",

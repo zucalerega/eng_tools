@@ -32,15 +32,14 @@
     color: var(--accent);
 }
 
-.dev-toolbar .check {
+.dev-units {
     margin-left: auto;
+    font-size: 0.85rem;
 }
 
-.dev-divider {
-    width: 1px;
-    align-self: stretch;
-    background: var(--border);
-    margin: 0 0.2rem;
+/* The Add part and Connect menus: wide enough for a part's name, with headings over liquid and gas parts. */
+.dev-tool-menu {
+    min-width: 12rem;
 }
 
 .dev-hint {
@@ -308,10 +307,6 @@
     font-size: 0.8rem;
 }
 
-.dev-toolbar .dev-gas-tool {
-    border-style: dashed;
-}
-
 .dev-stem {
     stroke-width: 2;
 }
@@ -338,8 +333,6 @@
 .dev-knobs {
     display: grid;
     gap: 0.3rem;
-    max-height: 45vh;
-    overflow: auto;
     margin: 0.5rem 0;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border);
@@ -377,24 +370,78 @@
     font-size: 0.85rem;
 }
 
-.dev-anchors {
+/* Tune: its two ways side by side, each saying what it does, then what the one picked needs. */
+.dev-methods {
     display: grid;
-    gap: 0.5rem;
-    margin: 0.5rem 0;
-    padding: 0.5rem 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.6rem;
+    margin: 0 0 0.9rem;
+    padding: 0;
+    border: 0;
+}
+
+.dev-methods legend {
+    margin-bottom: 0.4rem;
+    padding: 0;
+    font-weight: 600;
+}
+
+.dev-method {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.7rem 0.8rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-large);
+    cursor: pointer;
 }
 
-.dev-anchor {
+.dev-method > span {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem;
-    gap: 0.5rem;
-    align-items: end;
+    gap: 0.25rem;
+    font-size: 0.85rem;
 }
 
-.dev-anchor select {
+.dev-method strong {
+    font-size: 0.95rem;
+}
+
+.dev-method-on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.dev-anchor-table {
     width: 100%;
+    margin: 0.5rem 0 0.75rem;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.dev-anchor-table th {
+    padding: 0 0.4rem 0.3rem 0;
+    color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+}
+
+.dev-anchor-table td {
+    padding: 0.25rem 0.4rem 0.25rem 0;
+    vertical-align: middle;
+}
+
+.dev-anchor-table select {
+    width: 100%;
+    min-width: 12rem;
+}
+
+.dev-anchor-channel {
+    display: block;
+    font-size: 0.8rem;
+}
+
+.dev-anchor-table input {
+    width: 5.5rem;
 }
 
 /* The P&ID or the Script view, and the Reference beside either. */
@@ -516,18 +563,23 @@
     padding-left: 1.1rem;
 }
 
-.dev-reference-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
+/* How each part is built: its name, then its FullFlow components and its knobs. */
+.dev-reference-parts {
+    margin: 0.4rem 0;
+    font-size: 0.85rem;
 }
 
-.dev-reference-table th,
-.dev-reference-table td {
-    padding: 0.25rem 0.35rem;
+.dev-reference-parts div {
+    padding: 0.4rem 0;
     border-bottom: 1px solid var(--border);
-    text-align: left;
-    vertical-align: top;
+}
+
+.dev-reference-parts dt {
+    font-weight: 600;
+}
+
+.dev-reference-parts dd {
+    margin: 0.15rem 0 0;
 }
 
 .dev-reference-calls {

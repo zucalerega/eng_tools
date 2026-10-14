@@ -19,7 +19,7 @@ interface Props {
     onReset: () => void;
     library: ScriptLibrary | null;
     note: string | null; // about how it's written: the window it's for
-    anchors: { offered: boolean; on: boolean; onChange: (on: boolean) => void }; // with Anchor…'s last anchors
+    anchors: { offered: boolean; on: boolean; onChange: (on: boolean) => void }; // with the last anchored run's anchors
     error: RunError | null; // where its last run in the browser failed
     onRun: () => void;
 }
@@ -64,7 +64,7 @@ export function ScriptView(props: Props) {
                 {props.anchors.offered && shown === MODEL_FILE && (
                     <label
                         className="check dev-script-anchors"
-                        title="As Anchor… last ran: the anchored run's script, without its fit of what its anchors don't settle"
+                        title="As the last anchored run (Tune…) ran: its script, without its fit of what its anchors don't settle"
                     >
                         <input
                             type="checkbox"

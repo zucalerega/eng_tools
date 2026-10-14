@@ -24,6 +24,10 @@ CODE_TTL = timedelta(minutes=5)
 # seconds), without a write for every request.
 _TOUCH_EVERY = timedelta(minutes=1)
 ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
+# A browser session used again within this long was open the whole time, so the gap counts as time on the site. An
+# open page asks who you are every minute while it's visible (session.ts); a longer gap means the page was closed or
+# hidden.
+_SAME_VISIT = timedelta(minutes=5)
 # Georgia Tech's accounts are Microsoft 365 accounts, in GT's own directory (tenant) in Microsoft Entra, which sends
 # their sign-ins to GT's login page, Duo and all. Signing in with Microsoft lets in only this tenant's people.
 GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
@@ -141,8 +145,14 @@ def authenticate(db: Session, secret: str) -> User | None:
     now = utcnow()
     if token is None or token.revoked_at is not None or (token.expires_at is not None and token.expires_at <= now):
         return None
-    if token.last_used_at is None or now - token.last_used_at > _TOUCH_EVERY:
-        token.last_used_at = now
+    last_used = token.last_used_at
+    if last_used is None or now - last_used > _TOUCH_EVERY:
+        # Only if no other request touched it first, so a gap is counted once.
+        unchanged = Token.last_used_at.is_(None) if last_used is None else Token.last_used_at == last_used
+        touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(last_used_at=now)).rowcount
+        if touched and token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT:
+            seconds = round((now - last_used).total_seconds())
+            db.execute(update(User).where(User.id == token.user_id).values(site_seconds=User.site_seconds + seconds))
         db.commit()
     return db.get(User, token.user_id)
 

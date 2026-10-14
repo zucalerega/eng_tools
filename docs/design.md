@@ -105,7 +105,11 @@ copy of them needs to keep old versions too.
   the last use of a session or a client: the web app, the add-in, the CLI) and who's on
   now (within two minutes: an open page asks who you are every minute, `session.ts`). Only
   admins see it (`people.last_active`); the list others get for granting access doesn't
-  say.
+  say. Admins also see each person's time on the site (`site_seconds`): when a browser
+  session is used again within five minutes of its last use, the page was open all along,
+  and the gap counts (`auth.authenticate`). The add-in and the CLI don't count, and two
+  browsers open at once count twice. The list sorts by status, when people joined, when
+  they were last on, or their time on the site.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -180,7 +184,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
-| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) |
+| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |

@@ -32,9 +32,11 @@ class UserOut(BaseModel):
     # false.
     last_active_at: datetime | None = None
     active_now: bool = False
+    # For admins (people.time_on_site): how long they've had the web app open, in seconds. Otherwise null.
+    site_seconds: int | None = None
 
     @classmethod
-    def of(cls, user: User, last_active: datetime | None = None) -> "UserOut":
+    def of(cls, user: User, last_active: datetime | None = None, site_seconds: int | None = None) -> "UserOut":
         return cls(
             id=user.id,
             name=user.display_name,
@@ -45,6 +47,7 @@ class UserOut(BaseModel):
             last_login_at=user.last_login_at,
             last_active_at=last_active,
             active_now=auth.active_now(last_active),
+            site_seconds=site_seconds,
         )
 
 

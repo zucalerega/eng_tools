@@ -13,7 +13,7 @@ from yjsp_server import auth
 from yjsp_server.app import create_app
 from yjsp_server.config import Settings, refuse_old_settings
 from yjsp_server.db import utcnow
-from yjsp_server.models import Token
+from yjsp_server.models import Token, User
 
 from .conftest import BOOTSTRAP_ADMIN
 
@@ -266,6 +266,47 @@ def test_admins_see_when_people_were_last_on_and_who_is_on_now(app, client, team
     # Everyone else sees who the members are, not when they're on.
     seen = {u["email"]: u for u in client.get("/api/users", headers=alice).json()}
     assert (seen["chief@x.test"]["last_active_at"], seen["chief@x.test"]["active_now"]) == (None, False)
+
+
+def test_admins_see_how_long_people_have_had_the_web_app_open(app, client, team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    with app.state.sessionmaker() as db:
+        browser = bearer(
+            auth.issue_token(db, db.get(User, team.ids["alice@x.test"]), kind=auth.SESSION, name="Firefox")
+        )
+
+    def used_ago(minutes: int, kind: str = auth.SESSION) -> None:
+        with app.state.sessionmaker() as db:
+            db.execute(
+                update(Token)
+                .where(Token.user_id == team.ids["alice@x.test"], Token.kind == kind)
+                .values(last_used_at=utcnow() - timedelta(minutes=minutes))
+            )
+            db.commit()
+
+    def site_seconds() -> int:
+        return {u["email"]: u for u in client.get("/api/users", headers=chief).json()}["alice@x.test"]["site_seconds"]
+
+    # Opening the page starts a visit; nothing to count yet.
+    client.get("/api/me", headers=browser)
+    assert site_seconds() == 0
+
+    # The page asks again two minutes on: she was here all along.
+    used_ago(2)
+    client.get("/api/me", headers=browser)
+    assert 115 <= site_seconds() <= 125
+
+    # An hour away isn't time on the site, and neither is using the CLI or the add-in.
+    used_ago(60)
+    client.get("/api/me", headers=browser)
+    used_ago(2, kind=auth.CLIENT)
+    client.get("/api/folders", headers=alice)
+    assert 115 <= site_seconds() <= 125
+
+    # Everyone else doesn't see it.
+    seen = {u["email"]: u for u in client.get("/api/users", headers=alice).json()}
+    assert seen["chief@x.test"]["site_seconds"] is None
 
 
 def test_people_change_their_own_name_and_signing_in_with_google_again_keeps_it(app, client, team, settings):

@@ -31,6 +31,19 @@ export function formatAgo(iso: string, now: number = Date.now()): string {
     return "just now";
 }
 
+/** How long, from seconds: "45 min", "3 h 20 min", "12 h". */
+export function formatDuration(seconds: number): string {
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 1) {
+        return "under a minute";
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours === 0) {
+        return `${minutes} min`;
+    }
+    return hours >= 10 || minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
+}
+
 /** "Sep 26", or "Sep 26, 2025" for another year: short, for tables. */
 export function formatDate(iso: string, now: number = Date.now()): string {
     const date = new Date(iso);

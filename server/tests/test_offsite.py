@@ -128,7 +128,8 @@ def test_a_night_copies_the_database_vaults_files_and_yorgs_but_not_whats_tempor
     assert f"{home}/backups/offsite/yjsp.db" in kept  # a consistent copy, not the live file
     assert f"{home}{str(server['blob']).removeprefix(home)}" in kept
     assert f"{home}/data/yorg/datasets/1/run.csv" in kept
-    assert not [path for path in kept if "/tmp/" in path or "/runs/" in path]
+    leftovers = ("/data/vault/blobs/tmp", "/data/yorg/tmp", "/data/yorg/runs")
+    assert not [path for path in kept if path.removeprefix(home).startswith(leftovers)]
     with sqlite3.connect(server["repo"] / "latest" / f"{home}/backups/offsite/yjsp.db".lstrip("/")) as db:
         assert db.execute("SELECT email FROM users").fetchall() == [("gburdell3@gatech.edu",)]
 

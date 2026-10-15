@@ -43,29 +43,38 @@ jobs:
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
+      # The builds are kept from main and from release tags only, main's for a week and a tag's for 90 days:
+      # only those go on the server (docs/deploying.md), and a pull request's would fill the account's
+      # artifact storage (500 MB) with copies nobody installs. Pull requests still build and test all of it.
       # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2026: put it in the server's
       # YJSP_DOWNLOADS_DIR, and the web app offers it to members.
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push'
         with:
           name: vault-setup
           path: client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
           if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
       # The add-in's files as they are, to install by hand with install.ps1 (see its README).
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push'
         with:
           name: vault-solidworks-addin
           path: client/src/Vault.SolidWorks/bin/Release/net48/
           if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
       # One self-contained vault.exe: runs on Windows without installing .NET.
       - run: >-
           dotnet publish src/Vault.Cli --no-restore --configuration Release --runtime win-x64
           --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
           --output ${{ runner.temp }}/vault-windows
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push'
         with:
           name: vault-windows
           path: ${{ runner.temp }}/vault-windows/vault.exe
           if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
 
   web:
     runs-on: ubuntu-latest

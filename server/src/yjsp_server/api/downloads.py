@@ -6,12 +6,13 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .. import clients
 from ..errors import NotFound
-from .deps import ActiveUser, Config
+from .deps import DB, ActiveUser, Config
 
 router = APIRouter(prefix="/api/downloads", tags=["downloads"])
 
@@ -81,8 +82,12 @@ def get_downloads(user: ActiveUser, settings: Config) -> list[DownloadOut]:
 
 
 @router.get("/{name}", response_class=FileResponse)
-def get_download(name: str, user: ActiveUser, settings: Config) -> FileResponse:
+def get_download(name: str, request: Request, user: ActiveUser, db: DB, settings: Config) -> FileResponse:
     path = _files(settings.downloads_dir).get(name)
     if path is None:
         raise NotFound(f"There's no download called {name}")
+    # Admin > People counts who got the add-in.
+    stat = path.stat()
+    version, _ = _contents(str(path), stat.st_size, stat.st_mtime_ns)
+    clients.record_download(db, user, name, version, request.headers.get("user-agent", ""))
     return FileResponse(path, filename=name, media_type="application/octet-stream")

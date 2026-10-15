@@ -53,6 +53,32 @@ export class ApiError extends Error {
     }
 }
 
+/** A computer someone is signed in to the SolidWorks add-in on. */
+export interface AddInComputer {
+    name: string; // as the add-in said it when it signed in
+    version: string | null; // the add-in's, as its requests last said it
+    signed_in_at: string;
+    last_used_at: string | null;
+}
+
+/** Someone who has the add-in, or downloaded its installer. */
+export interface AddInPerson {
+    user: UserRef;
+    computers: AddInComputer[];
+    downloaded_at: string | null; // when they last downloaded the installer
+    downloaded_version: string | null;
+    downloads: number; // how many times, updates by the add-in included
+}
+
+/** Who has the SolidWorks add-in (Admin > People). */
+export interface AddIn {
+    people: AddInPerson[]; // the most recently on first
+    have_it: number; // signed in with it, and using it in the last 90 days
+    this_week: number;
+    downloaded: number; // people who downloaded the installer
+    counting_since: string | null; // the first download counted: none were before
+}
+
 /** A file the server offers for download, like the add-in's installer. */
 export interface Download {
     name: string;
@@ -241,6 +267,8 @@ export const api = {
     addToWhitelist: (emails: string[]) => request<WhitelistAdded>("POST", "/api/whitelist", { emails }),
     removeFromWhitelist: (id: number) => request<void>("DELETE", `/api/whitelist/${id}`),
     downloads: () => request<Download[]>("GET", "/api/downloads"),
+    /** For admins: who has the SolidWorks add-in, and who downloaded it. */
+    addIn: () => request<AddIn>("GET", "/api/add-in"),
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** For admins: how full the server's disk is. */
     storage: () => request<Storage>("GET", "/api/storage"),

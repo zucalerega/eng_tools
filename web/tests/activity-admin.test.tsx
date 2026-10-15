@@ -49,6 +49,20 @@ test("admins see how hard the server is working, over a day or a week", async ()
     expect(await card.findByText("Busiest, last 7 days")).toBeTruthy();
 });
 
+test("admins see who has the SolidWorks add-in, on which computers, and with which version", async () => {
+    const team = await Team.create();
+    const computer = `PC-${team.folder}`;
+    await team.addInOn(`drafter-${team.folder.toLowerCase()}@rocketry.test`, computer);
+    renderApp(team.chief, "/vault/admin");
+    const card = within((await screen.findByRole("heading", { name: "SolidWorks add-in" })).closest("section")!);
+    expect(Number(card.getByText("Have it").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
+    expect(Number(card.getByText("Used it this week").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
+    const row = (await card.findByText(computer)).closest("tr")!;
+    expect(within(row).getByText(`drafter-${team.folder.toLowerCase()}`)).toBeTruthy(); // their name, as dev sign-in gives it
+    expect(within(row).getByText("0.5.2")).toBeTruthy();
+    expect(card.getByText(/^Have it: signed in with the add-in on a computer/)).toBeTruthy();
+});
+
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");

@@ -70,6 +70,18 @@ export class Team {
         return signIn(email);
     }
 
+    /** Someone signed in with the SolidWorks add-in on a computer, whose requests have said its version. */
+    async addInOn(email: string, computer: string, version = "0.5.2.0"): Promise<Member> {
+        const member = await call<Member>("POST", "/auth/dev-token", null, {
+            email,
+            client: `SolidWorks add-in on ${computer}`,
+        });
+        await fetch(new URL("/api/me", serverUrl()), {
+            headers: { Authorization: `Bearer ${member.token}`, "User-Agent": `vault-client/${version}` },
+        });
+        return member;
+    }
+
     /** Someone who made an account by signing in, as with a Georgia Tech account: without an invite. */
     async signUp(email: string): Promise<Member> {
         return signIn(email);

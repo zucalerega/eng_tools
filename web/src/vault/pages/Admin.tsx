@@ -13,6 +13,7 @@ import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
+import { AddInTracker } from "./AddIn";
 import { ServerLoad } from "./Load";
 import { SiteUsage } from "./Usage";
 
@@ -138,6 +139,7 @@ function People() {
             <div className="dashboard">
                 <SiteUsage />
                 <ServerLoad />
+                <AddInTracker />
                 <DiskSpace />
             </div>
             {problem && <Notice tone="error">{problem}</Notice>}

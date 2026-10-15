@@ -1,7 +1,7 @@
 """Request and response bodies of the site's own API: accounts, sign-in, and tokens. Each app has its own
 (vault/schemas.py, yorg/schemas.py)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
@@ -74,6 +74,22 @@ class SiteSettingsOut(BaseModel):
     @classmethod
     def of(cls, site: SiteSettings) -> "SiteSettingsOut":
         return cls(whitelist=site.whitelist)
+
+
+class UsageDayOut(BaseModel):
+    day: date
+    people: int  # who used the site that day: the web app, the add-in, or the CLI
+    site_seconds: int  # how long the web app was open that day, everyone's together
+
+
+class UsageOut(BaseModel):
+    """How many people used the site each day, and how long they had the web app open (people.site_usage)."""
+
+    timezone: str  # the days': the one asked for, or UTC if the server doesn't know it
+    days: list[UsageDayOut]  # oldest first; the last is today, so far
+    people: int  # who used the site on any of those days
+    since: date | None  # the first day anything was recorded: nothing was before it
+    total_site_seconds: int  # everyone's time on the web app, since it was first counted
 
 
 class StorageOut(BaseModel):

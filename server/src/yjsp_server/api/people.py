@@ -2,8 +2,9 @@
 admins), and your sign-in tokens."""
 
 from dataclasses import asdict
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from .. import auth, people
 from ..models import UserStatus
@@ -15,6 +16,7 @@ from .schemas import (
     SiteSettingsPatch,
     StorageOut,
     TokenOut,
+    UsageOut,
     UserOut,
     UserPatch,
     WhitelistAddedOut,
@@ -88,6 +90,18 @@ def post_whitelist(body: WhitelistIn, user: ActiveUser, db: DB) -> WhitelistAdde
 def delete_whitelist_entry(entry_id: int, user: ActiveUser, db: DB) -> None:
     """Take an email off the whitelist (admins). An account it made stays."""
     people.remove_from_whitelist(db, user, entry_id)
+
+
+@router.get("/usage")
+def get_usage(
+    user: ActiveUser,
+    db: DB,
+    days: Annotated[int, Query(ge=1, le=366)] = 30,
+    tz: Annotated[str, Query(max_length=64)] = "UTC",
+) -> UsageOut:
+    """How many people used the site on each of the last `days` days, today last, and how long they had the web app
+    open, with days in the time zone `tz`, an IANA name like America/New_York (admins)."""
+    return UsageOut(**asdict(people.site_usage(db, user, days=days, timezone=tz)))
 
 
 @router.get("/storage")

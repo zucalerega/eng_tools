@@ -13,6 +13,27 @@ test("the activity feed says what each check-in was for", async () => {
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
 
+test("admins see how many people used the site each day for the last month, and for how long", async () => {
+    const team = await Team.create();
+    await team.member(`Usage-${team.folder}`); // signed in just now
+    renderApp(team.chief, "/vault/admin");
+    const tracker = within((await screen.findByRole("heading", { name: "Activity" })).closest("section")!);
+    expect(Number(tracker.getByText("Active today").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(2);
+    expect(tracker.getByText("Time on the site, in all")).toBeTruthy();
+
+    // Each of the last 30 days, today last, in a table for screen readers; the chart says the same on hover.
+    const days = tracker.getAllByRole("row").slice(1);
+    expect(days).toHaveLength(30);
+    const today = new Date().toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" });
+    expect(days.at(-1)!.textContent).toMatch(new RegExp(`^${today}\\d+`));
+    await userEvent.hover([...document.querySelectorAll(".bars-slot")].at(-1)!);
+    expect(tracker.getByRole("status").textContent).toMatch(/^Today\d+ people.* on the site$/);
+
+    await userEvent.click(tracker.getByRole("button", { name: "Time on the site" }));
+    expect(tracker.getByRole("button", { name: "Time on the site" }).getAttribute("aria-pressed")).toBe("true");
+    expect(tracker.getByRole("button", { name: "Active people" }).getAttribute("aria-pressed")).toBe("false");
+});
+
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");
@@ -48,7 +69,8 @@ test("admins see when each person was last on, and who's on now", async () => {
     await waitFor(() => expect(lastActive(email)).toBe("never"));
 
     // How many people there are, and how many are on now; and when each joined.
-    const counts = (await screen.findByText(/people$/)).closest("p")!.textContent!;
+    const counts = (await screen.findByText((_, element) => !!element?.classList.contains("people-counts")))
+        .textContent!;
     expect(counts).toMatch(/^\d+ people\d+ active now$/);
     expect(Number(/(\d+) active now/.exec(counts)![1])).toBeGreaterThanOrEqual(2); // Alice and the chief
     expect(screen.getByRole("columnheader", { name: "Joined" })).toBeTruthy();

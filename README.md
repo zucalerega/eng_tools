@@ -22,9 +22,10 @@ CSV, or one at a time, and see who on it has joined.
 
 Google signs in to accounts already there: one made with Google before, or an admin's
 invite. Someone without a GT account (a mentor, say) joins by an invite to the address they
-use with Google (Admin > People). Admin > People also shows how many people there are and
-how many are on now, and when each joined and was last on. Change the name everyone sees
-you by from your account menu.
+use with Google (Admin > People). Admin > People also shows how many people used the site
+each day this past month and how long they spent on it, how many people there are and how
+many are on now, and when each joined and was last on. Change the name everyone sees you by
+from your account menu.
 
 Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
 your account only if its email is your GT address; otherwise it makes a new, empty one,

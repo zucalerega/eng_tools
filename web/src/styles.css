@@ -32,6 +32,9 @@
     --storage-yorg: #e0a500;
     --storage-other: #8e99ab;
     --storage-free: #e1e6ee;
+    /* Admin > People's charts: the site's blue, a step darker where the pointer is. */
+    --chart-bar: #2a5fb0;
+    --chart-bar-hovered: #1c4b8f;
     --shadow: 0 1px 2px rgb(15 27 45 / 5%), 0 1px 3px rgb(15 27 45 / 6%);
     --shadow-pop: 0 12px 32px rgb(15 27 45 / 18%);
     --focus: 0 0 0 3px rgb(29 77 148 / 28%);
@@ -78,6 +81,8 @@
         --storage-yorg: #b8860b;
         --storage-other: #5d6a80;
         --storage-free: #2a3650;
+        --chart-bar: #5b8fe0;
+        --chart-bar-hovered: #7aa7ee;
         --shadow: 0 1px 2px rgb(0 0 0 / 35%);
         --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
         --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -111,6 +116,8 @@
     --storage-yorg: #b8860b;
     --storage-other: #5d6a80;
     --storage-free: #2a3650;
+    --chart-bar: #5b8fe0;
+    --chart-bar-hovered: #7aa7ee;
     --shadow: 0 1px 2px rgb(0 0 0 / 35%);
     --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
     --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -897,6 +904,140 @@ a.tag:hover {
     font-size: 0.85rem;
 }
 
+/* Admin > People's tracker: how many people used the site each day, and how long, in stat tiles and a chart. */
+.tracker {
+    margin: 0 0 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.tracker-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+}
+
+.tracker-head h2 {
+    margin: 0;
+}
+
+.tracker .segmented {
+    padding: 0;
+}
+
+.tracker-note {
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+}
+
+.stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.75rem;
+    margin: 0.75rem 0 1rem;
+}
+
+.stat-tiles div {
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.stat-tiles dt {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.stat-tiles dd {
+    margin: 0.1rem 0 0;
+    font-size: 1.35rem;
+    font-weight: 600;
+}
+
+/* A column chart: gridlines with their values, one slot a day, and the dates under it. */
+.bars {
+    position: relative;
+    padding-left: 3.75rem; /* the gridlines' values */
+}
+
+.bars-plot {
+    position: relative;
+    height: 9rem;
+}
+
+.bars-grid {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--border);
+}
+
+.bars-grid span {
+    position: absolute;
+    right: calc(100% + 0.5rem);
+    top: -0.55rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.bars-columns {
+    position: absolute;
+    inset: 0;
+    display: flex;
+}
+
+.bars-slot {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.bars-bar {
+    width: 70%;
+    max-width: 24px;
+    min-height: 2px;
+    border-radius: 4px 4px 0 0;
+    background: var(--chart-bar);
+}
+
+.bars-bar-hovered {
+    background: var(--chart-bar-hovered);
+}
+
+.bars-tip {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.bars-axis {
+    position: relative;
+    height: 1.4rem;
+    margin-top: 0.3rem;
+}
+
+.bars-axis span {
+    position: absolute;
+    translate: -50% 0;
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
 /* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
 .storage {
     margin: 0 0 1.25rem;
@@ -909,7 +1050,11 @@ a.tag:hover {
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.25rem 0.75rem;
-    margin: 0 0 0.5rem;
+    margin: 0 0 0.6rem;
+}
+
+.storage-head h2 {
+    margin: 0;
 }
 
 .storage-low {

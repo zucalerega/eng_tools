@@ -72,6 +72,22 @@ export interface Storage {
     database: number;
 }
 
+/** A day of the site's use, by the server's count, in the time zone asked for. */
+export interface UsageDay {
+    day: string; // 2026-10-14
+    people: number; // who used the site: the web app, the add-in, or the CLI
+    site_seconds: number; // how long the web app was open, everyone's together
+}
+
+/** How the site was used, day by day (Admin > People's tracker). */
+export interface Usage {
+    timezone: string; // the days': the one asked for, or UTC if the server doesn't know it
+    days: UsageDay[]; // oldest first; the last is today, so far
+    people: number; // who used the site on any of those days
+    since: string | null; // the first day anything was recorded: nothing was before it
+    total_site_seconds: number; // everyone's time on the web app, since it was first counted
+}
+
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
 // server and use a client token instead.
 let baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
@@ -211,4 +227,7 @@ export const api = {
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** For admins: how full the server's disk is. */
     storage: () => request<Storage>("GET", "/api/storage"),
+    /** For admins: how many people used the site each of the last days, and for how long, in a time zone's days. */
+    usage: (days: number, timezone: string) =>
+        request<Usage>("GET", `/api/usage?${new URLSearchParams({ days: String(days), tz: timezone })}`),
 };

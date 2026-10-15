@@ -13,6 +13,7 @@ import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
+import { SiteUsage } from "./Usage";
 
 // Admins manage accounts and who can make one; admins and folder leads manage who can do what where.
 
@@ -133,6 +134,7 @@ function People() {
     const onNow = sorted.filter((person) => person.active_now).length;
     return (
         <>
+            <SiteUsage />
             <DiskSpace />
             {problem && <Notice tone="error">{problem}</Notice>}
             <form className="inline-form" onSubmit={invite}>
@@ -315,14 +317,14 @@ function DiskSpace() {
     const low = storage.free <= storage.total * LOW_ON_SPACE;
     return (
         <div className="storage">
-            <p className="storage-head">
-                <strong>Storage</strong>
+            <div className="storage-head">
+                <h2>Storage</h2>
                 <span>
                     {formatSize(used)} of {formatSize(storage.total)} used (
                     {Math.round((used / Math.max(storage.total, 1)) * 100)}%)
                 </span>
                 {low && <span className="storage-low">Running out of space</span>}
-            </p>
+            </div>
             {/* The legend below says the same in words. */}
             <div className="storage-bar" aria-hidden="true">
                 {parts

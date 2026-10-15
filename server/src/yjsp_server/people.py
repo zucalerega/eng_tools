@@ -1,5 +1,6 @@
 """Accounts as admins and their owners change them: inviting, approving, and disabling people, admin rights, the
-whitelist and the emails on it, and your own name; and who has been on when, and how full the server's disk is.
+whitelist and the emails on it, and your own name; and who has been on when, how many each day, and how full the
+server's disk is.
 
 Vault's index carries people's names and what they may see, so a change here makes every Vault client sync everything
 again (vault.people_changed), and it goes in Vault's activity log (vault.log), the site's only one.
@@ -13,7 +14,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import auth, disk
+from . import auth, disk, usage
 from .config import Settings
 from .errors import ApiError, Conflict, Forbidden, NotFound
 from .models import SiteSettings, Token, User, UserStatus, WhitelistEmail
@@ -137,6 +138,12 @@ def site_settings(db: Session, user: User) -> SiteSettings:
     """What admins decide for everyone: whether new people need an invite or approval to join (the whitelist)."""
     _require_admin(user)
     return db.get_one(SiteSettings, 1)
+
+
+def site_usage(db: Session, admin: User, *, days: int, timezone: str) -> usage.Usage:
+    """How many people used the site each of the last days, and how long they had the web app open (admins)."""
+    _require_admin(admin)
+    return usage.daily(db, days, timezone)
 
 
 def disk_usage(db: Session, admin: User, settings: Settings) -> disk.DiskUsage:

@@ -175,8 +175,21 @@ def issue_token(db: Session, user: User, *, kind: str, name: str, ttl: timedelta
     return secret
 
 
-def authenticate(db: Session, secret: str) -> User | None:
-    """The user a token belongs to, if the token is valid. Account status is the caller's check."""
+# What a CLI or the add-in sends as its User-Agent, before its version (VaultApi.cs).
+CLIENT_AGENT = "vault-client/"
+
+
+def client_version(user_agent: str) -> str | None:
+    """A Vault client's version from its User-Agent: "0.5.2" from "vault-client/0.5.2.0"; None from anything else."""
+    if not user_agent.startswith(CLIENT_AGENT):
+        return None
+    version = user_agent[len(CLIENT_AGENT) :].split(" ", 1)[0][:32]
+    return version.removesuffix(".0") if version.count(".") == 3 else version or None
+
+
+def authenticate(db: Session, secret: str, user_agent: str = "") -> User | None:
+    """The user a token belongs to, if the token is valid. Account status is the caller's check. A client's
+    version, from its User-Agent, is kept with its token as it's used."""
     token = db.scalar(select(Token).where(Token.token_hash == _digest(secret)))
     now = utcnow()
     if token is None or not _valid(token, now):
@@ -185,7 +198,10 @@ def authenticate(db: Session, secret: str) -> User | None:
     if last_used is None or now - last_used > _TOUCH_EVERY:
         # Only if no other request touched it first, so a gap is counted once.
         unchanged = Token.last_used_at.is_(None) if last_used is None else Token.last_used_at == last_used
-        touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(last_used_at=now)).rowcount
+        noted: dict[str, object] = {"last_used_at": now}
+        if (version := client_version(user_agent)) is not None and version != token.client_version:
+            noted["client_version"] = version
+        touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(**noted)).rowcount
         if touched:
             visit = token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT
             usage.record(db, token.user_id, now, round((now - last_used).total_seconds()) if visit else 0)

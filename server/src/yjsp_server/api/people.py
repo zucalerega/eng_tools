@@ -6,10 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from .. import auth, people
+from .. import auth, clients, people
 from ..models import UserStatus
 from .deps import DB, ActiveUser, AnyUser, Config
+from .downloads import version_of
 from .schemas import (
+    AddInOut,
     InviteIn,
     MePatch,
     ServerLoadOut,
@@ -115,6 +117,13 @@ def get_load(user: ActiveUser, db: DB, hours: Annotated[int, Query(ge=1, le=168)
     """How hard the server has worked the last `hours`, up to a week: how busy its CPUs were and how full its memory,
     a point a minute for a day or less and each 10 minutes for more, each its stretch's busiest (admins)."""
     return ServerLoadOut(**asdict(people.server_load(db, user, hours=hours)))
+
+
+@router.get("/add-in")
+def get_add_in(user: ActiveUser, db: DB, settings: Config) -> AddInOut:
+    """Who has the SolidWorks add-in: who's signed in with it, on which computers and versions, and when they last
+    used it; who downloaded its installer; and how many people have it, and are on the installer's version (admins)."""
+    return AddInOut.of(clients.add_in(db, user, version_of(settings.downloads_dir, clients.INSTALLER)))
 
 
 @router.get("/storage")

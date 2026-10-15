@@ -144,6 +144,17 @@ three. The rest of the disk is the system, logs, and the database's backups.
   for a quarter hour, the memory is over 90% full, or the hypervisor took over 10% of the
   CPU's time in the last hour. Elsewhere than Linux (development on a Mac) it estimates the
   CPU from the load average and leaves memory out.
+- **The SolidWorks add-in:** under them, who has Vault's add-in (`GET /api/add-in`,
+  `clients.py`): who's signed in with it, on which computers, with which version, and when
+  they last used it; who downloaded its installer; and how many people have it, signed in
+  and using it in the last 90 days. The add-in signs in as "SolidWorks add-in on
+  <computer>" and the CLI as "vault CLI on <computer>", so a token's name tells them apart,
+  and each says its version in its requests (`User-Agent: vault-client/<version>`), which
+  its token keeps (`tokens.client_version`, as it notes the token's use). Each download is
+  noted as it's served (`downloads`, the add-in's own updates included), from the deploy
+  that began noting them. Each version is compared with the installer the server offers:
+  an older one is marked (the add-in offers itself the update), and one not known yet,
+  until the add-in next talks to the server, isn't.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -237,6 +248,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
 | `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
+| `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
 

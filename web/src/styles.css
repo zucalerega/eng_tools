@@ -929,8 +929,19 @@ a.tag:hover {
     background: var(--surface);
 }
 
-.dashboard > .storage {
+.dashboard > .storage,
+.dashboard > .addin {
     grid-column: 1 / -1;
+}
+
+/* Who has the add-in: a list that scrolls rather than pushing the page down. */
+.addin-list {
+    max-height: 18rem;
+    overflow: auto;
+}
+
+.addin-list .badge:first-child {
+    margin-left: 0;
 }
 
 /* Admin > People's trackers: stat tiles, and a chart. */

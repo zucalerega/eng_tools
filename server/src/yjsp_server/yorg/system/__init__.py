@@ -3,7 +3,8 @@ ThermoProp against a test's data, to tune the model (CdAs, line losses, ullage h
 it matches what was measured.
 
 The server keeps the models and runs them: each run is a separate process (runner.py), so a long simulation never
-slows the site, and one that runs too long is stopped. A run is a FullFlow script, which script.py writes from the
-model (the Models page shows it); only that process imports FullFlow, running it (network.py, with library.py and
-components.py, which the script imports as yorg_models).
+slows the site, one that runs too long is stopped, and one gone wrong is kept from taking the site down with it
+(runs.py). A run is a FullFlow script, which script.py writes from the model (the Models page shows it); only that
+process imports FullFlow, running it (network.py, with library.py and components.py, which the script imports as
+yorg_models).
 """

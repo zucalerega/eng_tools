@@ -50,6 +50,29 @@ public sealed class VaultPathsTests
         Assert.Throws<VaultPathException>(() => VaultPaths.Split(string.Join("/", Enumerable.Repeat("aaaaaaaaa", 21))));
     }
 
+    [Fact]
+    public void NamesThatArentUnicodeTextAreRejected() =>
+        Assert.Throws<VaultPathException>(() => VaultPaths.CleanName("Fin\ud800.STEP")); // half a character
+
+    // Client only: how a client takes paths from the server (see Workspace.ToLocalPath).
+    [Fact]
+    public void ServerPathsAreNamesJoinedBySlashes()
+    {
+        Assert.Equal(["Structures", "Fins", "Fin.SLDPRT"], VaultPaths.SplitServerPath("Structures/Fins/Fin.SLDPRT"));
+        Assert.Empty(VaultPaths.SplitServerPath(""));
+        Assert.Equal(21, VaultPaths.SplitServerPath(string.Join("/", Enumerable.Repeat("aaaaaaaaa", 21))).Count); // longer than MaxPath
+    }
+
+    [Theory]
+    [InlineData("/Fins")]
+    [InlineData("Fins/")]
+    [InlineData("Fins//Fin.SLDPRT")]
+    [InlineData("Fins\\Fin.SLDPRT")]
+    [InlineData("../Fin.SLDPRT")]
+    [InlineData("C:/Fin.SLDPRT")]
+    public void ServerPathsInAnyOtherFormAreRejected(string path) =>
+        Assert.Throws<VaultPathException>(() => VaultPaths.SplitServerPath(path));
+
     [Theory]
     [InlineData("~$Fin Can.SLDASM", true)]
     [InlineData("Thumbs.db", true)]

@@ -1,8 +1,9 @@
 """A model run's (or fit's, or anchored run's) process: python -m yjsp_server.yorg.system.runner <folder>.
 
 The folder holds job.json (the checked model, the window, the time step, the solver; for a fit, what to fit; for an
-anchored run, its anchors and what to fit if they don't work) and inputs/ (each linked channel's times and values, as
-little-endian float64s). The process writes progress.json as it goes, then result.json or error.json.
+anchored run, its anchors and what to fit if they don't work; the memory it may use) and inputs/ (each linked
+channel's times and values, as little-endian float64s). The process writes progress.json as it goes, then result.json
+or error.json. runs.py starts it in that folder, held to limits on what it may use: one that runs out of memory says so.
 """
 
 import json
@@ -18,6 +19,7 @@ import numpy as np
 
 from .fit import fit, tune
 from .network import ModelError, run
+from .runs import named
 
 
 def _save(path: Path, value: dict) -> None:
@@ -43,19 +45,19 @@ class _Progress:
 
 def main(folder: Path) -> None:
     job = json.loads((folder / "job.json").read_text(encoding="utf-8"))
-    inputs = {
-        key: (
-            np.fromfile(folder / "inputs" / f"{key}.t.f64", dtype="<f8"),
-            np.fromfile(folder / "inputs" / f"{key}.v.f64", dtype="<f8"),
-        )
-        for key in job["inputs"]
-    }
     progress = folder / "progress.json"
 
     def report(state: dict[str, Any]) -> None:
         _save(progress, state)
 
     try:
+        inputs = {
+            key: (
+                np.fromfile(folder / "inputs" / f"{key}.t.f64", dtype="<f8"),
+                np.fromfile(folder / "inputs" / f"{key}.v.f64", dtype="<f8"),
+            )
+            for key in job["inputs"]
+        }
         if job.get("kind") == "fit":
             result = fit(job, inputs, report)
         elif job.get("kind") == "anchor":
@@ -65,11 +67,21 @@ def main(folder: Path) -> None:
     except ModelError as error:
         _save(folder / "error.json", {"message": str(error)})
         return
+    except MemoryError:  # past what the run may use (job["memory"]): where, the log says
+        traceback.print_exc()
+        _save(folder / "error.json", {"message": _out_of_memory(job)})
+        return
     except Exception as error:  # a bug here or in a library: say what, and keep the details in the log
         traceback.print_exc()
         _save(folder / "error.json", {"message": f"The run failed: {type(error).__name__}: {error}"})
         return
     _save(folder / "result.json", result)
+
+
+def _out_of_memory(job: dict[str, Any]) -> str:
+    memory = job.get("memory")  # bytes, where the system holds the run to them
+    limit = f": it may use {memory / 2**30:g} GB" if memory else ""
+    return f"The {named(job.get('kind', 'run'))} ran out of memory{limit}. Try a shorter time, or a longer time step."
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ On the server:
 | `/opt/yjsp/app/web/dist` | The built web app, which the server serves |
 | `/srv/yjsp/.env` | Settings and secrets (below). Readable only by `yjsp` |
 | `/srv/yjsp/data` | `yjsp.db` (SQLite: accounts, Vault's tables, Yorg's), `vault/blobs/` (every version of every file in Vault), `yorg/` (Yorg's uploads and arrays, scripts, and models) |
-| `/srv/yjsp/downloads` | `Vault-Setup.exe` and `vault.exe`, offered on Vault's SolidWorks page |
+| `/srv/yjsp/downloads` | `Vault-Setup.exe` and `vault.exe`, offered on Vault's SolidWorks page, and `Vault-Setup.exe.sig`, the installer's signature |
 | `/srv/yjsp/backups` | Database backups, nightly and before each deploy, kept 14 days |
 
 Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs as.
@@ -170,17 +170,64 @@ If the site doesn't load but `/healthz` answers on the server, look at Tailscale
 /srv/yjsp/.env`), then restart the service. Never print it or copy it off the server.
 
 **New downloads** (from CI's `vault-setup` and `vault-windows` artifacts, which runs on `main`
-and on release tags keep: a week, and a tag's 90 days): copy the file to
-the server's `/tmp` with `scp`, then swap it in whole, so nobody downloads half a file:
+and on release tags keep: a week, and a tag's 90 days): copy the files to the server's
+`/tmp` with `scp`, then swap each in whole, so nobody downloads half a file. `vault-setup`
+has two that go together, `Vault-Setup.exe` and its signature, `Vault-Setup.exe.sig`: put
+both in under hidden names first, then swap them in one right after the other, the
+signature first:
 
 ```bash
-sudo install -o yjsp -g yjsp -m 644 /tmp/Vault-Setup.exe /srv/yjsp/downloads/.Vault-Setup.exe.part
-sudo mv /srv/yjsp/downloads/.Vault-Setup.exe.part /srv/yjsp/downloads/Vault-Setup.exe
+cd /srv/yjsp/downloads
+sudo install -o yjsp -g yjsp -m 644 /tmp/Vault-Setup.exe .Vault-Setup.exe.part
+sudo install -o yjsp -g yjsp -m 644 /tmp/Vault-Setup.exe.sig .Vault-Setup.exe.sig.part
+sudo mv .Vault-Setup.exe.sig.part Vault-Setup.exe.sig && sudo mv .Vault-Setup.exe.part Vault-Setup.exe
 ```
+
+`vault.exe` goes in the same way, on its own.
 
 A newer `Vault-Setup.exe` there is also how laptops get an add-in update: within a few
 hours, the Vault tab in SolidWorks offers **Update** (the server reads the version from the
-program). So put in only a build CI made from `main` or a release tag, as for a deploy.
+program). The add-in installs it only when `Vault-Setup.exe.sig` says it's signed with the
+team's key ([below](#signing-key)), which CI does only for `main` and release tags: so put in
+only a build CI made from one of those, as for a deploy, with its signature. Without it, or
+with another build's, laptops refuse the update and say why. Add-ins up to 0.5.2 don't
+check signatures: the protection starts on each laptop once it has an add-in newer than that.
+
+### Signing key
+
+CI signs `Vault-Setup.exe` on pushes to `main` and release tags, never for pull requests,
+with RSA 3072 (PKCS#1 v1.5 over its SHA-256: `openssl dgst -sha256 -sign`), using the private
+key in the GitHub Actions secret `INSTALLER_SIGNING_KEY` (the PEM file's text). The add-in
+carries the public half (`AddInUpdate` in `Vault.Client`, the same as
+[`installer-signing.pub.pem`](../client/src/Vault.Client/installer-signing.pub.pem) beside
+it, which CI checks each signature with), and its Update runs only installers signed with
+it. So neither the server nor its downloads folder can put a program on the team's laptops:
+that takes the private key. Without the secret, CI's builds aren't signed (it warns), and
+add-ins won't update to them.
+
+The private key is in that secret and in the owner's password manager, and nowhere else:
+never in the repository, on the server, or left on a computer's disk. To change it, because
+it leaked or it's lost, or on the owner's say-so:
+
+1. On the owner's computer, in a private folder: `openssl genrsa -out new.pem 3072`, and
+   its public half, `openssl rsa -in new.pem -pubout -out installer-signing.pub.pem`. Put
+   `new.pem`'s text in the password manager.
+2. In a pull request, put the new `installer-signing.pub.pem` beside `AddInUpdate`, and its
+   modulus (`openssl rsa -pubin -in installer-signing.pub.pem -noout -modulus`) in
+   `AddInUpdate`'s `SigningKeyModulus`; the client tests check they're the same key. Merge
+   and release it with the old key still in the secret: laptops check it with the key their
+   add-in carries now, the old one. (CI warns that it's signed with a key this add-in
+   doesn't carry: here, that's right.)
+3. Once that release is in the downloads folder, put `new.pem`'s text in
+   `INSTALLER_SIGNING_KEY`, and delete `new.pem`. Every build from then on is signed with
+   the new key, which add-ins from step 2 on take.
+
+If the old key leaked, whoever has it and the server's downloads folder can get a program
+past the add-ins that carry it, until laptops have the release from step 2: have the team
+run that `Vault-Setup.exe` by hand, from the web app's SolidWorks page, rather than wait
+for Update. If it's lost, add-ins that carry it can't update to anything signed with the new
+one: put the new key in the secret first (step 3), then release step 2, and run its
+`Vault-Setup.exe` by hand on each laptop.
 
 ### Putting back a database backup
 

@@ -49,6 +49,22 @@ test("admins see how hard the server is working, over a day or a week", async ()
     expect(await card.findByText("Busiest, last 7 days")).toBeTruthy();
 });
 
+test("admins see who has the SolidWorks add-in, on which computers, and with which version", async () => {
+    const team = await Team.create();
+    const computer = `PC-${team.folder}`;
+    await team.addInOn(`drafter-${team.folder.toLowerCase()}@rocketry.test`, computer);
+    renderApp(team.chief, "/vault/admin");
+    const card = within((await screen.findByRole("heading", { name: "SolidWorks add-in" })).closest("section")!);
+    expect(Number(card.getByText("Have it").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
+    expect(Number(card.getByText("Used it this week").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
+    const row = (await card.findByText(computer)).closest("tr")!;
+    expect(within(row).getByText(`drafter-${team.folder.toLowerCase()}`)).toBeTruthy(); // their name, as dev sign-in gives it
+    // The installer offered is 0.5.0 (tests/server.ts): this one's newer, so it's on the newest, not old.
+    expect(within(row).getByText("0.5.2").className).not.toContain("status-pending");
+    expect(Number(card.getByText("On the newest (0.5.0)").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
+    expect(card.getByText(/^Have it: signed in with the add-in on a computer/)).toBeTruthy();
+});
+
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");
@@ -139,6 +155,15 @@ test("people change their own name from their account menu", async () => {
     await userEvent.click(dialog.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("button", { name: `Account: Ally ${team.folder}` })).toBeTruthy();
     expect((await team.account(member.user.email))?.name).toBe(`Ally ${team.folder}`);
+});
+
+test("the People tab warns while the whitelist is off", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin");
+    const warning = await screen.findByText(/^The whitelist is off: anyone with a Georgia Tech account/);
+    expect(within(warning).getByRole("link", { name: "Whitelist" }).getAttribute("href")).toBe(
+        "/vault/admin/whitelist",
+    );
 });
 
 test("admins turn the whitelist off, after saying who could join then, and on again", async () => {

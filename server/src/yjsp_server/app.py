@@ -14,6 +14,7 @@ from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
 from .limits import BodyLimit
+from .security import SecurityHeaders, hide_sign_in_codes
 from .vault import api as vault_api
 from .vault.storage import BlobStore
 from .vault.vault import init_vault
@@ -45,7 +46,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.yorg_runs.close()
         engine.dispose()
 
-    app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan)
+    # The API's own docs (/docs) are for development: in production they'd map the whole API for anyone.
+    hidden = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.production else {}
+    app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan, **hidden)
     app.state.settings = settings
     app.state.sessionmaker = sessions
     app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)
@@ -65,8 +68,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         https_only=settings.production,
     )
 
-    # Outermost, so that a request too big for the server is refused before anything reads it.
+    # Outside everything that reads a request, so that a request too big for the server is refused before anything
+    # reads it. Only SecurityHeaders, which reads nothing of it, is outside it, so a refusal has the headers too.
     app.add_middleware(BodyLimit)
+    app.add_middleware(SecurityHeaders, https=settings.production)
+    hide_sign_in_codes()
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, exc: ApiError) -> JSONResponse:

@@ -55,6 +55,22 @@ class Token(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # A CLI's or the add-in's version, as its requests last said it (User-Agent: vault-client/<version>).
+    client_version: Mapped[str | None] = mapped_column(String(32))
+
+
+class DownloadRecord(Base):
+    """Someone downloading a file the web app offers, as Vault-Setup.exe, the add-in's installer: Admin > People's
+    add-in tracker (clients.py)."""
+
+    __tablename__ = "downloads"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    version: Mapped[str | None] = mapped_column(String(32))  # a program's, read from it
+    by_client: Mapped[bool] = mapped_column(default=False)  # the add-in updating itself, not someone in a browser
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 class SiteUsage(Base):

@@ -456,4 +456,5 @@ def dev_token(body: DevTokenIn, db: DB, settings: Config) -> TokenIssuedOut:
     """Development only (YJSP_DEV_AUTH): a client token for any email, as if Georgia Tech vouched for it."""
     _require_dev(settings)
     user = auth.sign_in_dev(db, settings, body.email, body.name)
-    return TokenIssuedOut(token=auth.issue_token(db, user, kind=auth.CLIENT, name="dev token"), user=UserOut.of(user))
+    token = auth.issue_token(db, user, kind=auth.CLIENT, name=body.client or "dev token")
+    return TokenIssuedOut(token=token, user=UserOut.of(user))

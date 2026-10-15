@@ -181,10 +181,26 @@ in `web/src/yorg/index.tsx`).
   time, a new one of yours replacing the last), so a long simulation never slows the site:
   the server cuts the channels the model uses (valve commands, what it follows, what starts
   it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
-  it's going. The FullFlow network is a script (`script.py` writes it from the checked
-  model; see a model's script, below), written as FullFlow's own models are: FullFlow's
-  components, each fluid's properties from ThermoProp through FullFlow's `Lookup`. Yorg
-  adds only what joins a model to a test (`library.py`, `components.py`: the channels in,
+  it's going. A run is kept from taking the site, one small machine (one CPU, 6 GB), down
+  with it (`runs.py`): its process runs in its own folder (its home and temporary folder
+  too), in a session of its own (stopping it stops whatever it started), with an
+  environment of its own that has none of the server's settings or secrets, and the system
+  holds it to 2 GB of memory (address space, which Linux enforces and macOS doesn't), CPU
+  time a minute past its time limit, files of 1 GB, and no core dumps. So one gone wrong
+  fails by itself (out of memory, it says so), and two at a time still leave the server
+  2 GB. NumPy's and SciPy's OpenBLAS get one thread: each thread's stack and buffers count
+  against the memory, and the server has one CPU. A watchdog, a thread of the server's from
+  its first run until it stops, looks at the runs every 5 seconds and stops one past its
+  time limit whether or not anyone's asking how it's going (its page closed): asked to
+  stop, then killed 5 seconds later. A run still runs as the server's user, so it could
+  read what the server can (its settings, the database, Vault's files): the server runs
+  only scripts it wrote (below), and only admins start runs. A user of its own for runs
+  would need more than `sudo` (the service's `NoNewPrivileges` rules that out, and the
+  server couldn't stop another user's process): a systemd unit for each run. The FullFlow
+  network is a script (`script.py` writes it from the checked model; see a model's script,
+  below), written as FullFlow's own models are: FullFlow's components, each fluid's
+  properties from ThermoProp through FullFlow's `Lookup`. Yorg adds only what joins a model
+  to a test (`library.py`, `components.py`: the channels in,
   anchors, the results out). A fixed tank, supply, or outlet is a pressure that follows its
   channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K folded into f); liquid
   valves and orifices `DischargeCoefficient`s (a valve's position its discharge

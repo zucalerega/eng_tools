@@ -35,6 +35,8 @@
     /* Admin > People's charts: the site's blue, a step darker where the pointer is. */
     --chart-bar: #2a5fb0;
     --chart-bar-hovered: #1c4b8f;
+    --chart-cpu: #2a5fb0;
+    --chart-memory: #e0a500;
     --shadow: 0 1px 2px rgb(15 27 45 / 5%), 0 1px 3px rgb(15 27 45 / 6%);
     --shadow-pop: 0 12px 32px rgb(15 27 45 / 18%);
     --focus: 0 0 0 3px rgb(29 77 148 / 28%);
@@ -83,6 +85,8 @@
         --storage-free: #2a3650;
         --chart-bar: #5b8fe0;
         --chart-bar-hovered: #7aa7ee;
+        --chart-cpu: #5b8fe0;
+        --chart-memory: #b8860b;
         --shadow: 0 1px 2px rgb(0 0 0 / 35%);
         --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
         --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -118,6 +122,8 @@
     --storage-free: #2a3650;
     --chart-bar: #5b8fe0;
     --chart-bar-hovered: #7aa7ee;
+    --chart-cpu: #5b8fe0;
+    --chart-memory: #b8860b;
     --shadow: 0 1px 2px rgb(0 0 0 / 35%);
     --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
     --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -904,12 +910,30 @@ a.tag:hover {
     font-size: 0.85rem;
 }
 
-/* Admin > People's tracker: how many people used the site each day, and how long, in stat tiles and a chart. */
-.tracker {
-    margin: 0 0 1.25rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--border);
+/* The top of Admin > People: how the site is used and how hard the server works, side by side where there's room,
+   and how full its disk is under them, each a card. */
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(30rem, 100%), 1fr));
+    gap: 1rem;
+    margin: 0 0 1.5rem;
 }
+
+.dashboard > * {
+    container-type: inline-size;
+    min-width: 0;
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.dashboard > .storage {
+    grid-column: 1 / -1;
+}
+
+/* Admin > People's trackers: stat tiles, and a chart. */
 
 .tracker-head {
     display: flex;
@@ -934,16 +958,22 @@ a.tag:hover {
 
 .stat-tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
     margin: 0.75rem 0 1rem;
 }
 
+@container (min-width: 34rem) {
+    .stat-tiles {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
 .stat-tiles div {
-    padding: 0.6rem 0.8rem;
+    padding: 0.5rem 0.7rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--surface);
+    background: var(--surface-2);
 }
 
 .stat-tiles dt {
@@ -953,7 +983,7 @@ a.tag:hover {
 
 .stat-tiles dd {
     margin: 0.1rem 0 0;
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     font-weight: 600;
 }
 
@@ -1038,12 +1068,77 @@ a.tag:hover {
     white-space: nowrap;
 }
 
-/* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
-.storage {
-    margin: 0 0 1.25rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--border);
+/* A line chart: the bars' gridlines and dates, with lines drawn across, and the hovered minute's dots. */
+.lines-plot {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
 }
+
+.lines-plot path {
+    fill: none;
+    stroke-width: 2px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+path.lines-cpu {
+    stroke: var(--chart-cpu);
+}
+
+path.lines-memory {
+    stroke: var(--chart-memory);
+}
+
+.lines-cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--border-strong);
+}
+
+.lines-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    translate: -50% 50%;
+    box-shadow: 0 0 0 2px var(--surface);
+}
+
+.lines-dot.lines-cpu,
+.lines-swatch.lines-cpu {
+    background: var(--chart-cpu);
+}
+
+.lines-dot.lines-memory,
+.lines-swatch.lines-memory {
+    background: var(--chart-memory);
+}
+
+.lines-legend {
+    display: flex;
+    gap: 1rem;
+    margin: 0 0 0.5rem;
+    padding: 0;
+    list-style: none;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.lines-swatch {
+    display: inline-block;
+    width: 0.9rem;
+    height: 3px;
+    margin-right: 0.4rem;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+
+/* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
 
 .storage-head {
     display: flex;

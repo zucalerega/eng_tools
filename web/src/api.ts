@@ -88,6 +88,23 @@ export interface Usage {
     total_site_seconds: number; // everyone's time on the web app, since it was first counted
 }
 
+/** A stretch of the server's work: a minute, or ten for more than a day, at its busiest. */
+export interface LoadPoint {
+    at: string; // its start
+    cpu: number | null; // % of all CPUs busy
+    steal: number | null; // % the hypervisor took for other machines
+    memory: number | null; // % of memory in use
+}
+
+/** How hard the server has worked lately (Admin > People's server load). */
+export interface Load {
+    cpus: number;
+    minutes: number; // each point's stretch
+    points: LoadPoint[]; // oldest first; a stretch the server wasn't running is left out
+    memory_used: number | null; // the latest sample's, in bytes
+    memory_total: number | null;
+}
+
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
 // server and use a client token instead.
 let baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
@@ -227,6 +244,8 @@ export const api = {
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** For admins: how full the server's disk is. */
     storage: () => request<Storage>("GET", "/api/storage"),
+    /** For admins: how hard the server has worked the last hours (a week at most). */
+    load: (hours: number) => request<Load>("GET", `/api/load?hours=${hours}`),
     /** For admins: how many people used the site each of the last days, and for how long, in a time zone's days. */
     usage: (days: number, timezone: string) =>
         request<Usage>("GET", `/api/usage?${new URLSearchParams({ days: String(days), tz: timezone })}`),

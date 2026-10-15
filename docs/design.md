@@ -132,6 +132,17 @@ three. The rest of the disk is the system, logs, and the database's backups.
   time zone, so a day is the team's and not UTC's (`usage.daily`; a server without time zone
   data gives UTC's). It counts from the deploy that added it (October 2026): nothing kept
   this before, and the chart says since when.
+- **Server load:** beside it, how hard the server is working: how busy its CPUs have been
+  and how full its memory, against all of each, for the last 24 hours or 7 days (`GET
+  /api/load`). The server samples them itself each minute, in a thread it starts and stops
+  with itself (`load.Sampler`), from `/proc` on Linux: the CPUs' time since the last sample
+  that was busy, and that the hypervisor took for other machines (steal), and the memory in
+  use, all but what's available. Samples are kept a week (`server_load`). A point is a minute
+  over a day, and the busiest of 10 minutes over a week, so a short spike still shows; the
+  line breaks where the server wasn't running. It warns when the CPU has averaged over 85%
+  for a quarter hour, the memory is over 90% full, or the hypervisor took over 10% of the
+  CPU's time in the last hour. Elsewhere than Linux (development on a Mac) it estimates the
+  CPU from the load average and leaves memory out.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -212,6 +223,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
 | `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
+| `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
 
 ## Names from before YJSP

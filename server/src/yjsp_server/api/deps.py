@@ -44,7 +44,7 @@ def session_secret(request: Request) -> str:
 def session_user(request: Request, db: Session) -> User | None:
     """Who the browser's session cookie belongs to, if anyone: for pages, which redirect instead of failing."""
     secret = session_secret(request)
-    return auth.authenticate(db, secret) if secret else None
+    return auth.authenticate(db, secret, request.headers.get("user-agent", "")) if secret else None
 
 
 def any_user(request: Request, db: DB) -> User:
@@ -54,7 +54,7 @@ def any_user(request: Request, db: DB) -> User:
         secret, from_cookie = header[7:].strip(), False
     else:
         secret, from_cookie = session_secret(request), True
-    user = auth.authenticate(db, secret) if secret else None
+    user = auth.authenticate(db, secret, request.headers.get("user-agent", "")) if secret else None
     if user is None:
         raise Unauthorized("Sign in first")
     csrf = CSRF_HEADER in request.headers or OLD_CSRF_HEADER in request.headers

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from .. import auth
+from .. import auth, clients
 from ..models import SiteSettings, Token, User, WhitelistEmail
 
 
@@ -27,7 +27,7 @@ class UserOut(BaseModel):
     status: str
     is_admin: bool
     created_at: datetime
-    last_login_at: datetime | None
+    last_login_at: datetime | None  # in the list of everyone, only for admins and your own (people.last_sign_in)
     # For admins (people.last_active): when they last used the site, and whether they're on now. Otherwise null and
     # false.
     last_active_at: datetime | None = None
@@ -109,6 +109,56 @@ class ServerLoadOut(BaseModel):
     memory_total: int | None
 
 
+class AddInComputerOut(BaseModel):
+    name: str  # as the add-in said it when it signed in
+    version: str | None  # the add-in's, as its requests last said it
+    signed_in_at: datetime
+    last_used_at: datetime | None
+    in_use: bool  # used in the last 90 days, so its person has it
+    outdated: bool  # older than the installer offered now: it offers itself the update
+
+
+class AddInPersonOut(BaseModel):
+    user: UserRef
+    computers: list[AddInComputerOut]  # where they're signed in with the add-in
+    downloaded_at: datetime | None  # when they last downloaded the installer
+    downloaded_version: str | None
+    downloads: int  # how many times, updates by the add-in included
+
+
+class AddInOut(BaseModel):
+    """Who has the SolidWorks add-in, and who downloaded its installer (clients.add_in)."""
+
+    people: list[AddInPersonOut]  # the most recently on first
+    have_it: int  # people signed in with it and using it in the last 90 days
+    this_week: int  # of them, who used it in the last week
+    downloaded: int  # people who downloaded the installer
+    newest: str | None  # the installer's version, offered now
+    on_newest: int  # of the people who have it, who are on it (or newer) on a computer they use
+    counting_since: datetime | None  # the first download counted: none were before
+
+    @classmethod
+    def of(cls, found: "clients.AddIn") -> "AddInOut":
+        return cls(
+            people=[
+                AddInPersonOut(
+                    user=UserRef.of(p.user),
+                    computers=[AddInComputerOut(**vars(c)) for c in p.computers],
+                    downloaded_at=p.downloaded_at,
+                    downloaded_version=p.downloaded_version,
+                    downloads=p.downloads,
+                )
+                for p in found.people
+            ],
+            have_it=found.have_it,
+            this_week=found.this_week,
+            downloaded=found.downloaded,
+            newest=found.newest,
+            on_newest=found.on_newest,
+            counting_since=found.counting_since,
+        )
+
+
 class BackupOut(BaseModel):
     """What the off-site backup last said about itself (backups.status)."""
 
@@ -165,6 +215,8 @@ class TokenIssuedOut(BaseModel):
 class DevTokenIn(BaseModel):
     email: str
     name: str = ""
+    # The token's own name, as a client names it ("SolidWorks add-in on PC-1"), to stand in for that client.
+    client: str = Field(default="", max_length=200)
 
 
 class ClientTokenIn(BaseModel):

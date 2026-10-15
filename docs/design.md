@@ -71,7 +71,7 @@ site's only one.
 | The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
-| Software to download (the add-in's installer) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
+| Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
 
 Vault's blobs never change once written, so a backup of them only ever adds files. Yorg's
 scripts and models are JSON files changed in place, and deleting one deletes its file, so a
@@ -105,7 +105,7 @@ three. The rest of the disk is the system, logs, and the database's backups.
   from before, when a sign-in with the whitelist on made one to wait for an admin, can still
   be approved; one whose address goes on the whitelist joins at its next sign-in, and
   turning the whitelist off approves them all. While it's off, anyone with a GT account gets
-  Yorg and what Vault grants *everyone*.
+  Yorg and what Vault grants *everyone*, and Admin > People says so.
 - **Georgia Tech accounts** are Microsoft 365 accounts, in GT's tenant in Microsoft Entra,
   which sends their sign-ins on to GT's own login page, Duo and all. The server signs in
   through an app registered in Entra, at GT's tenant's endpoints, and lets in only GT's
@@ -123,7 +123,7 @@ three. The rest of the disk is the system, logs, and the database's backups.
   the last use of a session or a client: the web app, the add-in, the CLI) and who's on
   now (within two minutes: an open page asks who you are every minute, `session.ts`). Only
   admins see it (`people.last_active`); the list others get for granting access doesn't
-  say. Admins also see each person's time on the site (`site_seconds`): when a browser
+  say, nor when anyone signed in last, but themselves (`people.last_sign_in`). Admins also see each person's time on the site (`site_seconds`): when a browser
   session is used again within five minutes of its last use, the page was open all along,
   and the gap counts (`usage.record`). The add-in and the CLI don't count, and two
   browsers open at once count twice. The list sorts by status, when people joined, when
@@ -135,7 +135,8 @@ three. The rest of the disk is the system, logs, and the database's backups.
   hour, in UTC, with that hour's time on the site), and the page asks for days in its own
   time zone, so a day is the team's and not UTC's (`usage.daily`; a server without time zone
   data gives UTC's). It counts from the deploy that added it (October 2026): nothing kept
-  this before, and the chart says since when.
+  this before, and the chart says since when. The hours are kept 400 days, a little over a
+  year (`usage.KEEP`); noting a use forgets the ones past it.
 - **Server load:** beside it, how hard the server is working: how busy its CPUs have been
   and how full its memory, against all of each, for the last 24 hours or 7 days (`GET
   /api/load`). The server samples them itself each minute, in a thread it starts and stops
@@ -147,6 +148,17 @@ three. The rest of the disk is the system, logs, and the database's backups.
   for a quarter hour, the memory is over 90% full, or the hypervisor took over 10% of the
   CPU's time in the last hour. Elsewhere than Linux (development on a Mac) it estimates the
   CPU from the load average and leaves memory out.
+- **The SolidWorks add-in:** under them, who has Vault's add-in (`GET /api/add-in`,
+  `clients.py`): who's signed in with it, on which computers, with which version, and when
+  they last used it; who downloaded its installer; and how many people have it, signed in
+  and using it in the last 90 days. The add-in signs in as "SolidWorks add-in on
+  <computer>" and the CLI as "vault CLI on <computer>", so a token's name tells them apart,
+  and each says its version in its requests (`User-Agent: vault-client/<version>`), which
+  its token keeps (`tokens.client_version`, as it notes the token's use). Each download is
+  noted as it's served (`downloads`, the add-in's own updates included), from the deploy
+  that began noting them. Each version is compared with the installer the server offers:
+  an older one is marked (the add-in offers itself the update), and one not known yet,
+  until the add-in next talks to the server, isn't.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -165,7 +177,10 @@ three. The rest of the disk is the system, logs, and the database's backups.
   3. The server redirects to `http://127.0.0.1:<port>/callback` with a one-time
      code.
   4. The client exchanges the code and its PKCE verifier for a token. Tokens can be
-     revoked (`GET/DELETE /api/tokens`), and the server stores only their hashes.
+     revoked (`GET/DELETE /api/tokens`), and the server stores only their hashes. A
+     client's token lapses after 90 days unused (`auth.CLIENT_IDLE`), so a laptop in a
+     drawer, or one gone missing, isn't signed in forever; the CLI and the add-in then say
+     the sign-in expired and ask for a new one.
 - **Local development:** `YJSP_DEV_AUTH=1` enables `/auth/dev-login` and
   `/auth/dev-token`, which sign in as any email. The server refuses to start in
   production with this on, or without a way to sign in (Georgia Tech's, Google's, or
@@ -211,6 +226,16 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Settings** are `YJSP_*` environment variables, or a `.env` file (`config.py`;
   `server/.env.example` lists them). Production refuses development shortcuts and weak
   settings (`Settings.check`).
+- **Headers** (`security.py`): every response forbids other sites to frame ours (CSP
+  `frame-ancestors 'none'`, `X-Frame-Options`), the browser to second-guess a file's type
+  (`nosniff`), links to carry our addresses away (`Referrer-Policy`), plugins and another
+  base URL (`object-src`, `base-uri`), and forms to post anywhere but the site or a Vault
+  client's sign-in on the computer itself (`form-action`, `http://127.0.0.1:*`). Production
+  adds HSTS, and doesn't serve the API's docs (`/docs`, `/redoc`, `/openapi.json`). Which
+  scripts may run isn't limited yet: Yorg's Python sandbox runs an inline script in a
+  sandboxed frame, a worker from a `data:` URL, and Pyodide and WebAssembly from jsDelivr,
+  which a script policy must allow by hash or be reworked for first. The access log leaves
+  out sign-in codes (`HideSignInCodes`).
 
 ## API
 
@@ -225,8 +250,9 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
-| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
+| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
 | `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
+| `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
 
@@ -285,8 +311,9 @@ CI builds and smoke-tests the image on every change, and publishes it to
 3. Keep `YJSP_DATABASE_URL` (SQLite by default), `YJSP_VAULT_DIR`, and `YJSP_YORG_DIR`
    on a persistent disk, and back them up (see "Storage"). An S3/R2 store for Vault's
    blobs (Cloudflare R2: 10 GB free, no download fees) is planned.
-4. Put CI's `Vault-Setup.exe` (and `vault.exe`, if you like) in a folder and point
-   `YJSP_DOWNLOADS_DIR` at it: members get them from Vault's SolidWorks page.
+4. Put CI's `Vault-Setup.exe` with its signature, `Vault-Setup.exe.sig` (and `vault.exe`,
+   if you like), in a folder and point `YJSP_DOWNLOADS_DIR` at it: members get them from
+   Vault's SolidWorks page.
 
 Where to host it was decided in September 2026: the Oracle Cloud VM above, which costs
 nothing. The image would run on Render, a VPS, or a machine on campus too.

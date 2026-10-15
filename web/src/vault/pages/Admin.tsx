@@ -14,6 +14,7 @@ import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
+import { AddInTracker } from "./AddIn";
 import { ServerLoad } from "./Load";
 import { SiteUsage } from "./Usage";
 
@@ -88,10 +89,17 @@ function People() {
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
     const [sort, setSort] = useState<PeopleSort>({ key: "status", descending: false });
+    const [open, setOpen] = useState(false); // the whitelist is off: anyone at Georgia Tech can join
 
     useEffect(() => {
         reload().catch((error: Error) => setProblem(error.message));
     }, [reload, setProblem]);
+    useEffect(() => {
+        api.settings().then(
+            (site) => setOpen(!site.whitelist),
+            () => {}, // the Whitelist tab says what's wrong
+        );
+    }, []);
 
     // Who's on changes as people come and go: look again every so often while the page is in view.
     useEffect(() => {
@@ -139,8 +147,16 @@ function People() {
             <div className="dashboard">
                 <SiteUsage />
                 <ServerLoad />
+                <AddInTracker />
                 <DiskSpace />
             </div>
+            {open && (
+                <Notice tone="warning">
+                    The whitelist is off: anyone with a Georgia Tech account can make an account by signing in. Put the
+                    team's emails on it and turn it on, on the <Link to={`${VAULT}/admin/whitelist`}>Whitelist</Link>{" "}
+                    tab.
+                </Notice>
+            )}
             {problem && <Notice tone="error">{problem}</Notice>}
             <form className="inline-form" onSubmit={invite}>
                 <label className="field">

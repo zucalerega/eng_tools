@@ -397,19 +397,36 @@ internal sealed partial class VaultPane : UserControl
         var workspace = _workspace;
         if (workspace == null)
         {
-            _serverBox.Text = request.Server.AbsoluteUri; // ready to sign in to that vault
             ShowTab?.Invoke();
+            // Any web page can make a link: one for a server SolidWorks isn't set up for doesn't get to say where you sign in.
+            if (OpenLink.ConnectQuestion(request.Server, _settings.WorkspaceRoot, LastServer) != null)
+            {
+                return $"SolidWorks isn't connected to the vault at {OpenLink.Address(request.Server)}. To connect it, click Connect "
+                    + "SolidWorks on that vault's SolidWorks page.";
+            }
+            _serverBox.Text = request.Server.AbsoluteUri; // ready to sign in to that vault
             return "Sign in to Vault in SolidWorks first: open the Vault tab in the task pane.";
         }
-        if (!SameServer(workspace.Server, request.Server))
+        if (!OpenLink.SameServer(workspace.Server, request.Server))
         {
-            return $"That link is for the Vault server at {request.Server}, but this computer's workspace is for {workspace.Server}.";
+            return $"That link is for the Vault server at {OpenLink.Address(request.Server)}, but this computer's workspace is for "
+                + $"{OpenLink.Address(workspace.Server)}.";
         }
-        var path = workspace.ToLocalPath(request.VaultPath);
+        string path;
+        string? model;
+        try
+        {
+            path = workspace.ToLocalPath(request.VaultPath);
+            model = request.Model == null ? null : workspace.ToLocalPath(request.Model);
+        }
+        catch (VaultPathException e)
+        {
+            return e.Message; // in the workspace's own folder, say
+        }
         SolidWorksHost.BringToFront();
         if (request.Action == LinkAction.New)
         {
-            await NewFileAsync(path, request.Model == null ? null : workspace.ToLocalPath(request.Model));
+            await NewFileAsync(path, model);
             SolidWorksHost.BringToFront();
             return ""; // what went wrong, if anything, is shown here in SolidWorks
         }
@@ -426,7 +443,9 @@ internal sealed partial class VaultPane : UserControl
     /// <summary>
     /// For the web app's Connect SolidWorks: sign in to that vault, with the workspace folder shown (C:\VLT
     /// unless you chose another). Already signed in to it, there's nothing to do; signed in to another
-    /// vault, it says so, since switching is yours to choose (sign out, then connect again).
+    /// vault, it says so, since switching is yours to choose (sign out, then connect again). A vault
+    /// SolidWorks isn't set up for (or any, the first time) is asked about first, by its address: any web
+    /// page can make the link, and a server that isn't the team's would get your sign-in.
     /// </summary>
     private async Task<string> ConnectAsync(Uri server)
     {
@@ -434,12 +453,20 @@ internal sealed partial class VaultPane : UserControl
         ShowTab?.Invoke();
         if (_workspace is { } workspace)
         {
-            if (SameServer(workspace.Server, server))
+            if (OpenLink.SameServer(workspace.Server, server))
             {
                 ShowMessage("SolidWorks is connected to this vault.", Tone.Good);
                 return "";
             }
-            return $"SolidWorks is connected to the vault at {workspace.Server}. To switch, sign out in the Vault tab, then connect again.";
+            return $"SolidWorks is connected to the vault at {OpenLink.Address(workspace.Server)}. To switch, sign out in the Vault tab, "
+                + "then connect again.";
+        }
+        if (OpenLink.ConnectQuestion(server, _settings.WorkspaceRoot, LastServer) is { } question
+            && Ask(question, defaultNo: true) != DialogResult.Yes)
+        {
+            Log.Info($"Didn't connect to {OpenLink.Address(server)}, which SolidWorks isn't set up for: it wasn't confirmed");
+            ShowMessage("Not connected: SolidWorks connects to a new vault only when you say it's your team's.", Tone.Neutral);
+            return "";
         }
         _serverBox.Text = server.AbsoluteUri;
         try
@@ -568,7 +595,7 @@ internal sealed partial class VaultPane : UserControl
         var server = ParseServer(_serverBox.Text);
         var root = Path.GetFullPath(_rootBox.Text.Trim());
         var existing = Workspace.FindRoot(root);
-        if (existing != null && !SameServer(Workspace.ServerOf(existing), server))
+        if (existing != null && !OpenLink.SameServer(Workspace.ServerOf(existing), server))
         {
             throw new WorkspaceException($"{existing} is a workspace for {Workspace.ServerOf(existing)}. Choose another folder.");
         }
@@ -879,22 +906,34 @@ internal sealed partial class VaultPane : UserControl
     }
 
     /// <summary>
-    /// Update the add-in to the newer one the server offers: download its installer, checked against its SHA-256, and
-    /// start it. Windows asks to let it make changes; setup then waits for SolidWorks to close, since SolidWorks has
-    /// this add-in loaded, and installs the update. Sign-in, settings, and the workspace stay.
+    /// Update the add-in to the newer one the server offers: download its installer, check it (AddInUpdate.DownloadAsync:
+    /// its SHA-256, its signature by the key Vault's releases are signed with, and its version), and start it. Windows
+    /// asks to let it make changes; setup then waits for SolidWorks to close, since SolidWorks has this add-in loaded, and
+    /// installs the update. Sign-in, settings, and the workspace stay. One that doesn't check out isn't started: the tab
+    /// says why, and so does the log.
     /// </summary>
     private async Task UpdateAddInAsync()
     {
         if (_newerAddIn is not { } installer
-            || Ask($"Update Vault to version {installer.Version}? Vault downloads it, then Windows asks to let setup make changes. "
-                + "Setup finishes the update when you close SolidWorks, so save your work first. Your sign-in, settings, and workspace stay.")
+            || Ask($"Update Vault to version {installer.Version}? Vault downloads it and checks it's signed as Vault's releases are, then "
+                + "Windows asks to let setup make changes. Setup finishes the update when you close SolidWorks, so save your work first. "
+                + "Your sign-in, settings, and workspace stay.")
                 != DialogResult.Yes)
         {
             return;
         }
         await RunAsync($"Downloading Vault {installer.Version}", async workspace =>
         {
-            var setup = await AddInUpdate.DownloadAsync(workspace.Api, installer, Path.Combine(Path.GetTempPath(), "Vault"));
+            string setup;
+            try
+            {
+                setup = await AddInUpdate.DownloadAsync(workspace.Api, installer, Path.Combine(Path.GetTempPath(), "Vault"));
+            }
+            catch (WorkspaceException)
+            {
+                _checkedForUpdate = DateTime.MinValue; // what's offered may have changed since: look again at the next refresh
+                throw;
+            }
             try
             {
                 Process.Start(new ProcessStartInfo(setup, "/update") { UseShellExecute = true, Verb = "runas" })?.Dispose();
@@ -1801,8 +1840,8 @@ internal sealed partial class VaultPane : UserControl
             ? uri
             : throw new WorkspaceException("Enter the server's address, like https://yjsp.example.org");
 
-    private static bool SameServer(Uri a, Uri b) =>
-        string.Equals(a.AbsoluteUri.TrimEnd('/'), b.AbsoluteUri.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+    // The server SolidWorks last signed in to, if any: what it's set up for when there's no workspace (OpenLink.ConnectQuestion).
+    private Uri? LastServer => Uri.TryCreate(_settings.Server, UriKind.Absolute, out var server) ? server : null;
 
     /// <summary>Right-click actions on what's selected in the list or the tree (a folder in the tree gets its own few).</summary>
     private ContextMenuStrip ItemMenu()

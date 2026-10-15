@@ -43,16 +43,40 @@ jobs:
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
+      # The add-in's Update runs only an installer signed with the key it carries (docs/deploying.md, "Signing key"),
+      # so builds of main and release tags are signed. Never pull requests': their code runs in this job too.
+      - name: Sign Vault-Setup.exe
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        env:
+          INSTALLER_SIGNING_KEY: ${{ secrets.INSTALLER_SIGNING_KEY }}
+        run: |
+          if [ -z "$INSTALLER_SIGNING_KEY" ]; then
+            echo "::warning::INSTALLER_SIGNING_KEY isn't set, so Vault-Setup.exe isn't signed, and add-ins won't update to it."
+            exit 0
+          fi
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$INSTALLER_SIGNING_KEY" > "$key"
+          setup=src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
+          openssl dgst -sha256 -sign "$key" -out "$setup.sig" "$setup"
+          # Laptops check it with the key their add-in carries. Signed with another, it's right only for the release
+          # that brings a new key, which is signed with the old one.
+          if ! openssl dgst -sha256 -verify src/Vault.Client/installer-signing.pub.pem -signature "$setup.sig" "$setup"; then
+            echo "::warning::Vault-Setup.exe is signed with a key this add-in doesn't carry (installer-signing.pub.pem): add-ins won't update to it, unless it's the release that changes keys."
+          fi
       # The builds are kept from main and from release tags only, main's for a week and a tag's for 90 days:
       # only those go on the server (docs/deploying.md), and a pull request's would fill the account's
       # artifact storage (500 MB) with copies nobody installs. Pull requests still build and test all of it.
       # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2026: put it in the server's
-      # YJSP_DOWNLOADS_DIR, and the web app offers it to members.
+      # YJSP_DOWNLOADS_DIR, with its signature, Vault-Setup.exe.sig, and the web app offers it to members.
       - uses: actions/upload-artifact@v7
         if: github.event_name == 'push'
         with:
           name: vault-setup
-          path: client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
+          path: |
+            client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
+            client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe.sig
           if-no-files-found: error
           retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
       # The add-in's files as they are, to install by hand with install.ps1 (see its README).

@@ -11,12 +11,15 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from .db import utcnow
 from .models import SiteUsage, User
+
+# Who was on in which hour is kept this long: past a year, for a year-to-year look, and no longer.
+KEEP = timedelta(days=400)
 
 
 def record(db: Session, user_id: int, at: datetime, site_seconds: int) -> None:
@@ -35,6 +38,10 @@ def record(db: Session, user_id: int, at: datetime, site_seconds: int) -> None:
     )
     if site_seconds:
         db.execute(update(User).where(User.id == user_id).values(site_seconds=User.site_seconds + site_seconds))
+    # The oldest hour is a look at the index: only when one is past KEEP does anything go.
+    oldest = db.scalar(select(func.min(SiteUsage.hour)))
+    if oldest is not None and oldest < hour - KEEP:
+        db.execute(delete(SiteUsage).where(SiteUsage.hour < hour - KEEP))
 
 
 @dataclass

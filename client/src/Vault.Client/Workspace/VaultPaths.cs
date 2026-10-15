@@ -22,7 +22,14 @@ public static class VaultPaths
     /// <summary>Validates one file or folder name; returns it NFC-normalized.</summary>
     public static string CleanName(string name)
     {
-        name = name.Normalize(NormalizationForm.FormC);
+        try
+        {
+            name = name.Normalize(NormalizationForm.FormC);
+        }
+        catch (ArgumentException)
+        {
+            throw new VaultPathException("A name has characters that aren't Unicode text");
+        }
         if (name.Length == 0 || name == "." || name == "..")
         {
             throw new VaultPathException($"'{name}' is not a valid name");
@@ -62,6 +69,17 @@ public static class VaultPaths
         }
         return names;
     }
+
+    /// <summary>
+    /// The names along a vault path as the server writes it, and the workspace keeps it: names joined by '/', each one
+    /// CleanName allows; empty for the root. Anything else is a VaultPathException: a '\', an empty name, "..", a
+    /// drive, a device, a stream, a name Windows would change. A client puts files where the server's paths say, and
+    /// the server could be one that isn't the team's, so none of its paths may reach outside the folder they're put in.
+    /// Unlike Split, a path longer than MaxPath is one: the server can make them (a folder moved with empty folders deep
+    /// in it, a file restored into a folder renamed longer since), and they're no danger, only long.
+    /// </summary>
+    public static IReadOnlyList<string> SplitServerPath(string path) =>
+        path.Length == 0 ? Array.Empty<string>() : path.Split('/').Select(CleanName).ToList();
 
     /// <summary>Comparison key: names that differ only in case are the same file, as on Windows.</summary>
     public static string Key(string path) => path.Normalize(NormalizationForm.FormC).ToLowerInvariant();

@@ -104,3 +104,17 @@ def test_someone_on_twice_in_an_hour_counts_once_with_both_times(app, client, te
         alices = db.query(SiteUsage).filter(SiteUsage.user_id == team.ids["alice@x.test"]).all()
     assert sum(row.site_seconds for row in alices) == seconds
     assert 350 <= seconds <= 370
+
+
+def test_hours_are_kept_a_little_over_a_year(app, client, team):
+    chief = team.member("chief@x.test", admin=True)
+    long_ago = datetime.combine(utcnow().date() - timedelta(days=401), time(12), tzinfo=UTC)
+    within = datetime.combine(utcnow().date() - timedelta(days=399), time(12), tzinfo=UTC)
+    team.member("alice@x.test")
+    on(app, team, "alice@x.test", long_ago, site_seconds=60)
+    on(app, team, "alice@x.test", within, site_seconds=60)
+
+    client.get("/api/me", headers=chief)  # noting a use forgets what's past keeping
+    with app.state.sessionmaker() as db:
+        kept = sorted(row.hour for row in db.query(SiteUsage).filter(SiteUsage.user_id == team.ids["alice@x.test"]))
+    assert kept == [within]

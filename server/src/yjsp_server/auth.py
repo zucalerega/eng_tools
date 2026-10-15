@@ -25,6 +25,9 @@ CODE_TTL = timedelta(minutes=5)
 # seconds), without a write for every request.
 _TOUCH_EVERY = timedelta(minutes=1)
 ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
+# A CLI's or the add-in's token unused this long has lapsed: a laptop left in a drawer, or one that went missing, isn't
+# signed in forever. The clients say the sign-in expired and ask for a new one. (A browser's session has a fixed end.)
+CLIENT_IDLE = timedelta(days=90)
 # A browser session used again within this long was open the whole time, so the gap counts as time on the site. An
 # open page asks who you are every minute while it's visible (session.ts); a longer gap means the page was closed or
 # hidden.
@@ -172,17 +175,33 @@ def issue_token(db: Session, user: User, *, kind: str, name: str, ttl: timedelta
     return secret
 
 
-def authenticate(db: Session, secret: str) -> User | None:
-    """The user a token belongs to, if the token is valid. Account status is the caller's check."""
+# What a CLI or the add-in sends as its User-Agent, before its version (VaultApi.cs).
+CLIENT_AGENT = "vault-client/"
+
+
+def client_version(user_agent: str) -> str | None:
+    """A Vault client's version from its User-Agent: "0.5.2" from "vault-client/0.5.2.0"; None from anything else."""
+    if not user_agent.startswith(CLIENT_AGENT):
+        return None
+    version = user_agent[len(CLIENT_AGENT) :].split(" ", 1)[0][:32]
+    return version.removesuffix(".0") if version.count(".") == 3 else version or None
+
+
+def authenticate(db: Session, secret: str, user_agent: str = "") -> User | None:
+    """The user a token belongs to, if the token is valid. Account status is the caller's check. A client's
+    version, from its User-Agent, is kept with its token as it's used."""
     token = db.scalar(select(Token).where(Token.token_hash == _digest(secret)))
     now = utcnow()
-    if token is None or token.revoked_at is not None or (token.expires_at is not None and token.expires_at <= now):
+    if token is None or not _valid(token, now):
         return None
     last_used = token.last_used_at
     if last_used is None or now - last_used > _TOUCH_EVERY:
         # Only if no other request touched it first, so a gap is counted once.
         unchanged = Token.last_used_at.is_(None) if last_used is None else Token.last_used_at == last_used
-        touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(last_used_at=now)).rowcount
+        noted: dict[str, object] = {"last_used_at": now}
+        if (version := client_version(user_agent)) is not None and version != token.client_version:
+            noted["client_version"] = version
+        touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(**noted)).rowcount
         if touched:
             visit = token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT
             usage.record(db, token.user_id, now, round((now - last_used).total_seconds()) if visit else 0)
@@ -202,13 +221,20 @@ def revoke_secret(db: Session, secret: str) -> None:
     db.commit()
 
 
+def _valid(token: Token, now: datetime) -> bool:
+    """Not revoked, not past its end, and for a CLI or the add-in, used in the last CLIENT_IDLE."""
+    if token.revoked_at is not None or (token.expires_at is not None and token.expires_at <= now):
+        return False
+    return token.kind != CLIENT or now - (token.last_used_at or token.created_at) <= CLIENT_IDLE
+
+
 def list_tokens(db: Session, user: User) -> list[Token]:
     """The user's signed-in browsers and clients that are still valid."""
     now = utcnow()
     tokens = db.scalars(
         select(Token).where(Token.user_id == user.id, Token.revoked_at.is_(None)).order_by(Token.id.desc())
     )
-    return [t for t in tokens if t.expires_at is None or t.expires_at > now]
+    return [t for t in tokens if _valid(t, now)]
 
 
 def revoke_token(db: Session, user: User, token_id: int) -> None:

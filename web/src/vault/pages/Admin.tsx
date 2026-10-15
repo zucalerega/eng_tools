@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Account, type SiteSettings, type Storage } from "../../api";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+    api,
+    type Account,
+    type SiteSettings,
+    type Storage,
+    type WhitelistAdded,
+    type WhitelistEntry,
+} from "../../api";
 import { type Grants, type Role, vaultApi } from "../api";
 import { formatDate, formatDuration, formatSize, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
@@ -7,12 +14,12 @@ import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
 
-// Admins manage accounts; admins and folder leads manage who can do what where.
+// Admins manage accounts and who can make one; admins and folder leads manage who can do what where.
 
-export function Admin({ section }: { section: "people" | "access" }) {
+export function Admin({ section }: { section: "people" | "whitelist" | "access" }) {
     const vault = useVault();
     const isAdmin = vault.me?.is_admin ?? false;
-    const shown = section === "people" && !isAdmin ? "access" : section;
+    const shown = section !== "access" && !isAdmin ? "access" : section;
     return (
         <section>
             <div className="page-head">
@@ -23,12 +30,17 @@ export function Admin({ section }: { section: "people" | "access" }) {
                             People
                         </Link>
                     )}
+                    {isAdmin && (
+                        <Link to={`${VAULT}/admin/whitelist`} aria-current={shown === "whitelist" ? "page" : undefined}>
+                            Whitelist
+                        </Link>
+                    )}
                     <Link to={`${VAULT}/admin/access`} aria-current={shown === "access" ? "page" : undefined}>
                         Vault Access
                     </Link>
                 </nav>
             </div>
-            {shown === "people" ? <People /> : <Access vault={vault} />}
+            {shown === "people" ? <People /> : shown === "whitelist" ? <Whitelist /> : <Access vault={vault} />}
         </section>
     );
 }
@@ -68,16 +80,10 @@ const PEOPLE_REFRESH_MS = 30_000; // how often the list of people is fetched aga
 function People() {
     const vault = useVault();
     const [people, setPeople] = useState<Account[] | null>(null);
-    const [site, setSite] = useState<SiteSettings | null>(null);
-    const reload = useCallback(async () => {
-        const [accounts, settings] = await Promise.all([api.users(), api.settings()]);
-        setPeople(accounts);
-        setSite(settings);
-    }, []);
+    const reload = useCallback(async () => setPeople(await api.users()), []);
     const { problem, busy, run, setProblem } = useAction(reload);
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
-    const [opening, setOpening] = useState(false); // asking before the whitelist goes off
     const [sort, setSort] = useState<PeopleSort>({ key: "status", descending: false });
 
     useEffect(() => {
@@ -124,65 +130,11 @@ function People() {
             </th>
         );
     };
-    const waiting = sorted.filter((person) => person.status === "pending").length;
     const onNow = sorted.filter((person) => person.active_now).length;
     return (
         <>
             <DiskSpace />
             {problem && <Notice tone="error">{problem}</Notice>}
-            {site && (
-                <div className="setting">
-                    <label className="check">
-                        <input
-                            type="checkbox"
-                            checked={site.whitelist}
-                            disabled={busy}
-                            onChange={(event) => {
-                                if (event.target.checked) {
-                                    void run(() => api.updateSettings({ whitelist: true }));
-                                } else {
-                                    setOpening(true);
-                                }
-                            }}
-                        />
-                        Whitelist
-                    </label>
-                    {site.whitelist ? (
-                        <p className="muted">
-                            On: only people invited here can join. Anyone else who signs in waits for an admin to
-                            approve them.
-                        </p>
-                    ) : (
-                        <p className="muted">
-                            Off: anyone who signs in joins right away. They get what Everyone has on the Vault Access
-                            tab, and Yorg's test data.
-                        </p>
-                    )}
-                </div>
-            )}
-            {opening && (
-                <Dialog
-                    title="Turn the whitelist off?"
-                    confirm="Turn it off"
-                    danger
-                    busy={busy}
-                    onCancel={() => setOpening(false)}
-                    onConfirm={() =>
-                        void run(() => api.updateSettings({ whitelist: false })).then(() => setOpening(false))
-                    }
-                >
-                    <p>
-                        Anyone who signs in will join right away. They'll get what Everyone has on the Vault Access tab,
-                        and Yorg's test data.
-                    </p>
-                    {waiting > 0 && (
-                        <p>
-                            {waiting === 1 ? "The person" : `The ${waiting} people`} waiting for approval will be
-                            approved now.
-                        </p>
-                    )}
-                </Dialog>
-            )}
             <form className="inline-form" onSubmit={invite}>
                 <label className="field">
                     Invite by email
@@ -197,7 +149,8 @@ function People() {
                 </button>
             </form>
             <p className="muted">
-                Invited people are active from their first sign-in, and can be given access before then.
+                Invited people are active from their first sign-in, and can be given access before then. Someone without
+                a Georgia Tech account signs in with Google, once invited by their Google address.
             </p>
             {people === null ? (
                 <p className="muted">Loading…</p>
@@ -392,6 +345,297 @@ function DiskSpace() {
                 ))}
             </ul>
         </div>
+    );
+}
+
+/** The email addresses in a file's text, once each: a roster's CSV has them in a column, quoted or not. */
+function emailsIn(text: string): string[] {
+    const found = text.match(/[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi) ?? [];
+    return [...new Set(found.map((email) => email.toLowerCase()))];
+}
+
+const FOUND_SHOWN = 8; // of a file's emails, listed before adding them
+
+// Who can make an account: the whitelist's switch, and the Georgia Tech emails on it, typed in or from a file.
+function Whitelist() {
+    const [site, setSite] = useState<SiteSettings | null>(null);
+    const [entries, setEntries] = useState<WhitelistEntry[] | null>(null);
+    const [waiting, setWaiting] = useState(0); // accounts left waiting for approval from before
+    const reload = useCallback(async () => {
+        const [settings, listed, people] = await Promise.all([api.settings(), api.whitelist(), api.users()]);
+        setSite(settings);
+        setEntries(listed);
+        setWaiting(people.filter((person) => person.status === "pending").length);
+    }, []);
+    const { problem, busy, run, setProblem } = useAction(reload);
+    const [opening, setOpening] = useState(false); // asking before the whitelist goes off
+    const [email, setEmail] = useState("");
+    const [file, setFile] = useState<{ name: string; emails: string[] } | null>(null); // asking before adding them
+    const [added, setAdded] = useState<WhitelistAdded | null>(null);
+    const [filter, setFilter] = useState("");
+    const picker = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        reload().catch((error: Error) => setProblem(error.message));
+    }, [reload, setProblem]);
+
+    const add = (emails: string[], then?: () => void) =>
+        run(async () => {
+            setAdded(null);
+            setAdded(await api.addToWhitelist(emails));
+            then?.();
+        });
+
+    function addTyped(event: FormEvent) {
+        event.preventDefault();
+        void add([email.trim()], () => setEmail(""));
+    }
+
+    async function read(picked: File) {
+        setAdded(null);
+        setProblem(null);
+        const emails = emailsIn(await picked.text());
+        if (emails.length === 0) {
+            setProblem(`There are no email addresses in ${picked.name}.`);
+        } else {
+            setFile({ name: picked.name, emails });
+        }
+    }
+
+    const wanted = filter.trim().toLowerCase();
+    const shown = (entries ?? []).filter(
+        (entry) => !wanted || entry.email.includes(wanted) || !!entry.account?.name.toLowerCase().includes(wanted),
+    );
+    const joined = (entries ?? []).filter((entry) => entry.account?.status === "active").length;
+    return (
+        <>
+            {problem && <Notice tone="error">{problem}</Notice>}
+            {site && (
+                <div className="setting">
+                    <label className="check">
+                        <input
+                            type="checkbox"
+                            checked={site.whitelist}
+                            disabled={busy}
+                            onChange={(event) => {
+                                if (event.target.checked) {
+                                    void run(() => api.updateSettings({ whitelist: true }));
+                                } else {
+                                    setOpening(true);
+                                }
+                            }}
+                        />
+                        Whitelist
+                    </label>
+                    {site.whitelist ? (
+                        <p className="muted">
+                            On: only the emails below, and people invited on the People tab, can make an account, by
+                            signing in with Georgia Tech. Anyone else who signs in is turned away, and told to ask an
+                            admin.
+                        </p>
+                    ) : (
+                        <p className="muted">
+                            Off: anyone with a Georgia Tech account can make one by signing in. They get what Everyone
+                            has on the Vault Access tab, and Yorg's test data.
+                        </p>
+                    )}
+                    <p className="muted">Google signs in only to accounts made before: it makes no new ones.</p>
+                </div>
+            )}
+            {opening && (
+                <Dialog
+                    title="Turn the whitelist off?"
+                    confirm="Turn it off"
+                    danger
+                    busy={busy}
+                    onCancel={() => setOpening(false)}
+                    onConfirm={() =>
+                        void run(() => api.updateSettings({ whitelist: false })).then(() => setOpening(false))
+                    }
+                >
+                    <p>
+                        Anyone with a Georgia Tech account will be able to join by signing in. They'll get what Everyone
+                        has on the Vault Access tab, and Yorg's test data.
+                    </p>
+                    {waiting > 0 && (
+                        <p>
+                            {waiting === 1 ? "The person" : `The ${waiting} people`} waiting for approval will be
+                            approved now.
+                        </p>
+                    )}
+                </Dialog>
+            )}
+            <form className="inline-form" onSubmit={addTyped}>
+                <label className="field">
+                    Add a Georgia Tech email
+                    <input
+                        type="email"
+                        required
+                        placeholder="gburdell3@gatech.edu"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                    />
+                </label>
+                <button type="submit" className="button-primary" disabled={busy}>
+                    Add
+                </button>
+                <button type="button" disabled={busy} onClick={() => picker.current?.click()}>
+                    Upload a CSV…
+                </button>
+                <input
+                    ref={picker}
+                    type="file"
+                    accept=".csv,.tsv,.txt,text/csv,text/plain"
+                    hidden
+                    aria-label="File of emails"
+                    onChange={(event) => {
+                        const picked = event.target.files?.[0];
+                        event.target.value = "";
+                        if (picked) {
+                            read(picked).catch((error: Error) => setProblem(error.message));
+                        }
+                    }}
+                />
+            </form>
+            <p className="muted">
+                A team roster's CSV, or any file with the emails in it: its Georgia Tech addresses go on. Taking an
+                email off doesn't change an account it already made; disable that on the People tab.
+            </p>
+            {added && <Added result={added} />}
+            {file && (
+                <Dialog
+                    title={`Add the emails in ${file.name}?`}
+                    confirm={file.emails.length === 1 ? "Add it" : `Add all ${file.emails.length}`}
+                    busy={busy}
+                    onCancel={() => setFile(null)}
+                    onConfirm={() => {
+                        setFile(null);
+                        void add(file.emails);
+                    }}
+                >
+                    <p>
+                        {file.emails.length === 1
+                            ? "It has 1 email address:"
+                            : `It has ${file.emails.length} email addresses${file.emails.length > FOUND_SHOWN ? ", like these" : ""}:`}
+                    </p>
+                    <ul className="found-emails">
+                        {file.emails.slice(0, FOUND_SHOWN).map((found) => (
+                            <li key={found}>{found}</li>
+                        ))}
+                    </ul>
+                    {file.emails.length > FOUND_SHOWN && (
+                        <p className="muted">and {file.emails.length - FOUND_SHOWN} more.</p>
+                    )}
+                    <p className="muted">Any that aren't Georgia Tech addresses are left off.</p>
+                </Dialog>
+            )}
+            {entries === null ? (
+                <p className="muted">Loading…</p>
+            ) : entries.length === 0 ? (
+                <p className="muted">No emails on the whitelist yet.</p>
+            ) : (
+                <>
+                    <div className="whitelist-head">
+                        <p className="people-counts">
+                            <span>
+                                <strong>{entries.length}</strong> {entries.length === 1 ? "email" : "emails"}
+                            </span>
+                            <span>
+                                <strong>{joined}</strong> joined
+                            </span>
+                        </p>
+                        <input
+                            type="search"
+                            placeholder="Find an email or name"
+                            aria-label="Find on the whitelist"
+                            value={filter}
+                            onChange={(event) => setFilter(event.target.value)}
+                        />
+                    </div>
+                    <table className="table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Account</th>
+                                <th>Added</th>
+                                <th>
+                                    <span className="visually-hidden">Actions</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {shown.map((entry) => (
+                                <tr key={entry.id}>
+                                    <td>{entry.email}</td>
+                                    <td>
+                                        {entry.account ? (
+                                            <>
+                                                {entry.account.name}
+                                                {entry.account.status !== "active" && (
+                                                    <span className={`badge status-${entry.account.status}`}>
+                                                        {entry.account.status === "pending"
+                                                            ? "waiting for approval"
+                                                            : entry.account.status}
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <span className="muted">not yet</span>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <time dateTime={entry.added_at} title={formatTime(entry.added_at)}>
+                                            {formatDate(entry.added_at)}
+                                        </time>
+                                    </td>
+                                    <td className="row-actions">
+                                        <button
+                                            type="button"
+                                            className="button-small"
+                                            aria-label={`Remove ${entry.email}`}
+                                            disabled={busy}
+                                            onClick={() => {
+                                                setAdded(null);
+                                                void run(() => api.removeFromWhitelist(entry.id));
+                                            }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {shown.length === 0 && <p className="muted">Nothing on the whitelist matches “{filter.trim()}”.</p>}
+                </>
+            )}
+        </>
+    );
+}
+
+/** What putting emails on the whitelist did: which went on, which were on it already, and which it left off. */
+function Added({ result }: { result: WhitelistAdded }) {
+    const { added, already, not_georgia_tech: others } = result;
+    return (
+        <Notice tone={others.length > 0 ? "warning" : "info"}>
+            {added.length > 0 && <p>{added.length === 1 ? `Added ${added[0]}.` : `Added ${added.length} emails.`}</p>}
+            {already.length > 0 && (
+                <p>
+                    {already.length === 1
+                        ? `${already[0]} was on the whitelist already.`
+                        : `${already.length} were on the whitelist already.`}
+                </p>
+            )}
+            {others.length > 0 && (
+                <p>
+                    {others.length === 1
+                        ? `Left off ${others[0]}, which isn't a Georgia Tech address`
+                        : `Left off ${others.length} addresses that aren't Georgia Tech's: ${others.join(", ")}`}
+                    . Only GT accounts can make an account; to let someone in by another address, invite them on the
+                    People tab, and they sign in with Google.
+                </p>
+            )}
+        </Notice>
     );
 }
 

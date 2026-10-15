@@ -1,21 +1,22 @@
 """Accounts as admins and their owners change them: inviting, approving, and disabling people, admin rights, the
-whitelist, and your own name; and who has been on when, and how full the server's disk is.
+whitelist and the emails on it, and your own name; and who has been on when, and how full the server's disk is.
 
 Vault's index carries people's names and what they may see, so a change here makes every Vault client sync everything
 again (vault.people_changed), and it goes in Vault's activity log (vault.log), the site's only one.
 """
 
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import disk
+from . import auth, disk
 from .config import Settings
 from .errors import ApiError, Conflict, Forbidden, NotFound
-from .models import SiteSettings, Token, User, UserStatus
+from .models import SiteSettings, Token, User, UserStatus, WhitelistEmail
 from .vault import vault
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -147,8 +148,9 @@ def disk_usage(db: Session, admin: User, settings: Settings) -> disk.DiskUsage:
 def update_site_settings(db: Session, admin: User, *, whitelist: bool | None = None) -> SiteSettings:
     """Turn the whitelist on or off.
 
-    Accounts that already exist keep their status either way. Off, anyone who signs in joins at once
-    (auth.sign_in), so the people waiting for approval are approved now: they could sign in again to join.
+    Accounts that already exist keep their status either way. Off, anyone with a Georgia Tech account joins at once
+    (auth._sign_in), and anyone still waiting for approval from before would join by signing in again, so they're
+    approved now.
     """
     _require_admin(admin)
     seq = vault.begin_write(db)
@@ -164,3 +166,59 @@ def update_site_settings(db: Session, admin: User, *, whitelist: bool | None = N
             vault.people_changed(db, seq)
     db.commit()
     return site
+
+
+def whitelist(db: Session, admin: User) -> list[tuple[WhitelistEmail, User | None]]:
+    """The emails on the whitelist, in order, each with its account if it has one: the one that signed in as it, or
+    else the one under that email, an invite say (admins)."""
+    _require_admin(admin)
+    users = list(db.scalars(select(User)))
+    by_id, by_email = {u.id: u for u in users}, {u.email: u for u in users}
+    entries = db.scalars(select(WhitelistEmail).order_by(WhitelistEmail.email))
+    return [(e, by_id.get(e.user_id) if e.user_id else by_email.get(e.email)) for e in entries]
+
+
+@dataclass
+class WhitelistAdded:
+    added: list[str]
+    already: list[str]  # on the whitelist before
+    not_georgia_tech: list[str]  # left off: only Georgia Tech accounts make accounts
+
+
+def add_to_whitelist(db: Session, admin: User, emails: list[str]) -> WhitelistAdded:
+    """Put emails on the whitelist (admins): one typed in, or a team roster's.
+
+    Only Georgia Tech addresses go on, since only GT accounts make accounts (auth._sign_in): any other is left off and
+    said so, rather than refusing the rest of a roster with it. Someone with another address can be invited instead.
+    """
+    _require_admin(admin)
+    wanted: dict[str, None] = {}  # in the order given, once each
+    other: dict[str, None] = {}
+    for typed in emails:
+        email = typed.strip().lower()
+        if not _EMAIL.match(email):
+            raise ApiError(f"{typed.strip()!r} isn't an email address", code="bad_email")
+        (wanted if auth.gt_address(email) else other)[email] = None
+    vault.begin_write(db)
+    there = set(db.scalars(select(WhitelistEmail.email)))
+    added = [email for email in wanted if email not in there]
+    db.add_all(WhitelistEmail(email=email) for email in added)
+    if added:
+        vault.log(db, admin, "add_to_whitelist", emails=added)
+    db.commit()
+    return WhitelistAdded(added=added, already=[e for e in wanted if e in there], not_georgia_tech=list(other))
+
+
+def remove_from_whitelist(db: Session, admin: User, entry_id: int) -> None:
+    """Take an email off the whitelist (admins). An account it made stays as it is: disable it to keep them out."""
+    _require_admin(admin)
+    vault.begin_write(db)
+    entry = db.get(WhitelistEmail, entry_id)
+    if entry is None:
+        raise NotFound(
+            "That email isn't on the whitelist: someone may have just taken it off. Reload the page to see the list",
+            code="not_on_whitelist",
+        )
+    db.delete(entry)
+    vault.log(db, admin, "remove_from_whitelist", email=entry.email)
+    db.commit()

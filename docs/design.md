@@ -84,15 +84,24 @@ three. The rest of the disk is the system, logs, and the database's backups.
 
 ## Sign-in and accounts
 
-- **People** sign in with a Georgia Tech account or with Google, and anyone who does joins
-  at once (decided September 2026, for now), unless an admin has turned on the *whitelist*
-  (Admin > People in the web app, `site_settings`). With it on, a first sign-in creates a
-  *pending* account that an admin approves, unless an admin invited that email beforehand.
-  Emails listed in `YJSP_BOOTSTRAP_ADMINS` are always active admins, and a disabled account
-  stays disabled however it signs in. Turning the whitelist off approves everyone waiting,
-  since they could sign in again to join; turning it on changes no one who already has an
-  account. While it's off, anyone with a GT or Google account gets Yorg and what Vault
-  grants *everyone*.
+- **People** sign in with a Georgia Tech account, or with Google to an account already
+  there. Since October 2026 only a GT sign-in makes an account (`auth._sign_in`): Google
+  signs in to one it made before, or to an admin's invite, so someone without a GT account
+  (a mentor, say) joins by an invite to their Google address. With the *whitelist* off
+  (Admin > Whitelist in the web app, `site_settings`), anyone with a GT account joins at
+  once; with it on, only a GT address on it does (`whitelist_emails`), besides people
+  invited, and anyone else who signs in is turned away, by a page that says to ask an admin,
+  rather than left waiting for one. Admins put a roster's addresses on the whitelist from a
+  file, in which the web app finds every email wherever it is, or one at a time
+  (`people.add_to_whitelist`); only GT addresses go on, and any other is left off and said
+  so. Each shows its account once it has one, by its email or by the sign-in that made it
+  (an alias can make an account named by the GT username), and taking one off changes no
+  account. Emails listed in `YJSP_BOOTSTRAP_ADMINS` are always active admins, made by either
+  sign-in, and a disabled account stays disabled however it signs in. Accounts *pending*
+  from before, when a sign-in with the whitelist on made one to wait for an admin, can still
+  be approved; one whose address goes on the whitelist joins at its next sign-in, and
+  turning the whitelist off approves them all. While it's off, anyone with a GT account gets
+  Yorg and what Vault grants *everyone*.
 - **Georgia Tech accounts** are Microsoft 365 accounts, in GT's tenant in Microsoft Entra,
   which sends their sign-ins on to GT's own login page, Duo and all. The server signs in
   through an app registered in Entra, at GT's tenant's endpoints, and lets in only GT's
@@ -190,7 +199,8 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 |---|---|
 | `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) |
-| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
+| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
+| `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |

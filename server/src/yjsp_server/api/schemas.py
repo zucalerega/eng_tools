@@ -2,12 +2,12 @@
 (vault/schemas.py, yorg/schemas.py)."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 from .. import auth
-from ..models import SiteSettings, Token, User
+from ..models import SiteSettings, Token, User, WhitelistEmail
 
 
 class UserRef(BaseModel):
@@ -67,7 +67,9 @@ class MePatch(BaseModel):
 
 
 class SiteSettingsOut(BaseModel):
-    whitelist: bool  # on: only invited people join, and anyone else who signs in waits for an admin's approval
+    # On: only the emails on the whitelist and invited people can make an account; anyone else who signs in is turned
+    # away. Off: anyone with a Georgia Tech account can.
+    whitelist: bool
 
     @classmethod
     def of(cls, site: SiteSettings) -> "SiteSettingsOut":
@@ -121,3 +123,30 @@ class DevTokenIn(BaseModel):
 class ClientTokenIn(BaseModel):
     code: str
     verifier: str = Field(min_length=43, max_length=128)
+
+
+class WhitelistIn(BaseModel):
+    # One typed in, or a roster's: at most a few thousand, each at most as long as an email can be.
+    emails: list[Annotated[str, Field(max_length=320)]] = Field(min_length=1, max_length=5000)
+
+
+class WhitelistEntryOut(BaseModel):
+    id: int
+    email: str
+    added_at: datetime
+    account: UserOut | None  # the account it has, once it has one (people.whitelist)
+
+    @classmethod
+    def of(cls, entry: WhitelistEmail, account: User | None) -> "WhitelistEntryOut":
+        return cls(
+            id=entry.id,
+            email=entry.email,
+            added_at=entry.added_at,
+            account=UserOut.of(account) if account else None,
+        )
+
+
+class WhitelistAddedOut(BaseModel):
+    added: list[str]
+    already: list[str]  # on the whitelist before
+    not_georgia_tech: list[str]  # left off: only Georgia Tech accounts make accounts

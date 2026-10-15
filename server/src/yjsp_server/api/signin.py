@@ -200,6 +200,16 @@ def _safe_next(target: str | None) -> str:
     return target
 
 
+def _turned_away(error: ApiError) -> HTMLResponse:
+    """A sign-in that didn't let someone in, as a page that says why and what to do, not the API's JSON: they came
+    from Google's or GT's login page in their browser."""
+    return _page(
+        "Can't sign you in",
+        f'<p class="lead">{_esc(error.message)}.</p><a class="button secondary" href="/">Back to sign-in</a>',
+        error.status,
+    )
+
+
 def _start_session(request: Request, db: Session, settings: Settings, user: User, target: str) -> RedirectResponse:
     agent = request.headers.get("user-agent", "browser")
     secret = auth.issue_token(db, user, kind=auth.SESSION, name=agent, ttl=timedelta(days=settings.session_days))
@@ -236,11 +246,19 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
                 for i, way in enumerate(offered)
             )
             parts.append(f'<div class="choices">{buttons}</div>')
-            if auth.whitelist_on(db):
-                parts.append('<p class="fine">First time here? Sign in, and an admin will approve your account.</p>')
+            # Only Georgia Tech accounts make new accounts (auth._sign_in): Google is for accounts already there.
+            if _provider(request, "microsoft") is None:
+                first = "First time here? An admin needs to invite you first."
+            elif auth.whitelist_on(db):
+                first = (
+                    "First time here? Sign in with Georgia Tech. If your GT email isn't on the team's whitelist yet, "
+                    "ask an admin to add it."
+                )
             else:
-                accounts = " or ".join(way.label for way in offered)
-                parts.append(f'<p class="fine">First time here? Sign in with your {accounts} account to join.</p>')
+                first = "First time here? Sign in with your Georgia Tech account to join."
+            if _provider(request, "google") is not None:
+                first += " Google is for accounts made with it before."
+            parts.append(f'<p class="fine">{first}</p>')
         if settings.dev_auth and not settings.production:
             parts.append(
                 '<form class="dev" method="get" action="/auth/dev-login"><p>Development sign-in, with any email</p>'
@@ -298,16 +316,19 @@ async def login(request: Request, settings: Config, next_path: NextPath = "/") -
 
 
 @router.get("/auth/callback", include_in_schema=False)
-async def callback(request: Request, db: DB, settings: Config) -> RedirectResponse:
-    info = await _signed_in_as(request, "google")
-    user = auth.sign_in(
-        db,
-        settings,
-        subject=info["sub"],
-        email=info["email"],
-        name=info.get("name", ""),
-        email_verified=bool(info.get("email_verified")),
-    )
+async def callback(request: Request, db: DB, settings: Config) -> Response:
+    try:
+        info = await _signed_in_as(request, "google")
+        user = auth.sign_in(
+            db,
+            settings,
+            subject=info["sub"],
+            email=info["email"],
+            name=info.get("name", ""),
+            email_verified=bool(info.get("email_verified")),
+        )
+    except ApiError as error:
+        return _turned_away(error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -317,8 +338,11 @@ async def microsoft_login(request: Request, settings: Config, next_path: NextPat
 
 
 @router.get("/auth/microsoft/callback", include_in_schema=False)
-async def microsoft_callback(request: Request, db: DB, settings: Config) -> RedirectResponse:
-    user = auth.sign_in_microsoft(db, settings, await _signed_in_as(request, "microsoft"))
+async def microsoft_callback(request: Request, db: DB, settings: Config) -> Response:
+    try:
+        user = auth.sign_in_microsoft(db, settings, await _signed_in_as(request, "microsoft"))
+    except ApiError as error:
+        return _turned_away(error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -417,23 +441,19 @@ def _require_dev(settings: Settings) -> None:
         raise NotFound("Not found")
 
 
-def _dev_identity(db: Session, settings: Settings, email: str, name: str) -> User:
-    """Sign in as if Google vouched for this email. The usual approval rules apply."""
-    email = email.strip().lower()
-    return auth.sign_in(
-        db, settings, subject=f"dev:{email}", email=email, name=name or email.split("@")[0], email_verified=True
-    )
-
-
 @router.get("/auth/dev-login", include_in_schema=False)
 def dev_login(request: Request, db: DB, settings: Config, email: str, name: str = "", next_path: NextPath = "/"):
     _require_dev(settings)
-    return _start_session(request, db, settings, _dev_identity(db, settings, email, name), next_path)
+    try:
+        user = auth.sign_in_dev(db, settings, email, name)
+    except ApiError as error:
+        return _turned_away(error)
+    return _start_session(request, db, settings, user, next_path)
 
 
 @router.post("/auth/dev-token")
 def dev_token(body: DevTokenIn, db: DB, settings: Config) -> TokenIssuedOut:
-    """Development only (YJSP_DEV_AUTH): a client token for any email, without Google."""
+    """Development only (YJSP_DEV_AUTH): a client token for any email, as if Georgia Tech vouched for it."""
     _require_dev(settings)
-    user = _dev_identity(db, settings, body.email, body.name)
+    user = auth.sign_in_dev(db, settings, body.email, body.name)
     return TokenIssuedOut(token=auth.issue_token(db, user, kind=auth.CLIENT, name="dev token"), user=UserOut.of(user))

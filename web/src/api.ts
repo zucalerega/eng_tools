@@ -22,7 +22,24 @@ export interface Account extends UserRef {
 
 /** What admins decide for everyone. */
 export interface SiteSettings {
-    whitelist: boolean; // on: only invited people join; anyone else who signs in waits for an admin's approval
+    // On: only the emails on the whitelist, and people an admin invited, can make an account; anyone else who signs
+    // in is turned away. Off: anyone with a Georgia Tech account can.
+    whitelist: boolean;
+}
+
+/** A Georgia Tech address on the whitelist, with its account once it has one. */
+export interface WhitelistEntry {
+    id: number;
+    email: string;
+    added_at: string;
+    account: Account | null;
+}
+
+/** What putting emails on the whitelist did with each. */
+export interface WhitelistAdded {
+    added: string[];
+    already: string[]; // on it before
+    not_georgia_tech: string[]; // left off: only Georgia Tech accounts make accounts
 }
 
 export class ApiError extends Error {
@@ -185,8 +202,11 @@ export const api = {
     updateUser: (id: number, change: { status?: "active" | "disabled"; is_admin?: boolean }) =>
         request<Account>("PATCH", `/api/users/${id}`, change),
     settings: () => request<SiteSettings>("GET", "/api/settings"),
-    /** Turning the whitelist off approves everyone waiting too: anyone can join then. */
+    /** Turning the whitelist off approves everyone waiting too: anyone with a GT account can join then. */
     updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),
+    whitelist: () => request<WhitelistEntry[]>("GET", "/api/whitelist"),
+    addToWhitelist: (emails: string[]) => request<WhitelistAdded>("POST", "/api/whitelist", { emails }),
+    removeFromWhitelist: (id: number) => request<void>("DELETE", `/api/whitelist/${id}`),
     downloads: () => request<Download[]>("GET", "/api/downloads"),
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** For admins: how full the server's disk is. */

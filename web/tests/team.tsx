@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
-import { configureApi, type Account, type SiteSettings } from "../src/api";
+import { configureApi, type Account, type SiteSettings, type WhitelistEntry } from "../src/api";
 import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
@@ -70,15 +70,14 @@ export class Team {
         return signIn(email);
     }
 
-    /** Someone who signed in without an invitation, with the whitelist on: waiting for approval. */
-    async stranger(): Promise<Member> {
-        await this.whitelist(true);
-        return signIn(`someone-${randomUUID().slice(0, 8)}@example.test`);
+    /** Someone who made an account by signing in, as with a Georgia Tech account: without an invite. */
+    async signUp(email: string): Promise<Member> {
+        return signIn(email);
     }
 
     /**
-     * Turn the whitelist on or off, as an admin does on the People tab. Every test starts with it off, as a new
-     * server has it, so it goes off again when the test finishes (approving anyone the test left waiting).
+     * Turn the whitelist on or off, as an admin does on the Whitelist tab. Every test starts with it off, as a new
+     * server has it, so it goes off again when the test finishes.
      */
     async whitelist(on: boolean): Promise<void> {
         onTestFinished(async () => {
@@ -89,6 +88,14 @@ export class Team {
 
     async settings(): Promise<SiteSettings> {
         return call<SiteSettings>("GET", "/api/settings", this.chief.token);
+    }
+
+    async addToWhitelist(emails: string[]): Promise<void> {
+        await call("POST", "/api/whitelist", this.chief.token, { emails });
+    }
+
+    async whitelisted(): Promise<string[]> {
+        return (await call<WhitelistEntry[]>("GET", "/api/whitelist", this.chief.token)).map((entry) => entry.email);
     }
 
     async grant(path: string, userId: number | null, role: string | null): Promise<void> {

@@ -1,5 +1,6 @@
-"""Accounts, approval, browser sessions, and the CLI/add-in sign-in handshake."""
+"""Accounts, the whitelist, approval, browser sessions, and the CLI/add-in sign-in handshake."""
 
+import html
 import re
 import secrets
 from datetime import datetime, timedelta
@@ -13,7 +14,7 @@ from yjsp_server import auth
 from yjsp_server.app import create_app
 from yjsp_server.config import Settings, refuse_old_settings
 from yjsp_server.db import utcnow
-from yjsp_server.models import Token, User
+from yjsp_server.models import Token, User, UserStatus
 
 from .conftest import BOOTSTRAP_ADMIN
 
@@ -35,35 +36,49 @@ def test_anyone_can_join_while_the_whitelist_is_off(client):
     assert client.get("/api/folders", headers=bearer(again["token"])).json()["error"] == "disabled"
 
 
-def test_with_the_whitelist_on_new_accounts_wait_for_an_admin(client, team):
+def test_with_the_whitelist_on_only_emails_on_it_and_invited_people_join(client, team):
     chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
     me = client.get("/api/me", headers=chief).json()
     assert (me["status"], me["is_admin"]) == ("active", True)
     team.whitelist(chief, True)
 
-    newbie = client.post("/auth/dev-token", json={"email": "Newbie@X.test"}).json()
-    assert (newbie["user"]["email"], newbie["user"]["status"]) == ("newbie@x.test", "pending")
-    headers = bearer(newbie["token"])
-    assert client.get("/api/me", headers=headers).json()["status"] == "pending"
-    assert client.get("/api/folders", headers=headers).json()["error"] == "pending_approval"
-    waiting = [u for u in client.get("/api/users", headers=chief).json() if u["status"] == "pending"]
-    assert [u["email"] for u in waiting] == ["newbie@x.test"]
+    # Turned away, told what to do, with no account made to wait for an admin.
+    refused = client.post("/auth/dev-token", json={"email": "Newbie3@gatech.edu"})
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_whitelisted")
+    assert refused.json()["message"] == (
+        "newbie3@gatech.edu isn't on YJSP's whitelist: ask an admin to add it, then sign in again"
+    )
+    assert [u["email"] for u in client.get("/api/users", headers=chief).json()] == [BOOTSTRAP_ADMIN]
 
-    client.patch(f"/api/users/{newbie['user']['id']}", json={"status": "active"}, headers=chief)
-    assert client.get("/api/folders", headers=headers).status_code == 200
+    client.post("/api/whitelist", json={"emails": ["newbie3@gatech.edu"]}, headers=chief)
+    newbie = client.post("/auth/dev-token", json={"email": "Newbie3@gatech.edu"}).json()
+    assert (newbie["user"]["email"], newbie["user"]["status"]) == ("newbie3@gatech.edu", "active")
+    assert client.get("/api/folders", headers=bearer(newbie["token"])).status_code == 200
+
+
+def test_admins_approve_people_left_waiting_from_before(client, team):
+    # Before October 2026, signing in with the whitelist on made an account that waited for an admin.
+    chief = team.member("lead@x.test", admin=True)
+    waiting = team.member("waiting@x.test", status=UserStatus.PENDING)
+    assert client.get("/api/me", headers=waiting).json()["status"] == "pending"
+    assert client.get("/api/folders", headers=waiting).json()["error"] == "pending_approval"
+    pending = [u["email"] for u in client.get("/api/users", headers=chief).json() if u["status"] == "pending"]
+    assert pending == ["waiting@x.test"]
+
+    client.patch(f"/api/users/{team.ids['waiting@x.test']}", json={"status": "active"}, headers=chief)
+    assert client.get("/api/folders", headers=waiting).status_code == 200
 
 
 def test_turning_the_whitelist_off_approves_everyone_waiting(client, team):
     chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
     team.whitelist(chief, True)
-    waiting = client.post("/auth/dev-token", json={"email": "waiting@x.test"}).json()
-    blocked = client.post("/auth/dev-token", json={"email": "blocked@x.test"}).json()
-    client.patch(f"/api/users/{blocked['user']['id']}", json={"status": "disabled"}, headers=chief)
+    waiting = team.member("waiting@x.test", status=UserStatus.PENDING)
+    team.member("blocked@x.test", status=UserStatus.DISABLED)
 
     team.whitelist(chief, False)
     statuses = {u["email"]: u["status"] for u in client.get("/api/users", headers=chief).json()}
     assert (statuses["waiting@x.test"], statuses["blocked@x.test"]) == ("active", "disabled")
-    assert client.get("/api/folders", headers=bearer(waiting["token"])).status_code == 200
+    assert client.get("/api/folders", headers=waiting).status_code == 200
     log = [(e["action"], e["detail"]) for e in client.get("/api/activity", headers=chief).json()]
     assert log[:2] == [
         ("update_user", {"email": "waiting@x.test", "status": "active"}),
@@ -72,14 +87,15 @@ def test_turning_the_whitelist_off_approves_everyone_waiting(client, team):
 
 
 def test_the_sign_in_page_says_what_happens_the_first_time(settings):
-    # Google sign-in set up: nothing asks Google anything until someone clicks the button.
+    # Google sign-in set up alone: nothing asks Google anything until someone clicks the button, and Google makes no
+    # accounts, so new people need an invite. (With Georgia Tech's too: test_georgia_tech_sign_in.py.)
     settings.google_client_id, settings.google_client_secret = "id.apps.googleusercontent.com", "secret"
     with TestClient(create_app(settings)) as client:
-        page = client.get("/").text
-        assert "<title>Sign in · YJSP</title>" in page and "Sign in with your Google account to join" in page
-        chief = bearer(client.post("/auth/dev-token", json={"email": BOOTSTRAP_ADMIN}).json()["token"])
-        client.patch("/api/settings", json={"whitelist": True}, headers=chief)
-        assert "an admin will approve your account" in client.get("/").text
+        page = html.unescape(client.get("/").text)
+        assert "<title>Sign in · YJSP</title>" in page
+        assert (
+            "First time here? An admin needs to invite you first. Google is for accounts made with it before." in page
+        )
 
 
 def test_invited_people_are_active_from_their_first_sign_in(client, team):
@@ -91,6 +107,52 @@ def test_invited_people_are_active_from_their_first_sign_in(client, team):
     )
     carol = client.post("/auth/dev-token", json={"email": "carol@x.test"}).json()["user"]
     assert (carol["status"], carol["name"]) == ("active", "Carol")
+
+
+def test_admins_keep_a_whitelist_of_georgia_tech_emails(client, team):
+    chief = team.member("lead@x.test", admin=True)
+    alice = team.member("alice@x.test")
+
+    # A roster as it comes: once each, in lower case, and only GT's addresses, since only GT accounts make accounts.
+    roster = ["gburdell3@gatech.edu", " JDoe7@GATECH.edu ", "gburdell3@gatech.edu", "ta@cc.gatech.edu", "mom@gmail.com"]
+    added = client.post("/api/whitelist", json={"emails": roster}, headers=chief).json()
+    assert added == {
+        "added": ["gburdell3@gatech.edu", "jdoe7@gatech.edu", "ta@cc.gatech.edu"],
+        "already": [],
+        "not_georgia_tech": ["mom@gmail.com"],
+    }
+    again = client.post("/api/whitelist", json={"emails": ["jdoe7@gatech.edu", "new1@gatech.edu"]}, headers=chief)
+    assert again.json() == {"added": ["new1@gatech.edu"], "already": ["jdoe7@gatech.edu"], "not_georgia_tech": []}
+    typo = client.post("/api/whitelist", json={"emails": ["new2@gatech.edu", "gburdell3"]}, headers=chief)
+    assert (typo.status_code, typo.json()["error"]) == (400, "bad_email")  # and new2 isn't added either
+
+    # Each email with its account once it has one: an invite under it, say.
+    client.post("/api/users", json={"email": "new1@gatech.edu", "name": "New One"}, headers=chief)
+    listed = {e["email"]: e for e in client.get("/api/whitelist", headers=chief).json()}
+    assert list(listed) == ["gburdell3@gatech.edu", "jdoe7@gatech.edu", "new1@gatech.edu", "ta@cc.gatech.edu"]
+    assert listed["new1@gatech.edu"]["account"]["status"] == "invited"
+    assert listed["jdoe7@gatech.edu"]["account"] is None
+
+    gone = listed["gburdell3@gatech.edu"]["id"]
+    assert client.delete(f"/api/whitelist/{gone}", headers=chief).status_code == 204
+    missing = client.delete(f"/api/whitelist/{gone}", headers=chief)
+    assert (missing.status_code, missing.json()["error"]) == (404, "not_on_whitelist")
+    assert "gburdell3@gatech.edu" not in [e["email"] for e in client.get("/api/whitelist", headers=chief).json()]
+
+    # Members neither see it nor change it.
+    for attempt in (
+        client.get("/api/whitelist", headers=alice),
+        client.post("/api/whitelist", json={"emails": ["alice9@gatech.edu"]}, headers=alice),
+        client.delete(f"/api/whitelist/{listed['jdoe7@gatech.edu']['id']}", headers=alice),
+    ):
+        assert (attempt.status_code, attempt.json()["error"]) == (403, "admin_only")
+
+    log = [(e["action"], e["detail"]) for e in client.get("/api/activity", headers=chief).json()]
+    assert log[:3] == [
+        ("remove_from_whitelist", {"email": "gburdell3@gatech.edu"}),
+        ("invite_user", {"email": "new1@gatech.edu"}),
+        ("add_to_whitelist", {"emails": ["new1@gatech.edu"]}),
+    ]
 
 
 def test_unknown_or_revoked_tokens_are_rejected(client):

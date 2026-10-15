@@ -1,5 +1,5 @@
-"""The site's tables: accounts, their sign-in tokens, and the settings admins choose. Each app keeps its own
-(vault/models.py, yorg/models.py). Timestamps are timezone-aware UTC (db.UTCDateTime)."""
+"""The site's tables: accounts, their sign-in tokens, and the settings and whitelist admins choose. Each app keeps
+its own (vault/models.py, yorg/models.py). Timestamps are timezone-aware UTC (db.UTCDateTime)."""
 
 import enum
 from datetime import datetime
@@ -12,7 +12,9 @@ from .db import Base, UTCDateTime, enum_column, utcnow
 
 class UserStatus(enum.StrEnum):
     INVITED = "invited"  # added by an admin; active from their first sign-in
-    PENDING = "pending"  # signed in without an invite; waiting for an admin
+    # Signed in without an invite while the whitelist was on, which made an account that waited for an admin. Since
+    # October 2026 such a sign-in is turned away instead (auth._sign_in), so only accounts from before are pending.
+    PENDING = "pending"
     ACTIVE = "active"
     DISABLED = "disabled"
 
@@ -79,6 +81,19 @@ class SiteSettings(Base):
     __tablename__ = "site_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # On: only people an admin invited join; anyone else who signs in waits for an admin to approve them.
-    # Off: anyone who signs in joins at once (auth.sign_in).
+    # On: only the emails on the whitelist (WhitelistEmail) and people an admin invited can make an account; anyone
+    # else who signs in is turned away. Off: anyone with a Georgia Tech account can (auth._sign_in).
     whitelist: Mapped[bool] = mapped_column(default=False)
+
+
+class WhitelistEmail(Base):
+    """A Georgia Tech address that can make an account, by signing in with Georgia Tech, while the whitelist is on
+    (Admin > Whitelist in the web app). Taking it off changes no account it made."""
+
+    __tablename__ = "whitelist_emails"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    added_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # The account that signed in as it, once one has: by an alias, its email can be another of the person's addresses.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))

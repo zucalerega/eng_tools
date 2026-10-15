@@ -221,6 +221,20 @@ function describe(event: VaultEvent): ReactNode {
                     {who} turned the whitelist {detail.whitelist ? "on" : "off"}
                 </>
             );
+        case "add_to_whitelist": {
+            const emails = Array.isArray(detail.emails) ? detail.emails.map(String) : [];
+            return (
+                <>
+                    {who} added {emails.length === 1 ? emails[0] : `${emails.length} emails`} to the whitelist
+                </>
+            );
+        }
+        case "remove_from_whitelist":
+            return (
+                <>
+                    {who} took {text("email")} off the whitelist
+                </>
+            );
         default:
             return (
                 <>

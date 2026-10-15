@@ -34,6 +34,21 @@ test("admins see how many people used the site each day for the last month, and 
     expect(tracker.getByRole("button", { name: "Active people" }).getAttribute("aria-pressed")).toBe("false");
 });
 
+test("admins see how hard the server is working, over a day or a week", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin");
+    const card = within((await screen.findByRole("heading", { name: "Server load" })).closest("section")!);
+    expect(card.getByText("CPU now")).toBeTruthy();
+    expect(card.getByText("Busiest, last 24 hours")).toBeTruthy();
+    // The server samples each minute: this one may not have yet.
+    expect(card.queryByText(/^No samples yet/) ?? card.getByText("Memory")).toBeTruthy();
+    expect(card.getByText(/^\d+ CPU cores?/)).toBeTruthy();
+
+    await userEvent.click(card.getByRole("button", { name: "7 days" }));
+    expect(card.getByRole("button", { name: "7 days" }).getAttribute("aria-pressed")).toBe("true");
+    expect(await card.findByText("Busiest, last 7 days")).toBeTruthy();
+});
+
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");

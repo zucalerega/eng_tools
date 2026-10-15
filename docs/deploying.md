@@ -155,6 +155,12 @@ Everything here runs on the server: `ssh -i ~/.ssh/yjsp_oracle opc@129.80.217.44
 | See the backups | `sudo ls -lt /srv/yjsp/backups \| head` |
 | Check the public address | `sudo tailscale funnel status` (it should show `/ proxy http://127.0.0.1:8100`) |
 
+**Is it overloaded?** Admin > People's *Server load* shows how busy the CPU has been and how
+full the memory, minute by minute, for the last day or week (from `/proc`, sampled by the
+server itself). Near 100% for long, the site slows down: it says so when the CPU has
+averaged over 85% for a quarter hour or the memory is over 90% full. On the machine itself,
+`top` shows what's busy now.
+
 If the site doesn't load but `/healthz` answers on the server, look at Tailscale:
 `sudo tailscale status`, and `sudo tailscale funnel --bg 8100` turns Funnel back on.
 

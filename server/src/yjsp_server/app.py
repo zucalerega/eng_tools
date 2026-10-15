@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import __version__, people
+from . import __version__, load, people
 from .api import downloads, signin, web
 from .api import people as people_api
 from .config import Settings
@@ -38,13 +38,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             people.init(db)
             init_vault(db)
             recover_yorg(db)
+        app.state.server_load.start()
         yield
+        app.state.server_load.stop()
         app.state.yorg_runs.close()
         engine.dispose()
 
     app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.sessionmaker = sessions
+    app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)
     app.state.vault_store = BlobStore(settings.vault_dir / "blobs")
     app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.yorg_models = Saved(settings.yorg_dir, "model", "model")

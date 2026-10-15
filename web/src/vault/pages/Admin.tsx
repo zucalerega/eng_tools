@@ -13,6 +13,7 @@ import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
+import { ServerLoad } from "./Load";
 import { SiteUsage } from "./Usage";
 
 // Admins manage accounts and who can make one; admins and folder leads manage who can do what where.
@@ -134,8 +135,11 @@ function People() {
     const onNow = sorted.filter((person) => person.active_now).length;
     return (
         <>
-            <SiteUsage />
-            <DiskSpace />
+            <div className="dashboard">
+                <SiteUsage />
+                <ServerLoad />
+                <DiskSpace />
+            </div>
             {problem && <Notice tone="error">{problem}</Notice>}
             <form className="inline-form" onSubmit={invite}>
                 <label className="field">

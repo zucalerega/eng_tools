@@ -92,6 +92,23 @@ class UsageOut(BaseModel):
     total_site_seconds: int  # everyone's time on the web app, since it was first counted
 
 
+class LoadPointOut(BaseModel):
+    at: datetime  # the start of its stretch
+    cpu: float | None  # % of all CPUs busy in its busiest minute
+    steal: float | None  # % the hypervisor took for other machines then
+    memory: float | None  # % of memory in use in its fullest minute
+
+
+class ServerLoadOut(BaseModel):
+    """How hard the server has worked, minute by minute (people.server_load)."""
+
+    cpus: int
+    minutes: int  # each point's stretch: 1, or 10 for more than a day
+    points: list[LoadPointOut]  # oldest first; a stretch the server wasn't running is left out
+    memory_used: int | None  # the latest sample's, in bytes
+    memory_total: int | None
+
+
 class StorageOut(BaseModel):
     """How full the server's disk is, and how much of it each part of the site takes, in bytes (people.disk_usage)."""
 

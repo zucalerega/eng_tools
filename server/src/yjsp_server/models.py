@@ -4,7 +4,7 @@ its own (vault/models.py, yorg/models.py). Timestamps are timezone-aware UTC (db
 import enum
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import BigInteger, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, UTCDateTime, enum_column, utcnow
@@ -66,6 +66,18 @@ class SiteUsage(Base):
     hour: Mapped[datetime] = mapped_column(UTCDateTime, primary_key=True)  # its start, in UTC
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     site_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class ServerLoad(Base):
+    """A minute of the server's work: how busy its CPUs were and how full its memory, kept a week (load.py)."""
+
+    __tablename__ = "server_load"
+
+    at: Mapped[datetime] = mapped_column(UTCDateTime, primary_key=True)  # the minute's end
+    cpu: Mapped[float | None] = mapped_column(Float)  # % of all CPUs busy
+    steal: Mapped[float | None] = mapped_column(Float)  # % taken by the hypervisor for other machines
+    memory_used: Mapped[int | None] = mapped_column(BigInteger)  # bytes
+    memory_total: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class ClientAuthCode(Base):

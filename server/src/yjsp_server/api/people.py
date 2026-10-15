@@ -12,6 +12,7 @@ from .deps import DB, ActiveUser, AnyUser, Config
 from .schemas import (
     InviteIn,
     MePatch,
+    ServerLoadOut,
     SiteSettingsOut,
     SiteSettingsPatch,
     StorageOut,
@@ -102,6 +103,13 @@ def get_usage(
     """How many people used the site on each of the last `days` days, today last, and how long they had the web app
     open, with days in the time zone `tz`, an IANA name like America/New_York (admins)."""
     return UsageOut(**asdict(people.site_usage(db, user, days=days, timezone=tz)))
+
+
+@router.get("/load")
+def get_load(user: ActiveUser, db: DB, hours: Annotated[int, Query(ge=1, le=168)] = 24) -> ServerLoadOut:
+    """How hard the server has worked the last `hours`, up to a week: how busy its CPUs were and how full its memory,
+    a point a minute for a day or less and each 10 minutes for more, each its stretch's busiest (admins)."""
+    return ServerLoadOut(**asdict(people.server_load(db, user, hours=hours)))
 
 
 @router.get("/storage")

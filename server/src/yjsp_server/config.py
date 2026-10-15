@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     vault_dir: Path = Path("data/vault")
     # Yorg's files: each dataset's upload and the arrays read from it, and saved scripts and models. Back it up too.
     yorg_dir: Path = Path("data/yorg")
+    # What the off-site backup (deploy/yjsp-offsite, run by root) last wrote about itself, for Admin > People. Missing:
+    # no off-site backup here.
+    backup_status: Path = Path("backups/offsite.json")
 
     @property
     def production(self) -> bool:

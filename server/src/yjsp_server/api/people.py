@@ -6,10 +6,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from .. import auth, people
+from .. import auth, backups, people
 from ..models import UserStatus
 from .deps import DB, ActiveUser, AnyUser, Config
 from .schemas import (
+    BackupOut,
     InviteIn,
     MePatch,
     ServerLoadOut,
@@ -114,8 +115,11 @@ def get_load(user: ActiveUser, db: DB, hours: Annotated[int, Query(ge=1, le=168)
 
 @router.get("/storage")
 def get_storage(user: ActiveUser, db: DB, settings: Config) -> StorageOut:
-    """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take (admins)."""
-    return StorageOut(**asdict(people.disk_usage(db, user, settings)))
+    """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take; and whether the
+    data is copied off the server (admins)."""
+    usage = people.disk_usage(db, user, settings)
+    backup = backups.status(settings.backup_status)
+    return StorageOut(**asdict(usage), backup=BackupOut(**asdict(backup)) if backup else None)
 
 
 @router.get("/tokens")

@@ -1,0 +1,11 @@
+# /etc/systemd/system/yjsp-offsite-verify.timer on the server: see docs/deploying.md, "Backups". Keep this copy the same
+# as the server's.
+[Unit]
+Description=Check YJSP's off-site backup by a restore each week
+
+[Timer]
+OnCalendar=Sun *-*-* 10:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

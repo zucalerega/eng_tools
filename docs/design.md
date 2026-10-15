@@ -68,14 +68,18 @@ site's only one.
 
 | What | Setting (default) | Backed up |
 |---|---|---|
-| The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days |
-| Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | not yet |
-| Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | not yet |
+| The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
+| Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
+| Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
 
 Vault's blobs never change once written, so a backup of them only ever adds files. Yorg's
 scripts and models are JSON files changed in place, and deleting one deletes its file, so a
-copy of them needs to keep old versions too.
+copy of them needs to keep old versions too. The off-site backup does both: restic, run by
+root each night to an R2 bucket, encrypted, keeping two weeks of nights, two months of
+weeks, and two years of months, and checked by a restore each week (deploy/yjsp-offsite,
+[deploying.md](deploying.md#off-site-backups)). The server only reads its report
+(`YJSP_BACKUP_STATUS`, `backups.py`), for the Storage card.
 
 Admin > People starts with how full the server's disk is, and how much of it Vault's files,
 Yorg's, and the database take (`GET /api/storage`, `disk.py`): the folders above, measured

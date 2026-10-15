@@ -1,0 +1,18 @@
+# /etc/systemd/system/yjsp-offsite-verify.service on the server: see docs/deploying.md, "Backups". Keep this copy the
+# same as the server's.
+[Unit]
+Description=Restore from YJSP's off-site backup, and check what comes back
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yjsp-offsite verify
+Environment=RESTIC_CACHE_DIR=/var/cache/yjsp-offsite
+CacheDirectory=yjsp-offsite
+StateDirectory=yjsp-offsite
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full

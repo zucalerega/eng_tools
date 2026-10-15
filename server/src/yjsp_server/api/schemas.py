@@ -109,14 +109,28 @@ class ServerLoadOut(BaseModel):
     memory_total: int | None
 
 
+class BackupOut(BaseModel):
+    """What the off-site backup last said about itself (backups.status)."""
+
+    backed_up_at: datetime | None  # the last copy that worked
+    snapshot: str | None
+    backup_failed_at: datetime | None  # the last that didn't, if it's since that one
+    backup_error: str | None
+    verified_at: datetime | None  # the last restore that checked out
+    verify_failed_at: datetime | None
+    verify_error: str | None
+
+
 class StorageOut(BaseModel):
-    """How full the server's disk is, and how much of it each part of the site takes, in bytes (people.disk_usage)."""
+    """How full the server's disk is, and how much of it each part of the site takes, in bytes (people.disk_usage); and
+    whether the data is copied off the server."""
 
     total: int
     free: int  # what the server can still write
     vault: int
     yorg: int
     database: int
+    backup: BackupOut | None = None  # null: no off-site backup on this server
 
 
 class SiteSettingsPatch(BaseModel):

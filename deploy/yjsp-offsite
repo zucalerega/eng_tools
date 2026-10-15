@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# /usr/local/sbin/yjsp-offsite on the server: see docs/deploying.md, "Backups". Keep this copy the same as the server's.
+#
+# Copies YJSP's data off the server, into a restic repository in object storage (Cloudflare R2): the database (a
+# consistent copy), Vault's files, and Yorg's. restic encrypts it before it leaves, so the storage's owner can't read
+# the team's designs, and keeps each night's state while adding only what changed: Vault's blobs never change, so a
+# night adds just the new versions.
+#
+#   yjsp-offsite backup   tonight's copy; then it forgets the copies the schedule no longer keeps (on Sundays, their
+#                         data too)
+#   yjsp-offsite verify   checks the repository, and restores the database and a sample of Vault's files to check them
+#                         byte for byte: a backup is only as good as its restore
+#
+# It runs as root, with its keys in /etc/yjsp/offsite.env (root only), so the site's own user (yjsp) can neither read
+# them nor erase the copies. It writes how it went to /srv/yjsp/backups/offsite.json, which Admin > People shows, so a
+# failure doesn't go unnoticed. The test (server/tests/test_offsite.py) points the YJSP_HOME, OFFSITE_ENV, OFFSITE_WORK,
+# and AS_YJSP settings below at a folder of its own, and restic at a stand-in.
+set -euo pipefail
+
+YJSP_HOME=${YJSP_HOME:-/srv/yjsp}
+OFFSITE_ENV=${OFFSITE_ENV:-/etc/yjsp/offsite.env}
+WORK=${OFFSITE_WORK:-/var/lib/yjsp-offsite}
+# The database is copied as yjsp: SQLite run as root on a stopped site would leave files the site can't write.
+AS_YJSP=${AS_YJSP-runuser -u yjsp --}
+STATUS=$YJSP_HOME/backups/offsite.json
+DATABASE_COPY=$YJSP_HOME/backups/offsite/yjsp.db # what the repository keeps of the database
+SAMPLE=20                                        # Vault files each verify restores and checks
+
+set -a
+# shellcheck source=/dev/null
+. "$OFFSITE_ENV" # RESTIC_REPOSITORY, RESTIC_PASSWORD_FILE, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+set +a
+mkdir -p "$WORK" "$(dirname "$STATUS")"
+chmod 700 "$WORK"
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# Records how a step went in the status file, keeping what the other steps recorded: record KEY VALUE [KEY VALUE ...],
+# an empty value for "none".
+record() {
+    python3 - "$STATUS" "$@" <<'PYTHON'
+import json, os, sys
+
+path, pairs = sys.argv[1], sys.argv[2:]
+try:
+    with open(path) as file:
+        status = json.load(file)
+except (OSError, ValueError):
+    status = {}
+for key, value in zip(pairs[::2], pairs[1::2]):
+    status[key] = value or None
+with open(path + ".tmp", "w") as file:
+    json.dump(status, file, indent=2)
+os.chmod(path + ".tmp", 0o644)  # the site reads it
+os.replace(path + ".tmp", path)
+PYTHON
+}
+
+# Stops with what failed and the last thing it said, recorded for Admin > People: fail MODE WHAT
+fail() {
+    local detail
+    detail=$(grep -v '^[[:space:]]*$' "$WORK/errors" 2>/dev/null | tail -n 1 || true)
+    record "${1}_failed_at" "$(now)" "${1}_error" "$2${detail:+: $detail}"
+    echo "yjsp-offsite $1 failed: $2${detail:+: $detail}" >&2
+    exit 1
+}
+
+# Runs a step, its errors kept for the status and passed on to the journal: run MODE WHAT COMMAND...
+run() {
+    local mode=$1 what=$2
+    shift 2
+    if "$@" 2>"$WORK/errors"; then
+        cat "$WORK/errors" >&2
+    else
+        cat "$WORK/errors" >&2
+        fail "$mode" "$what"
+    fi
+}
+
+copy_database() {
+    mkdir -p "$(dirname "$DATABASE_COPY")"
+    [ -z "$AS_YJSP" ] || chown yjsp:yjsp "$(dirname "$DATABASE_COPY")"
+    rm -f "$DATABASE_COPY"
+    $AS_YJSP sqlite3 "$YJSP_HOME/data/yjsp.db" ".backup '$DATABASE_COPY'"
+}
+
+backup_files() {
+    restic backup --host yjsp --tag nightly --one-file-system --json --quiet \
+        --exclude "$YJSP_HOME/data/vault/blobs/tmp" \
+        --exclude "$YJSP_HOME/data/yorg/tmp" \
+        --exclude "$YJSP_HOME/data/yorg/runs" \
+        --exclude "$YJSP_HOME/data/yorg/matplotlib" \
+        "$DATABASE_COPY" "$YJSP_HOME/data/vault" "$YJSP_HOME/data/yorg" >"$WORK/summary"
+}
+
+# The copies kept: two weeks of nights, two months of weeks, two years of months. Their data goes on Sundays, without
+# repacking data that's still in use (--max-unused unlimited), so only packs that no kept copy needs, all older than two
+# weeks, are deleted: the bucket's lock rules forbid deleting younger ones (docs/deploying.md, "Backups").
+forget_old() {
+    local prune=()
+    [ "$(date -u +%u)" != 7 ] || prune=(--prune --max-unused unlimited)
+    restic forget --host yjsp --tag nightly --keep-daily 14 --keep-weekly 8 --keep-monthly 24 ${prune[@]+"${prune[@]}"}
+}
+
+backup() {
+    run backup "copying the database" copy_database
+    run backup "backing up" backup_files
+    local snapshot
+    snapshot=$(python3 -c '
+import json, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get("message_type") == "summary":
+        print(message["snapshot_id"][:8])
+' <"$WORK/summary")
+    run backup "forgetting old copies" forget_old
+    record backed_up_at "$(now)" snapshot "$snapshot" backup_failed_at "" backup_error ""
+    echo "yjsp-offsite: backed up as $snapshot"
+}
+
+# A different tenth of the data each week, so ten weeks read all of it back.
+check_repository() {
+    restic check --read-data-subset="$((10#$(date -u +%V) % 10 + 1))/10"
+}
+
+restore_database() {
+    restic dump --host yjsp --tag nightly latest "$DATABASE_COPY" >"$WORK/verify/yjsp.db"
+    local verdict
+    verdict=$(sqlite3 "$WORK/verify/yjsp.db" "PRAGMA integrity_check")
+    [ "$verdict" = ok ] || {
+        echo "SQLite says: $verdict" >&2
+        return 1
+    }
+}
+
+# Each of Vault's files is a blob named by its SHA-256, so a restored one checks itself.
+restore_sample() {
+    restic ls --host yjsp --tag nightly latest >"$WORK/verify/listing"
+    { grep -E "^$YJSP_HOME/data/vault/blobs/.*/[0-9a-f]{64}\$" "$WORK/verify/listing" || true; } |
+        python3 -c 'import random, sys; found = sys.stdin.read().split(); print("\n".join(random.sample(found, min(len(found), int(sys.argv[1])))))' "$SAMPLE" \
+            >"$WORK/verify/sample"
+    local path hash
+    while read -r path; do
+        [ -n "$path" ] || continue
+        hash=$(restic dump --host yjsp --tag nightly latest "$path" | python3 -c '
+import hashlib, sys
+digest = hashlib.sha256()
+for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
+    digest.update(chunk)
+print(digest.hexdigest())')
+        [ "$hash" = "$(basename "$path")" ] || {
+            echo "$path came back different: its SHA-256 is $hash" >&2
+            return 1
+        }
+    done <"$WORK/verify/sample"
+}
+
+verify() {
+    rm -rf "$WORK/verify"
+    mkdir -p "$WORK/verify"
+    run verify "checking the repository" check_repository
+    run verify "restoring the database" restore_database
+    run verify "restoring Vault's files" restore_sample
+    local checked
+    checked=$(grep -c . "$WORK/verify/sample" || true)
+    rm -rf "$WORK/verify"
+    record verified_at "$(now)" verify_failed_at "" verify_error ""
+    echo "yjsp-offsite: the database and $checked of Vault's files restored and checked"
+}
+
+case "${1:-}" in
+backup) backup ;;
+verify) verify ;;
+*)
+    echo "usage: yjsp-offsite backup|verify" >&2
+    exit 2
+    ;;
+esac

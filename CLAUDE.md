@@ -46,7 +46,7 @@ cd web && npm ci && npm run check && npm test && npm run build
   http://localhost:8000. `npm run dev` serves it at http://localhost:5173 and reloads as you
   edit (sign in at http://localhost:8000 first). `npm run format`: format the TypeScript.
 - The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks (2026, and
-  2025 for laptops moving over) on Windows. CI uploads each build as the `vault-setup` artifact (`Vault-Setup.exe`, which
+  2025 for laptops moving over) on Windows. CI uploads each build of `main` and of a release tag (kept a week, a tag's 90 days) as the `vault-setup` artifact (`Vault-Setup.exe`, which
   installs it; the server offers it from `YJSP_DOWNLOADS_DIR`), the `vault-solidworks-addin`
   artifact (its files, for install.ps1), and `vault-windows` (a self-contained `vault.exe`).
   Install and manual-testing steps are in `client/src/Vault.SolidWorks/README.md`.

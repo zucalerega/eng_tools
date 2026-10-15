@@ -167,7 +167,8 @@ If the site doesn't load but `/healthz` answers on the server, look at Tailscale
 **Changing a setting:** edit `/srv/yjsp/.env` on the server (`sudo -u yjsp vi
 /srv/yjsp/.env`), then restart the service. Never print it or copy it off the server.
 
-**New downloads** (from CI's `vault-setup` and `vault-windows` artifacts): copy the file to
+**New downloads** (from CI's `vault-setup` and `vault-windows` artifacts, which runs on `main`
+and on release tags keep: a week, and a tag's 90 days): copy the file to
 the server's `/tmp` with `scp`, then swap it in whole, so nobody downloads half a file:
 
 ```bash

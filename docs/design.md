@@ -121,9 +121,17 @@ three. The rest of the disk is the system, logs, and the database's backups.
   admins see it (`people.last_active`); the list others get for granting access doesn't
   say. Admins also see each person's time on the site (`site_seconds`): when a browser
   session is used again within five minutes of its last use, the page was open all along,
-  and the gap counts (`auth.authenticate`). The add-in and the CLI don't count, and two
+  and the gap counts (`usage.record`). The add-in and the CLI don't count, and two
   browsers open at once count twice. The list sorts by status, when people joined, when
   they were last on, or their time on the site.
+- **Activity:** Admin > People starts with a tracker of the last 30 days: how many people
+  used the site each day (the web app, the add-in, or the CLI) and how long the web app was
+  open, everyone's together, in stat tiles and a column chart (`GET /api/usage`). Each time
+  a token's use is noted, its owner was on in that hour (`site_usage`, one row a person an
+  hour, in UTC, with that hour's time on the site), and the page asks for days in its own
+  time zone, so a day is the team's and not UTC's (`usage.daily`; a server without time zone
+  data gives UTC's). It counts from the deploy that added it (October 2026): nothing kept
+  this before, and the chart says since when.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -203,6 +211,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
+| `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
 
 ## Names from before YJSP

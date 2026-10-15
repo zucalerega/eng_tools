@@ -12,6 +12,7 @@ from typing import Any, Literal
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from . import usage
 from .config import Settings
 from .db import utcnow
 from .errors import Forbidden, NotFound
@@ -182,9 +183,9 @@ def authenticate(db: Session, secret: str) -> User | None:
         # Only if no other request touched it first, so a gap is counted once.
         unchanged = Token.last_used_at.is_(None) if last_used is None else Token.last_used_at == last_used
         touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(last_used_at=now)).rowcount
-        if touched and token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT:
-            seconds = round((now - last_used).total_seconds())
-            db.execute(update(User).where(User.id == token.user_id).values(site_seconds=User.site_seconds + seconds))
+        if touched:
+            visit = token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT
+            usage.record(db, token.user_id, now, round((now - last_used).total_seconds()) if visit else 0)
         db.commit()
     return db.get(User, token.user_id)
 

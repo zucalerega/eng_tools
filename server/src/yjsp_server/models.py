@@ -33,7 +33,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
-    # Time spent with the web app open, in seconds (auth.authenticate adds it up). Admins see it.
+    # Time spent with the web app open, in seconds (usage.record adds it up). Admins see it.
     site_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
 
     @property
@@ -55,6 +55,17 @@ class Token(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class SiteUsage(Base):
+    """An hour in which someone used the site, and how long they had the web app open in it: Admin > People's daily
+    active users and time on the site (usage.py)."""
+
+    __tablename__ = "site_usage"
+
+    hour: Mapped[datetime] = mapped_column(UTCDateTime, primary_key=True)  # its start, in UTC
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    site_seconds: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
 class ClientAuthCode(Base):

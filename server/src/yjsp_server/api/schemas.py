@@ -27,7 +27,7 @@ class UserOut(BaseModel):
     status: str
     is_admin: bool
     created_at: datetime
-    last_login_at: datetime | None
+    last_login_at: datetime | None  # in the list of everyone, only for admins and your own (people.last_sign_in)
     # For admins (people.last_active): when they last used the site, and whether they're on now. Otherwise null and
     # false.
     last_active_at: datetime | None = None

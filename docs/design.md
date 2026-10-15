@@ -101,7 +101,7 @@ three. The rest of the disk is the system, logs, and the database's backups.
   from before, when a sign-in with the whitelist on made one to wait for an admin, can still
   be approved; one whose address goes on the whitelist joins at its next sign-in, and
   turning the whitelist off approves them all. While it's off, anyone with a GT account gets
-  Yorg and what Vault grants *everyone*.
+  Yorg and what Vault grants *everyone*, and Admin > People says so.
 - **Georgia Tech accounts** are Microsoft 365 accounts, in GT's tenant in Microsoft Entra,
   which sends their sign-ins on to GT's own login page, Duo and all. The server signs in
   through an app registered in Entra, at GT's tenant's endpoints, and lets in only GT's
@@ -119,7 +119,7 @@ three. The rest of the disk is the system, logs, and the database's backups.
   the last use of a session or a client: the web app, the add-in, the CLI) and who's on
   now (within two minutes: an open page asks who you are every minute, `session.ts`). Only
   admins see it (`people.last_active`); the list others get for granting access doesn't
-  say. Admins also see each person's time on the site (`site_seconds`): when a browser
+  say, nor when anyone signed in last, but themselves (`people.last_sign_in`). Admins also see each person's time on the site (`site_seconds`): when a browser
   session is used again within five minutes of its last use, the page was open all along,
   and the gap counts (`usage.record`). The add-in and the CLI don't count, and two
   browsers open at once count twice. The list sorts by status, when people joined, when
@@ -131,7 +131,8 @@ three. The rest of the disk is the system, logs, and the database's backups.
   hour, in UTC, with that hour's time on the site), and the page asks for days in its own
   time zone, so a day is the team's and not UTC's (`usage.daily`; a server without time zone
   data gives UTC's). It counts from the deploy that added it (October 2026): nothing kept
-  this before, and the chart says since when.
+  this before, and the chart says since when. The hours are kept 400 days, a little over a
+  year (`usage.KEEP`); noting a use forgets the ones past it.
 - **Server load:** beside it, how hard the server is working: how busy its CPUs have been
   and how full its memory, against all of each, for the last 24 hours or 7 days (`GET
   /api/load`). The server samples them itself each minute, in a thread it starts and stops
@@ -161,7 +162,10 @@ three. The rest of the disk is the system, logs, and the database's backups.
   3. The server redirects to `http://127.0.0.1:<port>/callback` with a one-time
      code.
   4. The client exchanges the code and its PKCE verifier for a token. Tokens can be
-     revoked (`GET/DELETE /api/tokens`), and the server stores only their hashes.
+     revoked (`GET/DELETE /api/tokens`), and the server stores only their hashes. A
+     client's token lapses after 90 days unused (`auth.CLIENT_IDLE`), so a laptop in a
+     drawer, or one gone missing, isn't signed in forever; the CLI and the add-in then say
+     the sign-in expired and ask for a new one.
 - **Local development:** `YJSP_DEV_AUTH=1` enables `/auth/dev-login` and
   `/auth/dev-token`, which sign in as any email. The server refuses to start in
   production with this on, or without a way to sign in (Georgia Tech's, Google's, or

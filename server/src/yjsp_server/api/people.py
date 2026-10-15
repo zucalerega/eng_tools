@@ -45,7 +45,12 @@ def get_users(user: ActiveUser, db: DB) -> list[UserOut]:
     """Admins see every account, including ones waiting for approval, and when each was last on; others see active
     members."""
     active = people.last_active(db, user)
-    return [UserOut.of(u, active.get(u.id), people.time_on_site(user, u)) for u in people.list_users(db, user)]
+    found = []
+    for u in people.list_users(db, user):
+        out = UserOut.of(u, active.get(u.id), people.time_on_site(user, u))
+        out.last_login_at = people.last_sign_in(user, u)
+        found.append(out)
+    return found
 
 
 @router.post("/users", status_code=201)

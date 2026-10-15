@@ -59,6 +59,11 @@ def last_active(db: Session, viewer: User) -> dict[int, datetime]:
     return found
 
 
+def last_sign_in(viewer: User, user: User) -> datetime | None:
+    """When the account last signed in: admins see everyone's, as with when they were last on; others, their own."""
+    return user.last_login_at if viewer.is_admin or viewer.id == user.id else None
+
+
 def time_on_site(viewer: User, user: User) -> int | None:
     """How long the account has had the web app open, in seconds (auth.authenticate counts it). Only for admins."""
     return user.site_seconds if viewer.is_admin else None

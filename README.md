@@ -52,7 +52,7 @@ replaces Kenesto.
   vault: new folders, uploads (files, whole folders, or what's in a zip, by dropping them
   on the page), moving or renaming, which every computer's copies follow, and deleting,
   to a trash each folder keeps. Admins and folder leads find Admin (people, access, the
-  whitelist) and admin mode in the account menu; admin mode releases someone's check-out
+  whitelist, and how full the server's disk is) and admin mode in the account menu; admin mode releases someone's check-out
   or reverts a file they have checked out.
 - **See any part or assembly in 3D** with **Open in Caliper**, beside Open in SolidWorks:
   in the browser, on any computer, without SolidWorks. Turn it, zoom, pick a standard view,

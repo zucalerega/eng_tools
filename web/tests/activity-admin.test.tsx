@@ -24,6 +24,19 @@ test("admins approve people waiting for it", async () => {
     await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
 });
 
+test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin");
+    const legend = (await screen.findByText("Everything else")).closest("ul")!;
+    expect([...legend.querySelectorAll("li")].map((part) => part.textContent)).toEqual([
+        expect.stringMatching(/^Vault [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Yorg [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Everything else [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Free [\d.]+ (bytes|KB|MB|GB)$/),
+    ]);
+    expect(screen.getByText(/^[\d.]+ (KB|MB|GB) of [\d.]+ GB used \(\d+%\)$/)).toBeTruthy();
+});
+
 test("admins see when each person was last on, and who's on now", async () => {
     const team = await Team.create();
     const alice = await team.member("Alice"); // signed in just now

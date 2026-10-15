@@ -85,9 +85,9 @@ comment, all or nothing:
    - A file whose contents didn't change gets no new version, but is still
      unlocked.
 3. References are the files each item uses: an assembly's parts, a drawing's
-   model. Each one must already be in the vault or be part of this check-in, and
-   is recorded with the version it used. That's how "where used" works, and later
-   "get this assembly as it was at version 5".
+   model. Each one must already be in the vault, where you can see it, or be part
+   of this check-in, and is recorded with the version it used. That's how "where
+   used" works, and later "get this assembly as it was at version 5".
 4. A new version of a drawing must show a part or assembly (reference one), and be
    named after one it shows: `Fin.SLDDRW`, or a name that starts with it and goes on
    after a space or a symbol (`Fin - machining.SLDDRW`), for `Fin.SLDPRT`
@@ -187,6 +187,15 @@ If you can't view a folder, its files are invisible to you: asking for one retur
 "not found", never "forbidden". You can still see the names of folders on the way
 down to one you do have access to, so you can navigate there.
 
+Using and adding files answer the same way, as if what you can't see weren't there. A
+check-in that uses a file you can't see is missing a reference (`missing_references`), at
+any version. Making a folder or checking in a file where one you can't see is, or putting
+anything in a folder you can't see, is refused as it would be where nothing is: you can't
+add anything there (if you could, you'd see what's in it), so it's never "exists". Where
+files you can't see are why something can't be done, as when they use a file you're
+deleting or moving, they're counted but not named: "Still used by Rocket.SLDASM and 2
+files you can't see".
+
 ## Server rules
 
 These rules keep the data consistent. The code relies on them, so keep them true:
@@ -200,7 +209,9 @@ These rules keep the data consistent. The code relies on them, so keep them true
   rolls back the whole check-in, including any folders it created.
 - **Versions and blobs never change.** Blobs are verified against their hash on
   upload.
-- **Every permission check goes through `access.Access`.**
+- **Every permission check goes through `access.Access`.** What the user can't see
+  answers as what isn't there (see "Permissions"): `vault._find` finds files, and
+  `Access.deepest` folders, as they see them.
 - **Timestamps are timezone-aware UTC.**
 
 ## The local workspace (client)

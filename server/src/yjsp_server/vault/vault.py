@@ -264,8 +264,8 @@ def _live_file(db: Session, folder: Folder | None, name: str) -> File | None:
     )
 
 
-def _resolve(db: Session, tree: Tree, access: Access, ref: FileRef, *, deleted_ok: bool = False) -> File:
-    """A file the user can see, by id or path. Files they can't see are 'not found'."""
+def _find(db: Session, tree: Tree, access: Access, ref: FileRef, *, deleted_ok: bool = False) -> File | None:
+    """A file the user can see, by id or path; None for one they can't see, as for one that isn't there."""
     if isinstance(ref, int):
         file = db.get(File, ref)
         if file is not None and file.deleted_at is not None and not deleted_ok:
@@ -273,7 +273,13 @@ def _resolve(db: Session, tree: Tree, access: Access, ref: FileRef, *, deleted_o
     else:
         names = paths.split(ref)
         file = _live_file(db, tree.find(names[:-1]), names[-1]) if names else None
-    if file is None or not access.can(file.folder_id, Role.VIEWER):
+    return file if file is not None and access.can(file.folder_id, Role.VIEWER) else None
+
+
+def _resolve(db: Session, tree: Tree, access: Access, ref: FileRef, *, deleted_ok: bool = False) -> File:
+    """A file the user can see, by id or path. Files they can't see are 'not found'."""
+    file = _find(db, tree, access, ref, deleted_ok=deleted_ok)
+    if file is None:
         raise NotFound(f"{ref} is not in the vault" if isinstance(ref, str) else f"File {ref} not found")
     return file
 
@@ -300,6 +306,18 @@ def _parents(db: Session, file_id: int) -> list[tuple[File, Version, int]]:
         .order_by(File.name_key)
     )
     return [(f, v, n) for f, v, n in db.execute(stmt)]
+
+
+def _named(tree: Tree, access: Access, files: list[File]) -> str:
+    """Files for a message: the paths of the ones the user can see, then how many others there are ("A.SLDASM and 2
+    files you can't see"). Files they can't see go unnamed, but they still count where they're why something can't be
+    done, as files that use one being deleted or moved are."""
+    shown = sorted({tree.file_path(f) for f in files if access.can(f.folder_id, Role.VIEWER)})
+    unseen = len({f.id for f in files if not access.can(f.folder_id, Role.VIEWER)})
+    parts = [", ".join(shown)] if shown else []
+    if unseen:
+        parts.append("a file you can't see" if unseen == 1 else f"{unseen} files you can't see")
+    return " and ".join(parts)
 
 
 def _host(host: str) -> str:
@@ -473,8 +491,9 @@ def activity(
 
 
 def _ensure_folders(db: Session, tree: Tree, access: Access, user: User, names: list[str], seq: int) -> Folder:
-    """The folder at names, creating any missing folders along the way."""
-    folder, depth = tree.deepest(names)
+    """The folder at names, creating any missing folders along the way. Folders the user can't see count as missing
+    (Access.deepest), so the answer doesn't say whether one is there."""
+    folder, depth = access.deepest(names)
     if depth == len(names):
         return folder
     access.require(folder.id, Role.EDITOR, f"create folders in {tree.label(folder.id)}")
@@ -503,7 +522,10 @@ def create_folder(db: Session, user: User, path: str) -> FolderView:
         raise ApiError("The vault root already exists", code="exists")
     seq = begin_write(db)
     tree, access = _context(db, user)
-    if tree.find(names) is not None:
+    # Only a folder the user can see "exists". One they can't see gets what a free name in the same place gets (from
+    # _ensure_folders): that they can't add folders there, which is so, or they'd see it. "Exists" would tell them
+    # what's there; that answer tells them nothing they didn't know.
+    if access.deepest(names)[1] == len(names):
         raise Conflict(f"{paths.join(*names)} already exists", code="exists")
     folder = _ensure_folders(db, tree, access, user, names, seq)
     db.commit()
@@ -627,7 +649,8 @@ def checkin(
     Upload each item's contents (PUT /api/blobs/{sha256}) first. New files may
     go in new folders, which are created. An item's references name the files
     it uses (an assembly's parts, a drawing's model) by vault path; they must be
-    in the vault already or in this check-in, and are pinned to the version used.
+    in the vault already, where the user can see them, or in this check-in, and
+    are pinned to the version used.
     A file whose contents didn't change gets no new version but is still
     released, unless keep_checked_out is set; if it had no references
     recorded and now has some, it gets a version to record them.
@@ -654,12 +677,14 @@ def checkin(
             raise ApiError(f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256)
         if blob.size != item.size:
             raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
-        existing = _live_file(db, tree.find(names[:-1]), names[-1])
+        # A file or folder the user can't see is as good as not there: checking one in answers as adding a new file
+        # there would (refused: see Access.deepest).
+        existing = _find(db, tree, access, path)
         if existing is not None:
             access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
             _require_own_lock(db, tree, existing, user, host)
         else:
-            parent, depth = tree.deepest(names[:-1])
+            parent, depth = access.deepest(names[:-1])
             access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
             if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
                 raise Conflict(f"{path} is a folder", code="exists", path=path)
@@ -738,7 +763,9 @@ def checkin(
             if in_batch is not None:
                 child, child_version = in_batch[1], in_batch[2].number
             else:
-                child = _live_file(db, tree.find(ref_names[:-1]), ref_names[-1]) if ref_names else None
+                # A file the user can't see is missing, as one that isn't there is: they can't use it, and whether
+                # it's there, or which versions it has, stays hidden.
+                child = _find(db, tree, access, ref.path)
                 if child is None:
                     missing.append({"file": tree.file_path(file), "reference": ref.path})
                     continue
@@ -896,14 +923,21 @@ def delete(
             raise Conflict(f"{lock['path']} is checked out by {lock['user']}", code="checked_out", files=[lock])
     if not force:
         in_use = [
-            {"path": tree.file_path(file), "used_by": tree.file_path(parent)}
+            (file, parent)
             for file in files.values()
             for parent, _, _ in _parents(db, file.id)
             if parent.id not in files
         ]
         if in_use:
-            parents = ", ".join(sorted({u["used_by"] for u in in_use}))
-            raise Conflict(f"Still used by {parents}", code="in_use", used_by=in_use)
+            raise Conflict(
+                f"Still used by {_named(tree, access, [parent for _, parent in in_use])}",
+                code="in_use",
+                used_by=[
+                    {"path": tree.file_path(file), "used_by": tree.file_path(parent)}
+                    for file, parent in in_use
+                    if access.can(parent.folder_id, Role.VIEWER)
+                ],
+            )
 
     now = utcnow()
     for top in tops:
@@ -1037,7 +1071,7 @@ def _still_found(old: str, new: str, user_old: str, user_new: str) -> bool:
     return _relative(_folder_of(user_old), _folder_of(old)) == _relative(_folder_of(user_new), _folder_of(new))
 
 
-def _check_moves(db: Session, tree: Tree, moves: dict[int, tuple[str, str]]) -> None:
+def _check_moves(db: Session, tree: Tree, access: Access, moves: dict[int, tuple[str, str]]) -> None:
     """Refuse moves that would break SolidWorks references or strand a check-out; moves maps file ids to paths."""
     for file_id in moves:
         file = db.get(File, file_id)
@@ -1049,21 +1083,26 @@ def _check_moves(db: Session, tree: Tree, moves: dict[int, tuple[str, str]]) -> 
                 code="checked_out",
                 files=[lock],
             )
-    broken = []
+    broken: list[tuple[str, File]] = []  # a moving file's path, and a file using it that wouldn't find it
     for file_id, (old, new) in moves.items():
         for user_file, _, _ in _parents(db, file_id):
             user_old = tree.file_path(user_file)
             user_new = moves.get(user_file.id, (user_old, user_old))[1]
             if not _still_found(old, new, user_old, user_new):
-                broken.append({"path": old, "used_by": user_old})
+                broken.append((old, user_file))
     if broken:
-        first = broken[0]
+        first = broken[0][0]
         raise Conflict(
-            f"{first['used_by']} uses {first['path']}, and SolidWorks wouldn't find it after this. Keep a file where "
-            "the files that use it can find it: in their folder, or where it was next to them (move their folder "
-            "together). To rename it, rename it in SolidWorks, then check both in.",
+            f"{first} is used by {_named(tree, access, [u for path, u in broken if path == first])}, and SolidWorks "
+            "wouldn't find it after this. Keep a file where the files that use it can find it: in their folder, or "
+            "where it was next to them (move their folder together). To rename it, rename it in SolidWorks, then "
+            "check both in.",
             code="in_use",
-            used_by=broken,
+            used_by=[
+                {"path": path, "used_by": tree.file_path(u)}
+                for path, u in broken
+                if access.can(u.folder_id, Role.VIEWER)
+            ],
         )
 
 
@@ -1163,7 +1202,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
         moves[file.id] = (old, paths.join(dest_path, file.name))
     for _, new in moves.values():
         paths.split(new)  # still within the length limit
-    _check_moves(db, tree, moves)
+    _check_moves(db, tree, access, moves)
 
     moved_folders = [f for f in moving_folders if f.parent_id != dest.id]
     moved_files = [f for f in moving_files if f.folder_id != dest.id]
@@ -1209,7 +1248,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         new = paths.join(tree.path(parent.id), new_name)
         paths.split(new)
         moves[target.id] = (old, new)
-        _check_moves(db, tree, moves)
+        _check_moves(db, tree, access, moves)
         _event(db, user, "rename", file=target, path=new, moved_from=old)
         target.name, target.name_key = new_name, paths.key(new_name)
         db.flush()
@@ -1231,7 +1270,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         moves[inside.id] = (old, new_base + old[len(old_base) :])
     for _, new in moves.values():
         paths.split(new)
-    _check_moves(db, tree, moves)
+    _check_moves(db, tree, access, moves)
     _event(db, user, "rename_folder", folder_id=renamed.id, path=new_base, moved_from=old_base)
     renamed.name, renamed.name_key = new_name, paths.key(new_name)
     db.flush()

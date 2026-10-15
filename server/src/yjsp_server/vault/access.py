@@ -117,6 +117,18 @@ class Access:
     def visible(self, folder_id: int) -> bool:
         return self.can(folder_id, Role.VIEWER) or folder_id in self._passage
 
+    def deepest(self, names: list[str]) -> tuple[Folder, int]:
+        """Tree.deepest among the folders the user can see: one they can't see is as good as not there, so adding
+        something in it, or at its name, answers as adding it where nothing is would. (Which is never allowed: they'd
+        see everything in a folder they can add to.)"""
+        folder = self.tree.root
+        for depth, name in enumerate(names):
+            child = self.tree.children[folder.id].get(paths.key(name))
+            if child is None or not self.visible(child.id):
+                return folder, depth
+            folder = child
+        return folder, len(names)
+
     def require(self, folder_id: int, role: Role, action: str) -> None:
         if self.can(folder_id, role):
             return

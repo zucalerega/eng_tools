@@ -363,6 +363,15 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.
+- **Connecting from the web app.** Connect SolidWorks is a `vault://connect?server=…` link,
+  and any web page can make one, so it doesn't decide where you sign in on its own. Signed
+  out, the add-in signs in to the server it's set up for (its workspace's, or the one it
+  last signed in to) without asking, and asks first, showing the address, for any other,
+  or for any at all before it's set up (`OpenLink.ConnectQuestion`). The address it shows
+  is the server's as it really is (`OpenLink.Address`: punycode for a name in other
+  alphabets), and a link whose server has a user name, query, or fragment in it is
+  refused. An open or new link for a server it isn't set up for doesn't fill in the
+  sign-in box: it says to connect from that vault's SolidWorks page.
 - **New files from the web app.** New part, New assembly, and New drawing (of a part or
   assembly) are `vault://new?server=…&path=…[&model=…]` links. The add-in checks that the
   name is free and that you can add files there (`Workspace.CheckNewFileAsync`); for a

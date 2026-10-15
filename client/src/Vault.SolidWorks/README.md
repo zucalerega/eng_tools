@@ -137,8 +137,11 @@ While you work:
    where SolidWorks 2026 is; where the add-in is already, on 2026 or 2025, it updates it,
    and the add-in keeps your settings, sign-in, and workspace.
 3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
-   with the Vault tab open, and your browser asks you to confirm. (Or type the web app's
-   address into the Vault tab yourself, and sign in.)
+   with the Vault tab open, and asks whether to connect to the vault at the address it
+   shows: say Yes if it's the one you open Vault at in your browser. Then your browser asks
+   you to confirm. (Or type the web app's address into the Vault tab yourself, and sign in.)
+   SolidWorks asks only the first time, and for a vault it isn't set up for: any web page
+   can make a Connect link, and a server that isn't your team's would get your sign-in.
 
 If the Vault tab doesn't appear, check **Tools > Add-ins** and tick Vault (both boxes, so it
 loads at startup). To remove the add-in, remove **Vault for SolidWorks** in Windows'
@@ -227,8 +230,10 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     with a view of it, and the part's page lists the drawing.
 16. On a PC without the add-in, download Vault-Setup.exe from the web app's SolidWorks page
     and run it: after Windows' warnings, it installs. Click Connect SolidWorks: SolidWorks
-    starts with the Vault tab, the browser asks to confirm, and the tab shows your name.
-    Click it again: the tab says it's connected already. Remove Vault for SolidWorks in
+    starts with the Vault tab and asks whether to connect to the vault, showing its address
+    (No is chosen to start with); say Yes, the browser asks to confirm, and the tab shows
+    your name. Click it again: the tab says it's connected already. Sign out, and click it
+    again: it signs in without asking which vault. Remove Vault for SolidWorks in
     Settings > Apps: SolidWorks starts without it, and `C:\Program Files\Vault for
     SolidWorks` is gone.
 17. With a part and an assembly downloaded here, and newer versions of both checked in
@@ -302,6 +307,14 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     question says that change is lost; Yes, and the part shows their version, read-only,
     with yours in `C:\VLT\.vault\backup`. Both are on the right-click menu in Needs
     attention too.
+31. Links for another vault: sign out, then open
+    `vault://connect?server=https%3A%2F%2Fvault.example.org` (Windows' Run box, Win+R):
+    SolidWorks asks whether to connect to `https://vault.example.org`, says it's set up for
+    the team's vault, and has No chosen. No: nothing opens in the browser, and the tab says it
+    didn't connect. Open `vault://open?server=https%3A%2F%2Fvault.example.org&path=A.SLDPRT`:
+    it says SolidWorks isn't connected to that vault, and the server box still shows the
+    team's. Sign in again, and open the connect link once more: it says SolidWorks is
+    connected to the team's vault, and to sign out to switch.
 
 ## When something goes wrong
 

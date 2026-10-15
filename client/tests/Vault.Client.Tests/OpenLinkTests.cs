@@ -56,6 +56,8 @@ public sealed class OpenLinkTests
     [InlineData("vault://open/elsewhere?server=https%3A%2F%2Fyjsp.example.org&path=A.SLDPRT")]
     [InlineData("vault://open?path=A.SLDPRT")] // no server
     [InlineData("vault://open?server=file%3A%2F%2F%2FC%3A%2FWindows&path=A.SLDPRT")] // not a web server
+    [InlineData("vault://connect?server=https%3A%2F%2Flucazerega.tail07089c.ts.net%40evil.example")] // the part before @ isn't the server
+    [InlineData("vault://connect?server=https%3A%2F%2Fyjsp.example.org%2F%3Fnext%3Delsewhere")] // nor is a query part of it
     [InlineData("vault://open?server=https%3A%2F%2Fyjsp.example.org")] // no file
     [InlineData("vault://new?server=https%3A%2F%2Fyjsp.example.org&path=Bolt.STEP")] // SolidWorks can't start one
     [InlineData("vault://new?server=https%3A%2F%2Fyjsp.example.org&path=Fin.SLDDRW")] // a drawing of nothing
@@ -68,4 +70,48 @@ public sealed class OpenLinkTests
     [InlineData("vault://new?server=https%3A%2F%2Fyjsp.example.org&path=A.SLDDRW&model=..%2FA.SLDPRT")]
     public void PathsFollowTheVaultsRules(string link) =>
         Assert.Throws<VaultPathException>(() => OpenLink.Parse(link));
+
+    [Fact]
+    public void ConnectingToAServerSolidWorksIsntSetUpForAsksFirst()
+    {
+        // Any web page can make a connect link: one for a server that isn't the team's would take your sign-in.
+        var team = new Uri("https://lucazerega.tail07089c.ts.net/");
+        var other = new Uri("https://vault.example.org/");
+        var folder = Path.Combine(Path.GetTempPath(), "vault-connect-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Not set up yet: even the team's own server is asked about, once, by its address.
+            Assert.Contains("https://lucazerega.tail07089c.ts.net", OpenLink.ConnectQuestion(team, folder, lastServer: null), StringComparison.Ordinal);
+
+            // Signed in to it before: its links go ahead, however its address is written; another's are asked about.
+            Assert.Null(OpenLink.ConnectQuestion(new Uri("https://LUCAZEREGA.tail07089c.ts.net"), folder, team));
+            var elsewhere = OpenLink.ConnectQuestion(other, folder, team);
+            Assert.Contains("https://vault.example.org", elsewhere, StringComparison.Ordinal);
+            Assert.Contains("set up for the one at https://lucazerega.tail07089c.ts.net", elsewhere, StringComparison.Ordinal);
+
+            // The workspace folder says which server SolidWorks is set up for, whatever it signed in to last.
+            Workspace.Create(folder, team, "token").Dispose();
+            Assert.Null(OpenLink.ConnectQuestion(team, folder, other));
+            Assert.NotNull(OpenLink.ConnectQuestion(other, folder, other));
+        }
+        finally
+        {
+            TempFolders.Delete(folder);
+        }
+    }
+
+    [Fact]
+    public void AServerThatIsntPrivateSaysSo()
+    {
+        Assert.Contains("not https", OpenLink.ConnectQuestion(new Uri("http://192.168.1.20:8000/"), Path.GetTempPath(), null), StringComparison.Ordinal);
+        Assert.DoesNotContain("not https", OpenLink.ConnectQuestion(new Uri("https://vault.example.org/"), Path.GetTempPath(), null), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("https://lucazerega.tail07089c.ts.net/", "https://lucazerega.tail07089c.ts.net")]
+    [InlineData("https://lucazerega.tаil07089c.ts.net/", "https://lucazerega.xn--til07089c-0yh.ts.net")] // a Cyrillic a: shown as it is
+    [InlineData("https://Team.Example.org:8443/vault/", "https://team.example.org:8443/vault")]
+    [InlineData("http://[::1]:8000/", "http://[::1]:8000")]
+    public void AddressesShowWhereTheServerReallyIs(string server, string shown) =>
+        Assert.Equal(shown, OpenLink.Address(new Uri(server)));
 }

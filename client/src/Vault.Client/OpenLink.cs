@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.Json;
+
 namespace Vault.Client;
 
 /// <summary>What a vault:// link asks SolidWorks to do.</summary>
@@ -79,6 +82,11 @@ public static class OpenLink
         {
             throw new WorkspaceException("The Vault link doesn't say which server it's from: " + link);
         }
+        // A server's address is where it is, and no more: a name before an @ would look like where it isn't.
+        if (server.UserInfo.Length > 0 || server.Query.Length > 0 || server.Fragment.Length > 0)
+        {
+            throw new WorkspaceException("The Vault link's server isn't a Vault server's address: " + link);
+        }
         if (action == LinkAction.Connect)
         {
             return new LinkRequest(action, server, "", null);
@@ -107,6 +115,60 @@ public static class OpenLink
             }
         }
         return new LinkRequest(action, server, path, model);
+    }
+
+    /// <summary>
+    /// What to ask before SolidWorks signs in to the server a link names, or null when it can go ahead: when it's the
+    /// server SolidWorks is set up for, which is the one the workspace in workspaceFolder is for, or without one,
+    /// lastServer, the one it last signed in to. Any web page can make a link, and one for another server (or any, before
+    /// SolidWorks is set up) could be for a server that isn't the team's, which would get your sign-in and hand you its
+    /// files. So the question shows its address, and only you can say it's the team's.
+    /// </summary>
+    public static string? ConnectQuestion(Uri server, string workspaceFolder, Uri? lastServer)
+    {
+        var setUpFor = WorkspaceServer(workspaceFolder) ?? lastServer;
+        if (setUpFor != null && SameServer(server, setUpFor))
+        {
+            return null;
+        }
+        var question = setUpFor == null
+            ? $"Connect SolidWorks to the vault at\n\n{Address(server)}\n\n"
+            : $"A link asks to connect SolidWorks to the vault at\n\n{Address(server)}\n\nbut SolidWorks is set up for the one at "
+                + $"{Address(setUpFor)}. Connect it to this one instead? ";
+        var plain = server.Scheme == Uri.UriSchemeHttp
+            ? "\n\nIts address is http, not https, so what you send it isn't private: only a test server's should be."
+            : "";
+        return question + "Say Yes only if that's your team's Vault, the address you open it at in your browser: "
+            + "SolidWorks signs in to it, and gets your files from it." + plain;
+    }
+
+    /// <summary>
+    /// A server's address as it really is, to check by eye: its host in letters anyone can read (punycode for a name in
+    /// other alphabets, whose letters can pass for Latin ones), with its port and path, and nothing else.
+    /// </summary>
+    public static string Address(Uri server)
+    {
+        var host = server.HostNameType == UriHostNameType.Dns ? server.IdnHost : server.Host;
+        var port = server.IsDefaultPort ? "" : ":" + server.Port.ToString(CultureInfo.InvariantCulture);
+        return server.Scheme + "://" + host + port + server.AbsolutePath.TrimEnd('/');
+    }
+
+    /// <summary>Whether two addresses are the same Vault server's, however they're written.</summary>
+    public static bool SameServer(Uri a, Uri b) =>
+        string.Equals(a.AbsoluteUri.TrimEnd('/'), b.AbsoluteUri.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    // The server of the workspace at or above folder; null if there's none, or it can't be read.
+    private static Uri? WorkspaceServer(string folder)
+    {
+        try
+        {
+            return Workspace.FindRoot(folder) is { } root ? Workspace.ServerOf(root) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException
+            or JsonException or UriFormatException or WorkspaceException)
+        {
+            return null;
+        }
     }
 
     private static string? VaultPathIn(Dictionary<string, string> query, string name)

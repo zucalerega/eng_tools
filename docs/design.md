@@ -77,6 +77,11 @@ Vault's blobs never change once written, so a backup of them only ever adds file
 scripts and models are JSON files changed in place, and deleting one deletes its file, so a
 copy of them needs to keep old versions too.
 
+Admin > People starts with how full the server's disk is, and how much of it Vault's files,
+Yorg's, and the database take (`GET /api/storage`, `disk.py`): the folders above, measured
+when the page opens, on the disk Vault's files are on, which on the live server holds all
+three. The rest of the disk is the system, logs, and the database's backups.
+
 ## Sign-in and accounts
 
 - **People** sign in with a Georgia Tech account or with Google, and anyone who does joins
@@ -188,6 +193,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, new people need an invite or approval; turning it off approves everyone waiting (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
+| `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
 
 ## Names from before YJSP
 

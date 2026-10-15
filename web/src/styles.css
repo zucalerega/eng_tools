@@ -27,6 +27,11 @@
     --good: #1a7f37;
     --admin: #bc4c00;
     --admin-soft: #fff1e5;
+    /* Admin > People's storage bar: Vault in blue and Yorg in gold, as their marks are, and the rest in grays. */
+    --storage-vault: #2a5fb0;
+    --storage-yorg: #e0a500;
+    --storage-other: #8e99ab;
+    --storage-free: #e1e6ee;
     --shadow: 0 1px 2px rgb(15 27 45 / 5%), 0 1px 3px rgb(15 27 45 / 6%);
     --shadow-pop: 0 12px 32px rgb(15 27 45 / 18%);
     --focus: 0 0 0 3px rgb(29 77 148 / 28%);
@@ -69,6 +74,10 @@
         --good: #48c35c;
         --admin: #f0883e;
         --admin-soft: #3a2413;
+        --storage-vault: #5b8fe0;
+        --storage-yorg: #b8860b;
+        --storage-other: #5d6a80;
+        --storage-free: #2a3650;
         --shadow: 0 1px 2px rgb(0 0 0 / 35%);
         --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
         --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -98,6 +107,10 @@
     --good: #48c35c;
     --admin: #f0883e;
     --admin-soft: #3a2413;
+    --storage-vault: #5b8fe0;
+    --storage-yorg: #b8860b;
+    --storage-other: #5d6a80;
+    --storage-free: #2a3650;
     --shadow: 0 1px 2px rgb(0 0 0 / 35%);
     --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
     --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -861,6 +874,80 @@ a.tag:hover {
     flex-wrap: wrap;
     gap: 0.5rem 1.5rem;
     margin: 1rem 0 0.75rem;
+}
+
+/* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
+.storage {
+    margin: 0 0 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.storage-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    margin: 0 0 0.5rem;
+}
+
+.storage-low {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.storage-bar {
+    display: flex;
+    gap: 2px;
+    height: 12px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.storage-bar > span {
+    flex-basis: 0;
+    min-width: 3px; /* a sliver, however little it is */
+}
+
+.storage-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.storage-legend strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.storage-swatch {
+    display: inline-block;
+    width: 0.65rem;
+    height: 0.65rem;
+    margin-right: 0.4rem;
+    border-radius: 2px;
+    vertical-align: -0.05rem;
+}
+
+.storage-vault {
+    background: var(--storage-vault);
+}
+
+.storage-yorg {
+    background: var(--storage-yorg);
+}
+
+.storage-other {
+    background: var(--storage-other);
+}
+
+.storage-free {
+    background: var(--storage-free);
 }
 
 /* Someone using Vault now (Admin > People), with a green dot. */

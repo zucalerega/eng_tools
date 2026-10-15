@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Account, type SiteSettings } from "../../api";
+import { api, type Account, type SiteSettings, type Storage } from "../../api";
 import { type Grants, type Role, vaultApi } from "../api";
-import { formatDate, formatDuration, formatTime } from "../../format";
+import { formatDate, formatDuration, formatSize, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
@@ -128,6 +128,7 @@ function People() {
     const onNow = sorted.filter((person) => person.active_now).length;
     return (
         <>
+            <DiskSpace />
             {problem && <Notice tone="error">{problem}</Notice>}
             {site && (
                 <div className="setting">
@@ -328,6 +329,69 @@ function People() {
                 </>
             )}
         </>
+    );
+}
+
+const LOW_ON_SPACE = 0.1; // of the disk free, or less: say so
+
+// How full the server's disk is, and how much of it is Vault's and Yorg's: measured when the page opens.
+function DiskSpace() {
+    const [storage, setStorage] = useState<Storage | null>(null);
+    const [problem, setProblem] = useState<string | null>(null);
+    useEffect(() => {
+        api.storage().then(setStorage, (error: Error) => setProblem(error.message));
+    }, []);
+    if (problem) {
+        return <p className="muted">Couldn't measure the server's disk: {problem}</p>;
+    }
+    if (!storage) {
+        return null;
+    }
+    const used = storage.total - storage.free;
+    const parts = [
+        { key: "vault", label: "Vault", bytes: storage.vault, about: "Every version of every file" },
+        { key: "yorg", label: "Yorg", bytes: storage.yorg, about: "Test data, scripts, and models" },
+        {
+            key: "other",
+            label: "Everything else",
+            bytes: Math.max(0, used - storage.vault - storage.yorg),
+            about: `The system, the database (${formatSize(storage.database)}), and its backups`,
+        },
+        { key: "free", label: "Free", bytes: storage.free, about: "What the server can still write" },
+    ];
+    const low = storage.free <= storage.total * LOW_ON_SPACE;
+    return (
+        <div className="storage">
+            <p className="storage-head">
+                <strong>Storage</strong>
+                <span>
+                    {formatSize(used)} of {formatSize(storage.total)} used (
+                    {Math.round((used / Math.max(storage.total, 1)) * 100)}%)
+                </span>
+                {low && <span className="storage-low">Running out of space</span>}
+            </p>
+            {/* The legend below says the same in words. */}
+            <div className="storage-bar" aria-hidden="true">
+                {parts
+                    .filter((part) => part.bytes > 0)
+                    .map((part) => (
+                        <span
+                            key={part.key}
+                            className={`storage-${part.key}`}
+                            style={{ flexGrow: part.bytes / Math.max(storage.total, 1) }}
+                            title={`${part.label}: ${formatSize(part.bytes)}`}
+                        />
+                    ))}
+            </div>
+            <ul className="storage-legend">
+                {parts.map((part) => (
+                    <li key={part.key} title={part.about}>
+                        <span className={`storage-swatch storage-${part.key}`} aria-hidden="true" />
+                        {part.label} <strong>{formatSize(part.bytes)}</strong>
+                    </li>
+                ))}
+            </ul>
+        </div>
     );
 }
 

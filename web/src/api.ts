@@ -46,6 +46,15 @@ export interface Download {
     sha256: string;
 }
 
+/** How full the server's disk is, in bytes, and how much of it Vault's files, Yorg's, and the database take. */
+export interface Storage {
+    total: number;
+    free: number; // what the server can still write
+    vault: number;
+    yorg: number;
+    database: number;
+}
+
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
 // server and use a client token instead.
 let baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
@@ -180,4 +189,6 @@ export const api = {
     updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),
     downloads: () => request<Download[]>("GET", "/api/downloads"),
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
+    /** For admins: how full the server's disk is. */
+    storage: () => request<Storage>("GET", "/api/storage"),
 };

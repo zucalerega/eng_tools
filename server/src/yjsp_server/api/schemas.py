@@ -74,6 +74,16 @@ class SiteSettingsOut(BaseModel):
         return cls(whitelist=site.whitelist)
 
 
+class StorageOut(BaseModel):
+    """How full the server's disk is, and how much of it each part of the site takes, in bytes (people.disk_usage)."""
+
+    total: int
+    free: int  # what the server can still write
+    vault: int
+    yorg: int
+    database: int
+
+
 class SiteSettingsPatch(BaseModel):
     whitelist: bool | None = None  # turning it off approves everyone waiting
 

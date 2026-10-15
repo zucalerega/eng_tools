@@ -1,11 +1,23 @@
-"""People API: your account, everyone's (for admins), the whitelist, and your sign-in tokens."""
+"""People API: your account, everyone's (for admins), the whitelist, how full the server's disk is (for admins), and
+your sign-in tokens."""
+
+from dataclasses import asdict
 
 from fastapi import APIRouter
 
 from .. import auth, people
 from ..models import UserStatus
-from .deps import DB, ActiveUser, AnyUser
-from .schemas import InviteIn, MePatch, SiteSettingsOut, SiteSettingsPatch, TokenOut, UserOut, UserPatch
+from .deps import DB, ActiveUser, AnyUser, Config
+from .schemas import (
+    InviteIn,
+    MePatch,
+    SiteSettingsOut,
+    SiteSettingsPatch,
+    StorageOut,
+    TokenOut,
+    UserOut,
+    UserPatch,
+)
 
 router = APIRouter(prefix="/api", tags=["people"])
 
@@ -53,6 +65,12 @@ def get_site_settings(user: ActiveUser, db: DB) -> SiteSettingsOut:
 def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB) -> SiteSettingsOut:
     """Turn the whitelist on or off (admins). Off, anyone can join, so it approves everyone waiting too."""
     return SiteSettingsOut.of(people.update_site_settings(db, user, whitelist=body.whitelist))
+
+
+@router.get("/storage")
+def get_storage(user: ActiveUser, db: DB, settings: Config) -> StorageOut:
+    """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take (admins)."""
+    return StorageOut(**asdict(people.disk_usage(db, user, settings)))
 
 
 @router.get("/tokens")

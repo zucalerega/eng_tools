@@ -13,6 +13,7 @@ from .api import people as people_api
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
+from .limits import BodyLimit
 from .security import SecurityHeaders, hide_sign_in_codes
 from .vault import api as vault_api
 from .vault.storage import BlobStore
@@ -67,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         https_only=settings.production,
     )
 
+    # Outside everything that reads a request, so that a request too big for the server is refused before anything
+    # reads it. Only SecurityHeaders, which reads nothing of it, is outside it, so a refusal has the headers too.
+    app.add_middleware(BodyLimit)
     app.add_middleware(SecurityHeaders, https=settings.production)
     hide_sign_in_codes()
 

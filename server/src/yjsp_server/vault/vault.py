@@ -7,7 +7,8 @@ function starts with begin_write(); read its docstring before adding one.
 
 import hashlib
 import re
-from collections import defaultdict
+import threading
+from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1499,6 +1500,13 @@ def put_caliper_model(
 
 
 _MAX_READ = 1 << 28  # bigger files aren't read for their 3D view here: Vault for SolidWorks makes theirs
+# SolidWorks files read at once for their 3D views: each can take a few hundred MB, on a server with 6 GB.
+_READING = threading.BoundedSemaphore(2)
+_READING_WAIT = 60.0  # seconds a look waits for its turn before it's told to try again
+# Why a file couldn't be read, by its contents' SHA-256: a version's bytes never change, so neither does that, and
+# reading it again on every look (up to _MAX_READ, a moment's work) would let a few clicks keep the server busy.
+_UNREADABLE: OrderedDict[str, str] = OrderedDict()
+_UNREADABLE_KEPT = 1000
 
 
 def _keep(store: BlobStore, data: bytes) -> tuple[str, int]:
@@ -1574,6 +1582,25 @@ def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
     return [(file, number) for file, number in rows]
 
 
+def _read_solidworks(store: BlobStore, sha256: str, kind: str, name: str) -> solidworks.Part | solidworks.Assembly:
+    """A SolidWorks file's 3D view (solidworks.py), read a couple at a time; one that can't be, refused (Unreadable)
+    at once from then on."""
+    if sha256 in _UNREADABLE:
+        raise solidworks.Unreadable(f"{name}: {_UNREADABLE[sha256]}")
+    if not _READING.acquire(timeout=_READING_WAIT):
+        raise Conflict("The server is reading other SolidWorks files: try again in a minute", code="busy")
+    try:
+        data = store.path(sha256).read_bytes()
+        return solidworks.read_part(data) if kind == "part" else solidworks.read_assembly(data)
+    except solidworks.Unreadable as e:
+        _UNREADABLE[sha256] = e.message
+        while len(_UNREADABLE) > _UNREADABLE_KEPT:
+            _UNREADABLE.popitem(last=False)
+        raise solidworks.Unreadable(f"{name}: {e.message}") from e
+    finally:
+        _READING.release()
+
+
 def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
     """Make a version's 3D model from the 3D view SolidWorks saved in the file itself (vault/solidworks.py), in the
     configuration it was saved in: so Caliper shows SolidWorks files that Vault for SolidWorks made no model of. A
@@ -1602,18 +1629,18 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
         )
 
     # Versions never change, so reading one, which takes a moment, comes before the write lock.
-    data = store.path(target.blob_sha256).read_bytes()
+    read = _read_solidworks(store, target.blob_sha256, kind, f"{path} v{version}")
     kept: dict[str, int] = {}  # blobs made, with their sizes
     mesh: str | None = None
     components: list[dict[str, Any]] | None = None
     try:
-        if kind == "part":
-            part = solidworks.read_part(data)
+        if isinstance(read, solidworks.Part):
+            part = read
             configuration, units = part.configuration[:255], part.units
             mesh, size = _keep(store, caliper.write_mesh(part.bodies))
             kept[mesh] = size
         else:
-            assembly = solidworks.read_assembly(data)
+            assembly = read
             configuration, units = assembly.configuration[:255], assembly.units
             finder = _Finder(db, tree, target.created_at)
 

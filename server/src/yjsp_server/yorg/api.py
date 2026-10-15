@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from .. import disk
 from ..api.deps import DB, ActiveUser, Config
 from ..errors import ApiError, NotFound, TooLarge
 from ..models import User
@@ -78,6 +79,7 @@ async def post_dataset(
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
         raise TooLarge(f"Files over {settings.max_upload_mb} MB aren't accepted")
+    disk.make_room(files.root, int(declared) if declared.isdigit() else 0)
     temp = files.temp_path()
     try:
         digest, size = hashlib.sha256(), 0

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
+from .. import disk
 from ..api.deps import DB, ActiveUser, Config
 from ..errors import ApiError, Forbidden, TooLarge
 from . import vault
@@ -274,6 +275,7 @@ async def put_blob(
         size = store.path(sha256).stat().st_size
         await run_in_threadpool(vault.register_blob, db, sha256, size)
         return JSONResponse({"sha256": sha256, "size": size, "stored": False})
+    disk.make_room(store.root, int(declared) if declared.isdigit() else 0)
 
     temp = store.temp_path()
     try:

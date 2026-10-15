@@ -16,7 +16,7 @@
 # site has run well for a week.
 set -euo pipefail
 
-host=${YJSP_DEPLOY_HOST:-opc@129.80.217.44}
+host=${YJSP_DEPLOY_HOST:-opc@lucazerega.tail07089c.ts.net}
 key=${YJSP_DEPLOY_KEY:-$HOME/.ssh/yjsp_oracle}
 repo=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 work="$(dirname "$repo")/.yjsp-deploy" # a short path: Windows can't hold node_modules under a long one

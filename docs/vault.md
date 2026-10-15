@@ -239,6 +239,20 @@ on top of it.
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.
+- **Paths from the server are checked** before anything is done with them, since a
+  server that isn't working right, or isn't the team's, mustn't be able to have a client
+  write, move, or delete anything outside its workspace. `Workspace.ToLocalPath` takes a
+  path only as the server writes them (`VaultPaths.SplitServerPath`: names joined by `/`,
+  each one the vault allows, so no `..`, drive, device, or stream), only inside the
+  workspace, and never in its own `.vault` folder (or `VAULT~1`, its short name on Windows).
+  An answer with a bad path (the sync feed, or a check-out's or check-in's) is refused
+  whole, before anything in it is kept, with an error saying the server sent a bad path;
+  paths a workspace kept from before are checked as it opens, and forgotten if they're bad.
+  Paths over 200 characters are taken: the server's own moves and restores can make them
+  (a folder moved with empty folders deep in it, a file restored into a folder renamed
+  longer since). A download never replaces a file the workspace didn't know was there (a
+  path sent for two files, or another file's short name on Windows) unless it's the
+  vault's version already.
 - **Local state.** `.vault/state.json` records the sync cursor, the vault's files (with
   what each uses) and folders (with your role in each), and each local copy's id,
   version, hash, size, and write time. A file is rehashed only when its size or write
@@ -305,18 +319,28 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   lists itself in Windows' installed apps to remove all that again. It installs new only
   where SolidWorks 2026 is (files saved in 2026 don't open in older versions, so the team
   stays on one); where the add-in is already, it updates it, on 2025 too. It isn't signed
-  yet, so Windows' SmartScreen warns about it once. The server offers it to members from
-  `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
-  Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
+  for Windows (Authenticode) yet, so Windows' SmartScreen warns about it once; the
+  signature its updates are checked with is Vault's own (see Updates). The server offers it
+  to members from `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks
+  page, whose Connect SolidWorks button (a `connect` link) has the add-in sign in to that
+  vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
 - **Updates.** Every few hours the add-in asks the server what it offers for download
   (`GET /api/downloads`, which reads each program's version from its version resource and
   gives each file's SHA-256). When `Vault-Setup.exe` installs a newer version than the
   add-in's own (`AddInUpdate.Newer`), Update appears in the task pane's header. It downloads
-  setup, checked against its size and SHA-256, and starts it with `/update`; Windows asks
-  for administrator rights, and setup waits for SolidWorks to close in that Windows
-  session, which has the add-in loaded, then installs, keeping sign-in, settings, and
-  workspaces. Add-ins before this one have no Update: run setup by hand once.
+  setup and checks it (`AddInUpdate.DownloadAsync`): its size and SHA-256 against what was
+  offered; its signature, `Vault-Setup.exe.sig` beside it in the downloads (served, not
+  listed), against the public key the add-in carries, so that only the holder of the
+  private key, which CI signs `main`'s and release tags' builds with, can put a program on
+  the team's laptops, not the server or whoever has it (deploying.md, "Signing key"); and
+  its own version, read from it as the server reads it, against the one it was offered as,
+  so an older signed release can't come back as a newer one. Only then does it start it
+  with `/update`; anything amiss means no update, and the tab and the log say why.
+  Windows asks for administrator rights, and setup waits for SolidWorks to close in that
+  Windows session, which has the add-in loaded, then installs, keeping sign-in, settings,
+  and workspaces. Add-ins before Update (0.4.0 and older) have none: run setup by hand
+  once. Add-ins up to 0.5.2 don't check signatures.
 
 - **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
   menu (the vault, the workspace, the web app, sign out); a card for the active document,
@@ -360,6 +384,15 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.
+- **Connecting from the web app.** Connect SolidWorks is a `vault://connect?server=…` link,
+  and any web page can make one, so it doesn't decide where you sign in on its own. Signed
+  out, the add-in signs in to the server it's set up for (its workspace's, or the one it
+  last signed in to) without asking, and asks first, showing the address, for any other,
+  or for any at all before it's set up (`OpenLink.ConnectQuestion`). The address it shows
+  is the server's as it really is (`OpenLink.Address`: punycode for a name in other
+  alphabets), and a link whose server has a user name, query, or fragment in it is
+  refused. An open or new link for a server it isn't set up for doesn't fill in the
+  sign-in box: it says to connect from that vault's SolidWorks page.
 - **New files from the web app.** New part, New assembly, and New drawing (of a part or
   assembly) are `vault://new?server=…&path=…[&model=…]` links. The add-in checks that the
   name is free and that you can add files there (`Workspace.CheckNewFileAsync`); for a

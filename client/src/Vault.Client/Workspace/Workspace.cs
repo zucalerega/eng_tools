@@ -78,7 +78,9 @@ public sealed class Workspace : IDisposable
         var statePath = Path.Combine(root, MetaFolder, StateFile);
         var state = File.Exists(statePath) ? ReadJson<WorkspaceState>(statePath) ?? new WorkspaceState() : new WorkspaceState();
         var server = new Uri(config.Server);
-        return new Workspace(root, server, config.Host ?? Environment.MachineName, new VaultApi(server, token, handler), state);
+        var workspace = new Workspace(root, server, config.Host ?? Environment.MachineName, new VaultApi(server, token, handler), state);
+        workspace.ForgetBadPaths();
+        return workspace;
     }
 
     /// <summary>The workspace containing a path (like git finding .git), or null.</summary>
@@ -104,8 +106,107 @@ public sealed class Workspace : IDisposable
     /// <summary>The vault path of a local file or folder in this workspace ("" for the root).</summary>
     public string ToVaultPath(string localPath) => string.Join("/", VaultPaths.Split(RelativePath(localPath)));
 
-    public string ToLocalPath(string vaultPath) =>
-        vaultPath.Length == 0 ? Root : Path.Combine(Root, vaultPath.Replace('/', Path.DirectorySeparatorChar));
+    /// <summary>
+    /// Where a vault path is in this workspace (Root for ""). Vault paths come from the server, which might not be the
+    /// team's, so each is checked: by the vault's name rules (VaultPaths.SplitServerPath), inside Root, and not in
+    /// .vault, the workspace's own folder. Nothing a server says can have Vault write, move, or delete anywhere else. Any
+    /// other path is a VaultPathException.
+    /// </summary>
+    public string ToLocalPath(string vaultPath)
+    {
+        var names = VaultPaths.SplitServerPath(vaultPath);
+        if (names.Count == 0)
+        {
+            return Root;
+        }
+        if (IsMetaFolder(names[0]))
+        {
+            throw new VaultPathException($"{vaultPath} is in {MetaFolder}, the workspace's own folder, not in the vault");
+        }
+        var local = Path.GetFullPath(Path.Combine(Root, Path.Combine(names.ToArray())));
+        if (!IsInside(local, Root))
+        {
+            throw new VaultPathException($"{vaultPath} isn't inside the workspace, {Root}");
+        }
+        return local;
+    }
+
+    // The workspace's own folder, by its name, or by the short name Windows gives it (VAULT~1), which opens it too.
+    private static bool IsMetaFolder(string name)
+    {
+        var key = VaultPaths.Key(name);
+        return key == MetaFolder || (key.StartsWith("vault~", StringComparison.Ordinal) && key.Length > 6 && key.Skip(6).All(char.IsDigit));
+    }
+
+    // Whether a full path is inside a folder (not the folder itself), as the file system compares them: on Windows,
+    // whatever the case.
+    private static bool IsInside(string path, string folder) =>
+        path.StartsWith(
+            folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar,
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    /// <summary>
+    /// Check the paths in an answer from the server before keeping any of it (see ToLocalPath). A bad one means a server
+    /// that isn't working right, or isn't the team's: nothing here changes, and the error says so.
+    /// </summary>
+    private void CheckServerPaths(IEnumerable<string> vaultPaths)
+    {
+        foreach (var path in vaultPaths)
+        {
+            if (Problem(path) is { } problem)
+            {
+                throw new WorkspaceException(
+                    $"The server at {Server} sent a bad path, {Shown(path)}: {Shown(problem, quoted: false)}. Vault didn't use it, and "
+                    + "changed nothing here. Tell whoever runs your vault: the server isn't working right, or isn't the team's.");
+            }
+        }
+    }
+
+    // Why ToLocalPath refuses a path from the server, or null if it takes it. The server never sends the root.
+    private string? Problem(string vaultPath)
+    {
+        if (vaultPath.Length == 0)
+        {
+            return "it's the top of the vault, which isn't a file or folder in it";
+        }
+        try
+        {
+            ToLocalPath(vaultPath);
+            return null;
+        }
+        catch (VaultPathException e)
+        {
+            return e.Message;
+        }
+    }
+
+    // A workspace's state from an older client can hold paths a server sent it that ToLocalPath refuses. They're
+    // forgotten, so nothing is done with them, and the next refresh gets everything again.
+    private void ForgetBadPaths()
+    {
+        var forgotten = Forget(_state.Remote, entry => entry.Path) + Forget(_state.Local, entry => entry.Path) + Forget(_state.Folders, entry => entry.Path);
+        if (forgotten > 0)
+        {
+            _state.SyncFormat = 0;
+        }
+    }
+
+    private int Forget<TKey, TEntry>(Dictionary<TKey, TEntry> entries, Func<TEntry, string> pathOf)
+        where TKey : notnull
+    {
+        var bad = entries.Where(pair => Problem(pathOf(pair.Value)) != null).Select(pair => pair.Key).ToList();
+        bad.ForEach(key => entries.Remove(key));
+        return bad.Count;
+    }
+
+    // Text from the server, as a message can show it: no control characters, and not too long.
+    private static string Shown(string text, bool quoted = true)
+    {
+        const int Longest = 120;
+        var printable = new string(text.Select(c => char.IsControl(c) ? '?' : c).ToArray());
+        printable = printable.Length > Longest ? printable.Substring(0, Longest) + "..." : printable;
+        return quoted ? "\"" + printable + "\"" : printable;
+    }
 
     private string RelativePath(string localPath)
     {
@@ -140,6 +241,8 @@ public sealed class Workspace : IDisposable
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
         var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
         var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
+        // Deleted files are only dropped, by id: their paths go nowhere.
+        CheckServerPaths(sync.Folders.Select(f => f.Path).Concat(sync.Files.Where(f => f.DeletedAt == null).Select(f => f.Path)));
         var before = sync.Full ? _state.Folders.Values.Select(f => f.Path).ToList() : new List<string>();
         if (sync.Full)
         {
@@ -286,9 +389,10 @@ public sealed class Workspace : IDisposable
         }
     }
 
+    // A folder a copy moved out of, which came from a vault path (so it may be longer than new paths can be).
     private bool IsEmptyFolderUnderRoot(string folder) =>
         folder.Length > Root.TrimEnd(Path.DirectorySeparatorChar).Length && Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()
-        && !_state.Folders.ContainsKey(VaultPaths.Key(ToVaultPath(folder)));
+        && !_state.Folders.ContainsKey(VaultPaths.Key(RelativePath(folder)));
 
     /// <summary>The state of every file under the given local paths (default: the whole workspace).</summary>
     public async Task<IReadOnlyList<FileStatus>> StatusAsync(IEnumerable<string>? localPaths = null, CancellationToken ct = default)
@@ -360,24 +464,32 @@ public sealed class Workspace : IDisposable
             return null;
         }
         var (byKey, byName) = Index(vaultPaths);
-        if (VaultFileMeant(keptPath, byKey, byName) is { } vaultPath && File.Exists(ToLocalPath(vaultPath)))
+        if (VaultFileMeant(keptPath, byKey, byName) is { } vaultPath && LocalPathOrNull(vaultPath) is { } meant && File.Exists(meant))
         {
-            return ToLocalPath(vaultPath);
+            return meant;
         }
         var names = NamesIn(keptPath);
         for (var skip = 0; skip < names.Length; skip++)
         {
-            var end = names.Skip(skip).ToList();
-            if (end.All(IsVaultName))
+            if (LocalPathOrNull(string.Join("/", names.Skip(skip))) is { } candidate && File.Exists(candidate))
             {
-                var candidate = ToLocalPath(string.Join("/", end));
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                return candidate;
             }
         }
         return null;
+    }
+
+    // ToLocalPath, or null for a path it refuses.
+    private string? LocalPathOrNull(string vaultPath)
+    {
+        try
+        {
+            return ToLocalPath(vaultPath);
+        }
+        catch (VaultPathException)
+        {
+            return null;
+        }
     }
 
     // Vault file paths by key, and those keys by their file name's key: for VaultFileMeant.
@@ -427,19 +539,6 @@ public sealed class Workspace : IDisposable
     }
 
     private static string[] NamesIn(string path) => path.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
-
-    private static bool IsVaultName(string name)
-    {
-        try
-        {
-            VaultPaths.CleanName(name);
-            return true;
-        }
-        catch (VaultPathException)
-        {
-            return false;
-        }
-    }
 
     // The path's vault path if it's in this workspace, else null.
     private string? UnderRoot(string path)
@@ -732,11 +831,7 @@ public sealed class Workspace : IDisposable
                 + ". Keep your copy (it's checked out to you, to check in on top), or use the vault's version (yours is backed up).");
         }
 
-        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force, ct).ConfigureAwait(false);
-        foreach (var file in locked)
-        {
-            _state.Remote[file.Id] = RemoteEntry.From(file);
-        }
+        Keep(await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force, ct).ConfigureAwait(false));
         foreach (var status in targets)
         {
             status.Lock = _state.Remote[status.FileId!.Value].Lock;
@@ -762,11 +857,7 @@ public sealed class Workspace : IDisposable
     public async Task<IReadOnlyList<FileStatus>> KeepMineAsync(IEnumerable<string> localPaths, CancellationToken ct = default)
     {
         var targets = await ConflictsAsync(localPaths, "keep", ct).ConfigureAwait(false);
-        var locked = await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force: false, ct).ConfigureAwait(false);
-        foreach (var file in locked)
-        {
-            _state.Remote[file.Id] = RemoteEntry.From(file);
-        }
+        Keep(await Api.CheckoutAsync(targets.Select(s => s.VaultPath), Host, force: false, ct).ConfigureAwait(false));
         foreach (var status in targets)
         {
             var remote = _state.Remote[status.FileId!.Value];
@@ -897,6 +988,7 @@ public sealed class Workspace : IDisposable
         }
 
         var result = await Api.CheckinAsync(request, ct).ConfigureAwait(false);
+        CheckServerPaths(result.Files.Select(f => f.File.Path));
         foreach (var checkedIn in result.Files)
         {
             var file = checkedIn.File;
@@ -945,11 +1037,7 @@ public sealed class Workspace : IDisposable
                 await DownloadAsync(status, ct).ConfigureAwait(false);
             }
         }
-        var released = await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false);
-        foreach (var file in released)
-        {
-            _state.Remote[file.Id] = RemoteEntry.From(file);
-        }
+        Keep(await Api.UndoCheckoutAsync(targets.Select(s => s.VaultPath), ct).ConfigureAwait(false));
         foreach (var status in targets)
         {
             status.Lock = null;
@@ -962,6 +1050,16 @@ public sealed class Workspace : IDisposable
     }
 
     // --- internals --------------------------------------------------------------------------
+
+    // What the server says these files are now, once their paths are checked.
+    private void Keep(IReadOnlyCollection<VaultFile> files)
+    {
+        CheckServerPaths(files.Select(f => f.Path));
+        foreach (var file in files)
+        {
+            _state.Remote[file.Id] = RemoteEntry.From(file);
+        }
+    }
 
     private static IEnumerable<string> RequirePaths(IEnumerable<string> localPaths, string action)
     {
@@ -1365,6 +1463,13 @@ public sealed class Workspace : IDisposable
         var id = status.FileId!.Value;
         var remote = _state.Remote[id];
         var localPath = status.LocalPath;
+        // Not here, as far as the workspace could tell, yet there's a file there: another file's other name (Windows'
+        // short names), a path the server sent for two files, or one just saved. It isn't replaced, unless it's the
+        // vault's version already, so nothing of yours is lost.
+        if (status.State == FileState.Missing && File.Exists(localPath) && Hashing.Sha256File(localPath) != remote.Sha256)
+        {
+            throw new WorkspaceException($"Can't get {remote.Path}: there's another file at {localPath}. Move it out of the way, then try again.");
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
         var temp = localPath + DownloadSuffix;
         try
@@ -1428,7 +1533,13 @@ public sealed class Workspace : IDisposable
     private string Backup(FileStatus status)
     {
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        var copy = Path.Combine(Root, MetaFolder, "backup", stamp, status.VaultPath.Replace('/', Path.DirectorySeparatorChar));
+        var backups = Path.Combine(Root, MetaFolder, "backup", stamp);
+        // By the vault path's names, which came from the server: checked as they came, and here, so the copy stays in backups.
+        var copy = Path.GetFullPath(Path.Combine(backups, Path.Combine(VaultPaths.SplitServerPath(status.VaultPath).ToArray())));
+        if (!IsInside(copy, backups))
+        {
+            throw new VaultPathException($"{status.VaultPath} isn't a path in the vault, so it can't be backed up under it");
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
         File.Copy(status.LocalPath, copy, overwrite: true);
         return copy;

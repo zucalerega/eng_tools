@@ -59,6 +59,8 @@ export interface AddInComputer {
     version: string | null; // the add-in's, as its requests last said it
     signed_in_at: string;
     last_used_at: string | null;
+    in_use: boolean; // used in the last 90 days, so its person has it
+    outdated: boolean; // older than the installer offered now: it offers itself the update
 }
 
 /** Someone who has the add-in, or downloaded its installer. */
@@ -76,6 +78,8 @@ export interface AddIn {
     have_it: number; // signed in with it, and using it in the last 90 days
     this_week: number;
     downloaded: number; // people who downloaded the installer
+    newest: string | null; // the installer's version, offered now
+    on_newest: number; // of the people who have it, who are on it (or newer) on a computer they use
     counting_since: string | null; // the first download counted: none were before
 }
 

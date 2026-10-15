@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api, type AddIn, type AddInPerson } from "../../api";
 import { Time } from "../../components";
 import { formatDate } from "../../format";
@@ -6,18 +6,17 @@ import { formatDate } from "../../format";
 // Admin > People's add-in tracker: who has Vault's SolidWorks add-in (signed in with it, on which computers and
 // versions, and when they last used it), who downloaded its installer, and how many people have it (clients.py).
 
-const INSTALLER = "Vault-Setup.exe";
+/** The versions someone's add-ins are on, each once (null: not known yet), and whether it's older than the newest. */
+function versions(person: AddInPerson): [string | null, boolean][] {
+    const found = new Map(person.computers.map((c) => [c.version, c.outdated]));
+    return [...found].sort(([a], [b]) => (a ?? "").localeCompare(b ?? ""));
+}
 
 export function AddInTracker() {
     const [addIn, setAddIn] = useState<AddIn | null>(null);
-    const [newest, setNewest] = useState<string | null>(null); // the installer's version, offered now
     const [problem, setProblem] = useState<string | null>(null);
     useEffect(() => {
         api.addIn().then(setAddIn, (error: Error) => setProblem(error.message));
-        api.downloads().then(
-            (files) => setNewest(files.find((file) => file.name === INSTALLER)?.version ?? null),
-            () => {}, // without it, versions just aren't compared
-        );
     }, []);
     if (problem) {
         return <p className="muted">Couldn't load who has the add-in: {problem}</p>;
@@ -25,9 +24,6 @@ export function AddInTracker() {
     if (!addIn) {
         return null;
     }
-    const versions = (person: AddInPerson) => [...new Set(person.computers.map((c) => c.version ?? "?"))].sort();
-    const current =
-        newest === null ? null : addIn.people.filter((p) => p.computers.some((c) => c.version === newest)).length;
     return (
         <section className="tracker addin" aria-labelledby="addin-title">
             <div className="tracker-head">
@@ -47,8 +43,8 @@ export function AddInTracker() {
                     <dd>{addIn.downloaded}</dd>
                 </div>
                 <div>
-                    <dt>On the newest{newest ? ` (${newest})` : ""}</dt>
-                    <dd>{current ?? "–"}</dd>
+                    <dt>On the newest{addIn.newest ? ` (${addIn.newest})` : ""}</dt>
+                    <dd>{addIn.newest ? addIn.on_newest : "–"}</dd>
                 </div>
             </dl>
             {addIn.people.length === 0 ? (
@@ -76,27 +72,37 @@ export function AddInTracker() {
                                         <td>{person.user.name}</td>
                                         <td>
                                             {person.computers.length ? (
-                                                person.computers.map((c) => c.name).join(", ")
+                                                person.computers.map((c, i) => (
+                                                    <Fragment key={i}>
+                                                        {i > 0 && ", "}
+                                                        <span
+                                                            className={c.in_use ? undefined : "muted"}
+                                                            title={
+                                                                c.in_use ? undefined : "Not used in the last 90 days"
+                                                            }
+                                                        >
+                                                            {c.name}
+                                                        </span>
+                                                    </Fragment>
+                                                ))
                                             ) : (
                                                 <span className="muted">not yet</span>
                                             )}
                                         </td>
                                         <td>
-                                            {versions(person).map((version) => (
+                                            {versions(person).map(([version, outdated]) => (
                                                 <span
-                                                    key={version}
-                                                    className={
-                                                        newest !== null && version !== newest
-                                                            ? "badge status-pending"
-                                                            : "badge"
-                                                    }
+                                                    key={version ?? "?"}
+                                                    className={outdated ? "badge status-pending" : "badge"}
                                                     title={
-                                                        newest !== null && version !== newest
-                                                            ? `Older than ${newest}: it offers itself the update`
-                                                            : undefined
+                                                        version === null
+                                                            ? "Not known yet: it shows once the add-in next talks to the server"
+                                                            : outdated
+                                                              ? `Older than ${addIn.newest}: it offers itself the update`
+                                                              : undefined
                                                     }
                                                 >
-                                                    {version}
+                                                    {version ?? "?"}
                                                 </span>
                                             ))}
                                         </td>
@@ -119,7 +125,8 @@ export function AddInTracker() {
                 </div>
             )}
             <p className="muted tracker-note">
-                Have it: signed in with the add-in on a computer, and used it in the last 90 days.{" "}
+                Have it: signed in with the add-in on a computer, and used it there in the last 90 days (computers it
+                hasn't been used on since are greyed out).{" "}
                 {addIn.counting_since
                     ? `Downloads are counted since ${formatDate(addIn.counting_since)}.`
                     : "Downloads are counted from now on."}

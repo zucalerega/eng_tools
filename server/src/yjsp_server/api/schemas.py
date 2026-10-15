@@ -114,6 +114,8 @@ class AddInComputerOut(BaseModel):
     version: str | None  # the add-in's, as its requests last said it
     signed_in_at: datetime
     last_used_at: datetime | None
+    in_use: bool  # used in the last 90 days, so its person has it
+    outdated: bool  # older than the installer offered now: it offers itself the update
 
 
 class AddInPersonOut(BaseModel):
@@ -131,6 +133,8 @@ class AddInOut(BaseModel):
     have_it: int  # people signed in with it and using it in the last 90 days
     this_week: int  # of them, who used it in the last week
     downloaded: int  # people who downloaded the installer
+    newest: str | None  # the installer's version, offered now
+    on_newest: int  # of the people who have it, who are on it (or newer) on a computer they use
     counting_since: datetime | None  # the first download counted: none were before
 
     @classmethod
@@ -149,6 +153,8 @@ class AddInOut(BaseModel):
             have_it=found.have_it,
             this_week=found.this_week,
             downloaded=found.downloaded,
+            newest=found.newest,
+            on_newest=found.on_newest,
             counting_since=found.counting_since,
         )
 

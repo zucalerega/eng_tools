@@ -59,7 +59,9 @@ test("admins see who has the SolidWorks add-in, on which computers, and with whi
     expect(Number(card.getByText("Used it this week").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
     const row = (await card.findByText(computer)).closest("tr")!;
     expect(within(row).getByText(`drafter-${team.folder.toLowerCase()}`)).toBeTruthy(); // their name, as dev sign-in gives it
-    expect(within(row).getByText("0.5.2")).toBeTruthy();
+    // The installer offered is 0.5.0 (tests/server.ts): this one's newer, so it's on the newest, not old.
+    expect(within(row).getByText("0.5.2").className).not.toContain("status-pending");
+    expect(Number(card.getByText("On the newest (0.5.0)").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
     expect(card.getByText(/^Have it: signed in with the add-in on a computer/)).toBeTruthy();
 });
 

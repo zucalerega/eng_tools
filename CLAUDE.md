@@ -71,6 +71,15 @@ cd web && npm ci && npm run check && npm test && npm run build
   commented-out code, no TODO without an issue link.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
+- **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and
+  locally, and its worktree: `git push origin --delete <branch>`, `git worktree remove
+  <path>`, `git branch -d <branch>`. Check first that it's merged (its PR says MERGED,
+  and `git merge-base --is-ancestor origin/<branch> origin/main` agrees), and use `-d`,
+  not `-D`, so git refuses a branch that isn't. A closed, unmerged PR's branch goes only
+  once its work is abandoned or done elsewhere; ask before deleting a branch someone is
+  still working on. When you're done, also stop the servers and background processes
+  you started, and delete their scratch copies and databases: never leave a test or a
+  server running.
 
 ## Code standards
 

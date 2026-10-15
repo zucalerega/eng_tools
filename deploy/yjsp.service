@@ -19,6 +19,11 @@ ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/srv/yjsp
 LimitNOFILE=65536
+# The server and its model runs together, on a 6 GB machine: past MemoryHigh the kernel reclaims its memory hard, and
+# past MemoryMax systemd stops it (and Restart brings it back), rather than the kernel stopping whatever it picks, SSH
+# and Tailscale included.
+MemoryHigh=4G
+MemoryMax=5G
 
 [Install]
 WantedBy=multi-user.target

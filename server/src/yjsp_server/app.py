@@ -13,6 +13,7 @@ from .api import people as people_api
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
+from .limits import BodyLimit
 from .vault import api as vault_api
 from .vault.storage import BlobStore
 from .vault.vault import init_vault
@@ -63,6 +64,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         same_site="lax",
         https_only=settings.production,
     )
+
+    # Outermost, so that a request too big for the server is refused before anything reads it.
+    app.add_middleware(BodyLimit)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, exc: ApiError) -> JSONResponse:

@@ -20,6 +20,7 @@ import gzip
 import json
 import struct
 import sys
+import threading
 import zlib
 from array import array
 from dataclasses import dataclass
@@ -32,8 +33,11 @@ from ..errors import ApiError
 
 MAGIC = b"CMSH"
 FORMAT = 1
-# A mesh unpacks to at most this much: more is something else (or a gzip bomb). A big part is tens of megabytes.
-MAX_UNPACKED = 1 << 30
+# A mesh unpacks to at most this much: more is something else (or a gzip bomb). A big part is tens of megabytes, and
+# checking one holds it in memory, so this bounds what an upload can take of the server's.
+MAX_UNPACKED = 1 << 28
+# Meshes checked at once: each can hold MAX_UNPACKED, on a server with 6 GB.
+_CHECKING = threading.BoundedSemaphore(2)
 
 Color = Annotated[list[Annotated[float, Field(ge=0, le=1)]], Field(min_length=3, max_length=3)]
 Rgb = tuple[float, float, float]  # red, green, and blue, from 0 to 1
@@ -63,7 +67,7 @@ class _Header(BaseModel):
     bodies: list[_Body]
 
 
-def _unpack(path: Path) -> bytes:
+def _unpack(path: Path) -> bytearray:
     inflater = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)  # gzip
     out = bytearray()
     try:
@@ -80,12 +84,16 @@ def _unpack(path: Path) -> bytes:
         raise BadMesh("The mesh ends early: it was cut off on the way. Make it again.")
     if inflater.unused_data or len(out) > MAX_UNPACKED:
         raise BadMesh("The mesh goes on after its end")
-    return bytes(out)
+    return out
 
 
 def check_mesh(path: Path) -> None:
     """Refuse (BadMesh) a file that isn't a mesh the web app can draw: its header, its sizes, and its triangles."""
-    data = _unpack(path)
+    with _CHECKING:
+        _check(_unpack(path))
+
+
+def _check(data: bytearray) -> None:
     if len(data) < 12 or data[:4] != MAGIC:
         raise BadMesh("That isn't a Caliper mesh: it doesn't start with CMSH")
     version, length = struct.unpack_from("<II", data, 4)

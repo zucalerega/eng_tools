@@ -41,7 +41,9 @@ Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs a
 **Services** (their files are in [`deploy/`](../deploy), copies of the server's):
 
 - `yjsp.service` runs `yjsp-server` as `yjsp` in `/srv/yjsp`, starts at boot, and
-  restarts it if it stops. The server migrates its database itself when it starts.
+  restarts it if it stops. The server migrates its database itself when it starts. It and
+  its model runs may use 5 GB of the machine's 6 (`MemoryMax`): past that, systemd restarts
+  it, rather than the kernel stopping whatever it picks, SSH and Tailscale included.
 - `yjsp-backup.timer` runs `/usr/local/sbin/yjsp-backup` every night at 08:30 UTC: a
   consistent copy of the database, gzipped, kept 14 days. The files (`vault/`, `yorg/`)
   have no copy off the server yet (Cloudflare R2 is planned).

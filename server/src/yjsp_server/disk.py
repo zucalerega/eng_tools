@@ -1,5 +1,5 @@
 """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take: for admins, at the
-top of Admin > People in the web app.
+top of Admin > People in the web app; and whether an upload leaves the server room to work (make_room).
 
 It reads the folders the settings name, so it needs neither app: the live server keeps all three on one disk
 (docs/deploying.md), and the disk measured is the one Vault's files are on.
@@ -14,6 +14,26 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .config import Settings
+from .errors import ApiError
+
+# What an upload must leave free: the database needs room to write (and SQLite fails badly without it), the nightly
+# backups need room, and so does the system.
+FLOOR = 2 << 30  # bytes
+
+
+class DiskFull(ApiError):
+    status = 507
+    code = "disk_full"
+
+
+def make_room(folder: Path, size: int) -> None:
+    """Refuse (DiskFull) an upload of this many bytes into the folder that would leave its disk under FLOOR free."""
+    free = shutil.disk_usage(_nearest_folder(folder)).free
+    if free - size < FLOOR:
+        raise DiskFull(
+            f"The server's disk is nearly full ({free >> 20} MB free): ask an admin to make room (Admin > People shows "
+            "what's using it)"
+        )
 
 
 @dataclass(frozen=True)

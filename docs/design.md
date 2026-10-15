@@ -207,6 +207,17 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Settings** are `YJSP_*` environment variables, or a `.env` file (`config.py`;
   `server/.env.example` lists them). Production refuses development shortcuts and weak
   settings (`Settings.check`).
+- **What one request may cost**, on a server of 1 CPU and 6 GB that anyone can reach:
+  - A body is at most 10 MB, refused (413 `too_large`) before anything reads it
+    (`limits.BodyLimit`, outermost): FastAPI reads a JSON body whole before it checks who's
+    asking. Uploads (`PUT /api/blobs/{sha256}`, `POST /api/yorg/datasets`) stream to disk
+    instead, up to `YJSP_MAX_UPLOAD_MB`.
+  - An upload must leave the disk 2 GB free (`disk.make_room`, 507 `disk_full`): the
+    database, its backups, and the system need room to write.
+  - A Caliper mesh unpacks to at most 256 MB to be checked, two at a time; the server reads
+    at most two SolidWorks files at once for their 3D views (409 `busy` after a minute's
+    wait), and remembers a file it couldn't read, by its SHA-256, rather than read it again.
+  - The service may use 5 GB (`deploy/yjsp.service`, `MemoryMax`).
 
 ## API
 

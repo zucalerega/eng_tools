@@ -228,6 +228,20 @@ on top of it.
 - **Read-only unless checked out.** Files you don't have checked out are read-only
   on disk, so SolidWorks opens them read-only. Checking out makes a file writable;
   checking in or undoing makes it read-only again.
+- **Paths from the server are checked** before anything is done with them, since a
+  server that isn't working right, or isn't the team's, mustn't be able to have a client
+  write, move, or delete anything outside its workspace. `Workspace.ToLocalPath` takes a
+  path only as the server writes them (`VaultPaths.SplitServerPath`: names joined by `/`,
+  each one the vault allows, so no `..`, drive, device, or stream), only inside the
+  workspace, and never in its own `.vault` folder (or `VAULT~1`, its short name on Windows).
+  An answer with a bad path (the sync feed, or a check-out's or check-in's) is refused
+  whole, before anything in it is kept, with an error saying the server sent a bad path;
+  paths a workspace kept from before are checked as it opens, and forgotten if they're bad.
+  Paths over 200 characters are taken: the server's own moves and restores can make them
+  (a folder moved with empty folders deep in it, a file restored into a folder renamed
+  longer since). A download never replaces a file the workspace didn't know was there (a
+  path sent for two files, or another file's short name on Windows) unless it's the
+  vault's version already.
 - **Local state.** `.vault/state.json` records the sync cursor, the vault's files (with
   what each uses) and folders (with your role in each), and each local copy's id,
   version, hash, size, and write time. A file is rehashed only when its size or write

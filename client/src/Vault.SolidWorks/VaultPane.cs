@@ -405,11 +405,21 @@ internal sealed partial class VaultPane : UserControl
         {
             return $"That link is for the Vault server at {request.Server}, but this computer's workspace is for {workspace.Server}.";
         }
-        var path = workspace.ToLocalPath(request.VaultPath);
+        string path;
+        string? model;
+        try
+        {
+            path = workspace.ToLocalPath(request.VaultPath);
+            model = request.Model == null ? null : workspace.ToLocalPath(request.Model);
+        }
+        catch (VaultPathException e)
+        {
+            return e.Message; // in the workspace's own folder, say
+        }
         SolidWorksHost.BringToFront();
         if (request.Action == LinkAction.New)
         {
-            await NewFileAsync(path, request.Model == null ? null : workspace.ToLocalPath(request.Model));
+            await NewFileAsync(path, model);
             SolidWorksHost.BringToFront();
             return ""; // what went wrong, if anything, is shown here in SolidWorks
         }

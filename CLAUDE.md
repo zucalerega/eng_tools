@@ -51,6 +51,13 @@ cd web && npm ci && npm run check && npm test && npm run build
   artifact (its files, for install.ps1), and `vault-windows` (a self-contained `vault.exe`).
   Install and manual-testing steps are in `client/src/Vault.SolidWorks/README.md`.
 - `docker build -f server/Dockerfile -t yjsp-server .`: the production image, server and web app.
+- In a Claude Code cloud session, the SessionStart hook (`.claude/settings.json`) runs
+  `.claude/cloud-setup.sh`, which installs Node 24 and the .NET 10 SDK, since the cloud
+  image lacks them, so the full check runs there too. It does nothing on a laptop. If it
+  says a download was blocked, the cloud environment's network access needs those hosts.
+  Run as root, 4 client tests that make a file impossible to replace fail; CI runs them
+  as a normal user. Cloud sessions can't reach the live site, so deploys happen from a
+  laptop.
 
 ## How changes are made
 

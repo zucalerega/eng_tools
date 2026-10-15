@@ -9,6 +9,9 @@ namespace Vault.Client;
 /// <summary>The server's HTTP API for Vault. See docs/vault.md and docs/design.md, "API".</summary>
 public sealed class VaultApi : IDisposable
 {
+    /// <summary>The code of the VaultApiException for a download bigger than it may be.</summary>
+    internal const string TooBig = "too_big";
+
     private readonly HttpClient _http;
 
     public VaultApi(Uri server, string? token = null, HttpMessageHandler? handler = null)
@@ -61,6 +64,30 @@ public sealed class VaultApi : IDisposable
         await EnsureSuccessAsync(response).ConfigureAwait(false);
         using var body = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
         await body.CopyToAsync(destination, 81920, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One of the downloads, by name, whole, if it's at most maxBytes (a signature, say): anything bigger is a
+    /// VaultApiException (TooBig), read no further.
+    /// </summary>
+    internal async Task<byte[]> DownloadSoftwareAsync(string name, int maxBytes, CancellationToken ct = default)
+    {
+        using var response = await _http.GetAsync("api/downloads/" + Uri.EscapeDataString(name), HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        using var body = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        var data = new byte[maxBytes + 1];
+        var length = 0;
+        int read;
+        while (length < data.Length && (read = await body.ReadAsync(data, length, data.Length - length, ct).ConfigureAwait(false)) > 0)
+        {
+            length += read;
+        }
+        if (length > maxBytes)
+        {
+            throw new VaultApiException((int)response.StatusCode, TooBig, $"{name} on the server is bigger than {maxBytes} bytes");
+        }
+        Array.Resize(ref data, length);
+        return data;
     }
 
     /// <summary>Whether the server already has these contents, so the upload can be skipped.</summary>

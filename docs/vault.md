@@ -308,18 +308,28 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   lists itself in Windows' installed apps to remove all that again. It installs new only
   where SolidWorks 2026 is (files saved in 2026 don't open in older versions, so the team
   stays on one); where the add-in is already, it updates it, on 2025 too. It isn't signed
-  yet, so Windows' SmartScreen warns about it once. The server offers it to members from
-  `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks page, whose
-  Connect SolidWorks button (a `connect` link) has the add-in sign in to that vault.
+  for Windows (Authenticode) yet, so Windows' SmartScreen warns about it once; the
+  signature its updates are checked with is Vault's own (see Updates). The server offers it
+  to members from `YJSP_DOWNLOADS_DIR` (`GET /api/downloads`), on the web app's SolidWorks
+  page, whose Connect SolidWorks button (a `connect` link) has the add-in sign in to that
+  vault.
   `install.ps1` does the same by hand, from wherever the add-in is (for development).
 - **Updates.** Every few hours the add-in asks the server what it offers for download
   (`GET /api/downloads`, which reads each program's version from its version resource and
   gives each file's SHA-256). When `Vault-Setup.exe` installs a newer version than the
   add-in's own (`AddInUpdate.Newer`), Update appears in the task pane's header. It downloads
-  setup, checked against its size and SHA-256, and starts it with `/update`; Windows asks
-  for administrator rights, and setup waits for SolidWorks to close in that Windows
-  session, which has the add-in loaded, then installs, keeping sign-in, settings, and
-  workspaces. Add-ins before this one have no Update: run setup by hand once.
+  setup and checks it (`AddInUpdate.DownloadAsync`): its size and SHA-256 against what was
+  offered; its signature, `Vault-Setup.exe.sig` beside it in the downloads (served, not
+  listed), against the public key the add-in carries, so that only the holder of the
+  private key, which CI signs `main`'s and release tags' builds with, can put a program on
+  the team's laptops, not the server or whoever has it (deploying.md, "Signing key"); and
+  its own version, read from it as the server reads it, against the one it was offered as,
+  so an older signed release can't come back as a newer one. Only then does it start it
+  with `/update`; anything amiss means no update, and the tab and the log say why.
+  Windows asks for administrator rights, and setup waits for SolidWorks to close in that
+  Windows session, which has the add-in loaded, then installs, keeping sign-in, settings,
+  and workspaces. Add-ins before Update (0.4.0 and older) have none: run setup by hand
+  once. Add-ins up to 0.5.2 don't check signatures.
 
 - **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
   menu (the vault, the workspace, the web app, sign out); a card for the active document,

@@ -1,4 +1,4 @@
-"""Software the web app offers members: the files in YJSP_DOWNLOADS_DIR, like the add-in's installer."""
+"""Software the web app offers members: the files in YJSP_DOWNLOADS_DIR, like the add-in's installer and its signature."""
 
 import hashlib
 import struct
@@ -18,6 +18,9 @@ router = APIRouter(prefix="/api/downloads", tags=["downloads"])
 # A Windows program's version resource: the UTF-16 key "VS_VERSION_INFO", then VS_FIXEDFILEINFO, which starts with this.
 _VERSION_KEY = "VS_VERSION_INFO".encode("utf-16-le")
 _FIXED_INFO = struct.pack("<I", 0xFEEF04BD)
+# A file's signature, beside it (Vault-Setup.exe.sig, which CI makes): served, for the add-in to check the installer with
+# before it runs it, but not listed, since it's not a download for people.
+_SIGNATURE = ".sig"
 
 
 class DownloadOut(BaseModel):
@@ -63,9 +66,11 @@ def _program_version(data: bytes) -> str | None:
 
 @router.get("")
 def get_downloads(user: ActiveUser, settings: Config) -> list[DownloadOut]:
-    """What there is to download (Vault-Setup.exe installs the SolidWorks add-in)."""
+    """What there is to download (Vault-Setup.exe installs the SolidWorks add-in). Signatures aren't listed."""
     downloads = []
     for name, path in _files(settings.downloads_dir).items():
+        if name.lower().endswith(_SIGNATURE):
+            continue
         stat = path.stat()
         version, sha256 = _contents(str(path), stat.st_size, stat.st_mtime_ns)
         downloads.append(

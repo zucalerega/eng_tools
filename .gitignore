@@ -10,6 +10,9 @@ data/
 
 # Secrets
 .env
+# Private keys, like the one Vault-Setup.exe is signed with (docs/deploying.md, "Signing key"): only public halves go in.
+*.pem
+!*.pub.pem
 
 # Web app
 node_modules/

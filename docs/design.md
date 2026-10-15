@@ -71,7 +71,7 @@ site's only one.
 | The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | not yet |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | not yet |
-| Software to download (the add-in's installer) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
+| Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
 
 Vault's blobs never change once written, so a backup of them only ever adds files. Yorg's
 scripts and models are JSON files changed in place, and deleting one deletes its file, so a
@@ -221,7 +221,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
-| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own |
+| `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
 | `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
@@ -281,8 +281,9 @@ CI builds and smoke-tests the image on every change, and publishes it to
 3. Keep `YJSP_DATABASE_URL` (SQLite by default), `YJSP_VAULT_DIR`, and `YJSP_YORG_DIR`
    on a persistent disk, and back them up (see "Storage"). An S3/R2 store for Vault's
    blobs (Cloudflare R2: 10 GB free, no download fees) is planned.
-4. Put CI's `Vault-Setup.exe` (and `vault.exe`, if you like) in a folder and point
-   `YJSP_DOWNLOADS_DIR` at it: members get them from Vault's SolidWorks page.
+4. Put CI's `Vault-Setup.exe` with its signature, `Vault-Setup.exe.sig` (and `vault.exe`,
+   if you like), in a folder and point `YJSP_DOWNLOADS_DIR` at it: members get them from
+   Vault's SolidWorks page.
 
 Where to host it was decided in September 2026: the Oracle Cloud VM above, which costs
 nothing. The image would run on Render, a VPS, or a machine on campus too.

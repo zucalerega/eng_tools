@@ -129,13 +129,14 @@ While you work:
 ## Install
 
 1. In the Vault web app, open **SolidWorks** (at the top) and download `Vault-Setup.exe`.
-   (It's the `vault-setup` artifact of a CI run on `main` or a release tag; an admin puts it in the server's
-   `YJSP_DOWNLOADS_DIR`.)
-2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
-   click **More info**, then **Run anyway**. It asks for administrator rights, then installs
-   the add-in in `C:\Program Files\Vault for SolidWorks`. It installs the add-in new only
-   where SolidWorks 2026 is; where the add-in is already, on 2026 or 2025, it updates it,
-   and the add-in keeps your settings, sign-in, and workspace.
+   (It's the `vault-setup` artifact of a CI run on `main` or a release tag; an admin puts
+   it in the server's `YJSP_DOWNLOADS_DIR`, with its signature, `Vault-Setup.exe.sig`, for
+   Update.)
+2. Close SolidWorks and run it. It isn't signed for Windows yet: if Windows says it
+   protected your PC, click **More info**, then **Run anyway**. It asks for administrator
+   rights, then installs the add-in in `C:\Program Files\Vault for SolidWorks`. It installs
+   the add-in new only where SolidWorks 2026 is; where the add-in is already, on 2026 or
+   2025, it updates it, and the add-in keeps your settings, sign-in, and workspace.
 3. Back on the web app's SolidWorks page, click **Connect SolidWorks**. SolidWorks starts
    with the Vault tab open, and asks whether to connect to the vault at the address it
    shows: say Yes if it's the one you open Vault at in your browser. Then your browser asks
@@ -157,15 +158,28 @@ folder's files.
 
 When the server offers a newer add-in, **Update** appears at the top of the Vault tab (the
 add-in looks every few hours). Click it and say Yes: Vault downloads the new
-`Vault-Setup.exe`, checks it against the SHA-256 the server gives, and starts it. Windows
-asks to let it make changes, then setup waits: save your work and close SolidWorks, and it
-finishes the update. Start SolidWorks again, and the Vault tab is the new version. Your
-sign-in, settings, and workspace stay.
+`Vault-Setup.exe` and checks it before it starts it:
 
-An admin offers an update by putting the new `Vault-Setup.exe` in the server's
-`YJSP_DOWNLOADS_DIR` (see docs/deploying.md): the server reads the version from the program.
-Add-ins from before Update (0.4.0 and older) don't have the button: run the new
-`Vault-Setup.exe` once, by hand, from the web app's SolidWorks page.
+- its size and SHA-256 are the ones the server offered it with;
+- it's signed with the key Vault's releases are signed with: its signature,
+  `Vault-Setup.exe.sig`, which the server has beside it, matches the public key this
+  add-in carries. Only CI has the private key, and signs only builds of `main` and release
+  tags, so neither the server nor anyone who gets into it can put a program of their own
+  on your computer this way (docs/deploying.md, "Signing key");
+- it's the version it was offered as, so an older release can't pass for a newer one.
+
+If anything is amiss, nothing starts: the tab says why (no signature, a signature that
+doesn't match, a version that isn't the one offered), and so does `addin.log`. Otherwise
+Windows asks to let setup make changes, then setup waits: save your work and close
+SolidWorks, and it finishes the update. Start SolidWorks again, and the Vault tab is the new
+version. Your sign-in, settings, and workspace stay.
+
+An admin offers an update by putting the new `Vault-Setup.exe` and its
+`Vault-Setup.exe.sig` (both in CI's `vault-setup` artifact, from `main` or a release tag) in
+the server's `YJSP_DOWNLOADS_DIR` (see docs/deploying.md): the server reads the version from
+the program. Add-ins from before Update (0.4.0 and older) don't have the button: run the new
+`Vault-Setup.exe` once, by hand, from the web app's SolidWorks page. Add-ins up to 0.5.2
+update without checking the signature: the check starts with the update after that.
 
 ## Testing against a development server
 
@@ -265,9 +279,11 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     SolidWorks 2026, and installs nothing. On a PC with SolidWorks 2025 and an older add-in,
     it offers Update, and updates it; SolidWorks 2025 starts with the new Vault tab, and
     `addin.log` says which SolidWorks it started in.
-23. Put a Vault-Setup.exe with a newer version than the installed add-in in the server's
-    downloads folder, then start SolidWorks: Update appears in the tab's header, and the web
-    app's SolidWorks page shows the new version. Click Update and say Yes, but No to
+23. Put a Vault-Setup.exe with a newer version than the installed add-in, and its
+    Vault-Setup.exe.sig (CI's `vault-setup` artifact, from `main` or a release tag), in the
+    server's downloads folder, then start SolidWorks: Update appears in the tab's header,
+    and the web app's SolidWorks page shows the new version, and doesn't list the
+    signature. Click Update and say Yes, but No to
     Windows' question: the tab says the update needs permission, and Update stays. Click
     it again and say Yes to both: setup waits for SolidWorks; close it, and setup updates the
     add-in. Start SolidWorks: your name's menu shows the new version, and there's no Update.
@@ -315,6 +331,12 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     it says SolidWorks isn't connected to that vault, and the server box still shows the
     team's. Sign in again, and open the connect link once more: it says SolidWorks is
     connected to the team's vault, and to sign out to switch.
+32. Updates that aren't signed: with a newer signed build in the downloads folder (as in
+    23), take its Vault-Setup.exe.sig out, and restart SolidWorks. Click Update and say
+    Yes: the tab says it has no signature, so Vault won't install it, Windows asks nothing,
+    and `addin.log` has a line saying why. Put another build's Vault-Setup.exe.sig in its
+    place, and click Update again: it says it isn't signed with the key Vault's releases are
+    signed with. Put its own back: the update goes ahead, as in 23.
 
 ## When something goes wrong
 

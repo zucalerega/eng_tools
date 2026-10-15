@@ -131,6 +131,21 @@ def test_members_download_the_software(settings, tmp_path, team, client):
     assert client.get("/api/downloads/Vault-Setup.exe").status_code == 401
 
 
+def test_signatures_are_served_but_not_listed(settings, tmp_path, team, client):
+    # The add-in fetches Vault-Setup.exe.sig to check the installer before it runs it: it's not a download for people.
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    (downloads / "Vault-Setup.exe").write_bytes(b"MZ installer")
+    (downloads / "Vault-Setup.exe.sig").write_bytes(b"\x5a" * 384)
+    settings.downloads_dir = downloads
+    chief = team.member("chief@x.test", admin=True)
+
+    assert [d["name"] for d in client.get("/api/downloads", headers=chief).json()] == ["Vault-Setup.exe"]
+    got = client.get("/api/downloads/Vault-Setup.exe.sig", headers=chief)
+    assert (got.status_code, got.content) == (200, b"\x5a" * 384)
+    assert client.get("/api/downloads/Vault-Setup.exe.sig").status_code == 401
+
+
 def program(version: tuple[int, int, int], carrying: bytes = b"") -> bytes:
     """A stand-in Windows program with a version resource (VS_VERSIONINFO), after anything it carries inside it."""
     major, minor, build = version

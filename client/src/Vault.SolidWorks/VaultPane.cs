@@ -906,22 +906,34 @@ internal sealed partial class VaultPane : UserControl
     }
 
     /// <summary>
-    /// Update the add-in to the newer one the server offers: download its installer, checked against its SHA-256, and
-    /// start it. Windows asks to let it make changes; setup then waits for SolidWorks to close, since SolidWorks has
-    /// this add-in loaded, and installs the update. Sign-in, settings, and the workspace stay.
+    /// Update the add-in to the newer one the server offers: download its installer, check it (AddInUpdate.DownloadAsync:
+    /// its SHA-256, its signature by the key Vault's releases are signed with, and its version), and start it. Windows
+    /// asks to let it make changes; setup then waits for SolidWorks to close, since SolidWorks has this add-in loaded, and
+    /// installs the update. Sign-in, settings, and the workspace stay. One that doesn't check out isn't started: the tab
+    /// says why, and so does the log.
     /// </summary>
     private async Task UpdateAddInAsync()
     {
         if (_newerAddIn is not { } installer
-            || Ask($"Update Vault to version {installer.Version}? Vault downloads it, then Windows asks to let setup make changes. "
-                + "Setup finishes the update when you close SolidWorks, so save your work first. Your sign-in, settings, and workspace stay.")
+            || Ask($"Update Vault to version {installer.Version}? Vault downloads it and checks it's signed as Vault's releases are, then "
+                + "Windows asks to let setup make changes. Setup finishes the update when you close SolidWorks, so save your work first. "
+                + "Your sign-in, settings, and workspace stay.")
                 != DialogResult.Yes)
         {
             return;
         }
         await RunAsync($"Downloading Vault {installer.Version}", async workspace =>
         {
-            var setup = await AddInUpdate.DownloadAsync(workspace.Api, installer, Path.Combine(Path.GetTempPath(), "Vault"));
+            string setup;
+            try
+            {
+                setup = await AddInUpdate.DownloadAsync(workspace.Api, installer, Path.Combine(Path.GetTempPath(), "Vault"));
+            }
+            catch (WorkspaceException)
+            {
+                _checkedForUpdate = DateTime.MinValue; // what's offered may have changed since: look again at the next refresh
+                throw;
+            }
             try
             {
                 Process.Start(new ProcessStartInfo(setup, "/update") { UseShellExecute = true, Verb = "runas" })?.Dispose();

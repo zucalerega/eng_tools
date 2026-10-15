@@ -207,6 +207,16 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Settings** are `YJSP_*` environment variables, or a `.env` file (`config.py`;
   `server/.env.example` lists them). Production refuses development shortcuts and weak
   settings (`Settings.check`).
+- **Headers** (`security.py`): every response forbids other sites to frame ours (CSP
+  `frame-ancestors 'none'`, `X-Frame-Options`), the browser to second-guess a file's type
+  (`nosniff`), links to carry our addresses away (`Referrer-Policy`), plugins and another
+  base URL (`object-src`, `base-uri`), and forms to post anywhere but the site or a Vault
+  client's sign-in on the computer itself (`form-action`, `http://127.0.0.1:*`). Production
+  adds HSTS, and doesn't serve the API's docs (`/docs`, `/redoc`, `/openapi.json`). Which
+  scripts may run isn't limited yet: Yorg's Python sandbox runs an inline script in a
+  sandboxed frame, a worker from a `data:` URL, and Pyodide and WebAssembly from jsDelivr,
+  which a script policy must allow by hash or be reworked for first. The access log leaves
+  out sign-in codes (`HideSignInCodes`).
 
 ## API
 

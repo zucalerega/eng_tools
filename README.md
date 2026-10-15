@@ -13,12 +13,18 @@ between them.
 
 ## Signing in
 
-Sign in with your Georgia Tech account, on GT's own login page, or with Google: either gets
-you both apps. Anyone can join, unless an admin turns on the whitelist (Admin > People,
-from the account menu at the top right): then only people an admin invites or approves
-can. Invite people by their GT address (`gburdell3@gatech.edu`). Admin > People also shows
-how many people there are and how many are on now, and when each joined and was last on.
-Change the name everyone sees you by from your account menu.
+Sign in with your Georgia Tech account, on GT's own login page: it gets you both apps, and
+it's how new people join. Anyone with a GT account can, unless an admin turns on the
+whitelist (Admin > Whitelist, from the account menu at the top right): then only GT emails
+on it, and people an admin invites, can, and anyone else who signs in is told to ask an
+admin to add theirs. Admins put the team's emails on the whitelist by uploading a roster's
+CSV, or one at a time, and see who on it has joined.
+
+Google signs in to accounts already there: one made with Google before, or an admin's
+invite. Someone without a GT account (a mentor, say) joins by an invite to the address they
+use with Google (Admin > People). Admin > People also shows how many people there are and
+how many are on now, and when each joined and was last on. Change the name everyone sees
+you by from your account menu.
 
 Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
 your account only if its email is your GT address; otherwise it makes a new, empty one,

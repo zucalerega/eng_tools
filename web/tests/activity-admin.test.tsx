@@ -13,17 +13,6 @@ test("the activity feed says what each check-in was for", async () => {
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
 
-test("admins approve people waiting for it", async () => {
-    const team = await Team.create();
-    const newbie = await team.stranger();
-
-    renderApp(team.chief, "/vault/admin");
-    const row = (await screen.findByText(newbie.user.email)).closest("tr")!;
-    expect(within(row).getByText("waiting for approval")).toBeTruthy();
-    await userEvent.click(within(row).getByRole("button", { name: "Approve" }));
-    await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
-});
-
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");
@@ -115,32 +104,69 @@ test("people change their own name from their account menu", async () => {
     expect((await team.account(member.user.email))?.name).toBe(`Ally ${team.folder}`);
 });
 
-test("admins turn the whitelist off, which approves everyone waiting, and on again", async () => {
+test("admins turn the whitelist off, after saying who could join then, and on again", async () => {
     const team = await Team.create();
-    const newbie = await team.stranger(); // with the whitelist on
+    await team.whitelist(true);
 
     renderApp(team.chief, "/vault/admin");
+    await userEvent.click(await screen.findByRole("link", { name: "Whitelist" }));
     const whitelist = await screen.findByRole<HTMLInputElement>("checkbox", { name: "Whitelist" });
     expect(whitelist.checked).toBe(true);
+    expect(screen.getByText(/On: only the emails below, and people invited on the People tab/)).toBeTruthy();
     await userEvent.click(whitelist);
     const dialog = within(await screen.findByRole("dialog", { name: "Turn the whitelist off?" }));
-    expect(dialog.getByText(/waiting for approval will be approved now/)).toBeTruthy();
+    expect(dialog.getByText(/Anyone with a Georgia Tech account will be able to join/)).toBeTruthy();
     await userEvent.click(dialog.getByRole("button", { name: "Turn it off" }));
-    await waitFor(async () => expect((await team.account(newbie.user.email))?.status).toBe("active"));
-    expect((await team.settings()).whitelist).toBe(false);
-    await screen.findByText(/Off: anyone who signs in joins right away/);
+    await waitFor(async () => expect((await team.settings()).whitelist).toBe(false));
+    await screen.findByText(/Off: anyone with a Georgia Tech account can make one by signing in/);
 
     await userEvent.click(whitelist); // on again: nothing to ask
     await waitFor(async () => expect((await team.settings()).whitelist).toBe(true));
     await waitFor(() => expect(whitelist.checked).toBe(true));
 });
 
-test("the activity feed says who turned the whitelist on", async () => {
+test("admins put a roster's Georgia Tech emails on the whitelist, see who has joined, and take one off", async () => {
+    const team = await Team.create();
+    const tag = team.folder.toLowerCase();
+    const [george, jane, mom] = [`gburdell3-${tag}@gatech.edu`, `jdoe7-${tag}@gatech.edu`, `mom-${tag}@gmail.com`];
+    const roster = `Name,Email,Subteam\nGeorge Burdell,${george},Propulsion\n"Doe, Jane",${jane.toUpperCase()},Avionics\nMom,${mom},\n`;
+
+    renderApp(team.chief, "/vault/admin/whitelist");
+    await userEvent.upload(await screen.findByLabelText("File of emails"), new File([roster], "roster.csv"));
+    const dialog = within(await screen.findByRole("dialog", { name: "Add the emails in roster.csv?" }));
+    expect(dialog.getAllByRole("listitem").map((item) => item.textContent)).toEqual([george, jane, mom]);
+    await userEvent.click(dialog.getByRole("button", { name: "Add all 3" }));
+    expect(await screen.findByText("Added 2 emails.")).toBeTruthy();
+    expect(screen.getByText(/which isn't a Georgia Tech address\. Only GT accounts/).textContent).toMatch(
+        new RegExp(`^Left off ${mom.replace(/[.]/g, "\\.")}, `),
+    );
+    expect(await team.whitelisted()).toEqual(expect.arrayContaining([george, jane]));
+    expect(await team.whitelisted()).not.toContain(mom);
+
+    // Typed in again: on it already.
+    await userEvent.type(screen.getByLabelText("Add a Georgia Tech email"), george);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText(`${george} was on the whitelist already.`)).toBeTruthy();
+
+    // George signs up; Jane comes off, and the list, fetched again, has George's account.
+    await team.signUp(george);
+    await userEvent.type(screen.getByLabelText("Find on the whitelist"), tag);
+    await userEvent.click(screen.getByRole("button", { name: `Remove ${jane}` }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: `Remove ${jane}` })).toBeNull());
+    expect(await team.whitelisted()).not.toContain(jane);
+    const row = screen.getByText(george).closest("tr")!;
+    expect(within(row).getByText(`gburdell3-${tag}`)).toBeTruthy(); // the name he signed up with
+});
+
+test("the activity feed says who turned the whitelist on, and who changed what's on it", async () => {
     const team = await Team.create();
     await team.whitelist(true);
+    const email = `ta-${team.folder.toLowerCase()}@gatech.edu`;
+    await team.addToWhitelist([email]);
 
     renderApp(team.chief, "/vault/activity");
     expect(await screen.findAllByText("chief turned the whitelist on")).not.toHaveLength(0);
+    expect(await screen.findByText(`chief added ${email} to the whitelist`)).toBeTruthy();
 });
 
 test("admins open the admin pages from their account menu", async () => {

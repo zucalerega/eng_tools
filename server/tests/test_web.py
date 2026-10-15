@@ -5,6 +5,8 @@ from urllib.parse import urlencode
 
 import pytest
 
+from yjsp_server.models import UserStatus
+
 from .conftest import BOOTSTRAP_ADMIN
 
 
@@ -69,6 +71,7 @@ def test_a_link_too_long_to_keep_through_sign_in_comes_back_to_its_page(built, c
 
 def test_people_waiting_for_approval_see_the_home_page(built, client, team):
     team.whitelist(team.member("chief@x.test", admin=True), True)
+    team.member("newbie@x.test", status=UserStatus.PENDING)  # left waiting from before sign-ups were turned away
     sign_in(client, "newbie@x.test")
     assert client.get("/activity", follow_redirects=False).status_code == 303
     assert "An admin needs to approve your account" in client.get("/").text

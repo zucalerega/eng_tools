@@ -104,6 +104,8 @@ function page(route: string) {
             return <SolidWorks />;
         case "/admin":
             return <Admin section="people" />;
+        case "/admin/whitelist":
+            return <Admin section="whitelist" />;
         case "/admin/access":
             return <Admin section="access" />;
         default:

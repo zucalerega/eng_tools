@@ -61,7 +61,7 @@ YJSP_WEB_DIR=/opt/yjsp/app/web/dist
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
-# them the site offers Google's alone).
+# them the site offers Google's alone, which makes no new accounts: only invites join).
 ```
 
 ## Getting access

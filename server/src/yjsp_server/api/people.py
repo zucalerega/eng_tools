@@ -1,5 +1,5 @@
-"""People API: your account, everyone's (for admins), the whitelist, how full the server's disk is (for admins), and
-your sign-in tokens."""
+"""People API: your account, everyone's (for admins), the whitelist and its emails, how full the server's disk is (for
+admins), and your sign-in tokens."""
 
 from dataclasses import asdict
 
@@ -17,6 +17,9 @@ from .schemas import (
     TokenOut,
     UserOut,
     UserPatch,
+    WhitelistAddedOut,
+    WhitelistEntryOut,
+    WhitelistIn,
 )
 
 router = APIRouter(prefix="/api", tags=["people"])
@@ -65,6 +68,26 @@ def get_site_settings(user: ActiveUser, db: DB) -> SiteSettingsOut:
 def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB) -> SiteSettingsOut:
     """Turn the whitelist on or off (admins). Off, anyone can join, so it approves everyone waiting too."""
     return SiteSettingsOut.of(people.update_site_settings(db, user, whitelist=body.whitelist))
+
+
+@router.get("/whitelist")
+def get_whitelist(user: ActiveUser, db: DB) -> list[WhitelistEntryOut]:
+    """The emails that can make an account, by signing in with Georgia Tech, while the whitelist is on, each with its
+    account once it has one (admins)."""
+    return [WhitelistEntryOut.of(entry, account) for entry, account in people.whitelist(db, user)]
+
+
+@router.post("/whitelist")
+def post_whitelist(body: WhitelistIn, user: ActiveUser, db: DB) -> WhitelistAddedOut:
+    """Put emails on the whitelist (admins): Georgia Tech addresses only. Says which it added, which were on it already,
+    and which it left off for not being GT's."""
+    return WhitelistAddedOut(**asdict(people.add_to_whitelist(db, user, body.emails)))
+
+
+@router.delete("/whitelist/{entry_id}", status_code=204)
+def delete_whitelist_entry(entry_id: int, user: ActiveUser, db: DB) -> None:
+    """Take an email off the whitelist (admins). An account it made stays."""
+    people.remove_from_whitelist(db, user, entry_id)
 
 
 @router.get("/storage")

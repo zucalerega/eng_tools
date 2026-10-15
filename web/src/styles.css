@@ -876,6 +876,27 @@ a.tag:hover {
     margin: 1rem 0 0.75rem;
 }
 
+/* The whitelist's counts, with its search box at the other end (Admin > Whitelist). */
+.whitelist-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 1rem;
+}
+
+.whitelist-head input {
+    width: min(18rem, 100%);
+}
+
+/* A file's emails, before they go on the whitelist. */
+.found-emails {
+    margin: 0.25rem 0 0.5rem;
+    padding-left: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+
 /* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
 .storage {
     margin: 0 0 1.25rem;
@@ -1597,6 +1618,14 @@ input[type="checkbox"] {
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
     background: var(--accent-soft);
+}
+
+.notice p {
+    margin: 0;
+}
+
+.notice p + p {
+    margin-top: 0.35rem;
 }
 
 .notice-warning {

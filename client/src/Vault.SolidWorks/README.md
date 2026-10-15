@@ -129,7 +129,7 @@ While you work:
 ## Install
 
 1. In the Vault web app, open **SolidWorks** (at the top) and download `Vault-Setup.exe`.
-   (It's the `vault-setup` artifact of a CI run; an admin puts it in the server's
+   (It's the `vault-setup` artifact of a CI run on `main` or a release tag; an admin puts it in the server's
    `YJSP_DOWNLOADS_DIR`.)
 2. Close SolidWorks and run it. It isn't signed yet: if Windows says it protected your PC,
    click **More info**, then **Run anyway**. It asks for administrator rights, then installs

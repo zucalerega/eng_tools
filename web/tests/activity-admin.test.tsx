@@ -141,6 +141,15 @@ test("people change their own name from their account menu", async () => {
     expect((await team.account(member.user.email))?.name).toBe(`Ally ${team.folder}`);
 });
 
+test("the People tab warns while the whitelist is off", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin");
+    const warning = await screen.findByText(/^The whitelist is off: anyone with a Georgia Tech account/);
+    expect(within(warning).getByRole("link", { name: "Whitelist" }).getAttribute("href")).toBe(
+        "/vault/admin/whitelist",
+    );
+});
+
 test("admins turn the whitelist off, after saying who could join then, and on again", async () => {
     const team = await Team.create();
     await team.whitelist(true);

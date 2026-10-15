@@ -392,3 +392,46 @@ def test_people_change_their_own_name_and_signing_in_with_google_again_keeps_it(
     events = client.get("/api/activity", headers=chief).json()
     renamed = [e for e in events if e["action"] == "update_user" and e["detail"].get("name") == "Ally Smith"]
     assert len(renamed) == 1
+
+
+def test_a_cli_or_add_in_unused_for_90_days_has_to_sign_in_again(app, client, team):
+    alice = team.member("alice@x.test")
+    assert client.get("/api/me", headers=alice).status_code == 200
+
+    def unused_for(days: int, never: bool = False) -> None:
+        with app.state.sessionmaker() as db:
+            then = utcnow() - timedelta(days=days)
+            db.execute(
+                update(Token)
+                .where(Token.user_id == team.ids["alice@x.test"])
+                .values(last_used_at=None if never else then, created_at=then)
+            )
+            db.commit()
+
+    unused_for(89)
+    assert client.get("/api/me", headers=alice).status_code == 200
+    unused_for(91)
+    assert client.get("/api/me", headers=alice).status_code == 401  # the clients say: sign in again
+    unused_for(91, never=True)  # made, and never used since
+    assert client.get("/api/me", headers=alice).status_code == 401
+
+    # A browser's session ends when it says it does instead, however long it sat.
+    with app.state.sessionmaker() as db:
+        user = db.get_one(User, team.ids["alice@x.test"])
+        browser = bearer(auth.issue_token(db, user, kind=auth.SESSION, name="Firefox", ttl=timedelta(days=200)))
+        db.execute(update(Token).where(Token.kind == auth.SESSION).values(last_used_at=utcnow() - timedelta(days=120)))
+        db.commit()
+    assert client.get("/api/me", headers=browser).status_code == 200
+
+
+def test_members_dont_see_when_others_last_signed_in(client, team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    with team.app.state.sessionmaker() as db:
+        db.execute(update(User).values(last_login_at=utcnow()))
+        db.commit()
+
+    seen = {u["email"]: u["last_login_at"] for u in client.get("/api/users", headers=alice).json()}
+    assert seen["chief@x.test"] is None and seen["alice@x.test"] is not None  # her own she does
+    by_admin = {u["email"]: u["last_login_at"] for u in client.get("/api/users", headers=chief).json()}
+    assert by_admin["alice@x.test"] is not None

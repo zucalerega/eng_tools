@@ -10,13 +10,14 @@
 # version back if the new one doesn't answer.
 #
 # Needs bash (Git Bash on Windows), git, Node.js 24 with npm, and SSH access to the server. Settings:
-#   YJSP_DEPLOY_HOST=opc@129.80.217.44    the server
+#   YJSP_DEPLOY_HOST=opc@lucazerega.tail07089c.ts.net
+#                                         the server, over Tailscale (docs/deploying.md, "Getting access")
 #   YJSP_DEPLOY_KEY=~/.ssh/yjsp_oracle    your SSH key for it
 #   YJSP_DEPLOY_DRY_RUN=1                 build it, then stop before touching the server
 #   YJSP_DEPLOY_UNMERGED=1                allow a commit that isn't on main (only when the repository's owner asks)
 set -euo pipefail
 
-host=${YJSP_DEPLOY_HOST:-opc@129.80.217.44}
+host=${YJSP_DEPLOY_HOST:-opc@lucazerega.tail07089c.ts.net}
 key=${YJSP_DEPLOY_KEY:-$HOME/.ssh/yjsp_oracle}
 repo=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 work="$(dirname "$repo")/.yjsp-deploy" # a short path: Windows can't hold node_modules under a long one
@@ -32,6 +33,11 @@ if [ -z "${YJSP_DEPLOY_DRY_RUN:-}" ]; then
         exit 1
     fi
     # A server still laid out as it was before YJSP (/srv/vault) is moved over once, by migrate-to-yjsp.sh.
+    if ! run true; then
+        echo "Can't reach the server as $host. It's reached through Tailscale: is this computer on the owner's tailnet," >&2
+        echo "with its key on the server? (docs/deploying.md, \"Getting access\")" >&2
+        exit 1
+    fi
     if ! run 'test -d /opt/yjsp/app/server/.venv && systemctl cat yjsp.service >/dev/null 2>&1'; then
         echo "The server isn't set up for YJSP yet: run deploy/migrate-to-yjsp.sh once (docs/deploying.md)." >&2
         exit 1

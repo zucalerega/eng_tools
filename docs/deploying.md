@@ -8,7 +8,8 @@ before you deploy, and keep to the [rules](#rules) at the end.
 ## Where it runs
 
 - **The machine:** an Oracle Cloud "Always Free" VM (Ampere A1, 1 OCPU and 6 GB, Oracle
-  Linux 9), reached over SSH as `opc@129.80.217.44`. The Oracle Cloud account is the
+  Linux 9), reached over SSH as `opc@lucazerega.tail07089c.ts.net`, through Tailscale: its SSH isn't
+  open to the internet ([Getting access](#getting-access)). The Oracle Cloud account is the
   repository owner's.
 - **Its public address:** [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) on the
   VM (Tailscale machine `lucazerega`, key expiry off) serves
@@ -72,9 +73,11 @@ YJSP_WEB_DIR=/opt/yjsp/app/web/dist
 
 ## Getting access
 
-Deploying takes SSH access to the server as `opc`. The server takes keys only, no
-passwords, and no key is in this repository, so a clone alone can't deploy: each computer
-that deploys has a key of its own. The first one is on the owner's laptop. A key made
+Deploying takes SSH access to the server as `opc`, through Tailscale: the computer must be
+on the owner's tailnet (Tailscale, signed in to the owner's account, or with the machine
+`lucazerega` shared to it from the Tailscale admin console), since the server's SSH isn't
+open to the internet. The server takes keys only, no passwords, and no key is in this
+repository, so a clone alone can't deploy: each computer that deploys has a key of its own. The first one is on the owner's laptop. A key made
 before YJSP is `~/.ssh/vault_oracle`: rename it and its `.pub` to `yjsp_oracle`, or point
 `YJSP_DEPLOY_KEY` at it.
 
@@ -85,8 +88,28 @@ To deploy from another computer:
    Never send the private half.
 3. They add that line to `/home/opc/.ssh/authorized_keys` on the server. Taking the line
    out again stops that computer.
-4. Check it: `ssh -i ~/.ssh/yjsp_oracle opc@129.80.217.44 true` answers without asking for
-   a password. Then deploy as below.
+4. Check it: `ssh -i ~/.ssh/yjsp_oracle opc@lucazerega.tail07089c.ts.net true` answers without
+   asking for a password. Then deploy as below.
+
+### Closing SSH to the internet
+
+Once, by the owner. Until it's done, SSH answers anyone on the internet at the VM's public
+address (keys only, but a door all the same):
+
+1. From a computer on the tailnet, check that SSH works through Tailscale:
+   `ssh -i ~/.ssh/yjsp_oracle opc@lucazerega.tail07089c.ts.net true`. (The VM's own firewall lets
+   SSH in on Tailscale's interface; Funnel, the website, comes in through Tailscale too, not
+   through an open port.)
+2. In Oracle Cloud: Networking > Virtual cloud networks > the VM's network > Security Lists
+   (and Network Security Groups, if the VM has one): delete the ingress rule for TCP port 22
+   from `0.0.0.0/0`.
+3. Check it from a computer off the tailnet (or with Tailscale off): `ssh opc@<the public
+   address>` times out, and step 1 still works.
+4. If Tailscale on the VM is ever down, Oracle Cloud's console connection (Compute >
+   Instances > the VM > Console connection, or Cloud Shell) still reaches it.
+
+Optionally, Tailscale SSH (`sudo tailscale set --ssh` on the VM) lets the tailnet's access
+rules decide who gets in, on top of the keys.
 
 Agents use the key already set up on the computer they run on, so an agent can deploy only
 from a computer that has one. Agents never make, copy, move, or print private keys: on a
@@ -150,7 +173,7 @@ earlier) runs only in the old layout: going back to one after the move takes
 
 ## Looking after it
 
-Everything here runs on the server: `ssh -i ~/.ssh/yjsp_oracle opc@129.80.217.44`.
+Everything here runs on the server: `ssh -i ~/.ssh/yjsp_oracle opc@lucazerega.tail07089c.ts.net`.
 
 | To | Run |
 |---|---|

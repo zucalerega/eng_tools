@@ -12,7 +12,9 @@ read on a best effort, and fall back to SolidWorks' default when they don't add 
 The file. A part or assembly saved by SolidWorks 2015 or later is a run of streams. Each is the bytes 14 00 06 00 08 00;
 a tag, the CRC-32 of its contents, its packed size, its size, and its name's length (uint32s, little-endian, as is
 everything here); its name, each byte's two halves swapped; and its contents, deflated (raw: no zlib header). Files
-from SolidWorks 2014 and before are OLE compound documents, which this doesn't read. It reads:
+from SolidWorks 2014 and before are OLE compound documents (Microsoft's [MS-CFB]) of the same streams, most of them
+packed: a stream whose name ends in __ZLB is 16 fixed bytes, its size and its packed size (uint32s), then zlib. Their
+3D views are as later ones', but their units aren't in XML (they start in mm). It reads:
 
 - Contents/DisplayLists: what SolidWorks draws (below).
 - docProps/ISolidWorksInformation.xml: the document's units (SW_UnitsLinear, a swLengthUnit_e).
@@ -38,8 +40,9 @@ triangles, each wound the other way from the one before. An appearance starts wi
 the bodies comes the part's own appearance.
 
 An assembly's display list has a node (uoTempAssemblySHDData_c) for each component that's a part, at every level: its
-name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (SolidWorks' 13 numbers: a rotation by
-columns, a translation in meters, and a scale), its configuration, its part's name and path, and then the part's
+name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (a byte, 1 if it's turned; then
+SolidWorks' 13 numbers, a rotation by columns, a translation in meters, and a scale, or for one that isn't turned just
+the translation and the scale), its configuration, its part's name and path, and then the part's
 shape, as above, in the part's own coordinates. Often there's no shape after a node, and from SolidWorks 2024 on there
 never is: only which of the part's faces it shows. Nor has every assembly a display list. Its components are still in
 its XML, and their parts' shapes are in their own files (vault.py finds them).
@@ -62,6 +65,8 @@ from .caliper import MeshBody, MeshFace, Rgb
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
 _MARKER = b"\x14\x00\x06\x00\x08\x00"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ZLB = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")  # what a packed stream of an OLE file starts with
+_NO_SECTOR = 0xFFFFFFFA  # sector numbers from here up mean a chain's end, or none
 _DISPLAY = "Contents/DisplayLists"
 _INFO = "docProps/ISolidWorksInformation.xml"
 _FEATURES = "swXmlContents/Features"
@@ -160,15 +165,124 @@ def _units(info: bytes | None) -> str:
     return _UNITS.get(int(found.group(1)), "mm") if found else "mm"
 
 
+def _compound(data: bytes, wanted: set[str]) -> dict[str, bytes]:
+    """The streams of an OLE compound file (a SolidWorks 2014 or older file) that are wanted, by name, each as it is
+    or unpacked from its __ZLB stream. Anything that doesn't fit the format is refused."""
+    odd = Unreadable("It's an OLE file, as SolidWorks 2014 and older saved them, that doesn't read as one")
+    if len(data) < 512 or data[28:30] != b"\xfe\xff":
+        raise odd
+    shift, mini_shift = struct.unpack_from("<HH", data, 30)
+    if (shift, mini_shift) not in ((9, 6), (12, 6)):
+        raise odd
+    size, mini = 1 << shift, 1 << mini_shift
+    fat_sectors, first_directory, _, cutoff, first_mini_fat, _, first_difat, difat_sectors = struct.unpack_from(
+        "<8I", data, 44
+    )
+    sectors = (len(data) - size) // size  # how many sectors the file has, after its header
+    if fat_sectors > sectors or difat_sectors > sectors:
+        raise odd
+
+    def at(sector: int) -> int:
+        if sector >= sectors:
+            raise odd
+        return (sector + 1) * size
+
+    difat = list(struct.unpack_from("<109I", data, 76))
+    sector = first_difat
+    for _ in range(difat_sectors):
+        entries = struct.unpack_from(f"<{size // 4}I", data, at(sector))
+        difat += entries[:-1]
+        sector = entries[-1]
+    fat: list[int] = []
+    for sector in difat[:fat_sectors]:
+        fat += struct.unpack_from(f"<{size // 4}I", data, at(sector))
+
+    def chain(first: int, table: list[int], limit: int) -> list[int]:
+        """A chain of sectors, which must end, and not come back on itself."""
+        found, seen = [], set()
+        sector = first
+        while sector < _NO_SECTOR:
+            if sector in seen or sector >= len(table) or len(found) > limit:
+                raise odd
+            seen.add(sector)
+            found.append(sector)
+            sector = table[sector]
+        return found
+
+    def read(first: int, length: int) -> bytes:
+        return b"".join(data[at(s) : at(s) + size] for s in chain(first, fat, length // size + 1))[:length]
+
+    directory = read(first_directory, size * len(chain(first_directory, fat, sectors)))
+    entries = [directory[i : i + 128] for i in range(0, len(directory) - 127, 128)]
+    if not entries or entries[0][66] != 5:  # the root
+        raise odd
+    root_start, root_size = struct.unpack_from("<IQ", entries[0], 116)
+    mini_stream = read(root_start, root_size & 0xFFFFFFFF) if root_start < _NO_SECTOR else b""
+    mini_fat: list[int] = []
+    for sector in chain(first_mini_fat, fat, sectors):
+        mini_fat += struct.unpack_from(f"<{size // 4}I", data, at(sector))
+
+    def stream(entry: bytes) -> bytes:
+        first, length = struct.unpack_from("<IQ", entry, 116)
+        length &= 0xFFFFFFFF if size == 512 else (1 << 64) - 1  # version 3 files have only 32 bits of it
+        if length > MAX_STREAM:
+            raise Unreadable(f"A stream of it is over {MAX_STREAM >> 20} MB, more than Caliper reads")
+        if length >= cutoff:
+            return read(first, length)
+        pieces = chain(first, mini_fat, length // mini + 1)
+        return b"".join(mini_stream[p * mini : (p + 1) * mini] for p in pieces)[:length]
+
+    # The directory is a tree of storages (folders) and streams, each storage's children a binary tree of siblings.
+    found: dict[str, bytes] = {}
+    pending, seen = [(entries[0], "")], set()
+    while pending:
+        entry, folder = pending.pop()
+        child = struct.unpack_from("<I", entry, 76)[0]
+        siblings = [child]
+        while siblings:
+            index = siblings.pop()
+            if index >= _NO_SECTOR:
+                continue
+            if index in seen or index >= len(entries):
+                raise odd
+            seen.add(index)
+            item = entries[index]
+            left, right = struct.unpack_from("<II", item, 68)
+            siblings += [left, right]
+            length = struct.unpack_from("<H", item, 64)[0]
+            name = item[: max(0, min(length, 64) - 2)].decode("utf-16-le", "replace")
+            if item[66] == 1:  # a storage
+                pending.append((item, folder + name + "/"))
+            elif item[66] == 2:
+                path = folder + name
+                plain = path.removesuffix("__ZLB")
+                if plain in wanted and plain not in found:
+                    contents = stream(item)
+                    if path.endswith("__ZLB"):
+                        contents = _unpack_zlb(contents, odd)
+                    found[plain] = contents
+    return found
+
+
+def _unpack_zlb(packed: bytes, odd: Unreadable) -> bytes:
+    if len(packed) < 24 or packed[:16] != _ZLB:
+        raise odd
+    size, length = struct.unpack_from("<II", packed, 16)
+    if size > MAX_STREAM:
+        raise Unreadable(f"A stream of it unpacks to over {MAX_STREAM >> 20} MB, more than Caliper reads")
+    if length == 0:
+        return b""
+    inflater = zlib.decompressobj()
+    contents = inflater.decompress(packed[24 : 24 + length], size + 1)
+    if len(contents) != size:
+        raise odd
+    return contents
+
+
 def _open(data: bytes, kind: Literal["part", "assembly"]) -> dict[str, bytes]:
     """The streams a part or assembly is read from. A part needs its display list; an assembly, only its XML."""
-    if data.startswith(_OLE):
-        raise Unreadable(
-            "It was saved by SolidWorks 2014 or older, which Caliper can't read: save it in a newer SolidWorks, or "
-            "make its 3D view in SolidWorks (Make 3D view, on the Vault tab)"
-        )
     wanted = {_DISPLAY, _INFO, _FEATURES if kind == "part" else _TREE}
-    found = _streams(data, wanted)
+    found = _compound(data, wanted) if data.startswith(_OLE) else _streams(data, wanted)
     if not found:
         raise Unreadable(f"It isn't a SolidWorks {kind} that Caliper can read")
     if kind == "part" and _DISPLAY not in found:
@@ -714,20 +828,28 @@ def _rigid(rows: list[float]) -> bool:
 
 
 def _nodes(data: bytes) -> list[_Node]:
-    """The display list's nodes: a name with an @, a byte, SolidWorks' 13 numbers for a turn and a move, a byte, 10
-    more numbers, then the configuration, the part's name, and its path."""
+    """The display list's nodes: a name with an @; its place, which is a byte that says whether it's turned, then
+    SolidWorks' 13 numbers for a turn and a move if it is, or just a move and a scale (4) if it isn't; a byte, 10 more
+    numbers, then the configuration, the part's name, and its path."""
     found = []
     for at, name in _strings(data, 0, len(data)):
         read = _string(data, at)
-        if "@" not in name or read is None:
+        if "@" not in name or read is None or read[1] >= len(data):
             continue
-        place = read[1] + 1
-        if place + 104 + 1 + 80 > len(data):
+        turned, place = data[read[1]], read[1] + 1
+        if turned not in (0, 1):
             continue
-        rows = _rows(struct.unpack_from("<13d", data, place))
+        length = 104 if turned else 32
+        if place + length + 1 + 80 > len(data):
+            continue
+        if turned:
+            rows = _rows(struct.unpack_from("<13d", data, place))
+        else:
+            x, y, z, scale = struct.unpack_from("<4d", data, place)
+            rows = _rows((1, 0, 0, 0, 1, 0, 0, 0, 1, x, y, z, scale))
         if not _rigid(rows):
             continue
-        texts = [text for _, text in _strings(data, place + 104 + 1 + 80, min(len(data), place + 4096))][:6]
+        texts = [text for _, text in _strings(data, place + length + 1 + 80, min(len(data), place + 4096))][:6]
         path = next((t for t in texts if t.lower().endswith((".sldprt", ".sldasm"))), None)
         if not texts or path is None:
             continue

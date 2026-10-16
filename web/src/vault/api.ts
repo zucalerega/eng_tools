@@ -141,6 +141,7 @@ export interface CaliperComponent {
     mesh: string | null;
     model: boolean; // whether its file has a model of its own, at its version and in its configuration
     kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
+    format?: "step" | "iges" | null; // a STEP or IGES file's, placed with 3D Interconnect: read as it is
     children: CaliperComponent[];
 }
 

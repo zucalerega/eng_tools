@@ -3,10 +3,11 @@ import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
 import { readMesh, type Mesh } from "./format";
 import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
 import { cadFormat } from "../paths";
-import { modelFromCad, readCadFile } from "./step";
+import { bodiesOfCad, modelFromCad, readCadFile, type CadFormat } from "./step";
 
 // Caliper's model of a file, from wherever it comes: a part's mesh, or an assembly's components and their parts'
-// meshes (made by Vault for SolidWorks, or by the server from the files); or a STEP or IGES file, read in the browser.
+// meshes (made by Vault for SolidWorks, or by the server from the files), or the STEP and IGES files placed in it; or a
+// STEP or IGES file, read in the browser.
 
 export type Progress = (done: number, total: number) => void;
 
@@ -62,6 +63,12 @@ export async function partModel(fileId: number, model: CaliperModel): Promise<Mo
     return { units: model.units, nodes };
 }
 
+/** A STEP or IGES file's solids, read in the browser as opening it on its own would. */
+async function cadBodies(fileId: number, version: number, format: CadFormat): Promise<Body[]> {
+    const bytes = new Uint8Array(await requestBytes(vaultApi.downloadUrl(fileId, version)));
+    return bodiesOfCad(await readCadFile(bytes, format));
+}
+
 /** Run work on each item, a few at a time. */
 async function inTurn<T>(items: T[], at: number, work: (item: T) => Promise<void>): Promise<void> {
     let next = 0;
@@ -77,7 +84,8 @@ async function inTurn<T>(items: T[], at: number, work: (item: T) => Promise<void
  * An assembly's model: its components, where it has them, each part with its own model's mesh (the same part at the
  * same version and configuration comes once). A part without a model has one made from its file first, as opening it
  * on its own would; one that can't be made, or whose mesh doesn't come, says so and draws nothing, and the rest still
- * does. Also says how many components are of files you can't see.
+ * does. A STEP or IGES file placed in it (SolidWorks' 3D Interconnect) is read as it is, one at a time: OpenCascade
+ * takes a lot of memory. Also says how many components are of files you can't see.
  */
 export async function assemblyModel(
     fileId: number,
@@ -85,8 +93,20 @@ export async function assemblyModel(
     progress: Progress,
 ): Promise<{ model: Model; leftOut: number }> {
     const assembly = await vaultApi.caliperAssembly(fileId, model.version, model.configuration);
-    const keyOf = (c: CaliperComponent) => (c.mesh ? `mesh:${c.mesh}` : `${c.file_id}:${c.version}:${c.configuration}`);
-    const wanted = new Map<string, () => Promise<ArrayBuffer>>();
+    const keyOf = (c: CaliperComponent) =>
+        c.mesh
+            ? `mesh:${c.mesh}`
+            : c.format
+              ? `cad:${c.file_id}:${c.version}`
+              : `${c.file_id}:${c.version}:${c.configuration}`;
+    const wanted = new Map<string, () => Promise<Body[]>>();
+    let cadTurn: Promise<unknown> = Promise.resolve();
+    const oneAtATime = <T>(work: () => Promise<T>): Promise<T> => {
+        const run = cadTurn.then(work, work);
+        cadTurn = run.catch(() => undefined);
+        return run;
+    };
+    const meshBodies = async (bytes: Promise<ArrayBuffer>) => bodiesOf(readMesh(await bytes));
     // A part's model, made from its file where it has none yet: once for each version, however many use it.
     const made = new Map<string, Promise<CaliperModel>>();
     const make = (id: number, version: number): Promise<CaliperModel> => {
@@ -101,7 +121,12 @@ export async function assemblyModel(
             visit(c.children);
             if (c.mesh) {
                 const mesh = c.mesh;
-                wanted.set(keyOf(c), () => vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh));
+                wanted.set(keyOf(c), () =>
+                    meshBodies(vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh)),
+                );
+            } else if (c.format && c.children.length === 0 && c.file_id !== null && c.version !== null) {
+                const [id, version, format] = [c.file_id, c.version, c.format];
+                wanted.set(keyOf(c), () => oneAtATime(() => cadBodies(id, version, format)));
             } else if (c.children.length === 0 && c.file_id !== null && c.version !== null && c.kind !== "assembly") {
                 const [id, version, configuration, own] = [c.file_id, c.version, c.configuration, c.model];
                 wanted.set(keyOf(c), async () => {
@@ -120,7 +145,7 @@ export async function assemblyModel(
                             );
                         }
                     }
-                    return vaultApi.caliperMesh(id, version, shown);
+                    return meshBodies(vaultApi.caliperMesh(id, version, shown));
                 });
             }
         }
@@ -132,7 +157,7 @@ export async function assemblyModel(
     progress(0, wanted.size);
     await inTurn([...wanted], 6, async ([key, load]) => {
         try {
-            shapes.set(key, { key, bodies: bodiesOf(readMesh(await load())) });
+            shapes.set(key, { key, bodies: await load() });
         } catch (error) {
             shapes.set(key, error instanceof Error ? error : new Error(String(error)));
         }

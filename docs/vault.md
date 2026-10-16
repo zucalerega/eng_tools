@@ -535,17 +535,23 @@ Where the 3D comes from:
     with those names in folders of the names of the folders SolidWorks saved them in (a name
     alone, as STEP imports' SOLID-1, could be any file's): the one whose path ends most like
     the saved one, and none where two end alike, each at the version it had when the
-    assembly's version was made, or its first. So they open on their own as usual. Parts
-    that were never put in the vault, and parts kept inside the assembly (virtual
-    components, as routed tubes are) without triangles, aren't shown, and Caliper lists them.
-    None of this is documented: it was worked out from files saved by SolidWorks 2015 to
-    2019, checked against their STL exports and the bounding boxes SolidWorks keeps, then
-    from the team's own files saved by SolidWorks 2024 and 2025 (whose faces have 32 more
-    bytes), checked against the previews SolidWorks saves in them. So the server refuses
-    (`unreadable_file`, saying why) whatever doesn't fit, rather than guess: a file from
-    SolidWorks 2014 or older, one saved without its triangles, or a layout it doesn't
-    know. Caliper says so, and the add-in can make that version's model instead. A flexible
-    sub-assembly's components show where the sub-assembly itself places them.
+    assembly's version was made, or its first. So they open on their own as usual. A STEP
+    or IGES file placed in an assembly (SolidWorks' 3D Interconnect) is read in the
+    browser, as the file on its own is (the server says which components are one), one at
+    a time. Parts that were never put in the vault, and parts kept inside the assembly
+    (virtual components, as routed tubes are) without triangles, aren't shown, and Caliper
+    lists them. Files from SolidWorks 2014 and older are OLE compound documents of the same
+    streams, most of them packed (`__ZLB`), and the server reads those too; their units
+    aren't saved where it reads them, so they start in mm. None of this is documented: it
+    was worked out from files saved by SolidWorks 2015 to 2019, checked against their STL
+    exports and the bounding boxes SolidWorks keeps, then from the team's own files saved by
+    SolidWorks 2024 and 2025 (whose faces have 32 more bytes), checked against the previews
+    SolidWorks saves in them, and from SparkFun's files saved by 2014 or older, checked
+    against their STL exports and the assembly's bounding box. So the server refuses
+    (`unreadable_file`, saying why) whatever doesn't fit, rather than guess: one saved
+    without its triangles, or a layout it doesn't know. Caliper says so, and the add-in can
+    make that version's model instead. A flexible sub-assembly's components show where the
+    sub-assembly itself places them.
 
   A part's model is a mesh: its bodies'
   triangles, in runs that are their faces, in millimeters in the part's coordinates, with
@@ -602,7 +608,7 @@ are in [design.md](design.md#api).
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly), and how many are left out |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; and `format`, step or iges, for a STEP or IGES file), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 
 ## Roadmap
@@ -625,8 +631,9 @@ are in [design.md](design.md#api).
    by the server from the files themselves.
 7. **Later**: thumbnails, check-in notifications to team chat, released revisions (A, B,
    C) for flight hardware, and rename/move with reference repair. In Caliper: drawings,
-   exploded views, and models of the files from Kenesto that the server can't read (from
-   SolidWorks 2014 and before), made on a computer that only makes them.
+   exploded views, and models of the files from Kenesto that the server can't read (saved
+   without their 3D views, or used in configurations their files have none of), made on a
+   computer that only makes them.
 
 ## Open questions
 

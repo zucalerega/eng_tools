@@ -1336,6 +1336,12 @@ def _caliper_kind(name: str) -> Literal["part", "assembly"] | None:
     return "part" if extension == ".sldprt" else "assembly" if extension == ".sldasm" else None
 
 
+def _cad_format(name: str) -> Literal["step", "iges"] | None:
+    """A STEP or IGES file's format, which Caliper reads in the browser (as web/src/vault/paths.ts has it)."""
+    extension = paths.extension(name)
+    return "step" if extension in (".step", ".stp") else "iges" if extension in (".iges", ".igs") else None
+
+
 def _walk(components: list[dict[str, Any]], depth: int = 1) -> Iterator[tuple[dict[str, Any], int]]:
     """Every component of an assembly's model, at every level, with how deep it is (1: the assembly's own)."""
     for component in components:
@@ -1741,8 +1747,9 @@ def caliper_assembly(db: Session, user: User, file_id: int, version: int, config
                 continue
             own = (file_id, component.get("version"), component.get("configuration")) in have
             kind = _caliper_kind(file.name) if file is not None else None
+            cad = _cad_format(file.name) if file is not None else None
             children = visible(component.get("children") or [])
-            kept.append({**component, "model": own, "kind": kind, "children": children})
+            kept.append({**component, "model": own, "kind": kind, "format": cad, "children": children})
         return kept
 
     components = visible(model.components)

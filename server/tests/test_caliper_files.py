@@ -8,7 +8,7 @@ import struct
 import zlib
 from pathlib import Path
 
-from .test_caliper import mesh, put_model
+from .test_caliper import IDENTITY, mesh, put_model
 
 FIXTURES = Path(__file__).parent / "fixtures" / "solidworks"
 DARK_GRAY = [0.251, 0.251, 0.251]  # the servo case's color: RGB 64, 64, 64
@@ -205,6 +205,82 @@ def test_a_part_saved_by_solidworks_2024_or_later_is_read(team, client):
     assert meshes[0] == meshes[1]
 
 
+def test_parts_and_assemblies_saved_by_solidworks_2014_or_older_are_read(team, client):
+    """SolidWorks 2014 and older saved files as OLE compound documents of the same streams, most of them packed
+    (vault/solidworks.py): SparkFun's box and lid, checked against their STL exports and the box SolidWorks keeps for
+    the assembly."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Box/11351_assembly.SLDASM": contents("11351_assembly.SLDASM"),
+                "Box/11351_body.SLDPRT": contents("11351_body.SLDPRT"),
+                "Box/11351_lid.SLDPRT": contents("11351_lid.SLDPRT"),
+            },
+            refs={"Box/11351_assembly.SLDASM": ["Box/11351_body.SLDPRT", "Box/11351_lid.SLDPRT"]},
+        )
+    )
+    params = {"version": 1, "configuration": "Default"}
+    for name, faces, size in (
+        ("11351_body.SLDPRT", 55, [119.634, 95.25, 33.02]),
+        ("11351_lid.SLDPRT", 44, [119.634, 5.842, 95.25]),
+    ):
+        made = make(client, chief, checked[name])
+        assert made.status_code == 200, made.text
+        # Their units aren't in the file in a form Caliper reads: they start in mm.
+        assert (made.json()["configuration"], made.json()["units"]) == ("Default", "mm")
+        shape = client.get(f"/api/files/{checked[name]['id']}/caliper/mesh", params=params, headers=chief)
+        header, vertices, _ = unpack(shape.content)
+        assert [len(body["faces"]) for body in header["bodies"]] == [faces]
+        low = box(vertices)
+        assert [round(low[3 + i] - low[i], 3) for i in range(3)] == size
+
+    # The assembly's own view carries its parts' triangles. The box isn't turned: SolidWorks keeps just where it is.
+    assert make(client, chief, checked["11351_assembly.SLDASM"]).status_code == 200
+    assembly = client.get(
+        f"/api/files/{checked['11351_assembly.SLDASM']['id']}/caliper/assembly", params=params, headers=chief
+    ).json()
+    found = {c["name"]: c for c in assembly["components"]}
+    assert sorted(found) == ["11351_body-1", "11351_lid-1"]
+    placed = []
+    for component in assembly["components"]:
+        assert component["mesh"]
+        shape = client.get(
+            f"/api/files/{checked['11351_assembly.SLDASM']['id']}/caliper/mesh",
+            params={**params, "mesh": component["mesh"]},
+            headers=chief,
+        )
+        _, vertices, _ = unpack(shape.content)
+        rows = component["transform"]
+        placed += [
+            tuple(sum(rows[4 * i + j] * p[j] for j in range(3)) + rows[4 * i + 3] for i in range(3)) for p in vertices
+        ]
+    assert box(placed) == [12.308, 40.787, 90.584, 131.942, 136.037, 127.414]
+
+
+def test_a_step_file_placed_in_an_assembly_says_its_format(team, client):
+    """A STEP or IGES file placed with SolidWorks' 3D Interconnect is a component with no SolidWorks kind: the web app
+    reads it as it is, as it does the file on its own."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(team.checkin(chief, {"Bay/Board.STEP": b"ISO-10303-21;", "Bay/Fin.SLDPRT": b"fin"}))
+    bay = files(
+        team.checkin(chief, {"Bay/Bay.SLDASM": b"bay"}, refs={"Bay/Bay.SLDASM": ["Bay/Board.STEP", "Bay/Fin.SLDPRT"]})
+    )["Bay.SLDASM"]
+    components = [
+        {"name": "Board-1", "file_id": checked["Board.STEP"]["id"], "version": 1, "transform": IDENTITY},
+        {"name": "Fin-1", "file_id": checked["Fin.SLDPRT"]["id"], "version": 1, "transform": IDENTITY},
+    ]
+    assert put_model(team, chief, bay, components=components).status_code == 200
+    shown = client.get(
+        f"/api/files/{bay['id']}/caliper/assembly", params={"version": 1, "configuration": "Default"}, headers=chief
+    ).json()
+    assert [(c["name"], c["kind"], c["format"]) for c in shown["components"]] == [
+        ("Board-1", None, "step"),
+        ("Fin-1", "part", None),
+    ]
+
+
 def test_a_3d_view_caliper_cant_follow_isnt_called_empty(team, client):
     """A view with faces the reader can't find in it is in a layout it doesn't know, and says so; only a part without a
     view says SolidWorks saved none."""
@@ -332,7 +408,7 @@ def test_who_may_read_and_see_a_files_model(team, client):
 
 def test_files_caliper_cant_read(team, client):
     chief = team.member("chief@x.test", admin=True)
-    old = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(4088)  # an OLE compound document: SolidWorks 2014 or older
+    old = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(4088)  # an OLE compound document's start, and no more
     damaged = contents("Embout.SLDPRT")[:60_000]  # cut off: its streams fail their CRCs
     checked = files(
         team.checkin(
@@ -352,7 +428,7 @@ def test_files_caliper_cant_read(team, client):
 
     status, code, message = refused("Old.SLDPRT")
     assert (status, code) == (422, "unreadable_file")
-    assert message.startswith("Old.SLDPRT v1: It was saved by SolidWorks 2014 or older")
+    assert message.startswith("Old.SLDPRT v1: It's an OLE file, as SolidWorks 2014 and older saved them, that doesn't")
     assert refused("Text.SLDPRT")[:2] == (422, "unreadable_file")
     assert refused("Damaged.SLDPRT")[:2] == (422, "unreadable_file")
     assert refused("Tab.STEP")[:2] == (400, "bad_model")
@@ -428,6 +504,9 @@ def test_a_damaged_3d_view_is_refused_or_read_never_an_error(team, client):
         )
         for i in range(60)
     }
+    # An OLE file, damaged anywhere: its directory and allocation tables have no checks at all.
+    old = contents("11351_assembly.SLDASM"), contents("11351_body.SLDPRT")
+    damaged |= {f"Damaged-old-{i}.{'SLDASM' if i % 2 == 0 else 'SLDPRT'}": damage(old[i % 2]) for i in range(40)}
     for file in files(team.checkin(chief, damaged)).values():
         made = make(client, chief, file)
         assert made.status_code in (200, 422), made.text

@@ -326,3 +326,30 @@ test("a STEP file is read as it is, its products the tree", async () => {
     expect(await screen.findByRole("checkbox", { name: "Show Tab" }, { timeout: 20_000 })).toBeTruthy();
     expect(screen.queryByText(/no 3D model/)).toBeNull();
 });
+
+test("a STEP file placed in an assembly (3D Interconnect) is read as it is, where the assembly puts it", async () => {
+    const team = await Team.create();
+    const step = await readFile(resolve(import.meta.dirname, "fixtures/tab.step"), "utf8");
+    const [tab, fin] = await team.checkin(team.chief, { "Avionics/Tab.STEP": step, "Fins/Fin.SLDPRT": "fin" });
+    const [bay] = await team.checkin(
+        team.chief,
+        { "Avionics/Bay.SLDASM": "bay" },
+        { refs: { "Avionics/Bay.SLDASM": ["Avionics/Tab.STEP", "Fins/Fin.SLDPRT"] } },
+    );
+    await team.model(team.chief, fin!, { mesh: tetrahedra("Fin") });
+    await team.model(team.chief, bay!, {
+        components: [component("Tab-1", tab!), component("Fin-1", fin!)],
+    });
+    const wasm = resolve(import.meta.dirname, "../node_modules/occt-import-js/dist/occt-import-js.wasm");
+    wasmFrom(async () => (await readFile(wasm)).buffer as ArrayBuffer);
+
+    renderApp(team.chief, caliperUrl(bay!.id));
+    const tabRow = (await screen.findByRole("checkbox", { name: "Show Tab-1" }, { timeout: 20_000 })).closest("li")!;
+    // It loads as the parts do: nothing says it has no 3D model, and the page sums up nothing missing.
+    await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull(), { timeout: 20_000 });
+    expect(within(tabRow).queryByText(/No 3D model|Unreadable|didn't load/i)).toBeNull();
+    expect(screen.queryByText(/don't show|no 3D model/i)).toBeNull();
+    expect(tree().getByRole("link", { name: "Open Tab-1 in Caliper" }).getAttribute("href")).toBe(
+        caliperUrl(tab!.id, 1, "Default"),
+    );
+});

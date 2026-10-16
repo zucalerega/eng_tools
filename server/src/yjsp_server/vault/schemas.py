@@ -384,6 +384,8 @@ class CaliperComponentOut(CaliperComponentIn):
     # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: it has
     # no file (a virtual part), or one that isn't a SolidWorks part or assembly.
     kind: Literal["part", "assembly"] | None = None
+    # A STEP or IGES file's (placed with SolidWorks' 3D Interconnect), which the web app reads as it is.
+    format: Literal["step", "iges"] | None = None
     children: list["CaliperComponentOut"] = []
 
 

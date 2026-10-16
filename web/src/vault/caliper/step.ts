@@ -1,7 +1,7 @@
 import type { OcctNode } from "occt-import-js";
 import wasmUrl from "occt-import-js/dist/occt-import-js.wasm?url";
 import type { RGB } from "./format";
-import { IDENTITY, type Model, type Node, type Shape } from "./model";
+import { IDENTITY, type Body, type Model, type Node, type Shape } from "./model";
 
 // STEP and IGES files, read in the browser by OpenCascade (occt-import-js, compiled to WebAssembly: 7 MB, fetched the
 // first time one is opened). Reading a big file takes a while, so it's done in a worker (stepWorker.ts), off the page's
@@ -80,22 +80,22 @@ export function readCadFile(bytes: Uint8Array, format: CadFormat): Promise<CadFi
     });
 }
 
+/** A file's solids as bodies, placed where the file has them. */
+export function bodiesOfCad(file: CadFile): Body[] {
+    return file.meshes.map((mesh) => ({
+        name: mesh.name,
+        solid: true,
+        color: mesh.color ?? DEFAULT_COLOR,
+        opacity: 1,
+        faces: mesh.faces,
+        positions: mesh.positions,
+        indices: mesh.indices,
+    }));
+}
+
 /** Caliper's model of a file OpenCascade read: its products as the tree, each solid a body. */
 export function modelFromCad(file: CadFile): Model {
-    const shapes = file.meshes.map((mesh, i): Shape => ({
-        key: `cad:${i}`,
-        bodies: [
-            {
-                name: mesh.name,
-                solid: true,
-                color: mesh.color ?? DEFAULT_COLOR,
-                opacity: 1,
-                faces: mesh.faces,
-                positions: mesh.positions,
-                indices: mesh.indices,
-            },
-        ],
-    }));
+    const shapes = bodiesOfCad(file).map((body, i): Shape => ({ key: `cad:${i}`, bodies: [body] }));
     const leaf = (id: string, name: string, meshes: number[]): Node => ({
         id,
         name,

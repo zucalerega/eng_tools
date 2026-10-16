@@ -71,11 +71,11 @@ replaces Kenesto.
   part on its own. Nothing in it changes a file. STEP and IGES files open as they are.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
   version it checks in; for any other version, the server reads the 3D view SolidWorks
-  saved in the file (SolidWorks 2015 to 2026), in the configuration it was saved in. An
+  saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
-  if it was uploaded in the web app; Caliper lists the parts it couldn't find. If it can't
-  read a file (one from SolidWorks 2014 or older, say), Caliper says why: open the file in
-  SolidWorks and click Make 3D view on the Vault tab.
+  if it was uploaded in the web app, and the STEP and IGES files placed in it; Caliper lists
+  the parts it couldn't find. If it can't read a file (one saved without its 3D view, say),
+  Caliper says why: open the file in SolidWorks and click Make 3D view on the Vault tab.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { renderApp, table, Team } from "./team";
 
 test("the activity feed says what each check-in was for", async () => {
@@ -32,6 +32,29 @@ test("admins see how many people used the site each day for the last month, and 
     await userEvent.click(tracker.getByRole("button", { name: "Time on the site" }));
     expect(tracker.getByRole("button", { name: "Time on the site" }).getAttribute("aria-pressed")).toBe("true");
     expect(tracker.getByRole("button", { name: "Active people" }).getAttribute("aria-pressed")).toBe("false");
+});
+
+test("the activity counts go up as people come on, while the page stays open", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] }); // the page's timers only: the server's real
+    try {
+        const team = await Team.create();
+        renderApp(team.chief, "/vault/admin");
+        const tracker = within((await screen.findByRole("heading", { name: "Activity" })).closest("section")!);
+        const activeToday = () => Number(tracker.getByText("Active today").nextElementSibling!.textContent);
+        const before = activeToday();
+        // The measure chosen, and the day hovered, stay as the counts change.
+        await userEvent.click(tracker.getByRole("button", { name: "Time on the site" }));
+        await userEvent.hover([...document.querySelectorAll(".bars-slot")].at(-1)!);
+
+        // Someone checks a part in after the page opened, as the add-in or the command line does.
+        await team.checkin(await team.member(`Late-${team.folder}`), { "Engine/Injector.SLDPRT": "injector" });
+        vi.advanceTimersByTime(30_000);
+        await waitFor(() => expect(activeToday()).toBeGreaterThan(before));
+        expect(tracker.getByRole("status").textContent).toMatch(new RegExp(`^Today${activeToday()} people`));
+        expect(tracker.getByRole("button", { name: "Time on the site" }).getAttribute("aria-pressed")).toBe("true");
+    } finally {
+        vi.useRealTimers();
+    }
 });
 
 test("admins see how hard the server is working, over a day or a week", async () => {

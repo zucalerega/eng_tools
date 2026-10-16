@@ -7,6 +7,7 @@ import { formatDuration } from "../../format";
 
 const DAYS = 30;
 const LABEL_EVERY = 7; // days between the dates under the chart, counting back from today
+const REFRESH_MS = 30_000; // how often the counts are fetched again, as people use the site
 
 type Measure = "people" | "time";
 
@@ -16,9 +17,35 @@ export function SiteUsage() {
     const [measure, setMeasure] = useState<Measure>("people");
     useEffect(() => {
         const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        api.usage(DAYS, zone).then(setUsage, (error: Error) => setProblem(error.message));
+        let current = true;
+        const fetchUsage = () =>
+            api.usage(DAYS, zone).then(
+                (loaded) => {
+                    if (current) {
+                        setUsage(loaded);
+                        setProblem(null);
+                    }
+                },
+                (error: Error) => {
+                    if (current) {
+                        setProblem(error.message);
+                    }
+                },
+            );
+        void fetchUsage();
+        // The counts go up as people use the site: look again while the page is in view. What's shown, and what's
+        // hovered, stay until the new counts come, and stay if they don't.
+        const timer = window.setInterval(() => {
+            if (!document.hidden) {
+                void fetchUsage();
+            }
+        }, REFRESH_MS);
+        return () => {
+            current = false;
+            window.clearInterval(timer);
+        };
     }, []);
-    if (problem) {
+    if (problem && !usage) {
         return <p className="muted">Couldn't load how the site is used: {problem}</p>;
     }
     if (!usage) {

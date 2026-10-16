@@ -524,9 +524,24 @@ Where the 3D comes from:
     with part document, on by default).
     - **A part:** its bodies' triangles, names, and colors (and faces' own colors, where the
       file says which), and its units, in the configuration SolidWorks had open when it saved
-      the file. That's the only configuration it keeps triangles of: the others are only
-      Parasolid solids, which would take a geometry kernel to turn into triangles, so a part
-      used in another configuration shows once Make 3D view makes it.
+      the file. That's the only configuration it keeps triangles of, and nearly always the
+      only one it keeps a solid of (in the team's assemblies, every part used in another
+      configuration had none), so a part used in another configuration shows once Make 3D
+      view makes it.
+    - **A part without a 3D view** (SolidWorks set not to save one, as vendors' parts often
+      are), or with one the server can't follow, is read from its solid instead: SolidWorks
+      keeps each configuration's bodies as Parasolid's, the geometry kernel it's built on,
+      whose file format is published (`vault/parasolid.py`), and the server turns them into
+      triangles of its own (`vault/brep.py`): it samples each edge once, so that its chords
+      stray from it by no more than 0.05% of the part's size (and the faces either side share
+      its points), and cuts each face into strips across its surface's parameters. Faces
+      keep the colors Parasolid has for them. A part that's an import and nothing else (a
+      vendor's fitting, an 80/20 extrusion) keeps its bodies with the import, which are the
+      part's only if none of its features could make or change one: the server reads them
+      only then. The 435 parts in the team's vault that have both a 3D view and a solid read
+      this way agree with their 3D views within a percent in area and volume, and to a few
+      microns in size (but for those whose 3D view shows something their solid hasn't, a
+      cosmetic thread, say).
     - **An assembly:** its components, from the XML it keeps of each configuration: each
       component's file, configuration, and place, and whether SolidWorks hid or suppressed
       it. A flexible sub-assembly's instance has its own layout there, as flexed. Each
@@ -563,8 +578,10 @@ Where the 3D comes from:
       where SolidWorks itself put every component, flexed ones too; and from SparkFun's files
       saved by 2014 or older, checked against their STL exports and the assembly's bounding
       box. So the server refuses (`unreadable_file`, saying why) whatever doesn't fit,
-      rather than guess: a part saved without its triangles, or a layout it doesn't know.
-      Caliper says so, and the add-in can make that version's model instead.
+      rather than guess: a part saved without its triangles and without a solid it can
+      follow (SolidWorks 2010's vendors' files, written to a Parasolid schema the server
+      hasn't), or a layout it doesn't know. Caliper says so, and the add-in can make that
+      version's model instead.
 
   A part's model is a mesh: its bodies'
   triangles, in runs that are their faces, in millimeters in the part's coordinates, with

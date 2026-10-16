@@ -48,6 +48,19 @@ the translation and the scale), its configuration, its part's name and path, and
 shape, as above, in the part's own coordinates. Often there's no shape after a node, and from SolidWorks 2024 on there
 never is: only which of the part's faces it shows. Nor has every assembly a display list. Its components are still in
 its XML, and their parts' shapes are in their own files (vault.py finds them).
+
+A part without a display list (SolidWorks set not to save one, as vendors' parts often are), or with one Caliper can't
+follow, is read from its solid instead: the Parasolid bodies SolidWorks keeps of each configuration (parasolid.py),
+turned into triangles (brep.py), for the configuration SolidWorks had open (N, its swID). It reads:
+
+- Contents/Config-N-Partition: the part's bodies, as the configuration last built them.
+- Config-N-FeatureBodies/LocalBodies: the bodies its imports brought in. Where the partition has none, as in a part
+  that's an import and nothing else, these are the part's own, but only then: so they're read only if
+  Contents/Config-N-ResolvedFeatures has no class (a feature's, and what features keep) but those such parts have, which
+  don't make or change bodies (the import, folders, planes and axes, sketches, dimensions, references).
+
+Some programs that write SolidWorks files leave every stream's CRC field the same, uncomputed. There the solid's own
+checks stand in: it must unpack to exactly the size it says, and its transmit files end exactly where their nodes do.
 """
 
 import re
@@ -62,6 +75,7 @@ from typing import Literal
 from xml.etree import ElementTree
 
 from ..errors import ApiError
+from . import brep, parasolid
 from .caliper import MeshBody, MeshFace, Rgb
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
@@ -73,6 +87,9 @@ _DISPLAY = "Contents/DisplayLists"
 _INFO = "docProps/ISolidWorksInformation.xml"
 _FEATURES = "swXmlContents/Features"
 _TREE = "swXmlContents/COMPINSTANCETREE"
+_PARTITION = "Contents/Config-{}-Partition"
+_LOCAL = "Config-{}-FeatureBodies/LocalBodies"
+_RESOLVED = "Contents/Config-{}-ResolvedFeatures"
 _NS = "{http://www.solidworks.com/sw2003/schema}"
 
 _BODY = b"uoTempBodyTessData_c"
@@ -125,8 +142,9 @@ class Assembly:
 # --- the file ---------------------------------------------------------------------------------
 
 
-def _streams(data: bytes, wanted: set[str]) -> dict[str, bytes]:
-    """The streams of a SolidWorks 2015+ file that are wanted, by name, each checked against its CRC."""
+def _streams(data: bytes, wanted: set[str], checked: bool = True) -> dict[str, bytes]:
+    """The streams of a SolidWorks 2015+ file that are wanted, by name, each checked against its CRC (unless
+    checked is False: see _unchecked)."""
     found: dict[str, bytes] = {}
     at = data.find(_MARKER)
     while at >= 0 and len(found) < len(wanted):
@@ -144,9 +162,33 @@ def _streams(data: bytes, wanted: set[str]) -> dict[str, bytes]:
                         contents = inflater.decompress(data[start : start + packed], size + 1)
                     except zlib.error:
                         contents = b""
-                    if len(contents) == size and zlib.crc32(contents) == crc:
+                    if len(contents) == size and (zlib.crc32(contents) == crc or not checked):
                         found[name] = contents
         at = data.find(_MARKER, at + 1)
+    return found
+
+
+def _unchecked(data: bytes) -> bool:
+    """Whether a file's streams all have one CRC field, never computed (as some programs that write SolidWorks files
+    leave them): then nothing that relies on its streams' CRCs reads it, but a solid can, by its own checks."""
+    crcs = set()
+    at = data.find(_MARKER)
+    while at >= 0 and len(crcs) < 2:
+        if at + len(_MARKER) + 20 <= len(data):
+            _tag, crc, _packed, _size, length = struct.unpack_from("<5I", data, at + len(_MARKER))
+            if 0 < length <= 1024:
+                crcs.add(crc)
+        at = data.find(_MARKER, at + 1)
+    return len(crcs) == 1
+
+
+def _found(data: bytes, wanted: set[str]) -> dict[str, bytes]:
+    """The wanted streams of a file of either kind."""
+    if data.startswith(_OLE):
+        return _compound(data, wanted)
+    found = _streams(data, wanted)
+    if not found and _unchecked(data):
+        found = _streams(data, wanted, checked=False)
     return found
 
 
@@ -282,13 +324,12 @@ def _unpack_zlb(packed: bytes, odd: Unreadable) -> bytes:
 
 
 def _open(data: bytes, kind: Literal["part", "assembly"]) -> dict[str, bytes]:
-    """The streams a part or assembly is read from. A part needs its display list; an assembly, only its XML."""
+    """The streams a part or assembly is read from: a part's display list, if it has one; an assembly's XML. Without
+    any of them, a part may still have a solid (_solid)."""
     wanted = {_DISPLAY, _INFO, _FEATURES if kind == "part" else _TREE}
     found = _compound(data, wanted) if data.startswith(_OLE) else _streams(data, wanted)
-    if not found:
+    if not found and kind == "assembly":
         raise Unreadable(f"It isn't a SolidWorks {kind} that Caliper can read")
-    if kind == "part" and _DISPLAY not in found:
-        raise Unreadable(_NO_VIEW)
     return found
 
 
@@ -807,7 +848,19 @@ def read_assembly(data: bytes) -> list[Assembly]:
 
 def _read_part(data: bytes) -> Part:
     found = _open(data, "part")
-    display = found[_DISPLAY]
+    display = found.get(_DISPLAY)
+    if display is None:
+        return _solid(data, found, None)
+    try:
+        return _viewed(found, display)
+    except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error) as e:
+        # A 3D view Caliper can't follow: the solid, if it can follow that. Else the 3D view's reason stands.
+        refused = e if isinstance(e, Unreadable) else Unreadable(_ODD)
+        return _solid(data, found, refused)
+
+
+def _viewed(found: dict[str, bytes], display: bytes) -> Part:
+    """A part read from its display list."""
     faces = _faces(display)
     shapes = _shapes(display, faces)
     if not shapes:
@@ -823,6 +876,102 @@ def _read_part(data: bytes) -> Part:
     tail = [text for _, text in _strings(display, faces[-1].end, len(display))]
     configuration = _part_configuration(_xml(found.get(_FEATURES)), tail)
     return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+
+
+# --- parts' solids --------------------------------------------------------------------------------
+
+# The classes in the features of parts that are an import and nothing else (in the team's library: vendors' fittings,
+# 80/20 extrusions): the import itself, and what changes no body. Any other is a feature that may make or change one.
+_IMPORTS = {"moBaseBody_c", "moMBimport_c"}
+_QUIET = _IMPORTS | {
+    "mbBodyImportIDMaps_c", "moCStringHandle_c", "moCommentsFolder_c", "moCompEdge_c", "moCompFace_c",
+    "moCompFeature_c", "moCompRefAxis_c", "moCompRefPlane_c", "moCompSketchEntHandle_c", "moConnectionPoint_c",
+    "moCurveFtrFolder_c", "moDefaultRefPlnData_c", "moDetailCabinet_c", "moDisplayDistanceDim_c",
+    "moDisplayRadialDim_c", "moDocsFolder_c", "moDoubleDim_c", "moEdgeRef_c", "moEqnFolder_c", "moExtObject_c",
+    "moFR_c", "moFavoriteFolder_c", "moFavoriteHandle_c", "moFeatGraphicsBodyFolder_c", "moFeatSolidBodyFolder_c",
+    "moFeatSurfaceBodyFolder_c", "moFeatureDimHandle_c", "moFtrFolder_c", "moHistoryFeatItemData_c",
+    "moHistoryFolder_c", "moInkMarkupFolder_c", "moLengthParameter_c", "moLineAxisData_c", "moLineBackedUpData_c",
+    "moLineRef_w", "moMaterialFolder_c", "moNodeName_c", "moNotesAreaFtrFolder_c", "moOriginProfileFeature_c",
+    "moPMarkRecord_c", "moPointBackedUpData_c", "moPointRef_w", "moProfileFeature_c", "moProfileFtrFolder_c",
+    "moRefAxisFtrFolder_c", "moRefAxis_c", "moRefPlaneFtrFolder_c", "moRefPlane_c", "moRoutePoint_c",
+    "moScalerParameter_c", "moSelectionSetFolder_c", "moSensorFolder_c", "moSimpleSurfIdRep_c", "moSketchExtRef_w",
+    "moSolidBodyFolder_c", "moSurfaceBodyFolder_c", "moUnitComponent_c", "sgExtEnt_c", "sgLineHandle",
+    "sgPntPntDist", "sgPointHandle", "sgSketch", "ThreeDRadialOrDiameterDim_c",
+}  # fmt: skip
+_CLASS = re.compile(rb"\xff\xff[\x00-\xff]{2}([\x01-\x40])\x00", re.DOTALL)
+
+
+def _classes(archive: bytes) -> set[str]:
+    """The classes an MFC archive names (each new one: 0xFFFF, a uint16 schema, a uint16 length, the name)."""
+    names = set()
+    for found in _CLASS.finditer(archive):
+        name = archive[found.end() : found.end() + found.group(1)[0]]
+        if re.fullmatch(rb"[A-Za-z_][A-Za-z0-9_]*", name):
+            names.add(name.decode())
+    return names
+
+
+def _only_imported(resolved: bytes | None) -> bool:
+    """Whether a part is an import and nothing else, by its features' classes."""
+    names = _classes(resolved or b"")
+    return bool(names & _IMPORTS) and names <= _QUIET
+
+
+def _bodies(stream: bytes | None) -> list[brep.Solid]:
+    """The solids in one of SolidWorks' streams of them: each transmit file's bodies (a partition's deltas, its undo,
+    left out)."""
+    out = []
+    for transmit in parasolid.transmit_files(stream or b""):
+        if "(deltas)" not in parasolid.header(transmit):
+            out += brep.solids(parasolid.read(transmit)[1])
+    return out
+
+
+def _solid(data: bytes, found: dict[str, bytes], refused: Unreadable | None) -> Part:
+    """A part read from its solid (when its display list is missing, or refused). Where that can't be read either,
+    the display list's reason for refusing it stands; or why the solid can't be read; or that there's no 3D view."""
+    features = _xml(found.get(_FEATURES))
+    active = None
+    if features is not None:
+        configurations = list(features.iter(f"{_NS}swConfiguration"))
+        active = next((c for c in configurations if c.get("swMostRecentConfiguration") == "YES"), None)
+    number = active.get("swID") if active is not None else None
+    number = number if number and number.isdigit() else "0"
+    names = (_PARTITION.format(number), _LOCAL.format(number), _RESOLVED.format(number))
+    streams = _found(data, set(names))
+    if not found and not streams:
+        raise refused or Unreadable("It isn't a SolidWorks part that Caliper can read")
+    try:
+        solids = _bodies(streams.get(names[0]))
+        if not any(s.faces for s in solids) and _only_imported(streams.get(names[2])):
+            solids = _bodies(streams.get(names[1]))
+    except parasolid.XtError as e:
+        raise refused or Unreadable(
+            f"SolidWorks saved no 3D view in it, and Caliper can't follow its solid ({e}). Make its 3D view in "
+            "SolidWorks instead (Make 3D view, on the Vault tab)"
+        ) from e
+    solids = [s for s in solids if s.faces]
+    if not solids:
+        raise refused or Unreadable(_NO_VIEW)
+    configuration = (active.get("swName") if active is not None else None) or "Default"
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=_meshed(solids))
+
+
+def _meshed(solids: list[brep.Solid]) -> list[MeshBody]:
+    """Solids as Caliper's mesh bodies, in mm: each body the color most of its faces have (SolidWorks' default if
+    none), and faces of another color their own."""
+    out = []
+    for i, solid in enumerate(solids):
+        colors = [face.color for face in solid.faces if face.color is not None]
+        color = max(set(colors), key=colors.count) if colors else DEFAULT_COLOR
+        faces = []
+        for face in solid.faces:
+            positions = array("f", (c * 1000 for p in face.positions for c in p))
+            triangles = array("I", (k for t in face.triangles for k in t))
+            faces.append(MeshFace(positions, triangles, face.color if face.color not in (None, color) else None))
+        name = "Body" if len(solids) == 1 else f"Body {i + 1}"
+        out.append(MeshBody(name=name, color=color, faces=faces, solid=solid.solid))
+    return out
 
 
 # --- assemblies ----------------------------------------------------------------------------------

@@ -1610,9 +1610,9 @@ def _read_solidworks(
 
 
 def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
-    """Make a version's 3D model from the 3D view SolidWorks saved in the file itself (vault/solidworks.py), in the
-    configuration it was saved in: so Caliper shows SolidWorks files that Vault for SolidWorks made no model of. A
-    version that has a model keeps it, and that one comes back.
+    """Make a version's 3D model from the 3D view SolidWorks saved in the file itself, or a part's from its solid where
+    it saved none (vault/solidworks.py), in the configuration it was saved in: so Caliper shows SolidWorks files that
+    Vault for SolidWorks made no model of. A version that has a model keeps it, and that one comes back.
 
     Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
     version references, or else the vault's files with their names (_Finder), each with its shape as the assembly

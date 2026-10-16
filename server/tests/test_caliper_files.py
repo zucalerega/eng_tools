@@ -476,25 +476,239 @@ def test_a_step_file_placed_in_an_assembly_says_its_format(team, client):
     ]
 
 
-def test_a_3d_view_caliper_cant_follow_isnt_called_empty(team, client):
-    """A view with faces the reader can't find in it is in a layout it doesn't know, and says so; only a part without a
+def test_a_3d_view_caliper_cant_follow_gives_way_to_the_solid(team, client):
+    """A view with faces the reader can't find in it is in a layout it doesn't know: the part's solid is read instead,
+    as it is for a part without a view. Without a solid either, the view's reason stands, and only a part without a
     view says SolidWorks saved none."""
     chief = team.member("chief@x.test", admin=True)
     case = contents("Servomoteur.SLDPRT")
+    odd = repacked(case, "Contents/DisplayLists", lambda d: in_2024_layout(d, first=7))
     checked = files(
         team.checkin(
             chief,
             {
-                "Odd.SLDPRT": repacked(case, "Contents/DisplayLists", lambda d: in_2024_layout(d, first=7)),
+                "Odd.SLDPRT": odd,
                 "Bare.SLDPRT": without_3d_view(case),
+                "OddAlone.SLDPRT": without_solid(odd),
+                "BareAlone.SLDPRT": without_solid(without_3d_view(case)),
             },
         )
     )
-    odd, bare = (make(client, chief, checked[name]) for name in ("Odd.SLDPRT", "Bare.SLDPRT"))
-    assert (odd.status_code, odd.json()["error"]) == (422, "unreadable_file")
-    assert "can't make sense of the 3D view SolidWorks saved in it" in odd.json()["message"]
-    assert (bare.status_code, bare.json()["error"]) == (422, "unreadable_file")
-    assert "SolidWorks saved no 3D view in it" in bare.json()["message"]
+    made = {name: make(client, chief, file) for name, file in checked.items()}
+    assert (made["Odd.SLDPRT"].status_code, made["Bare.SLDPRT"].status_code) == (200, 200)
+    assert measured(client, chief, checked["Odd.SLDPRT"])[3] == measured(client, chief, checked["Bare.SLDPRT"])[3]
+    odd_alone, bare_alone = made["OddAlone.SLDPRT"], made["BareAlone.SLDPRT"]
+    assert (odd_alone.status_code, odd_alone.json()["error"]) == (422, "unreadable_file")
+    assert "can't make sense of the 3D view SolidWorks saved in it" in odd_alone.json()["message"]
+    assert (bare_alone.status_code, bare_alone.json()["error"]) == (422, "unreadable_file")
+    assert "SolidWorks saved no 3D view in it" in bare_alone.json()["message"]
+
+
+def without_solid(data: bytes) -> bytes:
+    """A file without its solid: its partition stream, renamed."""
+    return data.replace(swapped(b"Contents/Config-0-Partition"), swapped(b"Contents/Config-0-Partitioz"))
+
+
+def without_old_3d_view(data: bytes) -> bytes:
+    """An OLE file (SolidWorks 2014 and older) without its display list: its stream renamed in its directory."""
+    return data.replace("DisplayLists".encode("utf-16-le"), "DisplayListz".encode("utf-16-le"))
+
+
+def measured(client, who, file: dict) -> tuple[float, float, list[float], str]:
+    """A part's mesh's area (mm2), volume (mm3), box, and etag."""
+    shape = client.get(
+        f"/api/files/{file['id']}/caliper/mesh", params={"version": 1, "configuration": "Default"}, headers=who
+    )
+    assert shape.status_code == 200, shape.text
+    _, vertices, corners = unpack(shape.content)
+    area = volume = 0.0
+    for i in range(0, len(corners), 3):
+        a, b, c = (vertices[k] for k in corners[i : i + 3])
+        u, v = [b[k] - a[k] for k in range(3)], [c[k] - a[k] for k in range(3)]
+        n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+        area += (n[0] ** 2 + n[1] ** 2 + n[2] ** 2) ** 0.5 / 2
+        volume += sum(a[k] * (b[(k + 1) % 3] * c[(k + 2) % 3] - b[(k + 2) % 3] * c[(k + 1) % 3]) for k in range(3)) / 6
+    return area, volume, box(vertices), shape.headers["etag"]
+
+
+def test_a_part_without_a_3d_view_is_read_from_its_solid(team, client):
+    """A part SolidWorks saved no display list in, as vendors' parts often are, is read from the solid SolidWorks keeps
+    of it (Parasolid's): Caliper's own triangles of the very shape its display list has, within their tolerance, with
+    the colors its faces have. From SolidWorks 2014 and older too."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Viewed/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+                "Bare/Servomoteur.SLDPRT": without_3d_view(contents("Servomoteur.SLDPRT")),
+                "Viewed/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Bare/Embout.SLDPRT": without_3d_view(contents("Embout.SLDPRT")),
+                "Viewed/11351_body.SLDPRT": contents("11351_body.SLDPRT"),
+                "Bare/11351_body.SLDPRT": without_old_3d_view(contents("11351_body.SLDPRT")),
+            },
+        )
+    )
+    for path, file in checked.items():
+        made = make(client, chief, file)
+        assert made.status_code == 200, f"{path}: {made.text}"
+        assert (made.json()["configuration"], made.json()["units"]) == ("Default", "mm")
+    for name in ("Servomoteur.SLDPRT", "Embout.SLDPRT", "11351_body.SLDPRT"):
+        viewed, bare = (measured(client, chief, checked[f"{folder}/{name}"]) for folder in ("Viewed", "Bare"))
+        assert abs(bare[0] - viewed[0]) < viewed[0] / 500, name  # area, within 0.2%
+        assert abs(bare[1] - viewed[1]) < viewed[1] / 500, name  # volume
+        assert all(abs(a - b) < 0.002 for a, b in zip(bare[2], viewed[2], strict=True)), name  # box, to 2 microns
+
+    shape = client.get(
+        f"/api/files/{checked['Bare/Servomoteur.SLDPRT']['id']}/caliper/mesh",
+        params={"version": 1, "configuration": "Default"},
+        headers=chief,
+    )
+    [body] = unpack(shape.content)[0]["bodies"]
+    assert (body["name"], len(body["faces"]), body["solid"], body["color"]) == ("Body", 52, True, DARK_GRAY)
+    colors = [face.get("color") for face in body["faces"]]
+    assert sum(color is None for color in colors) == 39 and [0.7529, 0.7529, 0.7529] in colors
+    shape = client.get(
+        f"/api/files/{checked['Bare/Embout.SLDPRT']['id']}/caliper/mesh",
+        params={"version": 1, "configuration": "Default"},
+        headers=chief,
+    )
+    assert [(b["name"], len(b["faces"])) for b in unpack(shape.content)[0]["bodies"]] == [("Body 1", 3), ("Body 2", 78)]
+
+
+def renamed(data: bytes, name: str, new: str) -> bytes:
+    """A SolidWorks file with one stream under another name."""
+    marker = b"\x14\x00\x06\x00\x08\x00"
+    at = data.find(marker)
+    while at >= 0:
+        head = at + len(marker)
+        tag, crc, packed, size, length = struct.unpack_from("<5I", data, head)
+        start = head + 20 + length
+        if data[head + 20 : start] == swapped(name.encode()):
+            try:
+                old = zlib.decompressobj(-15).decompress(data[start : start + packed])
+            except zlib.error:
+                old = b""
+            if len(old) == size and zlib.crc32(old) == crc:
+                header = marker + struct.pack("<5I", tag, crc, packed, size, len(new))
+                return data[:at] + header + swapped(new.encode()) + data[start:]
+        at = data.find(marker, at + 1)
+    raise KeyError(name)
+
+
+def classes(*names: str) -> bytes:
+    """An MFC archive naming these classes, as a part's features do (each new one: 0xFFFF, a schema, a length, the
+    name)."""
+    return b"".join(b"\xff\xff\x01\x00" + struct.pack("<H", len(name)) + name.encode() for name in names)
+
+
+def with_crcs(data: bytes, crc: int, only: str | None = None) -> bytes:
+    """A file whose streams all have one CRC field, as some programs that write SolidWorks files leave them; or just
+    the one named."""
+    marker = b"\x14\x00\x06\x00\x08\x00"
+    out = bytearray(data)
+    at = data.find(marker)
+    while at >= 0:
+        head = at + len(marker)
+        if head + 20 <= len(data):
+            length = struct.unpack_from("<I", data, head + 16)[0]
+            if only is None or data[head + 20 : head + 20 + length] == swapped(only.encode()):
+                struct.pack_into("<I", out, head + 4, crc)
+        at = data.find(marker, at + 1)
+    return bytes(out)
+
+
+def test_a_part_that_is_an_import_and_nothing_else_is_read_from_what_it_imported(team, client):
+    """Where a part's partition keeps no bodies, as in a vendor's part that's an import and nothing else, the bodies it
+    imported are its own: read, but only if its features are the import and what makes or changes no body. Some
+    programs that write SolidWorks files leave every stream's CRC field one value, which the solid's checks stand in
+    for."""
+    chief = team.member("chief@x.test", admin=True)
+    bare = without_3d_view(contents("Servomoteur.SLDPRT"))
+    imported = renamed(bare, "Contents/Config-0-Partition", "Config-0-FeatureBodies/LocalBodies")
+
+    def features(*names: str) -> bytes:
+        return repacked(imported, "Contents/Config-0-ResolvedFeatures", lambda _: classes(*names))
+
+    only = features("moRefPlane_c", "moOriginProfileFeature_c", "moBaseBody_c", "moPMarkRecord_c")
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Bare.SLDPRT": bare,
+                "Imported.SLDPRT": only,
+                "Unchecked.SLDPRT": with_crcs(only, 0x74610FB1),
+                "Cut.SLDPRT": features("moRefPlane_c", "moBaseBody_c", "moICE_c"),
+                "Drawn.SLDPRT": features("moRefPlane_c", "moProfileFeature_c"),
+            },
+        )
+    )
+    for name in ("Bare.SLDPRT", "Imported.SLDPRT", "Unchecked.SLDPRT"):
+        made = make(client, chief, checked[name])
+        assert made.status_code == 200, f"{name}: {made.text}"
+    tags = {
+        measured(client, chief, checked[name])[3] for name in ("Bare.SLDPRT", "Imported.SLDPRT", "Unchecked.SLDPRT")
+    }
+    assert len(tags) == 1  # the same solid, the same mesh
+    # A feature that may have changed the imported body (an extrude cut), or no import at all: not the part's.
+    for name in ("Cut.SLDPRT", "Drawn.SLDPRT"):
+        refused = make(client, chief, checked[name])
+        assert (refused.status_code, refused.json()["error"]) == (422, "unreadable_file")
+        assert "SolidWorks saved no 3D view in it" in refused.json()["message"]
+    # A stream whose CRC is wrong, in a file whose others are right, is damaged: not read.
+    mixed = files(team.checkin(chief, {"Mixed.SLDPRT": with_crcs(only, 0x1234, "Config-0-FeatureBodies/LocalBodies")}))
+    mixed = mixed["Mixed.SLDPRT"]
+    refused = make(client, chief, mixed)
+    assert (refused.status_code, refused.json()["error"]) == (422, "unreadable_file")
+
+
+def transmitted(stream: bytes, change) -> bytes:
+    """A solid's stream with its first transmit file changed (change: its bytes to the new ones), packed again."""
+    tag = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")
+    at = stream.index(tag)
+    end = at + struct.unpack_from("<I", stream, at - 4)[0]
+    pieces, place = [], at + len(tag)
+    while place + 8 <= end:
+        size, packed = struct.unpack_from("<II", stream, place)
+        if size == 0:
+            break
+        pieces.append(zlib.decompress(stream[place + 8 : place + 8 + packed]))
+        place += 8 + packed
+    new = change(b"".join(pieces))
+    body = zlib.compress(new)
+    region = tag + struct.pack("<II", len(new), len(body)) + body + struct.pack("<II", 0, 0)
+    return stream[: at - 4] + struct.pack("<I", len(region)) + region + stream[end:]
+
+
+def test_a_damaged_solid_is_refused_or_read_never_an_error(team, client):
+    """A solid has no checks of its own but its stream's CRC, and the reader is careful: whatever the bytes, it reads
+    them or refuses them."""
+    chief = team.member("chief@x.test", admin=True)
+    pick = random.Random(13006)
+
+    def damage(solid: bytes) -> bytes:
+        damaged = bytearray(solid)
+        at = pick.randrange(len(damaged))
+        match pick.choice(["flip", "cut", "zero", "repeat"]):
+            case "flip":
+                for _ in range(pick.randint(1, 20)):
+                    damaged[pick.randrange(len(damaged))] ^= 1 << pick.randrange(8)
+            case "cut":
+                del damaged[at:]
+            case "zero":
+                damaged[at : at + 400] = bytes(len(damaged[at : at + 400]))
+            case "repeat":
+                damaged[at:at] = damaged[pick.randrange(len(damaged)) :][:200]
+        return bytes(damaged)
+
+    bare = without_3d_view(contents("Servomoteur.SLDPRT"))
+    damaged = {
+        f"Damaged-{i}.SLDPRT": repacked(bare, "Contents/Config-0-Partition", lambda s: transmitted(s, damage))
+        for i in range(40)
+    }
+    for file in files(team.checkin(chief, damaged)).values():
+        made = make(client, chief, file)
+        assert made.status_code in (200, 422), made.text
 
 
 def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, client):

@@ -20,6 +20,7 @@ from .schemas import (
     DatasetChangeIn,
     DatasetDetailOut,
     DatasetOut,
+    DeleteIn,
     FolderChangeIn,
     FolderIn,
     FolderOut,
@@ -114,6 +115,12 @@ async def post_dataset(
 def post_move(body: MoveIn, user: ActiveUser, db: DB) -> list[DatasetOut]:
     """Put datasets in a folder (folder_id null: the top). All of them, or none if any isn't yours to move."""
     return [DatasetOut.of(dataset, user) for dataset in datasets.move(db, user, body.datasets, body.folder_id)]
+
+
+@router.post("/datasets/delete")
+def post_delete(body: DeleteIn, user: ActiveUser, db: DB) -> list[DatasetOut]:
+    """Delete datasets, each restorable as DELETE /datasets/{id} leaves it. All of them, or none if any isn't yours."""
+    return [DatasetOut.of(dataset, user) for dataset in datasets.remove_all(db, user, body.datasets)]
 
 
 @router.get("/folders")

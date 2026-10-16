@@ -91,6 +91,9 @@ from . import brep, parasolid
 from .caliper import MeshBody, MeshFace, Rgb
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
+# This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
+# a newer one is out, and the server reads the models an older one made again, as they're next wanted.
+READER = 2
 _MARKER = b"\x14\x00\x06\x00\x08\x00"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _ZLB = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")  # what a packed stream of an OLE file starts with

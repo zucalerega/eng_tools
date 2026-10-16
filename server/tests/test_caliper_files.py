@@ -10,9 +10,13 @@ import zlib
 from collections.abc import Callable
 from pathlib import Path
 
-from yjsp_server.vault import parasolid
+from sqlalchemy import select
+
+from yjsp_server.vault import parasolid, solidworks
+from yjsp_server.vault.models import CaliperModel, Version
 
 from .test_caliper import IDENTITY, mesh, put_model
+from .test_caliper import component as model_component
 
 FIXTURES = Path(__file__).parent / "fixtures" / "solidworks"
 DARK_GRAY = [0.251, 0.251, 0.251]  # the servo case's color: RGB 64, 64, 64
@@ -1126,6 +1130,135 @@ def test_splines_are_read_as_their_shapes_need(team, client):
         headers=chief,
     )
     assert unpack(shape.content)[0]["triangles"] == 2
+
+
+def readers(team, file: dict) -> dict[str, int | None]:
+    """What made each of a file's models (version 1), by configuration (CaliperModel.reader)."""
+    with team.app.state.sessionmaker() as db:
+        found = db.scalars(select(CaliperModel).join(Version).where(Version.file_id == file["id"], Version.number == 1))
+        return {model.configuration: model.reader for model in found}
+
+
+def made_by(team, file: dict, reader: int | None, **changes) -> None:
+    """A file's models (version 1) as another reader would have left them: as an older release of the server, which
+    measured in inches, say; or as one before the server noted which reader made each (None)."""
+    with team.app.state.sessionmaker() as db:
+        for model in db.scalars(select(CaliperModel).join(Version).where(Version.file_id == file["id"])):
+            model.reader = reader
+            for name, value in changes.items():
+                setattr(model, name, value)
+        db.commit()
+
+
+def listed(client, who, file: dict) -> list[tuple[str, str]]:
+    """A file's models, as Caliper lists them: each one's configuration and units."""
+    response = client.get(f"/api/files/{file['id']}/caliper", headers=who)
+    assert response.status_code == 200, response.text
+    return [(model["configuration"], model["units"]) for model in response.json()["models"]]
+
+
+def test_models_an_older_reader_made_are_read_again(team, client):
+    """The server notes which release of its reader made each model it reads from a file. Once a newer one is out, the
+    older one's models are read again when they're next wanted: they aren't listed, nor counted as a part's own model in
+    an assembly, so Caliper has the server make them, which replaces them. Models Vault for SolidWorks made stay."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": contents("9347.SLDASM"),
+                "Servo/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo, spline, case = checked["9347.SLDASM"], checked["Embout.SLDPRT"], checked["Servomoteur.SLDPRT"]
+    for file in (servo, spline, case):
+        assert make(client, chief, file).status_code == 200
+    assert readers(team, case) == {"Default": solidworks.READER}
+    # Vault for SolidWorks' model of another configuration of the assembly.
+    added = put_model(team, chief, servo, configuration="Spline out", components=[model_component("Embout-1", spline)])
+    assert added.status_code == 200, added.text
+    made_by(team, case, solidworks.READER - 1, units="in")
+    with team.app.state.sessionmaker() as db:  # the assembly's Default, but not Vault for SolidWorks' Spline out
+        for model in db.scalars(select(CaliperModel).join(Version).where(Version.file_id == servo["id"])):
+            if model.configuration == "Default":
+                model.reader, model.units = solidworks.READER - 1, "in"
+        db.commit()
+
+    assert listed(client, chief, case) == []  # so Caliper asks for it again
+    assert listed(client, chief, servo) == []  # a version's are left out while any of them is the older reader's
+    assert listed(client, chief, spline) == [("Default", "mm")]
+    shown = client.get(
+        f"/api/files/{servo['id']}/caliper/assembly", params={"version": 1, "configuration": "Default"}, headers=chief
+    ).json()
+    assert {c["name"]: c["model"] for c in shown["components"]} == {"Embout-1": True, "Servomoteur-1": False}
+
+    for file in (case, servo):
+        remade = make(client, chief, file)
+        assert (remade.status_code, remade.json()["configuration"], remade.json()["units"]) == (200, "Default", "mm")
+    assert readers(team, case) == {"Default": solidworks.READER}
+    assert readers(team, servo) == {"Default": solidworks.READER, "Spline out": 0}
+    assert listed(client, chief, servo) == [("Spline out", "mm"), ("Default", "mm")]
+
+
+def dotnet(data: bytes) -> bytes:
+    """A mesh as Vault for SolidWorks writes it: .NET's gzip names the operating system it ran on in its header, where
+    Python's names none (255)."""
+    return data[:9] + bytes([19]) + data[10:]
+
+
+def test_models_from_before_the_server_noted_their_reader_are_told_apart(team, client):
+    """Models made before the server noted which reader made them are its first reader's if the server wrote what they
+    carry, and are read again: a part's mesh gzipped by Python, an assembly whose components have no color of their own.
+    Vault for SolidWorks' stay: a mesh gzipped by .NET, or components with colors."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": contents("9347.SLDASM"),
+                "Servo/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+                "Bay/Tab.SLDPRT": b"tab",
+                "Bay/Bay.SLDASM": b"bay",
+            },
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo, case, tab, bay = (checked[n] for n in ("9347.SLDASM", "Servomoteur.SLDPRT", "Tab.SLDPRT", "Bay.SLDASM"))
+    for file in (servo, case):
+        assert make(client, chief, file).status_code == 200
+    assert put_model(team, chief, tab, mesh=team.upload(chief, dotnet(mesh()))).status_code == 200
+    red = model_component("Tab-1", tab, color=[1, 0, 0])
+    assert put_model(team, chief, bay, components=[red]).status_code == 200
+    for file in (servo, case, tab, bay):
+        made_by(team, file, None)
+
+    assert listed(client, chief, case) == listed(client, chief, servo) == []  # the server's: read again
+    assert listed(client, chief, tab) == listed(client, chief, bay) == [("Default", "mm")]  # Vault for SolidWorks'
+    for file in (servo, case, tab, bay):
+        assert make(client, chief, file).status_code == 200
+    assert [readers(team, file) for file in (servo, case, tab, bay)] == [
+        {"Default": solidworks.READER},
+        {"Default": solidworks.READER},
+        {"Default": None},
+        {"Default": None},
+    ]
+
+
+def test_an_older_readers_model_stands_while_its_file_cant_be_read(team, client):
+    """Where this reader can't read a file that an older one read (a layout it refuses), the older one's model stays,
+    and comes back when Caliper asks for one, rather than nothing."""
+    chief = team.member("chief@x.test", admin=True)
+    odd = files(team.checkin(chief, {"Odd.SLDPRT": b"not a SolidWorks file"}))["Odd.SLDPRT"]
+    assert put_model(team, chief, odd, mesh=team.upload(chief, mesh()), units="in").status_code == 200
+    made_by(team, odd, solidworks.READER - 1)
+    assert listed(client, chief, odd) == []
+    kept = make(client, chief, odd)
+    assert (kept.status_code, kept.json()["units"]) == (200, "in")
+    assert readers(team, odd) == {"Default": solidworks.READER - 1}
 
 
 def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, client):

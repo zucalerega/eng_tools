@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base, UTCDateTime, enum_column, utcnow
@@ -150,6 +150,9 @@ class CaliperModel(Base):
     components: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)  # an assembly's
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # What made it: the server's reader, by its version (solidworks.READER), which reads it again once there's a newer
+    # one; or 0, Vault for SolidWorks. None: made before the server noted which (vault.py tells by what it carries).
+    reader: Mapped[int | None] = mapped_column(Integer)
 
 
 class Grant(Base):

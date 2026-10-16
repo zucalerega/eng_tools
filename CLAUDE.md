@@ -134,6 +134,9 @@ Server:
   `==`. `vault/paths.py` and `VaultPaths.cs` must agree; their tests share cases.
 - Permission checks go through `Access`. A file the user can't see is 404, not 403.
 - Timestamps are timezone-aware UTC (`db.UTCDateTime`).
+- When a change makes the server read SolidWorks files differently (`vault/solidworks.py`, `parasolid.py`, `brep.py`),
+  bump `solidworks.READER`: the models an older reader made are then read again as they're next wanted. Models Vault
+  for SolidWorks made are never replaced by the server's reading.
 
 Vault's client:
 - Files not checked out to you are read-only on disk.

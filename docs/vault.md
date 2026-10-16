@@ -581,6 +581,17 @@ Where the 3D comes from:
     - **What isn't shown:** parts that were never put in the vault; and virtual parts
       without a shape the server could read where they're kept, which Caliper says (Make 3D
       view makes them, where SolidWorks can build them).
+    - **Reading improves, and models are read again.** Each model the server reads notes
+      which release of its reader made it (`reader`, `solidworks.READER`, which goes up when
+      what the server reads from a file changes). Once a newer one is out, an older one's
+      models are read again as they're next wanted: a version with any isn't listed, nor is
+      such a part's model counted as its own in an assembly, so Caliper has the server make
+      them, which replaces them. Where the file can't be read now, the older model stays and
+      comes back. Vault for SolidWorks' models (`reader` 0) are never replaced this way. For
+      models made before the server noted it, the server tells by what they carry: it wrote a
+      part's mesh if Python gzipped it (whose header names no operating system, where .NET's
+      names one), and an assembly's components if none has a color of its own (only Vault for
+      SolidWorks gives them one) or a shape .NET wrote.
     - **Files from SolidWorks 2014 and older** are OLE compound documents of the same streams,
       most of them packed (`__ZLB`), and the server reads those too; their units aren't
       saved where it reads them, so they start in mm.

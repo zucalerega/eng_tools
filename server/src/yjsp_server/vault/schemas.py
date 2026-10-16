@@ -368,8 +368,8 @@ class CaliperComponentIn(BaseModel):
     color: Color | None = None  # its own, over its part's
     opacity: float = Field(default=1, ge=0, le=1)
     mesh: Sha256 | None = None  # its shape, when the assembly keeps it (a virtual part's)
-    # Kept inside the assembly (a virtual part, as routed tubes are): without a mesh, its file saved no 3D view of it,
-    # as SolidWorks builds routed tubes again whenever it opens their assembly.
+    # Kept inside the assembly (a virtual part, as routed tubes are): without a mesh, no shape of it was found there (its
+    # solid empty, or the sub-assembly that keeps it not in the vault).
     virtual: bool = False
     children: list["CaliperComponentIn"] = []  # a sub-assembly's components
 

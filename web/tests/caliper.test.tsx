@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
+import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
 import { resolve } from "node:path";
 import { expect, test } from "vitest";
 import type { Mesh } from "../src/vault/caliper/format";
@@ -51,12 +52,65 @@ const component = (name: string, file: { id: number; version: number } | null, m
 
 const tree = () => within(screen.getByRole("tree", { name: "Components" }));
 
-test("parts, assemblies, and STEP files open in Caliper, beside Open in SolidWorks", async () => {
+// SparkFun's servo (server/tests/fixtures/solidworks/README.md), and ways to change its files as SolidWorks might have
+// saved them. SolidWorks stores a stream's name with each byte's halves swapped, and each stream with its CRC.
+const servo = (name: string) => readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
+const swapped = (name: string) => Buffer.from([...Buffer.from(name)].map((b) => ((b << 4) | (b >> 4)) & 0xff));
+
+/** The file with no display list: its streams of that name, renamed. */
+function viewless(data: Buffer): Buffer {
+    const [from, to] = [swapped("Contents/DisplayLists"), swapped("Contents/DisplayListz")];
+    const out = Buffer.from(data);
+    for (let at = out.indexOf(from); at >= 0; at = out.indexOf(from, at + 1)) {
+        to.copy(out, at);
+    }
+    return out;
+}
+
+/** The file with one stream changed, packed again with its CRC (as server/tests/test_caliper_files.py's repacked). */
+function repacked(data: Buffer, name: string, change: (old: Buffer) => Buffer): Buffer {
+    const marker = Buffer.from([0x14, 0x00, 0x06, 0x00, 0x08, 0x00]);
+    for (let at = data.indexOf(marker); at >= 0; at = data.indexOf(marker, at + 1)) {
+        const head = at + marker.length;
+        const [tag, crc, packed, size, length] = [0, 4, 8, 12, 16].map((offset) => data.readUInt32LE(head + offset));
+        const start = head + 20 + length!;
+        if (!swapped(name).equals(data.subarray(head + 20, start))) {
+            continue;
+        }
+        let old: Buffer;
+        try {
+            old = inflateRawSync(data.subarray(start, start + packed!));
+        } catch {
+            continue; // the blocks at a file's start that look like streams but don't unpack
+        }
+        if (old.length !== size || crc32(old) !== crc) {
+            continue;
+        }
+        const fresh = change(old);
+        const body = deflateRawSync(fresh);
+        const header = Buffer.alloc(20);
+        [tag!, crc32(fresh), body.length, fresh.length, length!].forEach((value, i) =>
+            header.writeUInt32LE(value, 4 * i),
+        );
+        return Buffer.concat([
+            data.subarray(0, at),
+            marker,
+            header,
+            data.subarray(head + 20, start),
+            body,
+            data.subarray(start + packed!),
+        ]);
+    }
+    throw new Error(`The file has no stream ${name}`);
+}
+
+test("parts, assemblies, and STEP and STL files open in Caliper, beside Open in SolidWorks", async () => {
     const team = await Team.create();
     const [fin] = await team.checkin(team.chief, {
         "Fin.SLDPRT": "fin",
         "Can.SLDASM": "can",
         "Tab.STEP": "step",
+        "Bracket.STL": "solid bracket\nendsolid bracket\n",
         "Notes.pdf": "notes",
     });
     await team.checkin(team.chief, { "Fin.SLDDRW": "drawing" }, { refs: { "Fin.SLDDRW": ["Fin.SLDPRT"] } });
@@ -69,6 +123,8 @@ test("parts, assemblies, and STEP files open in Caliper, beside Open in SolidWor
         expect(row(name).getByRole("link", { name: "Open in Caliper" })).toBeTruthy();
     }
     expect(row("Tab.STEP").getByRole("link", { name: "Open in Caliper" })).toBeTruthy();
+    expect(row("Bracket.STL").getByRole("link", { name: "Open in Caliper" })).toBeTruthy();
+    expect(row("Bracket.STL").queryByRole("link", { name: "Open in SolidWorks" })).toBeNull();
     expect(row("Fin.SLDDRW").queryByRole("link", { name: "Open in Caliper" })).toBeNull();
     expect(row("Notes.pdf").queryByRole("link", { name: "Open in Caliper" })).toBeNull();
     expect(row("Fin.SLDPRT").getByRole("link", { name: "Open in Caliper" }).getAttribute("href")).toBe(
@@ -160,8 +216,6 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
 
 test("what an assembly doesn't show is summed up by why, with what to do about it", async () => {
     const team = await Team.create();
-    const servo = (name: string) =>
-        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
     // A part with a model; SparkFun's spline, whose file has a 3D view of its Default configuration only; and a
     // sub-assembly none of whose parts were found.
     const [fin, spline, tail] = await team.checkin(team.chief, {
@@ -250,8 +304,6 @@ test("a version with no model says why; with none asked for, the newest that has
 
 test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it", async () => {
     // SparkFun's servo (server/tests/fixtures/solidworks/README.md): a part of two bodies, and its assembly.
-    const servo = (name: string) =>
-        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
     const team = await Team.create();
     const [assembly, spline] = await team.checkin(
         team.chief,
@@ -281,17 +333,6 @@ test("an assembly's parts without models of their own have them made from their 
     // SparkFun's servo again, its assembly without a 3D view of its own (its display list renamed: SolidWorks stores a
     // stream's name with each byte's halves swapped), checked in as the web app does, with no references. Its parts are
     // found by the paths SolidWorks saved for them, ...\Servomoteur SM-S4303R\, and each is read from its own file.
-    const servo = (name: string) =>
-        readFile(resolve(import.meta.dirname, "../../server/tests/fixtures/solidworks", name));
-    const swapped = (name: string) => Buffer.from([...Buffer.from(name)].map((b) => ((b << 4) | (b >> 4)) & 0xff));
-    const viewless = (data: Buffer) => {
-        const [from, to] = [swapped("Contents/DisplayLists"), swapped("Contents/DisplayListz")];
-        const out = Buffer.from(data);
-        for (let at = out.indexOf(from); at >= 0; at = out.indexOf(from, at + 1)) {
-            to.copy(out, at);
-        }
-        return out;
-    };
     const team = await Team.create();
     const [assembly, spline, caseFile] = await team.checkin(team.chief, {
         "Servo/9347.SLDASM": viewless(await servo("9347.SLDASM")),
@@ -352,4 +393,69 @@ test("a STEP file placed in an assembly (3D Interconnect) is read as it is, wher
     expect(tree().getByRole("link", { name: "Open Tab-1 in Caliper" }).getAttribute("href")).toBe(
         caliperUrl(tab!.id, 1, "Default"),
     );
+});
+
+test("an STL file is read as it is: its shells are bodies, and its numbers millimeters", async () => {
+    const team = await Team.create();
+    // Two boxes as one STL file, written out as text.
+    const facet = (a: number[], b: number[], c: number[]) =>
+        `facet normal 0 0 0\nouter loop\nvertex ${a.join(" ")}\nvertex ${b.join(" ")}\nvertex ${c.join(" ")}\nendloop\nendfacet\n`;
+    const cube = (x: number) => {
+        const p = (i: number, j: number, k: number) => [x + i, j, k];
+        const quads = [
+            [p(0, 0, 0), p(0, 1, 0), p(1, 1, 0), p(1, 0, 0)],
+            [p(0, 0, 1), p(1, 0, 1), p(1, 1, 1), p(0, 1, 1)],
+            [p(0, 0, 0), p(1, 0, 0), p(1, 0, 1), p(0, 0, 1)],
+            [p(0, 1, 0), p(0, 1, 1), p(1, 1, 1), p(1, 1, 0)],
+            [p(0, 0, 0), p(0, 0, 1), p(0, 1, 1), p(0, 1, 0)],
+            [p(1, 0, 0), p(1, 1, 0), p(1, 1, 1), p(1, 0, 1)],
+        ];
+        return quads.map(([a, b, c, d]) => facet(a!, b!, c!) + facet(a!, c!, d!)).join("");
+    };
+    const [stl] = await team.checkin(team.chief, {
+        "Brackets.STL": `solid brackets\n${cube(0)}${cube(5)}endsolid brackets\n`,
+    });
+
+    renderApp(team.chief, caliperUrl(stl!.id));
+    expect(await screen.findByRole("heading", { name: "Brackets.STL" })).toBeTruthy();
+    expect(await screen.findByRole("checkbox", { name: "Show Body 1" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Show Body 2" })).toBeTruthy();
+    expect(screen.queryByText(/no 3D model/)).toBeNull();
+});
+
+test("a part kept inside its assembly that SolidWorks builds as it opens it (a routed tube) says so", async () => {
+    // The servo's assembly without a 3D view of its own, as SolidWorks 2024 and later save one, and its case kept inside
+    // it, as SolidWorks Routing keeps tubes: nothing in the file has the case's shape.
+    const caseInside = (xml: Buffer) => {
+        const at = xml.indexOf('swName="Servomoteur" swReferenceNumber');
+        const rest = xml
+            .subarray(at)
+            .toString("latin1")
+            .replace('swIsVirtualComponent="NO"', 'swIsVirtualComponent="YES"');
+        return Buffer.concat([xml.subarray(0, at), Buffer.from(rest, "latin1")]);
+    };
+    const team = await Team.create();
+    const [assembly] = await team.checkin(
+        team.chief,
+        {
+            "Servo/9347.SLDASM": repacked(
+                viewless(await servo("9347.SLDASM")),
+                "swXmlContents/COMPINSTANCETREE",
+                caseInside,
+            ),
+            "Servo/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+        },
+        { refs: { "Servo/9347.SLDASM": ["Servo/Embout.SLDPRT"] } },
+    );
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    const caseRow = (await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).closest("li")!;
+    expect(within(caseRow).getByText("Built in SolidWorks")).toBeTruthy();
+    expect(
+        screen.getByText(/1 part is kept inside its assembly, which SolidWorks builds as it opens them/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/not in the vault/)).toBeNull();
+    expect(
+        within(tree().getByRole("checkbox", { name: "Show Embout-1" }).closest("li")!).queryByText(/Built|No 3D/),
+    ).toBeNull();
 });

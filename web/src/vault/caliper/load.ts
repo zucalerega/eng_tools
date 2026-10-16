@@ -2,12 +2,13 @@ import { requestBytes } from "../../api";
 import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
 import { readMesh, type Mesh } from "./format";
 import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
-import { cadFormat } from "../paths";
+import { fileFormat } from "../paths";
 import { bodiesOfCad, modelFromCad, readCadFile, type CadFormat } from "./step";
+import { modelFromStl } from "./stl";
 
 // Caliper's model of a file, from wherever it comes: a part's mesh, or an assembly's components and their parts'
 // meshes (made by Vault for SolidWorks, or by the server from the files), or the STEP and IGES files placed in it; or a
-// STEP or IGES file, read in the browser.
+// STEP, IGES, or STL file, read in the browser.
 
 export type Progress = (done: number, total: number) => void;
 
@@ -168,8 +169,16 @@ export async function assemblyModel(
         if (c.children.length > 0 || (found && !(found instanceof Error))) {
             return {};
         }
+        if (c.virtual && !c.mesh) {
+            return {
+                problem:
+                    "It's kept inside the assembly, and SolidWorks builds it (as it does routed tubes) when it opens " +
+                    "the assembly: the file has no 3D view of it",
+                why: "inside",
+            };
+        }
         if (c.kind === "assembly") {
-            // Nothing under it: none of its parts were found in the vault (or it keeps them inside, without triangles).
+            // Nothing under it: none of its parts were found in the vault.
             return { problem: "Caliper found none of its parts in the vault", why: "elsewhere" };
         }
         if (found instanceof NoModel) {
@@ -209,12 +218,15 @@ export async function assemblyModel(
     };
 }
 
-/** A STEP or IGES file's model, read from the file itself. */
+/** A STEP, IGES, or STL file's model, read from the file itself. */
 export async function cadModel(fileId: number, version: number, name: string): Promise<Model> {
-    const format = cadFormat(name);
+    const format = fileFormat(name);
     if (!format) {
-        throw new Error(`Caliper reads STEP and IGES files, and ${name} isn't one.`);
+        throw new Error(`Caliper reads STEP, IGES, and STL files, and ${name} isn't one.`);
     }
     const bytes = new Uint8Array(await requestBytes(vaultApi.downloadUrl(fileId, version)));
+    if (format === "stl") {
+        return modelFromStl(bytes, `stl:${fileId}:${version}`);
+    }
     return modelFromCad(await readCadFile(bytes, format));
 }

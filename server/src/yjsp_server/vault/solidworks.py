@@ -767,9 +767,10 @@ def read_part(data: bytes) -> Part:
     return _strict(_read_part, data)
 
 
-def read_assembly(data: bytes) -> Assembly:
-    """An assembly's 3D view, as SolidWorks saved it: its components, with each part's shape as the assembly shows
-    it. Components SolidWorks suppressed are left out."""
+def read_assembly(data: bytes) -> list[Assembly]:
+    """An assembly's 3D views, as SolidWorks saved them: in each configuration, its components, with each part's shape
+    as the assembly shows it. Components SolidWorks suppressed are left out. The configuration SolidWorks had open
+    comes first; then each other one whose places are up to date (one SolidWorks says needs rebuilding isn't)."""
     return _strict(_read_assembly, data)
 
 
@@ -891,7 +892,7 @@ def _same_place(a: list[float], b: list[float]) -> bool:
     return all(abs(x - y) <= (1e-3 if i % 4 == 3 else 1e-6) for i, (x, y) in enumerate(zip(a, b, strict=True)))
 
 
-def _read_assembly(data: bytes) -> Assembly:
+def _read_assembly(data: bytes) -> list[Assembly]:
     found = _open(data, "assembly")
     tree = _xml(found.get(_TREE))
     if tree is None:
@@ -921,8 +922,18 @@ def _read_assembly(data: bytes) -> Assembly:
             raise Unreadable(_ODD)
         if mine and _key(node.path, node.configuration) not in shape_of:
             shape_of[_key(node.path, node.configuration)] = _mesh(display, mine[0], starts[i + 1], None)
-    if any(not any(starts[i] < s.start < starts[i + 1] for i in range(len(nodes))) for s in shapes):
-        raise Unreadable(_ODD)  # a shape outside every node
+    # A shape after no node of its own (a node without its name, say) is nobody's that Caliper can tell: it isn't used,
+    # and its part shows its own file's shape, as parts of assemblies without a display list do.
+    # The display list can be older than the XML: where it puts a component of the top assembly somewhere else, the
+    # XML is right (placed by it, the parts fill the box SolidWorks keeps for the assembly), and the display list's
+    # shapes, from the same old moment, aren't used either. The parts show their own files' shapes.
+    for ref in top.findall(f"{_NS}swReference"):
+        name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}@{top.get('swName') or ''}"
+        seen = place_of.get(name.casefold(), [])
+        moved = seen and not any(_same_place(_xml_rows(ref.get("swTransform") or ""), s) for s in seen)
+        if ref.get("swSuppressed") != "YES" and moved:
+            shape_of.clear()
+            break
 
     def components(model: ElementTree.Element, place: list[float] | None, depth: int) -> list[Component]:
         if depth > 32:
@@ -938,11 +949,6 @@ def _read_assembly(data: bytes) -> Assembly:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
             rows = own if place is None else _compose(place, own)
-            if place is None:
-                # SolidWorks' own place for a component of the top assembly must be the XML's.
-                seen = place_of.get(f"{name}@{model.get('swName') or ''}".casefold(), [])
-                if seen and not any(_same_place(rows, s) for s in seen):
-                    raise Unreadable(_ODD)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
             assembly = file.get("swDocType") == "ASSEMBLY"
@@ -960,8 +966,13 @@ def _read_assembly(data: bytes) -> Assembly:
             )
         return out
 
-    return Assembly(
-        configuration=active.get("swName") or "Default",
-        units=_units(found.get(_INFO)),
-        components=components(top, None, 1),
-    )
+    units = _units(found.get(_INFO))
+    made = [Assembly(configuration=active.get("swName") or "Default", units=units, components=components(top, None, 1))]
+    for other in configurations:
+        model = models.get(other.get("swModelRef"))
+        name = other.get("swName") or ""
+        if other is active or model is None or not name or other.get("swConfigurationNeedsUpdate") == "YES":
+            continue
+        if name not in (assembly.configuration for assembly in made):
+            made.append(Assembly(configuration=name, units=units, components=components(model, None, 1)))
+    return made

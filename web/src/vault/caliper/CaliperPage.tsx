@@ -3,7 +3,7 @@ import { Notice, usePopover } from "../../components";
 import { Link, navigate, useSearch } from "../../router";
 import { vaultApi, type CaliperModel, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
-import { cadFormat, caliperUrl, fileUrl, kindOf } from "../paths";
+import { caliperUrl, fileFormat, fileUrl, kindOf } from "../paths";
 import { ComponentTree } from "./ComponentTree";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
@@ -14,7 +14,7 @@ import "./caliper.css";
 
 // Caliper: a part or assembly in 3D, in the browser, to look at and measure, not to change. SolidWorks parts and
 // assemblies show their versions' 3D models: the ones Vault for SolidWorks makes, or else the server reads one from the
-// 3D view SolidWorks saved in the file. STEP and IGES files are read as they are. At /vault/caliper/<file id>, with
+// 3D view SolidWorks saved in the file. STEP, IGES, and STL files are read as they are. At /vault/caliper/<file id>, with
 // ?version= and ?configuration= for which.
 
 export function CaliperPage({ id }: { id: number }) {
@@ -100,13 +100,13 @@ export function CaliperPage({ id }: { id: number }) {
     }
     const file = detail.file;
     const kind = kindOf(file.name);
-    const cad = cadFormat(file.name) !== null;
+    const cad = fileFormat(file.name) !== null;
     if (kind !== "part" && kind !== "assembly" && !cad) {
         return (
             <div className="caliper-page-message">
                 <Notice tone="info">
-                    Caliper shows SolidWorks parts and assemblies, and STEP and IGES files, and {file.name} isn't one.{" "}
-                    <Link to={fileUrl(file.id)}>Back to {file.name}</Link>
+                    Caliper shows SolidWorks parts and assemblies, and STEP, IGES, and STL files, and {file.name} isn't
+                    one. <Link to={fileUrl(file.id)}>Back to {file.name}</Link>
                 </Notice>
             </div>
         );
@@ -571,7 +571,7 @@ function CaliperView({
 
 /** How many components draw nothing, for each sort of reason. */
 function tallyMissing(model: Model): Record<Why, number> {
-    const tally: Record<Why, number> = { elsewhere: 0, configuration: 0, unreadable: 0, failed: 0 };
+    const tally: Record<Why, number> = { elsewhere: 0, configuration: 0, unreadable: 0, inside: 0, failed: 0 };
     const visit = (nodes: Model["nodes"]) =>
         nodes.forEach((node) => {
             if (node.problem) {
@@ -585,22 +585,25 @@ function tallyMissing(model: Model): Record<Why, number> {
 
 /**
  * What an assembly doesn't show, by why, and how to show it: Make 3D view in SolidWorks makes the models of parts in
- * other configurations and of files without a 3D view Caliper reads; parts not in the vault need checking in.
+ * other configurations, of files without a 3D view Caliper reads, and of parts kept inside an assembly that SolidWorks
+ * builds as it opens it (routed tubes); parts not in the vault need checking in.
  */
 function NotShown({ tally }: { tally: Record<Why, number> }) {
     const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-    const { configuration, unreadable, elsewhere, failed } = tally;
+    const { configuration, unreadable, inside, elsewhere, failed } = tally;
     const theirFiles = configuration === 1 ? "its file has" : "their files have";
     const theirParts = elsewhere === 1 ? "its" : "their";
     const reasons = [
         configuration > 0 &&
             `${count(configuration, "part is", "parts are")} in a configuration ${theirFiles} no 3D view of`,
         unreadable > 0 && `${count(unreadable, "part's file has", "parts' files have")} no 3D view Caliper can read`,
+        inside > 0 &&
+            `${count(inside, "part is", "parts are")} kept inside ${inside === 1 ? "its assembly" : "their assemblies"}, which SolidWorks builds as it opens them (routed tubes), with no 3D view saved`,
         elsewhere > 0 &&
             `${count(elsewhere, "sub-assembly has", "sub-assemblies have")} none of ${theirParts} parts in the vault`,
         failed > 0 && `${count(failed, "part", "parts")} didn't load`,
     ].filter((reason): reason is string => Boolean(reason));
-    const total = configuration + unreadable + elsewhere + failed;
+    const total = configuration + unreadable + inside + elsewhere + failed;
     if (total === 0) {
         return null;
     }
@@ -612,7 +615,7 @@ function NotShown({ tally }: { tally: Record<Why, number> }) {
                     <li key={reason}>{reason}.</li>
                 ))}
             </ul>
-            {configuration + unreadable > 0 && (
+            {configuration + unreadable + inside > 0 && (
                 <p>
                     Open the assembly in SolidWorks and click Make 3D view on the Vault tab to make those parts' models.
                 </p>

@@ -259,6 +259,125 @@ def test_parts_and_assemblies_saved_by_solidworks_2014_or_older_are_read(team, c
     assert box(placed) == [12.308, 40.787, 90.584, 131.942, 136.037, 127.414]
 
 
+def test_an_assembly_whose_3d_view_is_older_than_its_components_shows_them_where_they_are(team, client):
+    """SolidWorks' display list can be older than the XML that lists the components (the team's OVNT and PRQD
+    assemblies), and then the XML is right: placed by it, the parts fill the box SolidWorks keeps for the assembly. So
+    the components go where the XML puts them, and the display list's shapes, as old, aren't used."""
+    chief = team.member("chief@x.test", admin=True)
+
+    def moved(tree: bytes) -> bytes:  # the spline 6.35 mm further along y, in the XML only
+        return tree.replace(b"0.001710010157499106 -0.00331766815477726", b"0.001710010157499106 0.00303233184522274")
+
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": repacked(contents("9347.SLDASM"), "swXmlContents/COMPINSTANCETREE", moved),
+                "Servo/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo = checked["9347.SLDASM"]
+    assert make(client, chief, servo).status_code == 200
+    assembly = client.get(
+        f"/api/files/{servo['id']}/caliper/assembly", params={"version": 1, "configuration": "Default"}, headers=chief
+    ).json()
+    found = {c["name"]: c for c in assembly["components"]}
+    assert round(found["Embout-1"]["transform"][7], 3) == 3.032  # the XML's place, not the display list's -3.318
+    # Each part shows its own file's shape.
+    assert [(c["mesh"], c["file_id"]) for c in assembly["components"]] == [
+        (None, checked["Embout.SLDPRT"]["id"]),
+        (None, checked["Servomoteur.SLDPRT"]["id"]),
+    ]
+
+
+def test_a_part_kept_inside_an_assembly_without_a_3d_view_says_so(team, client):
+    """A virtual part, as SolidWorks Routing's tubes are, is kept inside its assembly, and SolidWorks builds a routed
+    tube again whenever it opens the assembly: from 2024 on, nothing in the file has its shape. It stays in the model,
+    as virtual, for Caliper to say why it shows nothing, rather than be taken for a part missing from the vault."""
+    chief = team.member("chief@x.test", admin=True)
+
+    def virtual(tree: bytes) -> bytes:  # the case kept inside the assembly
+        case = tree.index(b'swName="Servomoteur" swReferenceNumber')
+        return tree[:case] + tree[case:].replace(b'swIsVirtualComponent="NO"', b'swIsVirtualComponent="YES"', 1)
+
+    servo = repacked(without_3d_view(contents("9347.SLDASM")), "swXmlContents/COMPINSTANCETREE", virtual)
+    checked = files(
+        team.checkin(
+            chief,
+            {"Servo/9347.SLDASM": servo, "Servo/Embout.SLDPRT": contents("Embout.SLDPRT")},
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT"]},
+        )
+    )
+    assert make(client, chief, checked["9347.SLDASM"]).status_code == 200
+    shown = client.get(
+        f"/api/files/{checked['9347.SLDASM']['id']}/caliper/assembly",
+        params={"version": 1, "configuration": "Default"},
+        headers=chief,
+    ).json()
+    assert [(c["name"], c["file_id"] is not None, c["mesh"], c["virtual"]) for c in shown["components"]] == [
+        ("Embout-1", True, None, False),
+        ("Servomoteur-1", False, None, True),
+    ]
+
+
+def test_each_configuration_of_an_assembly_is_shown(team, client):
+    """An assembly's XML lists the components of each of its configurations (the team's have up to three), placed and
+    suppressed as each has them. Each up to date has a model; one SolidWorks says needs rebuilding has none, as its
+    places may be old."""
+    chief = team.member("chief@x.test", admin=True)
+
+    def configurations(tree: bytes) -> bytes:
+        start = tree.index(b'<swModel id="2"')
+        top = tree[start : tree.index(b"</swModel>", start) + len(b"</swModel>")]
+        out = top.replace(b'id="2"', b'id="99"', 1).replace(
+            b'swConfigurationName="Default"', b'swConfigurationName="Spline out"', 1
+        )
+        out = out.replace(b"0.001710010157499106 -0.00331766815477726", b"0.001710010157499106 0.00668233184522274")
+        tree = tree.replace(top, top + out)
+        more = (
+            b'<swConfiguration id="98" swName="Spline out" swID="1" swMostRecentConfiguration="NO" '
+            b'swConfigurationNeedsUpdate="NO" swModelRef="99"/>'
+            b'<swConfiguration id="97" swName="Old" swID="2" swMostRecentConfiguration="NO" '
+            b'swConfigurationNeedsUpdate="YES" swModelRef="99"/>'
+        )
+        return tree.replace(b"</swConfigurationList>", more + b"</swConfigurationList>")
+
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": repacked(
+                    contents("9347.SLDASM"), "swXmlContents/COMPINSTANCETREE", configurations
+                ),
+                "Servo/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo = checked["9347.SLDASM"]
+    made = make(client, chief, servo)
+    assert made.json()["configuration"] == "Default"  # the one SolidWorks had open
+    models = client.get(f"/api/files/{servo['id']}/caliper", headers=chief).json()["models"]
+    assert [model["configuration"] for model in models] == ["Default", "Spline out"]
+
+    def spline(configuration: str) -> dict:
+        shown = client.get(
+            f"/api/files/{servo['id']}/caliper/assembly",
+            params={"version": 1, "configuration": configuration},
+            headers=chief,
+        ).json()
+        return {c["name"]: c for c in shown["components"]}["Embout-1"]
+
+    assert round(spline("Default")["transform"][7], 3) == -3.318
+    assert round(spline("Spline out")["transform"][7], 3) == 6.682
+    # The parts are in their configurations as before, so the display list's shapes serve both.
+    assert spline("Spline out")["mesh"] == spline("Default")["mesh"] is not None
+
+
 def test_a_step_file_placed_in_an_assembly_says_its_format(team, client):
     """A STEP or IGES file placed with SolidWorks' 3D Interconnect is a component with no SolidWorks kind: the web app
     reads it as it is, as it does the file on its own."""

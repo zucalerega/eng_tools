@@ -1588,7 +1588,9 @@ def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
     return [(file, number) for file, number in rows]
 
 
-def _read_solidworks(store: BlobStore, sha256: str, kind: str, name: str) -> solidworks.Part | solidworks.Assembly:
+def _read_solidworks(
+    store: BlobStore, sha256: str, kind: str, name: str
+) -> solidworks.Part | list[solidworks.Assembly]:
     """A SolidWorks file's 3D view (solidworks.py), read a couple at a time; one that can't be, refused (Unreadable)
     at once from then on."""
     if sha256 in _UNREADABLE:
@@ -1637,17 +1639,15 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
     # Versions never change, so reading one, which takes a moment, comes before the write lock.
     read = _read_solidworks(store, target.blob_sha256, kind, f"{path} v{version}")
     kept: dict[str, int] = {}  # blobs made, with their sizes
-    mesh: str | None = None
-    components: list[dict[str, Any]] | None = None
+    # Each configuration's model: its name, units, and a part's mesh or an assembly's components. The configuration
+    # SolidWorks had open comes first, as it's the one Caliper shows first.
+    wanted: list[tuple[str, str, str | None, list[dict[str, Any]] | None]] = []
     try:
         if isinstance(read, solidworks.Part):
-            part = read
-            configuration, units = part.configuration[:255], part.units
-            mesh, size = _keep(store, caliper.write_mesh(part.bodies))
+            mesh, size = _keep(store, caliper.write_mesh(read.bodies))
             kept[mesh] = size
+            wanted.append((read.configuration[:255], read.units, mesh, None))
         else:
-            assembly = read
-            configuration, units = assembly.configuration[:255], assembly.units
             finder = _Finder(db, tree, target.created_at)
 
             def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:
@@ -1662,8 +1662,8 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                     if match is not None and component.children:
                         inner = _refs_of(db, _version(db, match[0].id, match[1]))
                     children = place(component.children, inner)
-                    if match is None and shape is None and not children:
-                        continue  # nothing to show or open
+                    if match is None and shape is None and not children and not component.virtual:
+                        continue  # nothing to show or open; a virtual part says why it shows nothing
                     out.append(
                         {
                             "name": component.name[:255],
@@ -1675,43 +1675,52 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                             "color": None,
                             "opacity": 1.0,
                             "mesh": shape,
+                            "virtual": component.virtual,
                             "children": children,
                         }
                     )
                 return out
 
-            components = place(assembly.components, _refs_of(db, target))
-            if not components:
+            refs = _refs_of(db, target)
+            for assembly in read:
+                components = place(assembly.components, refs)
+                if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
+                    raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
+                if components:
+                    wanted.append((assembly.configuration[:255], assembly.units, None, components))
+            if not wanted:
                 raise solidworks.Unreadable(
-                    "Caliper found none of its parts: they aren't in the vault, or they're kept inside it (virtual "
-                    "components) without a 3D view. Make its 3D view in SolidWorks (Make 3D view, on the Vault tab)"
+                    "Caliper found none of its parts in the vault. Make its 3D view in SolidWorks (Make 3D view, on the "
+                    "Vault tab)"
                 )
-            if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
-                raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
     except solidworks.Unreadable as e:
         raise solidworks.Unreadable(f"{path} v{version}: {e.message}") from e
 
     begin_write(db)
     tree, access = _context(db, user)
     _resolve(db, tree, access, file_id, deleted_ok=True)  # still theirs to see
-    made = db.scalar(
-        select(CaliperModel).where(CaliperModel.version_id == target.id, CaliperModel.configuration == configuration)
-    )
-    if made is None:  # else someone made it meanwhile
-        for sha, size in kept.items():
-            if db.get(Blob, sha) is None:
-                db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
-        made = CaliperModel(
-            version_id=target.id,
-            configuration=configuration,
-            units=units,
-            mesh_sha256=mesh,
-            components=components,
-            created_at=utcnow(),
-            created_by=user.id,
-        )
-        db.add(made)
+    have = {
+        model.configuration: model
+        for model in db.scalars(select(CaliperModel).where(CaliperModel.version_id == target.id))
+    }  # any made meanwhile stay
+    for sha, size in kept.items():
+        if db.get(Blob, sha) is None:
+            db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
+    for configuration, units, mesh, components in wanted:
+        if configuration not in have:
+            have[configuration] = CaliperModel(
+                version_id=target.id,
+                configuration=configuration,
+                units=units,
+                mesh_sha256=mesh,
+                components=components,
+                created_at=utcnow(),
+                created_by=user.id,
+            )
+            db.add(have[configuration])
+            db.flush()  # in order, so the one SolidWorks had open comes first
     db.commit()
+    made = have[wanted[0][0]]
     return ModelView(made, version, _users(db, {made.created_by})[made.created_by])
 
 

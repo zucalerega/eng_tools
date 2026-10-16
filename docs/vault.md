@@ -521,37 +521,50 @@ Where the 3D comes from:
     file itself (`POST /api/files/{id}/caliper/make`, `vault/solidworks.py`). SolidWorks
     saves the triangles it draws inside each part and assembly, which is how eDrawings
     shows files without SolidWorks (Document Properties > Image Quality > Save tessellation
-    with part document, on by default). The server reads them, with the bodies' names and
-    colors (and faces' own colors, where the file says which), the units, and the
-    configuration SolidWorks had open when it saved the file, which is the only one saved.
-    An assembly also keeps its components in XML (each one's file, configuration, place,
-    and whether SolidWorks hid or suppressed it), and sometimes each part's triangles as
-    the assembly shows them, which its model then carries. From SolidWorks 2024 on it never
-    does, and many older ones don't either, nor has every assembly a 3D view at all: its
-    components are still read from the XML, and each part shows its own model, which
-    Caliper has the server make from the part's file as the assembly loads. Its components
-    are the files its version references, matched by name; a version that references
-    nothing (checked in from the web app, or brought over from Kenesto) has the vault's files
-    with those names in folders of the names of the folders SolidWorks saved them in (a name
-    alone, as STEP imports' SOLID-1, could be any file's): the one whose path ends most like
-    the saved one, and none where two end alike, each at the version it had when the
-    assembly's version was made, or its first. So they open on their own as usual. A STEP
-    or IGES file placed in an assembly (SolidWorks' 3D Interconnect) is read in the
-    browser, as the file on its own is (the server says which components are one), one at
-    a time. Parts that were never put in the vault, and parts kept inside the assembly
-    (virtual components, as routed tubes are) without triangles, aren't shown, and Caliper
-    lists them. Files from SolidWorks 2014 and older are OLE compound documents of the same
-    streams, most of them packed (`__ZLB`), and the server reads those too; their units
-    aren't saved where it reads them, so they start in mm. None of this is documented: it
-    was worked out from files saved by SolidWorks 2015 to 2019, checked against their STL
-    exports and the bounding boxes SolidWorks keeps, then from the team's own files saved by
-    SolidWorks 2024 and 2025 (whose faces have 32 more bytes), checked against the previews
-    SolidWorks saves in them, and from SparkFun's files saved by 2014 or older, checked
-    against their STL exports and the assembly's bounding box. So the server refuses
-    (`unreadable_file`, saying why) whatever doesn't fit, rather than guess: one saved
-    without its triangles, or a layout it doesn't know. Caliper says so, and the add-in can
-    make that version's model instead. A flexible sub-assembly's components show where the
-    sub-assembly itself places them.
+    with part document, on by default).
+    - **A part:** its bodies' triangles, names, and colors (and faces' own colors, where the
+      file says which), and its units, in the configuration SolidWorks had open when it saved
+      the file. That's the only configuration it keeps triangles of: the others are only
+      Parasolid solids, which would take a geometry kernel to turn into triangles, so a part
+      used in another configuration shows once Make 3D view makes it.
+    - **An assembly:** its components, from the XML it keeps of each configuration: each
+      component's file, configuration, and place, and whether SolidWorks hid or suppressed
+      it. A flexible sub-assembly's instance has its own layout there, as flexed. Each
+      configuration SolidWorks keeps up to date gets a model, the one it had open first; one
+      it says needs rebuilding doesn't, as its places may be old. Its display list sometimes
+      has each part's triangles as the assembly shows them, which the model then carries.
+      From SolidWorks 2024 on it never does, and many older ones don't either, nor has every
+      assembly a display list: each part then shows its own model, which Caliper has the
+      server make from the part's file as the assembly loads. Where the display list puts a
+      component somewhere the XML doesn't, the display list is the older (placed by the XML,
+      the parts fill the box SolidWorks keeps for the assembly), so its triangles aren't
+      used either; nor are triangles it doesn't say whose they are.
+    - **Its parts' files:** the files its version references, matched by name; a version
+      that references nothing (checked in from the web app, or brought over from Kenesto)
+      has the vault's files with those names in folders of the names of the folders
+      SolidWorks saved them in (a name alone, as STEP imports' SOLID-1, could be any file's):
+      the one whose path ends most like the saved one, and none where two end alike, each at
+      the version it had when the assembly's version was made, or its first. So they open on
+      their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
+      Interconnect) is read in the browser, as the file on its own is (the server says which
+      components are one, `format`), one at a time.
+    - **What isn't shown:** parts that were never put in the vault; and parts kept inside
+      the assembly (virtual components, `virtual`) without triangles of their own. Routed
+      tubes are: SolidWorks builds them again from their route whenever it opens their
+      assembly, and saves only the template tube in the file, so Caliper says SolidWorks
+      builds them, and Make 3D view makes them.
+    - **Files from SolidWorks 2014 and older** are OLE compound documents of the same streams,
+      most of them packed (`__ZLB`), and the server reads those too; their units aren't
+      saved where it reads them, so they start in mm.
+    - **None of this is documented.** It was worked out from files saved by SolidWorks 2015 to
+      2019, checked against their STL exports and the bounding boxes SolidWorks keeps; from
+      the team's own files saved by SolidWorks 2024 to 2026 (whose faces have 32 more bytes),
+      checked against the previews SolidWorks saves in them and, for assemblies, against
+      where SolidWorks itself put every component, flexed ones too; and from SparkFun's files
+      saved by 2014 or older, checked against their STL exports and the assembly's bounding
+      box. So the server refuses (`unreadable_file`, saying why) whatever doesn't fit,
+      rather than guess: a part saved without its triangles, or a layout it doesn't know.
+      Caliper says so, and the add-in can make that version's model instead.
 
   A part's model is a mesh: its bodies'
   triangles, in runs that are their faces, in millimeters in the part's coordinates, with
@@ -565,13 +578,19 @@ Where the 3D comes from:
   each once (six at a time). A version the server can't read a model from says why, and
   how to make one; with no version asked for, Caliper then shows the newest one that has a
   model, and says so. A component that draws nothing says why beside its name, and the
-  page sums them up by why: parts in a configuration their files have no 3D view of, and
-  files with no 3D view Caliper reads (both of which Make 3D view in SolidWorks makes);
-  sub-assemblies none of whose parts are in the vault (each component says what its file
-  is, so one with nothing under it isn't taken for a part); and models that didn't load.
+  page sums them up by why: parts in a configuration their files have no 3D view of, files
+  with no 3D view Caliper reads, and parts kept inside an assembly that SolidWorks builds as
+  it opens it (all of which Make 3D view in SolidWorks makes); sub-assemblies none of whose
+  parts are in the vault (each component says what its file is, so one with nothing under
+  it isn't taken for a part); and models that didn't load.
 - **STEP and IGES files** are read as they are, in the browser, by OpenCascade compiled to
   WebAssembly (occt-import-js, LGPL-2.1: 7 MB, fetched the first time and cached), in a
   worker, so a big file doesn't freeze the page.
+- **STL files** are read as they are, in the browser (`stl.ts`). They're only triangles, so
+  Caliper welds them where they meet, makes each separate shell a body, and splits each
+  body into faces where its surface bends by more than 30 degrees: a cylinder's facets stay
+  one face, which measures as a cylinder. STL keeps no units: its numbers are taken as mm.
+  A text STL that doesn't end with `endsolid` was cut off, and says so.
 
 A model shows what the vault lets you see: a component in a file you can't see is left
 out, with everything in it, and the page says how many were. Anyone who may upload (an
@@ -608,7 +627,7 @@ are in [design.md](design.md#api).
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; and `format`, step or iges, for a STEP or IGES file), and how many are left out |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 
 ## Roadmap

@@ -49,7 +49,7 @@ test("admins see how hard the server is working, over a day or a week", async ()
     expect(await card.findByText("Busiest, last 7 days")).toBeTruthy();
 });
 
-test("admins see who has the SolidWorks add-in, on which computers, and with which version", async () => {
+test("admins see who has the SolidWorks add-in, on how many computers, and with which version", async () => {
     const team = await Team.create();
     const computer = `PC-${team.folder}`;
     await team.addInOn(`drafter-${team.folder.toLowerCase()}@rocketry.test`, computer);
@@ -57,8 +57,10 @@ test("admins see who has the SolidWorks add-in, on which computers, and with whi
     const card = within((await screen.findByRole("heading", { name: "SolidWorks add-in" })).closest("section")!);
     expect(Number(card.getByText("Have it").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
     expect(Number(card.getByText("Used it this week").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
-    const row = (await card.findByText(computer)).closest("tr")!;
-    expect(within(row).getByText(`drafter-${team.folder.toLowerCase()}`)).toBeTruthy(); // their name, as dev sign-in gives it
+    // Their name, as dev sign-in gives it, and how many computers they have it on, but not the computer's name.
+    const row = (await card.findByText(`drafter-${team.folder.toLowerCase()}`)).closest("tr")!;
+    expect(row.cells[1]!.textContent).toBe("1");
+    expect(card.queryByText(computer)).toBeNull();
     // The installer offered is 0.5.0 (tests/server.ts): this one's newer, so it's on the newest, not old.
     expect(within(row).getByText("0.5.2").className).not.toContain("status-pending");
     expect(Number(card.getByText("On the newest (0.5.0)").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);

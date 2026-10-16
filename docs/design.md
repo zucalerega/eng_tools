@@ -149,7 +149,8 @@ three. The rest of the disk is the system, logs, and the database's backups.
   CPU's time in the last hour. Elsewhere than Linux (development on a Mac) it estimates the
   CPU from the load average and leaves memory out.
 - **The SolidWorks add-in:** under them, who has Vault's add-in (`GET /api/add-in`,
-  `clients.py`): who's signed in with it, on which computers, with which version, and when
+  `clients.py`): who's signed in with it, on how many computers (the page doesn't name them, since a
+  computer's name is often its owner's), with which version, and when
   they last used it; who downloaded its installer; and how many people have it, signed in
   and using it in the last 90 days. The add-in signs in as "SolidWorks add-in on
   <computer>" and the CLI as "vault CLI on <computer>", so a token's name tells them apart,

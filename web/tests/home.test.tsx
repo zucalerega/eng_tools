@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, onTestFinished, test, vi } from "vitest";
 import { renderApp, Team } from "./team";
@@ -20,6 +20,19 @@ test("the site's address shows both apps, and each goes to its own pages", async
     expect(await screen.findByRole("navigation", { name: "Folder tree" })).toBeTruthy();
     expect(window.location.pathname).toBe("/vault");
     expect(document.title).toBe("Vault");
+});
+
+test("the mark at the top left goes to the site's front page, from either app", async () => {
+    const team = await Team.create();
+    for (const app of ["/vault", "/yorg"]) {
+        renderApp(team.chief, app);
+        const home = await screen.findByRole("link", { name: "YJSP home" });
+        expect(home.getAttribute("href")).toBe("/");
+        await userEvent.click(home);
+        expect(await screen.findByRole("heading", { name: "YJSP Engineering Tools Repository" })).toBeTruthy();
+        expect(window.location.pathname).toBe("/");
+        cleanup();
+    }
 });
 
 test("the site's own page leaves the vault's index alone", async () => {

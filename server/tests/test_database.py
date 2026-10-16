@@ -148,6 +148,38 @@ def test_upgrades_keep_accounts(tmp_path):
         db.exec_driver_sql("UPDATE users SET microsoft_oid = 'oid-1' WHERE id = 2")
 
 
+def test_upgrades_keep_time_on_the_site(tmp_path):
+    """Time in SolidWorks is counted beside time on the web app: what was counted before stays, and nobody has any
+    time in SolidWorks yet."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0014")
+    when = "'2026-10-15 14:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when}, 0), "
+            f"(2, 'alice@x.test', 'Alice', 'active', 0, {when}, 600)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO tokens (id, user_id, kind, name, token_hash, created_at) "
+            f"VALUES (1, 2, 'client', 'SolidWorks add-in on ALICE-PC', 'ab', {when})"
+        )
+        db.exec_driver_sql(f"INSERT INTO site_usage (hour, user_id, site_seconds) VALUES ({when}, 2, 600)")
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT email, site_seconds, solidworks_seconds FROM users ORDER BY id").all() == [
+            ("chief@x.test", 0, 0),
+            ("alice@x.test", 600, 0),
+        ]
+        assert db.exec_driver_sql(
+            "SELECT u.email, s.site_seconds, s.solidworks_seconds FROM site_usage s JOIN users u ON u.id = s.user_id"
+        ).all() == [("alice@x.test", 600, 0)]
+        assert db.exec_driver_sql("SELECT u.email FROM tokens t JOIN users u ON u.id = t.user_id").scalar() == (
+            "alice@x.test"
+        )
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

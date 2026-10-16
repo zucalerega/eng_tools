@@ -544,6 +544,25 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task SaysWhenSomeoneIsWorkingInSolidWorks()
+    {
+        var working = false;
+        var sent = new SentActivity();
+        var alice = await WorkspaceAsync("alice", new ActivityHandler(() => working, sent));
+
+        await alice.RefreshAsync(); // SolidWorks behind another window, or nobody at the computer
+        var idle = sent.Sent;
+        working = true;
+        await alice.RefreshAsync();
+        var busy = sent.Sent.Skip(idle.Count).ToList();
+
+        Assert.NotEmpty(idle);
+        Assert.All(idle, Assert.Null);
+        Assert.NotEmpty(busy);
+        Assert.All(busy, activity => Assert.Equal("solidworks", activity));
+    }
+
+    [Fact]
     public async Task ReferencesOutsideTheWorkspaceAreRejected()
     {
         var alice = await WorkspaceAsync("alice");
@@ -816,6 +835,38 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     private static void MakeWritable(string path) => File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
+
+    /// <summary>What each request on its way to the server said its person is doing, if anything.</summary>
+    private sealed class SentActivity : DelegatingHandler
+    {
+        private readonly List<string?> _sent = new List<string?>();
+
+        public SentActivity()
+            : base(new HttpClientHandler())
+        {
+        }
+
+        /// <summary>Each request's so far, in order.</summary>
+        public List<string?> Sent
+        {
+            get
+            {
+                lock (_sent)
+                {
+                    return _sent.ToList();
+                }
+            }
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            lock (_sent)
+            {
+                _sent.Add(request.Headers.TryGetValues("X-YJSP-Activity", out var values) ? string.Join(",", values) : null);
+            }
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
 
     /// <summary>The server as the release before it said what files use: its answers without "uses".</summary>
     private sealed class OlderServer : DelegatingHandler

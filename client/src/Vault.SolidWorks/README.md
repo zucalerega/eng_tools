@@ -125,6 +125,11 @@ While you work:
   brought from Kenesto, or checked in from the web. A part changed and not checked in, or
   with changes not saved, gets none until it is; one loaded lightweight needs the assembly
   set to resolved first. The tab says what it made, and why anything wasn't.
+- **Time in SolidWorks**, for Admin > People: while SolidWorks is in front and you've used
+  the computer in the last five minutes, the add-in's requests to the vault say so, and the
+  vault counts that time beside the time the web app is open. SolidWorks left open behind
+  other windows, or overnight, isn't counted. The vault learns only that, not what you
+  have open.
 
 ## Install
 
@@ -337,6 +342,13 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     and `addin.log` has a line saying why. Put another build's Vault-Setup.exe.sig in its
     place, and click Update again: it says it isn't signed with the key Vault's releases are
     signed with. Put its own back: the update goes ahead, as in 23.
+33. Time in SolidWorks: with SolidWorks in front, work in it for three minutes, then leave it
+    behind another window for three minutes. In the web app, Admin > People: hovering your
+    Time on site says about three minutes in SolidWorks (it's counted a minute at a time, so
+    give or take one), and today's column in the Activity chart's Time on the site has it on
+    top, in SolidWorks' color. Then leave the computer alone, SolidWorks in front, for fifteen
+    minutes: about five more count (until it's been five minutes without a key or the mouse),
+    and no more.
 
 ## When something goes wrong
 

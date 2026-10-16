@@ -1,5 +1,5 @@
 """Who used the site when, for Admin > People's tracker: how many people were on each day, and how long they had the
-web app open (admins only)."""
+web app open and worked in SolidWorks (admins only)."""
 
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -18,6 +18,19 @@ def browser(app, team, email: str) -> dict[str, str]:
     with app.state.sessionmaker() as db:
         secret = auth.issue_token(db, db.get_one(User, team.ids[email]), kind=auth.SESSION, name="Firefox")
     return {"Authorization": f"Bearer {secret}"}
+
+
+def add_in(app, team, email: str) -> dict[str, str]:
+    """Their add-in, signed in on their computer, which asks the server what's new every 20 seconds while SolidWorks
+    runs."""
+    with app.state.sessionmaker() as db:
+        user = db.get_one(User, team.ids[email])
+        secret = auth.issue_token(db, user, kind=auth.CLIENT, name="SolidWorks add-in on ALICE-PC")
+    return {"Authorization": f"Bearer {secret}", "User-Agent": "vault-client/0.5.3.0"}
+
+
+# What the add-in's requests say while someone works in SolidWorks: it has the foreground, and the computer's in use.
+IN_SOLIDWORKS = {"X-YJSP-Activity": "solidworks"}
 
 
 def last_used(app, team, email: str, minutes: int) -> None:
@@ -41,7 +54,7 @@ def test_admins_see_how_many_people_used_the_site_each_day_and_for_how_long(app,
     bob = team.member("bob@x.test")
     alice = browser(app, team, "alice@x.test")
 
-    # Alice's web app is open for two minutes; Bob uses the add-in, which is time on Vault but not on the web app.
+    # Alice's web app is open for two minutes; Bob uses the CLI, which is time on Vault but not on the web app.
     client.get("/api/me", headers=alice)
     last_used(app, team, "alice@x.test", 2)
     client.get("/api/me", headers=alice)
@@ -62,6 +75,9 @@ def test_admins_see_how_many_people_used_the_site_each_day_and_for_how_long(app,
     assert all(day["people"] == 0 for day in before)
     assert (usage["people"], usage["since"]) == (3, str(today - timedelta(days=2)))
     assert 115 <= usage["total_site_seconds"] <= 125  # the ten minutes were set up, not counted
+    # Nobody's worked in SolidWorks.
+    assert all(day["solidworks_seconds"] == 0 for day in usage["days"])
+    assert (usage["total_solidworks_seconds"], usage["solidworks_since"]) == (0, None)
 
     # Only admins see it.
     refused = client.get("/api/usage", headers=bob)
@@ -104,6 +120,52 @@ def test_someone_on_twice_in_an_hour_counts_once_with_both_times(app, client, te
         alices = db.query(SiteUsage).filter(SiteUsage.user_id == team.ids["alice@x.test"]).all()
     assert sum(row.site_seconds for row in alices) == seconds
     assert 350 <= seconds <= 370
+
+
+def test_time_in_solidworks_counts_while_the_add_in_says_someone_is_working_in_it(app, client, team):
+    chief = team.member("chief@x.test", admin=True)
+    alice_cli = team.member("alice@x.test")
+    alice = add_in(app, team, "alice@x.test")
+
+    def spent() -> tuple[int, int]:
+        """Alice's time on the web app and in SolidWorks, by the day (both days, in case this ran across midnight),
+        checked against her own."""
+        usage = client.get("/api/usage", params={"days": 2}, headers=chief).json()
+        by_day = sum(day["site_seconds"] for day in usage["days"]), sum(d["solidworks_seconds"] for d in usage["days"])
+        assert (usage["total_site_seconds"], usage["total_solidworks_seconds"]) == by_day  # nobody else counted any
+        [hers] = [u for u in client.get("/api/users", headers=chief).json() if u["email"] == "alice@x.test"]
+        assert (hers["site_seconds"], hers["solidworks_seconds"]) == by_day
+        return by_day
+
+    # SolidWorks starts: nothing to count yet. Two minutes of work in it count.
+    client.get("/api/me", headers={**alice, **IN_SOLIDWORKS})
+    last_used(app, team, "alice@x.test", 2)
+    client.get("/api/me", headers={**alice, **IN_SOLIDWORKS})
+    site, solidworks = spent()
+    assert site == 0
+    assert 115 <= solidworks <= 125
+    # Two minutes with SolidWorks behind another window, or with nobody at the computer, don't.
+    last_used(app, team, "alice@x.test", 2)
+    client.get("/api/me", headers=alice)
+    assert spent() == (site, solidworks)
+    # Nor does a gap since SolidWorks last asked that's too long for it to have been running all along.
+    last_used(app, team, "alice@x.test", 10)
+    client.get("/api/me", headers={**alice, **IN_SOLIDWORKS})
+    assert spent() == (site, solidworks)
+    # A browser's time is the web app's, whatever its requests say.
+    alices_browser = browser(app, team, "alice@x.test")
+    client.get("/api/me", headers=alices_browser)
+    last_used(app, team, "alice@x.test", 2)
+    client.get("/api/me", headers={**alices_browser, **IN_SOLIDWORKS})
+    site, still = spent()
+    assert 115 <= site <= 125
+    assert still == solidworks
+
+    usage = client.get("/api/usage", headers=chief).json()
+    assert usage["solidworks_since"] == str(utcnow().date())
+    # Only admins see who spent how long.
+    [seen] = [u for u in client.get("/api/users", headers=alice_cli).json() if u["email"] == "alice@x.test"]
+    assert (seen["site_seconds"], seen["solidworks_seconds"]) == (None, None)
 
 
 def test_hours_are_kept_a_little_over_a_year(app, client, team):

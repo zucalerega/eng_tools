@@ -50,7 +50,7 @@ def get_users(user: ActiveUser, db: DB) -> list[UserOut]:
     active = people.last_active(db, user)
     found = []
     for u in people.list_users(db, user):
-        out = UserOut.of(u, active.get(u.id), people.time_on_site(user, u))
+        out = UserOut.of(u, active.get(u.id), people.time_on_site(user, u), people.time_in_solidworks(user, u))
         out.last_login_at = people.last_sign_in(user, u)
         found.append(out)
     return found
@@ -109,7 +109,7 @@ def get_usage(
     tz: Annotated[str, Query(max_length=64)] = "UTC",
 ) -> UsageOut:
     """How many people used the site on each of the last `days` days, today last, and how long they had the web app
-    open, with days in the time zone `tz`, an IANA name like America/New_York (admins)."""
+    open and worked in SolidWorks, with days in the time zone `tz`, an IANA name like America/New_York (admins)."""
     return UsageOut(**asdict(people.site_usage(db, user, days=days, timezone=tz)))
 
 

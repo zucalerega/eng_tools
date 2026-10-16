@@ -493,7 +493,7 @@ test("renaming, deleting, and restoring a dataset", async () => {
     await userEvent.click(screen.getByRole("link", { name: "Deleted datasets" }));
     const deleted = within(await screen.findByRole("table", { name: "Deleted datasets" }));
     const gone = (await deleted.findByText(`Leak check 2 ${team.folder}`)).closest("tr")!;
-    await userEvent.click(within(gone).getByRole("button", { name: "Restore" }));
+    await userEvent.click(within(gone).getByRole("button", { name: `Restore Leak check 2 ${team.folder}` }));
     await waitFor(() => expect(screen.queryByText(`Leak check 2 ${team.folder}`)).toBeNull());
 });
 
@@ -509,17 +509,18 @@ test("only whoever added a dataset, or an admin, can change it", async () => {
     expect(screen.queryByLabelText("Name")).toBeNull();
 });
 
-test("chosen datasets are deleted together, and wait in Deleted datasets", async () => {
+test("chosen datasets are deleted together, and restored together", async () => {
     const team = await Team.create();
-    const alice = await team.member("Alice");
-    const first = await team.data(alice, "Alice's first", HOTFIRE);
-    const second = await team.data(alice, "Alice's second", HOTFIRE);
+    // An owner of this test's alone (Alice is every test's), so every one of theirs that's deleted is one of these.
+    const owner = await team.member(`Owner-${team.folder}`);
+    const first = await team.data(owner, "First", HOTFIRE);
+    const second = await team.data(owner, "Second", HOTFIRE);
     const chiefs = await team.data(team.chief, "Chief's", HOTFIRE);
-    renderApp(alice, "/yorg");
+    renderApp(owner, "/yorg");
     await userEvent.type(await screen.findByLabelText("Find datasets"), team.folder);
     const table = within(await screen.findByRole("table", { name: "Datasets" }));
 
-    // Only hers can be chosen: every one here is the two of them.
+    // Only theirs can be chosen: every one here is the two of them.
     const chiefsRow = (await table.findByRole("link", { name: chiefs.name })).closest("tr")!;
     expect(within(chiefsRow).queryByRole("checkbox")).toBeNull();
     await userEvent.click(table.getByRole("checkbox", { name: "Choose every dataset here" }));
@@ -541,6 +542,16 @@ test("chosen datasets are deleted together, and wait in Deleted datasets", async
     const deleted = within(await screen.findByRole("table", { name: "Deleted datasets" }));
     expect(await deleted.findByText(first.name)).toBeTruthy();
     expect(deleted.getByText(second.name)).toBeTruthy();
+
+    // Every one of theirs, restored at once: back with the datasets.
+    await userEvent.click(deleted.getByRole("checkbox", { name: "Choose every deleted dataset" }));
+    expect(screen.getByText("2 datasets chosen")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    // The page, not the table: with nothing else deleted, the table goes.
+    await waitFor(() => expect(screen.queryByText(first.name)).toBeNull());
+    expect(screen.queryByText(second.name)).toBeNull();
+    expect(screen.queryByText(/datasets? chosen/)).toBeNull();
+    expect((await team.datasets(owner)).map((one) => one.id)).toEqual(expect.arrayContaining([first.id, second.id]));
 });
 
 test("an admin can choose anyone's datasets to delete", async () => {

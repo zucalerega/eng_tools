@@ -120,7 +120,8 @@ the keys.
   to…. The list shows each dataset's size, and Find datasets looks in every folder.
 - **Deleting:** check datasets and Delete… to delete them together (or delete one from its
   About page): your own, or anyone's if you're an admin. Deleted datasets wait in Deleted
-  datasets, at the foot of the list, to be restored.
+  datasets, at the foot of the list: Restore one, or check several and Restore them
+  together, back in their folders.
 - **Plot:** click a channel to add it to the selected plot (click it again to take it
   off), shift-click for a plot of its own, or drag it onto one. Each unit gets an axis
   of its own, so thrust, pressures, and valves share a plot, each on its scale (psi on

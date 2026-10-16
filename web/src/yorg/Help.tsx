@@ -78,8 +78,9 @@ export function HelpPage() {
                             you&apos;re an admin.
                         </li>
                         <li>
-                            <em>Find datasets</em> looks in every folder. Deleted datasets can be restored (
-                            <Link to="/yorg/deleted">Deleted</Link>).
+                            <em>Find datasets</em> looks in every folder. Deleted datasets wait in{" "}
+                            <Link to="/yorg/deleted">Deleted datasets</Link>: <em>Restore</em> one, or check several and{" "}
+                            <em>Restore</em> them together, back in their folders.
                         </li>
                     </ul>
                 </>

@@ -434,6 +434,82 @@ def test_deleted_datasets_come_back(team):
     assert fetch(team, alice, dataset, "time.f64") == [0.0, 1.0]
 
 
+def test_datasets_are_deleted_together_by_whoever_may(team):
+    """Several datasets deleted at once: your own, or anyone's if you're an admin; all of them, or none."""
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    first = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    second = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    theirs = upload(team, bob, "Time,PT\n0,1\n1,2\n")
+
+    def delete(who, ids):
+        return team.client.post("/api/yorg/datasets/delete", json={"datasets": ids}, headers=who)
+
+    def left() -> list[int]:
+        return sorted(d["id"] for d in team.client.get("/api/yorg/datasets", headers=chief).json())
+
+    # One that isn't yours, or isn't there, and none of them go.
+    refused = delete(alice, [first["id"], theirs["id"]])
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert delete(alice, [first["id"], 999_999]).status_code == 404
+    assert delete(alice, []).status_code == 422
+    assert left() == sorted([first["id"], second["id"], theirs["id"]])
+
+    gone = delete(alice, [first["id"], second["id"]])
+    assert gone.status_code == 200, gone.text
+    assert [(d["id"], d["deleted_by"]["email"]) for d in gone.json()] == [
+        (first["id"], "alice@x.test"),
+        (second["id"], "alice@x.test"),
+    ]
+    assert left() == [theirs["id"]]
+    assert [d["id"] for d in delete(chief, [theirs["id"]]).json()] == [theirs["id"]]
+    assert left() == []
+
+    # Each is kept, to be restored.
+    deleted = team.client.get("/api/yorg/datasets?deleted=true", headers=alice).json()
+    assert sorted(d["id"] for d in deleted) == sorted([first["id"], second["id"], theirs["id"]])
+    assert team.client.post(f"/api/yorg/datasets/{second['id']}/restore", headers=alice).status_code == 200
+    assert left() == [second["id"]]
+
+
+def test_deleted_datasets_come_back_together(team):
+    """Several deleted datasets restored at once: your own, or anyone's if you're an admin; all of them, or none."""
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    first = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    second = upload(team, alice, "Time,PT\n0,1\n1,2\n")
+    theirs = upload(team, bob, "Time,PT\n0,1\n1,2\n")
+    every = sorted([first["id"], second["id"], theirs["id"]])
+    assert team.client.post("/api/yorg/datasets/delete", json={"datasets": every}, headers=chief).status_code == 200
+
+    def restore(who, ids):
+        return team.client.post("/api/yorg/datasets/restore", json={"datasets": ids}, headers=who)
+
+    def deleted() -> list[int]:
+        return sorted(d["id"] for d in team.client.get("/api/yorg/datasets?deleted=true", headers=chief).json())
+
+    # One that isn't yours, or isn't there, and none of them come back.
+    refused = restore(alice, [first["id"], theirs["id"]])
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert restore(alice, [first["id"], 999_999]).status_code == 404
+    assert restore(alice, []).status_code == 422
+    assert deleted() == every
+
+    # Yours come back (whoever deleted them), with their data; an admin brings back anyone's.
+    back = restore(alice, [first["id"], second["id"]])
+    assert back.status_code == 200, back.text
+    assert [(d["id"], d["deleted_at"], d["deleted_by"]) for d in back.json()] == [
+        (first["id"], None, None),
+        (second["id"], None, None),
+    ]
+    assert deleted() == [theirs["id"]]
+    assert fetch(team, alice, first, "time.f64") == [0.0, 1.0]
+    assert [d["id"] for d in restore(chief, [theirs["id"]]).json()] == [theirs["id"]]
+    assert deleted() == []
+
+
 def test_views_are_saved_for_everyone_and_changed_by_their_owner(team):
     alice = team.member("alice@x.test")
     bob = team.member("bob@x.test")

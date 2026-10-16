@@ -451,6 +451,37 @@ public sealed class Workspace : IDisposable
     }
 
     /// <summary>
+    /// Get the files a SolidWorks file here uses, and theirs, by the paths SolidWorks files keep for them (keptReferences:
+    /// a file's, as SolidWorks reads them). The vault knows what files checked in from SolidWorks use, but not what files
+    /// uploaded in the web app use (like a folder brought over from Kenesto): those say it only in themselves, and
+    /// <see cref="FindUsedFiles"/> finds them in the vault. Level by level, each read once it's here, so a sub-assembly
+    /// that's here leads to its parts that aren't. latest: files already here are updated too; otherwise only what isn't
+    /// here comes down. NotInVault: kept paths no vault file matches, and no file is at. keptReferences is called on the
+    /// caller's thread, because SolidWorks answers only on its main thread.
+    /// </summary>
+    public async Task<(GetResult Got, IReadOnlyList<string> NotInVault)> GetUsedFilesAsync(
+        string localPath, Func<string, IEnumerable<string>> keptReferences, bool latest, CancellationToken ct = default)
+    {
+        var got = new GetResult();
+        var notInVault = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { localPath };
+        var level = new List<string> { localPath };
+        while (level.Count > 0)
+        {
+            var (inVault, missing) = FindUsedFiles(level.Where(File.Exists).SelectMany(keptReferences).ToList());
+            notInVault.AddRange(missing.Where(p => !File.Exists(p) && !notInVault.Contains(p, StringComparer.OrdinalIgnoreCase)));
+            level = inVault.Where(seen.Add).ToList();
+            var get = latest ? level : level.Where(p => !File.Exists(p)).ToList();
+            if (get.Count > 0)
+            {
+                // Not ConfigureAwait(false): the next level is read on the caller's thread.
+                got.Add(await GetLatestAsync(get, ct: ct));
+            }
+        }
+        return (got, notInVault);
+    }
+
+    /// <summary>
     /// The file here that a path kept in a SolidWorks file from elsewhere means, for SolidWorks when it can't find it:
     /// the vault file it means, as <see cref="FindUsedFiles"/> finds it among vaultPaths (the vault's files), if that's
     /// here (C:\VLT\09_Hopper\Stringer.SLDPRT for K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT);

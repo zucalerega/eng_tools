@@ -37,11 +37,14 @@ export function formatDuration(seconds: number): string {
     if (minutes < 1) {
         return "under a minute";
     }
+    if (minutes >= 10 * 60) {
+        return `${Math.round(minutes / 60)} h`; // to the nearest hour: 10 h 50 min is 11 h
+    }
     const hours = Math.floor(minutes / 60);
     if (hours === 0) {
         return `${minutes} min`;
     }
-    return hours >= 10 || minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
+    return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
 }
 
 /** "Sep 26", or "Sep 26, 2025" for another year: short, for tables. */

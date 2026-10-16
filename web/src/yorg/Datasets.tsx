@@ -8,13 +8,15 @@ import { formatDuration, formatRate } from "./scale";
 import { DATA_FILES, UploadDialog } from "./Upload";
 
 // The datasets, in folders: a folder's own datasets and folders, and every dataset when searching. Datasets and
-// folders are moved by dragging them onto a folder (or a folder in the path above), or by choosing them and Move to.
+// folders are moved by dragging them onto a folder (or a folder in the path above), or by choosing them and Move to;
+// chosen datasets are deleted together. Only yours can be chosen (any, for an admin), as the server allows.
 
 export const folderUrl = (id: number | null): string => (id === null ? "/yorg" : `/yorg/folders/${id}`);
 const datasetUrl = (id: number): string => `/yorg/datasets/${id}`;
 const aboutUrl = (id: number): string => `/yorg/datasets/${id}/about`;
 
 const DRAGGED = "application/x-yorg-move"; // {datasets: number[], folder: number | null}
+const MAX_LISTED = 8; // datasets a delete names; past that, how many more
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -51,6 +53,7 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
         | { kind: "rename"; folder: DataFolder }
         | { kind: "delete"; folder: DataFolder }
         | { kind: "move" }
+        | { kind: "delete-chosen" }
         | null
     >(null);
     const [dropping, setDropping] = useState<string | null>(null); // what a drag is over: "files", or a folder's key
@@ -254,6 +257,13 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
                             </span>
                             <button type="button" className="button-small" onClick={() => setDialog({ kind: "move" })}>
                                 Move to…
+                            </button>
+                            <button
+                                type="button"
+                                className="button-small"
+                                onClick={() => setDialog({ kind: "delete-chosen" })}
+                            >
+                                Delete…
                             </button>
                             <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
                                 Clear
@@ -491,6 +501,17 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
                     </p>
                 </Dialog>
             )}
+            {dialog?.kind === "delete-chosen" && (
+                <DeleteDialog
+                    chosen={allDatasets.filter((one) => selected.has(one.id))}
+                    onCancel={() => setDialog(null)}
+                    onDelete={(ids) => {
+                        setDialog(null);
+                        setSelected(new Set());
+                        void act(() => yorg.removeAll(ids).then(() => ids.forEach((id) => void reloadDataset(id))));
+                    }}
+                />
+            )}
             {dialog?.kind === "move" && folders && (
                 <MoveDialog
                     folders={folders}
@@ -545,6 +566,42 @@ function NameDialog({
                 <input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
+/** Deleting the datasets chosen: named, so it's clear what goes, and to Deleted datasets, where they can come back. */
+function DeleteDialog({
+    chosen,
+    onDelete,
+    onCancel,
+}: {
+    chosen: Dataset[];
+    onDelete: (ids: number[]) => void;
+    onCancel: () => void;
+}) {
+    const one = chosen.length === 1;
+    return (
+        <Dialog
+            title={`Delete ${one ? chosen[0]!.name : `${chosen.length} datasets`}?`}
+            confirm="Delete"
+            danger
+            disabled={chosen.length === 0}
+            onConfirm={() => onDelete(chosen.map((dataset) => dataset.id))}
+            onCancel={onCancel}
+        >
+            <p>
+                {one ? "It goes" : "They go"} to <Link to="/yorg/deleted">Deleted datasets</Link>, where you can restore{" "}
+                {one ? "it" : "them"}: everything is kept.
+            </p>
+            {!one && (
+                <ul className="plain" aria-label="Datasets to delete">
+                    {chosen.slice(0, MAX_LISTED).map((dataset) => (
+                        <li key={dataset.id}>{dataset.name}</li>
+                    ))}
+                    {chosen.length > MAX_LISTED && <li className="muted">and {chosen.length - MAX_LISTED} more</li>}
+                </ul>
+            )}
         </Dialog>
     );
 }

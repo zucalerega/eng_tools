@@ -30,8 +30,12 @@ ACTIVE_NOW = 2 * _TOUCH_EVERY  # last active this recently: on now
 CLIENT_IDLE = timedelta(days=90)
 # A browser session used again within this long was open the whole time, so the gap counts as time on the site. An
 # open page asks who you are every minute while it's visible (session.ts); a longer gap means the page was closed or
-# hidden.
+# hidden. The same goes for the add-in, which asks every 20 seconds while SolidWorks runs: when its request says
+# someone is working in SolidWorks (IN_SOLIDWORKS), the gap counts as time in SolidWorks.
 _SAME_VISIT = timedelta(minutes=5)
+# What the add-in's requests say (api/deps.ACTIVITY_HEADER) while SolidWorks has the foreground and someone has used
+# the computer in the last few minutes (SolidWorksActivity.cs).
+IN_SOLIDWORKS = "solidworks"
 # Georgia Tech's accounts are Microsoft 365 accounts, in GT's own directory (tenant) in Microsoft Entra, which sends
 # their sign-ins to GT's login page, Duo and all. Signing in with Microsoft lets in only this tenant's people.
 GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
@@ -187,9 +191,10 @@ def client_version(user_agent: str) -> str | None:
     return version.removesuffix(".0") if version.count(".") == 3 else version or None
 
 
-def authenticate(db: Session, secret: str, user_agent: str = "") -> User | None:
+def authenticate(db: Session, secret: str, user_agent: str = "", activity: str = "") -> User | None:
     """The user a token belongs to, if the token is valid. Account status is the caller's check. A client's
-    version, from its User-Agent, is kept with its token as it's used."""
+    version, from its User-Agent, is kept with its token as it's used, and the time since its last use is counted as
+    time on the site: a browser's on the web app, and the add-in's in SolidWorks while its activity says so."""
     token = db.scalar(select(Token).where(Token.token_hash == _digest(secret)))
     now = utcnow()
     if token is None or not _valid(token, now):
@@ -203,8 +208,12 @@ def authenticate(db: Session, secret: str, user_agent: str = "") -> User | None:
             noted["client_version"] = version
         touched = db.execute(update(Token).where(Token.id == token.id, unchanged).values(**noted)).rowcount
         if touched:
-            visit = token.kind == SESSION and last_used is not None and now - last_used <= _SAME_VISIT
-            usage.record(db, token.user_id, now, round((now - last_used).total_seconds()) if visit else 0)
+            visit = last_used is not None and now - last_used <= _SAME_VISIT
+            seconds = round((now - last_used).total_seconds()) if visit else 0
+            if token.kind == SESSION:
+                usage.record(db, token.user_id, now, site_seconds=seconds)
+            else:
+                usage.record(db, token.user_id, now, solidworks_seconds=seconds if activity == IN_SOLIDWORKS else 0)
         db.commit()
     return db.get(User, token.user_id)
 

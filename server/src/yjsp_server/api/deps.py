@@ -15,6 +15,9 @@ SESSION_COOKIE = "yjsp_session"
 # Browsers can't add custom headers to cross-site requests without CORS (which the server
 # doesn't allow), so requiring one on cookie-authenticated writes stops CSRF.
 CSRF_HEADER = "x-yjsp-request"
+# What a client says its person is doing, for Admin > People's time on the site: the add-in sends "solidworks"
+# (auth.IN_SOLIDWORKS) while someone works in SolidWorks.
+ACTIVITY_HEADER = "x-yjsp-activity"
 # The names from before the site was YJSP (0.3.0), still accepted so browsers signed in then stay signed in and tabs
 # opened then can still save. Sessions last 30 days (Settings.session_days), so those from before 0.4.0 (live on
 # 2026-10-04) have run out by 2026-11-03: drop these in 0.6.0.
@@ -44,7 +47,7 @@ def session_secret(request: Request) -> str:
 def session_user(request: Request, db: Session) -> User | None:
     """Who the browser's session cookie belongs to, if anyone: for pages, which redirect instead of failing."""
     secret = session_secret(request)
-    return auth.authenticate(db, secret, request.headers.get("user-agent", "")) if secret else None
+    return _authenticate(request, db, secret) if secret else None
 
 
 def any_user(request: Request, db: DB) -> User:
@@ -54,7 +57,7 @@ def any_user(request: Request, db: DB) -> User:
         secret, from_cookie = header[7:].strip(), False
     else:
         secret, from_cookie = session_secret(request), True
-    user = auth.authenticate(db, secret, request.headers.get("user-agent", "")) if secret else None
+    user = _authenticate(request, db, secret) if secret else None
     if user is None:
         raise Unauthorized("Sign in first")
     csrf = CSRF_HEADER in request.headers or OLD_CSRF_HEADER in request.headers
@@ -63,6 +66,11 @@ def any_user(request: Request, db: DB) -> User:
     if user.status == UserStatus.DISABLED:
         raise Forbidden("This account is disabled", code="disabled")
     return user
+
+
+def _authenticate(request: Request, db: Session, secret: str) -> User | None:
+    headers = request.headers
+    return auth.authenticate(db, secret, headers.get("user-agent", ""), headers.get(ACTIVITY_HEADER, ""))
 
 
 def active_user(user: Annotated[User, Depends(any_user)]) -> User:

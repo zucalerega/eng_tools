@@ -108,12 +108,12 @@ While you work:
 - **Files brought over from Kenesto** (uploaded in the web app) name their parts where
   Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
-  file and gets the vault's files whose paths end the same way (`09_Hopper\...`), so they
-  come along like any other assembly's parts; parts that aren't in the vault are named on
-  the tab, with their old paths in the log. When SolidWorks can't find a part, Vault
-  points it at the vault's copy, found the same way (or by its name, when only one file in
-  the vault has it). Checking in an assembly that still uses files the vault doesn't have
-  lists them all, and checks nothing in.
+  file, and from its sub-assemblies, and gets the vault's files whose paths end the same
+  way (`09_Hopper\...`), so they come along like any other assembly's parts; parts that
+  aren't in the vault are named on the tab, with their old paths in the log. When
+  SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or
+  by its name, when only one file in the vault has it). Checking in an assembly that still
+  uses files the vault doesn't have lists them all, and checks nothing in.
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
@@ -125,6 +125,11 @@ While you work:
   brought from Kenesto, or checked in from the web. A part changed and not checked in, or
   with changes not saved, gets none until it is; one loaded lightweight needs the assembly
   set to resolved first. The tab says what it made, and why anything wasn't.
+- **Time in SolidWorks**, for Admin > People: while SolidWorks is in front and you've used
+  the computer in the last five minutes, the add-in's requests to the vault say so, and the
+  vault counts that time beside the time the web app is open. SolidWorks left open behind
+  other windows, or overnight, isn't counted. The vault learns only that, not what you
+  have open.
 
 ## Install
 
@@ -257,10 +262,15 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     so Enter downloads nothing either. Right-click a folder that isn't here in Browse and
     choose Get latest: it asks first too.
 18. Upload a folder from Kenesto in the web app, keeping its folders (an assembly with parts
-    in the same folder and in subfolders, and a sub-assembly), leaving one part out. On the
-    Browse tab, double-click the assembly: its parts come down, it opens with them, and the
-    tab names the part left out. Close it, delete a part from `C:\VLT`, and double-click the
-    assembly again: that part comes back, and nothing else downloads.
+    in the same folder and in subfolders, and a sub-assembly with parts of its own), leaving
+    one of the sub-assembly's parts out. On the Browse tab, double-click the assembly: its
+    parts and the sub-assembly's come down, it opens with them, and the tab names the part
+    left out. Close it, delete a part from `C:\VLT`, and double-click the assembly again: that
+    part comes back, and nothing else downloads. Close it, and delete the sub-assembly's
+    parts from `C:\VLT`, keeping the sub-assembly and the assembly's own parts: double-click
+    the assembly, and they come back before it opens, with no part grey or ⚠, and the tab
+    names the part left out again. Close it, delete them again, click Refresh, and at once
+    double-click the assembly: it waits for the refresh, then does the same.
 19. Watch the card as a part changes state. Up to date: Check out (in navy) and Get
     latest. Checked out to you: Check in (in navy) and Undo check-out. Out of date: Get
     latest first. Checked out by someone else: who, on which computer, and since when, and
@@ -337,6 +347,13 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     and `addin.log` has a line saying why. Put another build's Vault-Setup.exe.sig in its
     place, and click Update again: it says it isn't signed with the key Vault's releases are
     signed with. Put its own back: the update goes ahead, as in 23.
+33. Time in SolidWorks: with SolidWorks in front, work in it for three minutes, then leave it
+    behind another window for three minutes. In the web app, Admin > People: hovering your
+    Time on site says about three minutes in SolidWorks (it's counted a minute at a time, so
+    give or take one), and today's column in the Activity chart's Time on the site has it on
+    top, in SolidWorks' color. Then leave the computer alone, SolidWorks in front, for fifteen
+    minutes: about five more count (until it's been five minutes without a key or the mouse),
+    and no more.
 
 ## When something goes wrong
 

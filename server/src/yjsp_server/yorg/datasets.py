@@ -180,22 +180,38 @@ def update(db: Session, user: User, dataset_id: int, *, name: str | None, descri
 
 def remove(db: Session, user: User, dataset_id: int) -> Dataset:
     """Delete a dataset: it's hidden, with its file and arrays kept, until someone restores it."""
-    found = dataset(db, dataset_id)
-    check_can_change(user, found.created_by, "dataset")
-    if found.deleted_at is None:
-        found.deleted_at = utcnow()
-        found.deleter = user
-        db.commit()
-    return found
+    return remove_all(db, user, [dataset_id])[0]
+
+
+def remove_all(db: Session, user: User, dataset_ids: Sequence[int]) -> list[Dataset]:
+    """Delete datasets, as remove does: all of them, or none if any isn't yours to delete."""
+    removing = [dataset(db, dataset_id) for dataset_id in dict.fromkeys(dataset_ids)]
+    for found in removing:
+        check_can_change(user, found.created_by, "dataset")
+    now = utcnow()
+    for found in removing:
+        if found.deleted_at is None:
+            found.deleted_at = now
+            found.deleter = user
+    db.commit()
+    return removing
 
 
 def restore(db: Session, user: User, dataset_id: int) -> Dataset:
-    found = dataset(db, dataset_id)
-    check_can_change(user, found.created_by, "dataset")
-    found.deleted_at = None
-    found.deleter = None
+    """Bring a deleted dataset back, in its folder (the one above it, if its own was deleted)."""
+    return restore_all(db, user, [dataset_id])[0]
+
+
+def restore_all(db: Session, user: User, dataset_ids: Sequence[int]) -> list[Dataset]:
+    """Bring deleted datasets back, as restore does: all of them, or none if any isn't yours to restore."""
+    restoring = [dataset(db, dataset_id) for dataset_id in dict.fromkeys(dataset_ids)]
+    for found in restoring:
+        check_can_change(user, found.created_by, "dataset")
+    for found in restoring:
+        found.deleted_at = None
+        found.deleter = None
     db.commit()
-    return found
+    return restoring
 
 
 @dataclass

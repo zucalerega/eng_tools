@@ -211,7 +211,11 @@ export const yorg = {
     split: (id: number, pieces: PieceBody[], folder: number | null) =>
         request<Dataset[]>("POST", datasetPath(id) + "/split", { pieces, folder_id: folder }),
     remove: (id: number) => request<Dataset>("DELETE", datasetPath(id)),
+    /** Delete datasets (each can be restored): all of them, or none if any isn't yours to delete. */
+    removeAll: (datasets: number[]) => request<Dataset[]>("POST", "/api/yorg/datasets/delete", { datasets }),
     restore: (id: number) => request<Dataset>("POST", datasetPath(id) + "/restore"),
+    /** Restore deleted datasets, each in its folder: all of them, or none if any isn't yours to restore. */
+    restoreAll: (datasets: number[]) => request<Dataset[]>("POST", "/api/yorg/datasets/restore", { datasets }),
     sourceUrl: (id: number) => apiUrl(datasetPath(id) + "/source"),
     /** One of a read's arrays (a channel's time or values): little-endian float64, which browsers keep. */
     array: async (dataset: DatasetDetail, file: string): Promise<Float64Array> =>

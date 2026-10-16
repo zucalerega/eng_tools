@@ -226,12 +226,15 @@ on top of it.
   (the server can't read SolidWorks files), and one brought over from Kenesto keeps the
   paths its parts had there (`K:\Yellow Jacket Space Program\Project
   CAD\09_Hopper\Stringer.SLDPRT`). Opening or getting one in the add-in reads the paths
-  SolidWorks keeps in it (`GetDocumentDependencies2`, not searching), level by level, and
-  `Workspace.FindUsedFiles` takes each to the vault file whose path ends the same way,
-  with the most folders matching (none if two match as well); those come down with it,
-  and kept paths nothing matches are listed. When SolidWorks can't find a file anyway,
-  the add-in's `ReferenceNotFoundNotify` handler points it at the vault file that match
-  means, if it's here, or else at the file here at the longest end of the path
+  SolidWorks keeps in it (`GetDocumentDependencies2`, not searching), level by level, each
+  level once it's here (`Workspace.GetUsedFilesAsync`), and `Workspace.FindUsedFiles` takes
+  each to the vault file whose path ends the same way, with the most folders matching (none
+  if two match as well); those come down with it, and kept paths nothing matches are
+  listed. Opening a file that's here goes through every level too, since a sub-assembly
+  that's here can be missing its parts, and it waits for a refresh that's running rather
+  than skip the check. When SolidWorks can't find a file anyway, the add-in's
+  `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's
+  here, or else at the file here at the longest end of the path
   (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
   references (see "A check-in of unchanged contents" above); one that uses files the vault
   can't have (missing, or outside the workspace) names them all at once, and nothing is

@@ -23,7 +23,8 @@ CSV, or one at a time, and see who on it has joined.
 Google signs in to accounts already there: one made with Google before, or an admin's
 invite. Someone without a GT account (a mentor, say) joins by an invite to the address they
 use with Google (Admin > People). Admin > People also shows how many people used the site
-each day this past month and how long they spent on it, who has the SolidWorks add-in (on
+each day this past month and how long they spent on it (on the web app, and working in
+SolidWorks with the add-in), who has the SolidWorks add-in (on
 how many computers and which versions, and how many people in all), how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
@@ -120,6 +121,10 @@ the keys.
 - **Folders:** New folder makes one (a test campaign, a day of cold flows). Drag datasets
   onto a folder, or onto a folder above in the path at the top, or check some and Move
   to…. The list shows each dataset's size, and Find datasets looks in every folder.
+- **Deleting:** check datasets and Delete… to delete them together (or delete one from its
+  About page): your own, or anyone's if you're an admin. Deleted datasets wait in Deleted
+  datasets, at the foot of the list: Restore one, or check several and Restore them
+  together, back in their folders.
 - **Plot:** click a channel to add it to the selected plot (click it again to take it
   off), shift-click for a plot of its own, or drag it onto one. Each unit gets an axis
   of its own, so thrust, pressures, and valves share a plot, each on its scale (psi on

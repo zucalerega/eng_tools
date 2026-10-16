@@ -37,6 +37,8 @@
     --chart-bar-hovered: #1c4b8f;
     --chart-cpu: #2a5fb0;
     --chart-memory: #e0a500;
+    --chart-solidworks: #c08a00;
+    --chart-solidworks-hovered: #9c7000;
     --shadow: 0 1px 2px rgb(15 27 45 / 5%), 0 1px 3px rgb(15 27 45 / 6%);
     --shadow-pop: 0 12px 32px rgb(15 27 45 / 18%);
     --focus: 0 0 0 3px rgb(29 77 148 / 28%);
@@ -87,6 +89,8 @@
         --chart-bar-hovered: #7aa7ee;
         --chart-cpu: #5b8fe0;
         --chart-memory: #b8860b;
+        --chart-solidworks: #b8860b;
+        --chart-solidworks-hovered: #cf9d2e;
         --shadow: 0 1px 2px rgb(0 0 0 / 35%);
         --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
         --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -124,6 +128,8 @@
     --chart-bar-hovered: #7aa7ee;
     --chart-cpu: #5b8fe0;
     --chart-memory: #b8860b;
+    --chart-solidworks: #b8860b;
+    --chart-solidworks-hovered: #cf9d2e;
     --shadow: 0 1px 2px rgb(0 0 0 / 35%);
     --shadow-pop: 0 14px 40px rgb(0 0 0 / 60%);
     --focus: 0 0 0 3px rgb(122 167 238 / 35%);
@@ -1038,16 +1044,53 @@ a.tag:hover {
     justify-content: center;
 }
 
-.bars-bar {
+/* A day's column: its parts from the bottom up, kept apart by the surface, and rounded only at its top. */
+.bars-stack {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 2px;
     width: 70%;
     max-width: 24px;
     min-height: 2px;
-    border-radius: 4px 4px 0 0;
+}
+
+.bars-bar {
+    flex: 1 0 2px; /* a part's flex-grow is its share */
     background: var(--chart-bar);
 }
 
-.bars-bar-hovered {
+.bars-stack > .bars-bar:last-child {
+    border-radius: 4px 4px 0 0;
+}
+
+.bars-stack-hovered .bars-bar {
     background: var(--chart-bar-hovered);
+}
+
+.bars-bar-solidworks {
+    background: var(--chart-solidworks);
+}
+
+.bars-stack-hovered .bars-bar-solidworks {
+    background: var(--chart-solidworks-hovered);
+}
+
+.bars-legend {
+    min-height: 1.3rem; /* kept when empty, so the chart doesn't move */
+}
+
+.bars-swatch {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-right: 0.4rem;
+    border-radius: 2px;
+    vertical-align: -0.05rem;
+    background: var(--chart-bar);
+}
+
+.bars-swatch.bars-bar-solidworks {
+    background: var(--chart-solidworks);
 }
 
 .bars-tip {
@@ -1130,7 +1173,8 @@ path.lines-memory {
     background: var(--chart-memory);
 }
 
-.lines-legend {
+.lines-legend,
+.bars-legend {
     display: flex;
     gap: 1rem;
     margin: 0 0 0.5rem;

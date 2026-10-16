@@ -79,18 +79,23 @@ function startOf(dataset: Dataset, utcOffset: number | null = null): string {
 export function DeletedPage() {
     const [datasets, setDatasets] = useState<Dataset[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    // Chosen to restore together, as datasets are chosen to move or delete: yours (any, for an admin).
+    const [selected, setSelected] = useState<Set<number>>(new Set());
     const load = () => yorg.datasets(true).then(setDatasets, (error: unknown) => setProblem(message(error)));
     useEffect(() => {
         void load();
     }, []);
-    async function restore(dataset: Dataset) {
+    const choosable = (datasets ?? []).filter((one) => one.can_change);
+    async function restore(ids: number[]) {
+        setProblem(null);
         try {
-            await yorg.restore(dataset.id);
-            void reloadDataset(dataset.id);
-            await load();
+            await yorg.restoreAll(ids);
+            ids.forEach((id) => void reloadDataset(id));
+            setSelected((current) => new Set([...current].filter((id) => !ids.includes(id))));
         } catch (error) {
             setProblem(message(error));
         }
+        await load();
     }
     return (
         <section className="yorg-page">
@@ -102,12 +107,40 @@ export function DeletedPage() {
                     </Link>
                 </div>
             </div>
+            <p className="lead muted">
+                A deleted dataset keeps its file and channels. Restore puts it back in its folder; check several to
+                restore them together.
+            </p>
             {problem && <Notice tone="error">{problem}</Notice>}
             {datasets?.length === 0 && <div className="empty">Nothing's been deleted.</div>}
+            {selected.size > 0 && (
+                <div className="selection-bar" role="status">
+                    <span>
+                        {selected.size} {selected.size === 1 ? "dataset" : "datasets"} chosen
+                    </span>
+                    <button type="button" className="button-small" onClick={() => void restore([...selected])}>
+                        Restore
+                    </button>
+                    <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
+                        Clear
+                    </button>
+                </div>
+            )}
             {datasets && datasets.length > 0 && (
                 <table className="table" aria-label="Deleted datasets">
                     <thead>
                         <tr>
+                            <th className="select">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Choose every deleted dataset"
+                                    disabled={choosable.length === 0}
+                                    checked={choosable.length > 0 && choosable.every((one) => selected.has(one.id))}
+                                    onChange={(event) =>
+                                        setSelected(new Set(event.target.checked ? choosable.map((one) => one.id) : []))
+                                    }
+                                />
+                            </th>
                             <th>Name</th>
                             <th>Deleted</th>
                             <th />
@@ -116,6 +149,24 @@ export function DeletedPage() {
                     <tbody>
                         {datasets.map((dataset) => (
                             <tr key={dataset.id}>
+                                <td className="select">
+                                    {dataset.can_change && (
+                                        <input
+                                            type="checkbox"
+                                            aria-label={`Choose ${dataset.name}`}
+                                            checked={selected.has(dataset.id)}
+                                            onChange={(event) => {
+                                                const next = new Set(selected);
+                                                if (event.target.checked) {
+                                                    next.add(dataset.id);
+                                                } else {
+                                                    next.delete(dataset.id);
+                                                }
+                                                setSelected(next);
+                                            }}
+                                        />
+                                    )}
+                                </td>
                                 <td>{dataset.name}</td>
                                 <td>
                                     {dataset.deleted_by?.name ?? "—"}
@@ -131,7 +182,8 @@ export function DeletedPage() {
                                         <button
                                             type="button"
                                             className="button-small"
-                                            onClick={() => void restore(dataset)}
+                                            aria-label={`Restore ${dataset.name}`}
+                                            onClick={() => void restore([dataset.id])}
                                         >
                                             Restore
                                         </button>

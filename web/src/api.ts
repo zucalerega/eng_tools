@@ -100,6 +100,18 @@ export interface Storage {
     vault: number;
     yorg: number;
     database: number;
+    backup?: Backup | null; // null: no off-site backup on this server
+}
+
+/** What the off-site backup last said about itself (deploy/yjsp-offsite). */
+export interface Backup {
+    backed_up_at: string | null; // the last copy that worked
+    snapshot: string | null;
+    backup_failed_at: string | null; // the last that didn't, if it's since that one
+    backup_error: string | null;
+    verified_at: string | null; // the last restore that checked out
+    verify_failed_at: string | null;
+    verify_error: string | null;
 }
 
 /** A day of the site's use, by the server's count, in the time zone asked for. */

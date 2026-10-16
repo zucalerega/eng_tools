@@ -34,7 +34,8 @@ On the server:
 | `/srv/yjsp/.env` | Settings and secrets (below). Readable only by `yjsp` |
 | `/srv/yjsp/data` | `yjsp.db` (SQLite: accounts, Vault's tables, Yorg's), `vault/blobs/` (every version of every file in Vault), `yorg/` (Yorg's uploads and arrays, scripts, and models) |
 | `/srv/yjsp/downloads` | `Vault-Setup.exe` and `vault.exe`, offered on Vault's SolidWorks page, and `Vault-Setup.exe.sig`, the installer's signature |
-| `/srv/yjsp/backups` | Database backups, nightly and before each deploy, kept 14 days |
+| `/srv/yjsp/backups` | Database backups, nightly and before each deploy, kept 14 days; `offsite/yjsp.db`, the database as the off-site backup last copied it; `offsite.json`, how the off-site backup went (written by root) |
+| `/etc/yjsp/offsite.env`, `/etc/yjsp/offsite.password` | The off-site backup's settings and keys ([Off-site backups](#off-site-backups)). Readable only by root |
 
 Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs as.
 
@@ -45,8 +46,11 @@ Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs a
   its model runs may use 5 GB of the machine's 6 (`MemoryMax`): past that, systemd restarts
   it, rather than the kernel stopping whatever it picks, SSH and Tailscale included.
 - `yjsp-backup.timer` runs `/usr/local/sbin/yjsp-backup` every night at 08:30 UTC: a
-  consistent copy of the database, gzipped, kept 14 days. The files (`vault/`, `yorg/`)
-  have no copy off the server yet (Cloudflare R2 is planned).
+  consistent copy of the database, gzipped, kept 14 days, for putting it back quickly.
+- `yjsp-offsite.timer` runs `/usr/local/sbin/yjsp-offsite backup` as root every night at
+  09:00 UTC: the database, Vault's files, and Yorg's, copied off the server, encrypted, to
+  Cloudflare R2. `yjsp-offsite-verify.timer` checks it by a restore every Sunday at 10:00
+  UTC ([Off-site backups](#off-site-backups)).
 
 **Settings** (`/srv/yjsp/.env`; `server/.env.example` explains each one):
 
@@ -155,6 +159,7 @@ Everything here runs on the server: `ssh -i ~/.ssh/yjsp_oracle opc@129.80.217.44
 | Restart it | `sudo systemctl restart yjsp.service` |
 | Ask it directly | `curl -fs http://127.0.0.1:8100/healthz` |
 | See the backups | `sudo ls -lt /srv/yjsp/backups \| head` |
+| See the off-site backup | Admin > People's Storage card, or `systemctl list-timers 'yjsp-offsite*'` and `sudo journalctl -u yjsp-offsite -n 50` |
 | Check the public address | `sudo tailscale funnel status` (it should show `/ proxy http://127.0.0.1:8100`) |
 
 **Is it overloaded?** Admin > People's *Server load* shows how busy the CPU has been and how
@@ -245,6 +250,93 @@ sudo -u yjsp sh -c 'gunzip -c backups/<the backup>.db.gz > data/yjsp.db'
 sudo systemctl start yjsp.service
 ```
 
+### Off-site backups
+
+A copy on the server is no copy if the server goes: a disk failure, a mistake, or someone
+who takes it over. So every night `deploy/yjsp-offsite` copies everything that matters off
+it, into a [restic](https://restic.net) repository in a Cloudflare R2 bucket:
+
+- **What:** a consistent copy of the database (made as `yjsp`, in `backups/offsite/`),
+  Vault's files (`data/vault/`, without its temporary uploads), and Yorg's (`data/yorg/`,
+  without temporary files, runs, and caches).
+- **How:** restic encrypts everything on the server, with a password only the server and
+  the owner have, so Cloudflare can't read the team's designs. Each night adds only what
+  changed (Vault's blobs never change), and keeps the night's state: two weeks of nights,
+  two months of Sundays, and two years of first-of-months, so an old version of a Yorg script
+  or model can come back too. Unused data goes on Sundays.
+- **Out of the site's reach:** it runs as root, with its keys in `/etc/yjsp/offsite.env`
+  and `/etc/yjsp/offsite.password` (root only), so whoever took over the site (the `yjsp`
+  user) could neither read them nor use them to erase the copies. The bucket's lock rules
+  (below) keep even the key's holder from deleting the last 10 days of copies.
+- **Checked:** every Sunday it reads back a tenth of the repository (all of it over ten
+  weeks), restores the database and checks it with SQLite, and restores 20 of Vault's files
+  at random, each of which must hash to its own name. Each run writes how it went to
+  `backups/offsite.json`; Admin > People's Storage card shows it, and warns when a night
+  failed, no copy is newer than 36 hours, or a check failed.
+
+**Setting it up**, once, only when the owner asks (it needs their Cloudflare account):
+
+1. In Cloudflare, R2: create a bucket `yjsp-backups` (location: automatic). Under its
+   Settings, add these **bucket lock rules**, so that copies can't be deleted early even with
+   the key:
+   - prefix `keys/`, indefinitely, and prefix `config`, indefinitely (restic's encryption keys
+     and settings: without them nothing can be read);
+   - prefix `data/`, 10 days, and prefix `snapshots/`, 10 days.
+
+   restic deletes data only once no kept copy needs it, which is at least two weeks after it
+   was written, so these rules never get in its way. Then make an **R2 API token**: Object
+   Read & Write, for this bucket only. Note its access key ID and secret, and the account's
+   ID (R2's overview page).
+2. Copy the files from [`deploy/`](../deploy) to the server (from a checkout of `main`,
+   with the key from [Getting access](#getting-access)):
+   `scp -i ~/.ssh/yjsp_oracle deploy/yjsp-offsite* deploy/offsite.env.example opc@<the server>:/tmp/`.
+   Then on the server, in `/tmp`, install restic (from EPEL) and them:
+
+   ```bash
+   cd /tmp
+   sudo dnf install -y oracle-epel-release-el9 && sudo dnf install -y restic
+   sudo install -m 755 yjsp-offsite /usr/local/sbin/
+   sudo install -m 644 yjsp-offsite.service yjsp-offsite.timer yjsp-offsite-verify.service yjsp-offsite-verify.timer /etc/systemd/system/
+   sudo install -d -m 700 /etc/yjsp
+   sudo install -m 600 offsite.env.example /etc/yjsp/offsite.env
+   sudo vi /etc/yjsp/offsite.env  # the account ID, and the token's key ID and secret
+   sudo sh -c 'umask 077 && openssl rand -base64 32 > /etc/yjsp/offsite.password'
+   ```
+
+3. **Put the password in the owner's password manager now** (`sudo cat
+   /etc/yjsp/offsite.password`, once): if the server is lost, it's the only way to read the
+   backups. Never put it anywhere else.
+4. Make the repository, start the timers, and run both once:
+
+   ```bash
+   sudo sh -c 'set -a && . /etc/yjsp/offsite.env && restic init'
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now yjsp-offsite.timer yjsp-offsite-verify.timer
+   sudo systemctl start yjsp-offsite.service && sudo journalctl -u yjsp-offsite -n 20
+   sudo systemctl start yjsp-offsite-verify.service && sudo journalctl -u yjsp-offsite-verify -n 20
+   ```
+
+   The first night uploads everything, so it takes a while; later ones take minutes.
+   Admin > People should then say "Copied off the server … and checked by a restore …".
+
+**Putting it all back** from off-site, when the server's data is lost (on a new server,
+set up as in [Setting up a server from scratch](#setting-up-a-server-from-scratch), with
+`offsite.env` and the password from the password manager):
+
+```bash
+sudo systemctl stop yjsp.service
+sudo sh -c 'set -a && . /etc/yjsp/offsite.env && restic snapshots'   # pick one; latest is the last night
+sudo sh -c 'set -a && . /etc/yjsp/offsite.env && restic restore latest --target /srv/restore'
+cd /srv/yjsp
+sudo mv /srv/restore/srv/yjsp/data/vault /srv/restore/srv/yjsp/data/yorg data/
+sudo mv /srv/restore/srv/yjsp/backups/offsite/yjsp.db data/yjsp.db
+sudo chown -R yjsp:yjsp data && sudo systemctl start yjsp.service
+```
+
+If restic says its index is missing or damaged (the lock rules protect the data, keys,
+and snapshots, not the index), `restic repair index` rebuilds it from the data. Practice
+this on a scratch VM once a semester: a restore you've never done is a guess.
+
 ## Moving to YJSP
 
 Until 0.4.0 the server was laid out as it was when the site was CVC: `/srv/vault`,
@@ -291,7 +383,9 @@ If the VM is ever lost or moved:
    `yjsp`.
 4. The files in [`deploy/`](../deploy): the units in `/etc/systemd/system/`, `yjsp-backup`
    in `/usr/local/sbin/` (executable). Then
-   `sudo systemctl enable yjsp.service yjsp-backup.timer`.
+   `sudo systemctl enable yjsp.service yjsp-backup.timer`. And the off-site backup, as in
+   [Off-site backups](#off-site-backups), with the existing `offsite.env` and password if
+   it's a move: then put the data back from it before the first start.
 5. The first deploy expects a `server/.venv` already in place: copy `server/` and
    `web/dist` in by hand, run the `uv sync` line from `deploy/deploy.sh` there, and start the
    service. From then on, `deploy/deploy.sh` does it.

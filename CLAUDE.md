@@ -237,10 +237,12 @@ rolling back, backups, setting up a new server, and the rules. In short:
 - **Rolling back:** deploy the previous tag. If the release ran a migration, also
   restore the database backup taken before the deploy. Blobs are append-only, so they
   never need restoring.
-- **Backups:** the server backs its database up every night (kept 14 days). Still to
-  do: copy the database, Vault's folder (`YJSP_VAULT_DIR`), and Yorg's (`YJSP_YORG_DIR`)
-  off the host every night (blobs never change, so their backups are incremental; Yorg's
-  scripts and models do, so keep their old versions), and test a restore every semester.
+- **Backups:** the server backs its database up every night on the host (kept 14 days), and
+  `deploy/yjsp-offsite` copies the database, Vault's folder (`YJSP_VAULT_DIR`), and Yorg's
+  (`YJSP_YORG_DIR`) off it every night, encrypted, to an R2 bucket (restic, as root, with
+  keys the site can't read), and checks a restore every week; Admin > People shows how it
+  went. Do a full restore on a scratch VM every semester (docs/deploying.md, "Off-site
+  backups").
 - **Configuration:** production runs with `YJSP_ENV=production`, and every setting
   comes from `/srv/yjsp/.env` on the server. Never print it, copy it off, or commit it.
 - **Never expose a development server** (dev sign-in) through Funnel or any other way.

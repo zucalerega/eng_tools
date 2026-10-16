@@ -76,6 +76,8 @@ test("admins see how full the server's disk is, and how much of it Vault and Yor
         expect.stringMatching(/^Free [\d.]+ (bytes|KB|MB|GB)$/),
     ]);
     expect(screen.getByText(/^[\d.]+ (KB|MB|GB) of [\d.]+ GB used \(\d+%\)$/)).toBeTruthy();
+    // The test server has no off-site backup, and says so.
+    expect(screen.getByText(/^Not copied off the server/)).toBeTruthy();
 });
 
 test("admins see when each person was last on, and who's on now", async () => {

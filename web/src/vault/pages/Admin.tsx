@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import {
     api,
     type Account,
+    type Backup,
     type SiteSettings,
     type Storage,
     type WhitelistAdded,
     type WhitelistEntry,
 } from "../../api";
 import { type Grants, type Role, vaultApi } from "../api";
-import { formatDate, formatDuration, formatSize, formatTime } from "../../format";
+import { formatAgo, formatDate, formatDuration, formatSize, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
 import { VAULT } from "../paths";
@@ -366,7 +367,70 @@ function DiskSpace() {
                     </li>
                 ))}
             </ul>
+            <OffsiteBackup backup={storage.backup ?? null} />
         </div>
+    );
+}
+
+const STALE_HOURS = 36; // since the last off-site copy that worked: say so (one runs each night)
+const UNCHECKED_DAYS = 9; // since the last restore that checked out: say so (one runs each week)
+
+/** Whether the data is copied off the server, from the off-site backup's last report: quiet while it works. */
+function OffsiteBackup({ backup }: { backup: Backup | null }) {
+    if (backup === null) {
+        return (
+            <p className="muted storage-backup">
+                Not copied off the server: there's no off-site backup here (docs/deploying.md, "Backups").
+            </p>
+        );
+    }
+    const time = (iso: string | null) => (iso === null ? null : Date.parse(iso));
+    const since = (iso: string | null, hours: number) => iso === null || Date.now() - time(iso)! > hours * 3_600_000;
+    const failing =
+        backup.backup_failed_at !== null && (time(backup.backed_up_at) ?? 0) < time(backup.backup_failed_at)!;
+    const checkFailing =
+        backup.verify_failed_at !== null && (time(backup.verified_at) ?? 0) < time(backup.verify_failed_at)!;
+    const last =
+        backup.backed_up_at === null
+            ? "No copy has worked yet."
+            : `The last that worked is from ${formatAgo(backup.backed_up_at)}.`;
+    return (
+        <>
+            {failing ? (
+                <Notice tone="warning">
+                    The off-site backup failed {formatAgo(backup.backup_failed_at!)}: {backup.backup_error}. {last} On
+                    the server, <code>journalctl -u yjsp-offsite</code> says more.
+                </Notice>
+            ) : since(backup.backed_up_at, STALE_HOURS) ? (
+                <Notice tone="warning">
+                    {backup.backed_up_at === null
+                        ? "No off-site copy has been made yet."
+                        : `The last off-site copy is from ${formatAgo(backup.backed_up_at)}, and one should run each night.`}{" "}
+                    On the server, <code>systemctl status yjsp-offsite.timer</code> says whether it's set to.
+                </Notice>
+            ) : (
+                <p className="storage-backup">
+                    <span className="storage-backup-ok" aria-hidden="true">
+                        ✓
+                    </span>
+                    Copied off the server {formatAgo(backup.backed_up_at!)}
+                    {checkFailing
+                        ? ""
+                        : backup.verified_at === null
+                          ? ", not yet checked by a restore"
+                          : since(backup.verified_at, UNCHECKED_DAYS * 24)
+                            ? `, but not checked by a restore since ${formatAgo(backup.verified_at)}`
+                            : `, and checked by a restore ${formatAgo(backup.verified_at)}`}
+                </p>
+            )}
+            {checkFailing && (
+                <Notice tone="warning">
+                    The weekly check, a restore, failed {formatAgo(backup.verify_failed_at!)}: {backup.verify_error}.
+                    The copies may not come back as they went: on the server,{" "}
+                    <code>journalctl -u yjsp-offsite-verify</code> says more.
+                </Notice>
+            )}
+        </>
     );
 }
 

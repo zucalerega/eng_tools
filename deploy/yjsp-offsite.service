@@ -1,0 +1,20 @@
+# /etc/systemd/system/yjsp-offsite.service on the server: see docs/deploying.md, "Backups". Keep this copy the same as
+# the server's.
+[Unit]
+Description=Copy YJSP's data off the server (restic, to object storage)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# As root: its keys (/etc/yjsp/offsite.env) are out of the site's reach.
+ExecStart=/usr/local/sbin/yjsp-offsite backup
+Environment=RESTIC_CACHE_DIR=/var/cache/yjsp-offsite
+CacheDirectory=yjsp-offsite
+StateDirectory=yjsp-offsite
+# Gently: the site keeps working while it reads every file.
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full

@@ -1,0 +1,12 @@
+# /etc/systemd/system/yjsp-offsite.timer on the server: see docs/deploying.md, "Backups". Keep this copy the same as the
+# server's.
+[Unit]
+Description=Copy YJSP's data off the server each night
+
+[Timer]
+# After the database's own nightly backup (08:30 UTC).
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

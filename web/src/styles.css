@@ -1197,6 +1197,17 @@ path.lines-memory {
     font-weight: 600;
 }
 
+.storage-backup {
+    margin: 0.6rem 0 0;
+    font-size: 0.9rem;
+}
+
+.storage-backup-ok {
+    margin-right: 0.4rem;
+    color: var(--good);
+    font-weight: 700;
+}
+
 .storage-swatch {
     display: inline-block;
     width: 0.65rem;

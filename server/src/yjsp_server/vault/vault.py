@@ -1618,31 +1618,42 @@ def _kept(components: list[solidworks.Component]) -> Iterator[solidworks.Compone
             yield component
 
 
-def _graft(mine: list[solidworks.Component], theirs: list[solidworks.Component]) -> None:
-    """Give virtual parts without shapes the ones they have in the components of the file that keeps them, by name."""
-    named = {component.name: component for component in theirs}
-    for component in mine:
-        other = named.get(component.name)
-        if other is None or not component.virtual:
-            continue
-        if component.children:
-            _graft(component.children, other.children)
-        elif component.shape is None:
-            component.shape = other.shape
+# The shapes of the virtual parts a file keeps, by their names from its components down.
+_Kept = dict[tuple[str, ...], list[caliper.MeshBody] | None]
 
 
-def _components_in(store: BlobStore, version: Version, configuration: str, name: str) -> list[solidworks.Component]:
-    """A sub-assembly's components as its own file has them, in a configuration (else the one it was saved in): none
-    where it can't be read."""
+def _kept_shapes(components: list[solidworks.Component], above: tuple[str, ...] = ()) -> _Kept:
+    shapes: _Kept = {}
+    for component in components:
+        if component.virtual and component.children:
+            shapes |= _kept_shapes(component.children, (*above, component.name))
+        elif component.virtual:
+            shapes[(*above, component.name)] = component.shape
+    return shapes
+
+
+def _graft(components: list[solidworks.Component], shapes: _Kept, above: tuple[str, ...] = ()) -> None:
+    """Give virtual parts without shapes the ones the file that keeps them has."""
+    for component in components:
+        if component.virtual and component.children:
+            _graft(component.children, shapes, (*above, component.name))
+        elif component.virtual and component.shape is None:
+            component.shape = shapes.get((*above, component.name))
+
+
+def _kept_in(store: BlobStore, version: Version, configuration: str, name: str) -> _Kept:
+    """The shapes of the virtual parts a sub-assembly keeps in its own file, in a configuration (else the one it was
+    saved in): only those, as the rest of what the file has isn't wanted, and a model can read many sub-assemblies.
+    None where it can't be read."""
     if version.size > _MAX_READ:
-        return []
+        return {}
     try:
         read = _read_solidworks(store, version.blob_sha256, "assembly", name)
     except solidworks.Unreadable:
-        return []
+        return {}
     made = read if isinstance(read, list) else []
     chosen = next((a for a in made if a.configuration == configuration), made[0] if made else None)
-    return chosen.components if chosen is not None else []
+    return _kept_shapes(chosen.components) if chosen is not None else {}
 
 
 def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
@@ -1687,15 +1698,15 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
             wanted.append((read.configuration[:255], read.units, mesh, None))
         else:
             finder = _Finder(db, tree, target.created_at)
-            # Sub-assemblies' components as their own files have them, by file, version and configuration: the shapes
-            # of the virtual parts they keep.
-            theirs: dict[tuple[int, int, str], list[solidworks.Component]] = {}
+            # The shapes of the virtual parts sub-assemblies keep in their own files, by file, version and
+            # configuration.
+            theirs: dict[tuple[int, int, str], _Kept] = {}
 
-            def kept_in(sub: File, number: int, configuration: str) -> list[solidworks.Component]:
+            def kept_in(sub: File, number: int, configuration: str) -> _Kept:
                 key = (sub.id, number, configuration)
                 if key not in theirs:
                     name = f"{tree.file_path(sub)} v{number}"
-                    theirs[key] = _components_in(store, _version(db, sub.id, number), configuration, name)
+                    theirs[key] = _kept_in(store, _version(db, sub.id, number), configuration, name)
                 return theirs[key]
 
             def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:

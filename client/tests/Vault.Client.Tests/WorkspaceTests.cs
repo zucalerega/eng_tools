@@ -662,6 +662,119 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task OpeningAFileFromElsewhereGetsWhatItUsesAtEveryLevel()
+    {
+        // An assembly from Kenesto that's here, with its sub-assembly and its own part, but not the sub-assembly's parts:
+        // SolidWorks would open it with those missing.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var kept = await FromKenestoAsync(alice);
+        await bob.GetLatestAsync([Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"), Local(bob, "09_Hopper/Thrust Structure.SLDASM"), Local(bob, "09_Hopper/Leg.SLDPRT")]);
+        var read = new List<string>();
+
+        var (got, notInVault) = await bob.GetUsedFilesAsync(
+            Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"),
+            path =>
+            {
+                read.Add(Path.GetFileName(path));
+                return kept(path);
+            },
+            latest: false);
+
+        Assert.Equal(["Gimbal Ring.SLDPRT", "Stringer.SLDPRT"], got.Downloaded.Select(Name).Order());
+        Assert.Equal("stringer", File.ReadAllText(Local(bob, "09_Hopper/Gimbal/Stringer.SLDPRT")));
+        Assert.Equal([$@"K:\Yellow Jacket Space Program\Project CAD\{_folder}\09_Hopper\Nozzle.SLDPRT"], notInVault);
+        // Each file once, and only once it's here.
+        Assert.Equal(["Assy - Vehicle.SLDASM", "Gimbal Ring.SLDPRT", "Leg.SLDPRT", "Stringer.SLDPRT", "Thrust Structure.SLDASM"], read.Order());
+
+        // With everything here, nothing comes down, and what isn't in the vault is still said.
+        (got, notInVault) = await bob.GetUsedFilesAsync(Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"), kept, latest: false);
+        Assert.Empty(got.Downloaded);
+        Assert.Single(notInVault);
+    }
+
+    [Fact]
+    public async Task GettingTheLatestOfAFileFromElsewhereUpdatesWhatItUsesToo()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var kept = await FromKenestoAsync(alice);
+        await bob.GetLatestAsync([Folder(bob)]);
+        var leg = Local(alice, "09_Hopper/Leg.SLDPRT");
+        await alice.CheckoutAsync([leg]);
+        File.WriteAllText(leg, "leg v2");
+        await alice.CheckinAsync([leg], "a longer leg");
+        await bob.RefreshAsync();
+
+        var (got, _) = await bob.GetUsedFilesAsync(Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"), kept, latest: false);
+        Assert.Empty(got.Downloaded); // only what isn't here
+        (got, _) = await bob.GetUsedFilesAsync(Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"), kept, latest: true);
+        Assert.Equal(["Leg.SLDPRT"], got.Downloaded.Select(Name));
+        Assert.Equal("leg v2", File.ReadAllText(Local(bob, "09_Hopper/Leg.SLDPRT")));
+    }
+
+    [Fact]
+    public async Task WhatFilesKeepIsReadOnTheCallersThread()
+    {
+        // The add-in reads them from SolidWorks, which only answers on its main thread: the task pane's.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var kept = await FromKenestoAsync(alice);
+        await bob.GetLatestAsync([Local(bob, "09_Hopper/Assy - Vehicle.SLDASM")]);
+        var context = new PoolContext();
+        var elsewhere = new List<string>();
+        var read = new List<string>();
+
+        await Task.Run(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+            try
+            {
+                return bob.GetUsedFilesAsync(
+                    Local(bob, "09_Hopper/Assy - Vehicle.SLDASM"),
+                    path =>
+                    {
+                        (SynchronizationContext.Current == context ? read : elsewhere).Add(Path.GetFileName(path));
+                        return kept(path);
+                    },
+                    latest: true);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(null);
+            }
+        });
+
+        Assert.Empty(elsewhere);
+        Assert.Contains("Stringer.SLDPRT", read); // after it came down
+    }
+
+    /// <summary>
+    /// A folder brought over from Kenesto, checked in by this person: an assembly using its own part and a sub-assembly,
+    /// which uses two parts in a subfolder and one that wasn't brought over. And the paths each file keeps for what it
+    /// uses, Kenesto's, as SolidWorks would read them (by file name: the same in every workspace).
+    /// </summary>
+    private async Task<Func<string, IEnumerable<string>>> FromKenestoAsync(Workspace workspace)
+    {
+        var kenesto = $@"K:\Yellow Jacket Space Program\Project CAD\{_folder}\09_Hopper";
+        await workspace.CheckinAsync(
+            [
+                Write(workspace, "09_Hopper/Assy - Vehicle.SLDASM", "assembly"),
+                Write(workspace, "09_Hopper/Leg.SLDPRT", "leg"),
+                Write(workspace, "09_Hopper/Thrust Structure.SLDASM", "sub-assembly"),
+                Write(workspace, "09_Hopper/Gimbal/Gimbal Ring.SLDPRT", "ring"),
+                Write(workspace, "09_Hopper/Gimbal/Stringer.SLDPRT", "stringer"),
+            ],
+            "from Kenesto");
+        var keeps = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Assy - Vehicle.SLDASM"] = [$@"{kenesto}\Thrust Structure.SLDASM", $@"{kenesto}\Leg.SLDPRT"],
+            ["Thrust Structure.SLDASM"] = [$@"{kenesto}\Gimbal\Gimbal Ring.SLDPRT", $@"{kenesto}\Gimbal\Stringer.SLDPRT", $@"{kenesto}\Nozzle.SLDPRT"],
+        };
+        return path => keeps.TryGetValue(Path.GetFileName(path), out var paths) ? paths : [];
+    }
+
+    [Fact]
     public async Task ACheckinNamesEveryFileItUsesThatTheVaultCantHave()
     {
         var alice = await WorkspaceAsync("alice");
@@ -832,6 +945,24 @@ public sealed class WorkspaceTests : IDisposable
         }
 
         public void Dispose() => File.SetUnixFileMode(_folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    /// <summary>Runs what's posted to it on the thread pool, as itself: it stands in for the task pane's thread.</summary>
+    private sealed class PoolContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) =>
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                SetSynchronizationContext(this);
+                try
+                {
+                    d(state);
+                }
+                finally
+                {
+                    SetSynchronizationContext(null);
+                }
+            });
     }
 
     private static void MakeWritable(string path) => File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);

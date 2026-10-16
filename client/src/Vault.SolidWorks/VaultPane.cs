@@ -835,11 +835,13 @@ internal sealed partial class VaultPane : UserControl
         involved.AddRange(_sw.AllReferences(path));
         var stale = (await CurrentStatusAsync(workspace, involved)).Where(s => s.State == FileState.Outdated).Select(s => s.LocalPath).ToList();
         RefuseUnsaved(stale, "get the latest version");
-        var notInVault = new List<string>();
+        IReadOnlyList<string> notInVault = Array.Empty<string>();
         var result = await ReplacingAsync(stale, async () =>
         {
             var got = await workspace.GetLatestAsync(new[] { path });
-            await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
+            var (used, missing) = await workspace.GetUsedFilesAsync(path, _sw.KeptReferences, latest: true);
+            got.Add(used);
+            notInVault = missing;
             return got;
         });
         var nothing = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count + notInVault.Count == 0;
@@ -955,58 +957,17 @@ internal sealed partial class VaultPane : UserControl
     // The active document, if it's an assembly: what Insert puts files in.
     private string? ActiveAssembly() => _sw.ActiveDocumentPath is { } path && SolidWorksHost.IsAssembly(path) ? path : null;
 
-    // Before opening a file that's here: the files it uses that aren't. Nothing to say if they all are.
+    /// <summary>
+    /// Before opening a SolidWorks file that's here: the files it uses that aren't, at every level (a sub-assembly that's
+    /// here can still be missing its parts), by the paths SolidWorks keeps in them (<see cref="Workspace.GetUsedFilesAsync"/>).
+    /// It waits for whatever Vault is doing, a refresh included. Nothing to say if they're all here and in the vault.
+    /// </summary>
     private Task GetWhatItUsesAsync(string path) =>
         RunAsync("Getting the files it uses", async workspace =>
         {
-            var result = new GetResult();
-            var notInVault = new List<string>();
-            await GetKeptReferencesAsync(workspace, path, latest: false, result, notInVault);
+            var (result, notInVault) = await workspace.GetUsedFilesAsync(path, _sw.KeptReferences, latest: false);
             return result.Downloaded.Count + result.Failures.Count + notInVault.Count == 0 ? "" : Summary(result) + NotInVaultNote(notInVault);
         });
-
-    /// <summary>
-    /// Get the files a SolidWorks file uses, and theirs, by the paths SolidWorks keeps in them. The vault knows what
-    /// files checked in from SolidWorks use, but not what files uploaded in the web app use (like a folder brought
-    /// over from Kenesto): those say it only in themselves, by where the files were where they came from (K:\...),
-    /// and <see cref="Workspace.FindUsedFiles"/> finds them in the vault. Each level is read once it's here. latest:
-    /// files already here are updated too; otherwise only what isn't here comes down. Kept paths no vault file
-    /// matches, and no file is at, go in notInVault.
-    /// </summary>
-    private async Task GetKeptReferencesAsync(Workspace workspace, string path, bool latest, GetResult result, List<string> notInVault)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
-        var level = new List<string> { path };
-        while (level.Count > 0)
-        {
-            var (inVault, missing) = workspace.FindUsedFiles(level.Where(File.Exists).SelectMany(_sw.KeptReferences).ToList());
-            notInVault.AddRange(missing.Where(p => !File.Exists(p) && !notInVault.Contains(p, StringComparer.OrdinalIgnoreCase)));
-            level = inVault.Where(seen.Add).ToList();
-            var get = latest ? level : level.Where(p => !File.Exists(p)).ToList();
-            if (get.Count > 0)
-            {
-                result.Add(await workspace.GetLatestAsync(get));
-            }
-        }
-    }
-
-    // Whether a SolidWorks file here uses files the vault has that aren't here, by the paths it keeps. Quick: it
-    // doesn't wait for the vault, and says no while another operation is running.
-    private bool UsesFilesNotHere(string path)
-    {
-        if (_workspace is not { } workspace || !SolidWorksHost.IsSolidWorksFile(path) || !_gate.Wait(0))
-        {
-            return false;
-        }
-        try
-        {
-            return workspace.FindUsedFiles(_sw.KeptReferences(path)).InVault.Any(p => !File.Exists(p));
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
 
     // What the files got use that's in neither the vault nor anywhere here (like files left behind on Kenesto): the
     // first few by name, and all of them in the log.
@@ -1129,7 +1090,9 @@ internal sealed partial class VaultPane : UserControl
                 var got = await workspace.GetLatestAsync(paths);
                 foreach (var path in folder ? Array.Empty<string>() : paths.Where(SolidWorksHost.IsSolidWorksFile))
                 {
-                    await GetKeptReferencesAsync(workspace, path, latest: true, got, notInVault);
+                    var (used, missing) = await workspace.GetUsedFilesAsync(path, _sw.KeptReferences, latest: true);
+                    got.Add(used);
+                    notInVault.AddRange(missing.Except(notInVault, StringComparer.OrdinalIgnoreCase).ToList());
                 }
                 return got;
             });
@@ -1769,7 +1732,7 @@ internal sealed partial class VaultPane : UserControl
 
     /// <summary>
     /// Open files, SolidWorks' own in SolidWorks. One that isn't here yet is got first, with the parts it uses; one
-    /// that is, with the parts it uses that aren't.
+    /// that is, with the parts it uses that aren't, at every level.
     /// </summary>
     private async Task OpenAsync(IReadOnlyList<string> paths)
     {
@@ -1779,7 +1742,7 @@ internal sealed partial class VaultPane : UserControl
             {
                 await GetLatestAsync(path);
             }
-            else if (File.Exists(path) && UsesFilesNotHere(path))
+            else if (File.Exists(path) && SolidWorksHost.IsSolidWorksFile(path))
             {
                 await GetWhatItUsesAsync(path);
             }

@@ -152,7 +152,9 @@ Vault's client:
 SolidWorks add-in:
 - Call the SolidWorks API only on SolidWorks' main thread, and only through
   `SolidWorksHost`. Awaits in the task pane resume on that thread; `Vault.Client` code does
-  not, so compute SolidWorks data before calling into it (see `ReferenceMap`).
+  not, so compute SolidWorks data before calling into it (see `ReferenceMap`). The one
+  exception, `Workspace.GetUsedFilesAsync`, reads each level as it comes down, so it calls
+  back on the caller's thread, and a test holds it to that.
 - Nothing may throw into SolidWorks. Event handlers and UI handlers catch everything and
   log to `%LOCALAPPDATA%\Vault\addin.log`.
 - One workspace operation at a time (the pane's gate), because `Workspace` isn't

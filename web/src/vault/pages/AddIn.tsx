@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type AddIn, type AddInPerson } from "../../api";
 import { Time } from "../../components";
 import { formatDate } from "../../format";
@@ -10,6 +10,24 @@ import { formatDate } from "../../format";
 function versions(person: AddInPerson): [string | null, boolean][] {
     const found = new Map(person.computers.map((c) => [c.version, c.outdated]));
     return [...found].sort(([a], [b]) => (a ?? "").localeCompare(b ?? ""));
+}
+
+/** How many computers someone has the add-in on, without naming them: a computer's name is often the owner's own. */
+function computers(person: AddInPerson) {
+    const used = person.computers.filter((c) => c.in_use).length;
+    const idle = person.computers.length - used;
+    if (!person.computers.length) return <span className="muted">not yet</span>;
+    return (
+        <>
+            {used}
+            {idle > 0 && (
+                <span className="muted" title="Not used in the last 90 days">
+                    {" "}
+                    (+{idle} idle)
+                </span>
+            )}
+        </>
+    );
 }
 
 export function AddInTracker() {
@@ -55,7 +73,7 @@ export function AddInTracker() {
                         <thead>
                             <tr>
                                 <th>Name</th>
-                                <th>Signed in on</th>
+                                <th>Computers</th>
                                 <th>Version</th>
                                 <th>Last used</th>
                                 <th>Downloaded</th>
@@ -70,25 +88,7 @@ export function AddInTracker() {
                                 return (
                                     <tr key={person.user.id}>
                                         <td>{person.user.name}</td>
-                                        <td>
-                                            {person.computers.length ? (
-                                                person.computers.map((c, i) => (
-                                                    <Fragment key={i}>
-                                                        {i > 0 && ", "}
-                                                        <span
-                                                            className={c.in_use ? undefined : "muted"}
-                                                            title={
-                                                                c.in_use ? undefined : "Not used in the last 90 days"
-                                                            }
-                                                        >
-                                                            {c.name}
-                                                        </span>
-                                                    </Fragment>
-                                                ))
-                                            ) : (
-                                                <span className="muted">not yet</span>
-                                            )}
-                                        </td>
+                                        <td>{computers(person)}</td>
                                         <td>
                                             {versions(person).map(([version, outdated]) => (
                                                 <span
@@ -125,8 +125,8 @@ export function AddInTracker() {
                 </div>
             )}
             <p className="muted tracker-note">
-                Have it: signed in with the add-in on a computer, and used it there in the last 90 days (computers it
-                hasn't been used on since are greyed out).{" "}
+                Have it: signed in with the add-in on a computer, and used it there in the last 90 days. Computers are
+                counted, not named.{" "}
                 {addIn.counting_since
                     ? `Downloads are counted since ${formatDate(addIn.counting_since)}.`
                     : "Downloads are counted from now on."}

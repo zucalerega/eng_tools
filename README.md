@@ -2,8 +2,8 @@
 
 The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
 the team's SolidWorks and STEP files, and **[Yorg](#yorg-test-data)** (`/yorg`), for its test
-data. The site's address on its own shows both, and the switcher at the top left goes
-between them.
+data. The site's address on its own shows both (the mark at the top left goes back to it),
+and the switcher beside it goes between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
@@ -24,7 +24,7 @@ Google signs in to accounts already there: one made with Google before, or an ad
 invite. Someone without a GT account (a mentor, say) joins by an invite to the address they
 use with Google (Admin > People). Admin > People also shows how many people used the site
 each day this past month and how long they spent on it, who has the SolidWorks add-in (on
-which computers and versions, and how many people in all), how hard the server is working
+how many computers and which versions, and how many people in all), how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.

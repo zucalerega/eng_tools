@@ -75,11 +75,8 @@ export function App() {
     return (
         <>
             <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
-                <Link
-                    to={yorg ? "/yorg" : vaultApp ? VAULT : "/"}
-                    className="brand"
-                    aria-label={yorg ? YORG : vaultApp ? "Vault" : SITE}
-                >
+                {/* The app's mark, but always home to the site's front page, where both apps are. */}
+                <Link to="/" className="brand" aria-label={`${SITE} home`}>
                     {yorg ? <YorgMark /> : vaultApp ? <VaultMark /> : <SiteMark />}
                 </Link>
                 <nav className="apps" aria-label="Apps">

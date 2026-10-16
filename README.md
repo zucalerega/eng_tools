@@ -75,10 +75,9 @@ replaces Kenesto.
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
   configurations; Caliper lists the parts it couldn't show, and why. A part saved without
-  its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it.
-  If Caliper can't read a file, or a part is built by SolidWorks as it opens the assembly (a
-  routed tube), it says so: open the file in SolidWorks and click Make 3D view on the Vault
-  tab.
+  its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
+  and so are routed tubes, which their assembly keeps inside its file. If Caliper can't read
+  a file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

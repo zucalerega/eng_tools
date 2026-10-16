@@ -2,14 +2,15 @@
 none of its own (docs/vault.md, "Caliper").
 
 A solid is a boundary: faces, each on a surface (a plane, cylinder, cone, sphere, torus, B-spline, rolling ball blend,
-swept or spun surface) and bounded by loops of edges on curves (lines, circles, ellipses, B-splines, intersections of
-two surfaces, curves in a surface's parameters). Each edge is sampled once, finely enough that its chords stray from
-the curve by no more than the tolerance, so the faces either side of it share its points. Each face's loops are then
-taken into its surface's parameters (u, v) and the region they bound there is cut into strips, at every boundary
-point's u and wherever the surface curves enough to need it, and each strip into cells between the boundaries that
-cross it (and, on surfaces curved both ways, at steps of v): their corners on the boundary are on its chords, the
-rest on the surface. Which side of a boundary the face is on is its loop's direction: the face is on its left, seen
-from the side its normal points to.
+swept or spun surface, or one of those offset) and bounded by loops of edges on curves (lines, circles, ellipses,
+B-splines, intersections of two surfaces, curves in a surface's parameters). Each edge is sampled once, finely enough
+that its chords stray from the curve by no more than the tolerance, so the faces either side of it share its points.
+Each face's loops are then taken into its surface's parameters (u, v) and the region they bound there is cut into
+strips, at every boundary point's u and wherever the surface curves enough to need it (where it curves, not where its
+parameters speed up, as along a swept tube's bends), and each strip into cells between the boundaries that cross it
+(and, on surfaces curved both ways, at steps of v): their corners on the boundary are on its chords, the rest on the
+surface. Which side of a boundary the face is on is its loop's direction: the face is on its left, seen from the side
+its normal points to.
 
 Where the reference (parasolid.py) and the files disagree, the files win: a cone is P + vA + (X cos u + Y sin u)(r +
 v tan a), not P - vA + ..., as the curves its edges keep in its parameters show; and a blend's natural normal points
@@ -357,11 +358,23 @@ class Sphere(_Round):
 
 
 class Torus(_Round):
-    v_period = TAU
+    v_period: float | None = TAU
 
     def __init__(self, f: dict[str, Any]) -> None:
         super().__init__(f["centre"], f["axis"], f["x_axis"])
         self.major, self.minor = f["major_radius"], f["minor_radius"]
+        if self.major < self.minor:
+            # An apple (0 < major <= minor) or a lemon (major < 0): the part of a torus that crosses its axis where
+            # major + minor cos v >= 0, which ends in a pole at each end of v, as a sphere does.
+            self.v_period = None
+            self.v_max = math.acos(max(-1.0, min(1.0, -self.major / self.minor)))
+            self.v_min = -self.v_max
+
+    def singular(self, p: Vec) -> float | None:
+        w = sub(p, self.c)
+        if self.v_max is not None and math.hypot(dot(w, self.x), dot(w, self.y)) < 1e-9:
+            return math.copysign(self.v_max, dot(w, self.a))
+        return None
 
     def at(self, u: float, v: float) -> Vec:
         ring = mul(self.around(u), self.major + self.minor * math.cos(v))
@@ -427,9 +440,18 @@ def newton_uv(surface: Surface, p: Vec, u: float, v: float, bounds: SplineSurfac
     return (u, v)
 
 
+def _off_chord(p: Vec, a: Vec, b: Vec) -> float:
+    """How far p is from the chord from a to b."""
+    ab = sub(b, a)
+    length = dot(ab, ab)
+    f = max(0.0, min(1.0, dot(sub(p, a), ab) / length)) if length else 0.0
+    return norm(sub(p, add(a, mul(ab, f))))
+
+
 def curvature_steps(surface: Surface, tol: float, uvs: list[UV]) -> tuple[float | None, float | None]:
-    """Steps in u and v for a surface without radii to go by: from how far its midpoints stray from chords over the
-    face's range of parameters."""
+    """Steps in u and v for a surface without radii to go by: from how far its points stray from chords over the
+    face's range of parameters (from the chords, not their midpoints: where a parameter speeds up, as along a swept
+    tube's bends, a chord's midpoint isn't its middle point's, and that isn't a curve)."""
     if not uvs:
         return None, None
     us, vs = [u for u, _ in uvs], [v for _, v in uvs]
@@ -441,10 +463,8 @@ def curvature_steps(surface: Surface, tol: float, uvs: list[UV]) -> tuple[float 
         for j in range(n + 1):
             u, v = u0 + hu * i, v0 + hv * j
             p = surface.at(u, v)
-            a, b = surface.at(u - hu, v), surface.at(u + hu, v)
-            worst_u = max(worst_u, norm(sub(p, mul(add(a, b), 0.5))) / (hu * hu))
-            a, b = surface.at(u, v - hv), surface.at(u, v + hv)
-            worst_v = max(worst_v, norm(sub(p, mul(add(a, b), 0.5))) / (hv * hv))
+            worst_u = max(worst_u, _off_chord(p, surface.at(u - hu, v), surface.at(u + hu, v)) / (hu * hu))
+            worst_v = max(worst_v, _off_chord(p, surface.at(u, v - hv), surface.at(u, v + hv)) / (hv * hv))
     return (math.sqrt(4 * tol / worst_u) if worst_u else None, math.sqrt(4 * tol / worst_v) if worst_v else None)
 
 
@@ -666,6 +686,31 @@ class Blend(Surface):
         return None, angle_step(self.r, tol) / (math.pi / 2)
 
 
+class Offset(Surface):
+    """A surface moved a distance along its normal, with the same (u, v): Parasolid's natural normal, du x dv, the
+    other way where the surface's sense is "-" (a thin feature's other wall)."""
+
+    def __init__(self, f: dict[str, Any], model: "Model") -> None:
+        self.s = model.surface(f["surface"])
+        self.d = f["offset"] * (1 if f["sense"] == "+" else -1) * (-1 if self.s.flip else 1)  # along du x dv
+        self.u_period, self.v_period = self.s.u_period, self.s.v_period
+        self.v_min, self.v_max = self.s.v_min, self.s.v_max
+        self.flip, self.follows = self.s.flip, self.s.follows
+
+    def at(self, u: float, v: float) -> Vec:
+        return add(self.s.at(u, v), mul(self.s.normal(u, v), self.d))
+
+    def uv(self, p: Vec, near: UV | None = None) -> UV:
+        if near is not None:
+            found = newton_uv(self, p, *near)
+            if norm(sub(self.at(*found), p)) < 1e-7:
+                return found
+        return newton_uv(self, p, *self.s.uv(p))  # from its foot on the surface it's offset from
+
+    def steps(self, tol: float, uvs: list[UV]) -> tuple[float | None, float | None]:
+        return curvature_steps(self, tol, uvs)
+
+
 def nearest(surface: Surface, p: Vec) -> Vec:
     """Where a rolling ball centred at p touches a support: its nearest point; on a cliff, the edge's."""
     if isinstance(surface, Blend) and surface.r == 0:
@@ -830,7 +875,8 @@ class BCurve(Curve):
 
 
 class SPCurve(Curve):
-    """A curve in a surface's parameters: a 2D B-spline of (u, v)."""
+    """A curve in a surface's parameters: a 2D B-spline of (u, v). One that goes once round a periodic surface, its
+    ends meeting there though not in (u, v), is periodic as Parasolid has it: a stretch of it can run on past an end."""
 
     def __init__(self, f: dict[str, Any], model: "Model") -> None:
         self.surface_index = f["surface"]
@@ -838,12 +884,18 @@ class SPCurve(Curve):
         flat = model.node(f["b_curve"])
         if flat.fields["sense"] != "+":
             raise Unfollowed("A curve in a surface's parameters runs backwards")
-        self.uvs = model.spline(flat.fields["nurbs"])
-        self.closed = self.uvs.periodic
-        self.period = self.uvs.t1 - self.uvs.t0 if self.uvs.periodic else None
+        s = self.uvs = model.spline(flat.fields["nurbs"])
+        round_once = (
+            s.t1 > s.t0 and norm(sub(self.surface.at(*s.at(s.t0)[:2]), self.surface.at(*s.at(s.t1)[:2]))) < 1e-8
+        )
+        self.closed = s.periodic or round_once
+        self.period = s.t1 - s.t0 if self.closed else None
 
     def uv_at(self, t: float) -> UV:
-        p = self.uvs.at(t)
+        s = self.uvs
+        if self.period and not s.t0 <= t <= s.t1:
+            t = s.t0 + (t - s.t0) % self.period
+        p = s.at(t)
         return (p[0], p[1])
 
     def at(self, t: float) -> Vec:
@@ -1046,6 +1098,8 @@ class Model:
             made = Spun(f, self)
         elif node.name == "SWEPT_SURF":
             made = Swept(f, self)
+        elif node.name == "OFFSET_SURF":
+            made = Offset(f, self)
         else:
             raise Unfollowed(f"It has a surface of a kind Caliper doesn't follow ({node.name})")
         made.sense = f["sense"]
@@ -1119,9 +1173,14 @@ def polyline(curve: Curve, start: Vec | None, end: Vec | None, tol: float) -> Po
         if start is None or end is None:
             raise Unfollowed("A straight edge has no ends")
         return [start, end], None, None
-    if ring:
-        if curve.period is None:
+    if ring and curve.period is None:
+        # A curve that closes without being periodic (one in a surface's parameters, once round its period): all of it.
+        t0, t1 = curve.range()
+        if norm(sub(curve.at(t0), curve.at(t1))) > tol:
             raise Unfollowed("A closed edge is on an open curve")
+        samples = curve.sample(t0, t1, tol) if forward else curve.sample(t1, t0, tol)
+    elif ring:
+        assert curve.period is not None
         t0 = curve.range()[0]
         samples = curve.sample(t0, t0 + curve.period if forward else t0 - curve.period, tol)
     else:
@@ -1192,11 +1251,23 @@ def solids(nodes: dict[int, Node]) -> list[Solid]:
         raise Unfollowed(f"Its solid doesn't fit together ({type(e).__name__})") from e
 
 
+def _size(nodes: dict[int, Node]) -> float:
+    """How big a transmit file's bodies are: across their vertices, or where they have none (a tube, all rings), across
+    their circles."""
+    points = [n.fields["pvec"] for n in nodes.values() if n.name == "POINT"]
+    if not points:
+        for n in nodes.values():
+            if n.name in ("CIRCLE", "ELLIPSE"):
+                r = n.fields["radius" if n.name == "CIRCLE" else "major_radius"]
+                points += [add(n.fields["centre"], (r, r, r)), sub(n.fields["centre"], (r, r, r))]
+    if not points:
+        return 0.01
+    return math.dist([min(p[k] for p in points) for k in range(3)], [max(p[k] for p in points) for k in range(3)])
+
+
 def _solids(nodes: dict[int, Node]) -> list[Solid]:
     bodies = [i for i, n in nodes.items() if n.name == "BODY"]
-    points = [n.fields["pvec"] for n in nodes.values() if n.name == "POINT"]
-    size = math.dist([min(p[k] for p in points) for k in range(3)], [max(p[k] for p in points) for k in range(3)]) if points else 0.01  # fmt: skip
-    tol = max(2e-6, size * 5e-4)  # chords within 0.05% of the part's size (and 2 microns)
+    tol = max(2e-6, _size(nodes) * 5e-4)  # chords within 0.05% of the part's size (and 2 microns)
     model = Model(nodes, tol)
     colours = _colours(nodes)
     edges: dict[int, Polyline] = {}

@@ -585,8 +585,8 @@ function tallyMissing(model: Model): Record<Why, number> {
 
 /**
  * What an assembly doesn't show, by why, and how to show it: Make 3D view in SolidWorks makes the models of parts in
- * other configurations, of files without a 3D view Caliper reads, and of parts kept inside an assembly that SolidWorks
- * builds as it opens it (routed tubes); parts not in the vault need checking in.
+ * other configurations, of files without a 3D view Caliper reads, and of parts kept inside an assembly with no shape
+ * there that Caliper found (routed tubes); parts not in the vault need checking in.
  */
 function NotShown({ tally }: { tally: Record<Why, number> }) {
     const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -598,7 +598,7 @@ function NotShown({ tally }: { tally: Record<Why, number> }) {
             `${count(configuration, "part is", "parts are")} in a configuration ${theirFiles} no 3D view of`,
         unreadable > 0 && `${count(unreadable, "part's file has", "parts' files have")} no 3D view Caliper can read`,
         inside > 0 &&
-            `${count(inside, "part is", "parts are")} kept inside ${inside === 1 ? "its assembly" : "their assemblies"}, which SolidWorks builds as it opens them (routed tubes), with no 3D view saved`,
+            `${count(inside, "part is", "parts are")} kept inside ${inside === 1 ? "its assembly" : "their assemblies"} (routed tubes) with no shape there that Caliper found`,
         elsewhere > 0 &&
             `${count(elsewhere, "sub-assembly has", "sub-assemblies have")} none of ${theirParts} parts in the vault`,
         failed > 0 && `${count(failed, "part", "parts")} didn't load`,

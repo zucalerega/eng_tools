@@ -45,7 +45,7 @@ export type Why =
     | "elsewhere" // a sub-assembly none of whose parts are in the vault
     | "configuration" // a part used in a configuration its file has no 3D view of
     | "unreadable" // a part whose file has no 3D view Caliper can read
-    | "inside" // a part kept inside the assembly (a routed tube) that SolidWorks builds as it opens it: none saved
+    | "inside" // a part kept inside an assembly's file (a routed tube) with no shape there that Caliper found
     | "failed"; // a model that didn't load
 
 export interface Model {

@@ -533,8 +533,9 @@ Where the 3D comes from:
       keeps each configuration's bodies as Parasolid's, the geometry kernel it's built on,
       whose file format is published (`vault/parasolid.py`), and the server turns them into
       triangles of its own (`vault/brep.py`): it samples each edge once, so that its chords
-      stray from it by no more than 0.05% of the part's size (and the faces either side share
-      its points), and cuts each face into strips across its surface's parameters. Faces
+      stray from it by no more than 0.05% of the part's size (measured across its vertices,
+      or a tube's, which has none, across its circles), and the faces either side share its
+      points; and it cuts each face into strips across its surface's parameters. Faces
       keep the colors Parasolid has for them. A part that's an import and nothing else (a
       vendor's fitting, an 80/20 extrusion) keeps its bodies with the import, which are the
       part's only if none of its features could make or change one: the server reads them
@@ -563,11 +564,18 @@ Where the 3D comes from:
       their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
       Interconnect) is read in the browser, as the file on its own is (the server says which
       components are one, `format`), one at a time.
-    - **What isn't shown:** parts that were never put in the vault; and parts kept inside
-      the assembly (virtual components, `virtual`) without triangles of their own. Routed
-      tubes are: SolidWorks builds them again from their route whenever it opens their
-      assembly, and saves only the template tube in the file, so Caliper says SolidWorks
-      builds them, and Make 3D view makes them.
+    - **Parts kept inside an assembly** (virtual components, `virtual`), as SolidWorks
+      Routing keeps its routes and their tubes: the assembly's file keeps each one's whole
+      file (`VirtualComp/...`), and a virtual sub-assembly's file keeps its own in turn. A
+      virtual part is read from its solid there, never its display list, which SolidWorks
+      leaves as it was when the part was made: a routed tube's is the library tube's stub,
+      12.7 mm long, while its solid follows the route. A sub-assembly that's a file of its
+      own (a route saved as one) keeps its virtual parts in that file, which the server reads
+      for them. Of the 479 virtual parts the team's assemblies keep, all but 28 read this
+      way, and those 28 have empty solids (24 tubes, and 4 parts with nothing in them).
+    - **What isn't shown:** parts that were never put in the vault; and virtual parts
+      without a shape the server could read where they're kept, which Caliper says (Make 3D
+      view makes them, where SolidWorks can build them).
     - **Files from SolidWorks 2014 and older** are OLE compound documents of the same streams,
       most of them packed (`__ZLB`), and the server reads those too; their units aren't
       saved where it reads them, so they start in mm.
@@ -596,10 +604,10 @@ Where the 3D comes from:
   how to make one; with no version asked for, Caliper then shows the newest one that has a
   model, and says so. A component that draws nothing says why beside its name, and the
   page sums them up by why: parts in a configuration their files have no 3D view of, files
-  with no 3D view Caliper reads, and parts kept inside an assembly that SolidWorks builds as
-  it opens it (all of which Make 3D view in SolidWorks makes); sub-assemblies none of whose
-  parts are in the vault (each component says what its file is, so one with nothing under
-  it isn't taken for a part); and models that didn't load.
+  with no 3D view Caliper reads, and parts kept inside an assembly without a shape there
+  that Caliper read (all of which Make 3D view in SolidWorks makes); sub-assemblies none of
+  whose parts are in the vault (each component says what its file is, so one with nothing
+  under it isn't taken for a part); and models that didn't load.
 - **STEP and IGES files** are read as they are, in the browser, by OpenCascade compiled to
   WebAssembly (occt-import-js, LGPL-2.1: 7 MB, fetched the first time and cached), in a
   worker, so a big file doesn't freeze the page.

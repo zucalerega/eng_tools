@@ -1609,6 +1609,42 @@ def _read_solidworks(
         _READING.release()
 
 
+def _kept(components: list[solidworks.Component]) -> Iterator[solidworks.Component]:
+    """The virtual parts that an assembly's own file keeps: its own, and its virtual sub-assemblies'."""
+    for component in components:
+        if component.virtual and component.children:
+            yield from _kept(component.children)
+        elif component.virtual:
+            yield component
+
+
+def _graft(mine: list[solidworks.Component], theirs: list[solidworks.Component]) -> None:
+    """Give virtual parts without shapes the ones they have in the components of the file that keeps them, by name."""
+    named = {component.name: component for component in theirs}
+    for component in mine:
+        other = named.get(component.name)
+        if other is None or not component.virtual:
+            continue
+        if component.children:
+            _graft(component.children, other.children)
+        elif component.shape is None:
+            component.shape = other.shape
+
+
+def _components_in(store: BlobStore, version: Version, configuration: str, name: str) -> list[solidworks.Component]:
+    """A sub-assembly's components as its own file has them, in a configuration (else the one it was saved in): none
+    where it can't be read."""
+    if version.size > _MAX_READ:
+        return []
+    try:
+        read = _read_solidworks(store, version.blob_sha256, "assembly", name)
+    except solidworks.Unreadable:
+        return []
+    made = read if isinstance(read, list) else []
+    chosen = next((a for a in made if a.configuration == configuration), made[0] if made else None)
+    return chosen.components if chosen is not None else []
+
+
 def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
     """Make a version's 3D model from the 3D view SolidWorks saved in the file itself, or a part's from its solid where
     it saved none (vault/solidworks.py), in the configuration it was saved in: so Caliper shows SolidWorks files that
@@ -1616,8 +1652,10 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
 
     Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
     version references, or else the vault's files with their names (_Finder), each with its shape as the assembly
-    shows it where SolidWorks saved one; the others show their own models. Who sees which is decided when it's shown
-    (caliper_assembly)."""
+    shows it where SolidWorks saved one; the others show their own models. A virtual part, which an assembly keeps
+    inside its file (as SolidWorks Routing does tubes), carries the shape of its solid, from the file that keeps it:
+    the assembly's own, or that of a sub-assembly that's a file of its own, read for it. Who sees which is decided when
+    it's shown (caliper_assembly)."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     path = tree.file_path(file)
@@ -1649,6 +1687,16 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
             wanted.append((read.configuration[:255], read.units, mesh, None))
         else:
             finder = _Finder(db, tree, target.created_at)
+            # Sub-assemblies' components as their own files have them, by file, version and configuration: the shapes
+            # of the virtual parts they keep.
+            theirs: dict[tuple[int, int, str], list[solidworks.Component]] = {}
+
+            def kept_in(sub: File, number: int, configuration: str) -> list[solidworks.Component]:
+                key = (sub.id, number, configuration)
+                if key not in theirs:
+                    name = f"{tree.file_path(sub)} v{number}"
+                    theirs[key] = _components_in(store, _version(db, sub.id, number), configuration, name)
+                return theirs[key]
 
             def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:
                 out = []
@@ -1661,6 +1709,8 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                     inner: list[tuple[File, int]] = []
                     if match is not None and component.children:
                         inner = _refs_of(db, _version(db, match[0].id, match[1]))
+                        if any(part.shape is None for part in _kept(component.children)):
+                            _graft(component.children, kept_in(*match, component.configuration))
                     children = place(component.children, inner)
                     if match is None and shape is None and not children and not component.virtual:
                         continue  # nothing to show or open; a virtual part says why it shows nothing

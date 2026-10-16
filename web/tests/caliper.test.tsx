@@ -423,9 +423,9 @@ test("an STL file is read as it is: its shells are bodies, and its numbers milli
     expect(screen.queryByText(/no 3D model/)).toBeNull();
 });
 
-test("a part kept inside its assembly that SolidWorks builds as it opens it (a routed tube) says so", async () => {
+test("a part kept inside its assembly with no shape there (a routed tube) says so", async () => {
     // The servo's assembly without a 3D view of its own, as SolidWorks 2024 and later save one, and its case kept inside
-    // it, as SolidWorks Routing keeps tubes: nothing in the file has the case's shape.
+    // it, as SolidWorks Routing keeps tubes, but without the case's own file in it: nothing in the file has its shape.
     const caseInside = (xml: Buffer) => {
         const at = xml.indexOf('swName="Servomoteur" swReferenceNumber');
         const rest = xml
@@ -450,12 +450,10 @@ test("a part kept inside its assembly that SolidWorks builds as it opens it (a r
 
     renderApp(team.chief, caliperUrl(assembly!.id));
     const caseRow = (await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).closest("li")!;
-    expect(within(caseRow).getByText("Built in SolidWorks")).toBeTruthy();
-    expect(
-        screen.getByText(/1 part is kept inside its assembly, which SolidWorks builds as it opens them/),
-    ).toBeTruthy();
+    expect(within(caseRow).getByText("No shape inside")).toBeTruthy();
+    expect(screen.getByText(/1 part is kept inside its assembly \(routed tubes\) with no shape there/)).toBeTruthy();
     expect(screen.queryByText(/not in the vault/)).toBeNull();
     expect(
-        within(tree().getByRole("checkbox", { name: "Show Embout-1" }).closest("li")!).queryByText(/Built|No 3D/),
+        within(tree().getByRole("checkbox", { name: "Show Embout-1" }).closest("li")!).queryByText(/No shape|No 3D/),
     ).toBeNull();
 });

@@ -3,11 +3,14 @@
 bounding boxes, which it keeps in the assembly."""
 
 import json
+import math
 import random
 import struct
 import zlib
 from collections.abc import Callable
 from pathlib import Path
+
+from yjsp_server.vault import parasolid
 
 from .test_caliper import IDENTITY, mesh, put_model
 
@@ -369,34 +372,139 @@ def test_an_assembly_whose_3d_view_is_older_than_its_components_shows_them_where
     ]
 
 
-def test_a_part_kept_inside_an_assembly_without_a_3d_view_says_so(team, client):
-    """A virtual part, as SolidWorks Routing's tubes are, is kept inside its assembly, and SolidWorks builds a routed
-    tube again whenever it opens the assembly: from 2024 on, nothing in the file has its shape. It stays in the model,
-    as virtual, for Caliper to say why it shows nothing, rather than be taken for a part missing from the vault."""
+def case_kept_inside(tree: bytes) -> bytes:
+    """The servo's XML with its case a virtual part, which the assembly keeps inside its file (as Routing's tubes are),
+    named as SolidWorks names one: "Servomoteur^Servomoteur SM-S4303R"."""
+    case = tree.index(b'swName="Servomoteur" swReferenceNumber')
+    rest = tree[case:].replace(b'swIsVirtualComponent="NO"', b'swIsVirtualComponent="YES"', 1)
+    rest = rest.replace(b'swName="Servomoteur"', b'swName="Servomoteur^Servomoteur SM-S4303R"', 1)
+    return (
+        tree[:case].replace(
+            b"Servomoteur SM-S4303R\\Servomoteur.SLDPRT",
+            b"VC~~\\Servomoteur SM-S4303R\\Servomoteur^Servomoteur SM-S4303R.SLDPRT",
+        )
+        + rest
+    )
+
+
+def keeping(data: bytes, name: str, kept: bytes) -> bytes:
+    """A SolidWorks file that keeps another inside it, as an assembly does a virtual component's: as a stream."""
+    deflater = zlib.compressobj(6, zlib.DEFLATED, -15)
+    body = deflater.compress(kept) + deflater.flush()
+    header = b"\x14\x00\x06\x00\x08\x00" + struct.pack("<5I", 0, zlib.crc32(kept), len(body), len(kept), len(name))
+    return data + header + swapped(name.encode()) + body
+
+
+def servo_keeping_its_case(name: str | None) -> bytes:
+    """The servo's assembly with its case kept inside it, under that stream's name (None: not there)."""
+    servo = repacked(contents("9347.SLDASM"), "swXmlContents/COMPINSTANCETREE", case_kept_inside)
+    return servo if name is None else keeping(servo, name, contents("Servomoteur.SLDPRT"))
+
+
+def shown(client, who, file: dict) -> dict[str, dict]:
+    """An assembly's model's components, made from its file, by name, at every level."""
+    assert make(client, who, file).status_code == 200
+    assembly = client.get(
+        f"/api/files/{file['id']}/caliper/assembly", params={"version": 1, "configuration": "Default"}, headers=who
+    ).json()
+    found = {}
+    pending = list(assembly["components"])
+    while pending:
+        component = pending.pop()
+        found[component["name"]] = component
+        pending += component["children"]
+    return found
+
+
+def test_a_part_kept_inside_an_assembly_is_read_from_its_solid(team, client):
+    """A virtual part, as SolidWorks Routing's tubes are, is kept inside the file of its assembly: its whole file, as
+    the stream VirtualComp/ and its name up to the ^, with -sldprt after that in some files. It's read from its solid,
+    never its display list, which SolidWorks leaves as it was when the part was made (a routed tube's is the library
+    tube's stub), so it's the very shape of the case's solid. Without its file there, it stays in the model, as virtual,
+    for Caliper to say why it shows nothing, rather than be taken for a part missing from the vault."""
     chief = team.member("chief@x.test", admin=True)
-
-    def virtual(tree: bytes) -> bytes:  # the case kept inside the assembly
-        case = tree.index(b'swName="Servomoteur" swReferenceNumber')
-        return tree[:case] + tree[case:].replace(b'swIsVirtualComponent="NO"', b'swIsVirtualComponent="YES"', 1)
-
-    servo = repacked(without_3d_view(contents("9347.SLDASM")), "swXmlContents/COMPINSTANCETREE", virtual)
-    checked = files(
+    checked = by_path(
         team.checkin(
             chief,
-            {"Servo/9347.SLDASM": servo, "Servo/Embout.SLDPRT": contents("Embout.SLDPRT")},
-            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT"]},
+            {
+                "Kept/9347.SLDASM": servo_keeping_its_case("VirtualComp/Servomoteur"),
+                "Suffixed/9347.SLDASM": servo_keeping_its_case("VirtualComp/Servomoteur-sldprt"),
+                "Lost/9347.SLDASM": servo_keeping_its_case(None),
+                "Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Bare/Servomoteur.SLDPRT": without_3d_view(contents("Servomoteur.SLDPRT")),
+            },
+            refs={f"{folder}/9347.SLDASM": ["Embout.SLDPRT"] for folder in ("Kept", "Suffixed", "Lost")},
         )
     )
-    assert make(client, chief, checked["9347.SLDASM"]).status_code == 200
-    shown = client.get(
-        f"/api/files/{checked['9347.SLDASM']['id']}/caliper/assembly",
-        params={"version": 1, "configuration": "Default"},
-        headers=chief,
-    ).json()
-    assert [(c["name"], c["file_id"] is not None, c["mesh"], c["virtual"]) for c in shown["components"]] == [
-        ("Embout-1", True, None, False),
-        ("Servomoteur-1", False, None, True),
-    ]
+    assert make(client, chief, checked["Bare/Servomoteur.SLDPRT"]).status_code == 200
+    solid = measured(client, chief, checked["Bare/Servomoteur.SLDPRT"])[3].strip('"')
+    case = "Servomoteur^Servomoteur SM-S4303R-1"
+    for folder in ("Kept", "Suffixed"):
+        found = shown(client, chief, checked[f"{folder}/9347.SLDASM"])
+        assert (found[case]["file_id"], found[case]["virtual"], found[case]["mesh"]) == (None, True, solid), folder
+        assert found["Embout-1"]["file_id"] == checked["Embout.SLDPRT"]["id"]
+    lost = shown(client, chief, checked["Lost/9347.SLDASM"])
+    assert (lost[case]["file_id"], lost[case]["virtual"], lost[case]["mesh"]) == (None, True, None)
+
+
+def bay_of(servo: bytes, virtual: bool) -> bytes:
+    """An assembly, Bay, whose one component is the servo's assembly (servo: its XML), 10 mm up: kept inside Bay's
+    file if virtual, and named as SolidWorks names a virtual component."""
+    servo = servo.replace(b'swModelRef="2">', b'swModelRef="31">')  # Bay's configuration, not the servo's
+    header = b'<swFile id="30" swDocType="ASSEMBLY" swPath="C:\\Bay\\Bay.SLDASM"/>'
+    bay = (
+        b'<swModel id="31" swName="Bay" swConfigurationName="Default" swFileRef="30"><swReference id="32" '
+        b'swName="%s" swReferenceNumber="1" swIsVirtualComponent="%s" swConfigurationName="Default" swSuppressed="NO" '
+        b'swHidden="NO" swModelRef="2" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.01 1"/></swModel>'
+    ) % ((b"Servomoteur SM-S4303R^Bay", b"YES") if virtual else (b"Servomoteur SM-S4303R", b"NO"))
+    return servo.replace(b"</swHeader>", header + b"</swHeader>").replace(b"</swModelList>", bay + b"</swModelList>")
+
+
+def test_a_part_kept_inside_a_sub_assembly_is_read_from_the_sub_assemblys_file(team, client):
+    """A sub-assembly keeps its own virtual parts (Routing's routes are sub-assemblies, which keep their tubes): in its
+    own file, which the server reads for them where it's a file of its own, or in the file a virtual sub-assembly is
+    kept in, in turn."""
+    chief = team.member("chief@x.test", admin=True)
+    servo = servo_keeping_its_case("VirtualComp/Servomoteur")
+    bare = without_3d_view(contents("9347.SLDASM"))
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/Servomoteur SM-S4303R.SLDASM": servo,
+                "Servo/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Bay.SLDASM": repacked(
+                    bare, "swXmlContents/COMPINSTANCETREE", lambda t: bay_of(case_kept_inside(t), False)
+                ),
+                "Kept/Bay.SLDASM": keeping(
+                    repacked(bare, "swXmlContents/COMPINSTANCETREE", lambda t: bay_of(case_kept_inside(t), True)),
+                    "VirtualComp/Servomoteur SM-S4303R-sldasm",
+                    servo,
+                ),
+                "Bare/Servomoteur.SLDPRT": without_3d_view(contents("Servomoteur.SLDPRT")),
+            },
+            refs={
+                "Servo/Bay.SLDASM": ["Servo/Servomoteur SM-S4303R.SLDASM"],
+                "Servo/Servomoteur SM-S4303R.SLDASM": ["Servo/Embout.SLDPRT"],
+                "Kept/Bay.SLDASM": ["Servo/Embout.SLDPRT"],
+            },
+        )
+    )
+    assert make(client, chief, checked["Bare/Servomoteur.SLDPRT"]).status_code == 200
+    solid = measured(client, chief, checked["Bare/Servomoteur.SLDPRT"])[3].strip('"')
+    case = "Servomoteur^Servomoteur SM-S4303R-1"
+
+    apart = shown(client, chief, checked["Servo/Bay.SLDASM"])
+    sub = apart["Servomoteur SM-S4303R-1"]
+    assert (sub["file_id"], sub["virtual"]) == (checked["Servo/Servomoteur SM-S4303R.SLDASM"]["id"], False)
+    assert (apart[case]["virtual"], apart[case]["mesh"]) == (True, solid)
+    assert [round(apart[case]["transform"][i], 3) for i in (3, 7, 11)] == [6.11, -45.018, 13.876]  # placed in Bay
+    assert apart["Embout-1"]["file_id"] == checked["Servo/Embout.SLDPRT"]["id"]
+
+    inside = shown(client, chief, checked["Kept/Bay.SLDASM"])
+    sub = inside["Servomoteur SM-S4303R^Bay-1"]
+    assert (sub["file_id"], sub["virtual"]) == (None, True)
+    assert (inside[case]["virtual"], inside[case]["mesh"]) == (True, solid)
 
 
 def test_each_configuration_of_an_assembly_is_shown(team, client):
@@ -709,6 +817,253 @@ def test_a_damaged_solid_is_refused_or_read_never_an_error(team, client):
     for file in files(team.checkin(chief, damaged)).values():
         made = make(client, chief, file)
         assert made.status_code in (200, 422), made.text
+
+
+NULL = -3.14158e13  # Parasolid's null double
+
+
+def transmit_file(nodes: dict[int, tuple[str, dict]]) -> bytes:
+    """A Parasolid transmit file of these nodes, by index: each its type's name and its fields (those left out are
+    none, or null), in neutral binary against the base schema, as SolidWorks writes them (vault/parasolid.py)."""
+    types = {name: (number, fields) for number, (name, fields) in parasolid._BASE.items()}
+    title, schema = b": TRANSMIT FILE (partition) created by modeller version 3401247", b"SCH_3401247_34101_13006"
+    out = bytearray(b"PS\x00\x00" + struct.pack(">H", len(title)) + title + struct.pack(">I", len(schema)) + schema)
+    out += struct.pack(">hI", 200, 0)  # the most node types; no user fields
+    seen = set()
+    for index, (name, values) in nodes.items():
+        number, fields = types[name]
+        out += struct.pack(">h", number)
+        if number not in seen:
+            seen.add(number)
+            out.append(0xFF)  # its fields are the base schema's
+        varying = [values[field] for field, _, count in fields if count == 1]
+        if varying:
+            out += struct.pack(">i", len(varying[0]))
+        out += struct.pack(">h", index + 1)
+        for field, kind, count in fields:
+            value = values.get(field)
+            for one in value if count == 1 else [value]:
+                if kind == "p":
+                    out += struct.pack(">h", (one or 0) + 1)
+                elif kind == "f":
+                    out += struct.pack(">d", NULL if one is None else one)
+                elif kind == "v":
+                    out += struct.pack(">3d", *(one or (NULL, NULL, NULL)))
+                elif kind == "c":
+                    out += (one or "?").encode()
+                elif kind in "ul":
+                    out.append(one or 0)
+                elif kind == "n":
+                    out += struct.pack(">h", one or 0)
+                elif kind == "d":
+                    out += struct.pack(">i", one or 0)
+    return bytes(out + struct.pack(">hh", 1, 1))  # the terminator, at index 0
+
+
+def part_of(solid: dict[int, tuple[str, dict]]) -> bytes:
+    """A part, without a 3D view, whose solid is these nodes'."""
+    bare = without_3d_view(contents("Servomoteur.SLDPRT"))
+    return repacked(bare, "Contents/Config-0-Partition", lambda s: transmitted(s, lambda _: transmit_file(solid)))
+
+
+def body(*faces: dict[int, tuple[str, dict]]) -> dict[int, tuple[str, dict]]:
+    """A solid body of these faces (nodes 1 to 3 are its own)."""
+    nodes = {
+        1: ("BODY", {"body_type": 1, "nom_geom_state": 1, "region": 2, "shell": 3}),
+        2: ("REGION", {"body": 1, "shell": 3, "type": "S"}),
+        3: ("SHELL", {"body": 1, "region": 2}),
+    }
+    for one in faces:
+        nodes |= one
+    return nodes
+
+
+def face(index: int, surface: int, sense: str, loops: dict[int, int]) -> dict[int, tuple[str, dict]]:
+    """A face, and its loops: by index, each its one fin."""
+    chain = list(loops)
+    nodes = {index: ("FACE", {"loop": chain[0], "shell": 3, "surface": surface, "sense": sense})}
+    for i, loop in enumerate(chain):
+        nodes[loop] = ("LOOP", {"fin": loops[loop], "face": index, "next": chain[i + 1] if i + 1 < len(chain) else 0})
+    return nodes
+
+
+def fin(index: int, loop: int, edge: int, other: int, sense: str, curve: int = 0) -> dict[int, tuple[str, dict]]:
+    """A fin alone in its loop, of a ring edge (one without vertices): along the edge's curve (sense "+") or against
+    it, or where the edge is tolerant, along its own curve."""
+    fields = {"loop": loop, "forward": index, "backward": index, "other": other, "edge": edge, "sense": sense}
+    return {index: ("FIN", fields | {"curve": curve})}
+
+
+def spline(
+    index: int, points: list[float], knots: list[float], mults: list[int], degree: int = 1, dim: int = 2
+) -> dict[int, tuple[str, dict]]:
+    """A B-spline curve's nodes, from index on: of points in a surface's (u, v), or with dim 4, rational ones in space
+    (each multiplied through by its weight, which comes last)."""
+    nurbs = {"degree": degree, "n_vertices": len(points) // dim, "vertex_dim": dim, "n_knots": len(knots),
+             "rational": dim == 4, "bspline_vertices": index + 2, "knot_mult": index + 3,
+             "knots": index + 4}  # fmt: skip
+    return {
+        index: ("B_CURVE", {"nurbs": index + 1, "sense": "+"}),
+        index + 1: ("NURBS_CURVE", nurbs),
+        index + 2: ("BSPLINE_VERTICES", {"vertices": points}),
+        index + 3: ("KNOT_MULT", {"mult": mults}),
+        index + 4: ("KNOT_SET", {"knots": knots}),
+    }
+
+
+def test_a_dome_of_a_lemon_shaped_torus_is_read(team, client):
+    """A torus whose major radius is less than its minor one crosses its axis, and Parasolid keeps one part of it: an
+    apple (the outer part), or with the major radius below 0, a lemon (the inner). Each ends in a pole at either end,
+    as a sphere does, rather than going round. A dome of a lemon, closed by a disc, is read as it is."""
+    a, b, z0 = -0.010, 0.030, -0.020  # the lemon's radii, and the height of the disc (meters)
+    v0, end = math.asin(z0 / b), math.acos(-a / b)
+    rim = a + b * math.cos(v0)
+    up = {"normal": (0, 0, 1), "x_axis": (1, 0, 0), "sense": "+"}
+    nodes = body(face(10, 40, "+", {20: 30}), face(11, 41, "+", {21: 31})) | {
+        **fin(30, 20, 50, 31, "-"),
+        **fin(31, 21, 50, 30, "+"),
+        40: ("TORUS", {"centre": (0, 0, 0), "axis": (0, 0, 1), "major_radius": a, "minor_radius": b,
+                       "x_axis": (1, 0, 0), "sense": "+"}),
+        41: ("PLANE", {"pvec": (0, 0, z0)} | up),
+        50: ("EDGE", {"fin": 30, "curve": 60}),
+        60: ("CIRCLE", {"centre": (0, 0, z0), "radius": rim} | up),
+    }  # fmt: skip
+    chief = team.member("chief@x.test", admin=True)
+    dome = files(team.checkin(chief, {"Dome.SLDPRT": part_of(nodes)}))["Dome.SLDPRT"]
+    assert make(client, chief, dome).status_code == 200
+    area, volume, box_, _ = measured(client, chief, dome)
+
+    # Its area and volume, of the lemon's arc (radius a + b cos v, height b sin v) turned round, in mm2 and mm3.
+    steps = 20000
+    dv = (v0 + end) / steps
+    rs = [(a + b * math.cos(v), b * math.cos(v)) for v in (-end + dv * (i + 0.5) for i in range(steps))]
+    want_area = (sum(2 * math.pi * r * b * dv for r, _ in rs) + math.pi * rim**2) * 1e6
+    want_volume = sum(math.pi * r * r * dz * dv for r, dz in rs) * 1e9
+    assert abs(area - want_area) < want_area / 200  # within 0.5%
+    assert abs(volume - want_volume) < want_volume / 100  # within 1%: chords cut in, and it's small and thin
+    assert (box_[2], box_[5]) == (round(-b * math.sin(end) * 1000, 3), round(z0 * 1000, 3))  # the pole, the disc
+
+
+def test_a_tube_with_an_offset_wall_is_read(team, client):
+    """A thin feature's other wall is its first's surface offset (Parasolid's offset surface), and its edges there are
+    curves in that surface's (u, v), going once round it: their ends meet, as a periodic curve's do, though in (u, v)
+    they're a period apart, and a tolerant edge's stretch of one can run on past its end. A tube of them is read as it
+    is, without vertices to measure its size by, so it's only as fine as its circles need."""
+    r, t, h = 0.005, 0.0005, 0.020  # the tube's outer radius, its wall, and its length (meters)
+    up = {"normal": (0, 0, 1), "x_axis": (1, 0, 0), "sense": "+"}
+    nodes = body(
+        face(10, 40, "+", {20: 30, 21: 31}),  # outside
+        face(11, 41, "-", {22: 32, 23: 33}),  # inside: facing the axis
+        face(12, 42, "+", {24: 34, 25: 35}),  # the bottom
+        face(13, 43, "+", {26: 36, 27: 37}),  # the top
+    ) | {
+        **fin(30, 20, 50, 34, "+"), **fin(34, 24, 50, 30, "-"),
+        **fin(31, 21, 51, 36, "-"), **fin(36, 26, 51, 31, "+"),
+        **fin(32, 22, 52, 35, "-"), **fin(35, 25, 52, 32, "+"),
+        **fin(33, 23, 53, 37, "+", curve=70), **fin(37, 27, 53, 33, "-", curve=71),
+        40: ("CYLINDER", {"pvec": (0, 0, 0), "axis": (0, 0, 1), "radius": r, "x_axis": (1, 0, 0), "sense": "+"}),
+        41: ("OFFSET_SURF", {"surface": 40, "offset": -t, "check": "V", "sense": "+"}),
+        42: ("PLANE", {"pvec": (0, 0, 0), "normal": (0, 0, -1), "x_axis": (1, 0, 0), "sense": "+"}),
+        43: ("PLANE", {"pvec": (0, 0, h)} | up),
+        50: ("EDGE", {"fin": 30, "curve": 60}),
+        51: ("EDGE", {"fin": 31, "curve": 61}),
+        52: ("EDGE", {"fin": 32, "curve": 62}),
+        53: ("EDGE", {"fin": 33, "tolerance": 1e-6}),  # tolerant: its fins have their own curves
+        60: ("CIRCLE", {"centre": (0, 0, 0), "radius": r} | up),
+        61: ("CIRCLE", {"centre": (0, 0, h), "radius": r} | up),
+        62: ("SP_CURVE", {"surface": 41, "b_curve": 80, "sense": "+"}),  # once round the inside, at the bottom
+        63: ("SP_CURVE", {"surface": 41, "b_curve": 85, "sense": "-"}),  # and at the top, the other way
+        64: ("CIRCLE", {"centre": (0, 0, h), "radius": r - t} | up | {"sense": "-"}),
+        70: ("TRIMMED_CURVE", {"basis_curve": 63, "point_1": (r - t, 0, h), "point_2": (r - t, 0, h), "parm_1": 0.0,
+                               "parm_2": -1.0, "sense": "+"}),
+        71: ("TRIMMED_CURVE", {"basis_curve": 64, "point_1": (r - t, 0, h), "point_2": (r - t, 0, h), "parm_1": 0.0,
+                               "parm_2": -2 * math.pi, "sense": "+"}),
+        **spline(80, [0, 0, 2 * math.pi, 0], [0, 1], [2, 2]),
+        # Speeding up along it, so that run on past its ends it would turn back, not go on round.
+        **spline(85, [2 * math.pi, h, 1.8 * math.pi, h, 0, h], [0, 1], [3, 3], degree=2),
+    }  # fmt: skip
+    chief = team.member("chief@x.test", admin=True)
+    tube = files(team.checkin(chief, {"Tube.SLDPRT": part_of(nodes)}))["Tube.SLDPRT"]
+    made = make(client, chief, tube)
+    assert made.status_code == 200, made.text
+    area, volume, box_, _ = measured(client, chief, tube)
+    want_area = (2 * math.pi * (r + r - t) * h + 2 * math.pi * (r * r - (r - t) ** 2)) * 1e6
+    want_volume = math.pi * h * (r * r - (r - t) ** 2) * 1e9
+    assert abs(area - want_area) < want_area / 200  # within 0.5%
+    # A thin wall's volume is what's between two near walls, so their chords' errors are a larger share of it.
+    assert abs(volume - want_volume) < want_volume / 50
+    assert (box_[2], box_[5]) == (0.0, 20.0) and all(4.95 < abs(v) <= 5 for v in box_[:2] + box_[3:5])
+    shape = client.get(
+        f"/api/files/{tube['id']}/caliper/mesh", params={"version": 1, "configuration": "Default"}, headers=chief
+    )
+    triangles = unpack(shape.content)[0]["triangles"]
+    assert triangles < 1000, triangles
+
+
+def sheet(*faces: dict[int, tuple[str, dict]]) -> dict[int, tuple[str, dict]]:
+    """A sheet body (one of faces that enclose nothing) of these faces."""
+    nodes = body(*faces)
+    nodes[1] = ("BODY", nodes[1][1] | {"body_type": 3})
+    return nodes
+
+
+def test_splines_are_read_as_their_shapes_need(team, client):
+    """A disc whose edge is a circle as a rational spline, which closes without being periodic, is read whole. A
+    square on a flat spline surface whose parameters speed up across it is only as fine as its shape needs: flat, so
+    two triangles, though its points aren't evenly spread in its parameters."""
+    r = 0.005
+    up = {"normal": (0, 0, 1), "x_axis": (1, 0, 0), "sense": "+"}
+    w = math.sqrt(0.5)
+    corners = [(1, 0, 1), (1, 1, w), (0, 1, 1), (-1, 1, w), (-1, 0, 1), (-1, -1, w), (0, -1, 1), (1, -1, w), (1, 0, 1)]
+    circle = [c for x, y, weight in corners for c in (x * r * weight, y * r * weight, 0, weight)]
+    disc = sheet(face(10, 40, "+", {20: 30})) | {
+        **fin(30, 20, 50, 31, "+"),
+        31: ("FIN", {"other": 30, "edge": 50, "sense": "-"}),  # the edge's other side, on no face
+        40: ("PLANE", {"pvec": (0, 0, 0)} | up),
+        50: ("EDGE", {"fin": 30, "curve": 60}),
+        **spline(60, circle, [0, 0.25, 0.5, 0.75, 1], [3, 2, 2, 2, 3], degree=2, dim=4),
+    }
+
+    side = 0.010
+    corner = [(0, 0, 0), (side, 0, 0), (side, side, 0), (0, side, 0)]
+    spread = [0, 0.001, side]  # the surface's points along each way: its parameters speed up across it
+    square = sheet(face(10, 40, "+", {20: 30})) | {
+        40: ("B_SURFACE", {"nurbs": 41, "sense": "+"}),
+        41: ("NURBS_SURF", {"u_degree": 2, "v_degree": 2, "n_u_vertices": 3, "n_v_vertices": 3, "n_u_knots": 2,
+                            "n_v_knots": 2, "vertex_dim": 3, "bspline_vertices": 42, "u_knot_mult": 43,
+                            "v_knot_mult": 43, "u_knots": 44, "v_knots": 44}),
+        42: ("BSPLINE_VERTICES", {"vertices": [c for x in spread for y in spread for c in (x, y, 0)]}),
+        43: ("KNOT_MULT", {"mult": [3, 3]}),
+        44: ("KNOT_SET", {"knots": [0, 1]}),
+    }  # fmt: skip
+    for i in range(4):  # the square's sides, each from a corner to the next: a fin on the face, and one on none
+        a, b = corner[i], corner[(i + 1) % 4]
+        square |= {
+            30 + i: ("FIN", {"loop": 20, "forward": 30 + (i + 1) % 4, "backward": 30 + (i - 1) % 4,
+                             "vertex": 70 + (i + 1) % 4, "other": 35 + i, "edge": 50 + i, "sense": "+"}),
+            35 + i: ("FIN", {"vertex": 70 + i, "other": 30 + i, "edge": 50 + i, "sense": "-"}),
+            50 + i: ("EDGE", {"fin": 30 + i, "curve": 60 + i}),
+            60 + i: ("LINE", {"pvec": a, "direction": tuple(q - p for p, q in zip(a, b, strict=True)), "sense": "+"}),
+            70 + i: ("VERTEX", {"point": 80 + i}),
+            80 + i: ("POINT", {"pvec": a}),
+        }  # fmt: skip
+
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(team.checkin(chief, {"Disc.SLDPRT": part_of(disc), "Square.SLDPRT": part_of(square)}))
+    for file in checked.values():
+        made = make(client, chief, file)
+        assert made.status_code == 200, made.text
+    area, _, box_, _ = measured(client, chief, checked["Disc.SLDPRT"])
+    assert abs(area - math.pi * 25) < math.pi * 25 / 200  # within 0.5%
+    assert all(4.95 < abs(v) <= 5 for v in box_[:2] + box_[3:5])
+    area, _, box_, _ = measured(client, chief, checked["Square.SLDPRT"])
+    assert (round(area, 3), box_) == (100.0, [0.0, 0.0, 0.0, 10.0, 10.0, 0.0])
+    shape = client.get(
+        f"/api/files/{checked['Square.SLDPRT']['id']}/caliper/mesh",
+        params={"version": 1, "configuration": "Default"},
+        headers=chief,
+    )
+    assert unpack(shape.content)[0]["triangles"] == 2
 
 
 def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, client):

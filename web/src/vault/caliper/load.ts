@@ -172,8 +172,8 @@ export async function assemblyModel(
         if (c.virtual && !c.mesh) {
             return {
                 problem:
-                    "It's kept inside the assembly, and SolidWorks builds it (as it does routed tubes) when it opens " +
-                    "the assembly: the file has no 3D view of it",
+                    "It's kept inside its assembly's file (as routed tubes are), and Caliper found no shape of it " +
+                    "there: SolidWorks saved it empty, or the sub-assembly that keeps it isn't in the vault",
                 why: "inside",
             };
         }

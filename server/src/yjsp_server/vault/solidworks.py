@@ -49,6 +49,13 @@ shape, as above, in the part's own coordinates. Often there's no shape after a n
 never is: only which of the part's faces it shows. Nor has every assembly a display list. Its components are still in
 its XML, and their parts' shapes are in their own files (vault.py finds them).
 
+A virtual component, which SolidWorks keeps inside the file of the assembly it's in (as it does Routing's tubes, and
+the routes they're in), has its whole file there: the stream VirtualComp/ and its name up to the ^ (SolidWorks names one
+"Tube-375X010^Route-1"), with -sldprt or -sldasm after that in some files. A virtual sub-assembly's file keeps its own
+virtual components in turn, and a sub-assembly that's a file of its own keeps its own (vault.py reads them there). A
+virtual part is read from its solid, never its display list: SolidWorks leaves that as it was when the part was made (a
+routed tube's is the library tube's, 12.7 mm long), but builds the solid along the route.
+
 A part without a display list (SolidWorks set not to save one, as vendors' parts often are), or with one Caliper can't
 follow, is read from its solid instead: the Parasolid bodies SolidWorks keeps of each configuration (parasolid.py),
 turned into triangles (brep.py), for the configuration SolidWorks had open (N, its swID). It reads:
@@ -127,8 +134,8 @@ class Component:
     configuration: str
     transform: list[float]  # the rows of a 3 x 4 matrix to the top assembly's coordinates, in mm
     hidden: bool
-    virtual: bool  # a part kept inside the assembly
-    shape: list[MeshBody] | None  # a part's bodies, as the assembly shows them
+    virtual: bool  # kept inside the assembly it's in
+    shape: list[MeshBody] | None  # a part's bodies, as the assembly shows them; a virtual part's, as its solid has them
     children: list["Component"] = field(default_factory=list)  # a sub-assembly's
 
 
@@ -1072,6 +1079,20 @@ def _same_place(a: list[float], b: list[float]) -> bool:
     return all(abs(x - y) <= (1e-3 if i % 4 == 3 else 1e-6) for i, (x, y) in enumerate(zip(a, b, strict=True)))
 
 
+def _kept_names(ref: ElementTree.Element, assembly: bool) -> list[str]:
+    """The streams a file may keep a virtual component's own file in."""
+    base = (ref.get("swName") or "").split("^", 1)[0]
+    return [f"VirtualComp/{base}", f"VirtualComp/{base}-{'sldasm' if assembly else 'sldprt'}"]
+
+
+def _kept_part(data: bytes) -> list[MeshBody] | None:
+    """A virtual part's bodies, from its solid; none where they can't be read (the part shows nothing, and says why)."""
+    try:
+        return _solid(data, _open(data, "part"), None).bodies
+    except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error):
+        return None
+
+
 def _read_assembly(data: bytes) -> list[Assembly]:
     found = _open(data, "assembly")
     tree = _xml(found.get(_TREE))
@@ -1115,10 +1136,17 @@ def _read_assembly(data: bytes) -> list[Assembly]:
             shape_of.clear()
             break
 
-    def components(model: ElementTree.Element, place: list[float] | None, depth: int) -> list[Component]:
+    # Virtual components' files, by the file that keeps them (the assembly's, or a virtual sub-assembly's) and their
+    # streams' names; and virtual parts' bodies, by their files: each read once, however many configurations use it.
+    kept: dict[int, dict[str, bytes | None]] = {}
+    kept_bodies: dict[int, list[MeshBody] | None] = {}
+
+    def components(
+        model: ElementTree.Element, place: list[float] | None, depth: int, keeper: bytes | None
+    ) -> list[Component]:
         if depth > 32:
             raise Unreadable("Its components nest more than 32 deep")
-        out = []
+        refs = []
         for ref in model.findall(f"{_NS}swReference"):
             if ref.get("swSuppressed") == "YES":
                 continue
@@ -1126,12 +1154,30 @@ def _read_assembly(data: bytes) -> list[Assembly]:
             file = files.get(used.get("swFileRef")) if used is not None else None
             if used is None or file is None:
                 raise Unreadable(_ODD)
+            assembly, virtual = file.get("swDocType") == "ASSEMBLY", ref.get("swIsVirtualComponent") == "YES"
+            refs.append((ref, used, file, assembly, virtual))
+        streams: dict[str, bytes | None] = {}
+        if keeper is not None:
+            streams = kept.setdefault(id(keeper), {})
+            wanted = {name for ref, _, _, assembly, virtual in refs if virtual for name in _kept_names(ref, assembly)}
+            if missing := wanted - streams.keys():
+                got = _found(keeper, missing)
+                streams.update((name, got.get(name)) for name in missing)
+        out = []
+        for ref, used, file, assembly, virtual in refs:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
             rows = own if place is None else _compose(place, own)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
-            assembly = file.get("swDocType") == "ASSEMBLY"
+            inside = next((f for n in _kept_names(ref, assembly) if (f := streams.get(n))), None) if virtual else None
+            shape = None
+            if virtual and inside is not None and not assembly:
+                if id(inside) not in kept_bodies:
+                    kept_bodies[id(inside)] = _kept_part(inside)
+                shape = kept_bodies[id(inside)]
+            elif not virtual and not assembly:
+                shape = shape_of.get(_key(path, configuration))
             out.append(
                 Component(
                     name=name,
@@ -1139,20 +1185,21 @@ def _read_assembly(data: bytes) -> list[Assembly]:
                     configuration=configuration,
                     transform=rows,
                     hidden=ref.get("swHidden") == "YES",
-                    virtual=ref.get("swIsVirtualComponent") == "YES",
-                    shape=None if assembly else shape_of.get(_key(path, configuration)),
-                    children=components(used, rows, depth + 1) if assembly else [],
+                    virtual=virtual,
+                    shape=shape,
+                    children=components(used, rows, depth + 1, inside if virtual else None) if assembly else [],
                 )
             )
         return out
 
     units = _units(found.get(_INFO))
-    made = [Assembly(configuration=active.get("swName") or "Default", units=units, components=components(top, None, 1))]
+    top_components = components(top, None, 1, data)
+    made = [Assembly(configuration=active.get("swName") or "Default", units=units, components=top_components)]
     for other in configurations:
         model = models.get(other.get("swModelRef"))
         name = other.get("swName") or ""
         if other is active or model is None or not name or other.get("swConfigurationNeedsUpdate") == "YES":
             continue
         if name not in (assembly.configuration for assembly in made):
-            made.append(Assembly(configuration=name, units=units, components=components(model, None, 1)))
+            made.append(Assembly(configuration=name, units=units, components=components(model, None, 1, data)))
     return made

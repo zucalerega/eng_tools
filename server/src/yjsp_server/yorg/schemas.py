@@ -157,6 +157,10 @@ class MoveIn(BaseModel):
     folder_id: int | None  # None: to the top
 
 
+class DeleteIn(BaseModel):
+    datasets: list[int] = Field(min_length=1, max_length=1000)
+
+
 class PieceIn(BaseModel):
     """A span of a dataset to make a dataset of, in the dataset's own seconds."""
 

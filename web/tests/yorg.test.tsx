@@ -509,6 +509,55 @@ test("only whoever added a dataset, or an admin, can change it", async () => {
     expect(screen.queryByLabelText("Name")).toBeNull();
 });
 
+test("chosen datasets are deleted together, and wait in Deleted datasets", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const first = await team.data(alice, "Alice's first", HOTFIRE);
+    const second = await team.data(alice, "Alice's second", HOTFIRE);
+    const chiefs = await team.data(team.chief, "Chief's", HOTFIRE);
+    renderApp(alice, "/yorg");
+    await userEvent.type(await screen.findByLabelText("Find datasets"), team.folder);
+    const table = within(await screen.findByRole("table", { name: "Datasets" }));
+
+    // Only hers can be chosen: every one here is the two of them.
+    const chiefsRow = (await table.findByRole("link", { name: chiefs.name })).closest("tr")!;
+    expect(within(chiefsRow).queryByRole("checkbox")).toBeNull();
+    await userEvent.click(table.getByRole("checkbox", { name: "Choose every dataset here" }));
+    expect(screen.getByText("2 datasets chosen")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Delete 2 datasets?" }));
+    const listed = within(dialog.getByRole("list", { name: "Datasets to delete" }));
+    expect(listed.getAllByRole("listitem").map((item) => item.textContent)).toEqual(
+        expect.arrayContaining([first.name, second.name]),
+    );
+    await userEvent.click(dialog.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(table.queryByRole("link", { name: first.name })).toBeNull());
+    expect(table.queryByRole("link", { name: second.name })).toBeNull();
+    expect(table.getByRole("link", { name: chiefs.name })).toBeTruthy();
+    expect(screen.queryByText(/datasets? chosen/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("link", { name: "Deleted datasets" }));
+    const deleted = within(await screen.findByRole("table", { name: "Deleted datasets" }));
+    expect(await deleted.findByText(first.name)).toBeTruthy();
+    expect(deleted.getByText(second.name)).toBeTruthy();
+});
+
+test("an admin can choose anyone's datasets to delete", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const hers = await team.data(alice, "Alice's", HOTFIRE);
+    renderApp(team.chief, "/yorg");
+    const table = within(await screen.findByRole("table", { name: "Datasets" }));
+    const row = (await table.findByRole("link", { name: hers.name })).closest("tr")!;
+    await userEvent.click(within(row).getByRole("checkbox", { name: `Choose ${hers.name}` }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = within(await screen.findByRole("dialog", { name: `Delete ${hers.name}?` }));
+    await userEvent.click(dialog.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(table.queryByRole("link", { name: hers.name })).toBeNull());
+    expect((await team.datasets(alice)).map((one) => one.id)).not.toContain(hers.id);
+});
+
 test("folders: made, moved into, browsed, and searched across; and each dataset's size", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Foldered", HOTFIRE);

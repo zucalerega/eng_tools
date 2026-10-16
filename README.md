@@ -118,6 +118,9 @@ the keys.
 - **Folders:** New folder makes one (a test campaign, a day of cold flows). Drag datasets
   onto a folder, or onto a folder above in the path at the top, or check some and Move
   to…. The list shows each dataset's size, and Find datasets looks in every folder.
+- **Deleting:** check datasets and Delete… to delete them together (or delete one from its
+  About page): your own, or anyone's if you're an admin. Deleted datasets wait in Deleted
+  datasets, at the foot of the list, to be restored.
 - **Plot:** click a channel to add it to the selected plot (click it again to take it
   off), shift-click for a plot of its own, or drag it onto one. Each unit gets an axis
   of its own, so thrust, pressures, and valves share a plot, each on its scale (psi on

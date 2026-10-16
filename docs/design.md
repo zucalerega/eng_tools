@@ -125,18 +125,27 @@ three. The rest of the disk is the system, logs, and the database's backups.
   admins see it (`people.last_active`); the list others get for granting access doesn't
   say, nor when anyone signed in last, but themselves (`people.last_sign_in`). Admins also see each person's time on the site (`site_seconds`): when a browser
   session is used again within five minutes of its last use, the page was open all along,
-  and the gap counts (`usage.record`). The add-in and the CLI don't count, and two
-  browsers open at once count twice. The list sorts by status, when people joined, when
-  they were last on, or their time on the site.
+  and the gap counts (`usage.record`). So does their time in SolidWorks
+  (`solidworks_seconds`): the add-in asks the server what's new every 20 seconds while
+  SolidWorks runs, and while SolidWorks has the foreground and someone has used the
+  computer in the last five minutes, its requests say so (`X-YJSP-Activity: solidworks`,
+  `SolidWorksActivity.cs`), and the gap since its token's last use counts. SolidWorks left
+  open behind other windows, or overnight, doesn't. The CLI doesn't count, nor do add-ins
+  released before (0.5.2 and older), which don't say; two browsers open at once count
+  twice. The list shows the two together, each on hover, and sorts by status, when people
+  joined, when they were last on, or their time on the site.
 - **Activity:** Admin > People starts with a tracker of the last 30 days: how many people
   used the site each day (the web app, the add-in, or the CLI) and how long the web app was
-  open, everyone's together, in stat tiles and a column chart (`GET /api/usage`). Each time
-  a token's use is noted, its owner was on in that hour (`site_usage`, one row a person an
-  hour, in UTC, with that hour's time on the site), and the page asks for days in its own
-  time zone, so a day is the team's and not UTC's (`usage.daily`; a server without time zone
-  data gives UTC's). It counts from the deploy that added it (October 2026): nothing kept
-  this before, and the chart says since when. The hours are kept 400 days, a little over a
-  year (`usage.KEEP`); noting a use forgets the ones past it.
+  open and people worked in SolidWorks, everyone's together, in stat tiles and a column
+  chart, where each day's time is the web app's with SolidWorks' on top, in a color of its
+  own (`GET /api/usage`). Each time a token's use is noted, its owner was on in that hour
+  (`site_usage`, one row a person an hour, in UTC, with that hour's time on the web app and
+  in SolidWorks), and the page asks for days in its own time zone, so a day is the team's
+  and not UTC's (`usage.daily`; a server without time zone data gives UTC's). It counts
+  from the deploy that added it (October 2026): nothing kept this before, and the chart
+  says since when, and since when time in SolidWorks was (from the add-in after 0.5.2). The
+  hours are kept 400 days, a little over a year (`usage.KEEP`); noting a use forgets the
+  ones past it.
 - **Server load:** beside it, how hard the server is working: how busy its CPUs have been
   and how full its memory, against all of each, for the last 24 hours or 7 days (`GET
   /api/load`). The server samples them itself each minute, in a thread it starts and stops
@@ -258,12 +267,12 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
-| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) |
+| `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) and in SolidWorks (`solidworks_seconds`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
-| `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open, with the time zone the days are in, who was on in all, since when it's counted, and everyone's time on the site in all (admins) |
+| `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open and people worked in SolidWorks, with the time zone the days are in, who was on in all, since when each is counted, and everyone's time on the web app and in SolidWorks in all (admins) |
 | `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |

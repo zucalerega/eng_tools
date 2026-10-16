@@ -13,7 +13,7 @@ test("the activity feed says what each check-in was for", async () => {
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
 
-test("admins see how many people used the site each day for the last month, and for how long", async () => {
+test("admins see how many people used the site each day for the last month, and for how long, on the web app and in SolidWorks", async () => {
     const team = await Team.create();
     await team.member(`Usage-${team.folder}`); // signed in just now
     renderApp(team.chief, "/vault/admin");
@@ -22,16 +22,28 @@ test("admins see how many people used the site each day for the last month, and 
     expect(tracker.getByText("Time on the site, in all")).toBeTruthy();
 
     // Each of the last 30 days, today last, in a table for screen readers; the chart says the same on hover.
+    expect(tracker.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+        "Day",
+        "Active people",
+        "Time on the web app",
+        "Time in SolidWorks",
+    ]);
     const days = tracker.getAllByRole("row").slice(1);
     expect(days).toHaveLength(30);
     const today = new Date().toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" });
     expect(days.at(-1)!.textContent).toMatch(new RegExp(`^${today}\\d+`));
     await userEvent.hover([...document.querySelectorAll(".bars-slot")].at(-1)!);
-    expect(tracker.getByRole("status").textContent).toMatch(/^Today\d+ people.* on the site$/);
+    expect(tracker.getByRole("status").textContent).toMatch(/^Today\d+ people.* on the site/);
+    expect(tracker.queryAllByRole("listitem")).toEqual([]); // one measure: no legend
 
+    // Time on the site is the web app's and SolidWorks', each its own color, as the legend says.
     await userEvent.click(tracker.getByRole("button", { name: "Time on the site" }));
     expect(tracker.getByRole("button", { name: "Time on the site" }).getAttribute("aria-pressed")).toBe("true");
     expect(tracker.getByRole("button", { name: "Active people" }).getAttribute("aria-pressed")).toBe("false");
+    expect(tracker.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Web app", "SolidWorks"]);
+    expect(
+        tracker.getByText(/SolidWorks in front, with someone at the computer, and the add-in signed in/),
+    ).toBeTruthy();
 });
 
 test("admins see how hard the server is working, over a day or a week", async () => {
@@ -140,10 +152,14 @@ test("admins sort people by when they joined, when they were last on, and their 
     await userEvent.click(screen.getByRole("button", { name: "Last active" }));
     expect(rowOf(team.chief.user.email)).toBeLessThan(rowOf(email));
 
-    // Nobody here has had the web app open for long yet.
+    // Nobody here has had the web app open, or worked in SolidWorks, for long yet.
     await userEvent.click(screen.getByRole("button", { name: "Time on site" }));
     expect(screen.getByRole("columnheader", { name: "Time on site" }).getAttribute("aria-sort")).toBe("descending");
     expect(screen.getAllByText("none").length).toBeGreaterThan(0);
+    const row = screen.getAllByText(second.user.email)[0]!.closest("tr")!;
+    const header = screen.getByRole("columnheader", { name: "Time on site" });
+    const time = row.cells[[...row.closest("table")!.querySelectorAll("th")].findIndex((th) => th === header)]!;
+    expect(time.getAttribute("title")).toBe("none on the web app, none in SolidWorks");
 });
 
 test("people change their own name from their account menu", async () => {

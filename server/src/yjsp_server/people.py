@@ -69,6 +69,12 @@ def time_on_site(viewer: User, user: User) -> int | None:
     return user.site_seconds if viewer.is_admin else None
 
 
+def time_in_solidworks(viewer: User, user: User) -> int | None:
+    """How long the account has worked in SolidWorks with the add-in, in seconds (auth.authenticate counts it). Only for
+    admins."""
+    return user.solidworks_seconds if viewer.is_admin else None
+
+
 def invite_user(db: Session, admin: User, email: str, name: str = "") -> User:
     """Pre-approve an email: the account is active from its first sign-in."""
     _require_admin(admin)
@@ -146,7 +152,8 @@ def site_settings(db: Session, user: User) -> SiteSettings:
 
 
 def site_usage(db: Session, admin: User, *, days: int, timezone: str) -> usage.Usage:
-    """How many people used the site each of the last days, and how long they had the web app open (admins)."""
+    """How many people used the site each of the last days, and how long they had the web app open and worked in
+    SolidWorks (admins)."""
     _require_admin(admin)
     return usage.daily(db, days, timezone)
 

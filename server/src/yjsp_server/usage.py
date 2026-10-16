@@ -1,10 +1,11 @@
 """Who used the site when, for Admin > People's tracker: how many people were on each day, and how long they had the
-web app open (admins only).
+web app open and worked in SolidWorks (admins only).
 
 auth.authenticate notes a token's use at most once a minute, and each time this records that its owner was on in that
 hour: with the web app, the add-in, or the CLI. A browser session used again within a few minutes had the web app open
-all along, so that time counts too (auth._SAME_VISIT). Hours are kept in UTC, and grouped into days in the time zone
-the page asks for, so that a day is the team's own and not UTC's.
+all along, so that time counts too (auth._SAME_VISIT), and so does the add-in's, as time in SolidWorks, when its
+request says someone is working in it. Hours are kept in UTC, and grouped into days in the time zone the page asks
+for, so that a day is the team's own and not UTC's.
 """
 
 from dataclasses import dataclass
@@ -22,22 +23,34 @@ from .models import SiteUsage, User
 KEEP = timedelta(days=400)
 
 
-def record(db: Session, user_id: int, at: datetime, site_seconds: int) -> None:
-    """Note that someone used the site at that time, with that many more seconds on the web app (often none). The
-    caller commits."""
+def record(db: Session, user_id: int, at: datetime, site_seconds: int = 0, solidworks_seconds: int = 0) -> None:
+    """Note that someone used the site at that time, with that many more seconds on the web app and in SolidWorks
+    (often none). The caller commits."""
     hour = at.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
     insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
-    stmt = insert(SiteUsage).values(hour=hour, user_id=user_id, site_seconds=site_seconds)
+    stmt = insert(SiteUsage).values(
+        hour=hour, user_id=user_id, site_seconds=site_seconds, solidworks_seconds=solidworks_seconds
+    )
     # Two of someone's tokens (a browser and the add-in, say) can note the same hour at once: add up, never collide.
     excluded = stmt.excluded
     db.execute(
         stmt.on_conflict_do_update(
             index_elements=["hour", "user_id"],
-            set_={"site_seconds": SiteUsage.site_seconds + excluded.site_seconds},
+            set_={
+                "site_seconds": SiteUsage.site_seconds + excluded.site_seconds,
+                "solidworks_seconds": SiteUsage.solidworks_seconds + excluded.solidworks_seconds,
+            },
         )
     )
-    if site_seconds:
-        db.execute(update(User).where(User.id == user_id).values(site_seconds=User.site_seconds + site_seconds))
+    if site_seconds or solidworks_seconds:
+        db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(
+                site_seconds=User.site_seconds + site_seconds,
+                solidworks_seconds=User.solidworks_seconds + solidworks_seconds,
+            )
+        )
     # The oldest hour is a look at the index: only when one is past KEEP does anything go.
     oldest = db.scalar(select(func.min(SiteUsage.hour)))
     if oldest is not None and oldest < hour - KEEP:
@@ -49,6 +62,7 @@ class Day:
     day: date
     people: int  # who used the site that day
     site_seconds: int  # how long the web app was open that day, everyone's together
+    solidworks_seconds: int  # how long people worked in SolidWorks that day, everyone's together
 
 
 @dataclass
@@ -58,6 +72,9 @@ class Usage:
     people: int  # who used the site on any of those days
     since: date | None  # the first day anything was recorded: before it, nothing was
     total_site_seconds: int  # everyone's time on the web app, since it was first counted
+    total_solidworks_seconds: int  # everyone's time in SolidWorks, since it was first counted
+    # The first day anyone's time in SolidWorks was counted: the add-in says it from the release that added it on.
+    solidworks_since: date | None
 
 
 def daily(db: Session, days: int, timezone: str) -> Usage:
@@ -67,20 +84,32 @@ def daily(db: Session, days: int, timezone: str) -> Usage:
     first = today - timedelta(days=days - 1)
     start = datetime.combine(first, time(), tzinfo=zone).astimezone(UTC)
     on: dict[date, set[int]] = {first + timedelta(days=n): set() for n in range(days)}
-    seconds = dict.fromkeys(on, 0)
-    rows = db.execute(select(SiteUsage.hour, SiteUsage.user_id, SiteUsage.site_seconds).where(SiteUsage.hour >= start))
-    for hour, user_id, site_seconds in rows:
+    site = dict.fromkeys(on, 0)
+    solidworks = dict.fromkeys(on, 0)
+    rows = db.execute(
+        select(SiteUsage.hour, SiteUsage.user_id, SiteUsage.site_seconds, SiteUsage.solidworks_seconds).where(
+            SiteUsage.hour >= start
+        )
+    )
+    for hour, user_id, site_seconds, solidworks_seconds in rows:
         day = hour.astimezone(zone).date()
         if day in on:  # an hour from later today, by a clock that's ahead, isn't
             on[day].add(user_id)
-            seconds[day] += site_seconds
+            site[day] += site_seconds
+            solidworks[day] += solidworks_seconds
     earliest = db.scalar(select(func.min(SiteUsage.hour)))
+    earliest_solidworks = db.scalar(select(func.min(SiteUsage.hour)).where(SiteUsage.solidworks_seconds > 0))
+    totals = db.execute(
+        select(func.coalesce(func.sum(User.site_seconds), 0), func.coalesce(func.sum(User.solidworks_seconds), 0))
+    ).one()
     return Usage(
         timezone=name,
-        days=[Day(day, len(on[day]), seconds[day]) for day in on],
+        days=[Day(day, len(on[day]), site[day], solidworks[day]) for day in on],
         people=len(set().union(*on.values())),
         since=earliest.astimezone(zone).date() if earliest else None,
-        total_site_seconds=int(db.scalar(select(func.coalesce(func.sum(User.site_seconds), 0))) or 0),
+        total_site_seconds=int(totals[0]),
+        total_solidworks_seconds=int(totals[1]),
+        solidworks_since=earliest_solidworks.astimezone(zone).date() if earliest_solidworks else None,
     )
 
 

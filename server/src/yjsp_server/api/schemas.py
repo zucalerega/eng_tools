@@ -32,11 +32,19 @@ class UserOut(BaseModel):
     # false.
     last_active_at: datetime | None = None
     active_now: bool = False
-    # For admins (people.time_on_site): how long they've had the web app open, in seconds. Otherwise null.
+    # For admins (people.time_on_site): how long they've had the web app open, and worked in SolidWorks, in seconds.
+    # Otherwise null.
     site_seconds: int | None = None
+    solidworks_seconds: int | None = None
 
     @classmethod
-    def of(cls, user: User, last_active: datetime | None = None, site_seconds: int | None = None) -> "UserOut":
+    def of(
+        cls,
+        user: User,
+        last_active: datetime | None = None,
+        site_seconds: int | None = None,
+        solidworks_seconds: int | None = None,
+    ) -> "UserOut":
         return cls(
             id=user.id,
             name=user.display_name,
@@ -48,6 +56,7 @@ class UserOut(BaseModel):
             last_active_at=last_active,
             active_now=auth.active_now(last_active),
             site_seconds=site_seconds,
+            solidworks_seconds=solidworks_seconds,
         )
 
 
@@ -80,16 +89,20 @@ class UsageDayOut(BaseModel):
     day: date
     people: int  # who used the site that day: the web app, the add-in, or the CLI
     site_seconds: int  # how long the web app was open that day, everyone's together
+    solidworks_seconds: int  # how long people worked in SolidWorks that day, with the add-in, everyone's together
 
 
 class UsageOut(BaseModel):
-    """How many people used the site each day, and how long they had the web app open (people.site_usage)."""
+    """How many people used the site each day, and how long they had the web app open and worked in SolidWorks
+    (people.site_usage)."""
 
     timezone: str  # the days': the one asked for, or UTC if the server doesn't know it
     days: list[UsageDayOut]  # oldest first; the last is today, so far
     people: int  # who used the site on any of those days
     since: date | None  # the first day anything was recorded: nothing was before it
     total_site_seconds: int  # everyone's time on the web app, since it was first counted
+    total_solidworks_seconds: int  # everyone's time in SolidWorks, since it was first counted
+    solidworks_since: date | None  # the first day time in SolidWorks was counted: add-ins before said nothing
 
 
 class LoadPointOut(BaseModel):

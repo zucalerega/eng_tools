@@ -16,8 +16,9 @@ export interface Account extends UserRef {
     // For admins (Admin > People): when they last used the site (the web app, the add-in, the CLI), and if they're on now.
     last_active_at?: string | null;
     active_now?: boolean;
-    // For admins: how long they've had the web app open, in seconds (not the add-in or the CLI).
+    // For admins: how long they've had the web app open, and worked in SolidWorks with the add-in, in seconds.
     site_seconds?: number | null;
+    solidworks_seconds?: number | null;
 }
 
 /** What admins decide for everyone. */
@@ -119,6 +120,7 @@ export interface UsageDay {
     day: string; // 2026-10-14
     people: number; // who used the site: the web app, the add-in, or the CLI
     site_seconds: number; // how long the web app was open, everyone's together
+    solidworks_seconds: number; // how long people worked in SolidWorks, with the add-in, everyone's together
 }
 
 /** How the site was used, day by day (Admin > People's tracker). */
@@ -128,6 +130,8 @@ export interface Usage {
     people: number; // who used the site on any of those days
     since: string | null; // the first day anything was recorded: nothing was before it
     total_site_seconds: number; // everyone's time on the web app, since it was first counted
+    total_solidworks_seconds: number; // everyone's time in SolidWorks, since it was first counted
+    solidworks_since: string | null; // the first day time in SolidWorks was counted: add-ins before said nothing
 }
 
 /** A stretch of the server's work: a minute, or ten for more than a day, at its busiest. */

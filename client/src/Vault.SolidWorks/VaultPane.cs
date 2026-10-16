@@ -29,6 +29,8 @@ internal sealed partial class VaultPane : UserControl
     private readonly AddinSettings _settings = AddinSettings.Load();
     private readonly TokenStore _tokens = new TokenStore();
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+    // Every workspace's requests say when someone is working in SolidWorks, for Admin > People's time in SolidWorks.
+    private readonly ActivityHandler _sayWhenWorking = new ActivityHandler(SolidWorksActivity.InUse);
     private readonly Timer _poll = new Timer { Interval = 20_000 };
     private readonly Timer _debounce = new Timer { Interval = 400 };
     // SolidWorks shows the pane in its task pane's window, but doesn't always size it to that window: on some PCs it stays
@@ -534,6 +536,7 @@ internal sealed partial class VaultPane : UserControl
             _debounce.Dispose();
             _fit.Dispose();
             _workspace?.Dispose();
+            _sayWhenWorking.Dispose();
             _gate.Dispose();
         }
         base.Dispose(disposing);
@@ -1431,7 +1434,7 @@ internal sealed partial class VaultPane : UserControl
             var token = _tokens.Load(server);
             if (token != null)
             {
-                _workspace = Workspace.Open(root, token);
+                _workspace = Workspace.Open(root, token, _sayWhenWorking);
             }
         }
         _serverBox.Text = server?.AbsoluteUri ?? _settings.Server ?? "";

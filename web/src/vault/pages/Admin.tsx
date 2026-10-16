@@ -75,8 +75,11 @@ const PEOPLE_SORTS: Record<PeopleSort["key"], (a: Account, b: Account) => number
     joined: (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
     // Who's on now is the most recent; who's never been on, the least.
     active: (a, b) => lastOn(a) - lastOn(b),
-    time: (a, b) => (a.site_seconds ?? 0) - (b.site_seconds ?? 0),
+    time: (a, b) => timeOnSite(a) - timeOnSite(b),
 };
+// On the web app and in SolidWorks, together.
+const timeOnSite = (person: Account) => (person.site_seconds ?? 0) + (person.solidworks_seconds ?? 0);
+const orNone = (seconds: number | null | undefined) => (seconds ? formatDuration(seconds) : "none");
 const lastOn = (person: Account) =>
     person.active_now ? Infinity : person.last_active_at ? Date.parse(person.last_active_at) : -Infinity;
 const PEOPLE_REFRESH_MS = 30_000; // how often the list of people is fetched again, for who's on now
@@ -231,9 +234,11 @@ function People() {
                                                 <span className="muted">never</span>
                                             )}
                                         </td>
-                                        <td title="Time with the web app open">
-                                            {person.site_seconds ? (
-                                                formatDuration(person.site_seconds)
+                                        <td
+                                            title={`${orNone(person.site_seconds)} on the web app, ${orNone(person.solidworks_seconds)} in SolidWorks`}
+                                        >
+                                            {timeOnSite(person) ? (
+                                                formatDuration(timeOnSite(person))
                                             ) : (
                                                 <span className="muted">none</span>
                                             )}

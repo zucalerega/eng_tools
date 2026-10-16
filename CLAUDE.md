@@ -69,6 +69,11 @@ cd web && npm ci && npm run check && npm test && npm run build
 - **Done means** the code, its tests, and the docs it affects are in the same PR,
   the full check passes, and you have read the whole diff. No debug output, no
   commented-out code, no TODO without an issue link.
+- **User-facing changes update the help people read, in the same PR.** Anything people
+  see or do differently (a new button, a setting, a rule about who can do what) goes in
+  the site's help: Yorg's Help page (`web/src/yorg/Help.tsx`, `/yorg/help`), the
+  SolidWorks page for the add-in (`web/src/vault/pages/SolidWorks.tsx`), the page's own
+  hints, and README.md, the user guide. A feature the help doesn't mention isn't done.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
 - **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and

@@ -66,6 +66,11 @@ turned into triangles (brep.py), for the configuration SolidWorks had open (N, i
   Contents/Config-N-ResolvedFeatures has no class (a feature's, and what features keep) but those such parts have, which
   don't make or change bodies (the import, folders, planes and axes, sketches, dimensions, references).
 
+A part read from its solid takes the appearance its configuration keeps (Contents/Config-N), where it keeps just one:
+the part's, which SolidWorks shows over the colors Parasolid keeps of faces, often older ones (a grey from before the
+part's steel). Faces of a color other than most of their body's keep theirs (an O-ring's black). Where the
+configuration keeps more appearances (its faces' too), the solid's colors stand.
+
 Some programs that write SolidWorks files leave every stream's CRC field the same, uncomputed. There the solid's own
 checks stand in: it must unpack to exactly the size it says, and its transmit files end exactly where their nodes do.
 """
@@ -97,6 +102,7 @@ _TREE = "swXmlContents/COMPINSTANCETREE"
 _PARTITION = "Contents/Config-{}-Partition"
 _LOCAL = "Config-{}-FeatureBodies/LocalBodies"
 _RESOLVED = "Contents/Config-{}-ResolvedFeatures"
+_CONFIGURATION = "Contents/Config-{}"
 _NS = "{http://www.solidworks.com/sw2003/schema}"
 
 _BODY = b"uoTempBodyTessData_c"
@@ -944,7 +950,7 @@ def _solid(data: bytes, found: dict[str, bytes], refused: Unreadable | None) -> 
         active = next((c for c in configurations if c.get("swMostRecentConfiguration") == "YES"), None)
     number = active.get("swID") if active is not None else None
     number = number if number and number.isdigit() else "0"
-    names = (_PARTITION.format(number), _LOCAL.format(number), _RESOLVED.format(number))
+    names = (_PARTITION.format(number), _LOCAL.format(number), _RESOLVED.format(number), _CONFIGURATION.format(number))
     streams = _found(data, set(names))
     if not found and not streams:
         raise refused or Unreadable("It isn't a SolidWorks part that Caliper can read")
@@ -961,23 +967,42 @@ def _solid(data: bytes, found: dict[str, bytes], refused: Unreadable | None) -> 
     if not solids:
         raise refused or Unreadable(_NO_VIEW)
     configuration = (active.get("swName") if active is not None else None) or "Default"
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=_meshed(solids))
+    bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
 
 
-def _meshed(solids: list[brep.Solid]) -> list[MeshBody]:
-    """Solids as Caliper's mesh bodies, in mm: each body the color most of its faces have (SolidWorks' default if
-    none), and faces of another color their own."""
+def _configuration_look(stream: bytes | None) -> _Look | None:
+    """The appearance a configuration keeps, where it keeps just one: the part's. Where it keeps more (its faces' or
+    features' too), which is the part's isn't known. An appearance's first string is empty, which tells them from the
+    units' and fonts' tables there that can look like one."""
+    found: list[_Look] = []
+    at = 0
+    while stream and (next_one := _next_appearance(stream, at, len(stream))) is not None:
+        look, tag = next_one
+        start = tag + 6 + len(_APPEARANCE) if stream[tag : tag + 2] == b"\xff\xff" else tag + 2
+        first = _string(stream, start + 12)
+        if first is not None and first[0] == "":
+            found.append(look)
+        at = tag + 1
+    return found[0] if len(found) == 1 else None
+
+
+def _meshed(solids: list[brep.Solid], look: _Look | None = None) -> list[MeshBody]:
+    """Solids as Caliper's mesh bodies, in mm: each body the part's appearance (look), where it's known, or else the
+    color most of its faces have (SolidWorks' default if none); and faces of a color other than most of their body's,
+    their own."""
     out = []
     for i, solid in enumerate(solids):
         colors = [face.color for face in solid.faces if face.color is not None]
-        color = max(set(colors), key=colors.count) if colors else DEFAULT_COLOR
+        most = max(set(colors), key=colors.count) if colors else DEFAULT_COLOR
         faces = []
         for face in solid.faces:
             positions = array("f", (c * 1000 for p in face.positions for c in p))
             triangles = array("I", (k for t in face.triangles for k in t))
-            faces.append(MeshFace(positions, triangles, face.color if face.color not in (None, color) else None))
+            faces.append(MeshFace(positions, triangles, face.color if face.color not in (None, most) else None))
         name = "Body" if len(solids) == 1 else f"Body {i + 1}"
-        out.append(MeshBody(name=name, color=color, faces=faces, solid=solid.solid))
+        color, opacity = (look.color, look.opacity) if look is not None else (most, 1.0)
+        out.append(MeshBody(name=name, color=color, opacity=opacity, faces=faces, solid=solid.solid))
     return out
 
 

@@ -535,14 +535,19 @@ Where the 3D comes from:
       triangles of its own (`vault/brep.py`): it samples each edge once, so that its chords
       stray from it by no more than 0.05% of the part's size (measured across its vertices,
       or a tube's, which has none, across its circles), and the faces either side share its
-      points; and it cuts each face into strips across its surface's parameters. Faces
-      keep the colors Parasolid has for them. A part that's an import and nothing else (a
-      vendor's fitting, an 80/20 extrusion) keeps its bodies with the import, which are the
-      part's only if none of its features could make or change one: the server reads them
-      only then. The 435 parts in the team's vault that have both a 3D view and a solid read
-      this way agree with their 3D views within a percent in area and volume, and to a few
-      microns in size (but for those whose 3D view shows something their solid hasn't, a
-      cosmetic thread, say).
+      points; and it cuts each face into strips across its surface's parameters. Its bodies
+      have the appearance its configuration keeps (`Contents/Config-N`), where it keeps just
+      one: the part's, which SolidWorks shows over the colors Parasolid keeps of faces, often
+      older ones. Faces of a color other than most of their body's keep theirs (an O-ring's
+      black), and where the configuration keeps more appearances (its faces' too), the
+      solid's colors stand. Of the team's 360 parts with both, 322 read this way are colored
+      as their 3D views are (101 with Parasolid's colors alone). A part that's an import and
+      nothing else (a vendor's fitting, an 80/20 extrusion) keeps its bodies with the import,
+      which are the part's only if none of its features could make or change one: the server
+      reads them only then. The 435 parts in the team's vault that have both a 3D view and a
+      solid read this way agree with their 3D views within a percent in area and volume, and
+      to a few microns in size (but for those whose 3D view shows something their solid
+      hasn't, a cosmetic thread, say).
     - **An assembly:** its components, from the XML it keeps of each configuration: each
       component's file, configuration, and place, and whether SolidWorks hid or suppressed
       it. A flexible sub-assembly's instance has its own layout there, as flexed. Each

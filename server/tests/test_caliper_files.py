@@ -684,6 +684,68 @@ def test_a_part_without_a_3d_view_is_read_from_its_solid(team, client):
     assert [(b["name"], len(b["faces"])) for b in unpack(shape.content)[0]["bodies"]] == [("Body 1", 3), ("Body 2", 78)]
 
 
+def appearance(rgb: tuple[int, int, int], first: str, second: str) -> bytes:
+    """An appearance in an MFC archive, of the class's fifth object (0x8005): its color, a second color, 4 bytes, two
+    strings, and its ambient, diffuse, specular, shininess, transparency, and emission."""
+
+    def text(value: str) -> bytes:
+        return b"\xff\xfe\xff" + bytes([len(value)]) + value.encode("utf-16-le")
+
+    color = bytes(rgb) + b"\x00"
+    return (
+        struct.pack("<H", 0x8005)
+        + color
+        + color
+        + bytes(4)
+        + text(first)
+        + text(second)
+        + struct.pack("<6d", 1, 1, 0.5, 0.4, 0, 0)
+    )
+
+
+def test_a_part_read_from_its_solid_has_its_configurations_appearance(team, client):
+    """A part read from its solid has the appearance its configuration keeps, where it keeps just one: the part's,
+    which SolidWorks shows over the colors Parasolid keeps of its faces, often older ones. A table there that looks
+    like an appearance (the units', whose strings are Hz and Pa) isn't one; and where it keeps another appearance too
+    (a face's), the solid's own colors stand, as the servo case's do."""
+    chief = team.member("chief@x.test", admin=True)
+
+    def recolored(stream: bytes) -> bytes:  # aluminium's appearance, in place of the spline's own
+        at = stream.index(b"moVisualProperties_c") + len(b"moVisualProperties_c")
+        return stream[:at] + bytes((229, 234, 237)) + stream[at + 3 :]
+
+    aluminium = repacked(without_3d_view(contents("Embout.SLDPRT")), "Contents/Config-0", recolored)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Aluminium.SLDPRT": aluminium,
+                "Tabled.SLDPRT": repacked(
+                    aluminium, "Contents/Config-0", lambda s: s + appearance((255, 2, 110), "Hz", "Pa")
+                ),
+                "Faced.SLDPRT": repacked(
+                    aluminium, "Contents/Config-0", lambda s: s + appearance((64, 64, 64), "", "")
+                ),
+            },
+        )
+    )
+
+    def looks(name: str) -> list[tuple[list[float], float, list]]:
+        assert make(client, chief, checked[name]).status_code == 200
+        shape = client.get(
+            f"/api/files/{checked[name]['id']}/caliper/mesh",
+            params={"version": 1, "configuration": "Default"},
+            headers=chief,
+        )
+        bodies = unpack(shape.content)[0]["bodies"]
+        return [
+            (b["color"], b.get("opacity", 1), [f.get("color") for f in b["faces"] if f.get("color")]) for b in bodies
+        ]
+
+    assert looks("Aluminium.SLDPRT") == looks("Tabled.SLDPRT") == [([0.898, 0.9176, 0.9294], 1, [])] * 2
+    assert looks("Faced.SLDPRT") == [([0.7922, 0.8196, 0.9333], 1, [])] * 2  # SolidWorks' default, as Parasolid has it
+
+
 def renamed(data: bytes, name: str, new: str) -> bytes:
     """A SolidWorks file with one stream under another name."""
     marker = b"\x14\x00\x06\x00\x08\x00"

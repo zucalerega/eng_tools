@@ -6,6 +6,7 @@ import json
 import random
 import struct
 import zlib
+from collections.abc import Callable
 from pathlib import Path
 
 from .test_caliper import IDENTITY, mesh, put_model
@@ -160,23 +161,29 @@ def without_3d_view(data: bytes) -> bytes:
     return data.replace(swapped(b"Contents/DisplayLists"), swapped(b"Contents/DisplayListz"))
 
 
-def in_2024_layout(display: bytes, first: int = 1) -> bytes:
-    """A display list as SolidWorks 2024 and later write it: 32 bytes between each face's counts and its arrays, the
-    uint32s 1, 0, 0, a number of the face's, and four 0s (first: something other than the 1, which no SolidWorks
-    wrote)."""
-    strips = struct.pack("<3I", 4, 8, 2)
+def strips(display: bytes) -> list[int]:
+    """Where each face's array of its strips' lengths starts, in a display list as SolidWorks before 2024 writes it:
+    just after the face's counts of triangles and strips."""
+    marker = struct.pack("<3I", 4, 8, 2)
     places = []
-    at = display.find(strips)
+    at = display.find(marker)
     while at >= 0:
         triangles, count = struct.unpack_from("<2I", display, at - 8)
         if 0 < count < 1 << 16 and count == struct.unpack_from("<I", display, at + 12)[0]:
             lengths = struct.unpack_from(f"<{count}I", display, at + 16)
             if triangles == sum(lengths) - 2 * count:
                 places.append(at)
-        at = display.find(strips, at + 1)
+        at = display.find(marker, at + 1)
     assert places
+    return places
+
+
+def in_2024_layout(display: bytes, first: int = 1) -> bytes:
+    """A display list as SolidWorks 2024 and later write it: 32 bytes between each face's counts and its arrays, the
+    uint32s 1, 0, 0, a number of the face's, and four 0s (first: something other than the 1, which no SolidWorks
+    wrote)."""
     changed = bytearray(display)
-    for i, at in reversed(list(enumerate(places))):
+    for i, at in reversed(list(enumerate(strips(display)))):
         changed[at:at] = struct.pack("<8I", first, 0, 0, 0x201A94 + i, 0, 0, 0, 0)
     return bytes(changed)
 
@@ -203,6 +210,75 @@ def test_a_part_saved_by_solidworks_2024_or_later_is_read(team, client):
         params = {"version": 1, "configuration": "Default"}
         meshes.append(client.get(f"/api/files/{file['id']}/caliper/mesh", params=params, headers=chief).headers["etag"])
     assert meshes[0] == meshes[1]
+
+
+def face_records(display: bytes) -> list[tuple[int, int]]:
+    """Each face's edges and record, in the case's display list (one body, in SolidWorks 2016's layout): where its
+    edges' data starts, just past its normals, and where its record ends, at the next face's tag, or for the last, 20
+    bytes before the body's properties (vault/solidworks.py)."""
+    faces = []
+    for at in strips(display):
+        count = struct.unpack_from("<I", display, at + 12)[0]
+        vertices = sum(struct.unpack_from(f"<{count}I", display, at + 16))
+        faces.append((at - 8, at + 16 + 4 * count + 2 * (16 + 12 * vertices)))
+    ends = [start - 2 for start, _ in faces[1:]] + [display.index(b"uoBodyPropInfo_c") - 6 - 20]
+    return [(edges, end) for (_, edges), end in zip(faces, ends, strict=True)]
+
+
+def ending(display: bytes, last: Callable[[bytes], bytes]) -> bytes:
+    """The case's display list with each face's record ending as another SolidWorks ends it: its last 4 bytes, a
+    uint32 as SolidWorks 2014 to 2017 end it, made into what `last` makes of them."""
+    changed = bytearray(display)
+    for _, end in reversed(face_records(display)):
+        changed[end - 4 : end] = last(display[end - 4 : end])
+    return bytes(changed)
+
+
+def with_false_anchors(display: bytes) -> bytes:
+    """The case's display list with the bytes that come before a face's own appearance, 01 00 00 00 ff ff ff ff, in the
+    edges' data of its first three faces too, as SolidWorks' own sometimes have them: followed by none, ahead of the
+    first face's own appearance; by the number of an object that isn't an appearance, ahead of the second face's
+    reference to the first's; and by the appearances' class, with no appearance after it."""
+    changed = bytearray(display)
+    first = face_records(display)[:3]
+    for (edges, _), tag in reversed(list(zip(first, (b"\x00\x00", b"\x01\x00", b"\x33\x80"), strict=True))):
+        changed[edges:edges] = struct.pack("<Ii", 1, -1) + tag
+    return bytes(changed)
+
+
+def test_a_faces_own_appearance_is_found_past_its_edges(team, client):
+    """A face's own appearance comes after its edges and the bytes 01 00 00 00 ff ff ff ff (vault/solidworks.py), but
+    its edges' data can have those bytes in it too, as 16 faces of the team's 16 FAN TEE did, which cost the tee all its
+    colors. Only those followed by an appearance, or by none or a reference and then just the rest of the face's record,
+    count, however SolidWorks ends the record: with them in its edges, the case reads as the very same mesh, colors and
+    all."""
+    chief = team.member("chief@x.test", admin=True)
+    case = contents("Servomoteur.SLDPRT")
+    text = "moSimpleSurfIdRep_c,18,44, "
+    face_id = b"\xff\xfe\xff" + bytes([len(text)]) + text.encode("utf-16-le")
+    endings: dict[str, Callable[[bytes], bytes]] = {
+        "2012": lambda last: b"",
+        "2016": lambda last: last,
+        "2019": lambda last: last + bytes(4) + face_id,  # a uint64, and the face's id
+        "2021": lambda last: last + bytes(4) + face_id + bytes(4),
+        "2022": lambda last: last + bytes(4) + face_id + bytes(8),
+    }
+
+    def saved(last: Callable[[bytes], bytes]) -> bytes:
+        return repacked(case, "Contents/DisplayLists", lambda display: with_false_anchors(ending(display, last)))
+
+    versions = {f"Servomoteur {year}.SLDPRT": saved(last) for year, last in endings.items()}
+    checked = files(team.checkin(chief, {"Servomoteur.SLDPRT": case} | versions))
+    params = {"version": 1, "configuration": "Default"}
+    meshes = {}
+    for name, file in checked.items():
+        made = make(client, chief, file)
+        assert made.status_code == 200, made.text
+        meshes[name] = client.get(f"/api/files/{file['id']}/caliper/mesh", params=params, headers=chief)
+    header, _, _ = unpack(meshes["Servomoteur.SLDPRT"].content)
+    assert sum(face.get("color") == DARK_GRAY for face in header["bodies"][0]["faces"]) == 39
+    etag = meshes["Servomoteur.SLDPRT"].headers["etag"]
+    assert [name for name in versions if meshes[name].headers["etag"] != etag] == []
 
 
 def test_parts_and_assemblies_saved_by_solidworks_2014_or_older_are_read(team, client):

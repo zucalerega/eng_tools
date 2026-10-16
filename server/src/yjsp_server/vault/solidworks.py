@@ -33,11 +33,13 @@ A part's shape is a count of its bodies, then the bodies (uoTempBodyTessData_c).
 faces (uoTempFaceTessData_c), and its properties (uoBodyPropInfo_c), which name it. A face is a uint32 count of
 triangles, a uint32 count of strips, and arrays: the strips' lengths (uint32), their vertices (float32 x, y, z, in
 meters), and the vertices' normals. From SolidWorks 2024 on, 32 bytes come between the counts and the arrays: the
-uint32s 1, 0, and 0, a number that differs from face to face, and four 0s. Then come its edges, and, after 01 00 00 00
-ff ff ff ff, the appearance (moVisualProperties_c) it has of its own, if any. A strip of n vertices makes n - 2
-triangles, each wound the other way from the one before. An appearance starts with its color (bytes red, green, blue,
-0), and after two strings come its ambient, diffuse, specular, shininess, transparency, and emission (doubles). After
-the bodies comes the part's own appearance.
+uint32s 1, 0, and 0, a number that differs from face to face, and four 0s. Then come its edges; after 01 00 00 00 ff ff
+ff ff, which the edges' data can have in it too, the appearance (moVisualProperties_c) it has of its own, if any; and
+some numbers and, from SolidWorks 2019 on, the face's id (a string), up to the next face's tag, or for a body's last
+face, to 20 bytes before the body's properties. A strip of n vertices makes n - 2 triangles, each wound the other way
+from the one before. An appearance starts with its color (bytes red, green, blue, 0), and after two strings come its
+ambient, diffuse, specular, shininess, transparency, and emission (doubles). After the bodies comes the part's own
+appearance.
 
 An assembly's display list has a node (uoTempAssemblySHDData_c) for each component that's a part, at every level: its
 name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (a byte, 1 if it's turned; then
@@ -593,9 +595,37 @@ class _Own:
     end: int  # where what comes after it starts, as far as it's read
 
 
-def _own(data: bytes, face: _Face, limit: int) -> _Own | None:
-    anchor = data.find(_OWN_APPEARANCE, face.end, limit)
-    read = _object(data, anchor + len(_OWN_APPEARANCE)) if anchor >= 0 else None
+def _own(data: bytes, face: _Face, end: int) -> _Own | None:
+    """A face's own appearance, after an anchor that follows its edges, in its record, which ends at `end`. The edges'
+    data can have the anchor's bytes in it too, and so can the rest of the record, so the anchor is the one followed by
+    an appearance, which nothing else passes for, or by none or an earlier one's number and then exactly the rest of the
+    record."""
+    anchor = data.find(_OWN_APPEARANCE, face.end, end)
+    while anchor >= 0:
+        own = _own_at(data, anchor + len(_OWN_APPEARANCE))
+        if own is not None and (own.look is not None or _rest(data, own.end, end)):
+            return own
+        anchor = data.find(_OWN_APPEARANCE, anchor + 1, end)
+    return None
+
+
+def _rest(data: bytes, at: int, end: int) -> bool:
+    """Whether what's from `at` to `end` is the rest of a face's record, after its own appearance: two uint32s, a count
+    of 8-byte entries and the entries, and then, as the SolidWorks that wrote the display list had it, nothing (2012), a
+    uint32 (2014 to 2017), or 8 bytes, the face's id (a string: "moSimpleSurfIdRep_c,18,44, "), and 0 bytes (2019 and
+    2020), 4 (2021), or 8 (2022 on)."""
+    if at + 12 > end:
+        return False
+    entries = at + 12 + 8 * int.from_bytes(data[at + 8 : at + 12], "little")
+    if entries in (end, end - 4):
+        return True
+    read = _string(data, entries + 8) if entries + 8 < end else None
+    return read is not None and end - read[1] in (0, 4, 8)
+
+
+def _own_at(data: bytes, at: int) -> _Own | None:
+    """The own appearance whose tag is at `at`: none, an earlier one's number, or a new one, if it reads as one."""
+    read = _object(data, at)
     if read is None:
         return None
     kind, number, start = read
@@ -698,12 +728,13 @@ def _mesh(data: bytes, shape: _Shape, end: int, first_face: int | None) -> list[
     stops = [body.start for body in shape.bodies[1:]] + [end]  # where what comes after each body starts
     properties = [_properties(data, body.faces[-1].end, stop) for body, stop in zip(shape.bodies, stops, strict=True)]
     owns: list[list[_Own]] = []
-    for body, stop, after in zip(shape.bodies, stops, properties, strict=True):
+    for body, after in zip(shape.bodies, properties, strict=True):
+        # A face's own appearance is in its record, which ends at the next face's tag, or for a body's last face, 20
+        # bytes before the body's properties: if they aren't found, nor is that face's appearance.
+        ends = [face.start - 2 for face in body.faces[1:]] + [after - 20 if after is not None else None]
         mine = []
-        for k, face in enumerate(body.faces):
-            # A face's own appearance is in what follows it: up to the next face, or the body's properties.
-            limit = body.faces[k + 1].start if k + 1 < len(body.faces) else after if after is not None else stop
-            own = _own(data, face, limit)
+        for face, record_end in zip(body.faces, ends, strict=True):
+            own = _own(data, face, record_end) if record_end is not None else None
             mine.append(own if own is not None else _Own("none", 0, None, face.end))
         owns.append(mine)
     # Every face says what appearance it has of its own (SolidWorks 2015 to 2017, and some later files), or none

@@ -454,6 +454,7 @@ site's own endpoints, are in [design.md](design.md#api).
 | `POST /api/yorg/datasets?filename=&name=&description=&folder=` | upload a file of test data (the raw body) into a folder (or the top) and read it; one that can't be read comes back `failed`, with why |
 | `POST /api/yorg/datasets/move` | move datasets `{datasets, folder_id}` into a folder (null: the top); all or none |
 | `POST /api/yorg/datasets/delete` | delete datasets `{datasets}` (each restorable); yours, or any for an admin; all or none |
+| `POST /api/yorg/datasets/restore` | restore deleted datasets `{datasets}`, each in its folder; yours, or any for an admin; all or none |
 | `GET`/`POST /api/yorg/folders`, `PATCH`/`DELETE /api/yorg/folders/{id}` | folders of datasets `{name, parent_id}`; rename or move one; delete an empty one |
 | `GET`/`PATCH`/`DELETE /api/yorg/datasets/{id}` | a dataset with its channels, events, and how it was read; rename it; delete it (restorable) |
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |

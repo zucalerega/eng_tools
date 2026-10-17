@@ -12,7 +12,9 @@ read on a best effort, and fall back to SolidWorks' default when they don't add 
 The file. A part or assembly saved by SolidWorks 2015 or later is a run of streams. Each is the bytes 14 00 06 00 08 00;
 a tag, the CRC-32 of its contents, its packed size, its size, and its name's length (uint32s, little-endian, as is
 everything here); its name, each byte's two halves swapped; and its contents, deflated (raw: no zlib header). Files
-from SolidWorks 2014 and before are OLE compound documents, which this doesn't read. It reads:
+from SolidWorks 2014 and before are OLE compound documents (Microsoft's [MS-CFB]) of the same streams, most of them
+packed: a stream whose name ends in __ZLB is 16 fixed bytes, its size and its packed size (uint32s), then zlib. Their
+3D views are as later ones', but their units aren't in XML (they start in mm). It reads:
 
 - Contents/DisplayLists: what SolidWorks draws (below).
 - docProps/ISolidWorksInformation.xml: the document's units (SW_UnitsLinear, a swLengthUnit_e).
@@ -31,18 +33,46 @@ A part's shape is a count of its bodies, then the bodies (uoTempBodyTessData_c).
 faces (uoTempFaceTessData_c), and its properties (uoBodyPropInfo_c), which name it. A face is a uint32 count of
 triangles, a uint32 count of strips, and arrays: the strips' lengths (uint32), their vertices (float32 x, y, z, in
 meters), and the vertices' normals. From SolidWorks 2024 on, 32 bytes come between the counts and the arrays: the
-uint32s 1, 0, and 0, a number that differs from face to face, and four 0s. Then come its edges, and, after 01 00 00 00
-ff ff ff ff, the appearance (moVisualProperties_c) it has of its own, if any. A strip of n vertices makes n - 2
-triangles, each wound the other way from the one before. An appearance starts with its color (bytes red, green, blue,
-0), and after two strings come its ambient, diffuse, specular, shininess, transparency, and emission (doubles). After
-the bodies comes the part's own appearance.
+uint32s 1, 0, and 0, a number that differs from face to face, and four 0s. Then come its edges; after 01 00 00 00 ff ff
+ff ff, which the edges' data can have in it too, the appearance (moVisualProperties_c) it has of its own, if any; and
+some numbers and, from SolidWorks 2019 on, the face's id (a string), up to the next face's tag, or for a body's last
+face, to 20 bytes before the body's properties. A strip of n vertices makes n - 2 triangles, each wound the other way
+from the one before. An appearance starts with its color (bytes red, green, blue, 0), and after two strings come its
+ambient, diffuse, specular, shininess, transparency, and emission (doubles). After the bodies comes the part's own
+appearance.
 
 An assembly's display list has a node (uoTempAssemblySHDData_c) for each component that's a part, at every level: its
-name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (SolidWorks' 13 numbers: a rotation by
-columns, a translation in meters, and a scale), its configuration, its part's name and path, and then the part's
+name ("Bracket-1@Rocket": the component, then the assembly it's in), its place (a byte, 1 if it's turned; then
+SolidWorks' 13 numbers, a rotation by columns, a translation in meters, and a scale, or for one that isn't turned just
+the translation and the scale), its configuration, its part's name and path, and then the part's
 shape, as above, in the part's own coordinates. Often there's no shape after a node, and from SolidWorks 2024 on there
 never is: only which of the part's faces it shows. Nor has every assembly a display list. Its components are still in
 its XML, and their parts' shapes are in their own files (vault.py finds them).
+
+A virtual component, which SolidWorks keeps inside the file of the assembly it's in (as it does Routing's tubes, and
+the routes they're in), has its whole file there: the stream VirtualComp/ and its name up to the ^ (SolidWorks names one
+"Tube-375X010^Route-1"), with -sldprt or -sldasm after that in some files. A virtual sub-assembly's file keeps its own
+virtual components in turn, and a sub-assembly that's a file of its own keeps its own (vault.py reads them there). A
+virtual part is read from its solid, never its display list: SolidWorks leaves that as it was when the part was made (a
+routed tube's is the library tube's, 12.7 mm long), but builds the solid along the route.
+
+A part without a display list (SolidWorks set not to save one, as vendors' parts often are), or with one Caliper can't
+follow, is read from its solid instead: the Parasolid bodies SolidWorks keeps of each configuration (parasolid.py),
+turned into triangles (brep.py), for the configuration SolidWorks had open (N, its swID). It reads:
+
+- Contents/Config-N-Partition: the part's bodies, as the configuration last built them.
+- Config-N-FeatureBodies/LocalBodies: the bodies its imports brought in. Where the partition has none, as in a part
+  that's an import and nothing else, these are the part's own, but only then: so they're read only if
+  Contents/Config-N-ResolvedFeatures has no class (a feature's, and what features keep) but those such parts have, which
+  don't make or change bodies (the import, folders, planes and axes, sketches, dimensions, references).
+
+A part read from its solid takes the appearance its configuration keeps (Contents/Config-N), where it keeps just one:
+the part's, which SolidWorks shows over the colors Parasolid keeps of faces, often older ones (a grey from before the
+part's steel). Faces of a color other than most of their body's keep theirs (an O-ring's black). Where the
+configuration keeps more appearances (its faces' too), the solid's colors stand.
+
+Some programs that write SolidWorks files leave every stream's CRC field the same, uncomputed. There the solid's own
+checks stand in: it must unpack to exactly the size it says, and its transmit files end exactly where their nodes do.
 """
 
 import re
@@ -57,15 +87,25 @@ from typing import Literal
 from xml.etree import ElementTree
 
 from ..errors import ApiError
+from . import brep, parasolid
 from .caliper import MeshBody, MeshFace, Rgb
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
+# This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
+# a newer one is out, and the server reads the models an older one made again, as they're next wanted.
+READER = 2
 _MARKER = b"\x14\x00\x06\x00\x08\x00"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ZLB = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")  # what a packed stream of an OLE file starts with
+_NO_SECTOR = 0xFFFFFFFA  # sector numbers from here up mean a chain's end, or none
 _DISPLAY = "Contents/DisplayLists"
 _INFO = "docProps/ISolidWorksInformation.xml"
 _FEATURES = "swXmlContents/Features"
 _TREE = "swXmlContents/COMPINSTANCETREE"
+_PARTITION = "Contents/Config-{}-Partition"
+_LOCAL = "Config-{}-FeatureBodies/LocalBodies"
+_RESOLVED = "Contents/Config-{}-ResolvedFeatures"
+_CONFIGURATION = "Contents/Config-{}"
 _NS = "{http://www.solidworks.com/sw2003/schema}"
 
 _BODY = b"uoTempBodyTessData_c"
@@ -103,8 +143,8 @@ class Component:
     configuration: str
     transform: list[float]  # the rows of a 3 x 4 matrix to the top assembly's coordinates, in mm
     hidden: bool
-    virtual: bool  # a part kept inside the assembly
-    shape: list[MeshBody] | None  # a part's bodies, as the assembly shows them
+    virtual: bool  # kept inside the assembly it's in
+    shape: list[MeshBody] | None  # a part's bodies, as the assembly shows them; a virtual part's, as its solid has them
     children: list["Component"] = field(default_factory=list)  # a sub-assembly's
 
 
@@ -118,8 +158,9 @@ class Assembly:
 # --- the file ---------------------------------------------------------------------------------
 
 
-def _streams(data: bytes, wanted: set[str]) -> dict[str, bytes]:
-    """The streams of a SolidWorks 2015+ file that are wanted, by name, each checked against its CRC."""
+def _streams(data: bytes, wanted: set[str], checked: bool = True) -> dict[str, bytes]:
+    """The streams of a SolidWorks 2015+ file that are wanted, by name, each checked against its CRC (unless
+    checked is False: see _unchecked)."""
     found: dict[str, bytes] = {}
     at = data.find(_MARKER)
     while at >= 0 and len(found) < len(wanted):
@@ -137,9 +178,33 @@ def _streams(data: bytes, wanted: set[str]) -> dict[str, bytes]:
                         contents = inflater.decompress(data[start : start + packed], size + 1)
                     except zlib.error:
                         contents = b""
-                    if len(contents) == size and zlib.crc32(contents) == crc:
+                    if len(contents) == size and (zlib.crc32(contents) == crc or not checked):
                         found[name] = contents
         at = data.find(_MARKER, at + 1)
+    return found
+
+
+def _unchecked(data: bytes) -> bool:
+    """Whether a file's streams all have one CRC field, never computed (as some programs that write SolidWorks files
+    leave them): then nothing that relies on its streams' CRCs reads it, but a solid can, by its own checks."""
+    crcs = set()
+    at = data.find(_MARKER)
+    while at >= 0 and len(crcs) < 2:
+        if at + len(_MARKER) + 20 <= len(data):
+            _tag, crc, _packed, _size, length = struct.unpack_from("<5I", data, at + len(_MARKER))
+            if 0 < length <= 1024:
+                crcs.add(crc)
+        at = data.find(_MARKER, at + 1)
+    return len(crcs) == 1
+
+
+def _found(data: bytes, wanted: set[str]) -> dict[str, bytes]:
+    """The wanted streams of a file of either kind."""
+    if data.startswith(_OLE):
+        return _compound(data, wanted)
+    found = _streams(data, wanted)
+    if not found and _unchecked(data):
+        found = _streams(data, wanted, checked=False)
     return found
 
 
@@ -160,19 +225,127 @@ def _units(info: bytes | None) -> str:
     return _UNITS.get(int(found.group(1)), "mm") if found else "mm"
 
 
+def _compound(data: bytes, wanted: set[str]) -> dict[str, bytes]:
+    """The streams of an OLE compound file (a SolidWorks 2014 or older file) that are wanted, by name, each as it is
+    or unpacked from its __ZLB stream. Anything that doesn't fit the format is refused."""
+    odd = Unreadable("It's an OLE file, as SolidWorks 2014 and older saved them, that doesn't read as one")
+    if len(data) < 512 or data[28:30] != b"\xfe\xff":
+        raise odd
+    shift, mini_shift = struct.unpack_from("<HH", data, 30)
+    if (shift, mini_shift) not in ((9, 6), (12, 6)):
+        raise odd
+    size, mini = 1 << shift, 1 << mini_shift
+    fat_sectors, first_directory, _, cutoff, first_mini_fat, _, first_difat, difat_sectors = struct.unpack_from(
+        "<8I", data, 44
+    )
+    sectors = (len(data) - size) // size  # how many sectors the file has, after its header
+    if fat_sectors > sectors or difat_sectors > sectors:
+        raise odd
+
+    def at(sector: int) -> int:
+        if sector >= sectors:
+            raise odd
+        return (sector + 1) * size
+
+    difat = list(struct.unpack_from("<109I", data, 76))
+    sector = first_difat
+    for _ in range(difat_sectors):
+        entries = struct.unpack_from(f"<{size // 4}I", data, at(sector))
+        difat += entries[:-1]
+        sector = entries[-1]
+    fat: list[int] = []
+    for sector in difat[:fat_sectors]:
+        fat += struct.unpack_from(f"<{size // 4}I", data, at(sector))
+
+    def chain(first: int, table: list[int], limit: int) -> list[int]:
+        """A chain of sectors, which must end, and not come back on itself."""
+        found, seen = [], set()
+        sector = first
+        while sector < _NO_SECTOR:
+            if sector in seen or sector >= len(table) or len(found) > limit:
+                raise odd
+            seen.add(sector)
+            found.append(sector)
+            sector = table[sector]
+        return found
+
+    def read(first: int, length: int) -> bytes:
+        return b"".join(data[at(s) : at(s) + size] for s in chain(first, fat, length // size + 1))[:length]
+
+    directory = read(first_directory, size * len(chain(first_directory, fat, sectors)))
+    entries = [directory[i : i + 128] for i in range(0, len(directory) - 127, 128)]
+    if not entries or entries[0][66] != 5:  # the root
+        raise odd
+    root_start, root_size = struct.unpack_from("<IQ", entries[0], 116)
+    mini_stream = read(root_start, root_size & 0xFFFFFFFF) if root_start < _NO_SECTOR else b""
+    mini_fat: list[int] = []
+    for sector in chain(first_mini_fat, fat, sectors):
+        mini_fat += struct.unpack_from(f"<{size // 4}I", data, at(sector))
+
+    def stream(entry: bytes) -> bytes:
+        first, length = struct.unpack_from("<IQ", entry, 116)
+        length &= 0xFFFFFFFF if size == 512 else (1 << 64) - 1  # version 3 files have only 32 bits of it
+        if length > MAX_STREAM:
+            raise Unreadable(f"A stream of it is over {MAX_STREAM >> 20} MB, more than Caliper reads")
+        if length >= cutoff:
+            return read(first, length)
+        pieces = chain(first, mini_fat, length // mini + 1)
+        return b"".join(mini_stream[p * mini : (p + 1) * mini] for p in pieces)[:length]
+
+    # The directory is a tree of storages (folders) and streams, each storage's children a binary tree of siblings.
+    found: dict[str, bytes] = {}
+    pending, seen = [(entries[0], "")], set()
+    while pending:
+        entry, folder = pending.pop()
+        child = struct.unpack_from("<I", entry, 76)[0]
+        siblings = [child]
+        while siblings:
+            index = siblings.pop()
+            if index >= _NO_SECTOR:
+                continue
+            if index in seen or index >= len(entries):
+                raise odd
+            seen.add(index)
+            item = entries[index]
+            left, right = struct.unpack_from("<II", item, 68)
+            siblings += [left, right]
+            length = struct.unpack_from("<H", item, 64)[0]
+            name = item[: max(0, min(length, 64) - 2)].decode("utf-16-le", "replace")
+            if item[66] == 1:  # a storage
+                pending.append((item, folder + name + "/"))
+            elif item[66] == 2:
+                path = folder + name
+                plain = path.removesuffix("__ZLB")
+                if plain in wanted and plain not in found:
+                    contents = stream(item)
+                    if path.endswith("__ZLB"):
+                        contents = _unpack_zlb(contents, odd)
+                    found[plain] = contents
+    return found
+
+
+def _unpack_zlb(packed: bytes, odd: Unreadable) -> bytes:
+    if len(packed) < 24 or packed[:16] != _ZLB:
+        raise odd
+    size, length = struct.unpack_from("<II", packed, 16)
+    if size > MAX_STREAM:
+        raise Unreadable(f"A stream of it unpacks to over {MAX_STREAM >> 20} MB, more than Caliper reads")
+    if length == 0:
+        return b""
+    inflater = zlib.decompressobj()
+    contents = inflater.decompress(packed[24 : 24 + length], size + 1)
+    if len(contents) != size:
+        raise odd
+    return contents
+
+
 def _open(data: bytes, kind: Literal["part", "assembly"]) -> dict[str, bytes]:
-    """The streams a part or assembly is read from. A part needs its display list; an assembly, only its XML."""
-    if data.startswith(_OLE):
-        raise Unreadable(
-            "It was saved by SolidWorks 2014 or older, which Caliper can't read: save it in a newer SolidWorks, or "
-            "make its 3D view in SolidWorks (Make 3D view, on the Vault tab)"
-        )
+    """The streams a part or assembly is read from: a part's display list, if it has one; an assembly's XML. Without
+    any of them, a part may still have a solid (_solid)."""
     wanted = {_DISPLAY, _INFO, _FEATURES if kind == "part" else _TREE}
-    found = _streams(data, wanted)
-    if not found:
+    found = _compound(data, wanted) if data.startswith(_OLE) else _streams(data, wanted)
+    if not found and kind == "assembly":
         raise Unreadable(f"It isn't a SolidWorks {kind} that Caliper can read")
-    if kind == "part" and _DISPLAY not in found:
-        raise Unreadable(_NO_VIEW)
     return found
 
 
@@ -479,9 +652,37 @@ class _Own:
     end: int  # where what comes after it starts, as far as it's read
 
 
-def _own(data: bytes, face: _Face, limit: int) -> _Own | None:
-    anchor = data.find(_OWN_APPEARANCE, face.end, limit)
-    read = _object(data, anchor + len(_OWN_APPEARANCE)) if anchor >= 0 else None
+def _own(data: bytes, face: _Face, end: int) -> _Own | None:
+    """A face's own appearance, after an anchor that follows its edges, in its record, which ends at `end`. The edges'
+    data can have the anchor's bytes in it too, and so can the rest of the record, so the anchor is the one followed by
+    an appearance, which nothing else passes for, or by none or an earlier one's number and then exactly the rest of the
+    record."""
+    anchor = data.find(_OWN_APPEARANCE, face.end, end)
+    while anchor >= 0:
+        own = _own_at(data, anchor + len(_OWN_APPEARANCE))
+        if own is not None and (own.look is not None or _rest(data, own.end, end)):
+            return own
+        anchor = data.find(_OWN_APPEARANCE, anchor + 1, end)
+    return None
+
+
+def _rest(data: bytes, at: int, end: int) -> bool:
+    """Whether what's from `at` to `end` is the rest of a face's record, after its own appearance: two uint32s, a count
+    of 8-byte entries and the entries, and then, as the SolidWorks that wrote the display list had it, nothing (2012), a
+    uint32 (2014 to 2017), or 8 bytes, the face's id (a string: "moSimpleSurfIdRep_c,18,44, "), and 0 bytes (2019 and
+    2020), 4 (2021), or 8 (2022 on)."""
+    if at + 12 > end:
+        return False
+    entries = at + 12 + 8 * int.from_bytes(data[at + 8 : at + 12], "little")
+    if entries in (end, end - 4):
+        return True
+    read = _string(data, entries + 8) if entries + 8 < end else None
+    return read is not None and end - read[1] in (0, 4, 8)
+
+
+def _own_at(data: bytes, at: int) -> _Own | None:
+    """The own appearance whose tag is at `at`: none, an earlier one's number, or a new one, if it reads as one."""
+    read = _object(data, at)
     if read is None:
         return None
     kind, number, start = read
@@ -584,12 +785,13 @@ def _mesh(data: bytes, shape: _Shape, end: int, first_face: int | None) -> list[
     stops = [body.start for body in shape.bodies[1:]] + [end]  # where what comes after each body starts
     properties = [_properties(data, body.faces[-1].end, stop) for body, stop in zip(shape.bodies, stops, strict=True)]
     owns: list[list[_Own]] = []
-    for body, stop, after in zip(shape.bodies, stops, properties, strict=True):
+    for body, after in zip(shape.bodies, properties, strict=True):
+        # A face's own appearance is in its record, which ends at the next face's tag, or for a body's last face, 20
+        # bytes before the body's properties: if they aren't found, nor is that face's appearance.
+        ends = [face.start - 2 for face in body.faces[1:]] + [after - 20 if after is not None else None]
         mine = []
-        for k, face in enumerate(body.faces):
-            # A face's own appearance is in what follows it: up to the next face, or the body's properties.
-            limit = body.faces[k + 1].start if k + 1 < len(body.faces) else after if after is not None else stop
-            own = _own(data, face, limit)
+        for face, record_end in zip(body.faces, ends, strict=True):
+            own = _own(data, face, record_end) if record_end is not None else None
             mine.append(own if own is not None else _Own("none", 0, None, face.end))
         owns.append(mine)
     # Every face says what appearance it has of its own (SolidWorks 2015 to 2017, and some later files), or none
@@ -653,15 +855,28 @@ def read_part(data: bytes) -> Part:
     return _strict(_read_part, data)
 
 
-def read_assembly(data: bytes) -> Assembly:
-    """An assembly's 3D view, as SolidWorks saved it: its components, with each part's shape as the assembly shows
-    it. Components SolidWorks suppressed are left out."""
+def read_assembly(data: bytes) -> list[Assembly]:
+    """An assembly's 3D views, as SolidWorks saved them: in each configuration, its components, with each part's shape
+    as the assembly shows it. Components SolidWorks suppressed are left out. The configuration SolidWorks had open
+    comes first; then each other one whose places are up to date (one SolidWorks says needs rebuilding isn't)."""
     return _strict(_read_assembly, data)
 
 
 def _read_part(data: bytes) -> Part:
     found = _open(data, "part")
-    display = found[_DISPLAY]
+    display = found.get(_DISPLAY)
+    if display is None:
+        return _solid(data, found, None)
+    try:
+        return _viewed(found, display)
+    except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error) as e:
+        # A 3D view Caliper can't follow: the solid, if it can follow that. Else the 3D view's reason stands.
+        refused = e if isinstance(e, Unreadable) else Unreadable(_ODD)
+        return _solid(data, found, refused)
+
+
+def _viewed(found: dict[str, bytes], display: bytes) -> Part:
+    """A part read from its display list."""
     faces = _faces(display)
     shapes = _shapes(display, faces)
     if not shapes:
@@ -677,6 +892,121 @@ def _read_part(data: bytes) -> Part:
     tail = [text for _, text in _strings(display, faces[-1].end, len(display))]
     configuration = _part_configuration(_xml(found.get(_FEATURES)), tail)
     return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+
+
+# --- parts' solids --------------------------------------------------------------------------------
+
+# The classes in the features of parts that are an import and nothing else (in the team's library: vendors' fittings,
+# 80/20 extrusions): the import itself, and what changes no body. Any other is a feature that may make or change one.
+_IMPORTS = {"moBaseBody_c", "moMBimport_c"}
+_QUIET = _IMPORTS | {
+    "mbBodyImportIDMaps_c", "moCStringHandle_c", "moCommentsFolder_c", "moCompEdge_c", "moCompFace_c",
+    "moCompFeature_c", "moCompRefAxis_c", "moCompRefPlane_c", "moCompSketchEntHandle_c", "moConnectionPoint_c",
+    "moCurveFtrFolder_c", "moDefaultRefPlnData_c", "moDetailCabinet_c", "moDisplayDistanceDim_c",
+    "moDisplayRadialDim_c", "moDocsFolder_c", "moDoubleDim_c", "moEdgeRef_c", "moEqnFolder_c", "moExtObject_c",
+    "moFR_c", "moFavoriteFolder_c", "moFavoriteHandle_c", "moFeatGraphicsBodyFolder_c", "moFeatSolidBodyFolder_c",
+    "moFeatSurfaceBodyFolder_c", "moFeatureDimHandle_c", "moFtrFolder_c", "moHistoryFeatItemData_c",
+    "moHistoryFolder_c", "moInkMarkupFolder_c", "moLengthParameter_c", "moLineAxisData_c", "moLineBackedUpData_c",
+    "moLineRef_w", "moMaterialFolder_c", "moNodeName_c", "moNotesAreaFtrFolder_c", "moOriginProfileFeature_c",
+    "moPMarkRecord_c", "moPointBackedUpData_c", "moPointRef_w", "moProfileFeature_c", "moProfileFtrFolder_c",
+    "moRefAxisFtrFolder_c", "moRefAxis_c", "moRefPlaneFtrFolder_c", "moRefPlane_c", "moRoutePoint_c",
+    "moScalerParameter_c", "moSelectionSetFolder_c", "moSensorFolder_c", "moSimpleSurfIdRep_c", "moSketchExtRef_w",
+    "moSolidBodyFolder_c", "moSurfaceBodyFolder_c", "moUnitComponent_c", "sgExtEnt_c", "sgLineHandle",
+    "sgPntPntDist", "sgPointHandle", "sgSketch", "ThreeDRadialOrDiameterDim_c",
+}  # fmt: skip
+_CLASS = re.compile(rb"\xff\xff[\x00-\xff]{2}([\x01-\x40])\x00", re.DOTALL)
+
+
+def _classes(archive: bytes) -> set[str]:
+    """The classes an MFC archive names (each new one: 0xFFFF, a uint16 schema, a uint16 length, the name)."""
+    names = set()
+    for found in _CLASS.finditer(archive):
+        name = archive[found.end() : found.end() + found.group(1)[0]]
+        if re.fullmatch(rb"[A-Za-z_][A-Za-z0-9_]*", name):
+            names.add(name.decode())
+    return names
+
+
+def _only_imported(resolved: bytes | None) -> bool:
+    """Whether a part is an import and nothing else, by its features' classes."""
+    names = _classes(resolved or b"")
+    return bool(names & _IMPORTS) and names <= _QUIET
+
+
+def _bodies(stream: bytes | None) -> list[brep.Solid]:
+    """The solids in one of SolidWorks' streams of them: each transmit file's bodies (a partition's deltas, its undo,
+    left out)."""
+    out = []
+    for transmit in parasolid.transmit_files(stream or b""):
+        if "(deltas)" not in parasolid.header(transmit):
+            out += brep.solids(parasolid.read(transmit)[1])
+    return out
+
+
+def _solid(data: bytes, found: dict[str, bytes], refused: Unreadable | None) -> Part:
+    """A part read from its solid (when its display list is missing, or refused). Where that can't be read either,
+    the display list's reason for refusing it stands; or why the solid can't be read; or that there's no 3D view."""
+    features = _xml(found.get(_FEATURES))
+    active = None
+    if features is not None:
+        configurations = list(features.iter(f"{_NS}swConfiguration"))
+        active = next((c for c in configurations if c.get("swMostRecentConfiguration") == "YES"), None)
+    number = active.get("swID") if active is not None else None
+    number = number if number and number.isdigit() else "0"
+    names = (_PARTITION.format(number), _LOCAL.format(number), _RESOLVED.format(number), _CONFIGURATION.format(number))
+    streams = _found(data, set(names))
+    if not found and not streams:
+        raise refused or Unreadable("It isn't a SolidWorks part that Caliper can read")
+    try:
+        solids = _bodies(streams.get(names[0]))
+        if not any(s.faces for s in solids) and _only_imported(streams.get(names[2])):
+            solids = _bodies(streams.get(names[1]))
+    except parasolid.XtError as e:
+        raise refused or Unreadable(
+            f"SolidWorks saved no 3D view in it, and Caliper can't follow its solid ({e}). Make its 3D view in "
+            "SolidWorks instead (Make 3D view, on the Vault tab)"
+        ) from e
+    solids = [s for s in solids if s.faces]
+    if not solids:
+        raise refused or Unreadable(_NO_VIEW)
+    configuration = (active.get("swName") if active is not None else None) or "Default"
+    bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+
+
+def _configuration_look(stream: bytes | None) -> _Look | None:
+    """The appearance a configuration keeps, where it keeps just one: the part's. Where it keeps more (its faces' or
+    features' too), which is the part's isn't known. An appearance's first string is empty, which tells them from the
+    units' and fonts' tables there that can look like one."""
+    found: list[_Look] = []
+    at = 0
+    while stream and (next_one := _next_appearance(stream, at, len(stream))) is not None:
+        look, tag = next_one
+        start = tag + 6 + len(_APPEARANCE) if stream[tag : tag + 2] == b"\xff\xff" else tag + 2
+        first = _string(stream, start + 12)
+        if first is not None and first[0] == "":
+            found.append(look)
+        at = tag + 1
+    return found[0] if len(found) == 1 else None
+
+
+def _meshed(solids: list[brep.Solid], look: _Look | None = None) -> list[MeshBody]:
+    """Solids as Caliper's mesh bodies, in mm: each body the part's appearance (look), where it's known, or else the
+    color most of its faces have (SolidWorks' default if none); and faces of a color other than most of their body's,
+    their own."""
+    out = []
+    for i, solid in enumerate(solids):
+        colors = [face.color for face in solid.faces if face.color is not None]
+        most = max(set(colors), key=colors.count) if colors else DEFAULT_COLOR
+        faces = []
+        for face in solid.faces:
+            positions = array("f", (c * 1000 for p in face.positions for c in p))
+            triangles = array("I", (k for t in face.triangles for k in t))
+            faces.append(MeshFace(positions, triangles, face.color if face.color not in (None, most) else None))
+        name = "Body" if len(solids) == 1 else f"Body {i + 1}"
+        color, opacity = (look.color, look.opacity) if look is not None else (most, 1.0)
+        out.append(MeshBody(name=name, color=color, opacity=opacity, faces=faces, solid=solid.solid))
+    return out
 
 
 # --- assemblies ----------------------------------------------------------------------------------
@@ -714,20 +1044,28 @@ def _rigid(rows: list[float]) -> bool:
 
 
 def _nodes(data: bytes) -> list[_Node]:
-    """The display list's nodes: a name with an @, a byte, SolidWorks' 13 numbers for a turn and a move, a byte, 10
-    more numbers, then the configuration, the part's name, and its path."""
+    """The display list's nodes: a name with an @; its place, which is a byte that says whether it's turned, then
+    SolidWorks' 13 numbers for a turn and a move if it is, or just a move and a scale (4) if it isn't; a byte, 10 more
+    numbers, then the configuration, the part's name, and its path."""
     found = []
     for at, name in _strings(data, 0, len(data)):
         read = _string(data, at)
-        if "@" not in name or read is None:
+        if "@" not in name or read is None or read[1] >= len(data):
             continue
-        place = read[1] + 1
-        if place + 104 + 1 + 80 > len(data):
+        turned, place = data[read[1]], read[1] + 1
+        if turned not in (0, 1):
             continue
-        rows = _rows(struct.unpack_from("<13d", data, place))
+        length = 104 if turned else 32
+        if place + length + 1 + 80 > len(data):
+            continue
+        if turned:
+            rows = _rows(struct.unpack_from("<13d", data, place))
+        else:
+            x, y, z, scale = struct.unpack_from("<4d", data, place)
+            rows = _rows((1, 0, 0, 0, 1, 0, 0, 0, 1, x, y, z, scale))
         if not _rigid(rows):
             continue
-        texts = [text for _, text in _strings(data, place + 104 + 1 + 80, min(len(data), place + 4096))][:6]
+        texts = [text for _, text in _strings(data, place + length + 1 + 80, min(len(data), place + 4096))][:6]
         path = next((t for t in texts if t.lower().endswith((".sldprt", ".sldasm"))), None)
         if not texts or path is None:
             continue
@@ -769,7 +1107,21 @@ def _same_place(a: list[float], b: list[float]) -> bool:
     return all(abs(x - y) <= (1e-3 if i % 4 == 3 else 1e-6) for i, (x, y) in enumerate(zip(a, b, strict=True)))
 
 
-def _read_assembly(data: bytes) -> Assembly:
+def _kept_names(ref: ElementTree.Element, assembly: bool) -> list[str]:
+    """The streams a file may keep a virtual component's own file in."""
+    base = (ref.get("swName") or "").split("^", 1)[0]
+    return [f"VirtualComp/{base}", f"VirtualComp/{base}-{'sldasm' if assembly else 'sldprt'}"]
+
+
+def _kept_part(data: bytes) -> list[MeshBody] | None:
+    """A virtual part's bodies, from its solid; none where they can't be read (the part shows nothing, and says why)."""
+    try:
+        return _solid(data, _open(data, "part"), None).bodies
+    except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error):
+        return None
+
+
+def _read_assembly(data: bytes) -> list[Assembly]:
     found = _open(data, "assembly")
     tree = _xml(found.get(_TREE))
     if tree is None:
@@ -799,13 +1151,30 @@ def _read_assembly(data: bytes) -> Assembly:
             raise Unreadable(_ODD)
         if mine and _key(node.path, node.configuration) not in shape_of:
             shape_of[_key(node.path, node.configuration)] = _mesh(display, mine[0], starts[i + 1], None)
-    if any(not any(starts[i] < s.start < starts[i + 1] for i in range(len(nodes))) for s in shapes):
-        raise Unreadable(_ODD)  # a shape outside every node
+    # A shape after no node of its own (a node without its name, say) is nobody's that Caliper can tell: it isn't used,
+    # and its part shows its own file's shape, as parts of assemblies without a display list do.
+    # The display list can be older than the XML: where it puts a component of the top assembly somewhere else, the
+    # XML is right (placed by it, the parts fill the box SolidWorks keeps for the assembly), and the display list's
+    # shapes, from the same old moment, aren't used either. The parts show their own files' shapes.
+    for ref in top.findall(f"{_NS}swReference"):
+        name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}@{top.get('swName') or ''}"
+        seen = place_of.get(name.casefold(), [])
+        moved = seen and not any(_same_place(_xml_rows(ref.get("swTransform") or ""), s) for s in seen)
+        if ref.get("swSuppressed") != "YES" and moved:
+            shape_of.clear()
+            break
 
-    def components(model: ElementTree.Element, place: list[float] | None, depth: int) -> list[Component]:
+    # Virtual components' files, by the file that keeps them (the assembly's, or a virtual sub-assembly's) and their
+    # streams' names; and virtual parts' bodies, by their files: each read once, however many configurations use it.
+    kept: dict[int, dict[str, bytes | None]] = {}
+    kept_bodies: dict[int, list[MeshBody] | None] = {}
+
+    def components(
+        model: ElementTree.Element, place: list[float] | None, depth: int, keeper: bytes | None
+    ) -> list[Component]:
         if depth > 32:
             raise Unreadable("Its components nest more than 32 deep")
-        out = []
+        refs = []
         for ref in model.findall(f"{_NS}swReference"):
             if ref.get("swSuppressed") == "YES":
                 continue
@@ -813,17 +1182,30 @@ def _read_assembly(data: bytes) -> Assembly:
             file = files.get(used.get("swFileRef")) if used is not None else None
             if used is None or file is None:
                 raise Unreadable(_ODD)
+            assembly, virtual = file.get("swDocType") == "ASSEMBLY", ref.get("swIsVirtualComponent") == "YES"
+            refs.append((ref, used, file, assembly, virtual))
+        streams: dict[str, bytes | None] = {}
+        if keeper is not None:
+            streams = kept.setdefault(id(keeper), {})
+            wanted = {name for ref, _, _, assembly, virtual in refs if virtual for name in _kept_names(ref, assembly)}
+            if missing := wanted - streams.keys():
+                got = _found(keeper, missing)
+                streams.update((name, got.get(name)) for name in missing)
+        out = []
+        for ref, used, file, assembly, virtual in refs:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
             rows = own if place is None else _compose(place, own)
-            if place is None:
-                # SolidWorks' own place for a component of the top assembly must be the XML's.
-                seen = place_of.get(f"{name}@{model.get('swName') or ''}".casefold(), [])
-                if seen and not any(_same_place(rows, s) for s in seen):
-                    raise Unreadable(_ODD)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
-            assembly = file.get("swDocType") == "ASSEMBLY"
+            inside = next((f for n in _kept_names(ref, assembly) if (f := streams.get(n))), None) if virtual else None
+            shape = None
+            if virtual and inside is not None and not assembly:
+                if id(inside) not in kept_bodies:
+                    kept_bodies[id(inside)] = _kept_part(inside)
+                shape = kept_bodies[id(inside)]
+            elif not virtual and not assembly:
+                shape = shape_of.get(_key(path, configuration))
             out.append(
                 Component(
                     name=name,
@@ -831,15 +1213,21 @@ def _read_assembly(data: bytes) -> Assembly:
                     configuration=configuration,
                     transform=rows,
                     hidden=ref.get("swHidden") == "YES",
-                    virtual=ref.get("swIsVirtualComponent") == "YES",
-                    shape=None if assembly else shape_of.get(_key(path, configuration)),
-                    children=components(used, rows, depth + 1) if assembly else [],
+                    virtual=virtual,
+                    shape=shape,
+                    children=components(used, rows, depth + 1, inside if virtual else None) if assembly else [],
                 )
             )
         return out
 
-    return Assembly(
-        configuration=active.get("swName") or "Default",
-        units=_units(found.get(_INFO)),
-        components=components(top, None, 1),
-    )
+    units = _units(found.get(_INFO))
+    top_components = components(top, None, 1, data)
+    made = [Assembly(configuration=active.get("swName") or "Default", units=units, components=top_components)]
+    for other in configurations:
+        model = models.get(other.get("swModelRef"))
+        name = other.get("swName") or ""
+        if other is active or model is None or not name or other.get("swConfigurationNeedsUpdate") == "YES":
+            continue
+        if name not in (assembly.configuration for assembly in made):
+            made.append(Assembly(configuration=name, units=units, components=components(model, None, 1, data)))
+    return made

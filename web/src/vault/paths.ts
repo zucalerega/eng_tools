@@ -90,9 +90,14 @@ export function cadFormat(name: string): "step" | "iges" | null {
     return extension === "igs" || extension === "iges" ? "iges" : null;
 }
 
-/** Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models), and STEP and IGES files. */
+/** Which of the files Caliper reads in the browser, as they are, a file is, by its name: STEP, IGES, or STL. */
+export function fileFormat(name: string): "step" | "iges" | "stl" | null {
+    return cadFormat(name) ?? (name.toLowerCase().endsWith(".stl") ? "stl" : null);
+}
+
+/** Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models), and STEP, IGES, and STL files. */
 export const opensInCaliper = (name: string): boolean =>
-    ["part", "assembly"].includes(kindOf(name)) || cadFormat(name) !== null;
+    ["part", "assembly"].includes(kindOf(name)) || fileFormat(name) !== null;
 
 const stem = (name: string) =>
     (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).normalize("NFC").toLowerCase();

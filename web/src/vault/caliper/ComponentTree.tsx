@@ -9,6 +9,7 @@ const TAGS: Record<Why, string> = {
     elsewhere: "Parts not in the vault",
     configuration: "Other configuration",
     unreadable: "No 3D model",
+    inside: "No shape inside",
     failed: "Didn't load",
 };
 

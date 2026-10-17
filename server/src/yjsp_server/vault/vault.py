@@ -1336,6 +1336,12 @@ def _caliper_kind(name: str) -> Literal["part", "assembly"] | None:
     return "part" if extension == ".sldprt" else "assembly" if extension == ".sldasm" else None
 
 
+def _cad_format(name: str) -> Literal["step", "iges"] | None:
+    """A STEP or IGES file's format, which Caliper reads in the browser (as web/src/vault/paths.ts has it)."""
+    extension = paths.extension(name)
+    return "step" if extension in (".step", ".stp") else "iges" if extension in (".iges", ".igs") else None
+
+
 def _walk(components: list[dict[str, Any]], depth: int = 1) -> Iterator[tuple[dict[str, Any], int]]:
     """Every component of an assembly's model, at every level, with how deep it is (1: the assembly's own)."""
     for component in components:
@@ -1351,6 +1357,43 @@ def _files_by_id(db: Session, ids: set[int]) -> dict[int, File]:
     return found
 
 
+_UPLOADED = 0  # CaliperModel.reader of a model Vault for SolidWorks made
+
+
+def _gzipped_here(store: BlobStore, sha256: str) -> bool:
+    """Whether the server wrote a mesh: Python's gzip names no operating system in its header (255), where .NET's, which
+    Vault for SolidWorks writes meshes with, names the one it ran on."""
+    try:
+        with store.path(sha256).open("rb") as f:
+            head = f.read(10)
+    except OSError:
+        return False
+    return len(head) == 10 and head[:2] == b"\x1f\x8b" and head[9] == 255
+
+
+def _reader(store: BlobStore, model: CaliperModel) -> int:
+    """What made a model (CaliperModel.reader). One made before the server noted it is the server's first reader's if
+    the server wrote what it carries: a part's mesh; or an assembly's components, none with a color of its own (only
+    Vault for SolidWorks gives them one) or a shape the server didn't write. Else it's Vault for SolidWorks'."""
+    if model.reader is not None:
+        return model.reader
+    if model.mesh_sha256 is not None:
+        return 1 if _gzipped_here(store, model.mesh_sha256) else _UPLOADED
+    for component, _ in _walk(model.components or []):
+        if component.get("color") is not None or component.get("opacity", 1) != 1:
+            return _UPLOADED
+        if component.get("mesh") and not _gzipped_here(store, component["mesh"]):
+            return _UPLOADED
+    return 1
+
+
+def _outdated(store: BlobStore, model: CaliperModel) -> bool:
+    """Whether an older reader of the server's made a model: it's read again when it's next wanted (make_caliper_model),
+    so its version's models aren't listed till then, nor does it count as a part's own model in an assembly. Vault for
+    SolidWorks' models stay."""
+    return _UPLOADED < _reader(store, model) < solidworks.READER
+
+
 def _find_model(db: Session, tree: Tree, file: File, version: int, configuration: str) -> CaliperModel:
     model = db.scalar(
         select(CaliperModel)
@@ -1364,9 +1407,10 @@ def _find_model(db: Session, tree: Tree, file: File, version: int, configuration
     return model
 
 
-def caliper_models(db: Session, user: User, file_id: int) -> list[ModelView]:
+def caliper_models(db: Session, store: BlobStore, user: User, file_id: int) -> list[ModelView]:
     """A file's 3D models for Caliper: each version's, in each configuration, newest version first, and in a version
-    the first one made first (the configuration SolidWorks had open)."""
+    the first one made first (the configuration SolidWorks had open). Not a version's that an older reader made any of:
+    Caliper then has the server make them again (make_caliper_model)."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     rows = db.execute(
@@ -1375,6 +1419,8 @@ def caliper_models(db: Session, user: User, file_id: int) -> list[ModelView]:
         .where(Version.file_id == file.id)
         .order_by(Version.number.desc(), CaliperModel.id)
     ).all()
+    outdated = {number for model, number in rows if _outdated(store, model)}
+    rows = [(model, number) for model, number in rows if number not in outdated]
     users = _users(db, {model.created_by for model, _ in rows})
     return [ModelView(model, number, users[model.created_by]) for model, number in rows]
 
@@ -1493,7 +1539,7 @@ def put_caliper_model(
         db.add(model)
     else:
         access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
-    model.units, model.mesh_sha256, model.components = units, mesh, components
+    model.units, model.mesh_sha256, model.components, model.reader = units, mesh, components, _UPLOADED
     model.created_at, model.created_by = utcnow(), user.id
     db.commit()
     return ModelView(model, version, user)
@@ -1582,7 +1628,9 @@ def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
     return [(file, number) for file, number in rows]
 
 
-def _read_solidworks(store: BlobStore, sha256: str, kind: str, name: str) -> solidworks.Part | solidworks.Assembly:
+def _read_solidworks(
+    store: BlobStore, sha256: str, kind: str, name: str
+) -> solidworks.Part | list[solidworks.Assembly]:
     """A SolidWorks file's 3D view (solidworks.py), read a couple at a time; one that can't be, refused (Unreadable)
     at once from then on."""
     if sha256 in _UNREADABLE:
@@ -1601,48 +1649,89 @@ def _read_solidworks(store: BlobStore, sha256: str, kind: str, name: str) -> sol
         _READING.release()
 
 
-def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
-    """Make a version's 3D model from the 3D view SolidWorks saved in the file itself (vault/solidworks.py), in the
-    configuration it was saved in: so Caliper shows SolidWorks files that Vault for SolidWorks made no model of. A
-    version that has a model keeps it, and that one comes back.
+def _kept(components: list[solidworks.Component]) -> Iterator[solidworks.Component]:
+    """The virtual parts that an assembly's own file keeps: its own, and its virtual sub-assemblies'."""
+    for component in components:
+        if component.virtual and component.children:
+            yield from _kept(component.children)
+        elif component.virtual:
+            yield component
 
-    Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
-    version references, or else the vault's files with their names (_Finder), each with its shape as the assembly
-    shows it where SolidWorks saved one; the others show their own models. Who sees which is decided when it's shown
-    (caliper_assembly)."""
-    tree, access = _context(db, user)
-    file = _resolve(db, tree, access, file_id, deleted_ok=True)
-    path = tree.file_path(file)
-    kind = _caliper_kind(file.name)
-    if kind is None:
-        raise ApiError(f"Caliper's models are of SolidWorks parts and assemblies: {path} isn't one", code="bad_model")
-    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
-    if target is None:
-        raise NotFound(f"{path} has no version {version}")
-    made = db.scalar(select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id))
-    if made is not None:
-        return ModelView(made, version, _users(db, {made.created_by})[made.created_by])
+
+# The shapes of the virtual parts a file keeps, by their names from its components down.
+_Kept = dict[tuple[str, ...], list[caliper.MeshBody] | None]
+
+
+def _kept_shapes(components: list[solidworks.Component], above: tuple[str, ...] = ()) -> _Kept:
+    shapes: _Kept = {}
+    for component in components:
+        if component.virtual and component.children:
+            shapes |= _kept_shapes(component.children, (*above, component.name))
+        elif component.virtual:
+            shapes[(*above, component.name)] = component.shape
+    return shapes
+
+
+def _graft(components: list[solidworks.Component], shapes: _Kept, above: tuple[str, ...] = ()) -> None:
+    """Give virtual parts without shapes the ones the file that keeps them has."""
+    for component in components:
+        if component.virtual and component.children:
+            _graft(component.children, shapes, (*above, component.name))
+        elif component.virtual and component.shape is None:
+            component.shape = shapes.get((*above, component.name))
+
+
+def _kept_in(store: BlobStore, version: Version, configuration: str, name: str) -> _Kept:
+    """The shapes of the virtual parts a sub-assembly keeps in its own file, in a configuration (else the one it was
+    saved in): only those, as the rest of what the file has isn't wanted, and a model can read many sub-assemblies.
+    None where it can't be read."""
+    if version.size > _MAX_READ:
+        return {}
+    try:
+        read = _read_solidworks(store, version.blob_sha256, "assembly", name)
+    except solidworks.Unreadable:
+        return {}
+    made = read if isinstance(read, list) else []
+    chosen = next((a for a in made if a.configuration == configuration), made[0] if made else None)
+    return _kept_shapes(chosen.components) if chosen is not None else {}
+
+
+# A model to make, in one configuration: its name, units, and a part's mesh or an assembly's components.
+_Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None]
+
+
+def _read_models(
+    db: Session, store: BlobStore, tree: Tree, target: Version, kind: str, name: str
+) -> tuple[list[_Wanted], dict[str, int]]:
+    """A version's models, read from its file (make_caliper_model), with the blobs made for them and their sizes. The
+    configuration SolidWorks had open comes first, as it's the one Caliper shows first. Unreadable says why not."""
     if target.size > _MAX_READ:
         raise solidworks.Unreadable(
-            f"{path} v{version} is over {_MAX_READ >> 20} MB, too big to read here: make its 3D view in SolidWorks "
+            f"{name} is over {_MAX_READ >> 20} MB, too big to read here: make its 3D view in SolidWorks "
             "(Make 3D view, on the Vault tab)"
         )
 
     # Versions never change, so reading one, which takes a moment, comes before the write lock.
-    read = _read_solidworks(store, target.blob_sha256, kind, f"{path} v{version}")
+    read = _read_solidworks(store, target.blob_sha256, kind, name)
     kept: dict[str, int] = {}  # blobs made, with their sizes
-    mesh: str | None = None
-    components: list[dict[str, Any]] | None = None
+    wanted: list[_Wanted] = []
     try:
         if isinstance(read, solidworks.Part):
-            part = read
-            configuration, units = part.configuration[:255], part.units
-            mesh, size = _keep(store, caliper.write_mesh(part.bodies))
+            mesh, size = _keep(store, caliper.write_mesh(read.bodies))
             kept[mesh] = size
+            wanted.append((read.configuration[:255], read.units, mesh, None))
         else:
-            assembly = read
-            configuration, units = assembly.configuration[:255], assembly.units
             finder = _Finder(db, tree, target.created_at)
+            # The shapes of the virtual parts sub-assemblies keep in their own files, by file, version and
+            # configuration.
+            theirs: dict[tuple[int, int, str], _Kept] = {}
+
+            def kept_in(sub: File, number: int, configuration: str) -> _Kept:
+                key = (sub.id, number, configuration)
+                if key not in theirs:
+                    name = f"{tree.file_path(sub)} v{number}"
+                    theirs[key] = _kept_in(store, _version(db, sub.id, number), configuration, name)
+                return theirs[key]
 
             def place(found: list[solidworks.Component], refs: list[tuple[File, int]]) -> list[dict[str, Any]]:
                 out = []
@@ -1655,9 +1744,11 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                     inner: list[tuple[File, int]] = []
                     if match is not None and component.children:
                         inner = _refs_of(db, _version(db, match[0].id, match[1]))
+                        if any(part.shape is None for part in _kept(component.children)):
+                            _graft(component.children, kept_in(*match, component.configuration))
                     children = place(component.children, inner)
-                    if match is None and shape is None and not children:
-                        continue  # nothing to show or open
+                    if match is None and shape is None and not children and not component.virtual:
+                        continue  # nothing to show or open; a virtual part says why it shows nothing
                     out.append(
                         {
                             "name": component.name[:255],
@@ -1669,49 +1760,108 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                             "color": None,
                             "opacity": 1.0,
                             "mesh": shape,
+                            "virtual": component.virtual,
                             "children": children,
                         }
                     )
                 return out
 
-            components = place(assembly.components, _refs_of(db, target))
-            if not components:
+            refs = _refs_of(db, target)
+            for assembly in read:
+                components = place(assembly.components, refs)
+                if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
+                    raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
+                if components:
+                    wanted.append((assembly.configuration[:255], assembly.units, None, components))
+            if not wanted:
                 raise solidworks.Unreadable(
-                    "Caliper found none of its parts: they aren't in the vault, or they're kept inside it (virtual "
-                    "components) without a 3D view. Make its 3D view in SolidWorks (Make 3D view, on the Vault tab)"
+                    "Caliper found none of its parts in the vault. Make its 3D view in SolidWorks (Make 3D view, on the "
+                    "Vault tab)"
                 )
-            if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
-                raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
     except solidworks.Unreadable as e:
-        raise solidworks.Unreadable(f"{path} v{version}: {e.message}") from e
+        raise solidworks.Unreadable(f"{name}: {e.message}") from e
+
+    return wanted, kept
+
+
+def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
+    """Make a version's 3D model from the 3D view SolidWorks saved in the file itself, or a part's from its solid where
+    it saved none (vault/solidworks.py), in the configuration it was saved in: so Caliper shows SolidWorks files that
+    Vault for SolidWorks made no model of. A version that has a model keeps it, and that one comes back; but one an
+    older reader made (an older release of the server, solidworks.READER) is read again, as reading has improved since,
+    and stands until it can be: while the file is unreadable now, or the server busy.
+
+    Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
+    version references, or else the vault's files with their names (_Finder), each with its shape as the assembly
+    shows it where SolidWorks saved one; the others show their own models. A virtual part, which an assembly keeps
+    inside its file (as SolidWorks Routing does tubes), carries the shape of its solid, from the file that keeps it:
+    the assembly's own, or that of a sub-assembly that's a file of its own, read for it. Who sees which is decided when
+    it's shown (caliper_assembly)."""
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    kind = _caliper_kind(file.name)
+    if kind is None:
+        raise ApiError(f"Caliper's models are of SolidWorks parts and assemblies: {path} isn't one", code="bad_model")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+
+    def view(model: CaliperModel) -> ModelView:
+        return ModelView(model, version, _users(db, {model.created_by})[model.created_by])
+
+    models = list(
+        db.scalars(select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id))
+    )
+    current = [model for model in models if not _outdated(store, model)]
+    if models and len(current) == len(models):
+        return view(models[0])
+    try:
+        wanted, kept = _read_models(db, store, tree, target, kind, f"{path} v{version}")
+    except (solidworks.Unreadable, Conflict):
+        if not models:
+            raise
+        return view((current or models)[0])
 
     begin_write(db)
     tree, access = _context(db, user)
     _resolve(db, tree, access, file_id, deleted_ok=True)  # still theirs to see
-    made = db.scalar(
-        select(CaliperModel).where(CaliperModel.version_id == target.id, CaliperModel.configuration == configuration)
-    )
-    if made is None:  # else someone made it meanwhile
-        for sha, size in kept.items():
-            if db.get(Blob, sha) is None:
-                db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
-        made = CaliperModel(
-            version_id=target.id,
-            configuration=configuration,
-            units=units,
-            mesh_sha256=mesh,
-            components=components,
-            created_at=utcnow(),
-            created_by=user.id,
-        )
-        db.add(made)
+    # Any made meanwhile, by this reader or Vault for SolidWorks, stay. An older reader's give way to this one's, and
+    # go where it makes no model of their configuration.
+    have: dict[str, CaliperModel] = {}
+    for model in db.scalars(select(CaliperModel).where(CaliperModel.version_id == target.id)):
+        if _outdated(store, model):
+            db.delete(model)
+        else:
+            have[model.configuration] = model
+    db.flush()
+    for sha, size in kept.items():
+        if db.get(Blob, sha) is None:
+            db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
+    for configuration, units, mesh, components in wanted:
+        if configuration not in have:
+            have[configuration] = CaliperModel(
+                version_id=target.id,
+                configuration=configuration,
+                units=units,
+                mesh_sha256=mesh,
+                components=components,
+                created_at=utcnow(),
+                created_by=user.id,
+                reader=solidworks.READER,
+            )
+            db.add(have[configuration])
+            db.flush()  # in order, so the one SolidWorks had open comes first
     db.commit()
-    return ModelView(made, version, _users(db, {made.created_by})[made.created_by])
+    return view(have[wanted[0][0]])
 
 
-def caliper_assembly(db: Session, user: User, file_id: int, version: int, configuration: str) -> AssemblyModel:
+def caliper_assembly(
+    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str
+) -> AssemblyModel:
     """An assembly's model, with the components the user can see: one of a file they can't see is left out, with
-    everything in it, as the rest of the vault leaves out such files."""
+    everything in it, as the rest of the vault leaves out such files. A component whose file's model an older reader
+    made has none of its own (model), so Caliper has the server make it again."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     model = _find_model(db, tree, file, version, configuration)
@@ -1723,11 +1873,13 @@ def caliper_assembly(db: Session, user: User, file_id: int, version: int, config
     ids = sorted(files)
     for start in range(0, len(ids), _BATCH):
         rows = db.execute(
-            select(Version.file_id, Version.number, CaliperModel.configuration)
+            select(Version.file_id, Version.number, CaliperModel)
             .join(Version, Version.id == CaliperModel.version_id)
             .where(Version.file_id.in_(ids[start : start + _BATCH]))
         )
-        have.update((file_id, number, configuration) for file_id, number, configuration in rows)
+        have.update(
+            (file_id, number, model.configuration) for file_id, number, model in rows if not _outdated(store, model)
+        )
     left_out = 0
 
     def visible(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1741,8 +1893,9 @@ def caliper_assembly(db: Session, user: User, file_id: int, version: int, config
                 continue
             own = (file_id, component.get("version"), component.get("configuration")) in have
             kind = _caliper_kind(file.name) if file is not None else None
+            cad = _cad_format(file.name) if file is not None else None
             children = visible(component.get("children") or [])
-            kept.append({**component, "model": own, "kind": kind, "children": children})
+            kept.append({**component, "model": own, "kind": kind, "format": cad, "children": children})
         return kept
 
     components = visible(model.components)
@@ -1751,12 +1904,12 @@ def caliper_assembly(db: Session, user: User, file_id: int, version: int, config
 
 
 def caliper_mesh(
-    db: Session, user: User, file_id: int, version: int, configuration: str, mesh: str | None = None
+    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str, mesh: str | None = None
 ) -> str:
     """The blob of a part's mesh; or, given mesh, of a shape an assembly's model carries (a virtual part's), if a
     component the user can see has it."""
     if mesh is not None:
-        assembly = caliper_assembly(db, user, file_id, version, configuration)
+        assembly = caliper_assembly(db, store, user, file_id, version, configuration)
         if not any(component.get("mesh") == mesh for component, _ in _walk(assembly.components)):
             raise NotFound("No component of the assembly that you can see has that shape", code="no_model")
         return mesh

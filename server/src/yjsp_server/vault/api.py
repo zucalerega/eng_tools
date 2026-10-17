@@ -82,9 +82,10 @@ def get_content(file_id: int, user: ActiveUser, db: DB, store: Store, version: i
 
 
 @router.get("/files/{file_id}/caliper")
-def get_caliper(file_id: int, user: ActiveUser, db: DB) -> CaliperModelsOut:
+def get_caliper(file_id: int, user: ActiveUser, db: DB, store: Store) -> CaliperModelsOut:
     """A file's 3D models for Caliper, the web app's 3D viewer: each version's, in each configuration."""
-    return CaliperModelsOut(models=[CaliperModelOut.of(view) for view in vault.caliper_models(db, user, file_id)])
+    models = vault.caliper_models(db, store, user, file_id)
+    return CaliperModelsOut(models=[CaliperModelOut.of(view) for view in models])
 
 
 @router.put("/files/{file_id}/caliper")
@@ -123,10 +124,10 @@ def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB) -> Ca
 
 @router.get("/files/{file_id}/caliper/assembly")
 def get_caliper_assembly(
-    file_id: int, user: ActiveUser, db: DB, version: int, configuration: str
+    file_id: int, user: ActiveUser, db: DB, store: Store, version: int, configuration: str
 ) -> CaliperAssemblyOut:
     """An assembly's model: its components that you can see, where each is, and whether each has a model of its own."""
-    return CaliperAssemblyOut.of(vault.caliper_assembly(db, user, file_id, version, configuration))
+    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration))
 
 
 @router.get("/files/{file_id}/caliper/mesh", response_class=FileResponse)
@@ -142,7 +143,7 @@ def get_caliper_mesh(
 ) -> Response:
     """A part's mesh (vault/caliper.py); or, with mesh=, a shape that an assembly's model carries (a virtual part's).
     It's stored gzip-compressed and sent that way (Content-Encoding: gzip), so browsers unpack it as it comes."""
-    sha = vault.caliper_mesh(db, user, file_id, version, configuration, mesh)
+    sha = vault.caliper_mesh(db, store, user, file_id, version, configuration, mesh)
     # A model can be made again, so ask each time; but the same mesh needn't come again.
     headers = {"ETag": f'"{sha}"', "Cache-Control": "private, no-cache"}
     if request.headers.get("if-none-match") == headers["ETag"]:

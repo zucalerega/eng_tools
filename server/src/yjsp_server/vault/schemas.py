@@ -368,6 +368,9 @@ class CaliperComponentIn(BaseModel):
     color: Color | None = None  # its own, over its part's
     opacity: float = Field(default=1, ge=0, le=1)
     mesh: Sha256 | None = None  # its shape, when the assembly keeps it (a virtual part's)
+    # Kept inside the assembly (a virtual part, as routed tubes are): without a mesh, no shape of it was found there (its
+    # solid empty, or the sub-assembly that keeps it not in the vault).
+    virtual: bool = False
     children: list["CaliperComponentIn"] = []  # a sub-assembly's components
 
 
@@ -384,6 +387,8 @@ class CaliperComponentOut(CaliperComponentIn):
     # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: it has
     # no file (a virtual part), or one that isn't a SolidWorks part or assembly.
     kind: Literal["part", "assembly"] | None = None
+    # A STEP or IGES file's (placed with SolidWorks' 3D Interconnect), which the web app reads as it is.
+    format: Literal["step", "iges"] | None = None
     children: list["CaliperComponentOut"] = []
 
 

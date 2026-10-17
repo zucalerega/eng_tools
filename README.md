@@ -77,8 +77,10 @@ replaces Kenesto.
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
   configurations; Caliper lists the parts it couldn't show, and why. A part saved without
   its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
-  and so are routed tubes, which their assembly keeps inside its file. If Caliper can't read
-  a file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
+  in the colors SolidWorks shows, and so are routed tubes, which their assembly keeps inside
+  its file. The server reads a version's model once and keeps it; when an update reads files
+  better, it reads each one again the first time it's opened after. If Caliper can't read a
+  file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

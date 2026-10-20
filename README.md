@@ -306,10 +306,10 @@ API requests to it.
 
 ## Use the `vault` command
 
-Vault's command line. On Windows, download `vault.exe` (the `vault-windows` artifact of
-any CI run). It runs without installing anything. Otherwise you need the
-[.NET 10 SDK](https://dotnet.microsoft.com/download). With the server running, sign in
-through your browser, create a workspace, and work in it:
+Vault's command line. On Windows, download `vault.exe` from the web app's SolidWorks page
+(each release has it, on its GitHub release). It runs without installing anything.
+Otherwise you need the [.NET 10 SDK](https://dotnet.microsoft.com/download). With the
+server running, sign in through your browser, create a workspace, and work in it:
 
 ```bash
 cd client && dotnet run --project src/Vault.Cli -- login http://localhost:8000

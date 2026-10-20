@@ -82,7 +82,7 @@ import unicodedata
 import zlib
 from array import array
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 from xml.etree import ElementTree
 
@@ -93,7 +93,7 @@ from .caliper import MeshBody, MeshFace, Rgb
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
 # This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
 # a newer one is out, and the server reads the models an older one made again, as they're next wanted.
-READER = 2
+READER = 3
 _MARKER = b"\x14\x00\x06\x00\x08\x00"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _ZLB = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")  # what a packed stream of an OLE file starts with
@@ -139,7 +139,9 @@ class Part:
 @dataclass
 class Component:
     name: str  # SolidWorks' name for it in the assembly: "Bracket-2"
-    path: str  # its file's path when the assembly was saved: C:\VLT\Rocket\Bracket.SLDPRT
+    # its file's path when the assembly was saved: C:\VLT\Rocket\Bracket.SLDPRT (a STEP file placed with 3D
+    # Interconnect: the one it was made from)
+    path: str
     configuration: str
     transform: list[float]  # the rows of a 3 x 4 matrix to the top assembly's coordinates, in mm
     hidden: bool
@@ -1107,6 +1109,11 @@ def _same_place(a: list[float], b: list[float]) -> bool:
     return all(abs(x - y) <= (1e-3 if i % 4 == 3 else 1e-6) for i, (x, y) in enumerate(zip(a, b, strict=True)))
 
 
+def _drawn(component: Component) -> bool:
+    """Whether the display list draws any of a component."""
+    return component.shape is not None or any(_drawn(child) for child in component.children)
+
+
 def _kept_names(ref: ElementTree.Element, assembly: bool) -> list[str]:
     """The streams a file may keep a virtual component's own file in."""
     base = (ref.get("swName") or "").split("^", 1)[0]
@@ -1170,7 +1177,7 @@ def _read_assembly(data: bytes) -> list[Assembly]:
     kept_bodies: dict[int, list[MeshBody] | None] = {}
 
     def components(
-        model: ElementTree.Element, place: list[float] | None, depth: int, keeper: bytes | None
+        model: ElementTree.Element, place: list[float] | None, depth: int, keeper: bytes | None, imported: bool = False
     ) -> list[Component]:
         if depth > 32:
             raise Unreadable("Its components nest more than 32 deep")
@@ -1206,18 +1213,28 @@ def _read_assembly(data: bytes) -> list[Assembly]:
                 shape = kept_bodies[id(inside)]
             elif not virtual and not assembly:
                 shape = shape_of.get(_key(path, configuration))
-            out.append(
-                Component(
-                    name=name,
-                    path=path,
-                    configuration=configuration,
-                    transform=rows,
-                    hidden=ref.get("swHidden") == "YES",
-                    virtual=virtual,
-                    shape=shape,
-                    children=components(used, rows, depth + 1, inside if virtual else None) if assembly else [],
-                )
+            # A STEP file (or another CAD file) placed with 3D Interconnect is kept as the document SolidWorks made of
+            # it, in its temporary folder (...\IC~~\Board.step.SLDASM, never on disk), and the path of the file it was
+            # made from. That file is the component, read whole as it is on its own, where the display list doesn't draw
+            # it: the documents made of its parts (each keeping the same path) are in it.
+            source = None if imported else file.get("swImportedPath")
+            component = Component(
+                name=name,
+                path=path,
+                configuration=configuration,
+                transform=rows,
+                hidden=ref.get("swHidden") == "YES",
+                virtual=virtual,
+                shape=shape,
+                children=(
+                    components(used, rows, depth + 1, inside if virtual else None, imported or bool(source))
+                    if assembly
+                    else []
+                ),
             )
+            if source and not _drawn(component):
+                component = replace(component, path=source, children=[])
+            out.append(component)
         return out
 
     units = _units(found.get(_INFO))

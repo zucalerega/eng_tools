@@ -589,7 +589,11 @@ Where the 3D comes from:
       the version it had when the assembly's version was made, or its first. So they open on
       their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
       Interconnect) is read in the browser, as the file on its own is (the server says which
-      components are one, `format`), one at a time.
+      components are one, `format`), one at a time. SolidWorks keeps one as the document it
+      made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`, with a document for
+      each of the STEP file's own parts under it), with the STEP file's path
+      (`swImportedPath`): that path is the component's, found as any other, and the
+      documents under it aren't components of their own, unless the display list draws them.
     - **Parts kept inside an assembly** (virtual components, `virtual`), as SolidWorks
       Routing keeps its routes and their tubes: the assembly's file keeps each one's whole
       file (`VirtualComp/...`), and a virtual sub-assembly's file keeps its own in turn. A

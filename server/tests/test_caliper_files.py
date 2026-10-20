@@ -1297,6 +1297,46 @@ def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, cli
     assert make(client, chief, spline).status_code == 200
 
 
+def placed_with_3d_interconnect(tree: bytes) -> bytes:
+    """The servo's XML with its case a STEP file placed with 3D Interconnect, as SolidWorks keeps one: the document it
+    made of it in its temporary folder (never on disk), and the path of the STEP file it was made from."""
+    return tree.replace(
+        b'swPath="C:\\Users\\elizabeth.robert\\Desktop\\Servomoteur SM-S4303R\\Servomoteur.SLDPRT"',
+        b'swPath="C:\\Users\\adity\\AppData\\Local\\Temp\\swx19380\\IC~~\\Servo Case.step.SLDPRT" '
+        b'swImportedPath="K:\\Project CAD\\Servo\\Servo Case.step"',
+        1,
+    )
+
+
+def test_a_step_file_placed_with_3d_interconnect_is_the_file_it_was_made_from(team, client):
+    """Caliper finds such a component's file by the STEP file's path, and reads it in the browser, as it does one on
+    its own; the document SolidWorks made of it names nothing in the vault."""
+    chief = team.member("chief@x.test", admin=True)
+    servo = repacked(
+        without_3d_view(contents("9347.SLDASM")), "swXmlContents/COMPINSTANCETREE", placed_with_3d_interconnect
+    )
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": servo,
+                "Servomoteur SM-S4303R/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                "Servo/Servo Case.step": b"ISO-10303-21;",
+                "Elsewhere/Servo Case.step": b"ISO-10303-21;",
+            },
+        )
+    )
+    found = shown(client, chief, checked["Servo/9347.SLDASM"])
+    case = found["Servomoteur-1"]
+    assert (case["file_id"], case["format"], case["kind"], case["children"]) == (
+        checked["Servo/Servo Case.step"]["id"],
+        "step",
+        None,
+        [],
+    )
+    assert found["Embout-1"]["file_id"] == checked["Servomoteur SM-S4303R/Embout.SLDPRT"]["id"]
+
+
 def test_an_assembly_whose_parts_caliper_cant_tell_apart_or_find(team, client):
     chief = team.member("chief@x.test", admin=True)
     # Two splines in folders of the name SolidWorks saved (Servomoteur SM-S4303R): neither is taken for the other.

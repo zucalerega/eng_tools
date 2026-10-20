@@ -989,9 +989,10 @@ internal sealed partial class VaultPane : UserControl
             return "";
         }
         Log.Info("Used, but not in the vault or on this computer: " + string.Join("; ", notInVault));
-        var names = notInVault.Select(Path.GetFileName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // By the names people know them by: a STEP file placed with 3D Interconnect by its own, not SolidWorks' copy's.
+        var names = notInVault.Select(Workspace.UsedFileName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var shown = string.Join(", ", names.Take(3)) + (names.Count > 3 ? $", and {names.Count - 3} more" : "");
-        return $" {Count(notInVault.Count, "file")} it uses {(notInVault.Count == 1 ? "isn't" : "aren't")} in the vault: {shown}. "
+        return $" {Count(names.Count, "file")} it uses {(names.Count == 1 ? "isn't" : "aren't")} in the vault: {shown}. "
             + $"Where they were is in {Log.FilePath}.";
     }
 

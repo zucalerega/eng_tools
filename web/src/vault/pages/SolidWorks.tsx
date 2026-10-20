@@ -132,6 +132,16 @@ export function SolidWorks() {
                     </p>
                 </details>
                 <details>
+                    <summary>An assembly opens with parts missing</summary>
+                    <p>
+                        Open it from the Browse list in the Vault tab, or with Open in SolidWorks here: Vault gets
+                        everything it uses first, at every level, STEP files placed in it with 3D Interconnect included.
+                        Whatever the vault doesn't have, the Vault tab names, like parts left in Kenesto or saved only
+                        on someone's computer. Add those to the vault (upload them here, or check them in from
+                        SolidWorks), or take them out of the assembly.
+                    </p>
+                </details>
+                <details>
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like

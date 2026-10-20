@@ -826,6 +826,36 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task AFileAGetDidntBringSaysWhy()
+    {
+        // Opening a file from a link gets it first: when it isn't here after that, saying it isn't in the vault would be
+        // wrong if its download failed.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync([Write(alice, "Fin.SLDPRT", "fin"), Write(alice, "Fin Can.SLDASM", "can")], "add fin and can");
+
+        var fin = Local(bob, "Fin.SLDPRT");
+        Assert.Null(bob.WhyNotHere(fin, await bob.GetLatestAsync([fin])));
+
+        var nowhere = Local(bob, "Nowhere.SLDPRT");
+        Assert.Equal(
+            $"{_folder}/Nowhere.SLDPRT isn't in the vault, or you don't have access to it.",
+            bob.WhyNotHere(nowhere, await bob.GetLatestAsync([nowhere])));
+
+        // Something in the way that isn't the file: its download can't be put there. Gets made of several gets (the
+        // file, then what it uses) still know which file failed, and why.
+        var can = Local(bob, "Fin Can.SLDASM");
+        Directory.CreateDirectory(can);
+        var got = new GetResult();
+        got.Add(await bob.GetLatestAsync([can]));
+        got.Add(await bob.GetLatestAsync([fin]));
+        Assert.StartsWith($"Can't replace {can}: ", bob.WhyNotHere(can, got), StringComparison.Ordinal);
+        Assert.Equal(
+            $"Vault couldn't get {_folder}/Fin Can.SLDASM. Try again.",
+            bob.WhyNotHere(can, new GetResult())); // without the get that failed, all it can say
+    }
+
+    [Fact]
     public async Task FreeingUpSpaceRemovesOnlyCopiesTheVaultHasAsTheyAre()
     {
         var alice = await WorkspaceAsync("alice");

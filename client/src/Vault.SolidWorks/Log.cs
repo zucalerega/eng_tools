@@ -6,7 +6,8 @@ namespace Vault.SolidWorks;
 
 /// <summary>
 /// %LOCALAPPDATA%\Vault\addin.log. The add-in runs inside SolidWorks, so this file is how to
-/// find out what went wrong; keep messages specific.
+/// find out what went wrong; keep messages specific. vault-open.exe writes its lines here too, so
+/// the one file says what became of a click in the web app.
 /// </summary>
 internal static class Log
 {

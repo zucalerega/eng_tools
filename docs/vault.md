@@ -387,6 +387,17 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   pipe for the Windows session, which only the current user can open. The add-in checks
   that the link is for its workspace's server, gets the file's latest version and the
   parts it uses (updating open copies in place), opens it, and comes to the front.
+  Once the browser hands the link over, every way that can fail says why (before, an
+  unregistered link does nothing, and only the help can say so). Before the add-in has the
+  link, `vault-open.exe` says it, in a message kept on top (it isn't the window in front once it has started
+  SolidWorks): no SolidWorks, the add-in not answering, or busy with an earlier link (its
+  pipe is there, taking one link at a time). The add-in answers a link it won't follow
+  (another vault's, not signed in), which `vault-open.exe` shows; once it follows one, the
+  Vault tab comes to the front and the open runs like any of its operations, problems in a
+  message there: why the file isn't here after getting it (`Workspace.WhyNotHere`: not in
+  the vault, or its download failed, and why), or why SolidWorks didn't open it (its
+  `OpenDoc6` error, in words). Both write a line for each link, and its outcome, to
+  `addin.log`.
 - **Connecting from the web app.** Connect SolidWorks is a `vault://connect?server=…` link,
   and any web page can make one, so it doesn't decide where you sign in on its own. Signed
   out, the add-in signs in to the server it's set up for (its workspace's, or the one it

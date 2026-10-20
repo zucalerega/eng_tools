@@ -31,6 +31,7 @@ internal sealed class LinkListener : IDisposable
 
     private void Listen()
     {
+        string? failing = null;
         while (!_stopping)
         {
             try
@@ -38,10 +39,15 @@ internal sealed class LinkListener : IDisposable
                 using var pipe = OpenPipe.Listen();
                 _pipe = pipe;
                 pipe.WaitForConnection();
+                failing = null;
                 var link = OpenPipe.Read(pipe);
                 if (link != null)
                 {
-                    OpenPipe.Write(pipe, _pane.OpenLinkFromAnotherThread(link));
+                    // In the log, so it says what happened to a click in the web app: vault-open.exe's lines are there too.
+                    Log.Info("Link from the web app: " + link);
+                    var answer = _pane.OpenLinkFromAnotherThread(link);
+                    Log.Info(answer.Length == 0 ? "Done with the link" : "Didn't follow the link: " + answer);
+                    OpenPipe.Write(pipe, answer);
                 }
             }
             catch (Exception) when (_stopping)
@@ -50,8 +56,13 @@ internal sealed class LinkListener : IDisposable
             }
             catch (Exception e)
             {
-                // Another SolidWorks may have this session's pipe, or a link came in badly. Keep listening.
-                Log.Error("Couldn't take a link from the web app", e);
+                // Another SolidWorks may have this session's pipe, or a link came in badly. Keep listening, and say so once,
+                // not every few seconds: that would push what explains other problems out of the log.
+                if (e.Message != failing)
+                {
+                    Log.Error("Couldn't take a link from the web app", e);
+                    failing = e.Message;
+                }
                 Thread.Sleep(TimeSpan.FromSeconds(5));
             }
         }

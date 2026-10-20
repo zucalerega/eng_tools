@@ -59,6 +59,12 @@ public sealed class GetResult
     /// <summary>Files that couldn't be updated, and why (for example, open in SolidWorks).</summary>
     public List<string> Failures { get; } = new List<string>();
 
+    // Which file each failure was, by its vault path's key: Workspace.WhyNotHere says why one didn't come.
+    private readonly Dictionary<string, string> _failed = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Why this vault file couldn't be updated, or null if it wasn't one that failed.</summary>
+    public string? FailureOf(string vaultPath) => _failed.TryGetValue(VaultPaths.Key(vaultPath), out var why) ? why : null;
+
     /// <summary>Add a later get's results to these, each file once.</summary>
     public void Add(GetResult later)
     {
@@ -67,6 +73,16 @@ public sealed class GetResult
         AddNew(Removed, later.Removed);
         BackedUp.AddRange(later.BackedUp.Except(BackedUp, StringComparer.Ordinal).ToList());
         Failures.AddRange(later.Failures.Except(Failures, StringComparer.Ordinal).ToList());
+        foreach (var failed in later._failed.Where(f => !_failed.ContainsKey(f.Key)).ToList())
+        {
+            _failed[failed.Key] = failed.Value;
+        }
+    }
+
+    internal void Fail(FileStatus status, string why)
+    {
+        Failures.Add(why);
+        _failed[VaultPaths.Key(status.VaultPath)] = why;
     }
 
     private static void AddNew(List<FileStatus> to, List<FileStatus> more)

@@ -118,6 +118,20 @@ export function SolidWorks() {
                     </p>
                 </details>
                 <details>
+                    <summary>Open in SolidWorks doesn't open the file</summary>
+                    <p>
+                        If nothing at all happens, the add-in isn't installed on this computer (step 1), or your browser
+                        asked whether to open vault-open.exe and was told no: click again, and say yes.
+                    </p>
+                    <p>
+                        Otherwise Vault says why. A Vault message on top of SolidWorks means the add-in didn't get the
+                        file: it's turned off (tick Vault in both columns of <strong>Tools &gt; Add-ins</strong>), or
+                        it's still busy with the last file you opened. Once it has the file, the Vault tab comes to the
+                        front and says what it's doing, and a message says what went wrong, like a file saved in a newer
+                        SolidWorks than yours.
+                    </p>
+                </details>
+                <details>
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like
@@ -133,7 +147,10 @@ export function SolidWorks() {
                 </details>
                 <details>
                     <summary>Something else</summary>
-                    <p>The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log: send it to whoever runs your vault.</p>
+                    <p>
+                        The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log, with a line for each click on Open in
+                        SolidWorks: send it to whoever runs your vault.
+                    </p>
                 </details>
             </div>
             {others.length > 0 && (

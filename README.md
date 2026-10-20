@@ -90,6 +90,11 @@ replaces Kenesto.
   SolidWorks; a drawing stays linked to what it shows.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
   which installs the add-in, and a button that connects it to the vault.
+- **When Open in SolidWorks can't open a file,** Vault says why: the Vault tab comes to the
+  front with what it's doing, and a message says what went wrong (a file saved in a newer
+  SolidWorks, the add-in turned off, still busy with your last click). Nothing at all
+  happens on a computer without the add-in. `%LOCALAPPDATA%\Vault\addin.log` has a line for
+  each click; the SolidWorks page's "If something's not right" has the rest.
 - **Bringing files over from Kenesto:** upload the project folders as they are (the web
   app takes whole folders), so `09_Hopper` stays `09_Hopper`. Assemblies from there still
   name their parts where Kenesto had them (`K:\Yellow Jacket Space Program\Project

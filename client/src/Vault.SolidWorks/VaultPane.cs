@@ -377,8 +377,14 @@ internal sealed partial class VaultPane : UserControl
                 done.SetResult($"Something went wrong. Details are in {Log.FilePath}");
             }
         }));
-        // A big assembly can take a while to download; the file still opens when it's done.
-        return done.Task.Wait(TimeSpan.FromMinutes(10)) ? done.Task.Result : "";
+        // A big assembly can take a while to download; the file still opens when it's done, and anything that goes wrong
+        // is still shown here.
+        if (done.Task.Wait(TimeSpan.FromMinutes(10)))
+        {
+            return done.Task.Result;
+        }
+        Log.Info("Still following the link after 10 minutes: vault-open.exe stops waiting for it");
+        return "";
     }
 
     private async Task<string> OpenLinkAsync(string link)
@@ -411,8 +417,10 @@ internal sealed partial class VaultPane : UserControl
         }
         if (!OpenLink.SameServer(workspace.Server, request.Server))
         {
-            return $"That link is for the Vault server at {OpenLink.Address(request.Server)}, but this computer's workspace is for "
-                + $"{OpenLink.Address(workspace.Server)}.";
+            return $"That link is for the vault at {OpenLink.Address(request.Server)}, but SolidWorks is connected to the one at "
+                + $"{OpenLink.Address(workspace.Server)}: open the file from that one in your browser. To switch vaults, sign out in "
+                + "the Vault tab, type another folder there (each vault needs its own), then click Connect SolidWorks on the other "
+                + "vault's SolidWorks page.";
         }
         string path;
         string? model;
@@ -426,21 +434,27 @@ internal sealed partial class VaultPane : UserControl
             return e.Message; // in the workspace's own folder, say
         }
         SolidWorksHost.BringToFront();
-        if (request.Action == LinkAction.New)
-        {
-            await NewFileAsync(path, model);
-            SolidWorksHost.BringToFront();
-            return ""; // what went wrong, if anything, is shown here in SolidWorks
-        }
-        await GetLatestAsync(path); // with the parts it uses; open copies update in place
-        if (!File.Exists(path))
-        {
-            return $"{request.VaultPath} isn't in the vault, or you don't have access to it.";
-        }
-        _sw.Open(path);
+        // The tab says what Vault is doing (a big assembly takes a while to come down), and what went wrong, if anything:
+        // another of the task pane's tabs could be in front.
+        ShowTab?.Invoke();
+        await (request.Action == LinkAction.New ? NewFileAsync(path, model) : OpenLatestAsync(path));
         SolidWorksHost.BringToFront();
-        return "";
+        return ""; // what went wrong, if anything, is shown here in SolidWorks
     }
+
+    /// <summary>
+    /// Open a file for the web app's Open in SolidWorks: its latest version first, with the parts it uses (open copies
+    /// update in place). Why it couldn't be opened, if it couldn't, is shown here, as for anything else Vault does.
+    /// </summary>
+    private Task OpenLatestAsync(string path) => RunAsync($"Opening {Path.GetFileName(path)}", async workspace =>
+    {
+        var got = await GetLatestHereAsync(workspace, path, quiet: true);
+        if (_sw.Open(path) is { } problem)
+        {
+            throw new WorkspaceException(problem);
+        }
+        return $"Opened {Path.GetFileName(path)}." + (got.Length > 0 ? " " + got : "");
+    });
 
     /// <summary>
     /// For the web app's Connect SolidWorks: sign in to that vault, with the workspace folder shown (C:\VLT
@@ -496,10 +510,6 @@ internal sealed partial class VaultPane : UserControl
         {
             // The drawing's view needs the model here, with the parts it uses.
             await GetLatestHereAsync(workspace, model);
-            if (!File.Exists(model))
-            {
-                throw new WorkspaceException($"{Path.GetFileName(model)} isn't in the vault, or you don't have access to it.");
-            }
         }
         if (_sw.CreateDocument(path, model) is { } problem)
         {
@@ -828,7 +838,8 @@ internal sealed partial class VaultPane : UserControl
     private Task GetLatestAsync(string path) =>
         RunAsync("Getting the latest version", async workspace => await GetLatestHereAsync(workspace, path));
 
-    // The file and the parts it uses are updated in place, open or not. Quiet: nothing to say if nothing came down.
+    // The file and the parts it uses are updated in place, open or not. Quiet: nothing to say if nothing came down. A file
+    // that isn't here after it is a WorkspaceException saying why.
     private async Task<string> GetLatestHereAsync(Workspace workspace, string path, bool quiet = false)
     {
         var involved = new List<string> { path };
@@ -844,6 +855,10 @@ internal sealed partial class VaultPane : UserControl
             notInVault = missing;
             return got;
         });
+        if (workspace.WhyNotHere(path, result) is { } notHere)
+        {
+            throw new WorkspaceException(notHere);
+        }
         var nothing = result.Downloaded.Count + result.Removed.Count + result.Skipped.Count + result.Failures.Count + notInVault.Count == 0;
         return quiet && nothing ? "" : Summary(result) + NotInVaultNote(notInVault);
     }
@@ -875,10 +890,6 @@ internal sealed partial class VaultPane : UserControl
         return RunAsync($"Inserting {name}", async workspace =>
         {
             var got = await GetLatestHereAsync(workspace, path, quiet: true);
-            if (!File.Exists(path))
-            {
-                throw new WorkspaceException($"{name} isn't in the vault, or you don't have access to it.");
-            }
             if (_sw.InsertComponent(assembly, path) is { } problem)
             {
                 throw new WorkspaceException(problem);
@@ -1752,7 +1763,11 @@ internal sealed partial class VaultPane : UserControl
             }
             if (SolidWorksHost.IsSolidWorksFile(path))
             {
-                _sw.Open(path);
+                if (_sw.Open(path) is { } problem)
+                {
+                    ShowMessage(problem, Tone.Problem);
+                    Warn(problem);
+                }
             }
             else
             {

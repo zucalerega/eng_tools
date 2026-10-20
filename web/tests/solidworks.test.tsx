@@ -20,4 +20,7 @@ test("the SolidWorks page has the add-in's installer, and connects SolidWorks to
     await userEvent.click(within(missing).getByText("There's no Vault tab in SolidWorks"));
     expect(missing.open).toBe(true);
     expect(missing.textContent).toContain("Tools > Add-ins");
+    // And when Open in SolidWorks doesn't open a file.
+    const notOpened = screen.getByText("Open in SolidWorks doesn't open the file").closest("details")!;
+    expect(notOpened.textContent).toContain("isn't installed on this computer");
 });

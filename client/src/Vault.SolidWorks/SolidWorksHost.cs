@@ -153,18 +153,19 @@ internal sealed partial class SolidWorksHost
         return released;
     }
 
-    public void Open(string path)
+    /// <summary>Open a SolidWorks file, its window in front. Returns why SolidWorks couldn't, in words, or null.</summary>
+    public string? Open(string path)
     {
         if (!IsSolidWorksFile(path))
         {
-            return;
+            return $"{Path.GetFileName(path)} isn't a SolidWorks part, assembly, or drawing, so SolidWorks doesn't open it.";
         }
         int errors = 0, warnings = 0;
         var opened = _app.OpenDoc6(path, (int)DocumentType(path), (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings);
         if (opened == null)
         {
             Log.Error($"Opening {path} returned SolidWorks error {errors}");
-            return;
+            return CantOpen(path, errors);
         }
         if (errors != 0)
         {
@@ -173,6 +174,44 @@ internal sealed partial class SolidWorksHost
         }
         // Opening a file that's already open doesn't bring its window forward; this does.
         _app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
+        return null;
+    }
+
+    // Why SolidWorks didn't open path, from OpenDoc6's errors (swFileLoadError_e flags), and what to do about it. Opened
+    // silently, SolidWorks says nothing itself.
+    private string CantOpen(string path, int errors)
+    {
+        var name = Path.GetFileName(path);
+        bool Has(swFileLoadError_e error) => (errors & (int)error) != 0;
+        if (Has(swFileLoadError_e.swFutureVersion))
+        {
+            return $"{name} was saved in a newer SolidWorks than this one, which can't open it. Open it in SolidWorks 2026, the team's.";
+        }
+        if (Has(swFileLoadError_e.swFileWithSameTitleAlreadyOpen))
+        {
+            var other = OpenDocuments().Select(PathOf).FirstOrDefault(p =>
+                p != null && string.Equals(Path.GetFileName(p), name, StringComparison.OrdinalIgnoreCase));
+            return $"SolidWorks has another {name} open{(other == null ? "" : $" ({other})")}, and it can't open two files with the same "
+                + "name at once. Close that one, and any assembly or drawing that uses it, then try again.";
+        }
+        if (Has(swFileLoadError_e.swFileNotFoundError))
+        {
+            return $"SolidWorks couldn't find {path}. Refresh the Vault tab, then try again.";
+        }
+        if (Has(swFileLoadError_e.swFileRequiresRepairError) || Has(swFileLoadError_e.swFileCriticalDataRepairError))
+        {
+            return $"{name} is damaged: SolidWorks would have to repair it to open it. Open it with File > Open to see what "
+                + "SolidWorks says, or ask whoever checked it in last.";
+        }
+        if (Has(swFileLoadError_e.swLowResourcesError))
+        {
+            return $"SolidWorks is too low on memory to open {name}. Close some files, then try again.";
+        }
+        if (Has(swFileLoadError_e.swApplicationBusy))
+        {
+            return $"SolidWorks was busy, so it didn't open {name}. Try again when it's finished.";
+        }
+        return $"SolidWorks couldn't open {name} (error {errors}). Open it with File > Open to see what SolidWorks says: it's at {path}.";
     }
 
     /// <summary>

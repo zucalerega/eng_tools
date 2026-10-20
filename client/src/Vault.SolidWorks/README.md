@@ -104,7 +104,12 @@ While you work:
   stay on their computer, and Vault tells them who took it over if they try to check in.
 - **Open in SolidWorks** from the web app: Vault gets the latest version, and the parts it
   uses, and opens it here. If SolidWorks isn't running, it starts first. (This is
-  `vault-open.exe`, which setup registers for the web app's links.)
+  `vault-open.exe`, which setup registers for the web app's links.) The Vault tab comes to
+  the front and says what it's doing; a file that can't be opened gets a message saying
+  why (saved in a newer SolidWorks, another file of the same name open, its download
+  failed). What goes wrong before the add-in has the link (it isn't on, or it's still busy
+  with your last click) is a message on top of SolidWorks from `vault-open.exe`. Both write
+  each click, and what became of it, to `addin.log`.
 - **Files brought over from Kenesto** (uploaded in the web app) name their parts where
   Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
@@ -354,8 +359,31 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     top, in SolidWorks' color. Then leave the computer alone, SolidWorks in front, for fifteen
     minutes: about five more count (until it's been five minutes without a key or the mouse),
     and no more.
+34. Open in SolidWorks when it can't: with the Design Library tab in front of the task pane,
+    click Open in SolidWorks on a part: the Vault tab comes to the front, says it's opening
+    it, and the part opens. In SolidWorks 2025, open a part saved in 2026: a message says
+    it was saved in a newer SolidWorks. With a `Bracket.SLDPRT` open, open another
+    `Bracket.SLDPRT` from a different folder: the message names the open one. Make a folder
+    where a file's download goes (`C:\VLT\Test\Fin.SLDPRT` as a folder) and open that file:
+    the message says it can't be put there, not that it isn't in the vault. Open a big
+    assembly that isn't here, and while it downloads click Open in SolidWorks on another
+    file: a message says Vault is still busy with a link you clicked before. Untick both of
+    Vault's boxes in Tools > Add-ins and restart SolidWorks, then click Open in SolidWorks:
+    within 10 seconds a message on top of SolidWorks says to tick Vault's boxes. Close
+    SolidWorks and click it again: SolidWorks starts, and after 3 minutes the same message is
+    on top of it, not behind. Tick them again, close SolidWorks, start it yourself, and click
+    Open in SolidWorks at once: no message about the add-in, and the file opens once
+    SolidWorks is up. `addin.log` has a line for each click, from `vault-open.exe` and from
+    the add-in, saying what became of it. Open a link for another vault
+    (`vault://open?server=https%3A%2F%2Fvault.example.org&path=A.SLDPRT` in Win+R): the
+    message says which vault SolidWorks is connected to, and how to switch.
 
 ## When something goes wrong
+
+Open in SolidWorks did nothing at all: the add-in isn't installed on that computer (run
+Vault-Setup.exe), or the browser's question about opening `vault-open.exe` was turned down;
+`reg query HKLM\SOFTWARE\Classes\vault\shell\open\command` shows whether links are
+registered. Anything after that is in the log, a line for each click.
 
 The add-in logs to `%LOCALAPPDATA%\Vault\addin.log`. Settings are in
 `%APPDATA%\Vault\addin.json`, and saved sign-ins (encrypted) are in

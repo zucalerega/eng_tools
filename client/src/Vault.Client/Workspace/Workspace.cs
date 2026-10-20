@@ -639,6 +639,25 @@ public sealed class Workspace : IDisposable
         await GetAsync(await PlanGetAsync(localPaths, ct).ConfigureAwait(false), force, ct).ConfigureAwait(false);
 
     /// <summary>
+    /// Why the file at localPath isn't here after got, a get that was to bring it (to open it, say), or null if it's here:
+    /// it isn't in the vault, or you can't see it; or its download failed, and got says why. As the vault was at that get.
+    /// </summary>
+    public string? WhyNotHere(string localPath, GetResult got)
+    {
+        if (File.Exists(localPath))
+        {
+            return null;
+        }
+        var vaultPath = ToVaultPath(localPath);
+        var key = VaultPaths.Key(vaultPath);
+        if (!_state.Remote.Values.Any(remote => VaultPaths.Key(remote.Path) == key))
+        {
+            return $"{vaultPath} isn't in the vault, or you don't have access to it.";
+        }
+        return got.FailureOf(vaultPath) ?? $"Vault couldn't get {vaultPath}. Try again.";
+    }
+
+    /// <summary>
     /// Update the files that are here, under the given paths (default: the whole workspace), to their
     /// latest versions, and get the files they use that aren't here (a part an assembly started using),
     /// so they still open. Nothing else comes down: the rest of the vault stays there. Files deleted in
@@ -1484,7 +1503,7 @@ public sealed class Workspace : IDisposable
         }
         catch (WorkspaceException e)
         {
-            result.Failures.Add(e.Message);
+            result.Fail(status, e.Message);
             return false;
         }
     }

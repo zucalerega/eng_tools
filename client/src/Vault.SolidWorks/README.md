@@ -114,8 +114,12 @@ While you work:
   Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
   file, and from its sub-assemblies, and gets the vault's files whose paths end the same
-  way (`09_Hopper\...`), so they come along like any other assembly's parts; parts that
-  aren't in the vault are named on the tab, with their old paths in the log. When
+  way (`09_Hopper\...`), so they come along like any other assembly's parts. A STEP (or
+  other CAD) file placed with 3D Interconnect is named in the file by the copy SolidWorks
+  made of it in its temporary folder (`...\Temp\swx19380\IC~~\BMS.step.SLDASM`), which is
+  never on disk: Vault gets the file it was made from (`BMS.step`), and of two with its
+  name, the one in the folder most like the assembly's. Parts that aren't in the vault are
+  named on the tab (a STEP file by its own name), with their old paths in the log. When
   SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or
   by its name, when only one file in the vault has it). Checking in an assembly that still
   uses files the vault doesn't have lists them all, and checks nothing in.
@@ -377,6 +381,18 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     the add-in, saying what became of it. Open a link for another vault
     (`vault://open?server=https%3A%2F%2Fvault.example.org&path=A.SLDPRT` in Win+R): the
     message says which vault SolidWorks is connected to, and how to switch.
+35. 3D Interconnect: in an assembly in a folder of its own, insert a STEP file of a board with
+    several parts (Insert Components, with 3D Interconnect on, its default) from a subfolder,
+    save, and upload the folder from the web app as from Kenesto, with another STEP file of
+    the same name in a different top folder. On another PC (or after Free up space), open the
+    assembly from the Browse tab: the STEP file from the assembly's own folder comes down
+    with it, not the other, and the board shows, with no ⚠ and no note naming
+    `<name>.step.SLDASM`. Delete the STEP file from `C:\VLT` and open the assembly again: it
+    comes back. Delete both STEP files in the web app and open the assembly: the tab names
+    the STEP file, as `<name>.step`. In the web app, Caliper shows the board, drawn
+    from the STEP file. Then check the assembly out and check it in from SolidWorks, and
+    write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
+    temporary folder (`...\IC~~\...`), that's still to fix.
 
 ## When something goes wrong
 

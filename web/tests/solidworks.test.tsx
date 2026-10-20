@@ -23,4 +23,8 @@ test("the SolidWorks page has the add-in's installer, and connects SolidWorks to
     // And when Open in SolidWorks doesn't open a file.
     const notOpened = screen.getByText("Open in SolidWorks doesn't open the file").closest("details")!;
     expect(notOpened.textContent).toContain("isn't installed on this computer");
+    // And when an assembly opens without some of its parts.
+    const partsMissing = screen.getByText("An assembly opens with parts missing").closest("details")!;
+    expect(partsMissing.textContent).toContain("3D Interconnect");
+    expect(partsMissing.textContent).toContain("the Vault tab names");
 });

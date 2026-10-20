@@ -420,11 +420,19 @@ public sealed class Workspace : IDisposable
     /// means the file there. A file brought from elsewhere keeps elsewhere's paths: one from Kenesto names its drive
     /// (K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT), meaning the vault file whose path ends
     /// the same way, with the most folders matching (09_Hopper/Stringer.SLDPRT). Where others match as well, it
-    /// means none of them.
+    /// means none of them. A STEP or other CAD file placed with 3D Interconnect is kept as the document SolidWorks made
+    /// of it in its temporary folder, never on disk (see <see cref="UsedFileName"/>): that means the vault file of the
+    /// name it was made from, and of several, the one whose folder is most like that of the file that uses it (usedBy,
+    /// its local path), if one is.
     /// </summary>
-    public (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(IEnumerable<string> keptPaths)
+    public (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(IEnumerable<string> keptPaths, string? usedBy = null) =>
+        FindUsedFiles(keptPaths, usedBy, Index(_state.Remote.Values.Select(file => file.Path)));
+
+    private (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(
+        IEnumerable<string> keptPaths, string? usedBy, (Dictionary<string, string> ByKey, ILookup<string, string> ByName) index)
     {
-        var (byKey, byName) = Index(_state.Remote.Values.Select(file => file.Path));
+        var (byKey, byName) = index;
+        var near = usedBy != null && UnderRoot(usedBy) is { } at ? VaultPaths.Key(at).Split('/') : Array.Empty<string>();
         var inVault = new List<string>();
         var notInVault = new List<string>();
         var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -432,7 +440,7 @@ public sealed class Workspace : IDisposable
         {
             var here = UnderRoot(kept);
             var vaultPath = here == null
-                ? VaultFileMeant(kept, byKey, byName)
+                ? VaultFileMeant(kept, byKey, byName) ?? MadeFrom(kept, byKey, byName, near)
                 : byKey.TryGetValue(VaultPaths.Key(here), out var found) ? found : null;
             if (vaultPath != null || (here != null && File.Exists(kept))) // or new here, not checked in yet
             {
@@ -448,6 +456,64 @@ public sealed class Workspace : IDisposable
             }
         }
         return (inVault, notInVault);
+    }
+
+    /// <summary>
+    /// The name of the file a kept path means, to name it to people: its own, except for a file placed with 3D
+    /// Interconnect. SolidWorks keeps that as the document it made of it, in a folder IC~~ in its temporary folder
+    /// (C:\Users\alice\AppData\Local\Temp\swx19380\IC~~\BMS.step.SLDASM), which is never on disk: the file SolidWorks
+    /// opens is the one that document was made from, BMS.step.
+    /// </summary>
+    public static string UsedFileName(string keptPath) => InterconnectSource(keptPath) ?? NamesIn(keptPath).LastOrDefault() ?? keptPath;
+
+    // The name of the file a 3D Interconnect document was made from (see UsedFileName); null for any other path.
+    private static string? InterconnectSource(string keptPath)
+    {
+        var names = NamesIn(keptPath);
+        if (names.Length < 2 || !string.Equals(names[names.Length - 2], "IC~~", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        var name = names[names.Length - 1];
+        var source = name.Substring(0, Math.Max(0, name.LastIndexOf('.')));
+        var made = name.Substring(source.Length);
+        var dot = source.LastIndexOf('.');
+        return (made.Equals(".SLDPRT", StringComparison.OrdinalIgnoreCase) || made.Equals(".SLDASM", StringComparison.OrdinalIgnoreCase))
+            && dot > 0 && dot < source.Length - 1
+            ? source
+            : null;
+    }
+
+    // See FindUsedFiles: the vault file a 3D Interconnect document means, of those with its source's name, the one
+    // whose folders, from the top, are most like those of the file that uses it (near: its vault path's key, split);
+    // none where two are as like.
+    private static string? MadeFrom(string kept, Dictionary<string, string> byKey, ILookup<string, string> byName, string[] near)
+    {
+        if (InterconnectSource(kept) is not { } source)
+        {
+            return null;
+        }
+        string? best = null;
+        var bestShared = -1;
+        var tied = false;
+        foreach (var key in byName[VaultPaths.Key(source)])
+        {
+            var parts = key.Split('/');
+            var shared = 0;
+            while (shared < parts.Length - 1 && shared < near.Length - 1 && parts[shared] == near[shared])
+            {
+                shared++;
+            }
+            if (shared > bestShared)
+            {
+                (best, bestShared, tied) = (key, shared, false);
+            }
+            else if (shared == bestShared)
+            {
+                tied = true;
+            }
+        }
+        return best == null || tied ? null : byKey[best];
     }
 
     /// <summary>
@@ -468,9 +534,15 @@ public sealed class Workspace : IDisposable
         var level = new List<string> { localPath };
         while (level.Count > 0)
         {
-            var (inVault, missing) = FindUsedFiles(level.Where(File.Exists).SelectMany(keptReferences).ToList());
-            notInVault.AddRange(missing.Where(p => !File.Exists(p) && !notInVault.Contains(p, StringComparer.OrdinalIgnoreCase)));
-            level = inVault.Where(seen.Add).ToList();
+            var index = Index(_state.Remote.Values.Select(file => file.Path));
+            var next = new List<string>();
+            foreach (var file in level.Where(File.Exists))
+            {
+                var (inVault, missing) = FindUsedFiles(keptReferences(file).ToList(), file, index);
+                notInVault.AddRange(missing.Where(p => !File.Exists(p) && !notInVault.Contains(p, StringComparer.OrdinalIgnoreCase)));
+                next.AddRange(inVault.Where(seen.Add));
+            }
+            level = next;
             var get = latest ? level : level.Where(p => !File.Exists(p)).ToList();
             if (get.Count > 0)
             {

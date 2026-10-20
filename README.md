@@ -101,8 +101,10 @@ replaces Kenesto.
   CAD\09_Hopper\Stringer.SLDPRT`), and the web app can't read that. So open them from
   the Vault pane in SolidWorks, or with Open in SolidWorks on the web: the add-in reads the
   paths from the files, gets the vault's files whose paths end the same way, and shows
-  SolidWorks where they are. It says which parts aren't in the vault. Check an assembly
-  out, save it, and check it in to store the vault's paths in it for good; while it still
+  SolidWorks where they are. A STEP file placed in one with 3D Interconnect comes along
+  too: SolidWorks names it by a copy it made, and the add-in gets the STEP file that copy
+  was made from (of two with its name, the one nearest the assembly). It says which parts
+  aren't in the vault. Check an assembly out, save it, and check it in to store the vault's paths in it for good; while it still
   uses files the vault doesn't have, checking it in lists them, to upload them or take them
   out of it. Once the team works from the vault, disconnect Kenesto's drive, so no one
   opens a part from there.

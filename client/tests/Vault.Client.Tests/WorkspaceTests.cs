@@ -714,6 +714,75 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task OpeningAFileGetsTheStepFilesPlacedInItWith3DInterconnect()
+    {
+        // SolidWorks names a STEP file placed with 3D Interconnect by the document it made of it in its temporary
+        // folder, which is never on disk: what it opens is the STEP file. Two in the vault have this one's name; the one
+        // beside what uses it is the one it means.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync(
+            [
+                Write(alice, "09_Hopper/CTV.SLDASM", "assembly"),
+                Write(alice, "09_Hopper/Battery Mount/RECO BMS Mount.SLDASM", "sub-assembly"),
+                Write(alice, "09_Hopper/Battery Mount/BMS.step", "bms"),
+                Write(alice, "01_Vespula/Battery Box/BMS.step", "another bms"),
+                Write(alice, "09_Hopper/RCS/65mm Prop.step", "prop"),
+            ],
+            "from Kenesto");
+        var kenesto = $@"K:\Yellow Jacket Space Program\Project CAD\{_folder}\09_Hopper";
+        const string temp = @"C:\Users\adity\AppData\Local\Temp\swx19380\IC~~";
+        var keeps = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CTV.SLDASM"] = [$@"{kenesto}\Battery Mount\RECO BMS Mount.SLDASM", $@"{temp}\65mm Prop.step.SLDPRT", $@"{temp}\Board.step.SLDASM"],
+            ["RECO BMS Mount.SLDASM"] = [$@"{temp}\BMS.step.SLDASM"],
+        };
+        await bob.GetLatestAsync([Local(bob, "09_Hopper/CTV.SLDASM")]);
+
+        var (got, notInVault) = await bob.GetUsedFilesAsync(
+            Local(bob, "09_Hopper/CTV.SLDASM"), path => keeps.TryGetValue(Path.GetFileName(path), out var paths) ? paths : [], latest: false);
+
+        Assert.Equal(
+            [$"{_folder}/09_Hopper/Battery Mount/BMS.step", $"{_folder}/09_Hopper/Battery Mount/RECO BMS Mount.SLDASM", $"{_folder}/09_Hopper/RCS/65mm Prop.step"],
+            got.Downloaded.Select(s => s.VaultPath).Order());
+        Assert.Equal("bms", File.ReadAllText(Local(bob, "09_Hopper/Battery Mount/BMS.step")));
+        Assert.False(File.Exists(Local(bob, "01_Vespula/Battery Box/BMS.step")));
+        // One whose STEP file isn't in the vault is still said, by the STEP file's name.
+        Assert.Equal([$@"{temp}\Board.step.SLDASM"], notInVault);
+        Assert.Equal("Board.step", Workspace.UsedFileName(notInVault[0]));
+        Assert.Equal("Nozzle.SLDPRT", Workspace.UsedFileName($@"{kenesto}\Nozzle.SLDPRT"));
+    }
+
+    [Fact]
+    public async Task A3DInterconnectFileIsOnlyTakenForOneItCanOnlyMean()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync(
+            [
+                Write(alice, "09_Hopper/CTV.SLDASM", "assembly"),
+                Write(alice, "09_Hopper/Tanks/Bolt.step", "a bolt"),
+                Write(alice, "09_Hopper/Legs/Bolt.step", "another bolt"),
+                Write(alice, "09_Hopper/Battery Mount/J9.step.SLDASM", "J9, saved as a SolidWorks file"),
+                Write(alice, "09_Hopper/Battery Mount/J9.step", "J9"),
+            ],
+            "from Kenesto");
+        await bob.RefreshAsync();
+        const string temp = @"C:\Users\adity\AppData\Local\Temp\swx19380\IC~~";
+
+        var (inVault, notInVault) = bob.FindUsedFiles(
+            [
+                $@"{temp}\Bolt.step.SLDPRT", // either bolt: both are as near the assembly
+                $@"{temp}\J9.step.SLDASM", // a file of that name is in the vault, so it's that one, as for any name
+                @"C:\Users\adity\Documents\Bolt.step.SLDPRT", // not 3D Interconnect's folder, so a name like any other
+            ],
+            usedBy: Local(bob, "09_Hopper/CTV.SLDASM"));
+
+        Assert.Equal([Local(bob, "09_Hopper/Battery Mount/J9.step.SLDASM")], inVault);
+        Assert.Equal([$@"{temp}\Bolt.step.SLDPRT", @"C:\Users\adity\Documents\Bolt.step.SLDPRT"], notInVault);
+    }
+
+    [Fact]
     public async Task WhatFilesKeepIsReadOnTheCallersThread()
     {
         // The add-in reads them from SolidWorks, which only answers on its main thread: the task pane's.

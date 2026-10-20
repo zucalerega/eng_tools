@@ -230,7 +230,14 @@ on top of it.
   level once it's here (`Workspace.GetUsedFilesAsync`), and `Workspace.FindUsedFiles` takes
   each to the vault file whose path ends the same way, with the most folders matching (none
   if two match as well); those come down with it, and kept paths nothing matches are
-  listed. Opening a file that's here goes through every level too, since a sub-assembly
+  listed. A file placed with 3D Interconnect (a STEP file, say) is kept as the document
+  SolidWorks made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`), never on disk,
+  so where no vault file has that name, it means the vault file of the name it was made
+  from (`BMS.step`): of several, the one whose folders, from the top, are most like those
+  of the file that uses it (none if two are as like). The file itself keeps the STEP file's
+  path too (`swImportedPath`, which the server reads), but `GetDocumentDependencies2` gives
+  only the document's, and the add-in reads what files use before they're open. Opening a
+  file that's here goes through every level too, since a sub-assembly
   that's here can be missing its parts, and it waits for a refresh that's running rather
   than skip the check. When SolidWorks can't find a file anyway, the add-in's
   `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's

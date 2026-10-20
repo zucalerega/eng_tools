@@ -197,12 +197,22 @@ If the site doesn't load but `/healthz` answers on the server, look at Tailscale
 **Changing a setting:** edit `/srv/yjsp/.env` on the server (`sudo -u yjsp vi
 /srv/yjsp/.env`), then restart the service. Never print it or copy it off the server.
 
-**New downloads** (from CI's `vault-setup` and `vault-windows` artifacts, which runs on `main`
-and on release tags keep: a week, and a tag's 90 days): copy the files to the server's
-`/tmp` with `scp`, then swap each in whole, so nobody downloads half a file. `vault-setup`
-has two that go together, `Vault-Setup.exe` and its signature, `Vault-Setup.exe.sig`: put
-both in under hidden names first, then swap them in one right after the other, the
-signature first:
+**New downloads** come with each release: CI puts `Vault-Setup.exe`, its signature
+`Vault-Setup.exe.sig`, and `vault.exe` on the tag's GitHub release, a draft until the owner
+publishes it (only people who can push to the repository see a draft). In your clone of this
+repository, download them, check the signature (it says `Verified OK`), and copy them to the
+server's `/tmp`:
+
+```bash
+d=/tmp/yjsp-v0.5.4
+gh release download v0.5.4 --dir $d --pattern 'Vault-Setup.exe*' --pattern vault.exe
+openssl dgst -sha256 -verify client/src/Vault.Client/installer-signing.pub.pem -signature $d/Vault-Setup.exe.sig $d/Vault-Setup.exe
+scp -i ~/.ssh/yjsp_oracle $d/* opc@lucazerega.tail07089c.ts.net:/tmp/
+```
+
+On the server, swap each in whole, so nobody downloads half a file. `Vault-Setup.exe` and its
+signature go together: put both in under hidden names first, then swap them in one right
+after the other, the signature first:
 
 ```bash
 cd /srv/yjsp/downloads
@@ -211,7 +221,9 @@ sudo install -o yjsp -g yjsp -m 644 /tmp/Vault-Setup.exe.sig .Vault-Setup.exe.si
 sudo mv .Vault-Setup.exe.sig.part Vault-Setup.exe.sig && sudo mv .Vault-Setup.exe.part Vault-Setup.exe
 ```
 
-`vault.exe` goes in the same way, on its own.
+`vault.exe` goes in the same way, on its own. A build of `main` goes in the same way too, from
+its CI run's `vault-setup` artifact (`gh run download <run id> --name vault-setup`), which is
+kept 3 days.
 
 A newer `Vault-Setup.exe` there is also how laptops get an add-in update: within a few
 hours, the Vault tab in SolidWorks offers **Update** (the server reads the version from the
@@ -223,15 +235,17 @@ check signatures: the protection starts on each laptop once it has an add-in new
 
 ### Signing key
 
-CI signs `Vault-Setup.exe` on pushes to `main` and release tags, never for pull requests,
-with RSA 3072 (PKCS#1 v1.5 over its SHA-256: `openssl dgst -sha256 -sign`), using the private
-key in the GitHub Actions secret `INSTALLER_SIGNING_KEY` (the PEM file's text). The add-in
+CI signs `Vault-Setup.exe` on pushes to `main` and release tags, never for pull requests
+([`.github/sign-installer.sh`](../.github/sign-installer.sh)), with RSA 3072 (PKCS#1 v1.5
+over its SHA-256: `openssl dgst -sha256 -sign`), using the private key in the GitHub Actions
+secret `INSTALLER_SIGNING_KEY` (the PEM file's text). The add-in
 carries the public half (`AddInUpdate` in `Vault.Client`, the same as
 [`installer-signing.pub.pem`](../client/src/Vault.Client/installer-signing.pub.pem) beside
 it, which CI checks each signature with), and its Update runs only installers signed with
 it. So neither the server nor its downloads folder can put a program on the team's laptops:
-that takes the private key. Without the secret, CI's builds aren't signed (it warns), and
-add-ins won't update to them.
+that takes the private key. Without the secret, CI's builds of `main` aren't signed (it
+warns), and add-ins won't update to them, and a release tag's run fails before it uploads
+anything.
 
 The private key is in that secret and in the owner's password manager, and nowhere else:
 never in the repository, on the server, or left on a computer's disk. To change it, because

@@ -332,9 +332,9 @@ CI builds and smoke-tests the image on every change, and publishes it to
 3. Keep `YJSP_DATABASE_URL` (SQLite by default), `YJSP_VAULT_DIR`, and `YJSP_YORG_DIR`
    on a persistent disk, and back them up (see "Storage"). An S3/R2 store for Vault's
    blobs (Cloudflare R2: 10 GB free, no download fees) is planned.
-4. Put CI's `Vault-Setup.exe` with its signature, `Vault-Setup.exe.sig` (and `vault.exe`,
-   if you like), in a folder and point `YJSP_DOWNLOADS_DIR` at it: members get them from
-   Vault's SolidWorks page.
+4. Put a release's `Vault-Setup.exe` with its signature, `Vault-Setup.exe.sig` (and
+   `vault.exe`, if you like), from its GitHub release, in a folder and point
+   `YJSP_DOWNLOADS_DIR` at it: members get them from Vault's SolidWorks page.
 
 Where to host it was decided in September 2026: the Oracle Cloud VM above, which costs
 nothing. The image would run on Render, a VPS, or a machine on campus too.

@@ -1,5 +1,6 @@
 # Every pull request and every push to main must pass all of this (see CLAUDE.md).
-# Tags like v1.2.3 also publish the server image to ghcr.io; deploy only those images.
+# Tags like v1.2.3 also publish the server image to ghcr.io (deploy only those images), and put the Windows downloads
+# on the tag's GitHub release, a draft until the owner publishes it.
 name: CI
 
 on:
@@ -44,61 +45,45 @@ jobs:
       - run: dotnet build --no-restore --configuration Release
       - run: dotnet test --no-build --configuration Release
       # The add-in's Update runs only an installer signed with the key it carries (docs/deploying.md, "Signing key"),
-      # so builds of main and release tags are signed. Never pull requests': their code runs in this job too.
+      # so builds of main are signed here, and a release tag's in the release job. Never pull requests': their code
+      # runs in this job too.
       - name: Sign Vault-Setup.exe
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           INSTALLER_SIGNING_KEY: ${{ secrets.INSTALLER_SIGNING_KEY }}
-        run: |
-          if [ -z "$INSTALLER_SIGNING_KEY" ]; then
-            echo "::warning::INSTALLER_SIGNING_KEY isn't set, so Vault-Setup.exe isn't signed, and add-ins won't update to it."
-            exit 0
-          fi
-          key=$(mktemp)
-          trap 'rm -f "$key"' EXIT
-          chmod 600 "$key"
-          printf '%s\n' "$INSTALLER_SIGNING_KEY" > "$key"
-          setup=src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
-          openssl dgst -sha256 -sign "$key" -out "$setup.sig" "$setup"
-          # Laptops check it with the key their add-in carries. Signed with another, it's right only for the release
-          # that brings a new key, which is signed with the old one.
-          if ! openssl dgst -sha256 -verify src/Vault.Client/installer-signing.pub.pem -signature "$setup.sig" "$setup"; then
-            echo "::warning::Vault-Setup.exe is signed with a key this add-in doesn't carry (installer-signing.pub.pem): add-ins won't update to it, unless it's the release that changes keys."
-          fi
-      # The builds are kept from main and from release tags only, main's for a week and a tag's for 90 days:
-      # only those go on the server (docs/deploying.md), and a pull request's would fill the account's
-      # artifact storage (500 MB) with copies nobody installs. Pull requests still build and test all of it.
+        run: bash ../.github/sign-installer.sh
+      # Builds of main are kept as artifacts for 3 days, to try on a laptop before a release (over a weekend), and a
+      # pull request's not at all: nobody installs those. Artifacts count against the account's storage (500 MB on
+      # the free plan, metered by the hour), which GitHub blocks for the rest of the month once it's used up, so main
+      # keeps only the add-in (3 MB, where vault.exe is 30 MB: that's on releases). Then even 35 merges in a week use
+      # about a tenth of it. If it runs out anyway, the upload fails but the run doesn't: the build is still good.
       # Vault-Setup.exe installs the add-in on a Windows PC with SolidWorks 2026: put it in the server's
       # YJSP_DOWNLOADS_DIR, with its signature, Vault-Setup.exe.sig, and the web app offers it to members.
       - uses: actions/upload-artifact@v7
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         with:
           name: vault-setup
           path: |
             client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe
             client/src/Vault.Setup/bin/Release/net48/Vault-Setup.exe.sig
           if-no-files-found: error
-          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
+          retention-days: 3
       # The add-in's files as they are, to install by hand with install.ps1 (see its README).
       - uses: actions/upload-artifact@v7
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         with:
           name: vault-solidworks-addin
           path: client/src/Vault.SolidWorks/bin/Release/net48/
           if-no-files-found: error
-          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
-      # One self-contained vault.exe: runs on Windows without installing .NET.
+          retention-days: 3
+      # One self-contained vault.exe: runs on Windows without installing .NET. Built here too, so a change that
+      # breaks it fails its pull request, not the next release.
       - run: >-
           dotnet publish src/Vault.Cli --no-restore --configuration Release --runtime win-x64
           --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
           --output ${{ runner.temp }}/vault-windows
-      - uses: actions/upload-artifact@v7
-        if: github.event_name == 'push'
-        with:
-          name: vault-windows
-          path: ${{ runner.temp }}/vault-windows/vault.exe
-          if-no-files-found: error
-          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 90 || 7 }}
 
   web:
     runs-on: ubuntu-latest
@@ -145,3 +130,54 @@ jobs:
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag yjsp-server:ci "$image:${GITHUB_REF_NAME}"
           docker push "$image:${GITHUB_REF_NAME}"
+
+  # A release tag's Windows downloads go on the tag's GitHub release, for an admin to put in the server's downloads
+  # folder (docs/deploying.md, "New downloads"): Vault-Setup.exe with its signature, and vault.exe. Not as artifacts:
+  # those count against the account's artifact storage, which GitHub blocks once a month's is used, and a release's
+  # files don't, and stay as long as the release does.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [server, client, web]
+    # The only job that can write to the repository, and it runs only for release tags: it makes the release.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      # Built as the client job builds them, from the commit it tested: without artifacts, files don't pass between
+      # jobs.
+      - run: dotnet restore --locked-mode
+      - run: dotnet build --no-restore --configuration Release
+      - run: >-
+          dotnet publish src/Vault.Cli --no-restore --configuration Release --runtime win-x64
+          --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+          --output ${{ runner.temp }}/vault-windows
+      # Unsigned, laptops would refuse it as an update, so a release without the key fails here.
+      - name: Sign Vault-Setup.exe
+        env:
+          INSTALLER_SIGNING_KEY: ${{ secrets.INSTALLER_SIGNING_KEY }}
+        run: bash ../.github/sign-installer.sh --required
+      # Onto the tag's release: a new draft, for the owner to write the notes in and publish, or the release that's
+      # there already (one made by hand, or by an earlier try of this run), whose files are replaced.
+      - name: Upload to the tag's release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # The last try is for a release someone made while this one was being made.
+          gh release view "$tag" > /dev/null 2>&1 \
+            || gh release create "$tag" --draft --verify-tag --title "YJSP ${tag#v}" --notes "" \
+            || gh release view "$tag" > /dev/null
+          gh release upload "$tag" --clobber \
+            src/Vault.Setup/bin/Release/net48/Vault-Setup.exe \
+            src/Vault.Setup/bin/Release/net48/Vault-Setup.exe.sig \
+            "$RUNNER_TEMP/vault-windows/vault.exe"

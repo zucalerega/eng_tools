@@ -25,7 +25,7 @@ something both apps need belongs to the site.
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
 | `deploy/` | `deploy.sh`, which deploys the live site; `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files. |
-| `.github/workflows/ci.yml` | The checks every change must pass. |
+| `.github/workflows/ci.yml` | The checks every change must pass, and a release's downloads (`.github/sign-installer.sh` signs the installer). |
 
 ## Commands
 
@@ -46,9 +46,12 @@ cd web && npm ci && npm run check && npm test && npm run build
   http://localhost:8000. `npm run dev` serves it at http://localhost:5173 and reloads as you
   edit (sign in at http://localhost:8000 first). `npm run format`: format the TypeScript.
 - The add-in builds anywhere (`dotnet build`), but it only runs inside SolidWorks (2026, and
-  2025 for laptops moving over) on Windows. CI uploads each build of `main` and of a release tag (kept a week, a tag's 90 days) as the `vault-setup` artifact (`Vault-Setup.exe`, which
-  installs it; the server offers it from `YJSP_DOWNLOADS_DIR`), the `vault-solidworks-addin`
-  artifact (its files, for install.ps1), and `vault-windows` (a self-contained `vault.exe`).
+  2025 for laptops moving over) on Windows. CI puts a release tag's downloads on its GitHub
+  release, a draft until it's published: `Vault-Setup.exe` (which installs it; the server
+  offers it from `YJSP_DOWNLOADS_DIR`) with its signature, `Vault-Setup.exe.sig`, and a
+  self-contained `vault.exe`. A build of `main` keeps the `vault-setup` artifact (the installer
+  and its signature) and `vault-solidworks-addin` (its files, for install.ps1) for 3 days;
+  artifacts count against the account's storage, which GitHub blocks once a month's is used.
   Install and manual-testing steps are in `client/src/Vault.SolidWorks/README.md`.
 - `docker build -f server/Dockerfile -t yjsp-server .`: the production image, server and web app.
 - In a Claude Code cloud session, the SessionStart hook (`.claude/settings.json`) runs
@@ -233,8 +236,9 @@ rolling back, backups, setting up a new server, and the rules. In short:
 - **Releasing:**
   1. Bump the version in `server/pyproject.toml`, `server/src/yjsp_server/__init__.py`,
      and `client/Directory.Build.props`.
-  2. Tag `main`.
-  3. Write release notes in the GitHub release.
+  2. Tag `main`. CI makes the tag's GitHub release, a draft with the Windows downloads on it
+     (`Vault-Setup.exe`, its signature, and `vault.exe`).
+  3. Write release notes in that release, and publish it.
 - **Before deploying:**
   - CI is green on what you deploy.
   - You have read every migration in the release (the script backs the database up).

@@ -139,9 +139,8 @@ While you work:
 ## Install
 
 1. In the Vault web app, open **SolidWorks** (at the top) and download `Vault-Setup.exe`.
-   (It's the `vault-setup` artifact of a CI run on `main` or a release tag; an admin puts
-   it in the server's `YJSP_DOWNLOADS_DIR`, with its signature, `Vault-Setup.exe.sig`, for
-   Update.)
+   (It comes with each release, on its GitHub release; an admin puts it in the server's
+   `YJSP_DOWNLOADS_DIR`, with its signature, `Vault-Setup.exe.sig`, for Update.)
 2. Close SolidWorks and run it. It isn't signed for Windows yet: if Windows says it
    protected your PC, click **More info**, then **Run anyway**. It asks for administrator
    rights, then installs the add-in in `C:\Program Files\Vault for SolidWorks`. It installs
@@ -159,10 +158,10 @@ loads at startup). To remove the add-in, remove **Vault for SolidWorks** in Wind
 Settings > Apps > Installed apps; your workspace and sign-in stay.
 
 By hand (for development): build it (`dotnet build -c Release client/src/Vault.SolidWorks`,
-output in `bin/Release/net48`, or the `vault-solidworks-addin` artifact), put the folder
-somewhere permanent, and run `powershell -ExecutionPolicy Bypass -File install.ps1` in it,
-as administrator (`uninstall.ps1` removes it). To update, close SolidWorks and replace the
-folder's files.
+output in `bin/Release/net48`, or the `vault-solidworks-addin` artifact of a CI run on
+`main`, kept 3 days), put the folder somewhere permanent, and run
+`powershell -ExecutionPolicy Bypass -File install.ps1` in it, as administrator
+(`uninstall.ps1` removes it). To update, close SolidWorks and replace the folder's files.
 
 ## Updates
 
@@ -185,11 +184,12 @@ SolidWorks, and it finishes the update. Start SolidWorks again, and the Vault ta
 version. Your sign-in, settings, and workspace stay.
 
 An admin offers an update by putting the new `Vault-Setup.exe` and its
-`Vault-Setup.exe.sig` (both in CI's `vault-setup` artifact, from `main` or a release tag) in
-the server's `YJSP_DOWNLOADS_DIR` (see docs/deploying.md): the server reads the version from
-the program. Add-ins from before Update (0.4.0 and older) don't have the button: run the new
-`Vault-Setup.exe` once, by hand, from the web app's SolidWorks page. Add-ins up to 0.5.2
-update without checking the signature: the check starts with the update after that.
+`Vault-Setup.exe.sig` (both on a release's GitHub release, or in the `vault-setup` artifact
+of a CI run on `main`) in the server's `YJSP_DOWNLOADS_DIR` (see docs/deploying.md, "New
+downloads"): the server reads the version from the program. Add-ins from before Update
+(0.4.0 and older) don't have the button: run the new `Vault-Setup.exe` once, by hand, from
+the web app's SolidWorks page. Add-ins up to 0.5.2 update without checking the signature:
+the check starts with the update after that.
 
 ## Testing against a development server
 
@@ -295,7 +295,7 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     it offers Update, and updates it; SolidWorks 2025 starts with the new Vault tab, and
     `addin.log` says which SolidWorks it started in.
 23. Put a Vault-Setup.exe with a newer version than the installed add-in, and its
-    Vault-Setup.exe.sig (CI's `vault-setup` artifact, from `main` or a release tag), in the
+    Vault-Setup.exe.sig (from a release, or CI's `vault-setup` artifact from `main`), in the
     server's downloads folder, then start SolidWorks: Update appears in the tab's header,
     and the web app's SolidWorks page shows the new version, and doesn't list the
     signature. Click Update and say Yes, but No to

@@ -8,6 +8,6 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- packages.lock.json pins every dependency; CI restores with locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <Version>0.5.3</Version>
+    <Version>0.5.4</Version>
   </PropertyGroup>
 </Project>

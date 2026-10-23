@@ -83,6 +83,8 @@ test("a new part is named here, then started in SolidWorks", async () => {
     renderApp(team.chief, folderUrl(`${team.folder}/Fins`));
     await userEvent.click(await screen.findByRole("button", { name: "New" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Part…" }));
+    // Part numbers are offered: naming it yourself is the other way.
+    await userEvent.click(await screen.findByRole("button", { name: "Name it yourself instead" }));
     const dialog = screen.getByRole("dialog");
     const name = within(dialog).getByRole("textbox", { name: "Name" });
     await userEvent.type(name, "Fin");
@@ -98,6 +100,31 @@ test("a new part is named here, then started in SolidWorks", async () => {
     const link = new URL(start.getAttribute("href")!);
     expect([link.protocol, link.host]).toEqual(["vault:", "new"]);
     expect(link.searchParams.get("path")).toBe(`${team.folder}/Fins/Fin Bracket.SLDPRT`);
+    await userEvent.clear(name);
+    await userEvent.type(name, "00000099-001");
+    expect(within(dialog).getByRole("alert").textContent).toContain("That's a part number");
+});
+
+test("a new part gets its part number here, with its title, then starts in SolidWorks", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, folderUrl(team.folder));
+    await userEvent.click(await screen.findByRole("button", { name: "New" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Part…" }));
+    const title = await screen.findByRole("textbox", { name: "Title" });
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByRole("combobox", { name: "Kind" })).toHaveProperty("value", "001");
+    expect(dialog.getByRole("button", { name: "Get a number" })).toHaveProperty("disabled", true); // it needs a title
+    await userEvent.type(title, "Fin bracket");
+    await userEvent.click(dialog.getByRole("button", { name: "Get a number" }));
+
+    const start = await screen.findByRole("link", { name: "Start it in SolidWorks" });
+    const path = new URL(start.getAttribute("href")!).searchParams.get("path")!;
+    expect(path.slice(0, team.folder.length + 1)).toBe(`${team.folder}/`);
+    expect(path.slice(team.folder.length + 1)).toMatch(/^\d{8}-001\.SLDPRT$/);
+    expect(screen.getByRole("dialog").textContent).toContain("“Fin bracket”");
+    // SolidWorks makes it, and checks it in: it takes the number, and its title.
+    const [fin] = await team.checkin(team.chief, { [path.slice(team.folder.length + 1)]: "fin" });
+    expect([fin!.name, fin!.title]).toEqual([path.slice(path.lastIndexOf("/") + 1), "Fin bracket"]);
 });
 
 test("search finds files anywhere in the vault", async () => {
@@ -122,6 +149,10 @@ test("a file given a number shows its title with it, and search finds it by its 
     // A title that says no more than the name isn't said twice.
     const rail = screen.getByRole("link", { name: "Rail.SLDPRT" }).closest("tr")!;
     expect(within(rail).queryByText("Rail")).toBeNull();
+    // Its name is its number, which never changes: what it's called is its title.
+    await userEvent.click(within(bracket).getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Rename…" })).toHaveProperty("disabled", true);
+    await userEvent.click(within(bracket).getByRole("checkbox"));
 
     const search = screen.getByRole("searchbox", { name: "Search files" });
     const numbered = `${team.folder}/Fins/${number}.SLDPRT`;

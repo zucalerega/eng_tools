@@ -98,7 +98,9 @@ export function SolidWorks() {
                 </li>
                 <li>
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts
-                    it in SolidWorks, already in the vault and checked out to you.
+                    it in SolidWorks, already in the vault and checked out to you. Once part numbers are on, a new part
+                    or assembly gets its number here first: say what kind it is and what it's called, and its name is
+                    the number.
                 </li>
             </ul>
             <h2>If something's not right</h2>

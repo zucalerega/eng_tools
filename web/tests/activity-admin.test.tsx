@@ -26,6 +26,24 @@ test("the activity feed says when a file got a new title, and what it was", asyn
     );
 });
 
+test("admins keep the kinds of part numbers, and see that new files are offered them", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin/numbers");
+    expect(await screen.findByRole("combobox", { name: "New files" })).toHaveProperty("value", "offer");
+    const form = screen.getByRole("form", { name: "New kind" });
+    await userEvent.type(within(form).getByRole("textbox", { name: "Code" }), "777");
+    await userEvent.type(within(form).getByRole("textbox", { name: "What it's for" }), "Test fixture");
+    await userEvent.selectOptions(within(form).getByRole("combobox", { name: "Files" }), "any");
+    await userEvent.click(within(form).getByRole("button", { name: "Add kind" }));
+
+    const kinds = screen.getByRole("table", { name: "Kinds" });
+    const row = (await within(kinds).findByText("777")).closest("tr")!;
+    expect(row.textContent).toContain("Test fixture");
+    expect(row.textContent).toContain("Parts and assemblies");
+    await userEvent.click(within(row).getByRole("button", { name: "Retire 777" }));
+    expect(await within(kinds).findByRole("button", { name: "Bring back 777" })).toBeTruthy();
+});
+
 test("admins see how many people used the site each day for the last month, and for how long, on the web app and in SolidWorks", async () => {
     const team = await Team.create();
     await team.member(`Usage-${team.folder}`); // signed in just now

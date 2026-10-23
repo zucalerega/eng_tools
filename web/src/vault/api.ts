@@ -82,6 +82,38 @@ export interface Sync {
     full: boolean;
     folders: Folder[];
     files: VaultFile[];
+    paused?: Pause | null; // an admin has the vault paused: changes wait until it's back
+}
+
+/** An admin's pause: every change but theirs, from the computer they paused it on, waits until it's back. */
+export interface Pause {
+    by: UserRef;
+    since: string;
+    host: string;
+    reason: string;
+}
+
+/** Whether new files take part numbers, and the next number to hand out (docs/vault.md, "Part numbers"). */
+export interface Numbering {
+    mode: "off" | "offer" | "require";
+    next_number: number;
+}
+
+/** A kind of part number, its last three digits: 001 Part, 501 Assembly. */
+export interface PartKind {
+    code: string;
+    label: string;
+    applies: "part" | "assembly" | "any";
+    retired: boolean;
+}
+
+/** A part number handed out: 00000123-001, with what the file that takes it is to be called. */
+export interface PartNumber {
+    number: string;
+    kind: string;
+    title: string;
+    issued_at: string;
+    file_id: number | null; // the file that has it, once one does
 }
 
 export interface VaultEvent {
@@ -118,7 +150,7 @@ export type Deleted = Moved;
 export interface CheckinRequest {
     comment: string;
     host: string;
-    items: { path: string; sha256: string; size: number; references: { path: string }[] }[];
+    items: { path: string; sha256: string; size: number; references: { path: string }[]; vendor?: boolean }[];
 }
 
 /** A version's 3D model in one configuration, for Caliper (made by Vault for SolidWorks). */
@@ -184,6 +216,24 @@ export const vaultApi = {
         request<Moved>("POST", "/api/move", { files, folders, to }),
     rename: (target: { file: number } | { folder: string }, name: string) =>
         request<Moved>("POST", "/api/rename", { ...target, name }),
+    numbering: () => request<Numbering>("GET", "/api/numbering"),
+    /** Turn part numbers on or off for new files, or move the next number on (admins). */
+    setNumbering: (change: { mode?: Numbering["mode"]; next_number?: number }) =>
+        request<Numbering>("PUT", "/api/numbering", change),
+    partKinds: () => request<PartKind[]>("GET", "/api/part-kinds"),
+    addPartKind: (kind: Omit<PartKind, "retired">) => request<PartKind>("POST", "/api/part-kinds", kind),
+    changePartKind: (code: string, change: Partial<Omit<PartKind, "code">>) =>
+        request<PartKind>("PATCH", `/api/part-kinds/${code}`, change),
+    /** Hand out the next part numbers, of a kind, for new files: a file checked in named by one takes it. */
+    reserveNumbers: (kind: string, title: string, count = 1) =>
+        request<{ numbers: PartNumber[] }>("POST", "/api/numbers", { kind, title, count }),
+    /** Your part numbers that no file has yet. */
+    myNumbers: () => request<{ numbers: PartNumber[] }>("GET", "/api/numbers"),
+    releaseNumbers: (numbers: string[]) =>
+        request<{ numbers: PartNumber[] }>("POST", "/api/numbers/release", { numbers }),
+    /** Pause the vault (admins): every change but yours, from host, waits until it's unpaused. */
+    pause: (host: string, reason: string) => request<Pause>("PUT", "/api/vault/pause", { host, reason }),
+    unpause: () => request<unknown>("DELETE", "/api/vault/pause"),
     /** Say what files are called, or whether they're vendors' parts: not a new version, and no check-out. */
     describe: (files: { file: number; title?: string; vendor?: boolean }[]) =>
         request<{ files: VaultFile[] }>("POST", "/api/files/metadata", { files }),

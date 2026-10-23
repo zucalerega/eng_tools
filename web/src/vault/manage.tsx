@@ -10,6 +10,7 @@ import {
     asTheyAre,
     isZip,
     planUpload,
+    unnumbered,
     unzipped,
     upload,
     type Picked,
@@ -97,6 +98,7 @@ export function UploadDialog({ folder, picked, onClose }: { folder: string; pick
     const [opened, setOpened] = useState<UploadPlan | null>(null);
     const [opening, setOpening] = useState<string | null>(null);
     const [comment, setComment] = useState("");
+    const [vendor, setVendor] = useState(false);
     const [progress, setProgress] = useState<{ done: number; current: string } | null>(null);
     const { busy, problem, run } = useChange(onClose);
     const planned = useEffectEvent((sources: Source[], skipped: Skipped[]) =>
@@ -127,7 +129,8 @@ export function UploadDialog({ folder, picked, onClose }: { folder: string; pick
             busy={busy}
             disabled={count === 0}
             onConfirm={() =>
-                plan && run(() => upload(plan.ready, comment, (done, current) => setProgress({ done, current })))
+                plan &&
+                run(() => upload(plan.ready, comment, (done, current) => setProgress({ done, current }), vendor))
             }
             onCancel={onClose}
         >
@@ -183,6 +186,18 @@ export function UploadDialog({ folder, picked, onClose }: { folder: string; pick
                         ))}
                     </ul>
                 </details>
+            )}
+            {plan && plan.ready.some(({ path }) => unnumbered(path)) && (
+                <label className="check">
+                    <input
+                        type="checkbox"
+                        checked={vendor}
+                        disabled={busy}
+                        onChange={(event) => setVendor(event.target.checked)}
+                    />
+                    Its parts and assemblies are vendors' (McMaster, say): they keep their vendors' names, rather than
+                    taking part numbers
+                </label>
             )}
             {count > 0 && (
                 <label className="field">

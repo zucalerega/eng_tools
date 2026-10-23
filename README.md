@@ -64,10 +64,15 @@ replaces Kenesto.
   handed out. A drawing or PDF of a numbered part is named after its number
   (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
   Structures' numbers from before part numbers stay as they are; its new files take new
-  numbers.
-- **An admin can pause the vault** for work on all of it, such as numbering every file at
-  once. While it's paused, check-outs, check-ins and other changes wait, saying who paused
-  it and why; you can still look at everything, download, and undo your check-outs.
+  numbers. Once an admin turns them on, **New part** or **New assembly** in the web app asks
+  what kind it is and what it's called (its title), gets the next number (numbers you got and
+  haven't used yet come first), and starts it in SolidWorks. When you upload vendors' parts,
+  tick that they're vendors': they keep their names. Admins turn numbers on (offered, then
+  required), keep the list of kinds, and skip the next number ahead in Admin > Part numbers.
+- **An admin can pause the vault** (Admin > Part numbers) for work on all of it, such as
+  numbering every file at once. While it's paused, a banner says who paused it and why, and
+  check-outs, check-ins and other changes wait; you can still look at everything, download,
+  and undo your check-outs.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every

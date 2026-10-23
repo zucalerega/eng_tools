@@ -110,6 +110,30 @@ export const stemOf = (name: string): string =>
 export const titleBeside = (file: { name: string; title: string }): string | null =>
     file.title && pathKey(file.title) !== pathKey(stemOf(file.name)) ? file.title : null;
 
+// Part numbers, as the server's vault/numbers.py has them (it has the last word, and the same test cases): a number,
+// its kind, then the end of the name or a symbol or a space before more ("00000123-001 - machining").
+const NUMBERED = /^(\d{8})-(\d{3})(?![0-9A-Za-z])/;
+// McMaster-Carr's part numbers, which their files are named by: 91251A463, "91251A463_Socket Head Screw".
+const MCMASTER = /^\d{4,5}[A-Za-z]\d{1,4}(?![0-9A-Za-z])/;
+// The files that take numbers of their own, as against being named after one.
+const HOLDERS = [".sldprt", ".sldasm", ".step", ".stp", ".stl"];
+
+/** The part number a file's name starts with (00000123-001), and whether the name is that alone; null for none. */
+export function partNumberOf(name: string): { number: string; exact: boolean } | null {
+    const stemmed = stemOf(name);
+    const found = NUMBERED.exec(stemmed);
+    return found ? { number: found[0], exact: found[0].length === stemmed.length } : null;
+}
+
+/** Whether a file is named as a vendor names its parts (McMaster-Carr's numbers): such a file keeps its name. */
+export const vendorsName = (name: string): boolean => MCMASTER.test(stemOf(name));
+
+/** Whether a file's type takes a number of its own: a part, an assembly, or a STEP or STL file. */
+export const takesANumber = (name: string): boolean => HOLDERS.some((type) => name.toLowerCase().endsWith(type));
+
+/** Whether a file is named by a part number of its own (a part's, an assembly's), which never changes. */
+export const keepsItsName = (name: string): boolean => partNumberOf(name) !== null && takesANumber(name);
+
 /**
  * Whether a drawing is named after a part or assembly, as the vault requires: Fin.SLDDRW, or
  * "Fin - machining.SLDDRW", for Fin.SLDPRT; not Fin2 or Finish (named_after in the server's paths.py).

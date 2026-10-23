@@ -190,6 +190,47 @@ function describe(event: VaultEvent): ReactNode {
                 </>
             );
         }
+        case "reserve_numbers": {
+            const count = Number(detail.count ?? 1);
+            return (
+                <>
+                    {who} got{" "}
+                    {count === 1 ? `part number ${text("first")}` : `${count} part numbers, from ${text("first")}`}
+                    {detail.title ? ` for “${text("title")}”` : ""}
+                </>
+            );
+        }
+        case "release_numbers": {
+            const given = Array.isArray(detail.numbers) ? detail.numbers.map(String) : [];
+            return (
+                <>
+                    {who} gave back {given.length === 1 ? `part number ${given[0]}` : `${given.length} part numbers`}
+                </>
+            );
+        }
+        case "part_kind":
+            return (
+                <>
+                    {who} {detail.retired ? "retired" : "set"} the kind of part number {text("code")}, “{text("label")}”
+                </>
+            );
+        case "numbering":
+            return (
+                <>
+                    {who}{" "}
+                    {detail.numbering
+                        ? `set part numbers for new files to ${{ off: "off", offer: "offered", require: "required" }[text("numbering")] ?? text("numbering")}`
+                        : `moved the next part number on to ${text("next_number").padStart(8, "0")}`}
+                </>
+            );
+        case "pause":
+            return (
+                <>
+                    {who} paused the vault{detail.reason ? `, for ${text("reason")}` : ""}
+                </>
+            );
+        case "unpause":
+            return <>{who} unpaused the vault</>;
         case "move_folder":
             return (
                 <>

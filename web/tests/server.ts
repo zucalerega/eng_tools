@@ -100,6 +100,24 @@ export default async function setup(project: TestProject): Promise<() => void> {
         await new Promise((wait) => setTimeout(wait, 200));
     }
 
+    // Part numbers are offered for new parts and assemblies, as the vault has them once its files are numbered. It's
+    // the whole vault's setting, so no test changes it: tests run side by side against this one server.
+    const signedIn = await fetch(`${url}/auth/dev-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: CHIEF }),
+    });
+    const { token } = (await signedIn.json()) as { token: string };
+    const offered = await fetch(`${url}/api/numbering`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mode: "offer" }),
+    });
+    if (!offered.ok) {
+        stop(server);
+        throw new Error(`Couldn't offer part numbers: ${await offered.text()}`);
+    }
+
     project.provide("serverUrl", url);
     return () => {
         stop(server);

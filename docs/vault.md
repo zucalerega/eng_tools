@@ -545,7 +545,18 @@ the site gives both apps (design.md, "The web app").
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
     the top-level ones, its drawings, and its history, with downloads; its title, with Edit
-    title… for editors, and the names it had before ("Formerly …").
+    title… for editors, the names it had before ("Formerly …"), and whether it's a vendor's
+    part.
+  - New part and New assembly (`newFile.tsx`): while part numbers are offered or required,
+    a kind and a title, then Get a number, which hands one out (the user's unused ones are
+    offered first), then Start it in SolidWorks, a second click, as browsers let a link to
+    the add-in start only from a click. While they're offered, Name it yourself instead is
+    the old way; drawings are named after their part, as before. Uploads can mark parts as
+    vendors' (`vendor` on each check-in item). Rename is off for a file named by its part
+    number (`keepsItsName` in `paths.ts`, which has numbers.py's rules and test cases).
+  - Admin > Part numbers: whether new files take numbers, the next number, the kinds, and
+    pausing the vault. While it's paused, every page of the vault says so, with Unpause for
+    admins (from the sync feed's `paused`).
   - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
     in Caliper, beside Open in SolidWorks on a file's page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.

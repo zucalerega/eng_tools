@@ -87,6 +87,13 @@ export function FilePage({ id }: { id: number }) {
                     {file.name}
                 </h1>
                 {titleBeside(file) && <p className="file-head-title">{file.title}</p>}
+                {file.vendor && (
+                    <p>
+                        <span className="tag" title="It keeps its vendor's name, rather than taking a part number">
+                            Vendor's part
+                        </span>
+                    </p>
+                )}
                 <p className="muted">
                     v{file.version} · {formatSize(file.size)} · changed <Time at={file.modified_at} /> by{" "}
                     {file.modified_by.name} · created <Time at={file.created_at} />

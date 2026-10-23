@@ -22,9 +22,10 @@ from sqlalchemy.orm import Session
 from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
-from . import caliper, paths, solidworks
+from . import caliper, numbers, paths, solidworks
 from .access import Access, Tree
 from .models import (
+    Applies,
     Blob,
     CaliperModel,
     Checkin,
@@ -33,6 +34,9 @@ from .models import (
     Folder,
     FormerName,
     Grant,
+    Numbering,
+    PartKind,
+    PartNumber,
     Role,
     VaultState,
     Version,
@@ -645,6 +649,9 @@ class CheckinItem:
     sha256: str
     size: int
     references: list[Reference] = field(default_factory=list)
+    title: str | None = None  # what it's called (describe); a new file's is otherwise its number's, or its name's
+    vendor: bool | None = None  # a vendor's part (describe); a new file's is as its name says (numbers.vendors)
+    base_version: int | None = None  # the version its changes start from: refused (out_of_date) if there's a newer one
 
 
 CheckinStatus = Literal["created", "updated", "unchanged"]
@@ -671,6 +678,105 @@ def _require_own_lock(db: Session, tree: Tree, file: File, user: User, host: str
         )
 
 
+def _state(db: Session) -> VaultState:
+    state = db.get(VaultState, 1)
+    assert state is not None
+    return state
+
+
+def _holder(db: Session, number: int, kind: str) -> PartNumber | None:
+    """The record of a file that has this part number (in the trash or not), if one has it."""
+    held = PartNumber.number == number, PartNumber.kind == kind, PartNumber.file_id.is_not(None)
+    return db.scalar(select(PartNumber).where(*held).limit(1))
+
+
+def _part_number(db: Session, name: str, *, file: File | None, vendor: bool, new: bool) -> PartNumber | None:
+    """What a file's name (a new file's, or one a file is renamed to) says of its part number, held to the rules
+    (docs/vault.md, "Part numbers"): the number it takes, a part's, an assembly's, or a STEP or STL file's own, for
+    the caller to give it, or the one it has; None for a name after a number another file has (a drawing's, a PDF's,
+    an export's), or a name that's no number.
+
+    Refused: a number not handed out, or someone else's, or of a kind for something else; a part or an assembly named
+    by more than its number; a vendor's part named like a number; and a new part, assembly, STEP or STL file without
+    one, once they need them (Numbering.REQUIRE).
+    """
+    numbered = numbers.parse(name)
+    if numbered is None:
+        needs = new and numbers.holds(name) and _state(db).numbering is Numbering.REQUIRE
+        if needs and not (vendor or numbers.vendors(name)):
+            raise ApiError(
+                f"{name} needs a part number: start new parts and assemblies with New, in the web app or in "
+                "SolidWorks, which gives them one; or, for a vendor's part, say it's a vendor's",
+                code="part_number_needed",
+                name=name,
+            )
+        return None
+    if vendor:
+        _check_vendor(name)
+    own = numbered.text
+    if file is not None:
+        mine = db.scalar(select(PartNumber).where(PartNumber.file_id == file.id))
+        if mine is not None and (mine.number, mine.kind) == (numbered.number, numbered.kind):
+            return mine
+    holder = _holder(db, numbered.number, numbered.kind)
+    if numbers.holds(name) and numbered.exact and holder is None:
+        # It takes the number: one handed out and not yet used, of a kind for what it is.
+        unused = db.scalar(
+            select(PartNumber).where(
+                PartNumber.number == numbered.number,
+                PartNumber.kind == numbered.kind,
+                PartNumber.legacy.is_(False),
+                PartNumber.file_id.is_(None),
+                PartNumber.released_at.is_(None),
+            )
+        )
+        if unused is None:
+            raise ApiError(
+                f"{own} wasn't handed out: get a part number with New, in the web app or in SolidWorks",
+                code="unknown_part_number",
+                name=name,
+            )
+        kind = db.get(PartKind, numbered.kind)
+        if kind is None or not numbers.fits(kind.applies, name):
+            what = "an assembly" if numbers.applies_to(name) == "assembly" else "a part"
+            raise ApiError(
+                f"{own} was handed out for {kind.label if kind else 'something else'}, so it can't be {what}'s",
+                code="bad_part_number",
+                name=name,
+            )
+        return unused
+    if numbers.holds(name) and not numbers.exports(name):
+        if not numbered.exact:
+            raise ApiError(
+                f"Call it {own}{name[len(paths.stem(name)) :]}: a part's or an assembly's name is its number, and "
+                "its title says what it is",
+                code="bad_part_number",
+                name=name,
+            )
+        # Another file has it (where the user may not see it: the number says no more than that).
+        raise Conflict(
+            f"{own} is another file's part number: a part or an assembly takes a number of its own",
+            code="part_number_taken",
+            name=name,
+        )
+    if holder is None:
+        raise ApiError(
+            f"No part or assembly has {own}: a drawing, a PDF, or an export is named after the number of what it's "
+            "of, once that's in the vault",
+            code="unknown_part_number",
+            name=name,
+        )
+    return None
+
+
+def _taking_order(name: str) -> int:
+    """Parts and assemblies take their part numbers first, then STEP and STL files, so that the drawings, PDFs and
+    exports named after them in the same check-in find who has their numbers (_part_number)."""
+    if numbers.holds(name):
+        return 1 if numbers.exports(name) else 0
+    return 2
+
+
 def checkin(
     db: Session,
     user: User,
@@ -690,6 +796,8 @@ def checkin(
     A file whose contents didn't change gets no new version but is still
     released, unless keep_checked_out is set; if it had no references
     recorded and now has some, it gets a version to record them.
+    A new file's name is held to the rules of part numbers (_part_number): a
+    part named by a number handed out takes it.
     """
     host = _host(host)
     if not items:
@@ -698,7 +806,7 @@ def checkin(
     tree, access = _context(db, user)
     now = utcnow()
 
-    planned: list[tuple[CheckinItem, list[str], File | None]] = []
+    planned: list[tuple[CheckinItem, list[str], File | None, str | None]] = []
     seen: set[str] = set()
     for item in items:
         names = paths.split(item.path)
@@ -719,12 +827,22 @@ def checkin(
         if existing is not None:
             access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
             _require_own_lock(db, tree, existing, user, host)
+            if item.vendor:
+                _check_vendor(existing.name)
+            if item.base_version is not None and item.base_version != existing.latest_version:
+                raise Conflict(
+                    f"{path} is at v{existing.latest_version} now, not v{item.base_version}, which these changes "
+                    "start from: get its latest version and make them again there",
+                    code="out_of_date",
+                    path=path,
+                    version=existing.latest_version,
+                )
         else:
             parent, depth = access.deepest(names[:-1])
             access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
             if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
                 raise Conflict(f"{path} is a folder", code="exists", path=path)
-        planned.append((item, names, existing))
+        planned.append((item, names, existing, None if item.title is None else _title(item.title, path)))
 
     record: Checkin | None = None
 
@@ -737,25 +855,33 @@ def checkin(
         return record.id
 
     done: dict[str, tuple[CheckinStatus, File, Version, CheckinItem]] = {}
-    for item, names, existing in planned:
+    for item, names, existing, title in sorted(planned, key=lambda plan: _taking_order(plan[1][-1])):
         status: CheckinStatus
         version: Version | None = None
         if existing is None:
             folder = _ensure_folders(db, tree, access, user, names[:-1], seq)
+            vendor = numbers.vendors(names[-1]) if item.vendor is None else item.vendor
+            number = _part_number(db, names[-1], file=None, vendor=vendor, new=True)
             file = File(
                 folder_id=folder.id,
                 name=names[-1],
                 name_key=paths.key(names[-1]),
-                title=paths.stem(names[-1]),  # until someone names it (describe)
+                # Until someone names it (describe): what its number was handed out to be called, or its name.
+                title=title or (number.title if number is not None and number.title else paths.stem(names[-1])),
+                vendor=vendor,
                 latest_version=1,
                 created_at=now,
                 created_by=user.id,
             )
             db.add(file)
             db.flush()
+            if number is not None:
+                number.file_id = file.id
+                db.flush()
             status = "created"
         else:
             file = existing
+            _describe(db, user, tree, file, title, item.vendor)
             latest = _version(db, file.id, file.latest_version)
             # Same contents, same version; unless it's the first time SolidWorks says what it uses (it was
             # uploaded in the web app, which can't tell), which is worth a version that records it.
@@ -785,6 +911,7 @@ def checkin(
         file.change_seq = seq
         done[paths.key(tree.file_path(file))] = (status, file, version, item)
     db.flush()
+    done = {key: done[key] for key in (paths.key(paths.join(*names)) for _, names, _, _ in planned)}  # as they came
 
     missing = []
     unlinked: list[str] = []  # drawings that don't show a part or assembly
@@ -1270,6 +1397,43 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     return _finish_move(db, user, seq, moved_files, moved_folders)
 
 
+def _renumbered(db: Session, file: File, name: str) -> PartNumber | None:
+    """The part number a file renamed so has (_part_number), held to the rule that a part number never changes: a
+    file that has one keeps it, in its name. Ground Structures' numbers from before (legacy) may have more after them
+    in their names, which can change."""
+    mine = db.scalar(select(PartNumber).where(PartNumber.file_id == file.id))
+    if mine is not None:
+        numbered = numbers.parse(name)
+        if (
+            numbered is None
+            or (numbered.number, numbered.kind) != (mine.number, mine.kind)
+            or not (mine.legacy or numbered.exact)
+        ):
+            raise Conflict(
+                f"{file.name} is named by its part number, {numbers.text(mine.number, mine.kind)}, which never "
+                "changes: to say what it is, change its title instead",
+                code="part_number_fixed",
+                name=file.name,
+            )
+    return _part_number(db, name, file=file, vendor=file.vendor, new=False)
+
+
+def _check_drawing_name(db: Session, drawing: File, name: str) -> None:
+    """A drawing renamed stays named after a part or assembly it shows, as a check-in has it (checkin)."""
+    if not paths.is_drawing(name):
+        return
+    latest = _version(db, drawing.id, drawing.latest_version)
+    shows = [child for child, _ in _refs_of(db, latest) if paths.is_model(child.name)]
+    if shows and not any(paths.named_after(name, model.name) for model in shows):
+        stem = paths.stem(shows[0].name)
+        raise ApiError(
+            f"Name {drawing.name} after what it shows, {shows[0].name}, so they stay together: {stem}.SLDDRW, or "
+            f'something that starts with its name, like "{stem} - machining.SLDDRW".',
+            code="drawing_name",
+            name=name,
+        )
+
+
 def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str | None = None, name: str) -> Moved:
     """Rename a file (keeping its type) or a folder, where it is.
 
@@ -1289,6 +1453,8 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         access.require(target.folder_id, Role.EDITOR, f"rename {old}")
         if paths.extension(new_name) != paths.extension(target.name):
             raise ApiError(f"{new_name} would change what kind of file {target.name} is", code="bad_rename")
+        number = _renumbered(db, target, new_name)
+        _check_drawing_name(db, target, new_name)
         parent = tree.by_id[target.folder_id]
         if _taken(db, tree, parent, new_name, target):
             raise Conflict(f"{paths.join(tree.path(parent.id), new_name)} is taken", code="exists")
@@ -1299,6 +1465,8 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         _remember(db, user, moves)
         _event(db, user, "rename", file=target, path=new, moved_from=old)
         target.name, target.name_key = new_name, paths.key(new_name)
+        if number is not None:
+            number.file_id = target.id
         db.flush()
         return _finish_move(db, user, seq, [target], [])
 
@@ -1369,21 +1537,225 @@ def describe(db: Session, user: User, changes: list[Description]) -> list[FileVi
         seen.add(file.id)
         what = f"name {path}" if change.title is not None else f"say whose part {path} is"
         access.require(file.folder_id, Role.EDITOR, what)
+        if change.vendor:
+            _check_vendor(file.name)
         planned.append((file, None if change.title is None else _title(change.title, path), change.vendor))
 
     for file, title, vendor in planned:
-        detail: dict[str, Any] = {}
-        if title is not None and title != file.title:
-            detail |= {"title": title, "was": file.title}
-            file.title = title
-        if vendor is not None and vendor != file.vendor:
-            detail["vendor"] = file.vendor = vendor
-        if detail:
+        if _describe(db, user, tree, file, title, vendor):
             file.change_seq = seq
-            _event(db, user, "describe", file=file, path=tree.file_path(file), **detail)
     db.commit()
     views = _views_by_id(db, tree, access, [file for file, _, _ in planned])
     return [views[file.id] for file, _, _ in planned]
+
+
+def _check_vendor(name: str) -> None:
+    if numbers.parse(name) is not None:
+        raise ApiError(
+            f"{name} is named by a part number, so it isn't a vendor's part", code="bad_part_number", name=name
+        )
+
+
+def _describe(db: Session, user: User, tree: Tree, file: File, title: str | None, vendor: bool | None) -> bool:
+    """Give a file a title, or say whether it's a vendor's part, where that changes anything, as the activity log
+    says (describe); whether it did. The caller marks the file changed (change_seq)."""
+    detail: dict[str, Any] = {}
+    if title is not None and title != file.title:
+        detail |= {"title": title, "was": file.title}
+        file.title = title
+    if vendor is not None and vendor != file.vendor:
+        detail["vendor"] = file.vendor = vendor
+    if detail:
+        _event(db, user, "describe", file=file, path=tree.file_path(file), **detail)
+    return bool(detail)
+
+
+# --- part numbers (numbers.py; docs/vault.md, "Part numbers") ---------------------------------------
+
+
+_MAX_UNUSED = 20  # numbers an editor may have handed out and not yet used; admins any, to number the whole vault
+_MAX_AT_ONCE = 10_000
+
+
+def _require_admin(user: User, what: str) -> None:
+    if not user.is_admin:
+        raise Forbidden(f"Only admins can {what}")
+
+
+def _label(label: str) -> str:
+    label = unicodedata.normalize("NFC", label).strip()
+    if not label or len(label) > 100 or any(unicodedata.category(c) == "Cc" for c in label):
+        raise ApiError("Say what a kind is in a line of at most 100 characters", code="bad_kind")
+    return label
+
+
+def numbering(db: Session) -> tuple[Numbering, int]:
+    """Whether new files take part numbers, and the next number to hand out."""
+    state = _state(db)
+    return state.numbering, state.next_number
+
+
+def set_numbering(
+    db: Session, user: User, *, mode: Numbering | None = None, next_number: int | None = None
+) -> tuple[Numbering, int]:
+    """An admin turns part numbers on or off for new files, or moves the next number on. Numbers only go up, so none
+    is ever handed out twice."""
+    begin_write(db)
+    _require_admin(user, "change how part numbers are handed out")
+    state = _state(db)
+    detail: dict[str, Any] = {}
+    if next_number is not None and next_number != state.next_number:
+        if next_number < state.next_number or next_number > numbers.LARGEST:
+            raise ApiError(
+                f"Part numbers only go up: the next can be {numbers.digits(state.next_number)} or later",
+                code="bad_next_number",
+            )
+        detail["next_number"] = state.next_number = next_number
+    if mode is not None and mode is not state.numbering:
+        state.numbering = mode
+        detail["numbering"] = mode.value
+    if detail:
+        _event(db, user, "numbering", **detail)
+    db.commit()
+    return numbering(db)
+
+
+def part_kinds(db: Session) -> list[PartKind]:
+    """The kinds of part numbers, retired ones too (their numbers keep them), by code."""
+    return list(db.scalars(select(PartKind).order_by(PartKind.code)))
+
+
+def add_part_kind(db: Session, user: User, code: str, label: str, applies: Applies) -> PartKind:
+    """An admin adds a kind to the list: 002 Sheet metal part, for parts."""
+    begin_write(db)
+    _require_admin(user, "change the kinds of part numbers")
+    if not numbers.is_kind(code):
+        raise ApiError(f"A kind is three digits, like 001, not {code}", code="bad_kind")
+    there = db.get(PartKind, code)
+    if there is not None:
+        raise Conflict(f"{code} is {there.label} already", code="exists")
+    kind = PartKind(code=code, label=_label(label), applies=applies, created_at=utcnow(), created_by=user.id)
+    db.add(kind)
+    _event(db, user, "part_kind", code=code, label=kind.label, applies=applies.value, retired=False)
+    db.commit()
+    return kind
+
+
+def change_part_kind(
+    db: Session,
+    user: User,
+    code: str,
+    *,
+    label: str | None = None,
+    applies: Applies | None = None,
+    retired: bool | None = None,
+) -> PartKind:
+    """An admin renames a kind, retires it (no new numbers of it are handed out) or brings it back, or says what it's
+    for, while no file has a number of it. A kind is never deleted: the numbers handed out keep it."""
+    begin_write(db)
+    _require_admin(user, "change the kinds of part numbers")
+    kind = db.get(PartKind, code)
+    if kind is None:
+        raise NotFound(f"There's no kind {code}")
+    if applies is not None and applies is not kind.applies:
+        if _holder_of_kind(db, code):
+            raise Conflict(
+                f"Files have numbers of {code} already, so it stays a kind of {kind.applies.value}",
+                code="kind_in_use",
+            )
+        kind.applies = applies
+    if label is not None:
+        kind.label = _label(label)
+    if retired is not None:
+        kind.retired = retired
+    _event(db, user, "part_kind", code=code, label=kind.label, applies=kind.applies.value, retired=kind.retired)
+    db.commit()
+    return kind
+
+
+def _holder_of_kind(db: Session, code: str) -> bool:
+    held = PartNumber.kind == code, PartNumber.file_id.is_not(None)
+    return db.scalar(select(PartNumber.id).where(*held).limit(1)) is not None
+
+
+def reserve_numbers(db: Session, user: User, kind: str, *, count: int = 1, title: str = "") -> list[PartNumber]:
+    """Hand out the next part numbers, in order, of a kind: the web app's and the add-in's New, and the vault's
+    renumbering. A file checked in named by one takes it (_part_number), with its title if it's given none of its
+    own. Editors get them once an admin turns part numbers on, up to _MAX_UNUSED unused at a time; admins any."""
+    begin_write(db)
+    state = _state(db)
+    if not user.is_admin:
+        if state.numbering is Numbering.OFF:
+            raise Forbidden(
+                "Part numbers aren't handed out yet: an admin turns them on (Admin > Part numbers)",
+                code="numbering_off",
+            )
+        if not can_upload(db, user):
+            raise Forbidden("Part numbers are for new files: you need editor access to a folder to get them")
+    found = db.get(PartKind, kind)
+    if found is None or found.retired:
+        raise ApiError(f"{kind} isn't a kind of part number: pick one from the list", code="bad_kind")
+    if not 1 <= count <= _MAX_AT_ONCE:
+        raise ApiError(f"Ask for 1 to {_MAX_AT_ONCE} part numbers at a time", code="bad_count")
+    titled = _title(title, "A new file") if title.strip() else ""
+    if not user.is_admin:
+        unused = len(unused_numbers(db, user))
+        if unused + count > _MAX_UNUSED:
+            raise Conflict(
+                f"You have {unused} part numbers you haven't used: use them, or give them back, first",
+                code="too_many_numbers",
+            )
+    first = state.next_number
+    if first + count - 1 > numbers.LARGEST:
+        raise Conflict("The vault has run out of part numbers", code="numbers_exhausted")
+    state.next_number = first + count
+    now = utcnow()
+    issued = [
+        PartNumber(number=n, kind=kind, title=titled, issued_at=now, issued_by=user.id)
+        for n in range(first, first + count)
+    ]
+    db.add_all(issued)
+    _event(db, user, "reserve_numbers", first=numbers.text(first, kind), count=count, title=titled)
+    db.commit()
+    return issued
+
+
+def unused_numbers(db: Session, user: User) -> list[PartNumber]:
+    """The part numbers handed out to someone that no file has yet, and they haven't given back: theirs to use."""
+    mine = (
+        PartNumber.issued_by == user.id,
+        PartNumber.file_id.is_(None),
+        PartNumber.released_at.is_(None),
+        PartNumber.legacy.is_(False),
+    )
+    return list(db.scalars(select(PartNumber).where(*mine).order_by(PartNumber.number)))
+
+
+def release_numbers(db: Session, user: User, texts: list[str]) -> list[PartNumber]:
+    """Give back part numbers handed out and not used: no file ever takes them. Your own; an admin, anyone's."""
+    begin_write(db)
+    now = utcnow()
+    released: list[PartNumber] = []
+    for text in texts:
+        numbered = numbers.parse(text)
+        if numbered is None or not numbered.exact:
+            raise ApiError(f"{text} isn't a part number, like 00000123-001", code="bad_part_number")
+        issued = db.scalar(
+            select(PartNumber).where(
+                PartNumber.number == numbered.number, PartNumber.kind == numbered.kind, PartNumber.legacy.is_(False)
+            )
+        )
+        if issued is None or (issued.issued_by != user.id and not user.is_admin):
+            raise NotFound(f"{numbered.text} isn't one of your part numbers")
+        if issued.file_id is not None:
+            raise Conflict(f"{numbered.text} is a file's, for good", code="part_number_used")
+        if issued.released_at is None:
+            issued.released_at = now
+            released.append(issued)
+    if released:
+        _event(db, user, "release_numbers", numbers=[numbers.text(n.number, n.kind) for n in released])
+    db.commit()
+    return released
 
 
 def can_upload(db: Session, user: User) -> bool:

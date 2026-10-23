@@ -6,9 +6,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, FiniteFloat
 
 from ..api.schemas import UserRef
-from . import vault
+from . import numbers, vault
 from .caliper import Color
-from .models import Role
+from .models import Applies, Numbering, PartKind, PartNumber, Role
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 # A file id, or a vault path such as "Structures/Fins/Fin.SLDPRT".
@@ -239,6 +239,77 @@ class MovedOut(BaseModel):
         return cls(folders=[FolderOut.of(f) for f in moved.folders], files=[FileOut.of(f) for f in moved.files])
 
 
+class NumberingOut(BaseModel):
+    mode: (
+        Numbering  # off: not handed out (but to admins); offer: new parts and assemblies take them; require: they must
+    )
+    next_number: int  # the next to hand out
+
+
+class NumberingIn(BaseModel):
+    mode: Numbering | None = None
+    next_number: int | None = Field(default=None, ge=1, le=numbers.LARGEST)  # only ever later
+
+
+class PartKindOut(BaseModel):
+    code: str  # 001: a part number's last three digits
+    label: str  # what it's for: Part, Sheet metal part, Assembly
+    applies: Applies  # what can have one: parts (and STEP and STL files), assemblies, or any
+    retired: bool  # no new numbers of it are handed out
+
+    @classmethod
+    def of(cls, kind: PartKind) -> "PartKindOut":
+        return cls(code=kind.code, label=kind.label, applies=kind.applies, retired=kind.retired)
+
+
+class PartKindIn(BaseModel):
+    code: str
+    label: str
+    applies: Applies
+
+
+class PartKindChangeIn(BaseModel):
+    label: str | None = None
+    applies: Applies | None = None  # only while no file has a number of it
+    retired: bool | None = None
+
+
+class PartNumberOut(BaseModel):
+    number: str  # 00000123-001
+    kind: str
+    title: str  # what the file that takes it is to be called; "" for none
+    issued_at: datetime
+    file_id: int | None  # the file that has it, once one does
+
+    @classmethod
+    def of(cls, issued: PartNumber) -> "PartNumberOut":
+        return cls(
+            number=numbers.text(issued.number, issued.kind),
+            kind=issued.kind,
+            title=issued.title,
+            issued_at=issued.issued_at,
+            file_id=issued.file_id,
+        )
+
+
+class PartNumbersOut(BaseModel):
+    numbers: list[PartNumberOut]
+
+    @classmethod
+    def of(cls, issued: list[PartNumber]) -> "PartNumbersOut":
+        return cls(numbers=[PartNumberOut.of(n) for n in issued])
+
+
+class ReserveIn(BaseModel):
+    kind: str  # a kind's code: 001
+    title: str = ""  # what to call the file that takes it
+    count: int = Field(default=1, ge=1)
+
+
+class ReleaseIn(BaseModel):
+    numbers: list[str] = Field(min_length=1, max_length=10_000)  # 00000123-001, ...
+
+
 class ReferenceIn(BaseModel):
     path: str
     version: int | None = Field(default=None, ge=1)  # default: latest, or the one in this check-in
@@ -249,6 +320,9 @@ class CheckinItemIn(BaseModel):
     sha256: Sha256
     size: int = Field(ge=0)
     references: list[ReferenceIn] = []
+    title: str | None = None  # what it's called; a new file's is otherwise its part number's, or its name's
+    vendor: bool | None = None  # a vendor's part; a new file's is otherwise as its name says (a McMaster number)
+    base_version: int | None = Field(default=None, ge=1)  # the version its changes start from: out_of_date if older
 
 
 class CheckinIn(BaseModel):

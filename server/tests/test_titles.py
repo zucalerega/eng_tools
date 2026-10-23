@@ -68,26 +68,21 @@ def test_who_may_name_files(team, client):
 
 def test_files_from_a_vendor_are_marked(team, client):
     chief = team.member("chief@x.test", admin=True)
-    screw = files(team.checkin(chief, {"Library/91251A463_Socket Head Screw.SLDPRT": b"screw"}))
-    [marked] = describe(client, chief, {"file": "Library/91251A463_Socket Head Screw.SLDPRT", "vendor": True}).json()[
-        "files"
-    ]
-    assert (marked["vendor"], marked["title"]) == (True, "91251A463_Socket Head Screw")
+    path = "Library/Bearing 6203-2RS.SLDPRT"
+    assert files(team.checkin(chief, {path: b"bearing"}))[path]["vendor"] is False  # its name doesn't say whose it is
+    [marked] = describe(client, chief, {"file": path, "vendor": True}).json()["files"]
+    assert (marked["vendor"], marked["title"]) == (True, "Bearing 6203-2RS")
     event = client.get("/api/activity", headers=chief).json()[0]
     assert (event["action"], event["detail"]["vendor"]) == ("describe", True)
-    assert screw  # checked in as an ordinary file first
 
 
 def test_a_renamed_file_keeps_the_names_it_had(team, client):
     chief = team.member("chief@x.test", admin=True)
     fin = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin"}))["Fins/Fin.SLDPRT"]
-    for name in ("fin.sldprt", "00000022-001.SLDPRT", "00000023-001.SLDPRT"):  # a change of case changes nothing
+    for name in ("fin.sldprt", "Fin left.SLDPRT", "Fin port.SLDPRT"):  # a change of case changes nothing
         assert client.post("/api/rename", json={"file": fin["id"], "name": name}, headers=chief).status_code == 200
     moved = client.post("/api/move", json={"files": [fin["id"]], "folders": [], "to": "Tail"}, headers=chief)
     assert moved.status_code == 200, moved.text
     detail = client.get(f"/api/files/{fin['id']}", headers=chief).json()["file"]
-    assert (detail["path"], detail["former_names"]) == (
-        "Tail/00000023-001.SLDPRT",
-        ["fin.sldprt", "00000022-001.SLDPRT"],
-    )
+    assert (detail["path"], detail["former_names"]) == ("Tail/Fin port.SLDPRT", ["fin.sldprt", "Fin left.SLDPRT"])
     assert detail["title"] == "Fin"  # a rename leaves what it's called alone

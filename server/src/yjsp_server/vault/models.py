@@ -21,6 +21,22 @@ class Role(enum.StrEnum):
         return {Role.VIEWER: 1, Role.EDITOR: 2, Role.LEAD: 3}[self]
 
 
+class Numbering(enum.StrEnum):
+    """Whether new files take part numbers (docs/vault.md, "Part numbers"): an admin's switch."""
+
+    OFF = "off"  # not handed out but to admins: until the vault's files are numbered
+    OFFER = "offer"  # handed out to editors, and new parts and assemblies take them; files without one still go in
+    REQUIRE = "require"  # new parts, assemblies, STEP and STL files need numbers, unless they're vendors' parts
+
+
+class Applies(enum.StrEnum):
+    """What a kind of part number is for (numbers.fits)."""
+
+    PART = "part"
+    ASSEMBLY = "assembly"
+    ANY = "any"
+
+
 class VaultState(Base):
     """A single row (id 1). seq numbers committed vault changes; see vault.begin_write."""
 
@@ -29,6 +45,11 @@ class VaultState(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     seq: Mapped[int] = mapped_column(BigInteger, default=0)
     access_seq: Mapped[int] = mapped_column(BigInteger, default=0)  # seq of the last permission change
+    # Part numbers: the next to hand out (vault.reserve_numbers), and whether new files take them.
+    next_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    numbering: Mapped[Numbering] = mapped_column(
+        enum_column(Numbering), default=Numbering.OFF, server_default=Numbering.OFF.value
+    )
 
 
 class Folder(Base):
@@ -104,6 +125,51 @@ class FormerName(Base):
     name_key: Mapped[str] = mapped_column(String(255), index=True)  # paths.key of the path's last name
     changed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     changed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
+class PartKind(Base):
+    """A kind of thing a part number is for, its last 3 digits (numbers.py): 001 Part, 501 Assembly. Admins keep the
+    list. A kind is retired, never deleted: the numbers handed out with it keep it."""
+
+    __tablename__ = "part_kinds"
+
+    code: Mapped[str] = mapped_column(String(3), primary_key=True)
+    label: Mapped[str] = mapped_column(String(100))
+    applies: Mapped[Applies] = mapped_column(enum_column(Applies))
+    retired: Mapped[bool] = mapped_column(default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # None: one the vault started with
+
+
+class PartNumber(Base):
+    """A part number handed out (vault.reserve_numbers), and the file that has it once one does: one number per file.
+    Numbers are handed out once each, in order, and never again, even given back unused. Ground Structures' files
+    named by numbers from before (legacy) are here too: those numbers were never handed out, and several share one."""
+
+    __tablename__ = "part_numbers"
+    __table_args__ = (
+        Index("uq_part_numbers_file_id", "file_id", unique=True),
+        # Each number is handed out once; legacy ones share.
+        Index(
+            "uq_part_numbers_number",
+            "number",
+            unique=True,
+            sqlite_where=text("legacy = 0"),
+            postgresql_where=text("NOT legacy"),
+        ),
+        Index("ix_part_numbers_number_kind", "number", "kind"),
+        Index("ix_part_numbers_issued_by", "issued_by"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(3))  # a PartKind's code; a legacy number's may be none
+    title: Mapped[str] = mapped_column(String(200), default="")  # what to call the file that takes it; "": its name
+    file_id: Mapped[int | None] = mapped_column(ForeignKey("files.id"))
+    legacy: Mapped[bool] = mapped_column(default=False, server_default=false())
+    issued_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    issued_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # None: a legacy number
+    released_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # given back unused: it's never used
 
 
 class Checkin(Base):

@@ -1313,7 +1313,10 @@ def test_a_part_renamed_since_is_found_by_the_name_it_had(team, client):
         )
     )
     spline = checked[f"{folder}/Embout.SLDPRT"]
-    renamed = client.post("/api/rename", json={"file": spline["id"], "name": "00000022-001.SLDPRT"}, headers=chief)
+    [number] = client.post("/api/numbers", json={"kind": "001"}, headers=chief).json()["numbers"]
+    renamed = client.post(
+        "/api/rename", json={"file": spline["id"], "name": f"{number['number']}.SLDPRT"}, headers=chief
+    )
     assert renamed.status_code == 200, renamed.text
 
     found = shown(client, chief, checked["Servo/9347.SLDASM"])

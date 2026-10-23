@@ -146,6 +146,12 @@ export class Team {
         await call("POST", "/api/rename", who.token, { file: this.path(relative), name });
     }
 
+    /** A part number handed out (00000123-001), as New gets one; admins get them before numbering is turned on. */
+    async partNumber(who: Member, kind = "001"): Promise<string> {
+        const issued = await call<{ numbers: { number: string }[] }>("POST", "/api/numbers", who.token, { kind });
+        return issued.numbers[0]!.number;
+    }
+
     /** Say what a file is called (its title), as Edit title does. */
     async title(who: Member, relative: string, title: string): Promise<void> {
         await call("POST", "/api/files/metadata", who.token, { files: [{ file: this.path(relative), title }] });

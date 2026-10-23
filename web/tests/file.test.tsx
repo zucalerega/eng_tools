@@ -56,12 +56,13 @@ test("editors title a file on its page, without a new version or a check-out", a
     const team = await Team.create();
     const alice = await team.member("Alice");
     const [fin] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
-    await team.rename(team.chief, "Fins/Fin.SLDPRT", "00000124-001.SLDPRT");
-    await team.checkout(alice, "Fins/00000124-001.SLDPRT", "ALICE-PC"); // someone else's check-out is no matter
+    const number = await team.partNumber(team.chief);
+    await team.rename(team.chief, "Fins/Fin.SLDPRT", `${number}.SLDPRT`);
+    await team.checkout(alice, `Fins/${number}.SLDPRT`, "ALICE-PC"); // someone else's check-out is no matter
 
     renderApp(team.chief, fileUrl(fin!.id));
     expect(await screen.findByText("Formerly Fin.SLDPRT")).toBeTruthy();
-    const head = screen.getByRole("heading", { name: "00000124-001.SLDPRT" }).parentElement!;
+    const head = screen.getByRole("heading", { name: `${number}.SLDPRT` }).parentElement!;
     expect(within(head).getByText("Fin")).toBeTruthy(); // its name says nothing of what it is: its title does
     await userEvent.click(screen.getByRole("button", { name: "Edit title…" }));
     const dialog = screen.getByRole("dialog");

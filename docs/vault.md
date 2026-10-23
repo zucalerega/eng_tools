@@ -62,8 +62,10 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
   file, or the same STEP file in two folders, takes no extra space.
 - **Title**: what people call a file, `Fin bracket`, shown with its name. It starts as
   the file's name without its type, and anyone who can edit the file can change it. Part
-  numbers will make CAD files' names numbers (`00000123-001.SLDPRT`), and the title is what
-  says what each one is.
+  numbers make CAD files' names numbers (`00000123-001.SLDPRT`, "Part numbers" below), and
+  the title is what says what each one is.
+- **Part number**: `00000123-001`, eight digits the vault hands out in order and a kind
+  from a list admins keep. A part's or an assembly's number is its name, for good.
 - **Lock (check-out)**: a file checked out by one person on one computer.
 - **Workspace**: your local copy of the vault, at the same path on every machine
   (default `C:\VLT`).
@@ -138,7 +140,49 @@ nothing. Neither is in the file, so neither makes a version, and neither needs a
 someone else's is fine. It takes editor access to the file's folder, as a rename does. A
 title is trimmed, and refused (`bad_title`) if it's empty, longer than 200 characters, or
 has a tab or a line break in it. A change shows in the activity log (`describe`), and
-clients get it in the sync feed like any other.
+clients get it in the sync feed like any other. A check-in item may bring a `title` and
+`vendor` too, which a new file takes, and an existing one changes to, as here.
+
+**Part numbers** (`vault/numbers.py` has the rules, `vault.py` holds the vault to them). A
+part number is `NNNNNNNN-KKK`: eight digits the server hands out in order, and a kind,
+three digits from a list admins keep (`part_kinds`: 001 Part and 501 Assembly to start
+with; a kind is for parts, assemblies, or any, and is retired rather than deleted). A part's
+or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says what it is.
+
+- **Handing them out** (`POST /api/numbers {kind, title, count}`): numbers go up by one and
+  are never handed out twice, even given back unused (`POST /api/numbers/release`).
+  Whether new files take them is an admin's switch (`PUT /api/numbering {mode}`): `off`
+  until the vault's files are numbered, when only admins get numbers (the renumbering hands
+  them out itself); `offer`, when editors get them too, up to 20 unused at a time
+  (`too_many_numbers`), and the web app and the add-in number new parts and assemblies; and
+  `require`, when a new part, assembly, STEP or STL file needs a number or to be a vendor's
+  part (`part_number_needed`). Files there before go on as they are.
+- **Taking one:** a new part or assembly (or a STEP or STL file of our own) named by a
+  number handed out and not yet used takes it, for good, and with it the title it was handed
+  out with, unless it brings its own. A number not handed out (`unknown_part_number`), or
+  another file's (`part_number_taken`), or of a kind for something else, or a part's name
+  with more than its number in it (`bad_part_number`), is refused. Who it was handed out to
+  doesn't matter: whoever checks in a file named by it takes it.
+- **Named after one:** a drawing, a PDF, or an export (a STEP or STL file) of a numbered
+  part is named after its number, `00000123-001.SLDDRW` or `00000123-001 - machining.PDF`,
+  once a file has it (`unknown_part_number` otherwise). In a check-in, parts and assemblies
+  take their numbers before the files named after them, so they can go in together.
+- **Never changing:** a file with a number can't be renamed to anything else
+  (`part_number_fixed`), though it can move. A file without one can be renamed to a number
+  handed out, and takes it. A drawing renamed stays named after what it shows
+  (`drawing_name`), as a check-in has it.
+- **Vendors' parts** keep their vendors' names: a file named by a McMaster-Carr number
+  (`91251A463_Socket Head Screw.SLDPRT`) comes in marked as a vendor's, and any file can be
+  marked so (`POST /api/files/metadata`). A file named by a part number isn't a vendor's.
+- **Numbers from before:** Ground Structures named its parts and assemblies by numbers of
+  its own (`00000011-001` to `-013` are one project's parts, `00000011-501` its
+  assembly), and some have more after them (`00000004-010-6`). They keep their names
+  (migration 0019 records them as `legacy` numbers, which several files may share), and
+  the numbers handed out start after the largest any file's name had (00000022). New
+  Ground Structures files take new numbers.
+- A check-in item's `base_version` says which version its changes start from: if the file
+  is past it, the check-in is refused (`out_of_date`), so a change made to an old copy
+  isn't checked in over newer ones.
 
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. Vault refuses to delete a file that the
@@ -711,6 +755,9 @@ are in [design.md](design.md#api).
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
 | `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
+| `GET/PUT /api/numbering` | whether new files take part numbers `{mode: off, offer, or require}`, and the next number `{next_number}` (admins change them) |
+| `GET/POST /api/part-kinds`, `PATCH /api/part-kinds/{code}` | the kinds of part numbers `{code, label, applies, retired}` (admins add and change them) |
+| `POST /api/numbers`, `GET /api/numbers`, `POST /api/numbers/release` | hand out part numbers `{kind, title, count}`; yours not used yet; give back unused ones `{numbers}` |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |

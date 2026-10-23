@@ -58,6 +58,13 @@ replaces Kenesto.
   type; anyone who can edit the file changes it with **Edit title…** on its page, which
   isn't a new version and doesn't need it checked out. A renamed file lists the names it
   had ("Formerly …"), and search finds it by them too.
+- **Part numbers** (`00000123-001`: eight digits the vault hands out in order, then a
+  kind, from a list admins keep) name parts and assemblies, for good: a numbered file
+  can't be renamed, and a name that looks like a part number has to be one the vault
+  handed out. A drawing or PDF of a numbered part is named after its number
+  (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
+  Structures' numbers from before part numbers stay as they are; its new files take new
+  numbers.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every

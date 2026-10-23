@@ -110,20 +110,21 @@ test("search finds files anywhere in the vault", async () => {
     expect(screen.queryByText(/Harness/)).toBeNull();
 });
 
-test("a file given a number shows its title beside it, and search finds it by its title or the name it had", async () => {
+test("a file given a number shows its title with it, and search finds it by its title or the name it had", async () => {
     const team = await Team.create();
     await team.checkin(team.chief, { "Fins/Fin Bracket.SLDPRT": "bracket", "Fins/Rail.SLDPRT": "rail" });
-    await team.rename(team.chief, "Fins/Fin Bracket.SLDPRT", "00000123-001.SLDPRT");
+    const number = await team.partNumber(team.chief);
+    await team.rename(team.chief, "Fins/Fin Bracket.SLDPRT", `${number}.SLDPRT`);
 
     renderApp(team.chief, folderUrl(team.path("Fins")));
-    const bracket = (await screen.findByRole("link", { name: "00000123-001.SLDPRT" })).closest("tr")!;
+    const bracket = (await screen.findByRole("link", { name: `${number}.SLDPRT` })).closest("tr")!;
     expect(within(bracket).getByText("Fin Bracket")).toBeTruthy();
     // A title that says no more than the name isn't said twice.
     const rail = screen.getByRole("link", { name: "Rail.SLDPRT" }).closest("tr")!;
     expect(within(rail).queryByText("Rail")).toBeNull();
 
     const search = screen.getByRole("searchbox", { name: "Search files" });
-    const numbered = `${team.folder}/Fins/00000123-001.SLDPRT`;
+    const numbered = `${team.folder}/Fins/${number}.SLDPRT`;
     await userEvent.type(search, "bracket");
     expect(await screen.findByRole("link", { name: numbered })).toBeTruthy();
     expect(screen.queryByRole("link", { name: `${team.folder}/Fins/Rail.SLDPRT` })).toBeNull();

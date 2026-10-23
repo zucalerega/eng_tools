@@ -4,11 +4,11 @@ import { type FileDetail, type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { checkedOutHere, WEB_HOST } from "../checkouts";
 import { Dialog, Notice, Time } from "../../components";
-import { FileIcon, FileTitle, LockLabel, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileIcon, FileName, LockLabel, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatSize } from "../../format";
 import { DeleteDialog } from "../manage";
 import { NewFileDialog, StartedNotice } from "../newFile";
-import { fileUrl, kindOf, parentOf, titleBeside, trashUrl } from "../paths";
+import { kindOf, parentOf, titleBeside, trashUrl } from "../paths";
 import { Link } from "../../router";
 import { atLeast, nearestFolder, roleIn, useStore, useVault } from "../store";
 import { parentsOf, StructureTree, UsedVersion } from "../structure";
@@ -379,12 +379,10 @@ function Drawings({ model, canAdd }: { model: VaultFile; canAdd: boolean }) {
                     {drawings.map(({ use, file: drawing }) => (
                         <li key={drawing.id}>
                             <span className="tree-row">
-                                <span className="disclosure-space" />
-                                <Link to={fileUrl(drawing.id)} className="name">
-                                    <FileIcon name={drawing.name} />
-                                    {drawing.name}
-                                </Link>
-                                <FileTitle file={drawing} />
+                                <span className="tree-lead">
+                                    <span className="disclosure-space" />
+                                    <FileName file={drawing} />
+                                </span>
                                 {parentOf(drawing.path) !== folder && (
                                     <span className="muted">in {parentOf(drawing.path) || "the top folder"}</span>
                                 )}

@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { type UserRef } from "../../api";
 import { type Folder, type Listing, type VaultFile, vaultApi } from "../api";
 import { Notice, Time } from "../../components";
-import { FileIcon, FileTitle, FolderIcon } from "../components";
+import { FileName, FolderIcon } from "../components";
 import { formatSize } from "../../format";
-import { fileUrl, folderUrl } from "../paths";
+import { folderUrl } from "../paths";
 import { Link } from "../../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
 import { Breadcrumbs } from "./Browse";
@@ -128,11 +128,7 @@ export function Trash({ folder }: { folder: string }) {
                             {trash.files.map((gone: VaultFile) => (
                                 <tr key={gone.id}>
                                     <td>
-                                        <Link to={fileUrl(gone.id)} className="name">
-                                            <FileIcon name={gone.name} />
-                                            {gone.name}
-                                        </Link>{" "}
-                                        <FileTitle file={gone} />
+                                        <FileName file={gone} />
                                     </td>
                                     <td>v{gone.version}</td>
                                     <td>{deleted(gone.deleted_at, gone.deleted_by)}</td>

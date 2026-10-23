@@ -25,7 +25,7 @@ import {
 import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
 import { canCheckOut } from "../checkouts";
 import { MenuButton, Notice, Time } from "../../components";
-import { FileIcon, FileTitle, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileName, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatDate, formatSize, formatTime } from "../../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
@@ -528,22 +528,20 @@ export function FileTable({
                 {depth === 0 ? pick(fileKey(file), label) : selection && <td className="select" />}
                 <td className="name-cell">
                     <span className="tree-row" style={{ paddingLeft: `${depth * 1.4}rem` }}>
-                        {below.length > 0 ? (
-                            <button
-                                type="button"
-                                className="disclosure"
-                                aria-expanded={isOpen}
-                                aria-label={`${isOpen ? "Hide" : "Show"} what ${label} uses`}
-                                onClick={() => toggle(key)}
-                            />
-                        ) : (
-                            <span className="disclosure-space" />
-                        )}
-                        <Link to={fileUrl(file.id)} className="name">
-                            <FileIcon name={file.name} />
-                            {label}
-                        </Link>
-                        <FileTitle file={file} />
+                        <span className="tree-lead">
+                            {below.length > 0 ? (
+                                <button
+                                    type="button"
+                                    className="disclosure"
+                                    aria-expanded={isOpen}
+                                    aria-label={`${isOpen ? "Hide" : "Show"} what ${label} uses`}
+                                    onClick={() => toggle(key)}
+                                />
+                            ) : (
+                                <span className="disclosure-space" />
+                            )}
+                            <FileName file={file} label={label} />
+                        </span>
                         {user && folder !== parentOf(user.path) && (
                             <span className="muted">in {folder || "the top folder"}</span>
                         )}

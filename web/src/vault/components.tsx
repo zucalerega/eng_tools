@@ -4,7 +4,7 @@ import { formatTime } from "../format";
 import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
-import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks, titleBeside } from "./paths";
+import { caliperUrl, fileUrl, kindOf, opensInCaliper, opensInSolidWorks, titleBeside } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -47,10 +47,34 @@ export function FileIcon({ name }: { name: string }) {
     );
 }
 
-/** A file's title, beside its name, where it says more than the name does (titleBeside). */
-export function FileTitle({ file }: { file: VaultFile }) {
+/**
+ * A file's name, a link to its page, with its title under it where the title says more than the name does: once
+ * someone named it, or its name is a part number (titleBeside). label: the name as the list has it (a path, say).
+ */
+export function FileName({ file, label = file.name }: { file: VaultFile; label?: string }) {
     const title = titleBeside(file);
-    return title ? <span className="file-title">{title}</span> : null;
+    if (!title) {
+        return (
+            <Link to={fileUrl(file.id)} className="name">
+                <FileIcon name={file.name} />
+                {label}
+            </Link>
+        );
+    }
+    // The name itself (a part number) stays whole, though a path before it may wrap.
+    const at = label.length - file.name.length;
+    return (
+        <span className="file-name">
+            <Link to={fileUrl(file.id)} className="name">
+                <FileIcon name={file.name} />
+                <span>
+                    {label.slice(0, at)}
+                    <span className="file-name-whole">{label.slice(at)}</span>
+                </span>
+            </Link>
+            <span className="file-title">{title}</span>
+        </span>
+    );
 }
 
 export function FolderIcon() {

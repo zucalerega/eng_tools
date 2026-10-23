@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { Use, VaultFile } from "./api";
-import { FileIcon, FileTitle, StatusLabel } from "./components";
+import { FileName, StatusLabel } from "./components";
 import { fileUrl, kindOf, parentOf } from "./paths";
 import { Link } from "../router";
 import { useVault, type VaultState } from "./store";
@@ -137,26 +137,24 @@ export function StructureTree({
                 return (
                     <li key={key}>
                         <span className="tree-row">
-                            {below.length > 0 ? (
-                                <button
-                                    type="button"
-                                    className="disclosure"
-                                    aria-expanded={isOpen}
-                                    aria-label={
-                                        direction === "down"
-                                            ? `${isOpen ? "Hide" : "Show"} what ${child.name} uses`
-                                            : `${isOpen ? "Hide" : "Show"} where ${child.name} is used`
-                                    }
-                                    onClick={() => toggle(key)}
-                                />
-                            ) : (
-                                <span className="disclosure-space" />
-                            )}
-                            <Link to={fileUrl(child.id)} className="name">
-                                <FileIcon name={child.name} />
-                                {child.name}
-                            </Link>
-                            <FileTitle file={child} />
+                            <span className="tree-lead">
+                                {below.length > 0 ? (
+                                    <button
+                                        type="button"
+                                        className="disclosure"
+                                        aria-expanded={isOpen}
+                                        aria-label={
+                                            direction === "down"
+                                                ? `${isOpen ? "Hide" : "Show"} what ${child.name} uses`
+                                                : `${isOpen ? "Hide" : "Show"} where ${child.name} is used`
+                                        }
+                                        onClick={() => toggle(key)}
+                                    />
+                                ) : (
+                                    <span className="disclosure-space" />
+                                )}
+                                <FileName file={child} />
+                            </span>
                             {folder !== parentOf(parent.path) && (
                                 <span className="muted">in {folder || "the top folder"}</span>
                             )}

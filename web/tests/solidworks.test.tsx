@@ -27,4 +27,6 @@ test("the SolidWorks page has the add-in's installer, and connects SolidWorks to
     const partsMissing = screen.getByText("An assembly opens with parts missing").closest("details")!;
     expect(partsMissing.textContent).toContain("3D Interconnect");
     expect(partsMissing.textContent).toContain("the Vault tab names");
+    // Including those of a folder uploaded again under another name, with old copies still on the computer.
+    expect(partsMissing.textContent).toContain("Update downloaded files first");
 });

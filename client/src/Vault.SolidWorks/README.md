@@ -127,15 +127,21 @@ While you work:
   Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
   file, and from its sub-assemblies, and gets the vault's files whose paths end the same
-  way (`09_Hopper\...`), so they come along like any other assembly's parts. A STEP (or
+  way (`09_Hopper\...`), so they come along like any other assembly's parts. So do the
+  parts of an assembly saved before their folder was uploaded again under another name and
+  the old copies deleted: it still names them in `C:\VLT` (`C:\VLT\09_Hopper\Tanks\...`,
+  now `Hopper\Tanks\...`), and Vault gets the vault's file whose path ends the same way,
+  with its folder's name the same at least (a copy of the old file still here is what
+  SolidWorks opens: Update downloaded files removes those). A STEP (or
   other CAD) file placed with 3D Interconnect is named in the file by the copy SolidWorks
   made of it in its temporary folder (`...\Temp\swx19380\IC~~\BMS.step.SLDASM`), which is
   never on disk: Vault gets the file it was made from (`BMS.step`), and of two with its
   name, the one in the folder most like the assembly's. Parts that aren't in the vault are
   named on the tab (a STEP file by its own name), with their old paths in the log. When
-  SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or
-  by its name, when only one file in the vault has it). Checking in an assembly that still
-  uses files the vault doesn't have lists them all, and checks nothing in.
+  SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or,
+  for a path from elsewhere, by its name, when only one file in the vault has it).
+  Checking in an assembly that still uses files the vault doesn't have lists them all, and
+  checks nothing in.
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
@@ -453,6 +459,14 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     shows them changed), and nothing else asks. Save again and answer Yes: the parts but the
     other person's are checked out to you and saved. Click Check in: "Save changes before
     checking in?" lists only files checked out to you or new, if any changed.
+44. Uploaded again: check in from SolidWorks an assembly in a folder `Old`, with parts in a
+    subfolder `Old\Parts` and one beside it. Save it as `New\A.SLDASM` (still using `Old`'s
+    parts), upload `Old\Parts` and the other part into `New` in the web app, check
+    `New\A.SLDASM` in, and delete `Old` (Delete anyway). On another PC (or after Free up
+    space), open `New\A.SLDASM` from the Browse tab: the parts from `New\Parts` come down and
+    it opens with them, none grey or ⚠; the tab names the part beside it, which only its name
+    ties to its copy. With a copy of `Old` still on that PC, SolidWorks opens those: Update
+    downloaded files removes them, and then it opens with `New`'s.
 
 ## When something goes wrong
 

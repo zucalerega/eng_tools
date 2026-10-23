@@ -144,6 +144,13 @@ replaces Kenesto.
   uses files the vault doesn't have, checking it in lists them, to upload them or take them
   out of it. Once the team works from the vault, disconnect Kenesto's drive, so no one
   opens a part from there.
+- **Move files with Move, not by uploading them again:** Move or Rename in the web app
+  keeps a file's history, and refuses a move that would leave an assembly without its
+  parts. Uploading a folder again under another name and deleting the old one starts every
+  file's history over, and assemblies saved before still name the old folder. The add-in
+  finds the new copies when it opens such an assembly (the file whose path ends the same
+  way, in a folder of the same name at least), but check the assembly out, save it, and
+  check it in, so it names them for good.
 
 ## Yorg: test data
 

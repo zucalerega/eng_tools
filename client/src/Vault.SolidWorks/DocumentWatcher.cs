@@ -54,7 +54,7 @@ internal sealed class DocumentWatcher : IDisposable
             case PartDoc part:
                 DPartDocEvents_FileSaveNotifyEventHandler partSave = _ => BeforeSave(document);
                 DPartDocEvents_FileSaveAsNotify2EventHandler partSaveAs = _ => BeforeSaveAs(document);
-                DPartDocEvents_FileSavePostNotifyEventHandler partSaved = (_, _) => AfterSave();
+                DPartDocEvents_FileSavePostNotifyEventHandler partSaved = (_, _) => AfterSave(document);
                 DPartDocEvents_ModifyNotifyEventHandler partModified = () => Modified(document);
                 DPartDocEvents_DestroyNotify2EventHandler partDestroyed = type => Destroyed(document, type);
                 part.FileSaveNotify += partSave;
@@ -74,7 +74,7 @@ internal sealed class DocumentWatcher : IDisposable
             case AssemblyDoc assembly:
                 DAssemblyDocEvents_FileSaveNotifyEventHandler assemblySave = _ => BeforeSave(document);
                 DAssemblyDocEvents_FileSaveAsNotify2EventHandler assemblySaveAs = _ => BeforeSaveAs(document);
-                DAssemblyDocEvents_FileSavePostNotifyEventHandler assemblySaved = (_, _) => AfterSave();
+                DAssemblyDocEvents_FileSavePostNotifyEventHandler assemblySaved = (_, _) => AfterSave(document);
                 DAssemblyDocEvents_ModifyNotifyEventHandler assemblyModified = () => Modified(document);
                 DAssemblyDocEvents_DestroyNotify2EventHandler assemblyDestroyed = type => Destroyed(document, type);
                 assembly.FileSaveNotify += assemblySave;
@@ -94,7 +94,7 @@ internal sealed class DocumentWatcher : IDisposable
             case DrawingDoc drawing:
                 DDrawingDocEvents_FileSaveNotifyEventHandler drawingSave = _ => BeforeSave(document);
                 DDrawingDocEvents_FileSaveAsNotify2EventHandler drawingSaveAs = _ => BeforeSaveAs(document);
-                DDrawingDocEvents_FileSavePostNotifyEventHandler drawingSaved = (_, _) => AfterSave();
+                DDrawingDocEvents_FileSavePostNotifyEventHandler drawingSaved = (_, _) => AfterSave(document);
                 DDrawingDocEvents_ModifyNotifyEventHandler drawingModified = () => Modified(document);
                 DDrawingDocEvents_DestroyNotify2EventHandler drawingDestroyed = type => Destroyed(document, type);
                 drawing.FileSaveNotify += drawingSave;
@@ -141,8 +141,12 @@ internal sealed class DocumentWatcher : IDisposable
         }
     });
 
-    private int AfterSave() => Guard(() =>
+    private int AfterSave(ModelDoc2 document) => Guard(() =>
     {
+        if (SolidWorksHost.PathOf(document) is { } path)
+        {
+            _pane.SaveEnded(path);
+        }
         _pane.RefreshSoon();
         return 0;
     });

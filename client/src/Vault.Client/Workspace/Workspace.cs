@@ -1115,7 +1115,8 @@ public sealed class Workspace : IDisposable
                 throw new WorkspaceException(status switch
                 {
                     { State: FileState.Missing } => $"{status.VaultPath} isn't in this workspace; get it first",
-                    { State: FileState.DeletedInVault } => $"{status.VaultPath} was deleted in the vault",
+                    { State: FileState.DeletedInVault } =>
+                        $"{status.VaultPath} was deleted from the vault since you got it. Restore it from its folder's trash in the web app to check it in.",
                     { Lock: { } mine } when mine.User.Id == _me?.Id => $"{status.VaultPath} is checked out to you on {mine.Host}, not this computer",
                     _ => await NotYoursAsync(status, ct).ConfigureAwait(false),
                 });
@@ -1309,7 +1310,10 @@ public sealed class Workspace : IDisposable
                 }
                 if (used.State == FileState.DeletedInVault)
                 {
-                    throw new WorkspaceException($"{item.VaultPath} uses {vaultPath}, which was deleted in the vault");
+                    // Checked in, the vault would have a hole where it was: put it back, or take it out.
+                    throw new WorkspaceException(
+                        $"{item.VaultPath} uses {vaultPath}, which was deleted from the vault since you got it. Restore it from its "
+                        + $"folder's trash in the web app, or take it out of {Path.GetFileName(item.VaultPath)}, then check in again.");
                 }
                 var joins = used.State == FileState.New || (withChanged && used.CheckedOutByMe && used.State == FileState.Modified);
                 if (joins && included.Add(key))

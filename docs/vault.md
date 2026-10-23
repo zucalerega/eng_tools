@@ -397,7 +397,10 @@ on top of it.
   changes, go into the same check-in. Every reference is pinned to the version this
   workspace has, which is the one the assembly was built against. References outside the
   workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
-  saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
+  saying to move them in first, and so is a reference to a file deleted from the vault
+  since it came here, saying to restore it from its folder's trash or take it out of the
+  assembly: checked in, the assembly would have a hole where it was. Saving such a file
+  in SolidWorks says the same, and offers Save As. The CLI can't read SolidWorks files, so it doesn't send
   references, and the server refuses drawings from it (a drawing must show a part or
   assembly).
 
@@ -449,7 +452,10 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   in `Theme.cs` and `PaneControls.cs` (flat WinForms controls, and File Explorer's theme for
   the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
   20 seconds and after every action, and redraws only when something changed, so what you
-  opened in the tree stays open.
+  opened in the tree stays open. Its questions and warnings are its own box
+  (`MessageDialog`), not Windows' `MessageBox`, which grows with its text past the screen,
+  where neither its title bar nor its buttons can be reached, and can't scroll: Vault's is
+  never taller than 80% of the screen it's on, and a longer message scrolls.
 - **Titles and part numbers.** Files' titles show after their names in Browse and under the
   active document's name, where they say more than the names do (`Titles.Beside` in
   `Vault.Client`), with Edit title on a file's right-click menu. Right-clicking a folder in
@@ -471,6 +477,16 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   (`FileSaveAsNotify2`), the add-in checks the file out and saves it in place
   (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
   to save under another name.
+- **Saving along.** Saving an assembly (or a drawing) saves the files it uses that changed
+  too, and in SolidWorks 2026 that's every file last saved in an older SolidWorks, which
+  counts as changed once it's open: SolidWorks turns each that isn't checked out to you
+  into a Save As. So the first of them asks about them all, once (`SaveAlong`): Yes checks
+  out those that can be, in one go, and saves them; No (the default) leaves them as the
+  vault has them, what changed in them still on screen. Those someone else has, deleted
+  from the vault, or out of date are named and never saved. The file being saved is the
+  active document, or the one Vault saves before a check-in; the answer holds until its
+  save ends (`FileSavePostNotify`), or a minute. Check-in saves only the open files you
+  can save: one that isn't checked out to you can't go in it anyway.
 - **Open files.** SolidWorks holds the files it has open, including parts that an open
   assembly uses, even after the part's own window is closed. Before get latest, undo,
   or a check-out that needs the latest version replaces open files, SolidWorks lets go

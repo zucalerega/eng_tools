@@ -141,6 +141,11 @@ export class Team {
         await call("POST", "/api/checkout", who.token, { files: [this.path(relative)], host });
     }
 
+    /** Files deleted to the trash, as the web app's Delete anyway does, even ones that files staying behind use. */
+    async delete(who: Member, ...relative: string[]): Promise<void> {
+        await call("POST", "/api/delete", who.token, { files: relative.map((r) => this.path(r)), force: true });
+    }
+
     /** A mesh uploaded as Vault for SolidWorks uploads them, gzip-compressed: its SHA-256. */
     async mesh(who: Member, mesh: Mesh): Promise<string> {
         const data = gzipSync(writeMesh(mesh));

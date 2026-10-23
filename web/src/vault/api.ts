@@ -143,6 +143,7 @@ export interface CaliperComponent {
     kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
     format?: "step" | "iges" | null; // a STEP or IGES file's, placed with 3D Interconnect: read as it is
     virtual?: boolean; // kept inside the assembly (a routed tube): without a mesh, no shape of it was found there
+    deleted?: boolean; // its file is in the trash: shown as it was, but SolidWorks won't find it
     children: CaliperComponent[];
 }
 

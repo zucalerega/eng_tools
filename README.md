@@ -75,7 +75,10 @@ replaces Kenesto.
   saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
-  configurations; Caliper lists the parts it couldn't show, and why. A part saved without
+  configurations; Caliper lists the parts it couldn't show, and why. It still shows parts
+  whose files were deleted since, but marks them "In the trash", and says so above the list:
+  SolidWorks won't find those, so restore them, or have the assembly use their new copies
+  and check it in. A part saved without
   its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
   in the colors SolidWorks shows, and so are routed tubes, which their assembly keeps inside
   its file. The server reads a version's model once and keeps it; when an update reads files

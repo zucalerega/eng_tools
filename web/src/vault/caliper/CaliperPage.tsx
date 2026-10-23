@@ -8,7 +8,7 @@ import { ComponentTree } from "./ComponentTree";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
-import { initiallyHidden, shownNodes, type Model, type Units, type Why } from "./model";
+import { initiallyHidden, shownNodes, walk, type Model, type Units, type Why } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
 
@@ -446,6 +446,7 @@ function CaliperView({
         viewer.current?.fit(new Set([id]));
     };
     const missing = loaded ? tallyMissing(loaded.model) : null;
+    const trashed = loaded ? trashedFiles(loaded.model) : 0;
     const isolatedName = isolated && loaded ? nameOf(loaded.model, [...isolated][0]!) : null;
 
     return (
@@ -479,6 +480,7 @@ function CaliperView({
                         can't see, so they're left out.
                     </p>
                 )}
+                {trashed > 0 && <InTheTrash files={trashed} />}
                 {missing && <NotShown tally={missing} />}
                 {loaded && (
                     <ComponentTree
@@ -581,6 +583,40 @@ function tallyMissing(model: Model): Record<Why, number> {
         });
     visit(model.nodes);
     return tally;
+}
+
+/** How many files an assembly uses are in the trash: each once, however many components are of it. */
+function trashedFiles(model: Model): number {
+    const files = new Set<number>();
+    for (const node of walk(model.nodes)) {
+        if (node.trashed && node.file) {
+            files.add(node.file.id);
+        }
+    }
+    return files.size;
+}
+
+/**
+ * Files an assembly uses that were deleted since: Caliper draws them as the assembly had them, but SolidWorks, which
+ * looks for files on disk, won't find them, so the assembly isn't whole there, as when a folder was uploaded again
+ * elsewhere and the old copies deleted.
+ */
+function InTheTrash({ files }: { files: number }) {
+    const them = files === 1 ? "it" : "them";
+    return (
+        <div className="caliper-side-note">
+            <Notice tone="warning">
+                <p>
+                    {files === 1 ? "1 file it uses is" : `${files} files it uses are`} in the trash, so SolidWorks won't
+                    find {them}, though Caliper shows {them}.
+                </p>
+                <p>
+                    Restore {them} from the trash, or open the assembly in SolidWorks, have it use the new{" "}
+                    {files === 1 ? "copy" : "copies"}, and check it in.
+                </p>
+            </Notice>
+        </div>
+    );
 }
 
 /**

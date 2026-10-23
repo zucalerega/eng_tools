@@ -606,6 +606,13 @@ Where the 3D comes from:
     - **What isn't shown:** parts that were never put in the vault; and virtual parts
       without a shape the server could read where they're kept, which Caliper says (Make 3D
       view makes them, where SolidWorks can build them).
+    - **Parts in the trash are shown, and marked.** A version uses the files it was made
+      with, even ones deleted since, so its model still shows them; but SolidWorks, which
+      looks for files on disk, won't find them, as when an assembly was saved against a
+      folder that was then uploaded again elsewhere and the old copies deleted. So each
+      component says whether its file is in the trash (`deleted`), and Caliper says how many
+      files the assembly uses are, and marks them in its list: restore them, or have the
+      assembly use their new copies in SolidWorks and check it in.
     - **Reading improves, and models are read again.** Each model the server reads notes
       which release of its reader made it (`reader`, `solidworks.READER`, which goes up when
       what the server reads from a file changes). Once a newer one is out, an older one's
@@ -693,7 +700,7 @@ are in [design.md](design.md#api).
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; `virtual` for a part kept inside the assembly; and `deleted` for one whose file is in the trash), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 
 ## Roadmap

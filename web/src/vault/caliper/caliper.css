@@ -109,6 +109,11 @@
     font-size: 0.82rem;
 }
 
+.caliper-side-note .notice {
+    margin: 0;
+    padding: 0.5rem 0.65rem;
+}
+
 .caliper-isolated {
     display: flex;
     flex-wrap: wrap;

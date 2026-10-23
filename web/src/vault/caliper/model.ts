@@ -38,6 +38,7 @@ export interface Node {
     children: Node[];
     problem?: string; // why there's nothing to draw, in full: the server's reason, a mesh that didn't load
     why?: Why; // and what sort of reason, for the page to sum up
+    trashed?: boolean; // its file is in the trash: drawn as the assembly had it, but SolidWorks won't find it
 }
 
 /** Why a component draws nothing: what SolidWorks can fix (configuration, unreadable), and what it can't. */

@@ -389,6 +389,8 @@ class CaliperComponentOut(CaliperComponentIn):
     kind: Literal["part", "assembly"] | None = None
     # A STEP or IGES file's (placed with SolidWorks' 3D Interconnect), which the web app reads as it is.
     format: Literal["step", "iges"] | None = None
+    # Its file is in the trash, deleted since the assembly was made: shown as it was, but SolidWorks won't find it.
+    deleted: bool = False
     children: list["CaliperComponentOut"] = []
 
 

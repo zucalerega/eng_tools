@@ -269,6 +269,41 @@ test("components in folders you can't see are left out, with what's in them", as
     expect(tree().queryByRole("checkbox", { name: "Show Motor-1" })).toBeNull();
 });
 
+test("parts drawn from files in the trash say so, since SolidWorks won't find them", async () => {
+    // An assembly saved before its parts' folder was uploaded again elsewhere and the old copies deleted.
+    const team = await Team.create();
+    const [tank, leg, fin] = await team.checkin(team.chief, {
+        "09_Hopper/Tank.SLDASM": "tank",
+        "09_Hopper/Leg.SLDPRT": "leg",
+        "Hopper/Fin.SLDPRT": "fin",
+    });
+    const [vehicle] = await team.checkin(
+        team.chief,
+        { "Hopper/Vehicle.SLDASM": "vehicle" },
+        { refs: { "Hopper/Vehicle.SLDASM": ["09_Hopper/Tank.SLDASM", "09_Hopper/Leg.SLDPRT", "Hopper/Fin.SLDPRT"] } },
+    );
+    await team.model(team.chief, leg!, { mesh: tetrahedra("Leg") });
+    await team.model(team.chief, fin!, { mesh: tetrahedra("Fin") });
+    await team.model(team.chief, vehicle!, {
+        components: [
+            component("Tank-1", tank!, { children: [component("Leg-1", leg!), component("Leg-2", leg!)] }),
+            component("Fin-1", fin!),
+        ],
+    });
+    await team.delete(team.chief, "09_Hopper/Tank.SLDASM", "09_Hopper/Leg.SLDPRT");
+
+    renderApp(team.chief, caliperUrl(vehicle!.id));
+    expect(await screen.findByText(/^2 files it uses are in the trash/)).toBeTruthy();
+    const row = (name: string) =>
+        tree()
+            .getByRole("checkbox", { name: `Show ${name}` })
+            .closest("li")!;
+    expect(within(row("Tank-1")).getByText("In the trash")).toBeTruthy();
+    expect(within(row("Fin-1")).queryByText("In the trash")).toBeNull();
+    await userEvent.click(tree().getByRole("button", { name: "Show what's in Tank-1" }));
+    expect(within(row("Leg-2")).getByText("In the trash")).toBeTruthy();
+});
+
 test("a version with no model says why; with none asked for, the newest that has one shows", async () => {
     const team = await Team.create();
     const [fin] = await team.checkin(team.chief, { "Fin.SLDPRT": "fin v1" });

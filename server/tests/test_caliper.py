@@ -219,6 +219,26 @@ def test_components_of_files_you_cant_see_are_left_out(team, client):
     assert client.get(f"/api/files/{grain['id']}/caliper", headers=alice).status_code == 404
 
 
+def test_components_of_files_in_the_trash_say_so(team, client):
+    # An assembly saved against files deleted since, as when a folder is uploaded again elsewhere and the old copies
+    # deleted: its model still shows them, from the trash, but SolidWorks, looking for them on disk, won't find them.
+    chief = team.member("chief@x.test", admin=True)
+    old = {"09_Hopper/Tank.SLDASM": b"tank", "09_Hopper/Leg.SLDPRT": b"leg"}
+    made = files(team.checkin(chief, {**old, "Hopper/Fin.SLDPRT": b"fin"}))
+    tank, leg, fin = made["Tank.SLDASM"], made["Leg.SLDPRT"], made["Fin.SLDPRT"]
+    uses = {"Hopper/Vehicle.SLDASM": [*old, "Hopper/Fin.SLDPRT"]}
+    vehicle = files(team.checkin(chief, {"Hopper/Vehicle.SLDASM": b"vehicle"}, refs=uses))["Vehicle.SLDASM"]
+    components = [component("Tank-1", tank, children=[component("Leg-1", leg)]), component("Fin-1", fin)]
+    assert put_model(team, chief, vehicle, components=components).status_code == 200
+    gone = client.post("/api/delete", json={"files": list(old), "folders": [], "force": True}, headers=chief)
+    assert gone.status_code == 200, gone.text
+
+    params = {"version": 1, "configuration": "Default"}
+    got = client.get(f"/api/files/{vehicle['id']}/caliper/assembly", params=params, headers=chief).json()
+    shown_tank, shown_fin = got["components"]
+    assert (shown_tank["deleted"], shown_tank["children"][0]["deleted"], shown_fin["deleted"]) == (True, True, False)
+
+
 def test_which_models_are_missing(team, client):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test")

@@ -1861,7 +1861,9 @@ def caliper_assembly(
 ) -> AssemblyModel:
     """An assembly's model, with the components the user can see: one of a file they can't see is left out, with
     everything in it, as the rest of the vault leaves out such files. A component whose file's model an older reader
-    made has none of its own (model), so Caliper has the server make it again."""
+    made has none of its own (model), so Caliper has the server make it again. One whose file was deleted since is
+    still shown, as the version used it, but says so (deleted): SolidWorks, which looks for files on disk, won't find
+    it, as when a folder was uploaded again elsewhere and the old copies deleted."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     model = _find_model(db, tree, file, version, configuration)
@@ -1895,7 +1897,10 @@ def caliper_assembly(
             kind = _caliper_kind(file.name) if file is not None else None
             cad = _cad_format(file.name) if file is not None else None
             children = visible(component.get("children") or [])
-            kept.append({**component, "model": own, "kind": kind, "format": cad, "children": children})
+            deleted = file is not None and file.deleted_at is not None
+            kept.append(
+                {**component, "model": own, "kind": kind, "format": cad, "deleted": deleted, "children": children}
+            )
         return kept
 
     components = visible(model.components)

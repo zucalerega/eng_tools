@@ -210,6 +210,7 @@ export async function assemblyModel(
             ...(c.opacity < 1 ? { opacity: c.opacity } : {}),
             children: c.children.map((child, i) => node(child, `${id}/${i}`)),
             ...problem(c, found),
+            ...(c.deleted ? { trashed: true } : {}),
         };
     };
     return {

@@ -94,6 +94,14 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                         {latest && latest.version !== node.file.version && ` (now v${latest.version})`}
                     </span>
                 )}
+                {node.trashed && (
+                    <span
+                        className="tag tag-warning"
+                        title="Its file was deleted from the vault since, so SolidWorks won't find it: restore it, or have the assembly use its new copy"
+                    >
+                        In the trash
+                    </span>
+                )}
                 {node.problem && (
                     <span className="tag tag-warning" title={node.problem}>
                         {TAGS[node.why ?? "unreadable"]}

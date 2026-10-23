@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 
-// A text cell's Markdown, shown: headings, paragraphs, lists, quotes, code, rules, bold, italics, and links. It's made
-// of React's elements, never HTML from the text, so a notebook can put nothing on the page but what it says; and links
-// go only to the web (http, https), mail, or the site's own pages.
+// Markdown, shown: a notebook's text cells (Yorg's scripts), and Claude's answers in Help. Headings, paragraphs, lists,
+// quotes, code, rules, tables, bold, italics, and links. It's made of React's elements, never HTML from the text, so
+// what it shows can put nothing on the page but what it says; and links go only to the web (http, https), mail, or the
+// site's own pages.
 
 const SAFE_LINK = /^(https?:|mailto:|\/(?!\/))/i;
 
@@ -55,6 +56,22 @@ const BULLET = /^\s*[-*+]\s+(.*)$/;
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
 const QUOTE = /^\s*>\s?(.*)$/;
 const FENCE = /^\s*```/;
+// A table: a row of cells between pipes, then a rule of dashes under each cell (|---|:--:|), then its rows.
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+/** A table row's cells: what's between its pipes, where \| is a pipe in a cell. */
+function cells(row: string): string[] {
+    return row
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/(?<!\\)\|$/, "")
+        .split(/(?<!\\)\|/)
+        .map((cell) => cell.trim().replaceAll("\\|", "|"));
+}
+
+/** Whether a table starts at this line: a row with pipes, with its rule under it. */
+const tableAt = (lines: string[], at: number) =>
+    lines[at]!.includes("|") && at + 1 < lines.length && TABLE_RULE.test(lines[at + 1]!);
 
 /** Markdown's blocks, each shown. */
 function blocks(lines: string[], key = "b"): ReactNode[] {
@@ -89,6 +106,39 @@ function blocks(lines: string[], key = "b"): ReactNode[] {
             const Heading = `h${level}` as "h2" | "h3" | "h4" | "h5" | "h6";
             found.push(<Heading key={next()}>{inline(heading[2]!, next())}</Heading>);
             at += 1;
+            continue;
+        }
+        if (tableAt(lines, at)) {
+            const header = cells(line);
+            const rows: string[][] = [];
+            at += 2; // the header, and the rule under it
+            while (at < lines.length && lines[at]!.trim() && lines[at]!.includes("|")) {
+                rows.push(cells(lines[at]!));
+                at += 1;
+            }
+            const table = next();
+            found.push(
+                <div key={table} className="markdown-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                {header.map((cell, column) => (
+                                    <th key={column}>{inline(cell, `${table}-h${column}`)}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row, index) => (
+                                <tr key={index}>
+                                    {header.map((_, column) => (
+                                        <td key={column}>{inline(row[column] ?? "", `${table}-${index}-${column}`)}</td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>,
+            );
             continue;
         }
         if (RULE.test(line)) {
@@ -136,7 +186,8 @@ function blocks(lines: string[], key = "b"): ReactNode[] {
                 !RULE.test(lines[at]!) &&
                 !QUOTE.test(lines[at]!) &&
                 !BULLET.test(lines[at]!) &&
-                !NUMBERED.test(lines[at]!)
+                !NUMBERED.test(lines[at]!) &&
+                !tableAt(lines, at)
             ) {
                 paragraph.push(lines[at]!.trim());
                 at += 1;
@@ -147,7 +198,7 @@ function blocks(lines: string[], key = "b"): ReactNode[] {
     return found;
 }
 
-/** A text cell's Markdown, shown. */
+/** Markdown, shown. */
 export function Markdown({ source }: { source: string }) {
     return <div className="markdown">{blocks(source.split("\n"))}</div>;
 }

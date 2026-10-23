@@ -32,6 +32,7 @@ On the server:
 |---|---|
 | `/opt/yjsp/app/server` | The server's code (`server/` from the repository) and its `.venv`, made by uv 0.12 with Python 3.13 from `/opt/yjsp/python` |
 | `/opt/yjsp/app/web/dist` | The built web app, which the server serves |
+| `/opt/yjsp/app/help` | The docs the help shows (`/help`) and Claude reads: `README.md`, `docs/`, and the add-in's README, as laid out in the repository |
 | `/srv/yjsp/.env` | Settings and secrets (below). Readable only by `yjsp` |
 | `/srv/yjsp/data` | `yjsp.db` (SQLite: accounts, Vault's tables, Yorg's), `vault/blobs/` (every version of every file in Vault), `yorg/` (Yorg's uploads and arrays, scripts, and models) |
 | `/srv/yjsp/downloads` | `Vault-Setup.exe` and `vault.exe`, offered on Vault's SolidWorks page, and `Vault-Setup.exe.sig`, the installer's signature |
@@ -65,10 +66,15 @@ YJSP_VAULT_DIR=/srv/yjsp/data/vault
 YJSP_YORG_DIR=/srv/yjsp/data/yorg
 YJSP_DOWNLOADS_DIR=/srv/yjsp/downloads
 YJSP_WEB_DIR=/opt/yjsp/app/web/dist
+YJSP_HELP_DIR=/opt/yjsp/app/help
+# Claude, in Help ("Claude", below): what it may spend in all, the credits it has, and on one
+# person's questions in any 24 hours, in US dollars, as YJSP_ASSISTANT_BUDGET and
+# YJSP_ASSISTANT_DAILY_LIMIT.
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
-# them the site offers Google's alone, which makes no new accounts: only invites join).
+# them the site offers Google's alone, which makes no new accounts: only invites join), and
+# YJSP_ANTHROPIC_API_KEY (Claude, in Help: see "Claude" below).
 ```
 
 ## Getting access
@@ -137,7 +143,8 @@ What [`deploy/deploy.sh`](../deploy/deploy.sh) does:
    (`../.yjsp-deploy`, removed when it's done), and runs `npm ci` and `npm run build` there.
    So what ships is exactly that commit, whatever you have open, and the web app always
    matches the server.
-3. It copies `server/` and `web/dist` to the server, beside the running ones.
+3. It copies `server/`, `web/dist`, and the docs the help shows (`README.md`, `docs/`, the
+   add-in's README) to the server, beside the running ones.
 4. On the server it backs up the database (`backups/yjsp-before-deploy-<time>.db.gz`),
    stops `yjsp.service`, swaps the new code in (keeping the `.venv`), updates the Python
    packages with `uv sync --locked`, and starts the service again. The site is down for
@@ -145,7 +152,9 @@ What [`deploy/deploy.sh`](../deploy/deploy.sh) does:
 5. It waits up to 30 seconds for `/healthz`. If the new version doesn't answer, it shows
    the service's last log lines, puts the old version back, and fails.
 
-It ends with **"Deployed: YJSP answers."** A deploy takes a few minutes, mostly `npm ci`.
+It ends with **"Deployed: YJSP answers."** A deploy takes a few minutes, mostly `npm ci`. If
+the help page is empty after it, the server's `.env` lacks `YJSP_HELP_DIR`, and the script says
+so.
 
 ### Before deploying
 
@@ -159,6 +168,7 @@ It ends with **"Deployed: YJSP answers."** A deploy takes a few minutes, mostly 
 
 - The script said "Deployed: YJSP answers."
 - https://lucazerega.tail07089c.ts.net opens and you can sign in.
+- https://lucazerega.tail07089c.ts.net/help shows the help, signed out too.
 - If the release changed Vault: on a scratch folder, check a file in, out, and in again.
 - If it changed Yorg: a dataset opens and plots.
 - The service's log is clean (see [Looking after it](#looking-after-it)).
@@ -232,6 +242,30 @@ team's key ([below](#signing-key)), which CI does only for `main` and release ta
 only a build CI made from one of those, as for a deploy, with its signature. Without it, or
 with another build's, laptops refuse the update and say why. Add-ins up to 0.5.2 don't
 check signatures: the protection starts on each laptop once it has an add-in newer than that.
+
+### Claude
+
+Help, in the web app's top bar, asks Claude (Anthropic's API) about the site, from the help
+(`assistant.py`). It needs an API key and a budget in `.env`, and it stops answering at
+either of two limits it keeps itself, counting what every answer cost: the budget, in all
+(`YJSP_ASSISTANT_BUDGET`, the credits it may use), and each person's questions in any 24
+hours (`YJSP_ASSISTANT_DAILY_LIMIT`). Admin > People's *Claude* card shows what it has spent,
+and on whose questions; the server keeps no one's questions, only their cost. To set it up:
+
+1. In the Claude Console, on the account with the credits, make a workspace for the site,
+   `YJSP`, and give it a spend limit of the credits you mean it to have: Anthropic's own cap,
+   under the server's, in case the server's count is ever off.
+2. Make an API key in that workspace. Put it on the server's `.env` as
+   `YJSP_ANTHROPIC_API_KEY`, with `YJSP_ASSISTANT_BUDGET` at most the workspace's limit, and
+   restart the service. Never put the key anywhere else.
+3. Ask Help something in the web app, and see the cost on Admin > People.
+
+It uses Claude Sonnet 5.5 at high effort (`YJSP_ASSISTANT_MODEL`, `YJSP_ASSISTANT_EFFORT`;
+`server/.env.example` lists the others). Every question reads all of the help, about 50,000
+tokens, and Anthropic keeps it an hour for the questions after: the first question in an hour
+costs about 25 cents, and each after it a few cents. To give it more, raise
+`YJSP_ASSISTANT_BUDGET` (and the workspace's limit) and restart; to stop it, unset the key.
+When the credits run out, Help says so, and the rest of the site carries on.
 
 ### Signing key
 
@@ -414,7 +448,7 @@ If the VM is ever lost or moved:
    `/usr/local/bin/uv`, and Python 3.13 into `/opt/yjsp/python`
    (`sudo env UV_PYTHON_INSTALL_DIR=/opt/yjsp/python uv python install 3.13`).
 2. A system user `yjsp`; `/srv/yjsp` (with `data/`, `downloads/`, `backups/`) owned by it;
-   `/opt/yjsp/app` with `server/` and `web/`.
+   `/opt/yjsp/app` with `server/`, `web/`, and `help/`.
 3. `/srv/yjsp/.env` with the settings above, a new `YJSP_SECRET_KEY`, the Georgia Tech
    (Microsoft) and Google sign-ins, and `YJSP_BOOTSTRAP_ADMINS`; `chmod 600`, owned by
    `yjsp`.
@@ -425,7 +459,7 @@ If the VM is ever lost or moved:
    it's a move: then put the data back from it before the first start.
 5. The first deploy expects a `server/.venv` already in place: copy `server/` and
    `web/dist` in by hand, run the `uv sync` line from `deploy/deploy.sh` there, and start the
-   service. From then on, `deploy/deploy.sh` does it.
+   service. From then on, `deploy/deploy.sh` does it (and the help's docs, in `help/`).
 6. Tailscale on the VM: `sudo tailscale up`, turn key expiry off for the machine in the
    Tailscale admin console, and `sudo tailscale funnel --bg 8100`. Then point the
    sign-ins' redirect URIs (Microsoft's and Google's) and `YJSP_PUBLIC_URL` at the new

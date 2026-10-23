@@ -1,0 +1,694 @@
+# Troubleshooting
+
+Find your problem under the part of the site it's in, or search this page for words from the
+message you saw: every error the server sends is under [What an error means](#what-an-error-means),
+with its code. If your problem isn't here, see [Getting more help](#getting-more-help), at the end.
+
+## Signing in
+
+- **Signing in with Google says your email has no YJSP account.** Google signs in only to accounts
+  already there: one made with Google before, or an admin's invite. New people join with their
+  Georgia Tech account: click *Sign in with Georgia Tech*. Without a GT account (a mentor, say), ask
+  an admin to invite the address you use with Google (Admin > People).
+- **Signing in with Georgia Tech says your email isn't on YJSP's whitelist.** The admins have turned
+  the whitelist on, so only GT emails on it, and people they invite, can make an account. Ask an
+  admin to add your GT email (Admin > Whitelist), then sign in again.
+- **Signing in says only Georgia Tech accounts sign in this way.** *Sign in with Georgia Tech* takes
+  only GT's own accounts, with a GT email; a personal Microsoft account, or a guest GT invited from
+  outside, isn't one. Sign in on GT's login page with your GT username, like gburdell3@gatech.edu.
+- **You joined with Google, then signed in with Georgia Tech, and your check-outs are gone.**
+  Signing in with Georgia Tech finds your account only if its email is your GT address; otherwise it
+  makes a new, empty account, and what you have checked out stays with the old one. Sign out (in the
+  account menu, top right) and keep signing in with Google for now: admins can't change an
+  account's email yet.
+- **The page says "Waiting for approval".** Your account was made when new accounts waited for an
+  admin. Ask an admin to approve it (*Approve*, on Admin > People), then reload the page; or to put
+  your GT email on the whitelist, then sign in again.
+- **The page says the account is disabled.** An admin disabled it. If that's a mistake, ask an admin
+  to enable it (*Enable*, on Admin > People).
+- **Google says your email address isn't verified.** The site takes a Google account only once
+  Google has verified its email. Verify it with Google, or sign in with Georgia Tech.
+- **Signing in says your email belongs to a different Google account, or GT account.** The account
+  with that email here is tied to another Google or GT account than the one you used. Sign in with
+  the one you used before; if you can't, ask an admin.
+- **"Georgia Tech sign-in failed", or "Google sign-in failed".** The trip to GT's or Google's login
+  page didn't finish, and the rest of the message is theirs: often it was cancelled, or took more
+  than 10 minutes. Go back to the sign-in page and start again.
+- **"Georgia Tech sign-in isn't set up on this server", or Google's.** That way to sign in isn't
+  ready on the site. Use the other button, and tell an admin.
+- **The web app sends you to the sign-in page.** A browser stays signed in for 30 days, or until you
+  sign out. Sign in again, and you come back to the page you were on.
+- **A link to Yorg's plots opens without them after you sign in.** Signing in brings you back to the
+  link's page, but a link over 2,000 characters loses its plots on the way. Now that you're signed
+  in, open the link again.
+- **SolidWorks or the `vault` command says your sign-in expired.** Their sign-ins lapse after 90
+  days unused, so a laptop in a drawer, or one gone missing, isn't signed in forever. Sign in again
+  in the Vault tab, or with `vault login` and the address you open the site at; your workspace and
+  check-outs stay.
+- **Signing in from SolidWorks, the browser says the page expired, or the request doesn't match.**
+  The *Sign in to Vault* page, which the Vault tab and `vault login` open, has to be answered within
+  10 minutes, by whoever was signed in when it opened. Start signing in again, and click *Allow* on
+  the page that opens.
+
+## Vault
+
+### Checking out and in
+
+- **Check out says someone else has the file checked out.** One person at a time has a file checked
+  out, on one computer, and the message says who and where. Ask them to check it in, or to undo
+  their check-out. If they can't (gone for the summer, say), a lead of the folder or an admin can
+  release it, and their changes stay on their computer: in the web app, turn on *Admin mode* in the
+  account menu and click *Release check-out* on the file's page; in SolidWorks, *Take over...* on
+  the Vault tab.
+- **A file is checked out to you, but on another computer or in the web app.** A check-out is yours
+  on one computer, and only that one can check the file in. Check it in there, or move the check-out
+  here: in SolidWorks, start changing the file and Vault offers to, or click
+  *Move check-out here...*; with the `vault` command, `vault checkout --force`. Changes made on the
+  other computer stay there.
+- **Check in says to check the file out first.** Only a file checked out to you gets a new version;
+  a new file needs no check-out. Check it out, then check it in. If your check-out was released or
+  taken over, Vault says who did it and when, and your changes are still on your computer: check it
+  out again, settling the conflict first if someone checked in since (see [Conflicts](#conflicts)).
+- **A file is read-only, or SolidWorks opens it read-only.** Files you haven't checked out are
+  read-only on your computer, so two people can't change one file at once. Check it out: in
+  SolidWorks, start editing and Vault offers to, or click *Check out* on the Vault tab's card; with
+  the `vault` command, `vault checkout` and the file.
+- **Vault stopped offering to check a file out.** It offers once per file each time SolidWorks runs.
+  Click *Check out* on the Vault tab's card, or save the file, and it offers again.
+- **Saving in SolidWorks asks to check the file out, or offers to save under another name.** The
+  file isn't checked out to you, so it's read-only. Say Yes, and Vault checks it out and saves it in
+  place. If someone else has it checked out, or there's a newer version, Vault says so and offers to
+  save your changes under another name.
+- **You undid a check-out: where are your changes?** Undoing puts the vault's version back, and
+  copies yours into `C:\VLT\.vault\backup` first. Undoing in the web app a check-out made on a
+  computer leaves its changes on that computer.
+- **Get latest skipped a file.** Vault never replaces a file you've changed here, or an open file
+  with unsaved changes, and says which it skipped. Check your change in, or undo it;
+  `vault get --force` replaces it, copying yours into `.vault\backup` first.
+- **"Can't replace ... If it's open in SolidWorks, close it and try again."** Windows wouldn't let
+  Vault replace the file. Close it, and any assembly or drawing that uses it, then try again.
+- **"Can't get ...: there's another file at ..."** A file that didn't come from the vault is where
+  the vault's goes. Move it out of the way, then try again.
+- **A revert is refused.** *Revert to v2* (say) needs editor access, a version older than the
+  latest, and the file not checked out by someone else. A lead of the folder or an admin can revert
+  it anyway in admin mode, which releases the check-out.
+
+### Conflicts
+
+- **A file is "in conflict".** You changed it here, and someone checked in a newer version since,
+  so Vault won't check it in or out until you choose. *Keep mine...* (or
+  `vault resolve <file> --mine`) checks your copy out as it is, to check in as the next version, on
+  top of theirs. *Use the vault's version...* (or `vault resolve <file> --vault`) replaces your copy
+  with the latest, keeping yours in `C:\VLT\.vault\backup`; changes you haven't saved in SolidWorks
+  are lost.
+- **A copy you put in `C:\VLT` by hand is in conflict.** A copy that didn't come from the vault
+  (copied in, or there before Vault was installed) is in conflict when it differs from the vault's
+  latest version. Settle it the same way.
+- **Check in says the assembly uses a file that's in conflict.** The message names the file, which
+  changed here after someone checked in a newer version. Settle that first (*Keep mine...* or
+  *Use the vault's version...*), then check the assembly in.
+
+### Assemblies and Kenesto
+
+- **Check in says the assembly uses files the vault doesn't have.** An assembly goes in with every
+  file it uses, all or nothing. A missing file (not here or in the vault, like a part left in
+  Kenesto or saved only on someone's computer) needs adding to the vault, by upload or check-in, or
+  taking out of the assembly. A file outside `C:\VLT`, like a Toolbox part in `C:\SOLIDWORKS Data`,
+  needs moving into it first (Pack and Go can), and a file in a folder you can't see counts as
+  missing.
+- **An assembly opens with parts missing.** Open it from the Browse list in the Vault tab, or with
+  *Open in SolidWorks* in the web app: Vault gets everything it uses first, at every level, STEP
+  files placed with 3D Interconnect included. Whatever the vault doesn't have, the Vault tab names:
+  add it to the vault, or take it out of the assembly.
+- **An assembly from Kenesto names its parts on Kenesto's drive.** Files brought over from Kenesto
+  name their parts where Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\...`). Open
+  them from the Vault tab, or with *Open in SolidWorks*: the add-in gets the vault's files whose
+  paths end the same way. To keep the vault's paths in an assembly for good, check it out, save it,
+  and check it in.
+- **A part from Kenesto is named missing, though it's in the vault.** Vault takes each old path to
+  the vault file whose path ends most like it, and takes neither when two end alike. Upload
+  Kenesto's project folders as they are (`09_Hopper` stays `09_Hopper`), so the paths line up.
+- **An assembly uploaded or checked in on the web doesn't list its parts.** The web app can't read
+  SolidWorks files, so the assembly records no parts until it's checked in from SolidWorks: check
+  it out there, then in.
+
+### Drawings
+
+- **Check in says a drawing doesn't show a part or assembly in the vault.** A drawing goes in only
+  with what it shows, a part or assembly in the vault (or in the same check-in), and only SolidWorks
+  can say what that is: the `vault` command can't read drawings, and the web app only keeps what a
+  drawing's last version showed. Check it in from the Vault tab in SolidWorks.
+- **Check in says to name the drawing after what it shows.** A drawing's name is its model's, or
+  starts with it and goes on after a space or a symbol: `Fin.SLDDRW` or `Fin - machining.SLDDRW`
+  for `Fin.SLDPRT`, but not `Fin2.SLDDRW`. That keeps it next to its model. Save it under such a
+  name, then check it in.
+- **An upload leaves a drawing out.** Drawings are checked in from SolidWorks, so they stay linked
+  to what they show. To start one, click *New drawing* on the part's or assembly's page in the web
+  app, or make it in SolidWorks.
+- **A drawing's page says it isn't linked to what it shows.** Check it in again from SolidWorks,
+  where Vault records what each drawing shows.
+
+### Moving, renaming, deleting, and the trash
+
+- **Move or rename is refused because SolidWorks wouldn't find a file.** SolidWorks finds the files
+  an assembly or drawing uses by name, in its folder or where they were next to it, so Vault refuses
+  a move or rename that would lose one. Move a part into its assembly's folder, or move their whole
+  folder together. To rename a file something uses, rename it in SolidWorks, then check both in.
+- **Move, rename, or delete is refused because a file is checked out.** Files don't move or get
+  renamed while anyone has them checked out, you included: check them in, or undo the check-out,
+  first. A file someone else has checked out can't be deleted until it's checked in or released.
+- **Delete warns that other files use what you're deleting.** SolidWorks would miss it in the files
+  that stay. Delete them together, or click *Delete anyway* if you mean it.
+- **You can't move, rename, delete, or restore a folder.** A folder takes a lead of it, or an admin;
+  files take editor access.
+- **A name is refused.** Names have to work on Windows: none of `< > : " / \ | ? *`, no space at
+  either end or dot at the end, not a name Windows reserves (`CON`, `NUL`, `COM1`...), not a
+  temporary file (`~$...`), and at most 255 characters. A whole path is at most 200 characters, so
+  that `C:\VLT\` and it stay under Windows' 260-character limit: shorten the name or its folders.
+- **"... is taken", or "already exists".** Names are unique in a folder, whatever their case. Pick
+  another name, or move the other one out of the way.
+- **You deleted something by mistake.** Deleting puts it in the trash of the folder it was in,
+  history and all: click *Trash* on the folder's page, then *Restore*. Restoring a file takes editor
+  access, and a folder a lead; a folder comes back with everything deleted along with it. If
+  something else has the name now, move or rename that first.
+
+### Uploading
+
+- **An upload leaves files out.** It says why for each: it's in the vault already (check it out on
+  its page, then upload it as its next version), someone has it checked out, it's a drawing, there's
+  a folder with its name, or its name doesn't work on Windows. Temporary files (`~$...`, `*.tmp`,
+  `Thumbs.db`, `desktop.ini`, `.DS_Store`) are left out without a word.
+- **An upload says the server's disk is nearly full.** Every upload has to leave 2 GB free on the
+  server's disk, for the database and its backups. Ask an admin to make room (Admin > People shows
+  what's using it).
+- **An upload says files over a size aren't accepted.** A file can be up to the server's limit,
+  which the message names (2 GB, unless the site is set up otherwise). Anything else sent at once
+  can be up to 10 MB: check in or upload fewer files at a time.
+- **An upload says it doesn't match its SHA-256.** The file was damaged on the way: upload it
+  again.
+
+### Access
+
+- **Vault says you need editor (or lead) access.** Your role in that folder doesn't allow it.
+  Viewers browse and download; editors also check out, check in, add, delete, restore, and revert;
+  leads also release or take over other people's check-outs, and change who has access. Ask the
+  folder's lead, or an admin, for the role (Admin > Vault Access).
+- **A file or folder isn't there, or Vault says it isn't in the vault.** Files in folders you can't
+  view don't show anywhere, and asking for one says it isn't there, not that it's forbidden. Check
+  the path and the folder's *Trash*, or ask the folder's lead for access.
+
+### Caliper
+
+- **Caliper says it can't read a SolidWorks file.** Caliper shows the 3D view Vault for SolidWorks
+  makes when a file is checked in; for other versions, the server reads the 3D view SolidWorks saved
+  in the file, and some files have none it can read. Open the file in SolidWorks and click
+  *Make 3D view* on the Vault tab: Caliper shows it after.
+- **Caliper shows an assembly with parts missing.** It lists the parts it couldn't show, and why: a
+  part used in a configuration its file has no 3D view of, a file with no 3D view Caliper reads, a
+  part kept inside the assembly (a routed tube, say) without a shape Caliper read, or a sub-assembly
+  none of whose parts are in the vault. *Make 3D view* in SolidWorks makes the first three; the last
+  need their parts in the vault. Parts in folders you can't see are left out, and the page says how
+  many.
+- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time.
+  Wait a minute and open it again.
+- **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not
+  checked in, gets none until it is. A part loaded lightweight needs resolving first: right-click
+  the assembly, choose Set Lightweight to Resolved, then click *Make 3D view* again.
+- **A STEP, IGES, or STL file is slow to open, or measures wrong.** Caliper reads these in your
+  browser, fetching its STEP and IGES reader (7 MB) the first time. STL keeps no units, so its
+  numbers are taken as mm, and a text STL that doesn't end with `endsolid` was cut off, which
+  Caliper says.
+- **A file from SolidWorks 2014 or older measures in mm.** Its units aren't saved where the server
+  reads them, so it starts in mm: pick its units in Caliper.
+
+## The SolidWorks add-in
+
+### Installing and connecting
+
+- **Windows won't run `Vault-Setup.exe`.** It isn't signed for Windows yet, so Windows warns about
+  it: click *More info*, then *Run anyway*. Your browser may ask whether to keep the download first.
+- **Setup says it needs SolidWorks 2026.** Setup installs the add-in new only where SolidWorks 2026
+  is, since files saved in 2026 don't open in older versions and the team stays on one. With
+  SolidWorks 2025, it only updates an add-in that's there already.
+- **The SolidWorks page says the server doesn't have the installer yet.** Ask an admin for
+  `Vault-Setup.exe`.
+- **There's no Vault tab in SolidWorks.** Open Tools > Add-ins and tick Vault in both columns, so it
+  loads now and every time SolidWorks starts. This happens when setup ran as another Windows user.
+- **Connect SolidWorks does nothing.** Install the add-in first (step 1 on the SolidWorks page):
+  it's what follows the link. If your browser asks whether to open it, say yes.
+- **SolidWorks asks whether to connect to a vault.** Say Yes only if the address it shows is the
+  one you open Vault at in your browser: any web page can make a Connect link, and a server that
+  isn't your team's would get your sign-in. It asks the first time, and for a vault it isn't set up
+  for.
+- **SolidWorks is set up for another vault.** Each vault needs a folder of its own. In the Vault
+  tab, sign out, type another folder (like `C:\VLT-2`), then connect again.
+
+### Opening files
+
+- **Open in SolidWorks does nothing at all.** The add-in isn't installed on this computer (run
+  `Vault-Setup.exe`), or your browser asked whether to open `vault-open.exe` and was told no: click
+  again, and say yes. In a Command Prompt,
+  `reg query HKLM\SOFTWARE\Classes\vault\shell\open\command` shows whether the links are registered.
+- **A Vault message on top of SolidWorks says the add-in isn't answering.** The add-in is turned
+  off. Tick Vault in both columns of Tools > Add-ins, so it loads now and every time SolidWorks
+  starts; if they're ticked already, `addin.log` says why the add-in didn't start.
+- **A message says Vault is still busy with a link you clicked before.** The add-in follows one
+  link at a time. Wait for that file to open, or answer Vault's message in SolidWorks, then try
+  again.
+- **A message says SolidWorks 2026 isn't installed.** *Open in SolidWorks* starts SolidWorks when it
+  isn't running, and found none to start. Start SolidWorks yourself, then click again.
+- **Open in SolidWorks says the file was saved in a newer SolidWorks.** A file saved in SolidWorks
+  2026 doesn't open in 2025 or older. Open it in SolidWorks 2026, the team's.
+- **Open in SolidWorks says SolidWorks has another file of the same name open.** SolidWorks can't
+  open two files with the same name at once. Close that one, and any assembly or drawing that uses
+  it, then try again.
+- **The right-click menu says to open an assembly first.** *Insert into* puts a part or assembly
+  from Browse into the assembly you have open, so an assembly has to be the active document. A
+  drawing has no *Insert into*.
+
+### Sign-in, updates, and the log
+
+- **The Vault tab says your sign-in expired.** The add-in's sign-in lapses after 90 days unused.
+  Sign in again in the Vault tab; your workspace and check-outs stay.
+- **Update appears at the top of the Vault tab.** A newer add-in is out. Click it, say Yes, and let
+  setup make changes when Windows asks; then save your work and close SolidWorks, and setup
+  finishes. Your sign-in, settings, and workspace stay.
+- **Update says the update isn't signed, or isn't the version offered.** Vault installs only an
+  update it can check: signed with the key Vault's releases are signed with, at the version it was
+  offered as. Nothing was installed: keep working, and tell an admin.
+- **Update says it needs permission.** Windows asked to let setup make changes, and the answer was
+  No. Click *Update* again, and say Yes.
+- **There's no Update button, though a newer add-in is out.** The add-in looks every few hours.
+  Add-ins 0.4.0 and older have no *Update*: run the new `Vault-Setup.exe` once, from the web app's
+  SolidWorks page.
+- **The Vault tab says it can't reach the Vault server, or couldn't refresh.** The rest of the
+  message says why, most often that the vault is out of reach from this computer; the tab tries
+  again every 20 seconds. Files already on this computer still open, but checking out and in need
+  the connection.
+- **Something else went wrong.** The add-in logs to `%LOCALAPPDATA%\Vault\addin.log`: a line for
+  each click on *Open in SolidWorks* and what became of it, and the details of anything that
+  failed. Send it to an admin with what you clicked and when. `vault status` in `C:\VLT` is a good
+  second opinion.
+
+## Yorg
+
+### Getting data in
+
+- **A file was read wrong: the wrong time column, wrong times, or names in the wrong row.** Yorg
+  works out each file's layout, and keeps the file as it was uploaded. A dataset's *About* page says
+  how it was read and what was left out; its Read settings choose the time column, what the time is
+  in, the row the names are in, and what the values are separated by, and *Read it again* reads the
+  file that way. Only whoever added the dataset, or an admin, can read it again, and a read that
+  fails leaves the last one standing.
+- **An upload says it couldn't be read.** The file is kept: change its Read settings on the
+  dataset's *About* page and click *Read it again*, rather than upload it again. Yorg reads CSV
+  files of test data, of up to 2,000 columns.
+- **Rows or values are missing.** Rows without a readable time are left out, rows out of time order
+  are put in order, and cells that aren't numbers are left empty; the *About* page says so, with a
+  row number. A column empty in at least half the rows (a slower sensor in the same file) keeps only
+  its own samples, with their times.
+- **A file is too big to upload.** A file can be up to the server's limit, which the message names
+  (2 GB, unless the site is set up otherwise), and an upload has to leave 2 GB free on the server's
+  disk.
+
+### Time and T0
+
+- **Times read as time of day in UTC, not your time zone.** Data with Unix times reads as time of
+  day in UTC until there's a T0. Options > Time reads switches to your computer's time zone, or to
+  time from T0.
+- **You want time to read T−10, T0, T+15.** Set T0 from the *T0* menu: type a time of day
+  (`21:15:03.25`), a Unix time, or `T+12`; click a plot; or pick an event like MOV OPEN. Drag its
+  line to move it.
+- **Your plots, T0, or markers aren't there on another computer, or for someone else.** Each browser
+  keeps its own plots for each dataset. *Save view* keeps them for everyone, and *Copy link* sends
+  what's on screen without saving a view.
+- **A compared test doesn't line up.** Shift it in time to line them up; two tests with dates line
+  up by their clock times.
+
+### Calculated channels and views
+
+- **A calculated channel doesn't show in a dataset.** It shows in every dataset that has the
+  channels it uses, by name, so a dataset missing one of them doesn't list it. Check the names in
+  brackets against the dataset's channels.
+- **A calculated channel has gaps.** It's missing outside the samples of the channels it uses, and
+  where it divides by zero; `min`, `max`, and `avg` skip missing samples, as for redundant sensors.
+- **"There's already a calculated channel called ..."** Calculated channels are the whole team's,
+  and their names are unique whatever their case. Pick another name.
+- **A view opened with another test is missing plots.** A view plots channels by name, so it shows
+  another test's channels of the same names, and leaves out those the test hasn't got.
+- **You can't change or delete a dataset, view, calculated channel, script, or folder.** Only
+  whoever added it, or an admin, can. To keep your changes to someone's view, click
+  *Save as a new view*; for a copy of someone's script, *Save as…*.
+
+### Organizing
+
+- **A folder won't delete.** Only an empty folder can be deleted: move its datasets and folders out
+  first. Deleted datasets that were in it go to the folder it's in.
+- **You deleted a dataset by mistake.** It waits in Deleted datasets, at the foot of the list:
+  *Restore* puts it back in its folder. You can restore your own, or anyone's if you're an admin.
+- **A test split out of a file can't be read again or downloaded.** It has no file of its own. Read
+  the file it came from again, and split it again.
+- **Split says a test would be empty.** One of its spans has no samples, so nothing was made. Change
+  that span's times, and split again.
+- **A plot says the dataset has been read again since.** Its file was read again while you had it
+  open. Reload the page.
+
+### Scripts
+
+- **A script says to attach a test, or that a test isn't attached.** A script works on the tests
+  attached to it, under *Data* beside it, and `yorg.channel("PT-TANK")` takes from the first. Attach
+  the test there; for another one, add `dataset="Hotfire 4"`, and when two attached tests share a
+  name, name one by its id (`dataset=12`), as the message says.
+- **A script says a channel isn't loaded.** Channels named in quotes in the code are loaded before
+  it runs. For a name the code makes as it runs, use `await yorg.load(name, dataset=...)`.
+- **Python is slow to start, or to import.** Python runs in your browser, not on the server. It
+  downloads the first time, and CoolProp's first import reads its whole fluid library (20 seconds to
+  a minute); while a script is open, Python gets its slow imports ready, and the output says what
+  it's doing, and for how long.
+- **Python forgot your variables or imports.** Python stays open while the tab does, but stopping a
+  running cell starts it again without what it had, and 30 minutes without using it stops it, to
+  give its memory back. Run the cells that load your data again.
+- **A package isn't there.** NumPy, SciPy, pandas, matplotlib, and CoolProp load when a script
+  imports them, and pure-Python packages install from PyPI with micropip (`import micropip`, then
+  `await micropip.install("tabulate")`), until Python starts again. REFPROP isn't there: it needs
+  NIST's license.
+
+### Models (the preview)
+
+- **There's no Models in Yorg's top bar.** System models are in Yorg's preview while they're tried
+  out, and only admins see the preview: *Preview*, at the top right of Yorg. Saved models are every
+  admin's.
+- **A run says a part's channel isn't in the test.** A model runs against any test with the same
+  channel names. Link the part to a channel the test has, or run it against a test that has that
+  channel.
+- **A run says the model can't run as drawn.** The message names the part and what's wrong: a line
+  not connected at both ends, say, or a dataset that isn't ready. Fix that, and run again.
+- **A run says other runs are using the server.** Two runs go at once, and a new run of yours
+  replaces your last. Try again in a minute; a run stops after 10 minutes, and a fit after 30, with
+  the best it found.
+- **The run's window is in the wrong place.** It counts from the dataset's T0, as this browser has
+  it: set T0 on the dataset's plots first.
+- **Run in browser is slow.** FullFlow installs in your browser the first time (a minute or two),
+  and runs several times slower there than on the server. A changed script isn't saved.
+
+## What an error means
+
+Each error the server sends has a code, in backticks below, and a message, which is what the web
+app, the add-in, and the `vault` command show. In the messages, "..." stands for a name, a path, or
+a number. A few codes come up in more than one place.
+
+### Signing in and accounts
+
+- **Sign in first** (`unauthorized`): you aren't signed in, or your sign-in has ended: a browser's
+  after 30 days or when you sign out there, and the add-in's or the `vault` command's after 90 days
+  unused. Sign in again.
+- **This account is disabled** (`disabled`): an admin disabled your account. If that's a mistake,
+  ask an admin to enable it on Admin > People.
+- **An admin needs to approve your account first**, or **Your account isn't active**
+  (`pending_approval`): the account is waiting for an admin, from when new accounts did (signing in
+  from SolidWorks or the `vault` command, it may be disabled instead). Ask an admin to approve it on
+  Admin > People, or to put your GT email on the whitelist, then sign in again.
+- **... has no YJSP account, and Google doesn't make new ones** (`no_account`): you signed in with a
+  Google account whose email has no account here. Sign in with Georgia Tech, or ask an admin to
+  invite the email you use with Google.
+- **... isn't on YJSP's whitelist** (`not_whitelisted`): the whitelist is on, and your GT email
+  isn't on it. Ask an admin to add it on Admin > Whitelist, then sign in again.
+- **Only Georgia Tech accounts sign in this way** (`not_georgia_tech`): the Microsoft account you
+  used isn't one of GT's own, with a GT email. Sign in with your GT username, like
+  gburdell3@gatech.edu.
+- **Your Google account's email address isn't verified** (`unverified_email`): verify it with
+  Google, or sign in with Georgia Tech.
+- **... belongs to a different Google account**, or **GT account** (`identity_mismatch`): the
+  account with that email here is tied to another Google or GT account than the one you used. Sign
+  in with that one; if you can't, ask an admin.
+- **... sign-in isn't set up on this server** (`signin_unavailable`): that way to sign in isn't
+  ready on the site. Use the other one, and tell an admin.
+- **... sign-in failed: ...** (`signin_failed`): GT's or Google's login didn't finish, and the rest
+  of the message is theirs. Start again from the sign-in page.
+- **Requests from the browser need an X-YJSP-Request header** (`csrf`): a change came with your
+  browser's sign-in, but not from the web app; that's how the site keeps other sites from acting as
+  you. If it happens in the web app, reload the page.
+- **This sign-in request from the Vault client is malformed** (`bad_client_request`): the address
+  SolidWorks or the `vault` command opened in your browser was cut short or changed. Start signing
+  in again from it; if it keeps happening, update the add-in or the `vault` command.
+- **This page expired; start signing in again from the client** (`expired`): the
+  *Sign in to Vault* page waited more than 10 minutes for *Allow*. Start again from the Vault tab,
+  or with `vault login`.
+- **This sign-in request doesn't match** (`mismatch`): *Allow* was for another request than the one
+  the page was made for, as when someone else signed in on that browser meanwhile. Start again from
+  the client.
+- **This sign-in has expired**, or **Sign-in verification failed** (`invalid_code`): the one-time
+  code that finishes signing in from SolidWorks or the `vault` command was used already, was over 5
+  minutes old, or didn't match. Sign in again from the client.
+- **Only admins can do that**, or **Only admins can see what the assistant has cost**
+  (`admin_only`): inviting, approving, and disabling people, the whitelist, and Admin > People's
+  figures are for admins. Ask an admin.
+- **... isn't an email address** (`bad_email`): an invite, or an email for the whitelist, that isn't
+  an email address. Check what was typed.
+- **... already has an account** (`exists`): the person you're inviting has one already. One waiting
+  for approval, or disabled, is approved or enabled on Admin > People. (In Vault, `exists` is about
+  names: see [Vault files and folders](#vault-files-and-folders).)
+- **You can't disable yourself or drop your own admin rights** (`self_lockout`): another admin can.
+- **An account can be set active or disabled** (`bad_status`): a request asked for another status.
+  In the web app, *Approve*, *Enable*, and *Disable* are the ways to change one.
+- **A name can't be empty**, or **A name can be at most 200 characters** (`bad_name`):
+  *Change your name…*, in the account menu, takes 1 to 200 characters.
+- **That email isn't on the whitelist** (`not_on_whitelist`): someone took it off meanwhile. Reload
+  the Whitelist tab to see the list.
+
+### Vault files and folders
+
+- **... contains characters Windows doesn't allow**, **... is a reserved name on Windows**,
+  **... is longer than 200 characters**, and the like (`bad_path`): a name or path that won't work
+  in a Windows folder, as every workspace is. "A name is refused", under
+  [Moving, renaming, deleting, and the trash](#moving-renaming-deleting-and-the-trash), has the
+  rules: rename it, or shorten its folders.
+- **... already exists**, **... is taken**, **... is a folder**, **... is a file, not a folder**, or
+  **Something else is at ... now** (`exists`): something in that folder has the name already,
+  whatever its case. Pick another name, or move or rename the other one first; restoring from the
+  trash needs the old name free.
+- **Still used by ...** (`in_use`): files that stay use what you're deleting, and SolidWorks would
+  miss it. Delete them together, or *Delete anyway*.
+- **... is used by ..., and SolidWorks wouldn't find it after this** (`in_use`): a move or rename
+  would lose a file from what uses it. Keep it in their folder, or where it was next to them (move
+  their folder together); to rename it, rename it in SolidWorks, then check both in.
+- **... can't go inside itself**, **... is moving with its folder already**,
+  **The top of the vault doesn't move**, or **Say what to move** (`bad_move`): a move that can't be
+  done as asked, like a folder into one of its own folders. Pick another place, or move the folder
+  without the files in it.
+- **... would change what kind of file ... is** (`bad_rename`): a rename keeps a file's type, so
+  keep its extension. **Rename a file or a folder** and **The top of the vault has no name** are the
+  same code.
+- **The top of the vault can't be deleted**, or **Say what to delete** (`bad_delete`): pick the
+  files and folders to delete.
+- **You need editor access to ... to ...** (`forbidden`): your role in that folder doesn't allow
+  it, as with **You need editor access somewhere to upload files**. Ask the folder's lead, or an
+  admin, for the role (Admin > Vault Access).
+- **... is not in the vault**, **There's no folder ...**, or **Not found** (`not_found`): it isn't
+  there, or it's in a folder you can't view, which answers the same. Check the path and the
+  folder's trash, or ask the folder's lead for access.
+
+### Check-out and check-in
+
+- **Already checked out: ...**, or **... is checked out by ...** (`checked_out`): someone else has
+  the file checked out, and the message says who and on which computer. Ask them to check it in; if
+  they can't, a lead of the folder or an admin can release it in admin mode, or take it over in
+  SolidWorks. A move or rename waits for any check-out to end, yours too.
+- **... is checked out to you on ..., not ...** (`checked_out_elsewhere`): you have it checked out
+  on another computer (`web` is the web app). Check it in there, or move the check-out here:
+  *Move check-out here...* in SolidWorks, or `vault checkout --force`.
+- **Check out ... before checking it in** (`not_checked_out`): only a file checked out to you gets
+  a new version. Check it out, then check it in.
+- **Some referenced files aren't in the vault; add them to this check-in** (`missing_references`):
+  a file being checked in uses files that aren't in the vault, or that you can't see, so nothing was
+  checked in. Add them to the vault, or take them out of what uses them.
+- **... has no version ...** (`bad_reference`): the check-in records a file it uses at a version the
+  vault doesn't have. Get the latest version of that file, then check in again.
+- **... doesn't show a part or assembly in the vault** (`drawing_without_model`): a drawing goes in
+  only with what it shows, and only SolidWorks can say what that is. Check it in from SolidWorks,
+  with the Vault add-in.
+- **Name each drawing after what it shows** (`drawing_name`): a drawing's name has to start with its
+  model's, like `Fin.SLDDRW` or `Fin - machining.SLDDRW` for `Fin.SLDPRT`. Save it under such a
+  name, then check it in.
+- **Upload ... before checking it in** (`blob_missing`): the file's contents didn't reach the server
+  first, as when an upload was cut off. Check in again: it uploads them.
+- **The size of ... doesn't match its upload** (`size_mismatch`): the file changed between its
+  upload and the check-in. Let SolidWorks finish saving, then check in again.
+- **v... is already the latest version of ...**, or **... has no version ...** (`bad_version`): a
+  revert to the latest version, or to one that isn't there. Pick an older version in the history.
+- **Say which computer this is (host)** (`bad_host`): the client didn't say which computer it's on.
+  Update the add-in or the `vault` command; if it keeps happening, tell an admin.
+
+### Uploads and downloads
+
+- **Files over ... MB aren't accepted** (`too_large`): the file is bigger than the server takes
+  (2 GB, unless the site is set up otherwise). **That request is over 10 MB** is the same code, for
+  anything else sent at once, like a check-in of a great many files: send fewer at a time. So is
+  **A view can be up to 512 KB**, for a saved view's plots.
+- **The server's disk is nearly full** (`disk_full`): the upload would leave the server's disk under
+  2 GB free, which the database and its backups need. Ask an admin to make room (Admin > People
+  shows what's using it).
+- **The upload doesn't match its SHA-256** (`hash_mismatch`): the file was damaged on the way.
+  Upload it again.
+- **Blobs are named by their SHA-256** (`bad_sha256`): a client asked to upload under a name that
+  isn't a SHA-256. Update the add-in or the `vault` command; if it keeps happening, tell an admin.
+- **There's no download called ...** (`not_found`): the server doesn't offer that file. Ask an
+  admin for it.
+
+### Caliper
+
+- **SolidWorks saved no 3D view in it**, **Caliper can't make sense of the 3D view**,
+  **... is over 256 MB, too big to read here**, or **Caliper found none of its parts in the vault**
+  (`unreadable_file`): the server can't read a 3D view from that version of the file, and the
+  message says why. Open the file in SolidWorks and click *Make 3D view* on the Vault tab.
+- **The server is reading other SolidWorks files: try again in a minute** (`busy`): it reads two at
+  a time. Open it again in a minute.
+- **... has no 3D model in its ... configuration** (`no_model`): Caliper asked for a 3D view that
+  isn't there. Reload the page; if it stays, open the file in SolidWorks and click *Make 3D view*.
+- **Caliper's models are of SolidWorks parts and assemblies**,
+  **Component ... is of file ..., which isn't in the vault**,
+  **An assembly's model has at most 20000 components**, and the like (`bad_model`): a 3D view the
+  server won't keep, from *Make 3D view* or a check-in. Tell an admin, with the add-in's log.
+- **The mesh ends early: it was cut off on the way**, **That isn't a Caliper mesh**, or
+  **This server reads Caliper meshes of version 1, not ...** (`bad_mesh`): a 3D view from the
+  add-in didn't arrive whole, or is newer than the server reads. Click *Make 3D view* again; if it
+  says to update the server, tell an admin.
+- **Upload the mesh first** (`blob_missing`): a 3D view's file didn't reach the server. Click
+  *Make 3D view* again.
+
+### Yorg
+
+- **... is empty** (`empty`): the uploaded file has nothing in it. Upload the file with its data.
+- **That didn't work: ...** (`unreadable`): reading a dataset's file again with other Read settings
+  failed, and the last read stands. The message says what went wrong: try other settings.
+- **... hasn't been read, so there's nothing to split** (`not_read`): the dataset's file couldn't be
+  read. Fix its Read settings, on its *About* page, first.
+- **... was split from ..., and has no file of its own** (`split`): a test split out of a file can't
+  be read again, or downloaded as a file. Read the file it came from again, and split it again.
+- **... would be empty: ... has no samples from ... to ... s** (`empty_piece`): a span of the split
+  has no samples, so nothing was made. Change its times.
+- **... has been read again since: load it again** (`stale`): the dataset's file was read again
+  while you had it open. Reload the page.
+- **... is deleted: restore it first** (`conflict`): reading a deleted dataset again, or splitting
+  it. Restore it from Deleted datasets first.
+- **There's already a folder called ... there**, or
+  **There's already a calculated channel called ...** (`name_taken`): names are unique in a folder,
+  and calculated channels' across the team, whatever their case. Pick another.
+- **... can't go inside itself** (`cycle`): a folder can't move into one of its own folders.
+- **... isn't empty: move what's in it out first** (`not_empty`): only an empty folder can be
+  deleted.
+- **Only whoever added this ..., or an admin, can change it** (`not_yours`): a dataset, folder,
+  view, calculated channel, or script is its owner's to change. *Save as a new view*, or
+  *Save as…* a script, for a copy of your own.
+- **The dev page is for admins** (`admins_only`): Yorg's preview, with Models, is for admins.
+- **...'s ... is ..., which ... doesn't have** (`no_channel`): a model's part is linked to a channel
+  the test hasn't got. Link it to one the test has, or run it against a test that has it.
+- **Draw the system first**, **... isn't connected at both ends**,
+  **... isn't ready to run against: open it in Yorg first**, and the like (`bad_model`): the model
+  can't run as drawn, and the message names the part and what's wrong. Fix that, and run again.
+- **Other runs are using the server: try again in a minute** (`busy`): two model runs go at once.
+  Run it again in a minute.
+
+### Asking Claude
+
+- **Claude isn't set up on this server**, or **Claude has nothing to read on this server**
+  (`assistant_off`): the site isn't set up to ask Claude, or has no help for it to read. An admin
+  can ask whoever runs the server; meanwhile, search this help.
+- **Claude has spent its budget for questions** (`assistant_spent`): its answers have cost what the
+  site set aside for them, so it stops until that's raised. An admin can ask whoever runs the
+  server to raise it.
+- **Claude is out of API credits** (`assistant_no_credits`): the site's credits for Claude have run
+  out. An admin can ask whoever runs the server.
+- **You've asked Claude as much as one person can in a day** (`assistant_daily_limit`): each
+  person's questions can cost so much in 24 hours. As your questions from 24 hours ago fall out of
+  that, you can ask again.
+- **Claude is still answering your last question** (`assistant_busy`): Claude answers one question
+  of yours at a time. Wait for the answer, or click *Stop*, then ask.
+- **This conversation is too long for Claude: start a new one**, or
+  **Each message holds 1 to 20,000 characters**, and the like (`bad_conversation`): a question, or
+  the conversation so far, is longer than Claude takes. Shorten the question, or click
+  *New conversation*.
+- **Claude is overloaded or down**, **The server couldn't reach Claude**,
+  **Claude's answer broke off**, and the like (`assistant_failed`): Claude didn't take the question,
+  or its answer stopped partway. Try again in a minute or two, or ask another way if it says to; if
+  it says Claude's API key isn't working, tell an admin.
+
+### Anything
+
+- **Nothing to check in**, **... is listed twice**, and other messages that say what's wrong
+  (`bad_request`): a request that can't be done as asked. Do what the message says.
+- **Not found**, **There's no ...**, or **... not found** (`not_found`): it isn't there (deleted, or
+  never was), or you can't see it. Reload the page; for access, ask an admin or the folder's lead.
+- **You need ... access**, and other refusals (`forbidden`): your role doesn't allow it. Ask an
+  admin, or for Vault, the folder's lead.
+- **... is deleted: restore it first**, and other clashes (`conflict`): what you asked for clashes
+  with how things are now. Reload the page, and do what the message says.
+- **... MB aren't accepted**, and other sizes (`too_large`): see
+  [Uploads and downloads](#uploads-and-downloads).
+- **Sign in first** (`unauthorized`): see [Signing in and accounts](#signing-in-and-accounts).
+- **The server said** and a number, or **Can't reach the server**: no code, since the answer wasn't
+  one of the server's own, or none came. The site may be restarting, or out of reach from where you
+  are: check your connection, wait a minute, and try again. If it keeps happening, tell an admin.
+
+## Glossary
+
+- **Check out**: take a file to change it, on one computer (or in the web app); everyone else can
+  still open it, read-only, until you check it in.
+- **Check in**: save your changes to the vault as a new version, with a comment saying what
+  changed; it ends your check-out.
+- **Version**: a file's contents at one check-in, numbered v1, v2, v3...; versions never change, and
+  every one is kept.
+- **Workspace**: your computer's copy of the vault, at `C:\VLT` on every computer so assemblies find
+  their parts; it holds only the files you've opened, checked out, or got.
+- **References**: the files a file uses (an assembly's parts and sub-assemblies, the part or
+  assembly a drawing shows), recorded at each check-in with the version of each.
+- **Drawing**: a SolidWorks drawing (`.SLDDRW`); in the vault, it shows a part or assembly there,
+  and is named after it.
+- **Viewer, editor, lead**: the roles a folder gives, for everything in it. Viewers browse and
+  download; editors also change files; leads also release check-outs and decide who has access.
+- **Admin**: an account that can do everything, everywhere, and manages people and the whitelist
+  (Admin, in the account menu).
+- **Admin mode**: a switch in the account menu, for admins and folder leads, that adds releasing
+  someone's check-out, and reverting a file they have checked out.
+- **Trash**: where deleted files and folders wait, with their history; each folder has its own, and
+  *Restore* brings things back.
+- **Caliper**: Vault's 3D viewer in the browser, for parts, assemblies, and STEP, IGES, and STL
+  files: turn them, cut them, and measure them, without SolidWorks.
+- **The `vault` command**: Vault on the command line (`vault.exe`, from the web app's SolidWorks
+  page), sharing the add-in's workspace and sign-in.
+- **Dataset**: one uploaded file of test data in Yorg, read into channels; the file is kept as it
+  came.
+- **Channel**: one column of a dataset (a PT, a TC, a load cell, a valve's state), with its unit and
+  its times.
+- **Calculated channel**: a channel worked out from others by an expression, like `[LC-1] + [LC-2]`;
+  it's the whole team's, in every dataset that has the channels it uses.
+- **View**: plots saved for everyone, which open with any test's channels of the same names.
+- **Mask**: a test on channels, like a valve open, that shades the plots where it holds and can hide
+  the data elsewhere.
+- **T0**: the time the plots count from, so time reads T−10, T0, T+15.
+- **Marker**: a named line across the plots at a time (*M*); drag it to move it.
+- **Script**: Python kept for everyone in Yorg's Scripts, working on the tests attached to it, and
+  run in your browser.
+- **Notebook**: how a script is laid out: cells run one at a time, sharing their variables, as in
+  Jupyter.
+- **Model**: a test stand's feed system, drawn as a P&ID and simulated with FullFlow against a
+  test, in Yorg's preview.
+- **The preview**: Yorg as it will be, with what's new (Models), which only admins see.
+
+## Getting more help
+
+- **The rest of the help page**: [the user guide](../README.md), and
+  [the SolidWorks add-in's](../client/src/Vault.SolidWorks/README.md), with its
+  [When something goes wrong](../client/src/Vault.SolidWorks/README.md#when-something-goes-wrong).
+  Signed in, members also see how Vault and Yorg work inside. In the web app, Yorg's *Help* page
+  has Yorg's keys, and Vault's SolidWorks page has "If something's not right".
+- **Ask Claude**: signed-in members can ask Claude from *Help*, the question mark at the top right
+  of the web app. It has read this help, and answers from it with links to it, but it can be wrong:
+  check what it says in the app. When it can't answer, it says why (see
+  [Asking Claude](#asking-claude)).
+- **An admin, or the folder's lead**: for access to a folder, a check-out someone left behind, an
+  account waiting for approval, or the whitelist.
+- **For the add-in**: its log, `%LOCALAPPDATA%\Vault\addin.log`. Send it with what you clicked, and
+  when.
+
+When you ask, give the message as you saw it, the file or dataset, and what you clicked.

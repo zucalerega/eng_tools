@@ -17,7 +17,7 @@ from .deps import DB, Config, session_user
 
 router = APIRouter(include_in_schema=False)
 # First path segments the web app never owns: an unknown path under them is a 404, not an app page.
-_NOT_APP = {"api", "auth", "assets", "healthz"}
+_NOT_APP = {"api", "auth", "assets", "healthz", "help"}
 
 
 def app_index(settings: Settings) -> Path | None:

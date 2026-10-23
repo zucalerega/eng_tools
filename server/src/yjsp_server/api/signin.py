@@ -4,11 +4,10 @@ CLI/add-in, dev shortcuts.
 The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
 
-import html
 import re
 from datetime import timedelta
 from typing import Annotated, Any, Literal, NamedTuple
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 from authlib.integrations.starlette_client import OAuth, OAuthError, StarletteOAuth2App
 from fastapi import APIRouter, Form, Query, Request
@@ -22,6 +21,7 @@ from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
 from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
+from .pages import FAVICON, GOLD, PALETTE, SITE, THEME, esc
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -85,14 +85,9 @@ def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
     return None if oauth is None else oauth.create_client(name)
 
 
-def _esc(value: object) -> str:
-    return html.escape(str(value), quote=True)
-
-
 # The site's two apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/vault/components.tsx),
 # a vault door crossed by a gold orbit with a sliver of the card around it, and Yorg's (YorgMark in web/src/yorg), a
 # signal rising across a pair of axes to its gold peak.
-_GOLD = "#e0a500"
 _VAULT_MARK = (
     '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
     '<g fill="none" stroke="currentColor"><polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 '
@@ -100,33 +95,16 @@ _VAULT_MARK = (
     '<path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" stroke-width="3"/></g><g fill="currentColor">'
     '<circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/><circle cx="16.8" cy="40.8" r="2.8"/>'
     '<circle cx="47.2" cy="40.8" r="2.8"/></g>'
-    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{_GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
+    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
     'paint-order="stroke"/></svg>'
 )
 _YORG_MARK = (
     '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
     '<path d="M9 7v48h48" stroke-width="5"/><path d="M17 45l8-13 8 7 9-20 7 10 6-5" stroke-width="4"/></g>'
-    f'<circle cx="42" cy="19" r="5.5" fill="{_GOLD}"/></svg>'
+    f'<circle cx="42" cy="19" r="5.5" fill="{GOLD}"/></svg>'
 )
-# The site's own icon: the gold orbit both marks take from the team's logo, on the top bar's navy.
-_FAVICON = "data:image/svg+xml," + quote(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b1b33"/>'
-    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{_GOLD}"/></svg>'
-)
-# Light, or dark like the computer (or as chosen in the web app's account menu, which keeps it in localStorage).
-_DARK = """color-scheme: dark; --bg: #070b12; --surface: #0e1522; --text: #e5ebf4; --muted: #95a1b5;
-    --border: #1d2940; --accent: #7aa7ee; --primary: #2a5fb0; --primary-hover: #3469bd; --door: #fff;
-    --field: #111a29; --shadow: 0 18px 48px rgb(0 0 0 / 55%);"""
-_STYLE = f"""
-  :root {{ color-scheme: light; --bg: #eef1f6; --surface: #fff; --text: #0f1b2d; --muted: #5b677a;
-    --border: #dfe4ec; --accent: #1d4d94; --primary: #1c4b8f; --primary-hover: #163d75; --door: #0b1b33;
-    --field: #fff; --shadow: 0 18px 48px rgb(15 27 45 / 12%);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }}
-  @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ {_DARK} }} }}
-  :root[data-theme="dark"] {{ {_DARK} }}
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+_STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 2rem 1rem; background: var(--bg); color: var(--text);
     border-top: 3px solid #e0a500; }}
   .card {{ width: min(25rem, 100%); padding: 2.25rem 2rem 2rem; background: var(--surface);
@@ -161,22 +139,17 @@ _STYLE = f"""
   .dev button {{ width: auto; flex: none; }}
   .foot {{ margin: 1.5rem 0 0; font-size: .78rem; color: var(--muted); text-align: center; }}
 """
-_THEME = (
-    "<script>try{var t=localStorage.getItem('yjsp.theme');"
-    "if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>"
-)
-SITE = "YJSP"
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
     """A sign-in page: a card with the site's name and its apps' marks. The title "YJSP" is just the brand."""
-    heading = "" if title == SITE else f"<h1>{_esc(title)}</h1>"
+    heading = "" if title == SITE else f"<h1>{esc(title)}</h1>"
     tab_title = title if title == SITE else f"{title} · {SITE}"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>{_esc(tab_title)}</title>
-<link rel="icon" href="{_esc(_FAVICON)}">{_THEME}<style>{_STYLE}</style></head>
+<meta name="color-scheme" content="light dark"><title>{esc(tab_title)}</title>
+<link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
 <body><main class="card"><div class="brand"><div class="marks">{_VAULT_MARK}{_YORG_MARK}</div>
 <span class="wordmark">{SITE}</span><p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
@@ -205,7 +178,7 @@ def _turned_away(error: ApiError) -> HTMLResponse:
     from Google's or GT's login page in their browser."""
     return _page(
         "Can't sign you in",
-        f'<p class="lead">{_esc(error.message)}.</p><a class="button secondary" href="/">Back to sign-in</a>',
+        f'<p class="lead">{esc(error.message)}.</p><a class="button secondary" href="/">Back to sign-in</a>',
         error.status,
     )
 
@@ -264,14 +237,14 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
                 '<form class="dev" method="get" action="/auth/dev-login"><p>Development sign-in, with any email</p>'
                 '<div class="row"><input name="email" type="email" placeholder="you@example.com" required '
                 'aria-label="Email">'
-                f'<input type="hidden" name="next" value="{_esc(_safe_next(next_path))}"><button>Sign in</button>'
+                f'<input type="hidden" name="next" value="{esc(_safe_next(next_path))}"><button>Sign in</button>'
                 "</div></form>"
             )
         if len(parts) == 1:
             parts.append('<p class="fine">Sign-in isn\'t set up on this server yet.</p>')
         return _page("Sign in", "".join(parts))
 
-    body = f'<p class="lead">Signed in as <strong>{_esc(user.display_name)}</strong><br>{_esc(user.email)}</p>'
+    body = f'<p class="lead">Signed in as <strong>{esc(user.display_name)}</strong><br>{esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
         body += "<p>An admin needs to approve your account before you can use Vault and Yorg. Check back soon.</p>"
     elif user.status == UserStatus.DISABLED:
@@ -385,19 +358,19 @@ def client_start(
     if user.status != UserStatus.ACTIVE:
         return _page(
             "Waiting for approval",
-            f"<p>Signed in as {_esc(user.email)}. An admin needs to approve your account first.</p>",
+            f"<p>Signed in as {esc(user.email)}. An admin needs to approve your account first.</p>",
         )
     name = name.strip()[:100] or "Vault client"
     approval = _approval_signer(settings).dumps({"u": user.id, "p": port, "s": state, "c": challenge})
     cancel = _client_callback(port, error="access_denied", state=state)
     fields = {"port": port, "state": state, "challenge": challenge, "name": name, "approval": approval}
-    hidden = "".join(f'<input type="hidden" name="{k}" value="{_esc(v)}">' for k, v in fields.items())
+    hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(v)}">' for k, v in fields.items())
     return _page(
         "Sign in to Vault",
-        f"""<p class="lead"><strong>{_esc(name)}</strong> wants to use Vault as <strong>{_esc(user.email)}</strong>.
+        f"""<p class="lead"><strong>{esc(name)}</strong> wants to use Vault as <strong>{esc(user.email)}</strong>.
 It will be able to check files in and out with your permissions until you sign it out.</p>
 <form class="choices" method="post" action="/auth/client/approve">{hidden}
-<button type="submit">Allow</button><a class="button secondary" href="{_esc(cancel)}">Cancel</a></form>""",
+<button type="submit">Allow</button><a class="button secondary" href="{esc(cancel)}">Cancel</a></form>""",
     )
 
 

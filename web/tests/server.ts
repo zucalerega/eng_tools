@@ -4,9 +4,11 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { TestProject } from "vitest/node";
+import { fakeClaude } from "./claude";
 
 // Starts the real server (uv run yjsp-server in ../server) with development sign-in and a
-// throwaway vault and Yorg, once for the whole test run, and gives the tests its address.
+// throwaway vault and Yorg, once for the whole test run, and gives the tests its address. Its
+// assistant asks a stand-in for Anthropic's API (claude.ts), with $5 to spend.
 
 declare module "vitest" {
     export interface ProvidedContext {
@@ -59,6 +61,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     mkdirSync(downloads);
     writeFileSync(join(downloads, "Vault-Setup.exe"), program([0, 5, 0], "the add-in's installer"));
     writeFileSync(join(downloads, "vault.exe"), "the command line");
+    const claude = await fakeClaude();
     const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",
@@ -75,6 +78,9 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_WEB_DIR: join(data, "web"),
             YJSP_DOWNLOADS_DIR: downloads,
             YJSP_YORG_DIR: join(data, "yorg"),
+            YJSP_ANTHROPIC_API_KEY: "test-key",
+            YJSP_ANTHROPIC_BASE_URL: claude.url,
+            YJSP_ASSISTANT_BUDGET: "5",
         },
     });
     let output = "";
@@ -103,6 +109,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     project.provide("serverUrl", url);
     return () => {
         stop(server);
+        claude.close();
         rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     };
 }

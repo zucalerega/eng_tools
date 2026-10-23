@@ -26,6 +26,10 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY server/src ./src
 RUN uv sync --locked --no-dev --no-editable
 COPY --from=web /web/dist ./web
+# The help (/help, and what the assistant reads): the repository's guides, as laid out in it.
+COPY README.md ./help/README.md
+COPY docs ./help/docs
+COPY client/src/Vault.SolidWorks/README.md ./help/client/src/Vault.SolidWorks/README.md
 
 RUN useradd --system --uid 10001 --no-create-home yjsp && mkdir /data && chown yjsp /data
 USER yjsp
@@ -36,7 +40,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     YJSP_DATABASE_URL=sqlite:////data/yjsp.db \
     YJSP_VAULT_DIR=/data/vault \
     YJSP_YORG_DIR=/data/yorg \
-    YJSP_WEB_DIR=/app/web
+    YJSP_WEB_DIR=/app/web \
+    YJSP_HELP_DIR=/app/help
 VOLUME /data
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s \

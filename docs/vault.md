@@ -435,8 +435,8 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
 
 ## In the web app
 
-Vault's pages (`web/src/vault`) are the site's own paths, `/` and the rest, in the frame
-the site gives both apps (design.md, "The web app").
+Vault's pages (`web/src/vault`) are under `/vault` (`/vault/files/...`, `/vault/file/5`, ...),
+in the frame the site gives both apps (design.md, "The web app").
 
 - **A live copy of the vault index** (`store.ts`). It loads everything you can see from the
   sync feed (`GET /api/sync`, as the clients do) when a page of the vault first shows, and

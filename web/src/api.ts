@@ -151,6 +151,43 @@ export interface Load {
     memory_total: number | null;
 }
 
+/** Whether you can ask Claude now (Help, top right), and how much of your share of it you've used today. */
+export interface Assistant {
+    available: boolean;
+    reason: string | null; // why not, when you can't
+    model: string;
+    day_used: number; // how much of your daily limit your questions in the last 24 hours took, from 0 to 1
+    budget: number | null; // US dollars it may spend in all: admins only
+    spent: number | null; // what it has spent: admins only
+}
+
+/** A message in a conversation with Claude: a question, with the page of the web app it was asked from, or an answer. */
+export interface ChatMessage {
+    role: "user" | "assistant";
+    text: string;
+    page?: string;
+}
+
+/** A piece of Claude's answer, as it comes. */
+export type AnswerEvent =
+    | { type: "thinking" } // still thinking: comes every few seconds until it writes
+    | { type: "text"; text: string } // the next words of the answer
+    | { type: "done"; stop_reason: string; day_used: number } // end_turn; max_tokens (cut off); refusal
+    | { type: "error"; error: string; message: string }; // it broke off
+
+/** What Claude's answers have cost, for admins (Admin > People). */
+export interface AssistantSpending {
+    available: boolean; // whether people can ask now
+    reason: string | null; // why not, when they can't
+    budget: number; // US dollars it may spend in all
+    spent: number;
+    today: number; // in the last 24 hours, everyone's together
+    daily_limit: number; // what one person's questions may cost in 24 hours
+    model: string;
+    effort: string;
+    people: { user: UserRef; questions: number; spent: number; last_asked_at: string }[]; // the most spent first
+}
+
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
 // server and use a client token instead.
 let baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
@@ -264,6 +301,45 @@ export function uploadFile<T>(path: string, file: Blob, onProgress: (sent: numbe
     });
 }
 
+/**
+ * Ask Claude the conversation's last question. The answer comes as it's written, a line of JSON for each piece, and
+ * each is handed to onEvent as it arrives; the signal stops it. A question it can't take fails as any request does.
+ */
+export async function askClaude(
+    messages: ChatMessage[],
+    onEvent: (event: AnswerEvent) => void,
+    signal?: AbortSignal,
+): Promise<void> {
+    const response = await fetch(apiUrl("/api/assistant/ask"), {
+        method: "POST",
+        headers: { ...baseHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ messages }),
+        credentials: "same-origin",
+        signal,
+    });
+    if (!response.ok || !response.body) {
+        throw apiError(response.status, response.statusText, await response.text());
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    for (;;) {
+        const { done, value } = await reader.read();
+        pending += decoder.decode(value, { stream: !done });
+        let end: number;
+        while ((end = pending.indexOf("\n")) >= 0) {
+            const line = pending.slice(0, end).trim();
+            pending = pending.slice(end + 1);
+            if (line) {
+                onEvent(JSON.parse(line) as AnswerEvent);
+            }
+        }
+        if (done) {
+            return;
+        }
+    }
+}
+
 /** A query string from the parameters that are set. */
 export const query = (params: Record<string, string | number | boolean | undefined>) =>
     new URLSearchParams(
@@ -297,4 +373,8 @@ export const api = {
     /** For admins: how many people used the site each of the last days, and for how long, in a time zone's days. */
     usage: (days: number, timezone: string) =>
         request<Usage>("GET", `/api/usage?${new URLSearchParams({ days: String(days), tz: timezone })}`),
+    /** Whether you can ask Claude now, and how much of your daily limit you've used. */
+    assistant: () => request<Assistant>("GET", "/api/assistant"),
+    /** For admins: what Claude's answers have cost, in all and on whose questions. */
+    assistantSpending: () => request<AssistantSpending>("GET", "/api/assistant/spending"),
 };

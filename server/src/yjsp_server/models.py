@@ -99,6 +99,23 @@ class ServerLoad(Base):
     memory_total: Mapped[int | None] = mapped_column(BigInteger)
 
 
+class AssistantRequest(Base):
+    """A question to the assistant, and what Claude's answer cost: its budget and each person's daily limit add these
+    up (assistant.py). What was asked, and the answer, aren't kept."""
+
+    __tablename__ = "assistant_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    model: Mapped[str] = mapped_column(String(64))  # the model that answered
+    input_tokens: Mapped[int] = mapped_column(default=0)  # read in full
+    cache_write_tokens: Mapped[int] = mapped_column(default=0)  # read in full, and kept for the next questions
+    cache_read_tokens: Mapped[int] = mapped_column(default=0)  # read again from what was kept, for much less
+    output_tokens: Mapped[int] = mapped_column(default=0)  # written, thinking included
+    cost: Mapped[int] = mapped_column(BigInteger, default=0)  # in millionths of a US dollar
+
+
 class ClientAuthCode(Base):
     """One-time code from the CLI/add-in browser sign-in, redeemed with a PKCE verifier."""
 

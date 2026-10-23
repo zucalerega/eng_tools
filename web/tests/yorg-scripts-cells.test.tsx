@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { codeOf, joinCells, newCell, parseCells } from "../src/yorg/scripts/cells";
-import { Markdown } from "../src/yorg/scripts/Markdown";
+import { Markdown } from "../src/markdown";
 
 // A notebook's cells, as a script keeps them ("# %%" marks, as VS Code, Spyder, and Jupytext write them), and a text
 // cell's Markdown, shown.

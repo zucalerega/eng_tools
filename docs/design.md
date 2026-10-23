@@ -9,7 +9,8 @@ company: a few dozen people, close to zero hosting cost, and simple enough for n
 team to keep running.
 
 This page is the site as a whole: how it's put together, sign-in and accounts, the web
-app's frame, the API's conventions, the names from before YJSP, and deploying. Each app has
+app's frame, the help and Claude, the API's conventions, the names from before YJSP, and
+deploying. Each app has
 its own: [vault.md](vault.md) and [yorg.md](yorg.md).
 
 ## Context
@@ -34,7 +35,9 @@ Web app (React): the frame, Vault's pages, Yorg's pages ────────
                                ├── vault/: folders, files, versions, check-outs, permissions
                                ├── yorg/: datasets, views, calculated channels, scripts, models
                                ├── database: SQLite or Postgres, one for all of it
-                               └── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
+                               ├── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
+                               └── the help: the repository's docs (YJSP_HELP_DIR), which Claude
+                                   reads, through Anthropic's API, to answer Help's questions
 ```
 
 | Part | Where | Status |
@@ -47,6 +50,7 @@ Web app (React): the frame, Vault's pages, Yorg's pages ────────
 | Vault's SolidWorks add-in | `client/src/Vault.SolidWorks` (.NET Framework 4.8) | working; first run in SolidWorks September 2026; for SolidWorks 2026 since October 2026 |
 | Yorg on the server | `server/src/yjsp_server/yorg` | working |
 | Yorg in the web app | `web/src/yorg` | working |
+| The help, and Claude in it | `server/src/yjsp_server/help.py`, `assistant.py`; `web/src/help.tsx`, `chat.ts` | working since October 2026 |
 
 **What the apps share, and what's their own.** One server process, one database, one
 sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg), the account
@@ -68,7 +72,7 @@ site's only one.
 
 | What | Setting (default) | Backed up |
 |---|---|---|
-| The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
+| The database: accounts, Vault's tables, Yorg's, and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
@@ -216,6 +220,10 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Light and dark:** light, dark, or the computer's setting, chosen in the account menu
   and remembered per browser (`theme.ts`, `yjsp.theme`, as `data-theme` on the page). The
   sign-in pages follow the same choice.
+- **Help** (`help.tsx`), the question mark at the top right of both apps: a panel beside
+  the page, which stays as it is, with the help (`/help`), the open app's own (Yorg's Help
+  page, Vault's SolidWorks page), and Claude to ask (below). An error the page shows is
+  offered as a question, in a click.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
@@ -224,6 +232,56 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   crossed by a gold orbit (`VaultMark`), Yorg's a signal rising to its gold peak
   (`YorgMark`). The tab's title and icon are the app's. The site's own icon, on the
   sign-in pages, is the gold orbit alone.
+
+## The help, and Claude
+
+**The help** (`help.py`) is the repository's own docs, as one page: the user guide (README.md),
+the SolidWorks add-in's README, and troubleshooting (docs/troubleshooting.md), which anyone can
+read without signing in, and how the site works inside (this page, vault.md, yorg.md), which
+only signed-in members see, as the repository is private. `help.PARTS` is the one list of what's
+in it, in order, with each file's sections for developers left out (running a server, the
+checks before a release). The server renders the Markdown itself (`markdown-it-py`, with no HTML
+from the docs), so the page works without JavaScript, and for AI tools that fetch it: `/help`,
+each heading with an anchor (`#vault-api`: GitHub's, after the part's name), and links between
+the docs turned into links on the page, or into plain words where the file isn't shown.
+`/help.md` is the same as one Markdown document, each heading ending with its anchor, for an AI
+tool to read (*Copy for an AI*, on the page, puts it on the clipboard), and `/llms.txt` points AI
+tools to it. The docs come from `YJSP_HELP_DIR` (by default the repository; the live server
+keeps a copy beside the server, which `deploy.sh` ships with each deploy), and are read again
+when they change. Troubleshooting says what every error the server sends means: a test fails
+when a code isn't there.
+
+**Claude** (`assistant.py`), in Help, answers members' questions about the site: how to do
+something, or what an error means. It's Claude Sonnet 5.5 at high effort, through Anthropic's
+API (`YJSP_ANTHROPIC_API_KEY`; the model and the effort are settings too), and all it knows of
+YJSP is the help, the whole of which it reads with every question. The instructions and the help
+come first, the same for every question until the next deploy, and Anthropic keeps them an hour
+after each read (prompt caching), so a question in that hour reads them for a twentieth of the
+price; then whether the person asking is an admin; then the conversation, each question with
+the page it was asked from. It answers with links to the help's anchors. It can't see anyone's
+files or account, and it does nothing but answer.
+
+- **The conversation stays in the browser** (`chat.ts`, in the tab's sessionStorage, for the
+  person who had it: someone else signing in on the tab starts with none), which sends all of
+  it with each question: the server keeps no one's questions or answers. An answer
+  streams back as it's written (`POST /api/assistant/ask`, lines of JSON), with "thinking" every
+  10 seconds while Claude thinks, so nothing on the way closes a quiet connection. A question
+  Claude declines (`stop_reason: refusal`) says so; Anthropic's server-side fallback answers the
+  kinds it can with another model first.
+- **What it may spend**: the server counts what each answer cost, from the tokens Anthropic says
+  it used (read in full, kept, read from what was kept, and written, thinking included), at each
+  model's prices (`assistant.PRICES`), in `assistant_requests`, which keeps only who asked, when,
+  the tokens, and the cost. It stops answering everyone once its answers have cost
+  `YJSP_ASSISTANT_BUDGET` (the credits it may use), and anyone whose questions in the last 24
+  hours have cost `YJSP_ASSISTANT_DAILY_LIMIT`. Each person asks one question at a time, so no
+  one goes past a limit by more than one answer's cost (an answer writes at most 16,000
+  tokens). An answer that breaks off counts as if it had written all it could. The
+  workspace the key belongs to has a spend limit of its own, at Anthropic (deploying.md,
+  "Claude"). Admin > People's *Claude* card shows the spending, and on whose questions.
+- **When it can't answer**, it says why, with a code of its own: not set up (`assistant_off`),
+  the budget spent (`assistant_spent`), out of credits at Anthropic (`assistant_no_credits`),
+  your daily limit reached (`assistant_daily_limit`), still answering your last question
+  (`assistant_busy`), or Anthropic's API failing (`assistant_failed`).
 
 ## Server conventions
 
@@ -260,7 +318,8 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 
 ## API
 
-Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs are at
+Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`, `/help.md`,
+`/llms.txt`, which show members more). Interactive docs are at
 `/docs`. The site's own endpoints are below; each app's are in its page: [Vault's](vault.md#api)
 (`/api/folders`, `/api/files`, ...) and [Yorg's](yorg.md#api) (`/api/yorg/...`).
 
@@ -276,6 +335,9 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 | `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
+| `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` and what it has `spent`, in US dollars |
+| `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
+| `GET /api/assistant/spending` | what Claude's answers have cost, in all and in the last 24 hours; its budget, limit, model, and effort; and each person's questions and what they cost (admins) |
 
 ## Names from before YJSP
 
@@ -328,7 +390,7 @@ CI builds and smoke-tests the image on every change, and publishes it to
    `YJSP_MICROSOFT_CLIENT_ID`/`_SECRET` (the app's *Application (client) ID* and its
    secret), `YJSP_GOOGLE_CLIENT_ID`/`_SECRET`, and `YJSP_BOOTSTRAP_ADMINS` (see
    `server/.env.example`). Sign-up starts open: anyone who can sign in can join until an
-   admin turns on the whitelist (Admin > People).
+   admin turns on the whitelist (Admin > Whitelist).
 3. Keep `YJSP_DATABASE_URL` (SQLite by default), `YJSP_VAULT_DIR`, and `YJSP_YORG_DIR`
    on a persistent disk, and back them up (see "Storage"). An S3/R2 store for Vault's
    blobs (Cloudflare R2: 10 GB free, no download fees) is planned.

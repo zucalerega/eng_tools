@@ -45,6 +45,8 @@ from .schemas import (
     PartKindIn,
     PartKindOut,
     PartNumbersOut,
+    PauseIn,
+    PauseOut,
     ReleaseIn,
     RenameIn,
     ReserveIn,
@@ -285,6 +287,26 @@ def get_numbers(user: ActiveUser, db: DB) -> PartNumbersOut:
 def post_release(body: ReleaseIn, user: ActiveUser, db: DB) -> PartNumbersOut:
     """Give back part numbers not used: no file ever takes them."""
     return PartNumbersOut.of(vault.release_numbers(db, user, body.numbers))
+
+
+@router.get("/vault/pause")
+def get_pause(user: ActiveUser, db: DB) -> PauseOut | None:
+    """Whether an admin has the vault paused (null: it isn't), by whom, and why."""
+    pause = vault.paused(db)
+    return PauseOut.of(pause) if pause else None
+
+
+@router.put("/vault/pause")
+def put_pause(body: PauseIn, user: ActiveUser, db: DB) -> PauseOut:
+    """Pause the vault (admins): every change but yours, from this computer, waits until it's unpaused."""
+    return PauseOut.of(vault.pause(db, user, host=body.host, reason=body.reason))
+
+
+@router.delete("/vault/pause", status_code=204)
+def delete_pause(user: ActiveUser, db: DB) -> Response:
+    """Unpause the vault (admins)."""
+    vault.unpause(db, user)
+    return Response(status_code=204)
 
 
 @router.get("/checkouts")

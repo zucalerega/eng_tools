@@ -349,11 +349,28 @@ class CheckinOut(BaseModel):
         )
 
 
+class PauseOut(BaseModel):
+    by: UserRef  # the admin who paused the vault: their changes, from host, go on
+    since: datetime
+    host: str
+    reason: str
+
+    @classmethod
+    def of(cls, pause: vault.Pause) -> "PauseOut":
+        return cls(by=UserRef.of(pause.by), since=pause.since, host=pause.host, reason=pause.reason)
+
+
+class PauseIn(BaseModel):
+    host: str  # this computer: the admin's changes from it go on
+    reason: str = ""  # what for, shown to everyone
+
+
 class SyncOut(BaseModel):
     seq: int  # pass as `since` next time
     full: bool  # true: this is everything you can see; drop anything not listed
     folders: list[FolderOut]
     files: list[FileOut]  # when not full, includes files deleted since (deleted_at set)
+    paused: PauseOut | None = None  # an admin has the vault paused: changes wait until it's back
 
     @classmethod
     def of(cls, result: vault.SyncResult) -> "SyncOut":
@@ -362,6 +379,7 @@ class SyncOut(BaseModel):
             full=result.full,
             folders=[FolderOut.of(f) for f in result.folders],
             files=[FileOut.of(f) for f in result.files],
+            paused=PauseOut.of(result.paused) if result.paused else None,
         )
 
 

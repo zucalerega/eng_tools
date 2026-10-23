@@ -184,6 +184,14 @@ or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says w
   is past it, the check-in is refused (`out_of_date`), so a change made to an old copy
   isn't checked in over newer ones.
 
+**Pausing the vault.** An admin pauses the vault (`PUT /api/vault/pause {host, reason}`) for
+work on all of it, such as numbering every file at once: every change waits until it's
+unpaused (`DELETE /api/vault/pause`), refused as `paused`, with who paused it and why; but
+the admin's own, from the computer they paused it on (and those that name no computer, such
+as a rename, from anywhere). Looking, downloading, undoing check-outs, Caliper's models, and
+changes to accounts and to who may see what go on. The sync feed says while it's paused
+(`paused`), for the clients to show.
+
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. Vault refuses to delete a file that the
 latest version of another file still uses, unless you force it or delete both
@@ -756,6 +764,7 @@ are in [design.md](design.md#api).
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
 | `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
 | `GET/PUT /api/numbering` | whether new files take part numbers `{mode: off, offer, or require}`, and the next number `{next_number}` (admins change them) |
+| `GET/PUT/DELETE /api/vault/pause` | whether an admin has the vault paused, by whom and why; pause it `{host, reason}`; unpause it (admins) |
 | `GET/POST /api/part-kinds`, `PATCH /api/part-kinds/{code}` | the kinds of part numbers `{code, label, applies, retired}` (admins add and change them) |
 | `POST /api/numbers`, `GET /api/numbers`, `POST /api/numbers/release` | hand out part numbers `{kind, title, count}`; yours not used yet; give back unused ones `{numbers}` |
 | `GET /api/checkouts?mine=` | who has what checked out |

@@ -65,6 +65,9 @@ replaces Kenesto.
   (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
   Structures' numbers from before part numbers stay as they are; its new files take new
   numbers.
+- **An admin can pause the vault** for work on all of it, such as numbering every file at
+  once. While it's paused, check-outs, check-ins and other changes wait, saying who paused
+  it and why; you can still look at everything, download, and undo your check-outs.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
   search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every

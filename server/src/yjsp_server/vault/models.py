@@ -50,6 +50,11 @@ class VaultState(Base):
     numbering: Mapped[Numbering] = mapped_column(
         enum_column(Numbering), default=Numbering.OFF, server_default=Numbering.OFF.value
     )
+    # Paused by an admin (vault.pause): changes wait, but theirs from the computer they paused it on.
+    paused_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    paused_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", name="fk_vault_state_paused_by_users"))
+    paused_host: Mapped[str | None] = mapped_column(String(255))
+    paused_reason: Mapped[str] = mapped_column(String(500), default="", server_default="")
 
 
 class Folder(Base):

@@ -67,6 +67,8 @@ def begin_write(db: Session) -> int:
     in Postgres): writers run one at a time, the reads that follow see the
     latest committed state, and seq values commit in increasing order. The sync
     feed relies on that order. Rows the operation changes get change_seq = seq.
+    A change to files then calls _check_not_paused, unless it goes on while an
+    admin has the vault paused (pause).
     """
     db.execute(update(VaultState).where(VaultState.id == 1).values(seq=VaultState.seq + 1))
     return db.execute(select(VaultState.seq).where(VaultState.id == 1)).scalar_one()
@@ -186,6 +188,7 @@ class SyncResult:
     full: bool
     folders: list[FolderView]
     files: list[FileView]
+    paused: "Pause | None" = None
 
 
 @dataclass
@@ -486,7 +489,7 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     ]
     changed = File.deleted_at.is_(None) if full else File.change_seq > since
     rows = [(f, v) for f, v in _with_latest(db, changed) if access.can(f.folder_id, Role.VIEWER)]
-    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows))
+    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows), paused(db))
 
 
 def activity(
@@ -561,6 +564,7 @@ def create_folder(db: Session, user: User, path: str) -> FolderView:
     if not names:
         raise ApiError("The vault root already exists", code="exists")
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     # Only a folder the user can see "exists". One they can't see gets what a free name in the same place gets (from
     # _ensure_folders): that they can't add folders there, which is so, or they'd see it. "Exists" would tell them
@@ -580,6 +584,7 @@ def checkout(db: Session, user: User, refs: list[FileRef], host: str, *, force: 
     """
     host = _host(host)
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     files = _resolve_many(db, tree, access, refs)
     for file in files:
@@ -803,6 +808,7 @@ def checkin(
     if not items:
         raise ApiError("Nothing to check in")
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     now = utcnow()
 
@@ -995,6 +1001,7 @@ def revert(
     """
     host = _host(host)
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id)
     path = tree.file_path(file)
@@ -1060,6 +1067,7 @@ def delete(
     went with it (see restore_folder).
     """
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     chosen = []
     for path in folders or []:
@@ -1142,6 +1150,7 @@ def _revive(db: Session, tree: Tree, folder: Folder, seq: int) -> None:
 def restore(db: Session, user: User, file_id: int) -> FileView:
     """Bring a deleted file back, with its full history; and its folder, if that was deleted too."""
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     path = tree.file_path(file)
@@ -1176,6 +1185,7 @@ def restore_folder(db: Session, user: User, folder_id: int) -> FolderView:
     """Bring a deleted folder back with everything deleted along with it, and the folders above it if they
     were deleted too. What was deleted from it before stays in its trash. Takes a lead of it, like deleting it."""
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     folder = tree.by_id.get(folder_id)
     if folder is None or folder.parent_id is None or not access.visible(folder.id):
@@ -1328,6 +1338,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     go; moving a folder, which takes its permissions along, takes a lead of it.
     """
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     moving_folders = []
     for path in folders:
@@ -1443,6 +1454,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     """
     new_name = paths.clean_name(name)
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     if (file is None) == (folder is None):
         raise ApiError("Rename a file or a folder", code="bad_rename")
@@ -1526,6 +1538,7 @@ def describe(db: Session, user: User, changes: list[Description]) -> list[FileVi
     if not changes:
         raise ApiError("Say which files to describe")
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     planned: list[tuple[File, str | None, bool | None]] = []
     seen: set[int] = set()
@@ -1601,6 +1614,7 @@ def set_numbering(
     """An admin turns part numbers on or off for new files, or moves the next number on. Numbers only go up, so none
     is ever handed out twice."""
     begin_write(db)
+    _check_not_paused(db, user)
     _require_admin(user, "change how part numbers are handed out")
     state = _state(db)
     detail: dict[str, Any] = {}
@@ -1628,6 +1642,7 @@ def part_kinds(db: Session) -> list[PartKind]:
 def add_part_kind(db: Session, user: User, code: str, label: str, applies: Applies) -> PartKind:
     """An admin adds a kind to the list: 002 Sheet metal part, for parts."""
     begin_write(db)
+    _check_not_paused(db, user)
     _require_admin(user, "change the kinds of part numbers")
     if not numbers.is_kind(code):
         raise ApiError(f"A kind is three digits, like 001, not {code}", code="bad_kind")
@@ -1653,6 +1668,7 @@ def change_part_kind(
     """An admin renames a kind, retires it (no new numbers of it are handed out) or brings it back, or says what it's
     for, while no file has a number of it. A kind is never deleted: the numbers handed out keep it."""
     begin_write(db)
+    _check_not_paused(db, user)
     _require_admin(user, "change the kinds of part numbers")
     kind = db.get(PartKind, code)
     if kind is None:
@@ -1683,6 +1699,7 @@ def reserve_numbers(db: Session, user: User, kind: str, *, count: int = 1, title
     renumbering. A file checked in named by one takes it (_part_number), with its title if it's given none of its
     own. Editors get them once an admin turns part numbers on, up to _MAX_UNUSED unused at a time; admins any."""
     begin_write(db)
+    _check_not_paused(db, user)
     state = _state(db)
     if not user.is_admin:
         if state.numbering is Numbering.OFF:
@@ -1734,6 +1751,7 @@ def unused_numbers(db: Session, user: User) -> list[PartNumber]:
 def release_numbers(db: Session, user: User, texts: list[str]) -> list[PartNumber]:
     """Give back part numbers handed out and not used: no file ever takes them. Your own; an admin, anyone's."""
     begin_write(db)
+    _check_not_paused(db, user)
     now = utcnow()
     released: list[PartNumber] = []
     for text in texts:
@@ -1756,6 +1774,75 @@ def release_numbers(db: Session, user: User, texts: list[str]) -> list[PartNumbe
         _event(db, user, "release_numbers", numbers=[numbers.text(n.number, n.kind) for n in released])
     db.commit()
     return released
+
+
+# --- pausing (docs/vault.md, "Pausing the vault") --------------------------------------------------
+
+
+@dataclass
+class Pause:
+    by: User
+    since: datetime
+    host: str  # the computer the admin paused it on, whose changes go on
+    reason: str
+
+
+def paused(db: Session) -> Pause | None:
+    """Whether an admin has the vault paused: by whom, since when, on which computer, and why."""
+    state = _state(db)
+    if state.paused_at is None or state.paused_by is None:
+        return None
+    by = db.get(User, state.paused_by)
+    assert by is not None
+    return Pause(by, state.paused_at, state.paused_host or "", state.paused_reason)
+
+
+def _check_not_paused(db: Session, user: User, host: str | None = None) -> None:
+    """Refuse a change while an admin has the vault paused: but theirs, from the computer they paused it on (or from
+    anywhere, for a change that names no computer, such as a rename)."""
+    pause = paused(db)
+    if pause is None or (user.id == pause.by.id and host in (None, pause.host)):
+        return
+    raise Conflict(
+        f"The vault is paused while {pause.by.display_name} works on it{': ' + pause.reason if pause.reason else ''}. "
+        "Changes wait until it's back; you can still look at everything, and undo your check-outs.",
+        code="paused",
+        by=pause.by.display_name,
+        since=pause.since.isoformat(),
+        reason=pause.reason,
+    )
+
+
+def pause(db: Session, user: User, *, host: str, reason: str = "") -> Pause:
+    """An admin pauses the vault for work on all of it (numbering every file, say): every change but theirs, from this
+    computer, waits until it's unpaused. Undoing check-outs, and changes to who may see what, go on."""
+    begin_write(db)
+    _require_admin(user, "pause the vault")
+    host, reason = _host(host), reason.strip()
+    if len(reason) > 500:
+        raise ApiError("Say why in at most 500 characters", code="bad_reason")
+    state = _state(db)
+    if state.paused_by is not None and state.paused_by != user.id:
+        pause = paused(db)
+        assert pause is not None
+        raise Conflict(f"{pause.by.display_name} has the vault paused already", code="paused")
+    state.paused_at, state.paused_by, state.paused_host, state.paused_reason = utcnow(), user.id, host, reason
+    _event(db, user, "pause", host=host, reason=reason)
+    db.commit()
+    now = paused(db)
+    assert now is not None
+    return now
+
+
+def unpause(db: Session, user: User) -> None:
+    """An admin ends a pause, theirs or another admin's: changes go on again."""
+    begin_write(db)
+    _require_admin(user, "unpause the vault")
+    state = _state(db)
+    if state.paused_by is not None:
+        _event(db, user, "unpause", paused_by=state.paused_by)
+        state.paused_at, state.paused_by, state.paused_host, state.paused_reason = None, None, None, ""
+    db.commit()
 
 
 def can_upload(db: Session, user: User) -> bool:

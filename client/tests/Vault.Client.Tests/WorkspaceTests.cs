@@ -365,6 +365,31 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task CheckingInWhatUsesAFileDeletedInTheVaultSaysHowToGoOn()
+    {
+        // Someone deleted a sub-assembly that an assembly here still uses: the vault would have a hole in the assembly.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync([Write(alice, "Legs/Leg Assembly.SLDASM", "legs")], "the legs");
+        await bob.GetLatestAsync([Folder(bob)]);
+        await alice.Api.DeleteAsync([$"{_folder}/Legs/Leg Assembly.SLDASM"]);
+        var legs = Local(bob, "Legs/Leg Assembly.SLDASM");
+        var vehicle = Write(bob, "Vehicle.SLDASM", "vehicle");
+
+        var uses = await Assert.ThrowsAsync<WorkspaceException>(
+            () => bob.CheckinAsync([vehicle], "vehicle", referencesOf: path => path == vehicle ? [legs] : []));
+        Assert.Equal(
+            $"{_folder}/Vehicle.SLDASM uses {_folder}/Legs/Leg Assembly.SLDASM, which was deleted from the vault since you got it. "
+            + "Restore it from its folder's trash in the web app, or take it out of Vehicle.SLDASM, then check in again.",
+            uses.Message);
+        var itself = await Assert.ThrowsAsync<WorkspaceException>(() => bob.CheckinAsync([legs], "legs"));
+        Assert.Equal(
+            $"{_folder}/Legs/Leg Assembly.SLDASM was deleted from the vault since you got it. "
+            + "Restore it from its folder's trash in the web app to check it in.",
+            itself.Message);
+    }
+
+    [Fact]
     public async Task IdenticalCopiesAreRecognized()
     {
         var alice = await WorkspaceAsync("alice");

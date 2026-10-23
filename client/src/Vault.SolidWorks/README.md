@@ -95,11 +95,14 @@ While you work:
   if it's checked out to you in the web app or on another computer, to move the check-out
   here).
   Saving such a file also offers a check-out first, then saves it in place, or explains
-  why it can't be saved (someone else has it, or there's a newer version) and offers to
-  save your changes under another name.
+  why it can't be saved (someone else has it, there's a newer version, or it was deleted
+  from the vault since you got it: restore it from its folder's trash in the web app) and
+  offers to save your changes under another name.
 - **Check in an assembly** and the new parts it uses, and the parts you changed, go
   into the same check-in. Each is recorded with the version it used, and SolidWorks
-  is asked what the assembly references.
+  is asked what the assembly references. One that uses a file deleted from the vault since
+  you got it isn't checked in, and Vault says to restore that file or take it out of the
+  assembly.
 - **Getting the latest version** of an open file updates it in place, along with the
   parts it uses; an open assembly that uses an updated part updates too. Files with
   unsaved changes are never replaced for you.

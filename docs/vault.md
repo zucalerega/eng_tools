@@ -310,7 +310,10 @@ on top of it.
   changes, go into the same check-in. Every reference is pinned to the version this
   workspace has, which is the one the assembly was built against. References outside the
   workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
-  saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
+  saying to move them in first, and so is a reference to a file deleted from the vault
+  since it came here, saying to restore it from its folder's trash or take it out of the
+  assembly: checked in, the assembly would have a hole where it was. Saving such a file
+  in SolidWorks says the same, and offers Save As. The CLI can't read SolidWorks files, so it doesn't send
   references, and the server refuses drawings from it (a drawing must show a part or
   assembly).
 

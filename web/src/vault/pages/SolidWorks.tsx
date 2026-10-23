@@ -142,6 +142,16 @@ export function SolidWorks() {
                     </p>
                 </details>
                 <details>
+                    <summary>Vault won't save or check in a file that was deleted</summary>
+                    <p>
+                        Someone deleted it from the vault since you got it, so there's nowhere to save your changes to
+                        it, and an assembly that still uses it can't be checked in: the vault would have a hole in it.
+                        To keep the file, restore it from the Trash of its folder here. If it's gone for good, take it
+                        out of the assembly in SolidWorks, then check the assembly in. Your changes to the file itself
+                        can still be saved under another name (File &gt; Save As).
+                    </p>
+                </details>
+                <details>
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like

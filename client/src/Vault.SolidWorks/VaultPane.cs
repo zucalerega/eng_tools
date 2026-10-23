@@ -307,6 +307,11 @@ internal sealed partial class VaultPane : UserControl
             Warn($"{name} can't be saved: {other.User.Name} has it checked out on {other.Host}.");
             return false;
         }
+        if (status.State == FileState.DeletedInVault)
+        {
+            Warn(DeletedSinceYouGotIt(name));
+            return false;
+        }
         if (status.State is not (FileState.UpToDate or FileState.Modified))
         {
             Warn($"{name} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
@@ -315,6 +320,12 @@ internal sealed partial class VaultPane : UserControl
         return Ask($"{name} isn't checked out to you. Check it out now and save?") == DialogResult.Yes
             && CheckOutToSave(workspace, path);
     }
+
+    // A file deleted from the vault since it came here can't be checked out to save it: someone took it out, on
+    // purpose or not, and only bringing it back puts it in the vault again.
+    private static string DeletedSinceYouGotIt(string name) =>
+        $"{name} can't be saved: it was deleted from the vault since you got it. Restore it from its folder's trash in the web "
+        + "app to keep working on it, or save your work under another name.";
 
     /// <summary>
     /// Called before SolidWorks' Save As dialog for a read-only document. That's what Save opens for
@@ -335,14 +346,18 @@ internal sealed partial class VaultPane : UserControl
             // Checked out while it was open (with the CLI, say): it only needs to become editable.
             return _sw.SetReadOnly(path, false) ? SaveAsChoice.SaveInPlace : SaveAsChoice.ShowDialog;
         }
-        var reason = status.Lock is { } other
-            ? $"{name} is checked out by {other.User.Name} on {other.Host}, so your changes can't be saved to it."
-            : status.State is not (FileState.UpToDate or FileState.Modified)
-                ? $"{name} can't be saved: a newer version is in the vault."
-                : null;
+        var reason = status switch
+        {
+            { Lock: { } other } => $"{name} is checked out by {other.User.Name} on {other.Host}, so your changes can't be saved to it.",
+            { State: FileState.DeletedInVault } =>
+                $"{name} was deleted from the vault since you got it, so your changes can't be saved to it. To keep working on it, "
+                + "restore it from its folder's trash in the web app.",
+            { State: not (FileState.UpToDate or FileState.Modified) } => $"{name} can't be saved: a newer version is in the vault.",
+            _ => null,
+        };
         if (reason != null)
         {
-            return Ask(reason + " Save them under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
+            return Ask(reason + "\n\nSave your changes under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
         }
         var answer = MessageDialog.Show(
             this,
@@ -1302,7 +1317,9 @@ internal sealed partial class VaultPane : UserControl
             var current = Task.Run(() => workspace.StatusAsync(new[] { path })).GetAwaiter().GetResult().FirstOrDefault();
             if (current?.State is not (FileState.UpToDate or FileState.Modified))
             {
-                Warn($"{Path.GetFileName(path)} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
+                Warn(current?.State == FileState.DeletedInVault
+                    ? DeletedSinceYouGotIt(Path.GetFileName(path))
+                    : $"{Path.GetFileName(path)} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
                 return false;
             }
             var checkedOut = Task.Run(() => workspace.CheckoutAsync(new[] { path })).GetAwaiter().GetResult();

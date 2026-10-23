@@ -167,7 +167,7 @@ export function FilePage({ id }: { id: number }) {
                     {canEdit && !file.deleted_at && (
                         <button
                             type="button"
-                            title="What it's called, beside its name: no new version, and no check-out"
+                            title="What it's called, shown with its name: no new version, and no check-out"
                             onClick={() => setAsking({ action: "title" })}
                         >
                             Edit title…
@@ -322,7 +322,7 @@ export function FilePage({ id }: { id: number }) {
     );
 }
 
-/** What a file is called, shown beside its name: changing it changes nothing in the file. */
+/** What a file is called, shown with its name: changing it changes nothing in the file. */
 function TitleDialog({ file, onClose }: { file: VaultFile; onClose: () => void }) {
     const store = useStore();
     const [title, setTitle] = useState(file.title);
@@ -349,7 +349,7 @@ function TitleDialog({ file, onClose }: { file: VaultFile; onClose: () => void }
             onCancel={onClose}
         >
             <p className="muted">
-                What people call it, shown beside its name. Its name stays as it is, and so does the file: changing the
+                What people call it, shown with its name. Its name stays as it is, and so does the file: changing the
                 title isn't a new version, and doesn't need it checked out.
             </p>
             <label className="field">

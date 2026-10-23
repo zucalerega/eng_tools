@@ -60,7 +60,7 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
   and it can contain versions of many files.
 - **Blob**: file contents, stored once under their SHA-256 hash. An unchanged
   file, or the same STEP file in two folders, takes no extra space.
-- **Title**: what people call a file, `Fin bracket`, shown beside its name. It starts as
+- **Title**: what people call a file, `Fin bracket`, shown with its name. It starts as
   the file's name without its type, and anyone who can edit the file can change it. Part
   numbers will make CAD files' names numbers (`00000123-001.SLDPRT`), and the title is what
   says what each one is.
@@ -469,7 +469,7 @@ the site gives both apps (design.md, "The web app").
     computer, who created it and when, and who changed it last and when; every folder how
     many files in it are checked out. Assemblies (and drawings) open up to show what they
     use, level by level, each with its own status; parts and assemblies link to their
-    drawings. A file's title shows beside its name wherever it says more than the name does
+    drawings. A file's title shows under its name wherever it says more than the name does
     (`titleBeside` in `paths.ts`: once someone named it, or its name is a part number), here,
     on its page, in Checked out, in the trash, and in Caliper's tree. Search (by name, title,
     or a name the file had before, with `*` and `?` patterns, or by path with a `/`) and the

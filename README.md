@@ -52,7 +52,7 @@ replaces Kenesto.
   Check drawings in from SolidWorks: the `vault` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
-- **Every file has a title,** what it's called (`Fin bracket`), shown beside its name
+- **Every file has a title,** what it's called (`Fin bracket`), shown with its name
   wherever it says more than the name does: once part numbers make CAD files' names
   numbers, the title says what each one is. A file's title starts as its name without its
   type; anyone who can edit the file changes it with **Edit title…** on its page, which

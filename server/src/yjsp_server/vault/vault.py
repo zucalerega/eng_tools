@@ -8,6 +8,7 @@ function starts with begin_write(); read its docstring before adding one.
 import hashlib
 import re
 import threading
+import unicodedata
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -23,7 +24,20 @@ from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
 from . import caliper, paths, solidworks
 from .access import Access, Tree
-from .models import Blob, CaliperModel, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
+from .models import (
+    Blob,
+    CaliperModel,
+    Checkin,
+    Event,
+    File,
+    Folder,
+    FormerName,
+    Grant,
+    Role,
+    VaultState,
+    Version,
+    VersionRef,
+)
 from .storage import BlobStore
 
 FileRef = int | str  # a file id, or a vault path
@@ -123,6 +137,7 @@ class FileView:
     uses: list[tuple[int, int]] = field(default_factory=list)
     deleted_by: User | None = None
     created_by: User | None = None  # who added it: its version 1
+    former_names: list[str] = field(default_factory=list)  # _former_names
 
 
 @dataclass
@@ -212,6 +227,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
         people |= {f.created_by, f.checked_out_by, f.deleted_by}
     users = _users(db, people)
     uses = _uses(db, access, [v.id for _, v in rows])
+    former = _former_names(db, [f for f, _ in rows])
     return [
         FileView(
             f,
@@ -222,6 +238,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
             uses.get(v.id, []),
             users.get(f.deleted_by) if f.deleted_by else None,
             users.get(f.created_by),
+            former.get(f.id, []),
         )
         for f, v in rows
     ]
@@ -252,6 +269,24 @@ def _uses(db: Session, access: Access, version_ids: list[int]) -> dict[int, list
             if access.can(folder_id, Role.VIEWER):
                 uses[version_id].append((file_id, number))
     return uses
+
+
+def _former_names(db: Session, files: list[File]) -> dict[int, list[str]]:
+    """The names each file had before its renames (FormerName), each once, as it was last spelled, in the order the
+    file last left them; not its name now, which a move keeps. By file id, for files that had any."""
+    had: dict[int, dict[str, str]] = defaultdict(dict)  # by file: names by key, oldest first
+    ids = [f.id for f in files]
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(FormerName.file_id, FormerName.path, FormerName.name_key)
+            .where(FormerName.file_id.in_(ids[start : start + _BATCH]))
+            .order_by(FormerName.id)
+        )
+        for file_id, path, key in rows:
+            had[file_id].pop(key, None)  # to the end, as the last it left
+            had[file_id][key] = path.rsplit("/", 1)[-1]
+    found = {f.id: [name for key, name in had[f.id].items() if key != f.name_key] for f in files if f.id in had}
+    return {file_id: names for file_id, names in found.items() if names}
 
 
 # --- finding files ------------------------------------------------------------------------
@@ -711,6 +746,7 @@ def checkin(
                 folder_id=folder.id,
                 name=names[-1],
                 name_key=paths.key(names[-1]),
+                title=paths.stem(names[-1]),  # until someone names it (describe)
                 latest_version=1,
                 created_at=now,
                 created_by=user.id,
@@ -1107,6 +1143,15 @@ def _check_moves(db: Session, tree: Tree, access: Access, moves: dict[int, tuple
         )
 
 
+def _remember(db: Session, user: User, moves: dict[int, tuple[str, str]]) -> None:
+    """Keep where moving files were (FormerName): SolidWorks files saved with them there still name them so."""
+    now = utcnow()
+    for file_id, (old, new) in moves.items():
+        if paths.key(old) != paths.key(new):  # a change of case changes nothing to find a file by
+            name_key = paths.key(old.rsplit("/", 1)[-1])
+            db.add(FormerName(file_id=file_id, path=old, name_key=name_key, changed_at=now, changed_by=user.id))
+
+
 def _subtree(tree: Tree, folder: Folder) -> list[Folder]:
     """A folder and every folder under it."""
     found, pending = [], [folder]
@@ -1204,6 +1249,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     for _, new in moves.values():
         paths.split(new)  # still within the length limit
     _check_moves(db, tree, access, moves)
+    _remember(db, user, moves)
 
     moved_folders = [f for f in moving_folders if f.parent_id != dest.id]
     moved_files = [f for f in moving_files if f.folder_id != dest.id]
@@ -1250,6 +1296,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         paths.split(new)
         moves[target.id] = (old, new)
         _check_moves(db, tree, access, moves)
+        _remember(db, user, moves)
         _event(db, user, "rename", file=target, path=new, moved_from=old)
         target.name, target.name_key = new_name, paths.key(new_name)
         db.flush()
@@ -1272,10 +1319,71 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     for _, new in moves.values():
         paths.split(new)
     _check_moves(db, tree, access, moves)
+    _remember(db, user, moves)
     _event(db, user, "rename_folder", folder_id=renamed.id, path=new_base, moved_from=old_base)
     renamed.name, renamed.name_key = new_name, paths.key(new_name)
     db.flush()
     return _finish_move(db, user, seq, [], [renamed])
+
+
+_TITLE_MAX = 200  # files.title's size
+
+
+def _title(title: str, path: str) -> str:
+    """A title as it's kept, trimmed; refused if it says nothing, runs long, or has a tab, a line break or another
+    control character, which lists can't show."""
+    title = unicodedata.normalize("NFC", title).strip()
+    if not title:
+        raise ApiError(f"Say what {path} is called", code="bad_title", path=path)
+    if len(title) > _TITLE_MAX:
+        raise ApiError(f"{path}'s title is longer than {_TITLE_MAX} characters", code="bad_title", path=path)
+    if any(unicodedata.category(c) == "Cc" for c in title):
+        raise ApiError(f"{path}'s title has a tab or a line break in it", code="bad_title", path=path)
+    return title
+
+
+@dataclass
+class Description:
+    file: FileRef
+    title: str | None = None  # what it's called; None leaves it
+    vendor: bool | None = None  # whether it's a vendor's part, which keeps the vendor's name; None leaves it
+
+
+def describe(db: Session, user: User, changes: list[Description]) -> list[FileView]:
+    """Say what files are called (their titles) and which are vendors' parts, all or nothing.
+
+    Neither is in the file, so neither makes a version or needs a check-out (someone else's is fine). It takes
+    editor access to the file's folder, as a rename does.
+    """
+    if not changes:
+        raise ApiError("Say which files to describe")
+    seq = begin_write(db)
+    tree, access = _context(db, user)
+    planned: list[tuple[File, str | None, bool | None]] = []
+    seen: set[int] = set()
+    for change in changes:
+        file = _resolve(db, tree, access, change.file)
+        path = tree.file_path(file)
+        if file.id in seen:
+            raise ApiError(f"{path} is listed twice")
+        seen.add(file.id)
+        what = f"name {path}" if change.title is not None else f"say whose part {path} is"
+        access.require(file.folder_id, Role.EDITOR, what)
+        planned.append((file, None if change.title is None else _title(change.title, path), change.vendor))
+
+    for file, title, vendor in planned:
+        detail: dict[str, Any] = {}
+        if title is not None and title != file.title:
+            detail |= {"title": title, "was": file.title}
+            file.title = title
+        if vendor is not None and vendor != file.vendor:
+            detail["vendor"] = file.vendor = vendor
+        if detail:
+            file.change_seq = seq
+            _event(db, user, "describe", file=file, path=tree.file_path(file), **detail)
+    db.commit()
+    views = _views_by_id(db, tree, access, [file for file, _, _ in planned])
+    return [views[file.id] for file, _, _ in planned]
 
 
 def can_upload(db: Session, user: User) -> bool:
@@ -1568,49 +1676,61 @@ def _keep(store: BlobStore, data: bytes) -> tuple[str, int]:
     return sha, len(data)
 
 
-def _by_path[T](names: list[str], same: list[tuple[File, T]], tree: Tree, least: int = 0) -> tuple[File, T] | None:
-    """Of files with a component's name, the one whose path ends most like the one SolidWorks saved for it (names), if
-    at least `least` of their names agree; none when two end alike."""
-    if not same:
-        return None
+def _by_path[T](names: list[str], same: list[tuple[str, File, T]], least: int = 0) -> tuple[File, T] | None:
+    """Of files with a component's name, where they are or were (a vault path each), the one whose path ends most like
+    the one SolidWorks saved for it (names), if at least `least` of their names agree; none when two end alike."""
     mine = [paths.key(name) for name in names]
-
-    def common(file: File) -> int:
-        theirs = [paths.key(name) for name in paths.split(tree.file_path(file))]
+    best: dict[int, tuple[int, File, T]] = {}  # by file: how many names agree, where most do
+    for path, file, value in same:
+        theirs = [paths.key(name) for name in path.split("/")]
         n = 0
         while n < min(len(theirs), len(mine)) and theirs[-1 - n] == mine[-1 - n]:
             n += 1
-        return n
-
-    if len(same) == 1:
-        return same[0] if least == 0 or common(same[0][0]) >= least else None
-    ranked = sorted(same, key=lambda found: common(found[0]), reverse=True)
-    best = common(ranked[0][0])
-    return ranked[0] if best > common(ranked[1][0]) and best >= least else None
+        if file.id not in best or n > best[file.id][0]:
+            best[file.id] = (n, file, value)
+    ranked = sorted(best.values(), key=lambda found: found[0], reverse=True)
+    if not ranked or ranked[0][0] < least or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+        return None
+    return ranked[0][1], ranked[0][2]
 
 
 class _Finder:
     """Which file a component of an assembly's version is, by the path SolidWorks saved for it: one of the version's
-    references with its name; else, as versions from the web app and from Kenesto reference nothing, the vault's file
-    with its name in a folder of its folder's name (not deleted: a name alone, as STEP imports' SOLID-1, could be any
-    file's), at the version it had when the assembly's version was made, or its first."""
+    references with its name, now or before a rename (FormerName); else, as versions from the web app and from Kenesto
+    reference nothing, the vault's file with its name in a folder of its folder's name (not deleted: a name alone, as
+    STEP imports' SOLID-1, could be any file's), or the one that was there before a rename, at the version it had when
+    the assembly's version was made, or its first. A file there now comes first, as SolidWorks would open it."""
 
     def __init__(self, db: Session, tree: Tree, when: datetime) -> None:
         self._db, self._tree, self._when = db, tree, when
         self._named: dict[str, list[File]] = {}
+        self._had: dict[str, list[tuple[str, File]]] = {}  # files that had a name, with where they had it
+
+    def _former(self, key: str) -> list[tuple[str, File]]:
+        if key not in self._had:
+            had = select(FormerName.path, File).join(File, File.id == FormerName.file_id)
+            self._had[key] = [(path, file) for path, file in self._db.execute(had.where(FormerName.name_key == key))]
+        return self._had[key]
 
     def file_of(self, path: str, refs: list[tuple[File, int]]) -> tuple[File, int] | None:
         names = [name for name in re.split(r"[\\/]", path) if name]
         if not names:
             return None
         key = paths.key(names[-1])
-        found = _by_path(names, [(file, version) for file, version in refs if file.name_key == key], self._tree)
+        used = {file.id: version for file, version in refs}
+        theirs = [(self._tree.file_path(file), file, version) for file, version in refs if file.name_key == key]
+        theirs += [(where, file, used[file.id]) for where, file in self._former(key) if file.id in used]
+        found = _by_path(names, theirs)
         if found is not None:
             return found
         if key not in self._named:
             alive = select(File).where(File.name_key == key, File.deleted_at.is_(None))
             self._named[key] = list(self._db.scalars(alive))
-        named = _by_path(names, [(file, 0) for file in self._named[key]], self._tree, least=min(2, len(names)))
+        least = min(2, len(names))
+        named = _by_path(names, [(self._tree.file_path(file), file, 0) for file in self._named[key]], least)
+        if named is None:
+            had = [(where, file, 0) for where, file in self._former(key) if file.deleted_at is None]
+            named = _by_path(names, had, least)
         if named is None:
             return None
         then = self._db.scalar(

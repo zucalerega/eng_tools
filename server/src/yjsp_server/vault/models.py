@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base, UTCDateTime, enum_column, utcnow
@@ -85,6 +85,25 @@ class File(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     change_seq: Mapped[int] = mapped_column(BigInteger, default=0, index=True)
+    # What people call it: its name without its type, until someone names it (vault.describe). Part numbers make file
+    # names numbers, so this is what's shown beside them.
+    title: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    # A vendor's part (a McMaster screw, say), which keeps the vendor's name rather than taking a part number.
+    vendor: Mapped[bool] = mapped_column(default=False, server_default=false())
+
+
+class FormerName(Base):
+    """Where a file was, by its path then, before a rename or a move. SolidWorks files keep the paths their parts had
+    when they were saved, so a file is found by the names it had too (vault._Finder, and clients' FindUsedFiles)."""
+
+    __tablename__ = "former_names"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id"), index=True)
+    path: Mapped[str] = mapped_column(String(1024))  # a folder's moves can take paths past paths.MAX_PATH
+    name_key: Mapped[str] = mapped_column(String(255), index=True)  # paths.key of the path's last name
+    changed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    changed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
 
 class Checkin(Base):

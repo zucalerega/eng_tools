@@ -44,6 +44,10 @@ class FileOut(BaseModel):
     # What the latest version uses (an assembly's parts, a drawing's model), by id: the files you can
     # see, including any deleted since. Clients look them up in their copy of the sync feed.
     uses: list[UseOut]
+    title: str  # what people call it: its name without its type, until someone names it (POST /api/files/metadata)
+    vendor: bool  # a vendor's part (a McMaster screw, say), which keeps the vendor's name rather than a part number
+    # The names it had before its renames, oldest first: SolidWorks files saved before then still look for it by them.
+    former_names: list[str]
 
     @classmethod
     def of(cls, view: vault.FileView) -> "FileOut":
@@ -67,6 +71,9 @@ class FileOut(BaseModel):
             deleted_at=file.deleted_at,
             deleted_by=UserRef.of(view.deleted_by) if view.deleted_by else None,
             uses=[UseOut(file_id=file_id, version=number) for file_id, number in view.uses],
+            title=file.title,
+            vendor=file.vendor,
+            former_names=view.former_names,
         )
 
 
@@ -211,6 +218,16 @@ class RenameIn(BaseModel):
     file: int | str | None = None  # a file (id or vault path), or
     folder: str | None = None  # a folder (vault path)
     name: str
+
+
+class DescriptionIn(BaseModel):
+    file: int | str  # an id, or a vault path
+    title: str | None = None  # what it's called; null leaves it as it is
+    vendor: bool | None = None  # whether it's a vendor's part; null leaves it as it is
+
+
+class MetadataIn(BaseModel):
+    files: list[DescriptionIn] = Field(min_length=1, max_length=5000)
 
 
 class MovedOut(BaseModel):

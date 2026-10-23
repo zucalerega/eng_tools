@@ -36,6 +36,7 @@ from .schemas import (
     GrantIn,
     GrantsOut,
     ListingOut,
+    MetadataIn,
     MovedOut,
     MoveIn,
     RenameIn,
@@ -210,6 +211,13 @@ def post_move(body: MoveIn, user: ActiveUser, db: DB) -> MovedOut:
 def post_rename(body: RenameIn, user: ActiveUser, db: DB) -> MovedOut:
     """Rename a file (keeping its type) or a folder."""
     return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name))
+
+
+@router.post("/files/metadata")
+def post_metadata(body: MetadataIn, user: ActiveUser, db: DB) -> FilesOut:
+    """Say what files are called (their titles) and which are vendors' parts: no new version, no check-out."""
+    changes = [vault.Description(f.file, f.title, f.vendor) for f in body.files]
+    return FilesOut.of(vault.describe(db, user, changes))
 
 
 @router.get("/checkouts")

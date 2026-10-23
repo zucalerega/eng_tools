@@ -60,6 +60,10 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
   and it can contain versions of many files.
 - **Blob**: file contents, stored once under their SHA-256 hash. An unchanged
   file, or the same STEP file in two folders, takes no extra space.
+- **Title**: what people call a file, `Fin bracket`, shown beside its name. It starts as
+  the file's name without its type, and anyone who can edit the file can change it. Part
+  numbers will make CAD files' names numbers (`00000123-001.SLDPRT`), and the title is what
+  says what each one is.
 - **Lock (check-out)**: a file checked out by one person on one computer.
 - **Workspace**: your local copy of the vault, at the same path on every machine
   (default `C:\VLT`).
@@ -122,6 +126,20 @@ syncs everything again (clients know folders by path, and where a file is decide
 can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
 open moves at a later refresh, and counts as that file meanwhile.
 
+The vault keeps where each file was before a rename or a move (`former_names`, but for
+changes of case alone), since SolidWorks files saved before then still name it there:
+Caliper finds parts by those names, and every file the API returns lists the names it
+had (`former_names`, oldest first, each once, without the one it has now).
+
+**Titles and vendors' parts.** `POST /api/files/metadata` says what files are called
+(`title`) and which are vendors' parts (`vendor`: a McMaster screw, say, which keeps the
+vendor's name rather than taking a part number), for up to 5000 files at once, all or
+nothing. Neither is in the file, so neither makes a version, and neither needs a check-out:
+someone else's is fine. It takes editor access to the file's folder, as a rename does. A
+title is trimmed, and refused (`bad_title`) if it's empty, longer than 200 characters, or
+has a tab or a line break in it. A change shows in the activity log (`describe`), and
+clients get it in the sync feed like any other.
+
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. Vault refuses to delete a file that the
 latest version of another file still uses, unless you force it or delete both
@@ -142,8 +160,9 @@ everything again, like a move, and drop it.
 first, with comments, authors, and pinned references, plus the live files whose
 latest version uses this file. Every file the API returns, including in the sync
 feed, also lists what its latest version uses (`uses`: file ids, each with the version
-it was checked in with, limited to files you can see), and who created it and when
-(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`). So the web app and the add-in,
+it was checked in with, limited to files you can see), who created it and when
+(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`), and
+its `title`, `vendor`, and `former_names` (above). So the web app and the add-in,
 which keep a copy of the feed, know every assembly's parts and where each part is used,
 at every level, without asking for each file. References are by id, so renaming a file
 later won't touch the files that use it.
@@ -586,10 +605,12 @@ Where the 3D comes from:
       has the vault's files with those names in folders of the names of the folders
       SolidWorks saved them in (a name alone, as STEP imports' SOLID-1, could be any file's):
       the one whose path ends most like the saved one, and none where two end alike, each at
-      the version it had when the assembly's version was made, or its first. So they open on
-      their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
-      Interconnect) is read in the browser, as the file on its own is (the server says which
-      components are one, `format`), one at a time. SolidWorks keeps one as the document it
+      the version it had when the assembly's version was made, or its first. A file renamed or
+      moved since is found where it was (its former names: "Move and rename"), unless a file
+      is there now, as SolidWorks would open that one. So they open on their own as usual. A
+      STEP or IGES file placed in an assembly (SolidWorks' 3D Interconnect) is read in the
+      browser, as the file on its own is (the server says which components are one,
+      `format`), one at a time. SolidWorks keeps one as the document it
       made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`, with a document for
       each of the STEP file's own parts under it), with the STEP file's path
       (`swImportedPath`): that path is the component's, found as any other, and the
@@ -685,6 +706,7 @@ are in [design.md](design.md#api).
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
+| `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |

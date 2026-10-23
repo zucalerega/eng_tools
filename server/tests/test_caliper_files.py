@@ -1297,6 +1297,54 @@ def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, cli
     assert make(client, chief, spline).status_code == 200
 
 
+def test_a_part_renamed_since_is_found_by_the_name_it_had(team, client):
+    """An assembly keeps the paths its parts had when it was saved. A part renamed since (given its part number, say)
+    is still found, by the name it had there."""
+    chief = team.member("chief@x.test", admin=True)
+    folder = "Servo/Servomoteur SM-S4303R"
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                f"{folder}/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                f"{folder}/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+        )
+    )
+    spline = checked[f"{folder}/Embout.SLDPRT"]
+    renamed = client.post("/api/rename", json={"file": spline["id"], "name": "00000022-001.SLDPRT"}, headers=chief)
+    assert renamed.status_code == 200, renamed.text
+
+    found = shown(client, chief, checked["Servo/9347.SLDASM"])
+    assert found["Embout-1"]["file_id"] == spline["id"]
+
+
+def test_parts_in_a_folder_renamed_since_are_found_where_they_were(team, client):
+    """The folders an assembly saved for its parts are the ones they were in: a part's name alone could be any file's,
+    so a folder renamed since is found by the name it had."""
+    chief = team.member("chief@x.test", admin=True)
+    folder = "Servo/Servomoteur SM-S4303R"
+    checked = by_path(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                f"{folder}/Embout.SLDPRT": contents("Embout.SLDPRT"),
+                f"{folder}/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT"),
+            },
+        )
+    )
+    renamed = client.post("/api/rename", json={"folder": folder, "name": "Servo motor"}, headers=chief)
+    assert renamed.status_code == 200, renamed.text
+
+    found = shown(client, chief, checked["Servo/9347.SLDASM"])
+    assert (found["Embout-1"]["file_id"], found["Servomoteur-1"]["file_id"]) == (
+        checked[f"{folder}/Embout.SLDPRT"]["id"],
+        checked[f"{folder}/Servomoteur.SLDPRT"]["id"],
+    )
+
+
 def placed_with_3d_interconnect(tree: bytes) -> bytes:
     """The servo's XML with its case a STEP file placed with 3D Interconnect, as SolidWorks keeps one: the document it
     made of it in its temporary folder (never on disk), and the path of the STEP file it was made from."""

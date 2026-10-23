@@ -344,10 +344,9 @@ internal sealed partial class VaultPane : UserControl
         {
             return Ask(reason + " Save them under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
         }
-        var answer = MessageBox.Show(
+        var answer = MessageDialog.Show(
             this,
             $"{name} isn't checked out to you.\n\nYes: check it out and save it.\nNo: save your changes under another name.",
-            "Vault",
             MessageBoxButtons.YesNoCancel,
             MessageBoxIcon.Question);
         return answer switch
@@ -778,10 +777,9 @@ internal sealed partial class VaultPane : UserControl
             .Where(p => p != null && IsInWorkspace(p) && _sw.HasUnsavedChanges(p)).Cast<string>().ToList();
         if (unsaved.Count > 0)
         {
-            var answer = MessageBox.Show(
+            var answer = MessageDialog.Show(
                 this,
                 "Save changes before checking in?\n\n" + string.Join("\n", unsaved.Select(Path.GetFileName)),
-                "Vault",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question);
             if (answer == DialogResult.Cancel)
@@ -1730,14 +1728,13 @@ internal sealed partial class VaultPane : UserControl
         _statusBar.Visible = _message.Text.Length > 0;
     }
 
-    private void Warn(string text) => MessageBox.Show(this, text, "Vault", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    private void Warn(string text) => MessageDialog.Show(this, text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     // For a question with a big answer (a download of many files), No is the default, so Enter doesn't start it.
     private DialogResult Ask(string question, bool defaultNo = false) =>
-        MessageBox.Show(
+        MessageDialog.Show(
             this,
             question,
-            "Vault",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question,
             defaultNo ? MessageBoxDefaultButton.Button2 : MessageBoxDefaultButton.Button1);

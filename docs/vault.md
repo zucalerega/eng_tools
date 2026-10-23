@@ -362,7 +362,10 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   in `Theme.cs` and `PaneControls.cs` (flat WinForms controls, and File Explorer's theme for
   the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
   20 seconds and after every action, and redraws only when something changed, so what you
-  opened in the tree stays open.
+  opened in the tree stays open. Its questions and warnings are its own box
+  (`MessageDialog`), not Windows' `MessageBox`, which grows with its text past the screen,
+  where neither its title bar nor its buttons can be reached, and can't scroll: Vault's is
+  never taller than 80% of the screen it's on, and a longer message scrolls.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a

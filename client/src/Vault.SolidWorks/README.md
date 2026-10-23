@@ -34,6 +34,10 @@ move over. It adds a **Vault** tab to the task pane with these parts:
   assembly references resolve for everyone (setup makes it). It has a folder for each of
   the vault's folders, to save new parts in, but only the files you've opened, checked
   out, or got: the rest of the vault stays on the server until you need it.
+- **Vault's questions and warnings** come in Vault's own box (`MessageDialog`), not
+  Windows': it's never taller than most of the screen, a long one (a list of files) scrolls
+  and can be copied, and it takes the keys Windows' does: Enter for the highlighted answer,
+  Esc for Cancel (or No, or OK), and Y and N.
 
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do. A
 thin bar under the header runs while Vault is working, and the line at the bottom says
@@ -393,6 +397,12 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     from the STEP file. Then check the assembly out and check it in from SolidWorks, and
     write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
     temporary folder (`...\IC~~\...`), that's still to fix.
+36. Long messages: open an assembly of many parts saved in an older SolidWorks (so they all
+    count as changed), check the assembly out, and click Check in: "Save changes before
+    checking in?" lists them in Vault's box, which stops short of the screen's bottom with
+    its buttons showing, and scrolls. It moves by its title bar; Y, N, Esc, and Enter answer
+    it as in Windows' message box. A short warning (check in a file someone else has checked
+    out) is only as tall as its text. At 150% and 250% display scaling it looks the same.
 
 ## When something goes wrong
 

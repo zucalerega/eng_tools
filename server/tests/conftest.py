@@ -55,7 +55,7 @@ class Team:
     def whitelist(self, as_: dict[str, str], on: bool) -> None:
         """Turn the whitelist on or off, as an admin does in the web app (Admin > People)."""
         response = self.client.patch("/api/settings", json={"whitelist": on}, headers=as_)
-        assert (response.status_code, response.json()) == (200, {"whitelist": on}), response.text
+        assert (response.status_code, response.json()["whitelist"]) == (200, on), response.text
 
     def grant(self, as_: dict[str, str], path: str, email: str | None, role: str | None) -> None:
         body = {"path": path, "user_id": self.ids[email] if email else None, "role": role}

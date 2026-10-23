@@ -169,6 +169,26 @@ three. The rest of the disk is the system, logs, and the database's backups.
   that began noting them. Each version is compared with the installer the server offers:
   an older one is marked (the add-in offers itself the update), and one not known yet,
   until the add-in next talks to the server, isn't.
+- **The oldest client that can make changes:** an add-in updates only when its person
+  clicks Update and says yes to Windows, so a release's fixes reach laptops slowly: two days
+  after 0.5.4 was offered (October 2026), most laptops still ran 0.5.2, and hit the
+  missing-parts bugs 0.5.4 fixed. So under the tracker, admins can set the oldest version
+  of the add-in and the CLI that can change the vault (`min_client_version` in
+  `site_settings`, `PATCH /api/settings`). Then the vault refuses every change from an older
+  one (426 `client_too_old`, `clients.refuse_old`): check-outs (Keep mine and Take over among
+  them), check-ins and their uploads, undos, and the rest, each with a message that says how
+  to update: the add-in's to click Update or run `Vault-Setup.exe` from the SolidWorks page
+  (only the latter for those from before Update, 0.4.0 and older), and the CLI's to get the
+  new `vault.exe`. The add-in and the CLI have always shown a server's message as it is, so
+  the oldest on the team's laptops say it too. Reads stay open, so an old client still
+  browses, gets files, shows what Caliper has, and updates itself; and nothing that doesn't
+  say it's a Vault client of a version (`User-Agent: vault-client/<version>`, or CVC's
+  `cvc-client/` from before 0.4.0) is refused, browsers included. The oldest can be no
+  newer than the installer the server offers, which every add-in can update to, and each
+  change to it goes in the activity log. This is the one exception to the server's working
+  with older clients as it always has (CLAUDE.md, "API compatibility"): it's off as a server
+  starts, and an admin turns it on for a release whose fixes the team needs, once its
+  downloads are on the server and people have had a few days to take the update.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -268,7 +288,7 @@ Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs a
 |---|---|
 | `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) and in SolidWorks (`solidworks_seconds`) |
-| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
+| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting; and the oldest add-in and CLI that can change the vault `{min_client_version}`, like `"0.5.4"`, no newer than the installer offered (`not_offered`, or `no_installer` if there's none), or `null` for any (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
@@ -292,6 +312,7 @@ ones are still accepted for a while:
 | Tokens starting `cvc_` | `yjsp_` | work until they expire or are signed out |
 | Vault's pages at the site's own paths, until October 2026: `/files/...`, `/file/5`, `/locks`, `/admin` | under `/vault`: `/vault/files/...`, `/vault/file/5`, ... | followed, as bookmarks and shared links have them: the web app goes on to the same page under `/vault`, with its query (`movedToVault` in `web/src/vault/paths.ts`). `/` is the site's own page now |
 | `X-CVC-Version`, `X-CVC-SHA256`, `X-CVC-Size` on downloads | `X-Vault-*` | gone: no client read them |
+| The `cvc-client/<version>` User-Agent | `vault-client/<version>` | still read as a client's version, so the add-in tracker shows it and the oldest client that can make changes holds for it |
 | The `cvc` command, `cvc.exe` | `vault`, `vault.exe` | `cvc.exe` keeps working against the server; replace it |
 
 The SolidWorks add-in, its setup, and the client library they share with the CLI keep none

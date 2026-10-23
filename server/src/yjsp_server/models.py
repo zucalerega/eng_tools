@@ -126,6 +126,9 @@ class SiteSettings(Base):
     # On: only the emails on the whitelist (WhitelistEmail) and people an admin invited can make an account; anyone
     # else who signs in is turned away. Off: anyone with a Georgia Tech account can (auth._sign_in).
     whitelist: Mapped[bool] = mapped_column(default=False)
+    # The oldest Vault client (the add-in, the CLI) that can change the vault, like "0.5.4": older ones can still read
+    # it, and are told to update (clients.refuse_old). None, as it starts: any client can.
+    min_client_version: Mapped[str | None] = mapped_column(String(32))
 
 
 class WhitelistEmail(Base):

@@ -121,5 +121,6 @@ def test_a_clients_version_comes_from_what_it_says_it_is():
     assert auth.client_version("vault-client/0.5.2.0") == "0.5.2"
     assert auth.client_version("vault-client/0.6.0.1") == "0.6.0.1"
     assert auth.client_version("vault-client/1.2.3") == "1.2.3"
+    assert auth.client_version("cvc-client/0.3.0.0") == "0.3.0"  # CVC's, before 0.4.0
     assert auth.client_version("Mozilla/5.0 (Macintosh)") is None
     assert auth.client_version("") is None

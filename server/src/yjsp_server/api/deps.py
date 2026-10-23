@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from .. import auth
+from .. import auth, clients
 from ..config import Settings
 from ..errors import Forbidden, Unauthorized
 from ..models import User, UserStatus
@@ -50,13 +50,18 @@ def session_user(request: Request, db: Session) -> User | None:
     return _authenticate(request, db, secret) if secret else None
 
 
-def any_user(request: Request, db: DB) -> User:
-    """The signed-in user, whether or not an admin has approved them yet."""
+def _credentials(request: Request) -> tuple[str, bool]:
+    """The secret a request signs in with, from its Authorization header or else the browser's session cookie, and
+    whether it's the cookie's."""
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
-        secret, from_cookie = header[7:].strip(), False
-    else:
-        secret, from_cookie = session_secret(request), True
+        return header[7:].strip(), False
+    return session_secret(request), True
+
+
+def any_user(request: Request, db: DB) -> User:
+    """The signed-in user, whether or not an admin has approved them yet."""
+    secret, from_cookie = _credentials(request)
     user = _authenticate(request, db, secret) if secret else None
     if user is None:
         raise Unauthorized("Sign in first")
@@ -81,3 +86,13 @@ def active_user(user: Annotated[User, Depends(any_user)]) -> User:
 
 AnyUser = Annotated[User, Depends(any_user)]
 ActiveUser = Annotated[User, Depends(active_user)]
+
+
+def changing_user(request: Request, user: ActiveUser, db: DB) -> User:
+    """The active user, changing something in the vault: refused from a Vault client older than the oldest admins let
+    make changes (clients.refuse_old). Reads take ActiveUser, so an old client can still browse and update itself."""
+    clients.refuse_old(db, request.headers.get("user-agent", ""), _credentials(request)[0])
+    return user
+
+
+ChangingUser = Annotated[User, Depends(changing_user)]

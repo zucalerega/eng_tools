@@ -1,10 +1,18 @@
-"""Who has Vault's SolidWorks add-in, for admins (Admin > People): who has signed in with it, on which computers, with
-which version, and when they last used it; who downloaded its installer; and how many people have it.
+"""Vault's clients, the SolidWorks add-in and the CLI: who has the add-in, for admins (Admin > People), and which
+clients may change the vault.
 
-The add-in signs in as "SolidWorks add-in on <computer>" (VaultPane.cs) and the CLI as "vault CLI on <computer>", so a
-token's name tells them apart; each says its version in its requests, which the token keeps (auth.authenticate).
-Downloads are counted as the web app serves them (record_download), from the deploy that began counting them on.
-Versions are compared with the installer's, offered now: older ones are marked, and one not known yet isn't.
+Admin > People shows who has signed in with the add-in, on which computers, with which version, and when they last
+used it; who downloaded its installer; and how many people have it. The add-in signs in as "SolidWorks add-in on
+<computer>" (VaultPane.cs) and the CLI as "vault CLI on <computer>", so a token's name tells them apart; each says its
+version in its requests, which the token keeps (auth.authenticate). Downloads are counted as the web app serves them
+(record_download), from the deploy that began counting them on. Versions are compared with the installer's, offered
+now: older ones are marked, and one not known yet isn't.
+
+Add-ins update only when each person clicks Update and says yes to Windows, so a release's fixes reach laptops slowly.
+Admins can have the vault take changes only from clients at least as new as a version they set (refuse_old): an older
+one can still browse, get files, and update itself, and is told how. This is the one exception to the server's working
+with older clients as it always did (CLAUDE.md, "API compatibility"), so it's off unless an admin sets it, for a
+release whose fixes the team needs.
 """
 
 import re
@@ -16,8 +24,8 @@ from sqlalchemy.orm import Session
 
 from . import auth
 from .db import utcnow
-from .errors import Forbidden
-from .models import DownloadRecord, Token, User
+from .errors import ApiError, Conflict, Forbidden
+from .models import DownloadRecord, SiteSettings, Token, User
 
 ADD_IN = "SolidWorks add-in on "  # the start of the add-in's tokens' names
 INSTALLER = "Vault-Setup.exe"  # the add-in's installer, among the downloads
@@ -57,10 +65,12 @@ class AddIn:
 
 
 def _numbers(version: str | None) -> tuple[int, ...] | None:
-    """A version's numbers, to compare it with another: (0, 5, 2) from "0.5.2"; None if it isn't a version."""
+    """A version's numbers, to compare it with another: (0, 5, 2, 0) from "0.5.2", four as Windows has them, so 0.5.2
+    and 0.5.2.0 are the same; None if it isn't a version."""
     if version is None or not re.fullmatch(r"[0-9]{1,9}(\.[0-9]{1,9}){0,3}", version):
         return None
-    return tuple(int(number) for number in version.split("."))
+    numbers = tuple(int(number) for number in version.split("."))
+    return numbers + (0,) * (4 - len(numbers))
 
 
 def record_download(db: Session, user: User, name: str, version: str | None, user_agent: str) -> None:
@@ -133,3 +143,80 @@ def add_in(db: Session, viewer: User, newest: str | None = None) -> AddIn:
         on_newest=sum(1 for p in ordered if any(c.in_use and up_to_date(c) for c in p.computers)),
         counting_since=db.scalar(select(func.min(DownloadRecord.at))),
     )
+
+
+# --- which clients may change the vault ---------------------------------------------------------------------------
+
+
+class ClientTooOld(ApiError):
+    """A change to the vault from a Vault client older than admins let make changes (refuse_old)."""
+
+    status = 426  # Upgrade Required
+    code = "client_too_old"
+
+
+# The first add-in with Update at the top of its Vault tab (AddInUpdate.cs): older ones update by running setup by hand.
+UPDATES_ITSELF = (0, 5, 0, 0)
+
+
+def refuse_old(db: Session, user_agent: str, secret: str) -> None:
+    """Refuse a change to the vault from a Vault client older than the oldest admins have set (min_client_version),
+    saying how to update it. The add-in and the CLI show a server's message as it is (CVC's did too, before 0.4.0), so
+    the old ones on the team's laptops say it.
+
+    Everything else gets through: a browser, or any other request that doesn't say it's a Vault client
+    (auth.client_version); a client that doesn't say its version; and any client while no oldest is set. Reads never
+    come here, so an old client can still browse, get files, and update itself. The client is told by its sign-in's
+    name (secret is the token the request came with): the add-in's, or else the CLI's.
+    """
+    running = auth.client_version(user_agent)
+    if running is None:
+        return
+    oldest = db.get_one(SiteSettings, 1).min_client_version
+    have, need = _numbers(running), _numbers(oldest)
+    if have is None or need is None or have >= need:
+        return
+    too_old = f"is too old to make changes in this vault, which takes {oldest} and newer."
+    if not auth.token_name(db, secret).startswith(ADD_IN):
+        message = (
+            f"This vault command ({running}) {too_old} Download the new vault.exe from the web app's SolidWorks page."
+        )
+    elif have >= UPDATES_ITSELF:
+        message = (
+            f"Vault for SolidWorks {running} {too_old} Click Update at the top of the Vault tab, then close "
+            "SolidWorks; or download Vault-Setup.exe from the web app's SolidWorks page."
+        )
+    else:
+        message = (
+            f"Vault for SolidWorks {running} {too_old} Download Vault-Setup.exe from the web app's SolidWorks page, "
+            "then close SolidWorks and run it."
+        )
+    raise ClientTooOld(message, version=running, min_client_version=oldest)
+
+
+def oldest_allowed(version: str, offered: str | None) -> str | None:
+    """The oldest client to take changes from, as an admin typed it ("0.5.4", or a tag's "v0.5.4"), checked; None for
+    nothing typed, which takes changes from any.
+
+    It can be no newer than the installer the server offers now (offered: its version), which every add-in can update
+    to: one newer would keep the whole team from changing anything until the release's downloads are on the server.
+    """
+    text = version.strip()
+    text = text[1:] if text[:1] in ("v", "V") else text
+    if not text:
+        return None
+    wanted, have = _numbers(text), _numbers(offered)
+    if wanted is None:
+        raise ApiError(f"{version.strip()!r} isn't a version, like 0.5.4", code="bad_version")
+    if have is None:
+        raise Conflict(
+            f"This server offers no {INSTALLER} for add-ins to update to: put a release's downloads on it first",
+            code="no_installer",
+        )
+    if wanted > have:
+        raise Conflict(
+            f"No add-in could update to {text}: the {INSTALLER} this server offers is {offered}. Put that release's "
+            "downloads on the server first",
+            code="not_offered",
+        )
+    return text

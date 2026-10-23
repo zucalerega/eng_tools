@@ -179,16 +179,26 @@ def issue_token(db: Session, user: User, *, kind: str, name: str, ttl: timedelta
     return secret
 
 
-# What a CLI or the add-in sends as its User-Agent, before its version (VaultApi.cs).
+# What a CLI or the add-in sends as its User-Agent, before its version (VaultApi.cs); and before 0.4.0, when they were
+# CVC's, what they sent instead (CvcApi.cs), which laptops that never moved to Vault's add-in still send.
 CLIENT_AGENT = "vault-client/"
+OLD_CLIENT_AGENT = "cvc-client/"
 
 
 def client_version(user_agent: str) -> str | None:
-    """A Vault client's version from its User-Agent: "0.5.2" from "vault-client/0.5.2.0"; None from anything else."""
-    if not user_agent.startswith(CLIENT_AGENT):
+    """A Vault client's version from its User-Agent: "0.5.2" from "vault-client/0.5.2.0", and "0.3.0" from CVC's
+    "cvc-client/0.3.0.0"; None from anything else."""
+    agent = next((a for a in (CLIENT_AGENT, OLD_CLIENT_AGENT) if user_agent.startswith(a)), None)
+    if agent is None:
         return None
-    version = user_agent[len(CLIENT_AGENT) :].split(" ", 1)[0][:32]
+    version = user_agent[len(agent) :].split(" ", 1)[0][:32]
     return version.removesuffix(".0") if version.count(".") == 3 else version or None
+
+
+def token_name(db: Session, secret: str) -> str:
+    """The name a token was made with, like "SolidWorks add-in on ALICE-PC", which tells the add-in's tokens from the
+    CLI's (clients.py); empty if there's no such token."""
+    return db.scalar(select(Token.name).where(Token.token_hash == _digest(secret))) or ""
 
 
 def authenticate(db: Session, secret: str, user_agent: str = "", activity: str = "") -> User | None:

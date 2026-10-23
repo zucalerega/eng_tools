@@ -102,6 +102,45 @@ test("admins see who has the SolidWorks add-in, on how many computers, and with 
     expect(card.getByText(/^Have it: signed in with the add-in on a computer/)).toBeTruthy();
 });
 
+test("admins can have the vault take changes only from add-ins as new as a version they set, and from any again", async () => {
+    const team = await Team.create();
+    await team.oldestClient(null); // any, as a server starts, and again once the test is done
+    renderApp(team.chief, "/vault/admin");
+    const card = within((await screen.findByRole("heading", { name: "SolidWorks add-in" })).closest("section")!);
+    const field = await card.findByLabelText("Oldest version that can make changes");
+    expect(card.getByText(/^Any version can change the vault\./)).toBeTruthy();
+
+    // The installer offered is 0.5.0 (tests/server.ts): no add-in could update to a newer one, so it's refused.
+    await userEvent.type(field, "0.6.0");
+    await userEvent.click(card.getByRole("button", { name: "Save" }));
+    expect((await card.findByRole("alert")).textContent).toMatch(/^No add-in could update to 0\.6\.0/);
+    expect((await team.settings()).min_client_version).toBeNull();
+
+    await userEvent.clear(field);
+    await userEvent.type(field, "0.5.0");
+    await userEvent.click(card.getByRole("button", { name: "Save" }));
+    expect(await card.findByText(/^Only 0\.5\.0 and newer can check files out and in/)).toBeTruthy();
+    expect(card.queryByRole("alert")).toBeNull();
+    expect((await team.settings()).min_client_version).toBe("0.5.0");
+    expect(card.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true); // nothing new to save
+
+    await userEvent.click(card.getByRole("button", { name: "Allow any version" }));
+    expect(await card.findByText(/^Any version can change the vault\./)).toBeTruthy();
+    expect((await team.settings()).min_client_version).toBeNull();
+    expect(card.queryByRole("button", { name: "Allow any version" })).toBeNull();
+});
+
+test("the activity feed says when admins change the oldest version that can make changes", async () => {
+    const team = await Team.create();
+    await team.oldestClient("0.5.0");
+    await team.oldestClient(null);
+    renderApp(team.chief, "/vault/activity");
+    const [newest] = await screen.findAllByText(/ let add-ins and vault commands of any version change the vault$/);
+    const [before] = screen.getAllByText(/ let only add-ins and vault commands 0\.5\.0 and newer change the vault$/);
+    // Newest first.
+    expect(newest!.compareDocumentPosition(before!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");

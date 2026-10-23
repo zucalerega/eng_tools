@@ -79,10 +79,13 @@ class SiteSettingsOut(BaseModel):
     # On: only the emails on the whitelist and invited people can make an account; anyone else who signs in is turned
     # away. Off: anyone with a Georgia Tech account can.
     whitelist: bool
+    # The oldest Vault client (the add-in, the CLI) that can change the vault, like "0.5.4": older ones' changes are
+    # refused (426 client_too_old), and they can still read it. Null: any client can.
+    min_client_version: str | None
 
     @classmethod
     def of(cls, site: SiteSettings) -> "SiteSettingsOut":
-        return cls(whitelist=site.whitelist)
+        return cls(whitelist=site.whitelist, min_client_version=site.min_client_version)
 
 
 class UsageDayOut(BaseModel):
@@ -198,6 +201,8 @@ class StorageOut(BaseModel):
 
 class SiteSettingsPatch(BaseModel):
     whitelist: bool | None = None  # turning it off approves everyone waiting
+    # A version no newer than the installer offered, or null to take changes from any client again. Left out, it stays.
+    min_client_version: str | None = Field(default=None, max_length=32)
 
 
 class TokenOut(BaseModel):

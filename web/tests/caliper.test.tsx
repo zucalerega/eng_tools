@@ -113,7 +113,6 @@ test("parts, assemblies, and STEP and STL files open in Caliper, beside Open in 
         "Bracket.STL": "solid bracket\nendsolid bracket\n",
         "Notes.pdf": "notes",
     });
-    await team.checkin(team.chief, { "Fin.SLDDRW": "drawing" }, { refs: { "Fin.SLDDRW": ["Fin.SLDPRT"] } });
 
     renderApp(team.chief, folderUrl(team.folder));
     const files = await table();
@@ -125,7 +124,6 @@ test("parts, assemblies, and STEP and STL files open in Caliper, beside Open in 
     expect(row("Tab.STEP").getByRole("link", { name: "Open in Caliper" })).toBeTruthy();
     expect(row("Bracket.STL").getByRole("link", { name: "Open in Caliper" })).toBeTruthy();
     expect(row("Bracket.STL").queryByRole("link", { name: "Open in SolidWorks" })).toBeNull();
-    expect(row("Fin.SLDDRW").queryByRole("link", { name: "Open in Caliper" })).toBeNull();
     expect(row("Notes.pdf").queryByRole("link", { name: "Open in Caliper" })).toBeNull();
     expect(row("Fin.SLDPRT").getByRole("link", { name: "Open in Caliper" }).getAttribute("href")).toBe(
         caliperUrl(fin!.id),
@@ -291,15 +289,11 @@ test("a version with no model says why; with none asked for, the newest that has
 
     finPage.unmount(); // or it follows the next page too, and shows it twice
 
-    // Drawings and other files aren't Caliper's.
-    const [drawing] = await team.checkin(
-        team.chief,
-        { "Fin.SLDDRW": "drawing" },
-        { refs: { "Fin.SLDDRW": ["Fin.SLDPRT"] } },
-    );
-    renderApp(team.chief, caliperUrl(drawing!.id));
-    expect(await screen.findByText(/Caliper shows SolidWorks parts and assemblies/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Back to Fin.SLDDRW" }).getAttribute("href")).toBe(fileUrl(drawing!.id));
+    // Other files aren't Caliper's (drawings are: drawing.test.tsx).
+    const [notes] = await team.checkin(team.chief, { "Notes.pdf": "notes" });
+    renderApp(team.chief, caliperUrl(notes!.id));
+    expect(await screen.findByText(/Caliper shows SolidWorks parts, assemblies, and drawings/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to Notes.pdf" }).getAttribute("href")).toBe(fileUrl(notes!.id));
 });
 
 test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it", async () => {

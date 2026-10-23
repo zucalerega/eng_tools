@@ -166,6 +166,33 @@ public sealed class CaliperTests : IDisposable
     }
 
     [Fact]
+    public async Task DrawingsPdfsAreMadeOfVersionsThatHaveNoneYet()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var drawing = Write(alice, "Fins/Fin.SLDDRW", "drawing");
+        var draft = Write(alice, "Fins/Fin - draft.SLDDRW", "a drawing not checked in");
+        await alice.CheckinAsync([fin, drawing], "the fin", referencesOf: p => p == drawing ? new[] { fin } : Array.Empty<string>());
+        var pdfs = new DrawingPdfs(alice);
+
+        var plan = await pdfs.PlanAsync([drawing, fin, draft]);
+        Assert.Equal(1, plan.Count); // not the part's: parts have 3D models
+        Assert.True(plan.Needs(drawing.ToLowerInvariant())); // paths as Windows compares them
+        Assert.Equal(["Fin - draft.SLDDRW isn't in the vault yet: it gets its PDF when it's checked in."], plan.Problems);
+
+        var pdf = Encoding.ASCII.GetBytes("%PDF-1.7\n%%EOF\n");
+        Assert.Null(await pdfs.SaveAsync(plan, drawing, pdf));
+        var refused = await pdfs.SaveAsync(plan, drawing, Encoding.ASCII.GetBytes("not a PDF"));
+        Assert.StartsWith("Fin.SLDDRW's PDF wasn't saved: That isn't a PDF", refused, StringComparison.Ordinal);
+
+        // As the web app sees it; and made, it isn't asked for again.
+        var id = (await alice.StatusAsync([drawing])).Single().FileId!.Value;
+        using var http = _server.Http(await _server.MemberTokenAsync("alice@rocketry.test"));
+        Assert.Equal(pdf, await http.GetByteArrayAsync($"api/files/{id}/drawing/pdf?version=1"));
+        Assert.Equal(0, (await pdfs.PlanAsync([drawing])).Count);
+    }
+
+    [Fact]
     public async Task FilesChangedHereHaveNoModelUntilTheyreCheckedIn()
     {
         var bob = await WorkspaceAsync("bob");

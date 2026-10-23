@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { type UserRef } from "../../api";
 import { type Folder, type Listing, type VaultFile, vaultApi } from "../api";
 import { Notice, Time } from "../../components";
-import { FileIcon, FolderIcon } from "../components";
+import { FileIcon, FileTitle, FolderIcon } from "../components";
 import { formatSize } from "../../format";
 import { fileUrl, folderUrl } from "../paths";
 import { Link } from "../../router";
@@ -131,7 +131,8 @@ export function Trash({ folder }: { folder: string }) {
                                         <Link to={fileUrl(gone.id)} className="name">
                                             <FileIcon name={gone.name} />
                                             {gone.name}
-                                        </Link>
+                                        </Link>{" "}
+                                        <FileTitle file={gone} />
                                     </td>
                                     <td>v{gone.version}</td>
                                     <td>{deleted(gone.deleted_at, gone.deleted_by)}</td>

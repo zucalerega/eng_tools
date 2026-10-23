@@ -41,6 +41,9 @@ export interface VaultFile {
     deleted_at: string | null;
     deleted_by?: UserRef | null;
     uses: Use[]; // an assembly's parts, a drawing's model: files you can see, maybe deleted since
+    title: string; // what it's called: its name without its type, until someone names it
+    vendor: boolean; // a vendor's part (a McMaster screw), which keeps the vendor's name rather than a part number
+    former_names: string[]; // the names it had before, oldest first: SolidWorks files saved then still use them
 }
 
 export interface Listing {
@@ -181,6 +184,9 @@ export const vaultApi = {
         request<Moved>("POST", "/api/move", { files, folders, to }),
     rename: (target: { file: number } | { folder: string }, name: string) =>
         request<Moved>("POST", "/api/rename", { ...target, name }),
+    /** Say what files are called, or whether they're vendors' parts: not a new version, and no check-out. */
+    describe: (files: { file: number; title?: string; vendor?: boolean }[]) =>
+        request<{ files: VaultFile[] }>("POST", "/api/files/metadata", { files }),
     /** To the trash: files, and folders with everything in them. force: even if files elsewhere use them. */
     delete: (files: number[], folders: string[], force: boolean) =>
         request<Deleted>("POST", "/api/delete", { files, folders, force }),

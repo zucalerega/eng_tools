@@ -4,11 +4,11 @@ import { type FileDetail, type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { checkedOutHere, WEB_HOST } from "../checkouts";
 import { Dialog, Notice, Time } from "../../components";
-import { FileIcon, LockLabel, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileIcon, FileTitle, LockLabel, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatSize } from "../../format";
 import { DeleteDialog } from "../manage";
 import { NewFileDialog, StartedNotice } from "../newFile";
-import { fileUrl, kindOf, parentOf, trashUrl } from "../paths";
+import { fileUrl, kindOf, parentOf, titleBeside, trashUrl } from "../paths";
 import { Link } from "../../router";
 import { atLeast, nearestFolder, roleIn, useStore, useVault } from "../store";
 import { parentsOf, StructureTree, UsedVersion } from "../structure";
@@ -20,6 +20,7 @@ type Asking =
     | { action: "delete" }
     | { action: "checkin" }
     | { action: "undo" }
+    | { action: "title" }
     | null;
 
 export function FilePage({ id }: { id: number }) {
@@ -85,11 +86,17 @@ export function FilePage({ id }: { id: number }) {
                     <FileIcon name={file.name} />
                     {file.name}
                 </h1>
+                {titleBeside(file) && <p className="file-head-title">{file.title}</p>}
                 <p className="muted">
                     v{file.version} · {formatSize(file.size)} · changed <Time at={file.modified_at} /> by{" "}
                     {file.modified_by.name} · created <Time at={file.created_at} />
                     {file.created_by && ` by ${file.created_by.name}`}
                 </p>
+                {file.former_names.length > 0 && (
+                    <p className="muted" title="SolidWorks files saved before its renames still find it by these">
+                        Formerly {file.former_names.join(", ")}
+                    </p>
+                )}
                 {file.deleted_at && (
                     <Notice tone="warning">
                         <span className="notice-row">
@@ -155,6 +162,15 @@ export function FilePage({ id }: { id: number }) {
                             onClick={() => setAsking({ action: "release" })}
                         >
                             Release check-out
+                        </button>
+                    )}
+                    {canEdit && !file.deleted_at && (
+                        <button
+                            type="button"
+                            title="What it's called, beside its name: no new version, and no check-out"
+                            onClick={() => setAsking({ action: "title" })}
+                        >
+                            Edit title…
                         </button>
                     )}
                     {canEdit && !file.deleted_at && !holder && (
@@ -260,6 +276,7 @@ export function FilePage({ id }: { id: number }) {
                 <DeleteDialog files={[file]} folders={[]} onClose={() => setAsking(null)} />
             )}
             {asking?.action === "checkin" && <CheckinDialog file={file} onClose={() => setAsking(null)} />}
+            {asking?.action === "title" && <TitleDialog file={file} onClose={() => setAsking(null)} />}
             {asking?.action === "undo" && <UndoCheckoutDialog files={[file]} onClose={() => setAsking(null)} />}
             {asking?.action === "release" && holder && (
                 <Dialog
@@ -305,6 +322,45 @@ export function FilePage({ id }: { id: number }) {
     );
 }
 
+/** What a file is called, shown beside its name: changing it changes nothing in the file. */
+function TitleDialog({ file, onClose }: { file: VaultFile; onClose: () => void }) {
+    const store = useStore();
+    const [title, setTitle] = useState(file.title);
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function save() {
+        setBusy(true);
+        try {
+            await vaultApi.describe([{ file: file.id, title: title.trim() }]);
+            await store.refresh();
+            onClose();
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+            setBusy(false);
+        }
+    }
+    return (
+        <Dialog
+            title={`Title of ${file.name}`}
+            confirm="Save"
+            busy={busy}
+            disabled={!title.trim() || title.trim() === file.title}
+            onConfirm={() => void save()}
+            onCancel={onClose}
+        >
+            <p className="muted">
+                What people call it, shown beside its name. Its name stays as it is, and so does the file: changing the
+                title isn't a new version, and doesn't need it checked out.
+            </p>
+            <label className="field">
+                Title
+                <input autoFocus value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
 /** A part's or assembly's drawings, each with the version of it that it shows, and a way to start one. */
 function Drawings({ model, canAdd }: { model: VaultFile; canAdd: boolean }) {
     const vault = useVault();
@@ -328,6 +384,7 @@ function Drawings({ model, canAdd }: { model: VaultFile; canAdd: boolean }) {
                                     <FileIcon name={drawing.name} />
                                     {drawing.name}
                                 </Link>
+                                <FileTitle file={drawing} />
                                 {parentOf(drawing.path) !== folder && (
                                     <span className="muted">in {parentOf(drawing.path) || "the top folder"}</span>
                                 )}

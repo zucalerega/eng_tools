@@ -781,6 +781,16 @@ th[aria-sort="descending"] .sort-button::after {
     height: 1.1rem;
 }
 
+/* A file's title beside its name, where it says more than the name (a part number) does. */
+.file-title {
+    color: var(--muted);
+}
+
+.file-head .file-head-title {
+    margin-top: 0.15rem;
+    font-size: 1.15rem;
+}
+
 .lock {
     display: inline-block;
     padding: 0.1rem 0.6rem;

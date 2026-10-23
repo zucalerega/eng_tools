@@ -4,7 +4,7 @@ import { formatTime } from "../format";
 import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
-import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks } from "./paths";
+import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks, titleBeside } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -45,6 +45,12 @@ export function FileIcon({ name }: { name: string }) {
             data-letter={{ part: "P", assembly: "A", drawing: "D", model: "3D", file: "·" }[kind]}
         />
     );
+}
+
+/** A file's title, beside its name, where it says more than the name does (titleBeside). */
+export function FileTitle({ file }: { file: VaultFile }) {
+    const title = titleBeside(file);
+    return title ? <span className="file-title">{title}</span> : null;
 }
 
 export function FolderIcon() {

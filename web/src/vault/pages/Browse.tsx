@@ -25,7 +25,7 @@ import {
 import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
 import { canCheckOut } from "../checkouts";
 import { MenuButton, Notice, Time } from "../../components";
-import { FileIcon, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileIcon, FileTitle, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatDate, formatSize, formatTime } from "../../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
@@ -205,7 +205,7 @@ export function Browse({ folder }: { folder: string }) {
                 <input
                     type="search"
                     className="search"
-                    placeholder="Search by name, like fin or *.SLDASM"
+                    placeholder="Search by name or title, like fin or *.SLDASM"
                     aria-label="Search files"
                     value={filters.search}
                     onChange={(event) => narrow({ search: event.target.value })}
@@ -543,6 +543,7 @@ export function FileTable({
                             <FileIcon name={file.name} />
                             {label}
                         </Link>
+                        <FileTitle file={file} />
                         {user && folder !== parentOf(user.path) && (
                             <span className="muted">in {folder || "the top folder"}</span>
                         )}

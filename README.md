@@ -52,8 +52,14 @@ replaces Kenesto.
   Check drawings in from SolidWorks: the `vault` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
+- **Every file has a title,** what it's called (`Fin bracket`), shown beside its name
+  wherever it says more than the name does: once part numbers make CAD files' names
+  numbers, the title says what each one is. A file's title starts as its name without its
+  type; anyone who can edit the file changes it with **Edit title…** on its page, which
+  isn't a new version and doesn't need it checked out. A renamed file lists the names it
+  had ("Formerly …"), and search finds it by them too.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
-  search by name and filter by kind, status, date, and person, and sort by name, date,
+  search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every
   level, and whether each file is checked in, who created it, and who changed it last;
   see each file's history and drawings and who has what checked out;

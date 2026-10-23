@@ -172,6 +172,24 @@ function describe(event: VaultEvent): ReactNode {
                     {who} renamed {text("moved_from")} to {file}
                 </>
             );
+        case "describe": {
+            // A new title, whether it's a vendor's part, or both, said in one go (vault.describe).
+            const vendor =
+                typeof detail.vendor === "boolean" ? (detail.vendor ? "a vendor's part" : "not a vendor's part") : null;
+            if (typeof detail.title !== "string") {
+                return (
+                    <>
+                        {who} marked {file} as {vendor}
+                    </>
+                );
+            }
+            return (
+                <>
+                    {who} titled {file} “{text("title")}”{detail.was ? ` (it was “${text("was")}”)` : ""}
+                    {vendor && `, and marked it as ${vendor}`}
+                </>
+            );
+        }
         case "move_folder":
             return (
                 <>

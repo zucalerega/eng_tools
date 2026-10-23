@@ -13,6 +13,19 @@ test("the activity feed says what each check-in was for", async () => {
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
 
+test("the activity feed says when a file got a new title, and what it was", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    await team.checkin(alice, { "Fins/Fin.SLDPRT": "fin" });
+    await team.title(alice, "Fins/Fin.SLDPRT", "Fin, left side");
+
+    renderApp(team.chief, "/vault/activity");
+    const lines = (await screen.findAllByText(/titled/)).map((titled) => titled.closest("li")!.textContent);
+    expect(lines).toContainEqual(
+        expect.stringContaining(`Alice titled ${team.folder}/Fins/Fin.SLDPRT “Fin, left side” (it was “Fin”)`),
+    );
+});
+
 test("admins see how many people used the site each day for the last month, and for how long, on the web app and in SolidWorks", async () => {
     const team = await Team.create();
     await team.member(`Usage-${team.folder}`); // signed in just now

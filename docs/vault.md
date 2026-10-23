@@ -469,14 +469,18 @@ the site gives both apps (design.md, "The web app").
     computer, who created it and when, and who changed it last and when; every folder how
     many files in it are checked out. Assemblies (and drawings) open up to show what they
     use, level by level, each with its own status; parts and assemblies link to their
-    drawings. Search (by name, with `*` and `?` patterns, or by path with a `/`) and the
+    drawings. A file's title shows beside its name wherever it says more than the name does
+    (`titleBeside` in `paths.ts`: once someone named it, or its name is a part number), here,
+    on its page, in Checked out, in the trash, and in Caliper's tree. Search (by name, title,
+    or a name the file had before, with `*` and `?` patterns, or by path with a `/`) and the
     filters (kind, status, when it was last changed, and by whom) list matching files from
     the folder and every folder in it, or from the whole vault (`browsing.ts`). The sort
     (a dropdown, or the name, date, and size column headings) is remembered per browser.
   - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
-    the top-level ones, its drawings, and its history, with downloads.
+    the top-level ones, its drawings, and its history, with downloads; its title, with Edit
+    title… for editors, and the names it had before ("Formerly …").
   - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
     in Caliper, beside Open in SolidWorks on a file's page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.

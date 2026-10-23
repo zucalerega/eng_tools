@@ -141,6 +141,16 @@ export class Team {
         await call("POST", "/api/checkout", who.token, { files: [this.path(relative)], host });
     }
 
+    /** Rename a file where it is: given its part number, say. */
+    async rename(who: Member, relative: string, name: string): Promise<void> {
+        await call("POST", "/api/rename", who.token, { file: this.path(relative), name });
+    }
+
+    /** Say what a file is called (its title), as Edit title does. */
+    async title(who: Member, relative: string, title: string): Promise<void> {
+        await call("POST", "/api/files/metadata", who.token, { files: [{ file: this.path(relative), title }] });
+    }
+
     /** A mesh uploaded as Vault for SolidWorks uploads them, gzip-compressed: its SHA-256. */
     async mesh(who: Member, mesh: Mesh): Promise<string> {
         const data = gzipSync(writeMesh(mesh));

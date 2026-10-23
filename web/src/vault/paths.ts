@@ -102,6 +102,14 @@ export const opensInCaliper = (name: string): boolean =>
 const stem = (name: string) =>
     (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).normalize("NFC").toLowerCase();
 
+/** "Fin" for "Fin.SLDPRT": a name without its type, as a file's title starts out (stem, in the server's paths.py). */
+export const stemOf = (name: string): string =>
+    name.lastIndexOf(".") > 0 ? name.slice(0, name.lastIndexOf(".")) : name;
+
+/** A file's title where it says more than its name does: someone named it, or its name is a part number. */
+export const titleBeside = (file: { name: string; title: string }): string | null =>
+    file.title && pathKey(file.title) !== pathKey(stemOf(file.name)) ? file.title : null;
+
 /**
  * Whether a drawing is named after a part or assembly, as the vault requires: Fin.SLDDRW, or
  * "Fin - machining.SLDDRW", for Fin.SLDPRT; not Fin2 or Finish (named_after in the server's paths.py).

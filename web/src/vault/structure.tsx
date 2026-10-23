@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { Use, VaultFile } from "./api";
-import { FileIcon, StatusLabel } from "./components";
+import { FileIcon, FileTitle, StatusLabel } from "./components";
 import { fileUrl, kindOf, parentOf } from "./paths";
 import { Link } from "../router";
 import { useVault, type VaultState } from "./store";
@@ -156,6 +156,7 @@ export function StructureTree({
                                 <FileIcon name={child.name} />
                                 {child.name}
                             </Link>
+                            <FileTitle file={child} />
                             {folder !== parentOf(parent.path) && (
                                 <span className="muted">in {folder || "the top folder"}</span>
                             )}

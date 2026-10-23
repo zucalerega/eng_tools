@@ -4,7 +4,7 @@ import { type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { WEB_HOST } from "../checkouts";
 import { Dialog, Notice, Time } from "../../components";
-import { FileIcon } from "../components";
+import { FileIcon, FileTitle } from "../components";
 import { fileUrl, parentOf } from "../paths";
 import { Link } from "../../router";
 import { atLeast, roleIn, useStore, useVault } from "../store";
@@ -84,7 +84,8 @@ export function Locks() {
                                         <Link to={fileUrl(file.id)} className="name">
                                             <FileIcon name={file.name} />
                                             {file.path}
-                                        </Link>
+                                        </Link>{" "}
+                                        <FileTitle file={file} />
                                     </td>
                                     <td>{mine ? "You" : lock.user.name}</td>
                                     <td>{lock.host === WEB_HOST ? "The web app" : lock.host}</td>

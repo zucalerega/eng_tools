@@ -188,7 +188,7 @@ def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
             i.path,
             i.sha256,
             i.size,
-            [vault.Reference(r.path, r.version) for r in i.references],
+            [vault.Reference(r.path, r.version, r.file_id) for r in i.references],
             title=i.title,
             vendor=i.vendor,
             base_version=i.base_version,
@@ -196,7 +196,14 @@ def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
         for i in body.items
     ]
     result = vault.checkin(
-        db, user, items, comment=body.comment, host=body.host, keep_checked_out=body.keep_checked_out
+        db,
+        user,
+        items,
+        comment=body.comment,
+        host=body.host,
+        keep_checked_out=body.keep_checked_out,
+        renames=[vault.Renaming(r.file, r.name) for r in body.renames],
+        dry_run=body.dry_run,
     )
     return CheckinOut.of(result)
 

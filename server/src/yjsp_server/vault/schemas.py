@@ -311,7 +311,8 @@ class ReleaseIn(BaseModel):
 
 
 class ReferenceIn(BaseModel):
-    path: str
+    path: str = ""  # the file it uses, by vault path; or
+    file_id: int | None = None  # by id, which a rename in the same check-in doesn't change
     version: int | None = Field(default=None, ge=1)  # default: latest, or the one in this check-in
 
 
@@ -325,27 +326,50 @@ class CheckinItemIn(BaseModel):
     base_version: int | None = Field(default=None, ge=1)  # the version its changes start from: out_of_date if older
 
 
+class RenamingIn(BaseModel):
+    file: int  # a file checked out to you on this computer, by id
+    name: str  # its new name, in its folder: list it among the items by its new path
+
+
 class CheckinIn(BaseModel):
     comment: str = Field(default="", max_length=5000)
     host: str
     keep_checked_out: bool = False
     items: list[CheckinItemIn] = Field(min_length=1, max_length=5000)
+    # Files renamed in this check-in; every file whose latest version uses one goes in too, saved with its new name.
+    renames: list[RenamingIn] = Field(default=[], max_length=5000)
+    dry_run: bool = False  # find every problem, and change nothing
 
 
 class CheckinFileOut(BaseModel):
-    status: Literal["created", "updated", "unchanged"]
+    status: Literal["created", "updated", "unchanged", "renamed"]
     file: FileOut
 
 
+class ProblemOut(BaseModel):
+    error: str  # the error's code, as a refusal has it
+    message: str
+    details: dict[str, Any]  # as a refusal's
+
+
+class PlannedOut(BaseModel):
+    status: Literal["created", "updated", "unchanged", "renamed"]
+    path: str
+
+
 class CheckinOut(BaseModel):
-    checkin_id: int | None  # null when nothing changed
-    files: list[CheckinFileOut]
+    checkin_id: int | None  # null when nothing changed, and for a dry run
+    files: list[CheckinFileOut]  # none for a dry run, which says instead
+    planned: list[PlannedOut] = []  # what would happen to each file, if it found no
+    problems: list[ProblemOut] = []  # problems: every one it found
 
     @classmethod
     def of(cls, result: vault.CheckinResult) -> "CheckinOut":
         return cls(
             checkin_id=result.checkin_id,
             files=[CheckinFileOut(status=status, file=FileOut.of(view)) for status, view in result.files],
+            planned=[PlannedOut(status=status, path=path) for status, path in result.planned],
+            problems=[ProblemOut(error=p.code, message=p.message, details=p.details) for p in result.problems],
         )
 
 

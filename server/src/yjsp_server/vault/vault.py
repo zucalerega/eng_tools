@@ -644,8 +644,17 @@ def undo_checkout(db: Session, user: User, refs: list[FileRef]) -> list[FileView
 
 @dataclass
 class Reference:
-    path: str
+    path: str = ""  # the file's vault path; or
     version: int | None = None  # None: the latest version, or the one in the same check-in
+    file_id: int | None = None  # its id, which a rename in the same check-in doesn't change
+
+
+@dataclass
+class Renaming:
+    """A file renamed in a check-in (checkin): one checked out to you on the computer checking in."""
+
+    file: int  # its id
+    name: str  # its new name, in its folder; its type stays
 
 
 @dataclass
@@ -659,13 +668,28 @@ class CheckinItem:
     base_version: int | None = None  # the version its changes start from: refused (out_of_date) if there's a newer one
 
 
-CheckinStatus = Literal["created", "updated", "unchanged"]
+CheckinStatus = Literal["created", "updated", "unchanged", "renamed"]
 
 
 @dataclass
 class CheckinResult:
-    checkin_id: int | None  # None when nothing changed
-    files: list[tuple[CheckinStatus, FileView]]
+    checkin_id: int | None  # None when nothing changed, and for a dry run
+    files: list[tuple[CheckinStatus, FileView]]  # none for a dry run, which has
+    planned: list[tuple[CheckinStatus, str]] = field(default_factory=list)  # what would happen to each, by path
+    problems: list[ApiError] = field(default_factory=list)  # or every problem it found
+
+
+class _Problems:
+    """What's wrong with a check-in: the first is refused at once, but a dry run finds them all (checkin)."""
+
+    def __init__(self, dry_run: bool) -> None:
+        self.dry_run = dry_run
+        self.found: list[ApiError] = []
+
+    def add(self, error: ApiError) -> None:
+        if not self.dry_run:
+            raise error
+        self.found.append(error)
 
 
 def _require_own_lock(db: Session, tree: Tree, file: File, user: User, host: str) -> None:
@@ -782,6 +806,78 @@ def _taking_order(name: str) -> int:
     return 2
 
 
+def _rename_in_checkin(
+    db: Session,
+    tree: Tree,
+    access: Access,
+    user: User,
+    host: str,
+    renamings: list[Renaming],
+    problems: _Problems,
+) -> dict[int, tuple[str, str]]:
+    """Rename files for a check-in, before its items are read, which name them by their new paths. Each is checked
+    out to the user on this computer, and its new name, in its folder, is held to part numbers' rules (_renumbered).
+    They're renamed all at once, so names can change places. Moves, as rename's: by file id, its old and new paths."""
+    renaming: dict[int, tuple[File, str]] = {}
+    for change in renamings:
+        try:
+            file = _resolve(db, tree, access, change.file)
+            old = tree.file_path(file)
+            if file.id in renaming:
+                raise ApiError(f"{old} is renamed twice", code="bad_rename", path=old)
+            access.require(file.folder_id, Role.EDITOR, f"rename {old}")
+            _require_own_lock(db, tree, file, user, host)
+            name = paths.clean_name(change.name)
+            if paths.extension(name) != paths.extension(file.name):
+                raise ApiError(f"{name} would change what kind of file {file.name} is", code="bad_rename", path=old)
+            paths.split(paths.join(tree.path(file.folder_id), name))  # still within the length limit
+            renaming[file.id] = (file, name)
+        except ApiError as error:
+            problems.add(error)
+    # Parts and assemblies take their numbers before the drawings named after them (_taking_order).
+    for file, name in sorted(renaming.values(), key=lambda change: _taking_order(change[1])):
+        try:
+            number = _renumbered(db, file, name)
+            if number is not None:
+                number.file_id = file.id  # now, so no other file in the check-in takes it
+                db.flush()
+        except ApiError as error:
+            problems.add(error)
+            del renaming[file.id]
+    # Each new name has to be free once the rest are done: no folder's, nor a file's that keeps its name. One refused
+    # can leave another's taken, so look again until none is.
+    while True:
+        targets: set[tuple[int, str]] = set()
+        refused = None
+        for file, name in renaming.values():
+            target = (file.folder_id, paths.key(name))
+            there = _live_file(db, tree.by_id[file.folder_id], name)
+            if (
+                target in targets
+                or (there is not None and there.id not in renaming)
+                or target[1] in tree.children[file.folder_id]
+            ):
+                refused = file
+                break
+            targets.add(target)
+        if refused is None:
+            break
+        new = paths.join(tree.path(refused.folder_id), renaming.pop(refused.id)[1])
+        problems.add(Conflict(f"{new} is taken", code="exists", path=new))
+    moves = {
+        file.id: (tree.file_path(file), paths.join(tree.path(file.folder_id), name)) for file, name in renaming.values()
+    }
+    for file, _ in renaming.values():
+        file.name_key = f"/renaming/{file.id}"  # out of the way, as no name has a /: names can change places
+    db.flush()
+    for file, name in renaming.values():
+        file.name, file.name_key = name, paths.key(name)
+        _event(db, user, "rename", file=file, path=moves[file.id][1], moved_from=moves[file.id][0])
+    db.flush()
+    _remember(db, user, moves)
+    return moves
+
+
 def checkin(
     db: Session,
     user: User,
@@ -790,19 +886,25 @@ def checkin(
     comment: str = "",
     host: str,
     keep_checked_out: bool = False,
+    renames: list[Renaming] | None = None,
+    dry_run: bool = False,
 ) -> CheckinResult:
     """Check in new versions of your checked-out files and add new files, all or nothing.
 
     Upload each item's contents (PUT /api/blobs/{sha256}) first. New files may
     go in new folders, which are created. An item's references name the files
-    it uses (an assembly's parts, a drawing's model) by vault path; they must be
-    in the vault already, where the user can see them, or in this check-in, and
-    are pinned to the version used.
+    it uses (an assembly's parts, a drawing's model) by vault path or id; they
+    must be in the vault already, where the user can see them, or in this
+    check-in, and are pinned to the version used.
     A file whose contents didn't change gets no new version but is still
     released, unless keep_checked_out is set; if it had no references
     recorded and now has some, it gets a version to record them.
     A new file's name is held to the rules of part numbers (_part_number): a
     part named by a number handed out takes it.
+    Files may be renamed in the check-in (_rename_in_checkin): each is an item
+    too, by its new path, and so is every file whose latest version uses one,
+    with a new version, saved with the new name, so none is left naming a file
+    that isn't there. A dry run finds every problem, and changes nothing.
     """
     host = _host(host)
     if not items:
@@ -811,44 +913,71 @@ def checkin(
     _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     now = utcnow()
+    problems = _Problems(dry_run)
+    moves = _rename_in_checkin(db, tree, access, user, host, renames or [], problems)
 
     planned: list[tuple[CheckinItem, list[str], File | None, str | None]] = []
     seen: set[str] = set()
     for item in items:
-        names = paths.split(item.path)
-        if not names:
-            raise ApiError("A check-in item has an empty path", code="bad_path")
-        path = paths.join(*names)
-        if paths.key(path) in seen:
-            raise ApiError(f"{path} is listed twice")
-        seen.add(paths.key(path))
-        blob = db.get(Blob, item.sha256)
-        if blob is None:
-            raise ApiError(f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256)
-        if blob.size != item.size:
-            raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
-        # A file or folder the user can't see is as good as not there: checking one in answers as adding a new file
-        # there would (refused: see Access.deepest).
-        existing = _find(db, tree, access, path)
-        if existing is not None:
-            access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
-            _require_own_lock(db, tree, existing, user, host)
-            if item.vendor:
-                _check_vendor(existing.name)
-            if item.base_version is not None and item.base_version != existing.latest_version:
-                raise Conflict(
-                    f"{path} is at v{existing.latest_version} now, not v{item.base_version}, which these changes "
-                    "start from: get its latest version and make them again there",
-                    code="out_of_date",
-                    path=path,
-                    version=existing.latest_version,
+        try:
+            names = paths.split(item.path)
+            if not names:
+                raise ApiError("A check-in item has an empty path", code="bad_path")
+            path = paths.join(*names)
+            if paths.key(path) in seen:
+                raise ApiError(f"{path} is listed twice", path=path)
+            seen.add(paths.key(path))
+            blob = db.get(Blob, item.sha256)
+            if blob is None:
+                raise ApiError(
+                    f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256
                 )
-        else:
-            parent, depth = access.deepest(names[:-1])
-            access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
-            if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
-                raise Conflict(f"{path} is a folder", code="exists", path=path)
-        planned.append((item, names, existing, None if item.title is None else _title(item.title, path)))
+            if blob.size != item.size:
+                raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
+            # A file or folder the user can't see is as good as not there: checking one in answers as adding a new
+            # file there would (refused: see Access.deepest).
+            existing = _find(db, tree, access, path)
+            if existing is not None:
+                access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
+                _require_own_lock(db, tree, existing, user, host)
+                if item.vendor:
+                    _check_vendor(existing.name)
+                if item.base_version is not None and item.base_version != existing.latest_version:
+                    raise Conflict(
+                        f"{path} is at v{existing.latest_version} now, not v{item.base_version}, which these "
+                        "changes start from: get its latest version and make them again there",
+                        code="out_of_date",
+                        path=path,
+                        version=existing.latest_version,
+                    )
+            else:
+                parent, depth = access.deepest(names[:-1])
+                access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
+                if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
+                    raise Conflict(f"{path} is a folder", code="exists", path=path)
+            planned.append((item, names, existing, None if item.title is None else _title(item.title, path)))
+        except ApiError as error:
+            problems.add(error)
+
+    # A renamed file goes in under its new name, with every file that uses it, so none is left naming it as it was.
+    in_checkin = {existing.id for _, _, existing, _ in planned if existing is not None}
+    users_of: dict[int, list[File]] = {}  # by the id of a renamed file: the files whose latest versions use it
+    for file_id, (_, new) in moves.items():
+        if file_id not in in_checkin:
+            problems.add(
+                ApiError(f"Check {new} in too: it's renamed, and goes in by its new name", code="bad_rename", path=new)
+            )
+        users_of[file_id] = [parent for parent, _, _ in _parents(db, file_id)]
+        left = [parent for parent in users_of[file_id] if parent.id not in in_checkin]
+        if left:
+            problems.add(
+                Conflict(
+                    f"{new} is used by {_named(tree, access, left)}: check them in with it, saved with its new name",
+                    code="in_use",
+                    path=new,
+                    used_by=[tree.file_path(p) for p in left if access.can(p.folder_id, Role.VIEWER)],
+                )
+            )
 
     record: Checkin | None = None
 
@@ -865,9 +994,13 @@ def checkin(
         status: CheckinStatus
         version: Version | None = None
         if existing is None:
-            folder = _ensure_folders(db, tree, access, user, names[:-1], seq)
             vendor = numbers.vendors(names[-1]) if item.vendor is None else item.vendor
-            number = _part_number(db, names[-1], file=None, vendor=vendor, new=True)
+            try:
+                number = _part_number(db, names[-1], file=None, vendor=vendor, new=True)
+            except ApiError as error:
+                problems.add(error)
+                continue
+            folder = _ensure_folders(db, tree, access, user, names[:-1], seq)
             file = File(
                 folder_id=folder.id,
                 name=names[-1],
@@ -917,7 +1050,21 @@ def checkin(
         file.change_seq = seq
         done[paths.key(tree.file_path(file))] = (status, file, version, item)
     db.flush()
-    done = {key: done[key] for key in (paths.key(paths.join(*names)) for _, names, _, _ in planned)}  # as they came
+    keys = (paths.key(paths.join(*names)) for _, names, _, _ in planned)
+    done = {key: done[key] for key in keys if key in done}  # as they came
+    by_id = {entry[1].id: entry for entry in done.values()}
+    for file_id, (_, new) in moves.items():
+        kept = [parent for parent in users_of[file_id] if parent.id in by_id and by_id[parent.id][0] == "unchanged"]
+        if kept:
+            problems.add(
+                Conflict(
+                    f"{_named(tree, access, kept)} still name {new} as it was: save them with its new name, then "
+                    "check them in",
+                    code="in_use",
+                    path=new,
+                    used_by=[tree.file_path(p) for p in kept if access.can(p.folder_id, Role.VIEWER)],
+                )
+            )
 
     missing = []
     unlinked: list[str] = []  # drawings that don't show a part or assembly
@@ -928,20 +1075,28 @@ def checkin(
         linked: set[int] = set()
         shows: list[File] = []
         for ref in item.references:
-            ref_names = paths.split(ref.path)
-            in_batch = done.get(paths.key(paths.join(*ref_names)))
+            named = ref.path if ref.file_id is None else f"file {ref.file_id}"
+            if ref.file_id is None and not ref.path.strip():
+                problems.add(ApiError(f"A reference of {tree.file_path(file)} names no file", code="bad_reference"))
+                continue
+            if ref.file_id is not None:
+                in_batch = by_id.get(ref.file_id)
+            else:
+                in_batch = done.get(paths.key(paths.join(*paths.split(ref.path))))
             if in_batch is not None:
                 child, child_version = in_batch[1], in_batch[2].number
             else:
                 # A file the user can't see is missing, as one that isn't there is: they can't use it, and whether
                 # it's there, or which versions it has, stays hidden.
-                child = _find(db, tree, access, ref.path)
-                if child is None:
-                    missing.append({"file": tree.file_path(file), "reference": ref.path})
+                found = _find(db, tree, access, ref.path if ref.file_id is None else ref.file_id)
+                if found is None:
+                    missing.append({"file": tree.file_path(file), "reference": named})
                     continue
+                child = found
                 child_version = ref.version or child.latest_version
                 if child_version > child.latest_version:
-                    raise ApiError(f"{ref.path} has no version {ref.version}", code="bad_reference")
+                    problems.add(ApiError(f"{named} has no version {ref.version}", code="bad_reference"))
+                    continue
             if child.id == file.id or child.id in linked:
                 continue
             linked.add(child.id)
@@ -955,39 +1110,56 @@ def checkin(
             elif not any(paths.named_after(file.name, model.name) for model in shows):
                 misnamed.append({"drawing": tree.file_path(file), "shows": tree.file_path(shows[0])})
     if missing:
-        raise ApiError(
-            "Some referenced files aren't in the vault; add them to this check-in",
-            code="missing_references",
-            missing=missing,
+        problems.add(
+            ApiError(
+                "Some referenced files aren't in the vault; add them to this check-in",
+                code="missing_references",
+                missing=missing,
+            )
         )
     if unlinked:
-        raise ApiError(
-            f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
-            "vault. Check drawings in from SolidWorks, with the Vault add-in: it records what each drawing shows.",
-            code="drawing_without_model",
-            drawings=unlinked,
+        problems.add(
+            ApiError(
+                f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
+                "vault. Check drawings in from SolidWorks, with the Vault add-in: it records what each drawing shows.",
+                code="drawing_without_model",
+                drawings=unlinked,
+            )
         )
     if misnamed:
         first = misnamed[0]
         model = first["shows"].rsplit("/", 1)[-1]
         stem = model.rsplit(".", 1)[0]
-        raise ApiError(
-            f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, so "
-            f'call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
-            code="drawing_name",
-            drawings=misnamed,
+        problems.add(
+            ApiError(
+                f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, "
+                f'so call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
+                code="drawing_name",
+                drawings=misnamed,
+            )
         )
+    if problems.found:  # a dry run's
+        db.rollback()
+        return CheckinResult(None, [], problems=problems.found)
 
+    def reported(status: CheckinStatus, file: File) -> CheckinStatus:
+        return "renamed" if file.id in moves else status
+
+    if dry_run:
+        planned_out = [(reported(s, f), tree.file_path(f)) for s, f, _, _ in done.values()]
+        db.rollback()
+        return CheckinResult(None, [], planned_out)
     for status, file, version, _ in done.values():
         path = tree.file_path(file)
         if status != "unchanged":
             action = "add" if status == "created" else "checkin"
             _event(db, user, action, file=file, version=version, path=path, number=version.number, host=host)
-        elif not keep_checked_out:
+        elif not keep_checked_out and file.id not in moves:
             _event(db, user, "undo_checkout", file=file, path=path, host=host, unchanged=True)
     db.commit()
     views = _views_by_id(db, tree, access, [f for _, f, _, _ in done.values()])
-    return CheckinResult(record.id if record else None, [(s, views[f.id]) for s, f, _, _ in done.values()])
+    files = [(reported(s, f), views[f.id]) for s, f, _, _ in done.values()]
+    return CheckinResult(record.id if record else None, files)
 
 
 def revert(

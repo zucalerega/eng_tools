@@ -122,11 +122,24 @@ or get a new name (a file keeps its type), all or nothing, and never while check
 SolidWorks finds a file that an assembly or drawing uses by its name, in the assembly's
 folder or where it was relative to the assembly. So a move that would lose a file from
 the files using it is refused (`_still_found`): move a part into its assembly's folder,
-or their whole folder together, and rename used files in SolidWorks. Moving or renaming
+or their whole folder together, and rename used files in a check-in (below). Moving or renaming
 a folder, which takes its permissions along, takes a lead of it. Afterwards every client
 syncs everything again (clients know folders by path, and where a file is decides who
 can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
 open moves at a later refresh, and counts as that file meanwhile.
+
+**Renaming in a check-in.** A check-in can rename files too (`renames: [{file, name}]`, by
+id, each in its folder): the way to rename a file that others use, and how the vault's files
+are numbered all at once. Each renamed file is checked out to you on the computer checking in,
+and is an item too, by its new path (`renamed` in what the check-in says); and so is every
+file whose latest version uses it, with a new version, saved with the new name, so no file is
+left naming one that isn't there (`in_use` otherwise, with the files left behind). References
+can name files by id (`{file_id}`), which a rename doesn't change. The renames happen at once,
+so two files can trade names; new names are held to the rules of part numbers, as a rename's
+are. Clients follow a rename by the file's id, without syncing everything again. With
+`dry_run`, the check-in looks for every problem rather than stopping at the first, and changes
+nothing: it says what would happen to each file (`planned`), or lists the problems
+(`problems`, each as a refusal would say it).
 
 The vault keeps where each file was before a rename or a move (`former_names`, but for
 changes of case alone), since SolidWorks files saved before then still name it there:
@@ -757,7 +770,7 @@ are in [design.md](design.md#api).
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
 | `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
 | `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
-| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
+| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}`, with files renamed `{renames}`; or, `{dry_run}`, what it would do |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |

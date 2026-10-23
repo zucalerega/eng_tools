@@ -781,6 +781,31 @@ th[aria-sort="descending"] .sort-button::after {
     height: 1.1rem;
 }
 
+/* A file's name with its title under it, where the title says more than the name (a part number) does. */
+.file-name {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.file-title {
+    color: var(--muted);
+}
+
+.file-name .file-title {
+    padding-left: 2rem; /* past the icon: .file-icon's width and .name's gap */
+    font-size: 0.85rem;
+}
+
+.file-name-whole {
+    white-space: nowrap;
+}
+
+.file-head .file-head-title {
+    margin-top: 0.15rem;
+    font-size: 1.15rem;
+}
+
 .lock {
     display: inline-block;
     padding: 0.1rem 0.6rem;
@@ -1336,6 +1361,14 @@ path.lines-memory {
 .disclosure-space {
     flex: none;
     width: 1.3rem;
+}
+
+/* A row's disclosure and its file's name stay on one line: a long name (a part number is one word) widens the
+   column, rather than leaving the indent on a line of its own. */
+.tree-lead {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.5rem;
 }
 
 .used-row td {

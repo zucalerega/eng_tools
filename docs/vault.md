@@ -60,6 +60,12 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
   and it can contain versions of many files.
 - **Blob**: file contents, stored once under their SHA-256 hash. An unchanged
   file, or the same STEP file in two folders, takes no extra space.
+- **Title**: what people call a file, `Fin bracket`, shown with its name. It starts as
+  the file's name without its type, and anyone who can edit the file can change it. Part
+  numbers make CAD files' names numbers (`00000123-001.SLDPRT`, "Part numbers" below), and
+  the title is what says what each one is.
+- **Part number**: `00000123-001`, eight digits the vault hands out in order and a kind
+  from a list admins keep. A part's or an assembly's number is its name, for good.
 - **Lock (check-out)**: a file checked out by one person on one computer.
 - **Workspace**: your local copy of the vault, at the same path on every machine
   (default `C:\VLT`).
@@ -116,11 +122,88 @@ or get a new name (a file keeps its type), all or nothing, and never while check
 SolidWorks finds a file that an assembly or drawing uses by its name, in the assembly's
 folder or where it was relative to the assembly. So a move that would lose a file from
 the files using it is refused (`_still_found`): move a part into its assembly's folder,
-or their whole folder together, and rename used files in SolidWorks. Moving or renaming
+or their whole folder together, and rename used files in a check-in (below). Moving or renaming
 a folder, which takes its permissions along, takes a lead of it. Afterwards every client
 syncs everything again (clients know folders by path, and where a file is decides who
 can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
 open moves at a later refresh, and counts as that file meanwhile.
+
+**Renaming in a check-in.** A check-in can rename files too (`renames: [{file, name}]`, by
+id, each in its folder): the way to rename a file that others use, and how the vault's files
+are numbered all at once. Each renamed file is checked out to you on the computer checking in,
+and is an item too, by its new path (`renamed` in what the check-in says); and so is every
+file whose latest version uses it, with a new version, saved with the new name, so no file is
+left naming one that isn't there (`in_use` otherwise, with the files left behind). References
+can name files by id (`{file_id}`), which a rename doesn't change. The renames happen at once,
+so two files can trade names; new names are held to the rules of part numbers, as a rename's
+are. Clients follow a rename by the file's id, without syncing everything again. With
+`dry_run`, the check-in looks for every problem rather than stopping at the first, and changes
+nothing: it says what would happen to each file (`planned`), or lists the problems
+(`problems`, each as a refusal would say it).
+
+The vault keeps where each file was before a rename or a move (`former_names`, but for
+changes of case alone), since SolidWorks files saved before then still name it there:
+Caliper finds parts by those names, and every file the API returns lists the names it
+had (`former_names`, oldest first, each once, without the one it has now).
+
+**Titles and vendors' parts.** `POST /api/files/metadata` says what files are called
+(`title`) and which are vendors' parts (`vendor`: a McMaster screw, say, which keeps the
+vendor's name rather than taking a part number), for up to 5000 files at once, all or
+nothing. Neither is in the file, so neither makes a version, and neither needs a check-out:
+someone else's is fine. It takes editor access to the file's folder, as a rename does. A
+title is trimmed, and refused (`bad_title`) if it's empty, longer than 200 characters, or
+has a tab or a line break in it. A change shows in the activity log (`describe`), and
+clients get it in the sync feed like any other. A check-in item may bring a `title` and
+`vendor` too, which a new file takes, and an existing one changes to, as here.
+
+**Part numbers** (`vault/numbers.py` has the rules, `vault.py` holds the vault to them). A
+part number is `NNNNNNNN-KKK`: eight digits the server hands out in order, and a kind,
+three digits from a list admins keep (`part_kinds`: 001 Part and 501 Assembly to start
+with; a kind is for parts, assemblies, or any, and is retired rather than deleted). A part's
+or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says what it is.
+
+- **Handing them out** (`POST /api/numbers {kind, title, count}`): numbers go up by one and
+  are never handed out twice, even given back unused (`POST /api/numbers/release`).
+  Whether new files take them is an admin's switch (`PUT /api/numbering {mode}`): `off`
+  until the vault's files are numbered (docs/renumbering.md), when only admins get numbers (the renumbering hands
+  them out itself); `offer`, when editors get them too, up to 20 unused at a time
+  (`too_many_numbers`), and the web app and the add-in number new parts and assemblies; and
+  `require`, when a new part, assembly, STEP or STL file needs a number or to be a vendor's
+  part (`part_number_needed`). Files there before go on as they are.
+- **Taking one:** a new part or assembly (or a STEP or STL file of our own) named by a
+  number handed out and not yet used takes it, for good, and with it the title it was handed
+  out with, unless it brings its own. A number not handed out (`unknown_part_number`), or
+  another file's (`part_number_taken`), or of a kind for something else, or a part's name
+  with more than its number in it (`bad_part_number`), is refused. Who it was handed out to
+  doesn't matter: whoever checks in a file named by it takes it.
+- **Named after one:** a drawing, a PDF, or an export (a STEP or STL file) of a numbered
+  part is named after its number, `00000123-001.SLDDRW` or `00000123-001 - machining.PDF`,
+  once a file has it (`unknown_part_number` otherwise). In a check-in, parts and assemblies
+  take their numbers before the files named after them, so they can go in together.
+- **Never changing:** a file with a number can't be renamed to anything else
+  (`part_number_fixed`), though it can move. A file without one can be renamed to a number
+  handed out, and takes it. A drawing renamed stays named after what it shows
+  (`drawing_name`), as a check-in has it.
+- **Vendors' parts** keep their vendors' names: a file named by a McMaster-Carr number
+  (`91251A463_Socket Head Screw.SLDPRT`) comes in marked as a vendor's, and any file can be
+  marked so (`POST /api/files/metadata`). A file named by a part number isn't a vendor's.
+- **Numbers from before:** Ground Structures named its parts and assemblies by numbers of
+  its own (`00000011-001` to `-013` are one project's parts, `00000011-501` its
+  assembly), and some have more after them (`00000004-010-6`). They keep their names
+  (migration 0019 records them as `legacy` numbers, which several files may share), and
+  the numbers handed out start after the largest any file's name had (00000022). New
+  Ground Structures files take new numbers.
+- A check-in item's `base_version` says which version its changes start from: if the file
+  is past it, the check-in is refused (`out_of_date`), so a change made to an old copy
+  isn't checked in over newer ones.
+
+**Pausing the vault.** An admin pauses the vault (`PUT /api/vault/pause {host, reason}`) for
+work on all of it, such as numbering every file at once: every change waits until it's
+unpaused (`DELETE /api/vault/pause`), refused as `paused`, with who paused it and why; but
+the admin's own, from the computer they paused it on (and those that name no computer, such
+as a rename, from anywhere). Looking, downloading, undoing check-outs, Caliper's models, and
+changes to accounts and to who may see what go on. The sync feed says while it's paused
+(`paused`), for the clients to show.
 
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. Vault refuses to delete a file that the
@@ -142,8 +225,9 @@ everything again, like a move, and drop it.
 first, with comments, authors, and pinned references, plus the live files whose
 latest version uses this file. Every file the API returns, including in the sync
 feed, also lists what its latest version uses (`uses`: file ids, each with the version
-it was checked in with, limited to files you can see), and who created it and when
-(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`). So the web app and the add-in,
+it was checked in with, limited to files you can see), who created it and when
+(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`), and
+its `title`, `vendor`, and `former_names` (above). So the web app and the add-in,
 which keep a copy of the feed, know every assembly's parts and where each part is used,
 at every level, without asking for each file. References are by id, so renaming a file
 later won't touch the files that use it.
@@ -242,7 +326,9 @@ on top of it.
   than skip the check. When SolidWorks can't find a file anyway, the add-in's
   `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's
   here, or else at the file here at the longest end of the path
-  (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
+  (`Workspace.LocalFileFor`). A file renamed since (given its part number, say) is found by
+  the names it had (`former_names`), in its folder, unless a file has that name now: from
+  elsewhere, and in this workspace too, where its copy followed the rename. Checking such an assembly in from SolidWorks records its
   references (see "A check-in of unchanged contents" above); one that uses files the vault
   can't have (missing, or outside the workspace) names them all at once, and nothing is
   checked in.
@@ -264,10 +350,11 @@ on top of it.
   path sent for two files, or another file's short name on Windows) unless it's the
   vault's version already.
 - **Local state.** `.vault/state.json` records the sync cursor, the vault's files (with
-  what each uses) and folders (with your role in each), and each local copy's id,
-  version, hash, size, and write time. A file is rehashed only when its size or write
-  time changes. A workspace whose state is from an older client (`SyncFormat`), or that
-  synced while its server didn't say what files use yet, gets everything once more.
+  what each uses, its title, whether it's a vendor's part, and the names it had) and
+  folders (with your role in each), and each local copy's id, version, hash, size, and
+  write time. A file is rehashed only when its size or write time changes. A workspace
+  whose state is from an older client (`SyncFormat`), or that synced while its server
+  didn't say what files use, or what they're called, yet, gets everything once more.
   From this state each file is one of:
   - up to date
   - out of date
@@ -363,6 +450,19 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
   20 seconds and after every action, and redraws only when something changed, so what you
   opened in the tree stays open.
+- **Titles and part numbers.** Files' titles show after their names in Browse and under the
+  active document's name, where they say more than the names do (`Titles.Beside` in
+  `Vault.Client`), with Edit title on a file's right-click menu. Right-clicking a folder in
+  Browse offers New part and New assembly while part numbers are on: a kind and a title
+  (`NewNumberDialog`), the next number handed out, then the new file is started and checked
+  in as one from the web app is. Check in offers to mark new parts going in without part
+  numbers as vendors' parts, ticked to start with when McMaster's numbers name them all. While
+  an admin has the vault paused, the tab says who and why (`Workspace.Paused`, from the sync
+  feed). When SolidWorks can't find a part that was renamed since the file was saved (given its
+  part number, say), the add-in points it at the renamed file by the name it had
+  (`Workspace.LocalFileFor`, over the statuses, which carry former names). Numbering new files
+  as they go in (renaming them, and rewriting the new assemblies that use them) waits on the
+  SolidWorks 2026 checks in docs/renumbering.md.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a
@@ -450,14 +550,29 @@ the site gives both apps (design.md, "The web app").
     computer, who created it and when, and who changed it last and when; every folder how
     many files in it are checked out. Assemblies (and drawings) open up to show what they
     use, level by level, each with its own status; parts and assemblies link to their
-    drawings. Search (by name, with `*` and `?` patterns, or by path with a `/`) and the
+    drawings. A file's title shows under its name wherever it says more than the name does
+    (`titleBeside` in `paths.ts`: once someone named it, or its name is a part number), here,
+    on its page, in Checked out, in the trash, and in Caliper's tree. Search (by name, title,
+    or a name the file had before, with `*` and `?` patterns, or by path with a `/`) and the
     filters (kind, status, when it was last changed, and by whom) list matching files from
     the folder and every folder in it, or from the whole vault (`browsing.ts`). The sort
     (a dropdown, or the name, date, and size column headings) is remembered per browser.
   - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
-    the top-level ones, its drawings, and its history, with downloads.
+    the top-level ones, its drawings, and its history, with downloads; its title, with Edit
+    title… for editors, the names it had before ("Formerly …"), and whether it's a vendor's
+    part.
+  - New part and New assembly (`newFile.tsx`): while part numbers are offered or required,
+    a kind and a title, then Get a number, which hands one out (the user's unused ones are
+    offered first), then Start it in SolidWorks, a second click, as browsers let a link to
+    the add-in start only from a click. While they're offered, Name it yourself instead is
+    the old way; drawings are named after their part, as before. Uploads can mark parts as
+    vendors' (`vendor` on each check-in item). Rename is off for a file named by its part
+    number (`keepsItsName` in `paths.ts`, which has numbers.py's rules and test cases).
+  - Admin > Part numbers: whether new files take numbers, the next number, the kinds, and
+    pausing the vault. While it's paused, every page of the vault says so, with Unpause for
+    admins (from the sync feed's `paused`).
   - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
     in Caliper, beside Open in SolidWorks on a file's page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.
@@ -586,10 +701,12 @@ Where the 3D comes from:
       has the vault's files with those names in folders of the names of the folders
       SolidWorks saved them in (a name alone, as STEP imports' SOLID-1, could be any file's):
       the one whose path ends most like the saved one, and none where two end alike, each at
-      the version it had when the assembly's version was made, or its first. So they open on
-      their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
-      Interconnect) is read in the browser, as the file on its own is (the server says which
-      components are one, `format`), one at a time. SolidWorks keeps one as the document it
+      the version it had when the assembly's version was made, or its first. A file renamed or
+      moved since is found where it was (its former names: "Move and rename"), unless a file
+      is there now, as SolidWorks would open that one. So they open on their own as usual. A
+      STEP or IGES file placed in an assembly (SolidWorks' 3D Interconnect) is read in the
+      browser, as the file on its own is (the server says which components are one,
+      `format`), one at a time. SolidWorks keeps one as the document it
       made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`, with a document for
       each of the STEP file's own parts under it), with the STEP file's path
       (`swImportedPath`): that path is the component's, found as any other, and the
@@ -680,11 +797,16 @@ are in [design.md](design.md#api).
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
 | `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
 | `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
-| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
+| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}`, with files renamed `{renames}`; or, `{dry_run}`, what it would do |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
+| `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
+| `GET/PUT /api/numbering` | whether new files take part numbers `{mode: off, offer, or require}`, and the next number `{next_number}` (admins change them) |
+| `GET/PUT/DELETE /api/vault/pause` | whether an admin has the vault paused, by whom and why; pause it `{host, reason}`; unpause it (admins) |
+| `GET/POST /api/part-kinds`, `PATCH /api/part-kinds/{code}` | the kinds of part numbers `{code, label, applies, retired}` (admins add and change them) |
+| `POST /api/numbers`, `GET /api/numbers`, `POST /api/numbers/release` | hand out part numbers `{kind, title, count}`; yours not used yet; give back unused ones `{numbers}` |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |

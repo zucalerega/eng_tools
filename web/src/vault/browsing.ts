@@ -77,25 +77,32 @@ export const isFiltering = (filters: Filters): boolean =>
 export const onlySearching = (filters: Filters): boolean =>
     isFiltering({ ...filters, search: "" }) === false && filters.search.trim() !== "";
 
+/** What a search looks at: a folder's name, or a file's, its title, and the names it had before its renames. */
+type Searched = { name: string; path: string; title?: string; former_names?: string[] };
+
 /**
- * What a search matches: names containing it, or with * and ? in it, names like it (*.SLDASM, Fin??.SLDPRT);
- * with a / in it, the path (Motor/Grain).
+ * What a search matches: names or titles containing it, or with * and ? in it, names like it (*.SLDASM,
+ * Fin??.SLDPRT); with a / in it, the path (Motor/Grain). A file renamed (given its part number, say) is still
+ * found by the names it had.
  */
-export function searchMatcher(search: string): (item: { name: string; path: string }) => boolean {
+export function searchMatcher(search: string): (item: Searched) => boolean {
     const wanted = search.trim().toLowerCase();
     if (wanted === "") {
         return () => true;
     }
-    const field = (item: { name: string; path: string }) =>
-        (wanted.includes("/") ? item.path : item.name).toLowerCase();
+    const fields = (item: Searched) =>
+        (wanted.includes("/")
+            ? [item.path]
+            : [item.name, ...(item.title ? [item.title] : []), ...(item.former_names ?? [])]
+        ).map((field) => field.toLowerCase());
     if (/[*?]/.test(wanted)) {
         const pattern = [...wanted]
             .map((char) => (char === "*" ? ".*" : char === "?" ? "." : char.replace(/[.+^${}()|[\]\\]/g, "\\$&")))
             .join("");
         const like = new RegExp(`^${pattern}$`, "u");
-        return (item) => like.test(field(item));
+        return (item) => fields(item).some((field) => like.test(field));
     }
-    return (item) => field(item).includes(wanted);
+    return (item) => fields(item).some((field) => field.includes(wanted));
 }
 
 const DAY = 86_400_000;

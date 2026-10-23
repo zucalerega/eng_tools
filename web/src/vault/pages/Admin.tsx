@@ -8,7 +8,8 @@ import {
     type WhitelistAdded,
     type WhitelistEntry,
 } from "../../api";
-import { type Grants, type Role, vaultApi } from "../api";
+import { type Grants, type Numbering, type PartKind, type Role, vaultApi } from "../api";
+import { WEB_HOST } from "../checkouts";
 import { formatAgo, formatDate, formatDuration, formatSize, formatTime } from "../../format";
 import { Dialog, Notice, Time } from "../../components";
 import { Link } from "../../router";
@@ -20,7 +21,7 @@ import { SiteUsage } from "./Usage";
 
 // Admins manage accounts and who can make one; admins and folder leads manage who can do what where.
 
-export function Admin({ section }: { section: "people" | "whitelist" | "access" }) {
+export function Admin({ section }: { section: "people" | "whitelist" | "access" | "numbers" }) {
     const vault = useVault();
     const isAdmin = vault.me?.is_admin ?? false;
     const shown = section !== "access" && !isAdmin ? "access" : section;
@@ -42,9 +43,22 @@ export function Admin({ section }: { section: "people" | "whitelist" | "access" 
                     <Link to={`${VAULT}/admin/access`} aria-current={shown === "access" ? "page" : undefined}>
                         Vault Access
                     </Link>
+                    {isAdmin && (
+                        <Link to={`${VAULT}/admin/numbers`} aria-current={shown === "numbers" ? "page" : undefined}>
+                            Part numbers
+                        </Link>
+                    )}
                 </nav>
             </div>
-            {shown === "people" ? <People /> : shown === "whitelist" ? <Whitelist /> : <Access vault={vault} />}
+            {shown === "people" ? (
+                <People />
+            ) : shown === "whitelist" ? (
+                <Whitelist />
+            ) : shown === "numbers" ? (
+                <PartNumbers />
+            ) : (
+                <Access vault={vault} />
+            )}
         </section>
     );
 }
@@ -864,3 +878,218 @@ function Access({ vault }: { vault: VaultState }) {
         </>
     );
 }
+
+const MODES: [Numbering["mode"], string, string][] = [
+    ["off", "Off", "New files are named as people like; only admins get numbers, to number the vault's files."],
+    [
+        "offer",
+        "Offered",
+        "New parts and assemblies get numbers in the web app and in SolidWorks; files without one still go in.",
+    ],
+    [
+        "require",
+        "Required",
+        "New parts, assemblies, and STEP and STL files need numbers, unless they're vendors' parts.",
+    ],
+];
+
+/** Part numbers: whether new files take them, the next one, the kinds they're of, and pausing the vault. */
+function PartNumbers() {
+    const vault = useVault();
+    const [numbering, setNumbering] = useState<Numbering | null>(null);
+    const [kinds, setKinds] = useState<PartKind[]>([]);
+    const reload = useCallback(async () => {
+        const [state, listed] = await Promise.all([vaultApi.numbering(), vaultApi.partKinds()]);
+        setNumbering(state);
+        setKinds(listed);
+    }, []);
+    const { problem, busy, run, setProblem } = useAction(reload);
+    const [kind, setKind] = useState<Omit<PartKind, "retired">>({ code: "", label: "", applies: "part" });
+    const [next, setNext] = useState("");
+    const [reason, setReason] = useState("");
+    useEffect(() => {
+        reload().catch((error: Error) => setProblem(error.message));
+    }, [reload, setProblem]);
+
+    function addKind(event: FormEvent) {
+        event.preventDefault();
+        void run(async () => {
+            await vaultApi.addPartKind({ ...kind, code: kind.code.trim(), label: kind.label.trim() });
+            setKind({ code: "", label: "", applies: kind.applies });
+        });
+    }
+
+    function skip(event: FormEvent) {
+        event.preventDefault();
+        void run(async () => {
+            await vaultApi.setNumbering({ next_number: Number(next) });
+            setNext("");
+        });
+    }
+
+    function pause(event: FormEvent) {
+        event.preventDefault();
+        void run(async () => {
+            await vaultApi.pause(WEB_HOST, reason.trim());
+            setReason("");
+        });
+    }
+
+    return (
+        <>
+            {problem && <Notice tone="error">{problem}</Notice>}
+            {numbering && (
+                <div className="setting">
+                    <label className="field">
+                        New files
+                        <select
+                            value={numbering.mode}
+                            disabled={busy}
+                            onChange={(event) =>
+                                void run(() => vaultApi.setNumbering({ mode: event.target.value as Numbering["mode"] }))
+                            }
+                        >
+                            {MODES.map(([mode, label]) => (
+                                <option key={mode} value={mode}>
+                                    {label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <p className="muted">{MODES.find(([mode]) => mode === numbering.mode)?.[2]}</p>
+                    <p>
+                        The next number is <strong>{String(numbering.next_number).padStart(8, "0")}</strong>. Numbers
+                        only go up, so none is handed out twice.
+                    </p>
+                    <form className="inline-form" onSubmit={skip}>
+                        <label className="field">
+                            Skip ahead to
+                            <input
+                                value={next}
+                                inputMode="numeric"
+                                onChange={(event) => setNext(event.target.value.replace(/[^0-9]/g, ""))}
+                                placeholder={String(numbering.next_number + 100)}
+                            />
+                        </label>
+                        <button type="submit" disabled={busy || next === ""}>
+                            Skip ahead
+                        </button>
+                    </form>
+                </div>
+            )}
+            <h2>Kinds</h2>
+            <p className="muted">
+                A part number's last three digits say what kind of thing it is. A kind is retired rather than deleted:
+                the numbers handed out with it keep it.
+            </p>
+            <table className="table" aria-label="Kinds">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>What it's for</th>
+                        <th>Files</th>
+                        <th>
+                            <span className="visually-hidden">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {kinds.map((k) => (
+                        <tr key={k.code}>
+                            <td>{k.code}</td>
+                            <td>
+                                {k.label} {k.retired && <span className="tag">Retired</span>}
+                            </td>
+                            <td>{APPLIES[k.applies]}</td>
+                            <td className="row-actions">
+                                <button
+                                    type="button"
+                                    className="button-small"
+                                    disabled={busy}
+                                    onClick={() =>
+                                        void run(() => vaultApi.changePartKind(k.code, { retired: !k.retired }))
+                                    }
+                                >
+                                    {k.retired ? `Bring back ${k.code}` : `Retire ${k.code}`}
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <form className="inline-form" onSubmit={addKind} aria-label="New kind">
+                <label className="field">
+                    Code
+                    <input
+                        value={kind.code}
+                        maxLength={3}
+                        inputMode="numeric"
+                        placeholder="002"
+                        onChange={(event) => setKind({ ...kind, code: event.target.value })}
+                    />
+                </label>
+                <label className="field">
+                    What it's for
+                    <input
+                        value={kind.label}
+                        maxLength={100}
+                        placeholder="Sheet metal part"
+                        onChange={(event) => setKind({ ...kind, label: event.target.value })}
+                    />
+                </label>
+                <label className="field">
+                    Files
+                    <select
+                        value={kind.applies}
+                        onChange={(event) => setKind({ ...kind, applies: event.target.value as PartKind["applies"] })}
+                    >
+                        {(Object.keys(APPLIES) as PartKind["applies"][]).map((applies) => (
+                            <option key={applies} value={applies}>
+                                {APPLIES[applies]}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <button type="submit" disabled={busy || kind.code.trim() === "" || kind.label.trim() === ""}>
+                    Add kind
+                </button>
+            </form>
+            <h2>Pausing the vault</h2>
+            <p className="muted">
+                For work on all of the vault at once, such as numbering every file: while it's paused, every change but
+                yours from here (the web app) waits, and everyone sees why. Looking, downloading, and undoing check-outs
+                go on.
+            </p>
+            {vault.paused ? (
+                <p>
+                    Paused by {vault.paused.by.id === vault.me?.id ? "you" : vault.paused.by.name}
+                    {vault.paused.reason && `, for ${vault.paused.reason}`}.{" "}
+                    <button type="button" disabled={busy} onClick={() => void run(() => vaultApi.unpause())}>
+                        Unpause
+                    </button>
+                </p>
+            ) : (
+                <form className="inline-form" onSubmit={pause}>
+                    <label className="field">
+                        What for? (everyone sees it)
+                        <input
+                            value={reason}
+                            maxLength={500}
+                            placeholder="numbering every file"
+                            onChange={(event) => setReason(event.target.value)}
+                        />
+                    </label>
+                    <button type="submit" className="button-danger" disabled={busy}>
+                        Pause the vault
+                    </button>
+                </form>
+            )}
+        </>
+    );
+}
+
+const APPLIES: Record<PartKind["applies"], string> = {
+    part: "Parts",
+    assembly: "Assemblies",
+    any: "Parts and assemblies",
+};

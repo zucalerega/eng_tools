@@ -43,6 +43,9 @@ public sealed class Workspace : IDisposable
 
     public VaultApi Api { get; }
 
+    /// <summary>An admin's pause, as of the last refresh: changes wait until it's back. Null when the vault isn't paused.</summary>
+    public PauseInfo? Paused { get; private set; }
+
     public static string DefaultRoot => RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
         ? @"C:\VLT"
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "VLT");
@@ -241,6 +244,7 @@ public sealed class Workspace : IDisposable
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
         var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
         var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
+        Paused = sync.Paused;
         // Deleted files are only dropped, by id: their paths go nowhere.
         CheckServerPaths(sync.Folders.Select(f => f.Path).Concat(sync.Files.Where(f => f.DeletedAt == null).Select(f => f.Path)));
         var before = sync.Full ? _state.Folders.Values.Select(f => f.Path).ToList() : new List<string>();
@@ -265,8 +269,11 @@ public sealed class Workspace : IDisposable
                 _state.Remote[file.Id] = RemoteEntry.From(file);
             }
         }
-        // Synced while the server didn't say what files use (it was older): now it does, so get it all again.
-        if (!sync.Full && sync.Files.Any(f => f.Uses != null) && _state.Remote.Values.Any(r => r.Uses == null))
+        // Synced while the server didn't say what files use, or what they're called (it was older): now it does, so get
+        // it all again.
+        var newer = sync.Files.Any(f => f.Uses != null) && _state.Remote.Values.Any(r => r.Uses == null);
+        var titled = sync.Files.Any(f => f.FormerNames != null) && _state.Remote.Values.Any(r => r.FormerNames == null);
+        if (!sync.Full && (newer || titled))
         {
             _state.SyncFormat = 0;
             await RefreshAsync(ct).ConfigureAwait(false);
@@ -426,7 +433,11 @@ public sealed class Workspace : IDisposable
     /// its local path), if one is.
     /// </summary>
     public (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(IEnumerable<string> keptPaths, string? usedBy = null) =>
-        FindUsedFiles(keptPaths, usedBy, Index(_state.Remote.Values.Select(file => file.Path)));
+        FindUsedFiles(keptPaths, usedBy, Index(RemoteNames()));
+
+    // The vault's files as of the last refresh, each with the names it had before (see Index).
+    private IEnumerable<(string Path, IReadOnlyList<string>? FormerNames)> RemoteNames() =>
+        _state.Remote.Values.Select(file => (file.Path, (IReadOnlyList<string>?)file.FormerNames));
 
     private (IReadOnlyList<string> InVault, IReadOnlyList<string> NotInVault) FindUsedFiles(
         IEnumerable<string> keptPaths, string? usedBy, (Dictionary<string, string> ByKey, ILookup<string, string> ByName) index)
@@ -534,7 +545,7 @@ public sealed class Workspace : IDisposable
         var level = new List<string> { localPath };
         while (level.Count > 0)
         {
-            var index = Index(_state.Remote.Values.Select(file => file.Path));
+            var index = Index(RemoteNames());
             var next = new List<string>();
             foreach (var file in level.Where(File.Exists))
             {
@@ -560,13 +571,26 @@ public sealed class Workspace : IDisposable
     /// else the file here at the longest end of the path (one not checked in yet). Null if there's neither, and for
     /// paths in this workspace: they mean themselves. It reads no workspace state, so it's safe while one is running.
     /// </summary>
-    public string? LocalFileFor(string keptPath, IEnumerable<string> vaultPaths)
+    public string? LocalFileFor(string keptPath, IEnumerable<string> vaultPaths) =>
+        LocalFileFor(keptPath, Index(vaultPaths.Select(path => (path, (IReadOnlyList<string>?)null))));
+
+    /// <summary>
+    /// As <see cref="LocalFileFor(string, IEnumerable{string})"/>, among these files (their statuses), which say the names
+    /// each had before its renames: a file renamed since the SolidWorks file was saved (given its part number, say) is
+    /// found by the name it had, in this workspace too, where its copy has its new name.
+    /// </summary>
+    public string? LocalFileFor(string keptPath, IEnumerable<FileStatus> files) =>
+        LocalFileFor(keptPath, Index(files.Where(f => f.FileId != null).Select(f => (f.VaultPath, (IReadOnlyList<string>?)f.FormerNames))));
+
+    private string? LocalFileFor(string keptPath, (Dictionary<string, string> ByKey, ILookup<string, string> ByName) index)
     {
-        if (UnderRoot(keptPath) != null)
+        var (byKey, byName) = index;
+        if (UnderRoot(keptPath) is { } here)
         {
-            return null;
+            // A path here means the file there; one renamed since is there by its new name (FollowMoves).
+            return !File.Exists(keptPath) && byKey.TryGetValue(VaultPaths.Key(here), out var now)
+                && LocalPathOrNull(now) is { } renamed && File.Exists(renamed) ? renamed : null;
         }
-        var (byKey, byName) = Index(vaultPaths);
         if (VaultFileMeant(keptPath, byKey, byName) is { } vaultPath && LocalPathOrNull(vaultPath) is { } meant && File.Exists(meant))
         {
             return meant;
@@ -595,13 +619,28 @@ public sealed class Workspace : IDisposable
         }
     }
 
-    // Vault file paths by key, and those keys by their file name's key: for VaultFileMeant.
-    private static (Dictionary<string, string> ByKey, ILookup<string, string> ByName) Index(IEnumerable<string> vaultPaths)
+    // Vault file paths by key, and those keys by their file name's key: for VaultFileMeant. A renamed file is there by
+    // the names it had too, in its folder, unless a file has that name now (SolidWorks would open that one): SolidWorks
+    // files saved before the rename still name it so.
+    private static (Dictionary<string, string> ByKey, ILookup<string, string> ByName) Index(
+        IEnumerable<(string Path, IReadOnlyList<string>? FormerNames)> files)
     {
         var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var path in vaultPaths)
+        var all = files.ToList();
+        foreach (var (path, _) in all)
         {
             byKey[VaultPaths.Key(path)] = path;
+        }
+        foreach (var (path, formerNames) in all)
+        {
+            var folder = path.Substring(0, path.LastIndexOf('/') + 1);
+            foreach (var key in (formerNames ?? Array.Empty<string>()).Select(name => VaultPaths.Key(folder + name)))
+            {
+                if (!byKey.ContainsKey(key))
+                {
+                    byKey[key] = path;
+                }
+            }
         }
         return (byKey, byKey.Keys.ToLookup(key => key.Substring(key.LastIndexOf('/') + 1), StringComparer.Ordinal));
     }
@@ -1042,14 +1081,20 @@ public sealed class Workspace : IDisposable
     /// False: referenced files checked out to you with changes stay out of the check-in (new ones still
     /// join), pinned to their version in the vault. For a new drawing of a part you're changing.
     /// </param>
+    /// <param name="vendorParts">
+    /// New files (local paths) that are vendors' parts: they keep their vendors' names rather than taking part
+    /// numbers, which the vault may require of new parts and assemblies.
+    /// </param>
     public async Task<CheckinResult> CheckinAsync(
         IEnumerable<string> localPaths,
         string comment,
         bool keepCheckedOut = false,
         Func<string, IEnumerable<string>>? referencesOf = null,
         bool withChangedReferences = true,
+        IEnumerable<string>? vendorParts = null,
         CancellationToken ct = default)
     {
+        var vendors = new HashSet<string>((vendorParts ?? Enumerable.Empty<string>()).Select(p => VaultPaths.Key(ToVaultPath(p))), StringComparer.Ordinal);
         var scope = Scope(RequirePaths(localPaths, "check in"));
         await RefreshAsync(ct).ConfigureAwait(false);
         var items = new List<FileStatus>();
@@ -1106,6 +1151,7 @@ public sealed class Workspace : IDisposable
                 Sha256 = entry.Sha256,
                 Size = entry.Size,
                 References = references.TryGetValue(VaultPaths.Key(status.VaultPath), out var uses) ? uses : new List<CheckinReference>(),
+                Vendor = status.State == FileState.New && vendors.Contains(VaultPaths.Key(status.VaultPath)) ? true : null,
             });
         }
 
@@ -1125,6 +1171,31 @@ public sealed class Workspace : IDisposable
         }
         SaveState();
         return result;
+    }
+
+    /// <summary>
+    /// Say what files here are called (their titles), or whether they're vendors' parts, by local path (null leaves
+    /// either as it is). Neither is in the file, so neither makes a version or needs a check-out. All or nothing.
+    /// </summary>
+    public async Task<IReadOnlyList<VaultFile>> DescribeAsync(
+        IEnumerable<(string LocalPath, string? Title, bool? Vendor)> changes, CancellationToken ct = default)
+    {
+        await RefreshAsync(ct).ConfigureAwait(false);
+        var ids = _state.Remote.ToDictionary(pair => VaultPaths.Key(pair.Value.Path), pair => pair.Key, StringComparer.Ordinal);
+        var files = new List<FileDescription>();
+        foreach (var (localPath, title, vendor) in changes)
+        {
+            var vaultPath = ToVaultPath(localPath);
+            if (!ids.TryGetValue(VaultPaths.Key(vaultPath), out var id))
+            {
+                throw new WorkspaceException($"{vaultPath} isn't in the vault: check it in first");
+            }
+            files.Add(new FileDescription { File = id, Title = title, Vendor = vendor });
+        }
+        var described = await Api.DescribeAsync(files, ct).ConfigureAwait(false);
+        Keep(described);
+        SaveState();
+        return described;
     }
 
     /// <summary>Release your check-outs. Local changes are backed up, then replaced with the latest version.</summary>
@@ -1404,6 +1475,9 @@ public sealed class Workspace : IDisposable
                 Lock = remote.Lock,
                 CheckedOutByMe = IsMine(remote.Lock),
                 MyRole = RoleIn(remote.Path),
+                Title = remote.Title,
+                Vendor = remote.Vendor,
+                FormerNames = remote.FormerNames ?? (IReadOnlyList<string>)Array.Empty<string>(),
             };
             var at = key;
             if (!locals.ContainsKey(at) && _state.Local.TryGetValue(pair.Key, out var had) && locals.ContainsKey(VaultPaths.Key(had.Path)))

@@ -24,6 +24,7 @@ something both apps need belongs to the site.
 | `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). Tests run against the real server. |
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
+| `docs/renumbering.md` | Numbering the vault's files all at once: what has to be checked in SolidWorks 2026 first, the plan, and the run. |
 | `deploy/` | `deploy.sh`, which deploys the live site; `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files. |
 | `.github/workflows/ci.yml` | The checks every change must pass, and a release's downloads (`.github/sign-installer.sh` signs the installer). |
 

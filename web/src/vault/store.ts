@@ -1,7 +1,7 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { ApiError, signIn, type Account } from "../api";
 import type { SessionStore } from "../session";
-import { type Folder, type Role, type Sync, type VaultFile, vaultApi } from "./api";
+import { type Folder, type Pause, type Role, type Sync, type VaultFile, vaultApi } from "./api";
 import { parentOf, pathKey } from "./paths";
 
 // The vault as this browser sees it: every folder and file you can see, kept current through the
@@ -24,6 +24,7 @@ export interface VaultState {
     usedBy: ReadonlyMap<number, VaultFile[]>; // by id: the files whose latest version uses it, by name
     checkedOut: ReadonlyMap<string, number>; // by folder path key: files checked out in it, at any depth
     revision: number; // goes up whenever anything you can see changes
+    paused: Pause | null; // an admin has the vault paused: changes wait until it's back
 }
 
 const NOTHING: Contents = { folders: [], files: [] };
@@ -40,6 +41,7 @@ export class VaultStore {
         usedBy: new Map(),
         checkedOut: new Map(),
         revision: 0,
+        paused: null,
     };
     private readonly listeners = new Set<() => void>();
     private cursor = 0; // the server's seq at the last sync
@@ -139,10 +141,14 @@ export class VaultStore {
 
     private apply(changes: Sync, rootRole: Role | null) {
         this.cursor = changes.seq;
+        // Every sync says whether the vault is paused, whatever else changed.
+        const paused = samePause(changes.paused ?? null, this.state.paused)
+            ? this.state.paused
+            : (changes.paused ?? null);
         const unchanged = !changes.full && changes.folders.length === 0 && changes.files.length === 0;
         if (unchanged && this.state.status === "ready") {
-            if (this.state.error) {
-                this.set({ error: null });
+            if (this.state.error || paused !== this.state.paused) {
+                this.set({ error: null, paused });
             }
             return;
         }
@@ -166,6 +172,7 @@ export class VaultStore {
             files,
             ...index(folders, files),
             revision: this.state.revision + 1,
+            paused,
         });
     }
 
@@ -174,6 +181,9 @@ export class VaultStore {
         this.listeners.forEach((listener) => listener());
     }
 }
+
+const samePause = (a: Pause | null, b: Pause | null): boolean =>
+    a === b || (a !== null && b !== null && a.since === b.since && a.reason === b.reason);
 
 const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });

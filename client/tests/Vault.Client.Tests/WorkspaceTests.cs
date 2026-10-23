@@ -688,6 +688,20 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task ARenumberingPlanIsMadeFromAWorkspacesSnapshot()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var drawing = Write(alice, "Fins/Fin.SLDDRW", "drawing");
+        await alice.CheckinAsync([fin, drawing], "a fin and its drawing", referencesOf: p => p == drawing ? new[] { fin } : Array.Empty<string>());
+
+        var files = Renumbering.RenumberPlan.FilesOf(await alice.BrowseAsync()).Where(f => f.Path.StartsWith(_folder + "/", StringComparison.Ordinal));
+        var plan = Renumbering.RenumberPlan.Plan(files, new Renumbering.RenumberRules(), 500);
+        Assert.Equal([$"{_folder}/Fins/00000500-001.SLDPRT", $"{_folder}/Fins/00000500-001.SLDDRW"], plan.Renames.Select(r => r.NewPath));
+        Assert.Equal($"drawing of {_folder}/Fins/Fin.SLDPRT", plan.Renames[1].Role); // as the vault knows: what it shows
+    }
+
+    [Fact]
     public async Task AWorkspaceKnowsWhileTheVaultIsPaused()
     {
         var chief = await WorkspaceAsync("chief");

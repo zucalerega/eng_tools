@@ -36,7 +36,13 @@ public static class PartNumbers
     public static bool VendorsName(string name) => McMaster.IsMatch(Stem(name));
 
     /// <summary>How a part number is written: 00000123-001.</summary>
-    public static string Text(long number, string kind) => number.ToString("D8", CultureInfo.InvariantCulture) + "-" + kind;
+    public static string Text(long number, string kind) => Digits(number) + "-" + kind;
+
+    /// <summary>How a number is written without its kind: 00000123.</summary>
+    public static string Digits(long number) => number.ToString("D8", CultureInfo.InvariantCulture);
+
+    /// <summary>Whether a kind's code is three digits: 001.</summary>
+    public static bool IsKind(string code) => code.Length == 3 && code.All(c => c >= '0' && c <= '9');
 
     // A name without its type, as the server's paths.stem has it.
     private static string Stem(string name)

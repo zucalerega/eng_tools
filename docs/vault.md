@@ -165,7 +165,7 @@ or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says w
 - **Handing them out** (`POST /api/numbers {kind, title, count}`): numbers go up by one and
   are never handed out twice, even given back unused (`POST /api/numbers/release`).
   Whether new files take them is an admin's switch (`PUT /api/numbering {mode}`): `off`
-  until the vault's files are numbered, when only admins get numbers (the renumbering hands
+  until the vault's files are numbered (docs/renumbering.md), when only admins get numbers (the renumbering hands
   them out itself); `offer`, when editors get them too, up to 20 unused at a time
   (`too_many_numbers`), and the web app and the add-in number new parts and assemblies; and
   `require`, when a new part, assembly, STEP or STL file needs a number or to be a vendor's
@@ -462,7 +462,7 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   part number, say), the add-in points it at the renamed file by the name it had
   (`Workspace.LocalFileFor`, over the statuses, which carry former names). Numbering new files
   as they go in (renaming them, and rewriting the new assemblies that use them) waits on the
-  SolidWorks 2026 checks in the renumbering's plan.
+  SolidWorks 2026 checks in docs/renumbering.md.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a

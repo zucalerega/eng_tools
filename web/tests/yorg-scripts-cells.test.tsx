@@ -111,6 +111,20 @@ describe("a text cell's Markdown", () => {
         expect(screen.getByText("x = 1").tagName).toBe("CODE");
     });
 
+    test("shows tables, and a rule under a line with a pipe in it isn't one", () => {
+        const { container } = render(
+            <Markdown
+                source={["| You see | It means |", "|---|:--|", "| `Read-only` | not yours |", "", "a | b", "---"].join(
+                    "\n",
+                )}
+            />,
+        );
+        expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["You see", "It means"]);
+        expect(screen.getByText("Read-only").tagName).toBe("CODE");
+        expect(container.querySelectorAll("table")).toHaveLength(1);
+        expect(screen.getByText("a | b").tagName).toBe("P");
+    });
+
     test("links go to the web, mail, or the site's own pages; anything else is only text", () => {
         render(
             <Markdown source="[docs](https://example.com) [home](/yorg) [bad](javascript:alert(1)) [data](data:text/html,x)" />,

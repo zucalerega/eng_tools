@@ -604,8 +604,8 @@ a number. A few codes come up in more than one place.
   that, you can ask again.
 - **Claude is still answering your last question** (`assistant_busy`): Claude answers one question
   of yours at a time. Wait for the answer, or click *Stop*, then ask.
-- **This conversation is too long for Claude: start a new one**, or
-  **Each message holds 1 to 20,000 characters**, and the like (`bad_conversation`): a question, or
+- **This conversation is too long for Claude: start a new one**,
+  **A question holds up to 20,000 characters**, and the like (`bad_conversation`): a question, or
   the conversation so far, is longer than Claude takes. Shorten the question, or click
   *New conversation*.
 - **Claude is overloaded or down**, **The server couldn't reach Claude**,

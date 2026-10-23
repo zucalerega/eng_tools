@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ChatStore } from "./chat";
+import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
 import { inPreview, PREVIEW, sitePath } from "./preview";
@@ -290,7 +290,7 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         </>
                     )}
                     <hr />
-                    <form method="post" action="/auth/logout">
+                    <form method="post" action="/auth/logout" onSubmit={forgetChat}>
                         <button type="submit" className="menu-item">
                             Sign out
                         </button>

@@ -69,9 +69,12 @@ function cells(row: string): string[] {
         .map((cell) => cell.trim().replaceAll("\\|", "|"));
 }
 
-/** Whether a table starts at this line: a row with pipes, with its rule under it. */
+/** Whether a table starts at this line: a row with pipes, with its rule, which has pipes too, under it. */
 const tableAt = (lines: string[], at: number) =>
-    lines[at]!.includes("|") && at + 1 < lines.length && TABLE_RULE.test(lines[at + 1]!);
+    lines[at]!.includes("|") &&
+    at + 1 < lines.length &&
+    lines[at + 1]!.includes("|") &&
+    TABLE_RULE.test(lines[at + 1]!);
 
 /** Markdown's blocks, each shown. */
 function blocks(lines: string[], key = "b"): ReactNode[] {

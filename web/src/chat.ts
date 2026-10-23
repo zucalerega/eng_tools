@@ -25,9 +25,9 @@ export interface ChatState {
 
 const KEPT = "yjsp.chat";
 // What the server takes in one conversation (assistant.py): older exchanges than fit are left out of what Claude reads.
-// It takes 100,000 characters in all, with up to 20,000 in the new question.
+// It takes 150,000 characters in all, with up to 20,000 in the new question; and the first 300 of a page's address.
 const MOST_MESSAGES = 40;
-const MOST_CHARACTERS = 75_000;
+const MOST_CHARACTERS = 120_000;
 const MOST_PAGE = 300;
 
 const say = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -46,6 +46,7 @@ function restore(owner: number): Exchange[] {
     try {
         const kept = JSON.parse(sessionStorage.getItem(KEPT) ?? "null") as Kept | null;
         if (kept?.owner !== owner || !Array.isArray(kept.exchanges)) {
+            forgetChat(); // someone else's: gone from the tab, not only from view
             return [];
         }
         return kept.exchanges.map((exchange) =>
@@ -63,6 +64,15 @@ function keep(kept: Kept): void {
         sessionStorage.setItem(KEPT, JSON.stringify(kept));
     } catch {
         // storage full or blocked: the conversation lasts as long as the page, then
+    }
+}
+
+/** The tab forgets its conversation: on signing out, so the next person on a shared computer can't find it. */
+export function forgetChat(): void {
+    try {
+        sessionStorage.removeItem(KEPT);
+    } catch {
+        // storage the browser won't let the page use: nothing was kept
     }
 }
 
@@ -134,12 +144,11 @@ export class ChatStore {
         if (!text || this.answering) {
             return;
         }
-        const messages: ChatMessage[] = [
-            ...conversation(this.state.exchanges),
-            { role: "user", text, page: page.slice(0, MOST_PAGE) },
-        ];
+        // Kept as it's sent, as it goes back with each question after.
+        const where = page.slice(0, MOST_PAGE);
+        const messages: ChatMessage[] = [...conversation(this.state.exchanges), { role: "user", text, page: where }];
         const at = this.state.exchanges.length;
-        this.exchanges([...this.state.exchanges, { question: text, page, answer: "", state: "thinking" }]);
+        this.exchanges([...this.state.exchanges, { question: text, page: where, answer: "", state: "thinking" }]);
         const controller = new AbortController();
         this.controller = controller;
         const asked = this.current;

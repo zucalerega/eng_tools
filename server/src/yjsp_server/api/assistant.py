@@ -30,6 +30,9 @@ def ask(body: AskIn, request: Request, user: ActiveUser, db: DB) -> StreamingRes
     {"type": "done", "stop_reason": ..., "day_used": ...} or {"type": "error", "error": code, "message": ...}."""
     turns = [Turn(m.role, m.text, m.page) for m in body.messages]
     answer = _assistant(request).ask(db, user, turns)
+    # The answer can take minutes to come, and needs nothing more of the database: its connection goes back now, rather
+    # than when the response ends, so a few answers at once don't hold every connection the server has.
+    db.close()
     # No proxy on the way should hold the answer back to send it whole.
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(answer.lines(), media_type="application/x-ndjson", headers=headers)

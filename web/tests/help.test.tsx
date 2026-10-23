@@ -11,11 +11,27 @@ async function openHelp() {
     return within(await screen.findByRole("complementary", { name: "Help" }));
 }
 
-async function ask(help: ReturnType<typeof within>, question: string) {
+/**
+ * Ask Claude, and wait for the answer to end (unless told not to): an answer still coming when a test ends would
+ * write the conversation into the next test's tab.
+ */
+async function ask(help: ReturnType<typeof within>, question: string, { wait = true } = {}) {
     const box = help.getByRole("textbox", { name: "Ask Claude" });
     await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
     // userEvent reads [ and { as the start of a key's name: [[ and {{ type them.
     await userEvent.type(box, `${question.replace(/[[{]/g, (bracket) => bracket + bracket)}{Enter}`);
+    if (wait) {
+        await answered(help, question);
+    }
+}
+
+/** Until the conversation has the question, and its answer has ended, one way or another. */
+async function answered(help: ReturnType<typeof within>, question: string) {
+    await waitFor(() => {
+        const log = help.getByRole("log", { name: "Conversation with Claude" });
+        expect(within(log).getAllByText(question).length).toBeGreaterThan(0);
+        expect(log.getAttribute("aria-busy")).toBe("false");
+    });
 }
 
 test("Help opens beside the page, with the help and the app's own", async () => {
@@ -88,16 +104,62 @@ test("the conversation stays with the tab, through a reload", async () => {
     expect(theirs.queryByText("Where's the trash?")).toBeNull();
 });
 
+test("Stop ends an answer, and the next question can go at once", async () => {
+    const team = await Team.create();
+    renderApp(await team.member("Ana"), "/vault");
+    const help = await openHelp();
+    await ask(help, "Tell me everything [slow]", { wait: false });
+    await help.findByText(/You asked: "Tell me everything \[slow\]"/); // it's writing
+    await userEvent.click(help.getByRole("button", { name: "Stop" }));
+    expect(await help.findByText("Stopped.")).toBeTruthy();
+    // Not "still answering" the one that was stopped.
+    await ask(help, "Just this, then");
+    expect(await help.findByText(/You asked: "Just this, then"/)).toBeTruthy();
+});
+
+test("a long answer goes back to Claude with the next question", async () => {
+    const team = await Team.create();
+    renderApp(await team.member("Ana"), "/vault");
+    const help = await openHelp();
+    await ask(help, "Explain it all [long]");
+    await help.findByText(/You asked: "Explain it all \[long\]" \(question 1 here\)/);
+    await ask(help, "And in short?");
+    expect(await help.findByText(/You asked: "And in short\?" \(question 2 here\)/)).toBeTruthy();
+});
+
+test("a conversation asked from a long address goes on", async () => {
+    const team = await Team.create();
+    // A folder deep in the vault: its address is over 300 characters, more than a question keeps of it.
+    renderApp(await team.member("Ana"), "/vault/files/" + "Deep%20Folder/".repeat(30));
+    const help = await openHelp();
+    await ask(help, "Where am I?");
+    await help.findByText(/\(question 1 here\)/);
+    await ask(help, "And now?");
+    expect(await help.findByText(/You asked: "And now\?" \(question 2 here\)/)).toBeTruthy();
+});
+
+test("signing out forgets the tab's conversation", async () => {
+    const team = await Team.create();
+    renderApp(await team.member("Ana"), "/vault");
+    await ask(await openHelp(), "Is this kept?");
+    await screen.findByText(/You asked: "Is this kept\?"/);
+    expect(sessionStorage.getItem("yjsp.chat")).not.toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Account: / }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(sessionStorage.getItem("yjsp.chat")).toBeNull();
+});
+
 test("an error on the page can be asked about in a click", async () => {
     const team = await Team.create();
     renderApp(await team.member("Ana"), "/vault/file/987654321");
     await screen.findByText("File 987654321 not found");
     const help = await openHelp();
     await userEvent.click(await help.findByRole("button", { name: /^Ask about “File 987654321 not found”/ }));
-    const box = help.getByRole("textbox", { name: "Ask Claude" }) as HTMLTextAreaElement;
-    expect(box.value).toBe('The page says: "File 987654321 not found". What does it mean, and what do I do?');
+    const question = 'The page says: "File 987654321 not found". What does it mean, and what do I do?';
+    expect((help.getByRole("textbox", { name: "Ask Claude" }) as HTMLTextAreaElement).value).toBe(question);
     await userEvent.click(help.getByRole("button", { name: "Ask" }));
-    await help.findByText(/You asked: "The page says: \\?"File 987654321 not found/);
+    await answered(help, question);
+    expect(help.getByText(/You asked: "The page says: \\?"File 987654321 not found/)).toBeTruthy();
 });
 
 test("a question Claude won't answer, or can't now, says so", async () => {
@@ -111,7 +173,8 @@ test("a question Claude won't answer, or can't now, says so", async () => {
     expect(await help.findByText("Claude is overloaded or down just now: try again in a few minutes")).toBeTruthy();
     // Asked again, in its place at the end: here it fails the same way, as the stand-in turns it away each time.
     await userEvent.click(help.getByRole("button", { name: "Ask again" }));
-    await waitFor(() => expect(help.getAllByText("Is it there? [fail]")).toHaveLength(1));
+    await answered(help, "Is it there? [fail]");
+    expect(help.getAllByText("Is it there? [fail]")).toHaveLength(1);
 });
 
 test("admins see what Claude's answers have cost, and on whose questions", async () => {

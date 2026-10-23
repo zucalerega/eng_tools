@@ -8,12 +8,13 @@ hour reads it for a fraction of the price. That only works while the help, the i
 earlier turns stay exactly as they were, so everything that varies comes after them.
 """
 
+import asyncio
 import json
 import logging
 import math
 import queue
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -32,12 +33,16 @@ log = logging.getLogger(__name__)
 
 # The most an answer may write, thinking included: a long answer with room to think, and the most one can cost.
 MAX_TOKENS = 16_000
-# What a conversation may hold: the most turns, and characters in one message and in all.
+# What a conversation may hold: the most turns, and characters in a question, in an answer (the most Claude writes is
+# about 64,000), and in all.
 MOST_MESSAGES = 40
-MOST_MESSAGE = 20_000
-MOST_CONVERSATION = 100_000
-# How often a quiet answer (Claude thinking) says it's still coming, so nothing between closes the connection.
+MOST_QUESTION = 20_000
+MOST_ANSWER = 80_000
+MOST_CONVERSATION = 150_000
+# How often a quiet answer (Claude thinking) says it's still coming, so nothing between closes the connection; and how
+# often it looks for what's next, which is also how soon it notices that whoever asked has gone.
 HEARTBEAT = 10.0
+POLL = 0.1
 # How long to wait for Anthropic to take the question before giving up on it.
 START_WAIT = 120.0
 DAY = timedelta(hours=24)
@@ -45,8 +50,10 @@ DAY = timedelta(hours=24)
 
 @dataclass(frozen=True)
 class Price:
-    """US dollars per million tokens (platform.claude.com/docs/en/about-claude/pricing, October 2026). Thinking is
-    billed as output. Tokens times dollars per million tokens is millionths of a dollar, as costs are kept."""
+    """US dollars per million tokens, from the live page (platform.claude.com/docs/en/about-claude/pricing, read
+    2026-10-23): check there before changing one. Cache reads are 0.1x the input price, except Claude Sonnet 5.5's and
+    Claude Opus 5.5's, which are 0.05x. Thinking is billed as output. Tokens times dollars per million tokens is
+    millionths of a dollar, as costs are kept."""
 
     input: float
     write_5m: float  # read in full and kept 5 minutes for the next question
@@ -123,6 +130,10 @@ class Failed(ApiError):
 
 class _BrokeOff(Exception):
     """An answer whose stream ended without its end."""
+
+
+class _Stopped(Exception):
+    """An answer whoever asked stopped, or left before it came: no one is waiting for the rest of it."""
 
 
 @dataclass(frozen=True)
@@ -206,7 +217,7 @@ class Assistant:
             if settings.anthropic_api_key
             else None
         )
-        self._answering: set[int] = set()
+        self._answering: dict[int, Answer] = {}  # by whose question it is
         self._lock = threading.Lock()
 
     def _budget(self) -> int:
@@ -286,20 +297,30 @@ class Assistant:
         Anthropic doesn't; otherwise the answer comes as it's written."""
         _check(conversation)
         found = help.load(self.settings.help_dir)
-        why = self._why_not(db, user, found)
-        if why is not None:
-            raise why
         user_id = user.id
+        answer = Answer(lambda: self.day_used(user_id), lambda: self._done(user_id, answer))
         with self._lock:
             if user_id in self._answering:
                 raise Conflict("Claude is still answering your last question", code="assistant_busy")
-            self._answering.add(user_id)
-        answer = Answer(lambda: self.day_used(user_id))
-        request = self._request(found, user, conversation)
-        thread = threading.Thread(target=self._answer, args=(user_id, request, answer), daemon=True)
-        thread.start()
+            self._answering[user_id] = answer
+        try:
+            # With their turn taken, so that no answer of theirs is counted between this look and the next one.
+            if (why := self._why_not(db, user, found)) is not None:
+                raise why
+            request = self._request(found, user, conversation)
+            threading.Thread(target=self._answer, args=(user_id, request, answer), daemon=True).start()
+        except BaseException:
+            self._done(user_id, answer)
+            raise
         answer.wait_until_started()
         return answer
+
+    def _done(self, user_id: int, answer: "Answer") -> None:
+        """This person can ask again: their answer has ended, or they've stopped it. Only that answer's turn ends, never
+        a later one of theirs."""
+        with self._lock:
+            if self._answering.get(user_id) is answer:
+                del self._answering[user_id]
 
     def day_used(self, user_id: int) -> float:
         limit = self._daily_limit()
@@ -347,34 +368,45 @@ class Assistant:
         try:
             last = self._stream(user_id, request, answer)
         finally:
-            with self._lock:
-                self._answering.discard(user_id)
+            self._done(user_id, answer)
             answer.put(last)
             answer.finish()
 
     def _stream(self, user_id: int, request: dict[str, Any], answer: "Answer") -> dict[str, Any]:
         """Claude's answer as it streams in, piece by piece, into `answer`: its last event, how it ended."""
         assert self.client is not None
-        started = False
         stream = None
+        written = 0  # characters of the answer so far
         try:
             with self.client.beta.messages.stream(**request) as stream:
-                started = True
-                answer.put({"type": "started"})
+                answer.started(stream)
                 for event in stream:
+                    if answer.stopped:
+                        raise _Stopped("whoever asked stopped it, or left")
                     if event.type == "content_block_start" and event.content_block.type == "thinking":
                         answer.put({"type": "thinking"})
                     elif event.type == "text":
+                        written += len(event.text)
                         answer.put({"type": "text", "text": event.text})
                 message = stream.get_final_message()
                 if message.stop_reason is None:
                     raise _BrokeOff("the answer ended before Anthropic said it was done")
         except Exception as error:
-            code, text = _failure(error)
-            if started:
-                # Paid for, as far as it got: what Anthropic said it read, and as much writing as it might have done.
-                self._record(user_id, request["model"], request["model"], _usage_so_far(stream, request["model"]))
-            log.warning("The assistant's answer failed (%s): %s", code, error)
+            stopped = answer.stopped
+            code, text = ("assistant_failed", "Stopped") if stopped else _failure(error)
+            snapshot = _snapshot(stream)
+            if snapshot is not None:
+                # Paid for, as far as it got (before Anthropic began it, nothing is): what Anthropic said it read, and
+                # what it wrote. Ended by Anthropic's own error, that's the words that came; stopped, or cut off, it's
+                # as much as it could have written, as Anthropic may have gone on, and its thinking isn't seen.
+                anthropics = isinstance(error, anthropic.APIStatusError) and not stopped
+                output = _tokens(written) if anthropics else MAX_TOKENS
+                model = request["model"]
+                self._record(user_id, model, model, _usage_so_far(snapshot, model, output))
+            if stopped:
+                log.info("The assistant's answer was stopped, or its asker left")
+            else:
+                log.warning("The assistant's answer failed (%s): %s", code, error)
             return {"type": "error", "error": code, "message": text}
         self._record(user_id, request["model"], message.model, _usage(message, request["model"]))
         return {"type": "done", "stop_reason": message.stop_reason}
@@ -409,8 +441,12 @@ def _check(conversation: list[Turn]) -> None:
     for index, turn in enumerate(conversation):
         if turn.role != ("user" if index % 2 == 0 else "assistant"):
             raise ApiError("A conversation goes question, answer, question, ...", code="bad_conversation")
-        if not turn.text.strip() or len(turn.text) > MOST_MESSAGE:
-            raise ApiError(f"Each message holds 1 to {MOST_MESSAGE:,} characters", code="bad_conversation")
+        if not turn.text.strip():
+            raise ApiError("Each message has something in it", code="bad_conversation")
+        if turn.role == "user" and len(turn.text) > MOST_QUESTION:
+            raise ApiError(f"A question holds up to {MOST_QUESTION:,} characters", code="bad_conversation")
+        if len(turn.text) > MOST_ANSWER:
+            raise ApiError(f"An answer holds up to {MOST_ANSWER:,} characters", code="bad_conversation")
     if conversation[-1].role != "user":
         raise ApiError("A conversation ends with the question to answer", code="bad_conversation")
     if sum(len(turn.text) for turn in conversation) > MOST_CONVERSATION:
@@ -454,43 +490,89 @@ def _usage(message: Any, asked: str) -> list[tuple[str, int, int, int, int, int]
     return found
 
 
-def _usage_so_far(stream: Any, asked: str) -> list[tuple[str, int, int, int, int, int]]:
-    """An answer that broke off: what Anthropic said it read when it started, and as much output as it could have
-    written, since it doesn't say how much it did."""
+def _snapshot(stream: Any) -> Any:
+    """What Anthropic said of an answer when it began (its message_start, with what it read), or None if it hadn't."""
     try:
-        snapshot = stream.current_message_snapshot
+        return None if stream is None else stream.current_message_snapshot
     except (AssertionError, AttributeError):
-        return [(asked, 0, 0, 0, 0, MAX_TOKENS)]
+        return None
+
+
+def _usage_so_far(snapshot: Any, asked: str, output: int) -> list[tuple[str, int, int, int, int, int]]:
+    """An answer that ended early: what Anthropic said it read when it began, and `output` tokens written, since it
+    doesn't say how many it wrote."""
     model, read_in, write_5m, write_1h, read, _ = _usage(snapshot, asked)[-1]
-    return [(model, read_in, write_5m, write_1h, read, MAX_TOKENS)]
+    return [(model, read_in, write_5m, write_1h, read, output)]
+
+
+def _tokens(characters: int) -> int:
+    """About how many tokens that many characters of an answer are: a token is about four characters of English, so
+    three counts on the safe side."""
+    return math.ceil(characters / 3)
+
+
+def _error_type(error: anthropic.APIStatusError) -> str | None:
+    """The type Anthropic gave its error (overloaded_error, ...), which an error partway through an answer has too:
+    its HTTP status is the stream's, 200."""
+    body = error.body
+    inner = body.get("error") if isinstance(body, dict) else None
+    kind = inner.get("type") if isinstance(inner, dict) else None
+    return kind if isinstance(kind, str) else None
 
 
 def _failure(error: Exception) -> tuple[str, str]:
     """An error from Anthropic, as (code, what to tell the person)."""
     if isinstance(error, anthropic.APIStatusError):
-        said = str(error.message).lower()
-        if error.status_code == 402 or "credit balance" in said:
+        kind, status, said = _error_type(error), error.status_code, str(error.message).lower()
+        if status == 402 or kind == "billing_error" or "credit balance" in said:
             return "assistant_no_credits", "Claude is out of API credits: an admin can ask whoever runs the server"
-        if error.status_code in (401, 403):
+        if status in (401, 403) or kind in ("authentication_error", "permission_error"):
             return "assistant_failed", "Claude's API key isn't working: an admin can ask whoever runs the server"
-        if error.status_code == 429:
+        if status == 429 or kind == "rate_limit_error":
             return "assistant_failed", "Claude is getting too many questions just now: try again in a minute"
-        if error.status_code >= 500:
+        if status >= 500 or kind in ("overloaded_error", "api_error"):
             return "assistant_failed", "Claude is overloaded or down just now: try again in a few minutes"
-        return "assistant_failed", "Claude couldn't take that question: try asking it another way"
+        if 400 <= status < 500 or kind == "invalid_request_error":
+            return "assistant_failed", "Claude couldn't take that question: try asking it another way"
     if isinstance(error, anthropic.APIConnectionError):
         return "assistant_failed", "The server couldn't reach Claude: try again in a minute"
     return "assistant_failed", "Claude's answer broke off: try again"
 
 
 class Answer:
-    """An answer on its way: what the thread asking Claude writes, read out by the request that's waiting for it."""
+    """An answer on its way: what the thread asking Claude writes, read out by the request that's waiting for it. If
+    whoever asked stops it, or leaves, it stops: Anthropic stops writing it, and they can ask again at once."""
 
-    def __init__(self, day_used: Callable[[], float]):
+    def __init__(self, day_used: Callable[[], float], done: Callable[[], None]):
         self._events: queue.Queue[dict[str, Any] | None] = queue.Queue()
         self._started = threading.Event()
+        self._stopped = threading.Event()
         self._first: dict[str, Any] | None = None
+        self._stream: Any = None
         self._day_used = day_used
+        self._done = done
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped.is_set()
+
+    def started(self, stream: Any) -> None:
+        """Anthropic has taken the question: its answer comes on `stream`, which stopping closes."""
+        self._stream = stream
+        self.put({"type": "started"})
+        if self.stopped:
+            stream.close()
+
+    def stop(self) -> None:
+        """No more of it is wanted: whoever asked has stopped it, or gone, or it's over. They can ask again now."""
+        self._stopped.set()
+        self._done()
+        if self._stream is not None:
+            try:
+                # Now, so a quiet stream (Claude thinking) ends at once, not at its next word.
+                self._stream.close()
+            except Exception:
+                log.debug("Closing a stopped answer's stream", exc_info=True)  # it ends either way
 
     def put(self, event: dict[str, Any]) -> None:
         if not self._started.is_set():
@@ -507,6 +589,7 @@ class Answer:
     def wait_until_started(self) -> None:
         """Until Anthropic has taken the question: if it wouldn't, its error, as the request's."""
         if not self._started.wait(START_WAIT):
+            self.stop()  # if it does start, no one's waiting for it
             raise Failed("Claude didn't start answering: try again in a minute")
         first = self._first
         if first is not None and first["type"] == "error":
@@ -514,18 +597,27 @@ class Answer:
                 raise Unavailable(first["message"], code="assistant_no_credits")
             raise Failed(first["message"])
 
-    def lines(self) -> Iterator[bytes]:
+    async def lines(self) -> AsyncIterator[bytes]:
         """The answer as lines of JSON (application/x-ndjson): "thinking", each "text" as it's written, and "done" or
         "error" last. While Claude thinks, "thinking" comes every few seconds, so nothing on the way closes a quiet
-        connection."""
-        while True:
-            try:
-                event = self._events.get(timeout=HEARTBEAT)
-            except queue.Empty:
-                yield b'{"type": "thinking"}\n'
-                continue
-            if event is None:
-                return
-            if event["type"] == "done":
-                event = {**event, "day_used": self._day_used()}
-            yield (json.dumps(event) + "\n").encode()
+        connection. However the response ends, the answer stops: with whoever asked gone, no one wants the rest."""
+        quiet = 0.0
+        try:
+            while True:
+                try:
+                    event = self._events.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(POLL)
+                    quiet += POLL
+                    if quiet >= HEARTBEAT:
+                        quiet = 0.0
+                        yield b'{"type": "thinking"}\n'
+                    continue
+                quiet = 0.0
+                if event is None:
+                    return
+                if event["type"] == "done":
+                    event = {**event, "day_used": await asyncio.to_thread(self._day_used)}
+                yield (json.dumps(event) + "\n").encode()
+        finally:
+            self.stop()

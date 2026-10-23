@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from yjsp_server.app import create_app
+from yjsp_server.assistant import Assistant
 
 from .conftest import BOOTSTRAP_ADMIN
 from .fake_claude import FakeClaude, Reply
@@ -259,6 +260,64 @@ def test_an_answer_that_breaks_off_is_counted_as_if_it_had_finished(client, team
     assert spending(client, admin)["spent"] == pytest.approx(0.1602)
 
 
+def test_an_answer_anthropic_breaks_off_counts_what_it_wrote(client, team, claude):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    claude.replies.append(Reply(error_after=2))  # two pieces of the answer, then Anthropic is overloaded
+    response, events = ask(client, admin, QUESTION)
+    assert events[-1] == {
+        "type": "error",
+        "error": "assistant_failed",
+        "message": "Claude is overloaded or down just now: try again in a few minutes",
+    }
+    # What it read (100 tokens at $2 a million), and the words it wrote: not all it could have written.
+    assert 0.0002 < spending(client, admin)["spent"] < 0.001
+    # Turned away before it started, it cost nothing.
+    before = spending(client, admin)["spent"]
+    claude.replies.append(Reply(error_after=0))
+    response, events = ask(client, admin, QUESTION)
+    assert events[-1]["message"] == "Claude is overloaded or down just now: try again in a few minutes"
+    assert spending(client, admin)["spent"] == before
+
+
+def test_a_question_that_fails_to_start_frees_whoever_asked(client, team, claude, monkeypatch):
+    member = team.member("ana@rocketry.test")
+    request = Assistant._request
+
+    def unreadable(self, *args):
+        monkeypatch.setattr(Assistant, "_request", request)  # just this once
+        raise RuntimeError("the help couldn't be read")
+
+    monkeypatch.setattr(Assistant, "_request", unreadable)
+    with pytest.raises(RuntimeError):
+        ask(client, member, QUESTION)
+    # Not "still answering" a question that never started.
+    assert ask(client, member, QUESTION)[0].status_code == 200
+
+
+def test_an_answer_keeps_no_database_connection_while_it_comes(client, team, claude):
+    member = team.member("ana@rocketry.test")
+    hold = threading.Event()
+    claude.replies.append(Reply(hold=hold, hold_after=1))
+    asking = threading.Thread(target=lambda: ask(client, member, QUESTION))
+    asking.start()
+    try:
+        assert claude.holding.wait(10)
+        # A dozen answers at once would otherwise take every connection the server has.
+        assert client.app.state.sessionmaker.kw["bind"].pool.checkedout() == 0
+    finally:
+        hold.set()
+        asking.join(10)
+
+
+def test_a_long_answer_goes_back_with_the_next_question(client, team, claude):
+    member = team.member("ana@rocketry.test")
+    answer = {"role": "assistant", "text": "word " * 12_000}  # 60,000 characters: about as long as one gets
+    follow_up = {"role": "user", "text": "And the rest?", "page": "/vault"}
+    response, events = ask(client, member, QUESTION, answer, follow_up)
+    assert response.status_code == 200, response.text
+    assert claude.requests[-1]["messages"][1]["content"] == answer["text"]
+
+
 @pytest.mark.parametrize(
     "conversation",
     [
@@ -266,6 +325,7 @@ def test_an_answer_that_breaks_off_is_counted_as_if_it_had_finished(client, team
         [QUESTION, {"role": "assistant", "text": "An answer."}],  # nothing to answer
         [{"role": "assistant", "text": "An answer."}, QUESTION],
         [{"role": "user", "text": "   "}],
+        [{"role": "user", "text": "Why? " * 4001}],  # a question over 20,000 characters
     ],
 )
 def test_a_conversation_is_questions_and_answers_in_turn(client, team, claude, conversation):

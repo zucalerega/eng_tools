@@ -24,6 +24,10 @@ class Reply:
     error: str = ""
     breaks_off: bool = False  # the connection drops partway through the answer
     hold: threading.Event | None = None  # wait for this before answering
+    # Partway through the answer, after this many pieces of it: Anthropic's error event (as when it's overloaded), or a
+    # wait for `hold`. 0: before it starts (before message_start).
+    error_after: int | None = None
+    hold_after: int | None = None
 
 
 @dataclass
@@ -31,6 +35,7 @@ class FakeClaude:
     replies: list[Reply] = field(default_factory=list)
     requests: list[dict[str, Any]] = field(default_factory=list)  # each request's body, and its headers in "headers"
     received: threading.Event = field(default_factory=threading.Event)  # set at each request
+    holding: threading.Event = field(default_factory=threading.Event)  # set when an answer waits partway, hold_after
 
     def __post_init__(self) -> None:
         fake = self
@@ -46,7 +51,7 @@ class FakeClaude:
                 fake.requests.append({**body, "headers": {k.lower(): v for k, v in self.headers.items()}})
                 fake.received.set()
                 reply = fake.replies.pop(0) if fake.replies else Reply()
-                if reply.hold is not None:
+                if reply.hold is not None and reply.hold_after is None:
                     reply.hold.wait(30)
                 if reply.status != 200:
                     self._error(reply)
@@ -81,6 +86,8 @@ class FakeClaude:
                     "output_tokens": 1,
                 }
                 message = {"id": "msg_test", "type": "message", "role": "assistant", "model": model, "content": []}
+                if reply.error_after == 0:
+                    return self._overloaded()
                 self._event("message_start", {"message": {**message, "stop_reason": None, "usage": usage}})
                 # Thinking first, as adaptive thinking does, with its text left out.
                 block = {"type": "thinking", "thinking": "", "signature": ""}
@@ -95,6 +102,12 @@ class FakeClaude:
                         self.wfile.flush()
                         self.close_connection = True
                         return  # without the chunked body's end: as a dropped connection looks
+                    if reply.error_after == number + 1:
+                        return self._overloaded()
+                    if reply.hold_after == number + 1 and reply.hold is not None:
+                        self.wfile.flush()
+                        fake.holding.set()
+                        reply.hold.wait(30)
                 self._event("content_block_stop", {"index": 1})
                 ending: dict[str, Any] = {"output_tokens": reply.output_tokens}
                 if reply.iterations is not None:
@@ -104,6 +117,11 @@ class FakeClaude:
                     {"delta": {"stop_reason": reply.stop_reason, "stop_sequence": None}, "usage": ending},
                 )
                 self._event("message_stop", {})
+                self.wfile.write(b"0\r\n\r\n")
+
+            def _overloaded(self) -> None:
+                """Anthropic's error, on a stream that's begun: an error event, and the stream's end."""
+                self._event("error", {"error": {"type": "overloaded_error", "message": "Overloaded"}})
                 self.wfile.write(b"0\r\n\r\n")
 
             def _event(self, name: str, data: dict[str, Any]) -> None:

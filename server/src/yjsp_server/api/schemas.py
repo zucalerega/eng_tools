@@ -266,7 +266,8 @@ class WhitelistAddedOut(BaseModel):
 
 class AssistantMessageIn(BaseModel):
     role: Literal["user", "assistant"]
-    text: str = Field(max_length=20_000)
+    # A question's length, and an answer's, are the assistant's to check (assistant._check), saying which is too long.
+    text: str = Field(max_length=100_000)
     # A question's: the page of the web app it was asked from, like /vault/file/12.
     page: str | None = Field(default=None, max_length=300)
 

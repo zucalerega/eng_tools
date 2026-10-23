@@ -274,8 +274,11 @@ files or account, and it does nothing but answer.
   the tokens, and the cost. It stops answering everyone once its answers have cost
   `YJSP_ASSISTANT_BUDGET` (the credits it may use), and anyone whose questions in the last 24
   hours have cost `YJSP_ASSISTANT_DAILY_LIMIT`. Each person asks one question at a time, so no
-  one goes past a limit by more than one answer's cost (an answer writes at most 16,000
-  tokens). An answer that breaks off counts as if it had written all it could. The
+  one goes past their daily limit by more than one answer's cost (an answer writes at most
+  16,000 tokens), and the budget goes over by at most one answer for each person asking as it
+  runs out. An answer stopped partway, or cut off, counts as if it had written all it could, as
+  Anthropic may have gone on writing; one that Anthropic's own error ended counts what it
+  wrote; and a question Anthropic never began counts nothing. The
   workspace the key belongs to has a spend limit of its own, at Anthropic (deploying.md,
   "Claude"). Admin > People's *Claude* card shows the spending, and on whose questions.
 - **When it can't answer**, it says why, with a code of its own: not set up (`assistant_off`),

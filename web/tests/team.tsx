@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { inject, onTestFinished } from "vitest";
+import { expect, inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
 import { configureApi, type Account, type SiteSettings, type WhitelistEntry } from "../src/api";
 import { type VaultFile } from "../src/vault/api";
@@ -244,6 +244,20 @@ export const folderTree = async () => within(await screen.findByRole("navigation
 
 /** The breadcrumbs above a page's title: Files / Team / Folder. */
 export const breadcrumbs = async () => within(await screen.findByRole("navigation", { name: "Folders" }));
+
+// A page can show a change it made as soon as the vault syncs, before it has finished making it (fetching the vault
+// again): until then its dialog stays open, and its buttons wait. These wait for it to finish.
+
+/** No dialog open: the last one has finished and closed (on a folder's page, unpicking what it changed). */
+export const dialogClosed = () => waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+/** A button, once the page lets it be pressed. */
+export const pressable = (name: string) =>
+    waitFor(() => {
+        const button = screen.getByRole<HTMLButtonElement>("button", { name });
+        expect(button.disabled).toBe(false);
+        return button;
+    });
 
 /** The web app at this page, as this person, talking to the test server. */
 export function renderApp(who: Member, page: string) {

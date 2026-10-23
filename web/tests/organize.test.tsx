@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { folderUrl } from "../src/vault/paths";
-import { breadcrumbs, renderApp, table, Team } from "./team";
+import { breadcrumbs, dialogClosed, renderApp, table, Team } from "./team";
 import { makeZip } from "./zips";
 
 // New folders, uploads, moving, and renaming, from the web app, against the real server.
@@ -45,7 +45,7 @@ test("a new folder, then files and a whole folder uploaded into it", async () =>
     await userEvent.click(within(dialog).getByRole("button", { name: "Upload 2 files" }));
     const chute = (await screen.findByRole("link", { name: "Chute.SLDPRT" })).closest("tr")!;
     expect(within(chute).getByText("v1")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await dialogClosed();
 
     fireEvent.change(screen.getByLabelText("Upload a folder"), {
         target: { files: [file("Board.STEP", "board", "Avionics/Boards/Board.STEP")] },
@@ -166,6 +166,7 @@ test("picked files check out here, and those check-outs are undone", async () =>
     await userEvent.click(screen.getByRole("button", { name: "Check out" }));
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Check out" }));
     expect(await screen.findAllByText("Checked out by you in the web app")).toHaveLength(2);
+    await dialogClosed(); // it unpicks them as it closes
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Select Tank.SLDPRT" }));
     await userEvent.click(screen.getByRole("button", { name: "Undo check-out" }));

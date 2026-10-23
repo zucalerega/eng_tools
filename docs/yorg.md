@@ -446,7 +446,10 @@ in `web/src/yorg/index.tsx`).
 ## API
 
 Yorg's endpoints, all under `/api/yorg`. Every one needs sign-in; how errors look, and the
-site's own endpoints, are in [design.md](design.md#api).
+site's own endpoints, are in [design.md](design.md#api). Piper uses some of them as any client
+would, to show a test on a P&ID (the datasets, a dataset's channels, and their arrays), and
+makes links to plots as Copy link does (`?plots=`): they change only as the API's rules say
+([piper.md](piper.md#test-data-from-yorg)).
 
 | Endpoint | Purpose |
 |---|---|

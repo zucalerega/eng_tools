@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { readZip } from "../src/vault/zip";
+import { readZip } from "../src/zip";
 import { makeZip } from "./zips";
 
 // Reading zips in the browser (no server needed).

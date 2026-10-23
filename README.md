@@ -1,14 +1,15 @@
 # YJSP Eng Tools
 
 The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
-the team's SolidWorks and STEP files, and **[Yorg](#yorg-test-data)** (`/yorg`), for its test
-data. The site's address on its own shows both (the mark at the top left goes back to it),
-and the switcher beside it goes between them.
+the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for its test
+data; and **[Piper](#piper-pids)** (`/piper`), for its P&IDs. The site's address on its own
+shows all three (the mark at the top left goes back to it), and the switcher beside it goes
+between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
 > in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
-> [docs/vault.md](docs/vault.md) and [docs/yorg.md](docs/yorg.md) for each app and its
+> [docs/vault.md](docs/vault.md), [docs/yorg.md](docs/yorg.md), and [docs/piper.md](docs/piper.md) for each app and its
 > roadmap.
 
 ## Signing in
@@ -264,17 +265,66 @@ the keys.
   script. **Model** runs a model on the test over the time in
   view, and links back to it.
 
+## Piper: P&IDs
+
+The site's third app, **Piper** (the switcher's at the top left), draws the team's fluid
+systems: P&IDs of the test stands, the vehicle's feed system, and the GSE, with the parts
+the team uses, each tagged and described, lines in their fluids' colors, and valves in the
+colors of their normal states. Help, in Piper's top bar, has all of this on one page, with
+the keys.
+
+- **Diagrams**: **New diagram** makes one, empty or from an example (a pressure-fed engine's
+  feed system), in a folder (`Vespula/GSE`). Everyone can open and change every diagram;
+  whoever made one (or an admin) can delete it, to **Deleted diagrams**, where it waits to be
+  restored. **Find diagrams** looks in names, folders, and the tags on each drawing: PT-101
+  finds every diagram it's on.
+- **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
+  click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
+  check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
+  orifices and venturis, flow meters, filters, instruments as ISA bubbles, engines, pumps,
+  vents, tees, a box for anything else, notes, regions, a legend, and a title block. Each is
+  tagged with the next number free (PT-3); **R** turns it, **F** flips it.
+- **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
+  anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
+  as they are until their parts move. Drag a segment to move it; **Route automatically** puts
+  it back. Everything snaps to a grid, and a part being dragged lines up with what its lines
+  go to (a gold guide shows it; **Alt** drags freely). Lines that cross hop over each other.
+- **Into a line**: drop a valve (an orifice, a filter...) on a line and it goes into it;
+  delete it and the line joins up again.
+- **Properties**: select anything to name it and say what it is, on the right: a valve's body,
+  actuation, normal state (NO green, NC red), size, Cv, and rating; a tank's fluid, volume, and
+  MEOP; an orifice's diameter; a line's fluid, type, and size; and any field of your own. The
+  eye beside one shows it under the part's tag.
+- **Fluids**: each line carries one, in its color with its label (LOX, RP-1, GN2...); a line
+  drawn from a run takes its fluid, and **Carry along its run** sets it on the lines beyond.
+  With nothing selected, change the diagram's fluids' colors and labels, or add its own.
+- **Saving and history**: a diagram saves itself as you go; if a save fails, **Not saved**
+  beside its name says why, and it tries again on its own (too big: with your next change).
+  If someone saved it while you had it open, it asks whether to keep yours (theirs stays in
+  the history), save yours as a new diagram, or load theirs. **History** lists its revisions:
+  look at one, name one (Rev B, for HF-3) to keep it as it is, or restore it.
+- **Test data**: pick a test from Yorg, and each instrument shows its channel's value and each
+  valve whether it was open, at the time on the timeline: drag it or play the test. A part
+  reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test
+  with those channels plotted, and the page's address keeps the test and the time.
+- **Visio**: **Import Visio…** (or drop a .vsdx on the diagrams) makes a diagram of each page of
+  a Visio drawing: its P&ID shapes become parts, tagged with their text, its connectors lines
+  between them, and its colored lines fluids to name. Save an old .vsd as a .vsdx first.
+- **Export**: **PDF** on Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs
+  are (a border with its zones, the named revisions, and a title block), vector and searchable;
+  SVG or PNG images; printing; and the parts list as a CSV (a valve list, an instrument list).
+
 ## Layout
 
 | Path | What | Status |
 |---|---|---|
-| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/` | working |
-| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg` | working |
+| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/` | working |
+| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper` | working |
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
-| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md)), and [hosting and deploying](docs/deploying.md) | |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 

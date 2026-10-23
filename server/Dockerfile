@@ -1,4 +1,5 @@
-# The YJSP server image (Vault and Yorg), with the web app. Keep the database and files on a volume mounted at /data.
+# The YJSP server image (Vault, Yorg, and Piper), with the web app.
+# Keep the database and files on a volume mounted at /data.
 # Build from the repository root (it needs web/ too): docker build -f server/Dockerfile -t yjsp-server .
 
 # The web app: built here, then served by the server.

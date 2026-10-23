@@ -1,13 +1,23 @@
-"""Request and response bodies of the site's own API: accounts, sign-in, and tokens. Each app has its own
-(vault/schemas.py, yorg/schemas.py)."""
+"""Request and response bodies of the site's own API: accounts, sign-in, and tokens, and the pieces of bodies the apps
+share. Each app has its own (vault/schemas.py, yorg/schemas.py, piper/schemas.py)."""
 
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from .. import auth, clients
 from ..models import SiteSettings, Token, User, WhitelistEmail
+
+
+def _tidy_folder(value: str) -> str:
+    """A folder path, tidied: forward slashes, no empty or padded parts ("" for none)."""
+    return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
+
+
+# Where an app keeps something in folders that are only paths (Yorg's views and scripts, Piper's diagrams): a path of
+# folders, as "Hotfires/HF-3", or "" for none (at the top).
+FolderPath = Annotated[str, Field(max_length=300), AfterValidator(_tidy_folder)]
 
 
 class UserRef(BaseModel):

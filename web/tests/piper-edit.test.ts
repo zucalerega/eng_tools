@@ -1,0 +1,307 @@
+import { expect, test } from "vitest";
+import { emptyDrawing, isPortEnd, readDrawing, type Drawing, type Line, type Part } from "../src/piper/drawing";
+import {
+    addPart,
+    alignParts,
+    carryFluid,
+    connect,
+    copyItems,
+    deleteItems,
+    insertIntoLine,
+    moveItems,
+    moveSegment,
+    nextTag,
+    pasteClip,
+    reconnect,
+    sharedTags,
+    turnParts,
+    updatePart,
+} from "../src/piper/edit";
+import { presetOf } from "../src/piper/library/index";
+import { runOf } from "../src/piper/edit";
+import { partsById, pathOf, portOf } from "../src/piper/ports";
+
+// The editor's changes to a drawing: placing and tagging parts, connecting them, tees, putting a part into a line,
+// deleting (and joining a line up again), moving, and copying and pasting.
+
+let drawing: Drawing;
+
+function place(preset: string, x: number, y: number, change: Partial<Part> = {}): string {
+    const added = addPart(drawing, presetOf(preset)!, { x, y });
+    drawing = updatePart(added.drawing, added.id, (part) => ({
+        ...part,
+        ...change,
+        props: { ...part.props, ...change.props },
+    }));
+    return added.id;
+}
+
+function join(from: [string, string], to: [string, string]): string {
+    const made = connect(drawing, { part: from[0], port: from[1] }, { part: to[0], port: to[1] })!;
+    drawing = made.drawing;
+    return made.id;
+}
+
+const line = (id: string): Line => drawing.lines.find((entry) => entry.id === id)!;
+const part = (id: string): Part => drawing.parts.find((entry) => entry.id === id)!;
+
+/** Whether a line's drawn path is orthogonal: each segment across or down. */
+function orthogonalPath(id: string): boolean {
+    const path = pathOf(partsById(drawing), line(id));
+    return path.every(
+        (point, index) => index === 0 || point.x === path[index - 1]!.x || point.y === path[index - 1]!.y,
+    );
+}
+
+function fresh() {
+    drawing = emptyDrawing();
+}
+
+test("new parts are tagged with the next number free of their prefix", () => {
+    fresh();
+    const first = place("pressure-transducer", 0, 0);
+    const second = place("pressure-transducer", 100, 0);
+    expect([part(first).tag, part(second).tag]).toEqual(["PT-1", "PT-2"]);
+    drawing = updatePart(drawing, first, (entry) => ({ ...entry, tag: "PT-7" }));
+    expect(part(place("pressure-transducer", 200, 0)).tag).toBe("PT-8");
+    expect(nextTag(drawing, "")).toBe(""); // a junction, a note: no tag
+    drawing = updatePart(drawing, second, (entry) => ({ ...entry, tag: "pt-7" }));
+    expect([...sharedTags(drawing)]).toEqual(["PT-7"]);
+});
+
+test("parts go on the grid, wherever they're dropped", () => {
+    fresh();
+    const valve = place("ball-valve", 103, 46);
+    expect([part(valve).x, part(valve).y]).toEqual([100, 50]);
+});
+
+test("a line between ports is routed, and carries the fluid of what it's drawn from", () => {
+    fresh();
+    const bottle = place("bottle", 0, 0, { rotation: 90 }); // its neck faces right, at (50, 0)
+    const valve = place("ball-valve", 110, 0);
+    const regulator = place("regulator", 200, 60);
+    const first = join([bottle, "top"], [valve, "a"]);
+    const second = join([valve, "b"], [regulator, "a"]);
+    expect(line(first).fluid).toBe("gn2"); // what the bottle holds
+    expect(line(second).fluid).toBe("gn2"); // on through the valve
+    expect(line(first).points).toEqual([]); // straight: the ports line up
+    expect(line(second).points.length).toBeGreaterThan(0);
+    expect(orthogonalPath(second)).toBe(true);
+    expect(connect(drawing, { part: valve, port: "a" }, { part: valve, port: "a" })).toBeNull(); // to itself
+});
+
+test("a tank's top is its ullage: a line from it doesn't take the liquid it holds", () => {
+    fresh();
+    const tank = place("tank", 0, 0, { props: { fluid: "lox" } });
+    const below = place("ball-valve", 0, 120, { rotation: 90 });
+    const above = place("check-valve", 0, -120, { rotation: 90 });
+    expect(line(join([tank, "bottom"], [below, "a"])).fluid).toBe("lox");
+    expect(line(join([above, "b"], [tank, "top"])).fluid).toBe("");
+});
+
+test("a line drawn to another line tees into it at a junction on the grid", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const pipe = join([left, "b"], [right, "a"]);
+    drawing = carryFluid(drawing, pipe, "rp1");
+    const gauge = place("pressure-gauge", 104, -80);
+    const made = connect(drawing, { part: gauge, port: "bottom" }, { line: pipe, at: { x: 103, y: 2 } })!;
+    drawing = made.drawing;
+    const junction = drawing.parts.find((entry) => entry.kind === "junction")!;
+    expect([junction.x, junction.y]).toEqual([100, 0]);
+    expect(drawing.lines).toHaveLength(3);
+    const tee = line(made.id);
+    expect(tee.fluid).toBe("rp1"); // what the line it tees into carries
+    // The line it split: each half ends at the junction, and the first keeps its id.
+    expect(line(pipe).to).toEqual({ part: junction.id, port: "c" });
+    expect(drawing.lines.filter((entry) => isPortEnd(entry.from) && entry.from.part === junction.id)).toHaveLength(1);
+});
+
+test("a part dropped on a line goes into it, turned the line's way, and deleting it joins the line up again", () => {
+    fresh();
+    const top = place("tank", 0, 0);
+    const bottom = place("engine", 0, 300);
+    const feed = join([top, "bottom"], [bottom, "fuel"]);
+    drawing = carryFluid(drawing, feed, "rp1");
+    const before = runOf(partsById(drawing), line(feed))!;
+    const valve = place("pneumatic-valve", 300, 300); // dropped off to the side first, as from the library
+    const into = insertIntoLine(drawing, valve, feed, { x: before[0]!.x + 3, y: 150 });
+    expect(into).not.toBeNull();
+    drawing = into!;
+    // On the line, turned to its way (down: a quarter turn), its first port toward where the line comes from.
+    expect(part(valve).rotation).toBe(90);
+    const entering = portOf(part(valve), "a")!.at;
+    const leaving = portOf(part(valve), "b")!.at;
+    expect(entering.x).toBe(before[0]!.x);
+    expect(entering.y).toBeLessThan(leaving.y);
+    const lines = drawing.lines.filter((entry) =>
+        [entry.from, entry.to].some((end) => isPortEnd(end) && end.part === valve),
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines.every((entry) => entry.fluid === "rp1")).toBe(true);
+
+    drawing = deleteItems(drawing, new Set([valve]));
+    expect(drawing.lines).toHaveLength(1);
+    expect(line(feed).from).toEqual({ part: top, port: "bottom" });
+    expect(line(feed).to).toEqual({ part: bottom, port: "fuel" });
+    expect(runOf(partsById(drawing), line(feed))).toEqual(before);
+});
+
+test("deleting a part keeps its other lines, ending where it was; a junction left with too few lines goes", () => {
+    fresh();
+    const tank = place("tank", 0, 0);
+    const sensor = place("pressure-transducer", 120, -30);
+    const tap = join([tank, "right-upper"], [sensor, "left"]);
+    const end = portOf(part(sensor), "left")!.at;
+    drawing = deleteItems(drawing, new Set([sensor]));
+    expect(line(tap).to).toEqual(end);
+
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const pipe = join([left, "b"], [right, "a"]);
+    const gauge = place("pressure-gauge", 100, -80);
+    const made = connect(drawing, { part: gauge, port: "bottom" }, { line: pipe, at: { x: 100, y: 0 } })!;
+    drawing = deleteItems(made.drawing, new Set([made.id]));
+    // The tee's line went: the junction joins the two halves back into one, and goes.
+    expect(drawing.parts.some((entry) => entry.kind === "junction")).toBe(false);
+    expect(drawing.lines).toHaveLength(1);
+    expect(line(pipe).to).toEqual({ part: right, port: "a" });
+});
+
+test("moving a part routes its lines again; lines routed by hand keep their bends and follow their ends", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 100);
+    const pipe = join([a, "b"], [b, "a"]);
+    expect(line(pipe).points).toEqual([
+        { x: 160, y: 0 },
+        { x: 160, y: 100 },
+    ]);
+    drawing = moveSegment(drawing, pipe, 1, { x: -60, y: 0 });
+    expect(line(pipe).auto).toBe(false);
+    expect(line(pipe).points).toEqual([
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+    ]);
+    drawing = moveItems(drawing, new Set([b]), { x: 0, y: 40 });
+    expect(line(pipe).points).toEqual([
+        { x: 100, y: 0 },
+        { x: 100, y: 140 },
+    ]); // its upright segment stays where it was put
+    // Moved past the line's bend, the valve's port would face away from it: that end's routed around to it.
+    drawing = moveItems(drawing, new Set([b]), { x: -140, y: 0 });
+    expect(orthogonalPath(pipe)).toBe(true);
+    const path = pathOf(partsById(drawing), line(pipe));
+    const [last, previous] = [path[path.length - 1]!, path[path.length - 2]!];
+    expect(previous.x).toBeLessThan(last.x); // in from the left, as the port faces
+    expect(line(pipe).points[0]).toEqual({ x: 100, y: 0 }); // and the bends it can keep, kept
+    // Both ends moving together: the line moves with them, as it was.
+    const before = line(pipe).points;
+    drawing = moveItems(drawing, new Set([a, b]), { x: 50, y: 50 });
+    expect(line(pipe).points).toEqual(before.map((point) => ({ x: point.x + 50, y: point.y + 50 })));
+});
+
+test("turning a part turns its ports, and its lines follow", () => {
+    fresh();
+    const tank = place("tank", 0, 0);
+    const valve = place("ball-valve", 0, 120, { rotation: 90 });
+    const feed = join([tank, "bottom"], [valve, "a"]);
+    drawing = turnParts(drawing, new Set([valve]), true);
+    expect(part(valve).rotation).toBe(180);
+    expect(orthogonalPath(feed)).toBe(true);
+    const path = pathOf(partsById(drawing), line(feed));
+    expect(path[path.length - 1]).toEqual(portOf(part(valve), "a")!.edge);
+});
+
+test("dragging a line's segment past a port routes its end around to it, never through its part", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 100);
+    const pipe = join([a, "b"], [b, "a"]);
+    drawing = moveSegment(drawing, pipe, 1, { x: 80, y: 0 }); // the segment down, past the valve's port at x 180
+    const path = pathOf(partsById(drawing), line(pipe));
+    expect(orthogonalPath(pipe)).toBe(true);
+    expect(path[path.length - 2]!.x).toBeLessThan(path[path.length - 1]!.x);
+});
+
+test("a line's end moves to another port", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 0);
+    const c = place("ball-valve", 200, 150);
+    const pipe = join([a, "b"], [b, "a"]);
+    drawing = reconnect(drawing, pipe, "to", { part: c, port: "a" });
+    expect(line(pipe).to).toEqual({ part: c, port: "a" });
+    expect(orthogonalPath(pipe)).toBe(true);
+});
+
+test("a fluid carried along a run goes through valves and fittings, but not past tanks", () => {
+    fresh();
+    const tank = place("tank", 0, 0);
+    const valve = place("ball-valve", 100, -30);
+    const tee = place("junction", 200, -30);
+    const engine = place("engine", 300, 100);
+    const other = place("tank", -200, 0);
+    const first = join([tank, "right-upper"], [valve, "a"]);
+    const second = join([valve, "b"], [tee, "c"]);
+    const third = join([tee, "c"], [engine, "fuel"]);
+    const beyond = join([other, "right-lower"], [tank, "left-lower"]);
+    drawing = carryFluid(drawing, second, "ipa");
+    expect([first, second, third, beyond].map((id) => line(id).fluid)).toEqual(["ipa", "ipa", "ipa", ""]);
+});
+
+test("copied parts paste with their lines between them, and taken tags renumbered", () => {
+    fresh();
+    const a = place("pressure-transducer", 0, 0);
+    const b = place("ball-valve", 100, 0);
+    const between = join([a, "right"], [b, "a"]);
+    const clip = copyItems(drawing, new Set([a, b]))!;
+    expect(clip.lines.map((entry) => entry.id)).toEqual([between]); // the line between them comes along
+    const pasted = pasteClip(drawing, clip, { x: 23, y: 37 });
+    drawing = pasted.drawing;
+    const tags = drawing.parts.map((entry) => entry.tag).sort();
+    expect(tags).toEqual(["BV-1", "BV-2", "PT-1", "PT-2"]);
+    const copies = drawing.parts.filter((entry) => pasted.ids.includes(entry.id));
+    expect(copies.map((entry) => [entry.x, entry.y])).toEqual([
+        [20, 40],
+        [120, 40],
+    ]); // moved on the grid
+    expect(drawing.lines).toHaveLength(2);
+});
+
+test("parts line up by their boxes, and space evenly by their centers", () => {
+    fresh();
+    const a = place("pressure-transducer", 0, 0);
+    const b = place("pressure-transducer", 70, 40);
+    const c = place("pressure-transducer", 300, -20);
+    drawing = alignParts(drawing, new Set([a, b, c]), "top");
+    expect([a, b, c].map((id) => part(id).y)).toEqual([-20, -20, -20]);
+    drawing = alignParts(drawing, new Set([a, b, c]), "across");
+    expect([a, b, c].map((id) => part(id).x)).toEqual([0, 150, 300]);
+});
+
+test("a drawing reads back whatever its age: what's missing filled in, what can't be read left out", () => {
+    const read = readDrawing({
+        format: 1,
+        parts: [
+            { id: "p1", kind: "valve", x: 10, y: 20, props: { size: "1/2 in", cv: 1.2 } },
+            { id: "p2", kind: "something-newer", x: 0, y: 0, rotation: 45 },
+            { kind: "valve" },
+        ],
+        lines: [
+            { id: "l1", from: { part: "p1", port: "b" }, to: { x: 100, y: 20 } },
+            { id: "l2", from: { part: "gone", port: "a" }, to: { x: 0, y: 0 } },
+        ],
+        fluids: [{ id: "kero", name: "Kerosene", label: "KERO", color: "red" }],
+        future: true,
+    });
+    expect(read.parts.map((entry) => entry.id)).toEqual(["p1", "p2"]);
+    expect(read.parts[0]!.props).toEqual({ size: "1/2 in", cv: "1.2" });
+    expect(read.parts[1]!.rotation).toBe(0);
+    expect(read.lines.map((entry) => entry.id)).toEqual(["l1"]);
+    expect(read.lines[0]!.auto).toBe(true);
+    expect(read.fluids[0]!.color).toBe("#7f8c9a"); // not a color it can draw
+    expect(readDrawing(null)).toEqual(emptyDrawing());
+});

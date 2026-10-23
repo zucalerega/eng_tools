@@ -1,8 +1,8 @@
 // The Python window's bookkeeping, apart from the page: scripts arranged in their folders, and the channels a script
 // names (so they're loaded before it runs).
 
-// Scripts' folders are paths of their own, as saved views' are (pathTree.ts).
-export { folderTree, tidyFolder, type Folder } from "../pathTree";
+// Scripts' folders are paths of their own, as saved views' are (the site's pathTree.ts).
+export { folderTree, tidyFolder, type Folder } from "../../pathTree";
 
 /** The strings a script has in quotes ("PT-TANK", 'FM-OX'), which may name channels. */
 export function quoted(code: string): Set<string> {

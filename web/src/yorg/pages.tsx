@@ -19,7 +19,7 @@ import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { FolderPicker } from "./FolderPicker";
-import { folderTree, foldersOf, type Folder } from "./pathTree";
+import { folderTree, foldersOf, type Folder } from "../pathTree";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";

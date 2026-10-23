@@ -1,6 +1,6 @@
-// Reading .zip files in the browser, so an upload can be what's in one. The zip's directory (at its end)
-// lists the files in it; each is read only when it's uploaded, inflated by the browser's own
-// DecompressionStream and checked against its CRC-32, so a big zip is never all in memory at once.
+// Reading .zip files in the browser: Vault's uploads can be what's in one, and Piper reads Visio's drawings, which are
+// zips of XML. The zip's directory (at its end) lists the files in it; each is read only when it's wanted, inflated by
+// the browser's own DecompressionStream and checked against its CRC-32, so a big zip is never all in memory at once.
 
 export interface ZipEntry {
     path: string; // where it is in the zip, with / between folders

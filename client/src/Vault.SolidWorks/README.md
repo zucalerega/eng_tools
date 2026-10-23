@@ -134,6 +134,11 @@ While you work:
   brought from Kenesto, or checked in from the web. A part changed and not checked in, or
   with changes not saved, gets none until it is; one loaded lightweight needs the assembly
   set to resolved first. The tab says what it made, and why anything wasn't.
+- **PDFs of drawings for Caliper**: checking in a drawing saves it as a PDF of all its
+  sheets, as File > Save As > PDF does, which Caliper shows in the web app. **Make PDF**, on
+  the tab, does the same for the active drawing, where its version has none: for drawings
+  from before, brought from Kenesto, or checked in from the web. A drawing changed and not
+  checked in, or with changes not saved, gets none until it is.
 - **Time in SolidWorks**, for Admin > People: while SolidWorks is in front and you've used
   the computer in the last five minutes, the add-in's requests to the vault say so, and the
   vault counts that time beside the time the web app is open. SolidWorks left open behind
@@ -413,6 +418,15 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
 40. Pause: in the web app, Admin > Part numbers > Pause the vault, for "testing". Within 20
     seconds the Vault tab says who paused it and why, and checking a file out says the vault is
     paused. Unpause in the web app: the notice goes, and the check-out works.
+41. Drawings' PDFs: make a drawing of a part with two sheets (a second sheet with a detail
+    view and a note), dimensions, a hole callout (⌀), and a GD&T frame, and check it in: the
+    tab says it made the PDF Caliper shows, and no PDF window opens. In the web app, Open in
+    Caliper shows both sheets in the browser's PDF viewer, as SolidWorks prints them, the
+    callout and the GD&T frame as SolidWorks draws them; Open PDF shows it in a tab of its
+    own. Open a drawing checked in from the web (or before this release) and click Make PDF:
+    the same; click it again: it says it has its PDF already. Change the drawing without
+    saving and click Make PDF: it says why it didn't. Check `%TEMP%` has no `vault-*.pdf`
+    left.
 
 ## When something goes wrong
 

@@ -4,6 +4,10 @@
 .caliper {
     --caliper-stage-top: #f7f9fc;
     --caliper-stage-bottom: #d9e1ec;
+    /* A DXF file's sheet, and what AutoCAD's color 7 is on it; sheet.ts reads them, and whether the sheet is dark. */
+    --caliper-sheet: #ffffff;
+    --caliper-ink: #111827;
+    --caliper-sheet-dark: 0;
     display: flex;
     flex-direction: column;
     height: calc(100dvh - var(--caliper-top, 3.5rem));
@@ -13,12 +17,18 @@
     :root:not([data-theme="light"]) .caliper {
         --caliper-stage-top: #1b2434;
         --caliper-stage-bottom: #070b12;
+        --caliper-sheet: #0b111c;
+        --caliper-ink: #e5ebf4;
+        --caliper-sheet-dark: 1;
     }
 }
 
 :root[data-theme="dark"] .caliper {
     --caliper-stage-top: #1b2434;
     --caliper-stage-bottom: #070b12;
+    --caliper-sheet: #0b111c;
+    --caliper-ink: #e5ebf4;
+    --caliper-sheet-dark: 1;
 }
 
 .caliper > .notice {
@@ -456,6 +466,112 @@
 
 .caliper-result dd {
     font-weight: 700;
+}
+
+/* --- drawings and DXF files ----------------------------------------------------------------------------------- */
+
+/* A DXF file's drawing, on a sheet of the theme's color, with what's picked and measured on a canvas over it. */
+.caliper-sheet-stage {
+    background: var(--caliper-sheet);
+}
+
+.caliper-sheet-marks {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.caliper-layers {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+}
+
+.caliper-layers label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 1.9rem;
+    padding: 0 0.75rem;
+    font-size: 0.86rem;
+}
+
+.caliper-layers label:hover {
+    background: var(--row-hover);
+}
+
+.caliper-swatch {
+    flex: none;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    background: var(--caliper-ink);
+}
+
+.caliper-layer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A SolidWorks drawing: its PDF, in the browser's own viewer; or the pictures of its sheets. */
+.caliper-sheets {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.caliper-pdf {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: none;
+    background: #fff;
+}
+
+.caliper-sheets-note {
+    padding: 0.6rem 1rem 0;
+}
+
+.caliper-sheets-note p {
+    margin: 0.2rem 0;
+}
+
+.caliper-sheet-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.6rem 1rem 0;
+}
+
+.caliper-sheet-tabs .caliper-on,
+.caliper-sheet-tabs .caliper-on:hover:not(:disabled) {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+/* At its own size (640 x 480) or smaller: no bigger, as there's no more in it. */
+.caliper-sheet-picture {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0.75rem 1rem 1rem;
+}
+
+.caliper-sheet-picture img {
+    max-width: 100%;
+    max-height: 100%;
+    border: 1px solid var(--border);
+    background: #fff;
+    box-shadow: var(--shadow);
 }
 
 @media (max-width: 760px) {

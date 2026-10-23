@@ -105,6 +105,15 @@ replaces Kenesto.
   its file. The server reads a version's model once and keeps it; when an update reads files
   better, it reads each one again the first time it's opened after. If Caliper can't read a
   file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
+- **See drawings and DXF files** with **Open in Caliper** too. A SolidWorks drawing shows
+  as a PDF of all its sheets, as SolidWorks prints them, in the browser's own PDF viewer (to
+  zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one
+  each time it checks a drawing in. A version from before (or from Kenesto, or checked in
+  from the web) shows the pictures of its sheets SolidWorks saved in it, which are too small
+  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. A DXF file (a
+  flat pattern for the laser cutter or waterjet, say) is drawn as it is, in its own units:
+  drag to pan, scroll to zoom, show and hide its layers, and measure a line's length, a
+  hole's diameter, or the distance between two holes, lines, or corners.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or

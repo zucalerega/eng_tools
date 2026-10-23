@@ -240,7 +240,10 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   `frame-ancestors 'none'`, `X-Frame-Options`), the browser to second-guess a file's type
   (`nosniff`), links to carry our addresses away (`Referrer-Policy`), plugins and another
   base URL (`object-src`, `base-uri`), and forms to post anywhere but the site or a Vault
-  client's sign-in on the computer itself (`form-action`, `http://127.0.0.1:*`). Production
+  client's sign-in on the computer itself (`form-action`, `http://127.0.0.1:*`). One sets its
+  own: a drawing's PDF, which Vault's Caliper shows in a frame in the browser's PDF viewer,
+  may be framed by the site's own pages (`frame-ancestors 'self'`, `SAMEORIGIN`), and so
+  doesn't forbid plugins (docs/vault.md, "Caliper"). Production
   adds HSTS, and doesn't serve the API's docs (`/docs`, `/redoc`, `/openapi.json`). Which
   scripts may run isn't limited yet: Yorg's Python sandbox runs an inline script in a
   sandboxed frame, a worker from a `data:` URL, and Pyodide and WebAssembly from jsDelivr,
@@ -254,8 +257,9 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   - An upload must leave the disk 2 GB free (`disk.make_room`, 507 `disk_full`): the
     database, its backups, and the system need room to write.
   - A Caliper mesh unpacks to at most 256 MB to be checked, two at a time; the server reads
-    at most two SolidWorks files at once for their 3D views (409 `busy` after a minute's
-    wait), and remembers a file it couldn't read, by its SHA-256, rather than read it again.
+    at most two SolidWorks files at once for their 3D views or drawings' pictures of their
+    sheets (409 `busy` after a minute's wait), and remembers a file it couldn't read, by its
+    SHA-256, rather than read it again; and the pictures it read, up to 16 MB of them.
   - The service may use 5 GB (`deploy/yjsp.service`, `MemoryMax`).
 
 ## API

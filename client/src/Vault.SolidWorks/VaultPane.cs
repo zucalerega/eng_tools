@@ -85,6 +85,7 @@ internal sealed partial class VaultPane : UserControl
     private readonly FlatButton _takeOverButton;
     private readonly FlatButton _drawingButton;
     private readonly FlatButton _caliperButton;
+    private readonly FlatButton _pdfButton;
     private readonly FlatButton _keepMineButton;
     private readonly FlatButton _useVaultButton;
 
@@ -180,6 +181,10 @@ internal sealed partial class VaultPane : UserControl
             "Make 3D view",
             (_, _) => OnActiveDocument(MakeModelsHereAsync),
             "Make the 3D views that Caliper shows in the web app, of this file and of what it uses, where they're missing. Check-ins make them too.");
+        _pdfButton = MakeButton(
+            "Make PDF",
+            (_, _) => OnActiveDocument(MakeDrawingPdfHereAsync),
+            "Make the PDF of this drawing's sheets that Caliper shows in the web app, if this version has none. Check-ins make it too.");
         _keepMineButton = MakeButton(
             "Keep mine...",
             (_, _) => OnActiveDocument(path => KeepMineAsync(new[] { path })),
@@ -190,7 +195,7 @@ internal sealed partial class VaultPane : UserControl
             "Replace your copy with the vault's latest version. Yours is kept in the workspace's .vault\\backup folder.");
         _documentActions.Controls.AddRange(new Control[]
         {
-            _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton, _keepMineButton, _useVaultButton,
+            _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton, _pdfButton, _keepMineButton, _useVaultButton,
         });
         _documentActions.Margin = new Padding(0, 6, 0, 0);
         _documentCard.SizeChanged += (_, _) =>
@@ -866,10 +871,12 @@ internal sealed partial class VaultPane : UserControl
                 _sw.SetReadOnly(workspace.ToLocalPath(file.File.Path), true);
             }
             var checkedIn = $"Checked in {Count(result.Files.Count, "file")}.";
-            // The 3D views of what's checked in, for Caliper in the web app: SolidWorks has it all open now.
+            // The 3D views and drawings' PDFs of what's checked in, for Caliper in the web app: SolidWorks has it all
+            // open now.
             foreach (var path in paths)
             {
-                checkedIn = $"{checkedIn} {await MakeModelsAsync(workspace, path)}".TrimEnd();
+                var made = DrawingPdfs.IsDrawing(path) ? await MakeDrawingPdfAsync(workspace, path) : await MakeModelsAsync(workspace, path);
+                checkedIn = $"{checkedIn} {made}".TrimEnd();
             }
             return checkedIn;
         });
@@ -1582,8 +1589,9 @@ internal sealed partial class VaultPane : UserControl
         var canTakeOver = status != null && _workspace?.CanTakeOver(status) == true;
         var yoursElsewhere = canTakeOver && status!.Lock!.User.Id == _me?.Id;
         var drawings = status != null && _vault != null ? _vault.Drawings(status) : Array.Empty<FileStatus>();
-        // Caliper's 3D view, for parts and assemblies in the vault (check-ins make it too).
+        // Caliper's 3D view, for parts and assemblies in the vault, and its PDF, for drawings (check-ins make them too).
         var canMakeModel = inVault && Path.GetExtension(path ?? "").ToLowerInvariant() is ".sldprt" or ".sldasm";
+        var canMakePdf = inVault && DrawingPdfs.IsDrawing(path ?? "");
         _takeOverButton.Text = yoursElsewhere ? "Move check-out here..." : "Take over...";
         _drawingButton.Text = drawings.Count > 1 ? "Open drawing ▾" : "Open drawing";
         var primary = canCheckIn ? _checkInButton
@@ -1600,6 +1608,7 @@ internal sealed partial class VaultPane : UserControl
             (_takeOverButton, canTakeOver),
             (_drawingButton, drawings.Count > 0),
             (_caliperButton, canMakeModel),
+            (_pdfButton, canMakePdf),
             (_keepMineButton, conflict),
             (_useVaultButton, conflict));
     }

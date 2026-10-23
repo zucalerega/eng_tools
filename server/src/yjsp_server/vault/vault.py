@@ -29,6 +29,7 @@ from .models import (
     Blob,
     CaliperModel,
     Checkin,
+    DrawingPdf,
     Event,
     File,
     Folder,
@@ -2670,6 +2671,185 @@ def caliper_mesh(
     if model.mesh_sha256 is None:
         raise ApiError(f"{tree.file_path(file)} is an assembly: its parts have the meshes", code="bad_model")
     return model.mesh_sha256
+
+
+# --- Caliper: drawings' sheets ------------------------------------------------------------
+
+
+@dataclass
+class PdfView:
+    """The PDF Vault for SolidWorks made of a drawing's version, for Caliper."""
+
+    pdf: DrawingPdf
+    size: int
+    created_by: User
+
+
+@dataclass
+class DrawingView:
+    """What Caliper shows of a drawing's version: the PDF of it Vault for SolidWorks made, if it made one; and its
+    sheets, each with whether SolidWorks saved a picture of it in the file (or, where they can't be read, why not)."""
+
+    version: int
+    pdf: PdfView | None
+    sheets: list[solidworks.Sheet]
+    unreadable: str | None
+
+
+_PDF = b"%PDF-"
+# Drawings' sheets, by their contents' SHA-256, as they're read for their pictures (solidworks.read_sheets), or why they
+# couldn't be: a version never changes, and its pictures are asked for one by one after its sheets. Kept up to a size.
+_SHEETS: OrderedDict[str, list[solidworks.Sheet] | str] = OrderedDict()
+_SHEETS_KEPT = 16 << 20  # bytes of pictures
+_SHEETS_LOCK = threading.Lock()
+
+
+def _drawing_version(db: Session, tree: Tree, access: Access, file_id: int, version: int) -> tuple[File, Version]:
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    if not paths.is_drawing(file.name):
+        raise ApiError(f"{path} isn't a SolidWorks drawing", code="not_a_drawing")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    return file, target
+
+
+def _weight(kept: list[solidworks.Sheet] | str) -> int:
+    return len(kept) if isinstance(kept, str) else sum(len(sheet.picture or b"") for sheet in kept)
+
+
+def _sheets_of(store: BlobStore, version: Version, name: str) -> list[solidworks.Sheet]:
+    """A drawing version's sheets, with their pictures, read from its file a couple of files at a time and kept for the
+    next look; Unreadable says why not, and Conflict that the server is busy reading other files."""
+    sha = version.blob_sha256
+    with _SHEETS_LOCK:
+        kept = _SHEETS.get(sha)
+        if kept is not None:
+            _SHEETS.move_to_end(sha)
+    if kept is None:
+        if version.size > _MAX_READ:
+            kept = f"It's over {_MAX_READ >> 20} MB, too big to read here"
+        elif not _READING.acquire(timeout=_READING_WAIT):
+            raise Conflict("The server is reading other SolidWorks files: try again in a minute", code="busy")
+        else:
+            try:
+                kept = solidworks.read_sheets(store.path(sha).read_bytes())
+            except solidworks.Unreadable as e:
+                kept = e.message
+            finally:
+                _READING.release()
+        with _SHEETS_LOCK:
+            _SHEETS[sha] = kept
+            while len(_SHEETS) > 1 and sum(_weight(k) for k in _SHEETS.values()) > _SHEETS_KEPT:
+                _SHEETS.popitem(last=False)
+    if isinstance(kept, str):
+        raise solidworks.Unreadable(f"{name}: {kept}")
+    return kept
+
+
+def _pdf_view(db: Session, pdf: DrawingPdf) -> PdfView:
+    blob = db.get(Blob, pdf.pdf_sha256)
+    return PdfView(pdf, blob.size if blob else 0, _users(db, {pdf.created_by})[pdf.created_by])
+
+
+def drawing_view(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> DrawingView:
+    """A drawing's version, for Caliper: its PDF, which Vault for SolidWorks makes when it checks the drawing in; and its
+    sheets, each with the picture of it SolidWorks saved in the file, to show where there's no PDF (as for versions from
+    before Vault for SolidWorks made them). Anyone who can see the file may look."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    pdf = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    try:
+        sheets, unreadable = _sheets_of(store, target, f"{tree.file_path(file)} v{version}"), None
+    except (solidworks.Unreadable, Conflict) as e:
+        sheets, unreadable = [], e.message
+    return DrawingView(version, _pdf_view(db, pdf) if pdf else None, sheets, unreadable)
+
+
+def sheet_picture(db: Session, store: BlobStore, user: User, file_id: int, version: int, sheet: int) -> bytes:
+    """The picture of a drawing version's sheet (1 for the first) that SolidWorks saved in the file: a PNG."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    name = f"{tree.file_path(file)} v{version}"
+    sheets = _sheets_of(store, target, name)
+    picture = sheets[sheet - 1].picture if 1 <= sheet <= len(sheets) else None
+    if picture is None:
+        raise NotFound(f"{name} has no picture of sheet {sheet}", code="no_picture")
+    return picture
+
+
+def drawing_pdf(db: Session, user: User, file_id: int, version: int) -> tuple[str, str]:
+    """The PDF Vault for SolidWorks made of a drawing's version: a name for it ("Fin v3.pdf"), and its blob."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    pdf = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    if pdf is None:
+        raise NotFound(f"{tree.file_path(file)} v{version} has no PDF", code="no_pdf")
+    stem = file.name[: len(file.name) - len(paths.extension(file.name))]
+    return f"{stem} v{version}.pdf", pdf.pdf_sha256
+
+
+def drawings_missing(db: Session, user: User, wanted: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Which of these drawings' versions (file id, version) have no PDF yet, of files the user can see: what Vault for
+    SolidWorks asks before making them, so it makes only those."""
+    _, access = _context(db, user)
+    files = _files_by_id(db, {file_id for file_id, _ in wanted})
+    have: set[tuple[int, int]] = set()
+    ids = sorted(files)
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(Version.file_id, Version.number)
+            .join(DrawingPdf, DrawingPdf.version_id == Version.id)
+            .where(Version.file_id.in_(ids[start : start + _BATCH]))
+        )
+        have.update((file_id, number) for file_id, number in rows)
+
+    def needs(file_id: int, version: int) -> bool:
+        file = files.get(file_id)
+        return (
+            file is not None
+            and paths.is_drawing(file.name)
+            and access.can(file.folder_id, Role.VIEWER)
+            and 1 <= version <= file.latest_version
+            and (file_id, version) not in have
+        )
+
+    return [drawing for drawing in dict.fromkeys(wanted) if needs(*drawing)]
+
+
+def put_drawing_pdf(db: Session, store: BlobStore, user: User, file_id: int, *, version: int, pdf: str) -> PdfView:
+    """Save a drawing version's sheets as a PDF (upload it first, PUT /api/blobs/{sha256}), for Caliper: as Vault for
+    SolidWorks does when it checks a drawing in. Anyone who may upload contents and can see the file may add a PDF its
+    version doesn't have yet; making one again, in place of the one there, takes editor rights to the file's folder."""
+    # Blobs never change, so looking at one can come before the write lock.
+    if not store.exists(pdf):
+        raise ApiError("Upload the PDF first (PUT /api/blobs/{sha256})", code="blob_missing", sha256=pdf)
+    with store.path(pdf).open("rb") as f:
+        if f.read(len(_PDF)) != _PDF:
+            raise ApiError("That isn't a PDF: a PDF starts with %PDF-", code="bad_pdf")
+    begin_write(db)
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    if not can_upload(db, user):
+        raise Forbidden("You need editor access somewhere to add drawings' PDFs")
+    if not paths.is_drawing(file.name):
+        raise ApiError(f"PDFs are of SolidWorks drawings: {path} isn't one", code="not_a_drawing")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    if db.get(Blob, pdf) is None:  # in the store, but its upload was never recorded
+        raise ApiError("Upload the PDF again (PUT /api/blobs/{sha256})", code="blob_missing", sha256=pdf)
+    made = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    if made is None:
+        made = DrawingPdf(version_id=target.id)
+        db.add(made)
+    else:
+        access.require(file.folder_id, Role.EDITOR, f"make the PDF of {path} v{version} again")
+    made.pdf_sha256, made.created_at, made.created_by = pdf, utcnow(), user.id
+    db.commit()
+    return _pdf_view(db, made)
 
 
 # --- permissions --------------------------------------------------------------------------

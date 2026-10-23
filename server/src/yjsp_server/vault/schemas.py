@@ -551,3 +551,52 @@ class CaliperMissingIn(BaseModel):
 
 class CaliperMissingOut(BaseModel):
     missing: list[CaliperWantIn]  # those that have no model yet, of files you can see
+
+
+class DrawingPdfOut(BaseModel):
+    size: int
+    created_at: datetime
+    created_by: UserRef
+
+    @classmethod
+    def of(cls, view: vault.PdfView) -> "DrawingPdfOut":
+        return cls(size=view.size, created_at=view.pdf.created_at, created_by=UserRef.of(view.created_by))
+
+
+class SheetOut(BaseModel):
+    name: str  # SolidWorks' name for it ("Sheet1"), or "" where the file doesn't say
+    picture: bool  # whether SolidWorks saved a picture of it in the file (GET .../drawing/sheet)
+
+
+class DrawingOut(BaseModel):
+    version: int
+    pdf: DrawingPdfOut | None  # the PDF Vault for SolidWorks made of it (GET .../drawing/pdf), if it made one
+    sheets: list[SheetOut]  # in order
+    unreadable: str | None  # why its sheets couldn't be read, if they couldn't
+
+    @classmethod
+    def of(cls, view: vault.DrawingView) -> "DrawingOut":
+        return cls(
+            version=view.version,
+            pdf=DrawingPdfOut.of(view.pdf) if view.pdf else None,
+            sheets=[SheetOut(name=sheet.name, picture=sheet.picture is not None) for sheet in view.sheets],
+            unreadable=view.unreadable,
+        )
+
+
+class DrawingPdfIn(BaseModel):
+    version: int = Field(ge=1)
+    pdf: Sha256  # upload it first (PUT /api/blobs/{sha256})
+
+
+class DrawingWantIn(BaseModel):
+    file_id: int
+    version: int
+
+
+class DrawingsMissingIn(BaseModel):
+    drawings: list[DrawingWantIn] = Field(max_length=20_000)
+
+
+class DrawingsMissingOut(BaseModel):
+    missing: list[DrawingWantIn]  # those that have no PDF yet, of files you can see

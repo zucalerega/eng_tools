@@ -187,6 +187,20 @@ export interface CaliperAssembly {
     left_out: number; // components in files you can't see
 }
 
+/** A sheet of a drawing: its name ("" where the file doesn't say), and whether SolidWorks saved a picture of it. */
+export interface DrawingSheet {
+    name: string;
+    picture: boolean;
+}
+
+/** What Caliper shows of a drawing's version: the PDF Vault for SolidWorks made of it, or the pictures of its sheets. */
+export interface DrawingView {
+    version: number;
+    pdf: { size: number; created_at: string; created_by: UserRef } | null;
+    sheets: DrawingSheet[];
+    unreadable: string | null; // why its sheets couldn't be read
+}
+
 export const vaultApi = {
     folder: (path: string) => request<Listing>("GET", "/api/folders?" + query({ path })),
     /** A folder's trash: the folders and files deleted from it. */
@@ -268,4 +282,13 @@ export const vaultApi = {
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */
     caliperMesh: (fileId: number, version: number, configuration: string, mesh?: string) =>
         requestBytes(`/api/files/${fileId}/caliper/mesh?` + query({ version, configuration, mesh })),
+    /** A drawing's version, for Caliper: the PDF Vault for SolidWorks made of it, if it made one, and its sheets. */
+    drawing: (fileId: number, version: number) =>
+        request<DrawingView>("GET", `/api/files/${fileId}/drawing?` + query({ version })),
+    /** The picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG. */
+    sheetPictureUrl: (fileId: number, version: number, sheet: number) =>
+        apiUrl(`/api/files/${fileId}/drawing/sheet?` + query({ version, sheet })),
+    /** The PDF Vault for SolidWorks made of a drawing's version, to show in a frame. */
+    drawingPdfUrl: (fileId: number, version: number) =>
+        apiUrl(`/api/files/${fileId}/drawing/pdf?` + query({ version })),
 };

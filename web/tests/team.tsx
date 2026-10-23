@@ -191,6 +191,14 @@ export class Team {
         ).models;
     }
 
+    /** A drawing's PDF, of its latest version, as Vault for SolidWorks saves one when it checks the drawing in. */
+    async drawingPdf(who: Member, file: VaultFile, pdf: string): Promise<void> {
+        const data = new TextEncoder().encode(pdf);
+        const sha256 = createHash("sha256").update(data).digest("hex");
+        await call("PUT", `/api/blobs/${sha256}`, who.token, data);
+        await call("PUT", `/api/files/${file.id}/drawing/pdf`, who.token, { version: file.version, pdf: sha256 });
+    }
+
     async file(id: number): Promise<VaultFile> {
         return (await call<{ file: VaultFile }>("GET", `/api/files/${id}`, this.chief.token)).file;
     }

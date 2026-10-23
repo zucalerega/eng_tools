@@ -198,6 +198,14 @@ public sealed class VaultApi : IDisposable
     internal Task<CaliperModelInfo> PutCaliperModelAsync(long fileId, CaliperModelRequest request, CancellationToken ct = default) =>
         SendAsync<CaliperModelInfo>(HttpMethod.Put, "api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/caliper", request, ct);
 
+    /// <summary>Which of these drawings' versions have no PDF yet (of files you can see).</summary>
+    internal async Task<List<DrawingKey>> MissingDrawingPdfsAsync(List<DrawingKey> drawings, CancellationToken ct = default) =>
+        (await PostAsync<DrawingsMissing>("api/drawings/missing", new { drawings }, ct).ConfigureAwait(false)).Missing;
+
+    /// <summary>Save a drawing version's PDF, of all its sheets (uploaded first).</summary>
+    internal Task<DrawingPdfInfo> PutDrawingPdfAsync(long fileId, DrawingPdfRequest request, CancellationToken ct = default) =>
+        SendAsync<DrawingPdfInfo>(HttpMethod.Put, "api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/drawing/pdf", request, ct);
+
     /// <summary>The last step of browser sign-in (see BrowserSignIn).</summary>
     public Task<IssuedToken> RedeemSignInCodeAsync(string code, string verifier, CancellationToken ct = default) =>
         PostAsync<IssuedToken>("auth/client/token", new { code, verifier }, ct);

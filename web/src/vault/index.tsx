@@ -11,8 +11,8 @@ import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
 import { SolidWorks } from "./pages/SolidWorks";
 import { Trash } from "./pages/Trash";
-import { folderFromUrl, VAULT, vaultRoute } from "./paths";
-import { useStore, useVault } from "./store";
+import { folderFromUrl, sheetFormat, VAULT, vaultRoute } from "./paths";
+import { useStore, useVault, type VaultState } from "./store";
 
 // Vault: the team's CAD files. Its pages are under /vault (/vault/files/..., /vault/file/5, /vault/locks...), as
 // Yorg's are under /yorg; the app switcher in the top bar goes between them. Its routes below are the paths without
@@ -21,8 +21,10 @@ import { useStore, useVault } from "./store";
 export { VaultMark } from "./components";
 export { inVault, movedToVault, VAULT } from "./paths";
 
-// Caliper, the 3D viewer, and three.js with it, load only when a file is opened in it.
+// Caliper, the 3D viewer, and three.js with it, load only when a file is opened in it; drawings and DXF files, which are
+// flat, have a page of their own, without three.js.
 const CaliperPage = lazy(() => import("./caliper/CaliperPage").then((module) => ({ default: module.CaliperPage })));
+const DrawingPage = lazy(() => import("./caliper/DrawingPage").then((module) => ({ default: module.DrawingPage })));
 
 /** Which of Vault's sections a page is in, for the top bar. */
 export function vaultSection(pathname: string): string {
@@ -59,21 +61,23 @@ export function VaultPage({ pathname }: { pathname: string }) {
                 </Notice>
             )}
             <PauseNotice />
-            {page(vaultRoute(pathname))}
+            {page(vaultRoute(pathname), vault)}
         </>
     );
 }
 
-function page(route: string) {
+function page(route: string, vault: VaultState) {
     const file = /^\/file\/(\d+)\/?$/.exec(route);
     if (file) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
     }
     const caliper = /^\/caliper\/(\d+)\/?$/.exec(route);
     if (caliper) {
+        const id = Number(caliper[1]);
+        const Viewer = sheetFormat(vault.files.get(id)?.name ?? "") !== null ? DrawingPage : CaliperPage;
         return (
             <Suspense fallback={<p className="muted caliper-page-message">Loading Caliper…</p>}>
-                <CaliperPage key={caliper[1]} id={Number(caliper[1])} />
+                <Viewer key={caliper[1]} id={id} />
             </Suspense>
         );
     }

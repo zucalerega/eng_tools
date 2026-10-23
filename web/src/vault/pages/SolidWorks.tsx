@@ -109,6 +109,12 @@ export function SolidWorks() {
                     Checking in new parts without part numbers, tick that they're vendors' parts (a McMaster screw,
                     say), which keep their names.
                 </li>
+                <li>
+                    <strong>For Caliper</strong>, here in the browser: checking in a part or assembly makes the 3D view
+                    it shows, and checking in a drawing saves the PDF of its sheets it shows. For a file from before,
+                    open it and click <strong>Make 3D view</strong> (a part or assembly) or <strong>Make PDF</strong> (a
+                    drawing) on the Vault tab.
+                </li>
             </ul>
             <h2>If something's not right</h2>
             <div className="faq">

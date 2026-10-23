@@ -389,14 +389,8 @@ internal static class Program
         return $"  {state,-16} {version,-10} {Show(status.LocalPath)}{Titled(Path.GetFileName(status.VaultPath), status.Title)}{lockText}";
     }
 
-    // A file's title after its name, where it says more than the name does (once someone named it, or the name is a
-    // part number): "  “Fin bracket”".
-    private static string Titled(string name, string? title)
-    {
-        var dot = name.LastIndexOf('.');
-        var stem = dot > 0 ? name.Substring(0, dot) : name;
-        return string.IsNullOrEmpty(title) || string.Equals(title, stem, StringComparison.OrdinalIgnoreCase) ? "" : $"  “{title}”";
-    }
+    // A file's title after its name, where it says more than the name does (Titles.Beside): "  “Fin bracket”".
+    private static string Titled(string name, string? title) => Titles.Beside(name, title) is { } shown ? $"  “{shown}”" : "";
 
     private static async Task<int> TitleAsync(Options options)
     {

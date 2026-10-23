@@ -393,6 +393,26 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     from the STEP file. Then check the assembly out and check it in from SolidWorks, and
     write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
     temporary folder (`...\IC~~\...`), that's still to fix.
+36. Titles: in the web app, give a test part a title (Edit title… on its page). Within 20
+    seconds Browse shows it after the part's name, in quotes, and with the part open, the card
+    shows it under the name. Right-click the part in Browse > Edit title…, change it, and
+    Save: the web app shows the new one, and the part is still at the same version.
+37. New part in Browse: with part numbers offered (the web app's Admin > Part numbers), right-click
+    a test folder in Browse > New part…: pick a kind, give a title, and Start it. SolidWorks
+    makes `<number>.SLDPRT` in that folder from your default template, it's in the vault as
+    version 1, checked out to you, and the web app shows its title. With part numbers off, New
+    part… says they aren't handed out yet. Do the same with New assembly….
+38. Vendors' parts: save a new part as `91251A463_Socket Head Screw.SLDPRT` and another as
+    `Bearing.SLDPRT`, and check both in at once. The Check in dialog offers to mark the new parts
+    without part numbers as vendors' (unticked, as `Bearing` isn't named by McMaster's numbers);
+    tick it and check in. In the web app, both files' pages say "Vendor's part".
+39. A part renamed since: upload an assembly and its part from the web app as from Kenesto,
+    get the assembly in SolidWorks, close it, and rename the part in the web app (Fin.SLDPRT to
+    Fin left.SLDPRT). After a refresh, open the assembly: the part is there, with no missing
+    reference: Vault points SolidWorks at the renamed file, by the name it had.
+40. Pause: in the web app, Admin > Part numbers > Pause the vault, for "testing". Within 20
+    seconds the Vault tab says who paused it and why, and checking a file out says the vault is
+    paused. Unpause in the web app: the notice goes, and the check-out works.
 
 ## When something goes wrong
 

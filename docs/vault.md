@@ -450,6 +450,19 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
   20 seconds and after every action, and redraws only when something changed, so what you
   opened in the tree stays open.
+- **Titles and part numbers.** Files' titles show after their names in Browse and under the
+  active document's name, where they say more than the names do (`Titles.Beside` in
+  `Vault.Client`), with Edit title on a file's right-click menu. Right-clicking a folder in
+  Browse offers New part and New assembly while part numbers are on: a kind and a title
+  (`NewNumberDialog`), the next number handed out, then the new file is started and checked
+  in as one from the web app is. Check in offers to mark new parts going in without part
+  numbers as vendors' parts, ticked to start with when McMaster's numbers name them all. While
+  an admin has the vault paused, the tab says who and why (`Workspace.Paused`, from the sync
+  feed). When SolidWorks can't find a part that was renamed since the file was saved (given its
+  part number, say), the add-in points it at the renamed file by the name it had
+  (`Workspace.LocalFileFor`, over the statuses, which carry former names). Numbering new files
+  as they go in (renaming them, and rewriting the new assemblies that use them) waits on the
+  SolidWorks 2026 checks in the renumbering's plan.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a

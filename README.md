@@ -69,6 +69,9 @@ replaces Kenesto.
   haven't used yet come first), and starts it in SolidWorks. When you upload vendors' parts,
   tick that they're vendors': they keep their names. Admins turn numbers on (offered, then
   required), keep the list of kinds, and skip the next number ahead in Admin > Part numbers.
+  In SolidWorks, the Vault tab's Browse shows titles after names (right-click a file for Edit
+  title), and right-click a folder for New part or New assembly; checking in, tick that new
+  parts without numbers are vendors'.
 - **An admin can pause the vault** (Admin > Part numbers) for work on all of it, such as
   numbering every file at once. While it's paused, a banner says who paused it and why, and
   check-outs, check-ins and other changes wait; you can still look at everything, download,

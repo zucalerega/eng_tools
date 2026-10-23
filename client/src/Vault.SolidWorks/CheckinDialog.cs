@@ -26,7 +26,19 @@ internal sealed class CheckinDialog : Form
         Margin = new Padding(0, 0, 0, 4),
     };
 
-    public CheckinDialog(IEnumerable<string> fileNames)
+    private readonly CheckBox _vendors = new CheckBox
+    {
+        AutoSize = true,
+        UseCompatibleTextRendering = false,
+        Margin = new Padding(0, 0, 0, 4),
+    };
+
+    /// <param name="fileNames">What's checked in.</param>
+    /// <param name="unnumbered">
+    /// The new parts and assemblies going in without part numbers: they can be marked as vendors' parts, which keep their
+    /// names (ticked to start with when McMaster's numbers say they are).
+    /// </param>
+    public CheckinDialog(IEnumerable<string> fileNames, IReadOnlyList<string> unnumbered)
     {
         SuspendLayout();
         Text = "Check in";
@@ -63,7 +75,12 @@ internal sealed class CheckinDialog : Form
         };
         buttons.Controls.Add(cancel);
         buttons.Controls.Add(ok);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
+        _vendors.Visible = unnumbered.Count > 0;
+        _vendors.Checked = unnumbered.Count > 0 && unnumbered.All(Client.PartNumbers.VendorsName);
+        _vendors.Text = unnumbered.Count == 1
+            ? $"{unnumbered[0]} is a vendor's part: it keeps its name, rather than taking a part number"
+            : $"The {unnumbered.Count} new parts without part numbers are vendors': they keep their names";
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -71,12 +88,14 @@ internal sealed class CheckinDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(heading, 0, 0);
         layout.Controls.Add(files, 0, 1);
         layout.Controls.Add(prompt, 0, 2);
         layout.Controls.Add(_comment, 0, 3);
         layout.Controls.Add(_keep, 0, 4);
-        layout.Controls.Add(buttons, 0, 5);
+        layout.Controls.Add(_vendors, 0, 5);
+        layout.Controls.Add(buttons, 0, 6);
         Controls.Add(layout);
         AcceptButton = ok;
         CancelButton = cancel;
@@ -91,6 +110,9 @@ internal sealed class CheckinDialog : Form
     public string Comment => _comment.Text.Trim();
 
     public bool KeepCheckedOut => _keep.Checked;
+
+    /// <summary>The new parts without part numbers are vendors' parts.</summary>
+    public bool VendorParts => _vendors.Visible && _vendors.Checked;
 
     private static Label Words(string text, Font font, Color color) =>
         new Label

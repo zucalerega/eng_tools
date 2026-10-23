@@ -43,6 +43,9 @@ public sealed class Workspace : IDisposable
 
     public VaultApi Api { get; }
 
+    /// <summary>An admin's pause, as of the last refresh: changes wait until it's back. Null when the vault isn't paused.</summary>
+    public PauseInfo? Paused { get; private set; }
+
     public static string DefaultRoot => RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
         ? @"C:\VLT"
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "VLT");
@@ -241,6 +244,7 @@ public sealed class Workspace : IDisposable
         _me ??= await Api.MeAsync(ct).ConfigureAwait(false);
         var current = _state.SyncFormat == WorkspaceState.CurrentSyncFormat;
         var sync = await Api.SyncAsync(current ? _state.Seq : 0, ct).ConfigureAwait(false);
+        Paused = sync.Paused;
         // Deleted files are only dropped, by id: their paths go nowhere.
         CheckServerPaths(sync.Folders.Select(f => f.Path).Concat(sync.Files.Where(f => f.DeletedAt == null).Select(f => f.Path)));
         var before = sync.Full ? _state.Folders.Values.Select(f => f.Path).ToList() : new List<string>();

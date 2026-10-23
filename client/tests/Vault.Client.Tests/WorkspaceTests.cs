@@ -688,6 +688,25 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task AWorkspaceKnowsWhileTheVaultIsPaused()
+    {
+        var chief = await WorkspaceAsync("chief");
+        var bob = await WorkspaceAsync("bob");
+        await chief.Api.PauseAsync("RENUMBER-PC", "numbering every file");
+        try
+        {
+            await bob.RefreshAsync();
+            Assert.Equal((ServerFixture.Chief, "numbering every file"), (bob.Paused?.By.Email, bob.Paused?.Reason));
+        }
+        finally
+        {
+            await chief.Api.UnpauseAsync();
+        }
+        await bob.RefreshAsync();
+        Assert.Null(bob.Paused);
+    }
+
+    [Fact]
     public async Task NewFilesCheckedInAsVendorsPartsAreMarked()
     {
         var alice = await WorkspaceAsync("alice");

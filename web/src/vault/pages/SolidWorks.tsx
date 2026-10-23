@@ -100,7 +100,14 @@ export function SolidWorks() {
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts
                     it in SolidWorks, already in the vault and checked out to you. Once part numbers are on, a new part
                     or assembly gets its number here first: say what kind it is and what it's called, and its name is
-                    the number.
+                    the number. In SolidWorks, right-click a folder in the Vault tab's Browse for{" "}
+                    <strong>New part</strong> or <strong>New assembly</strong>, which do the same.
+                </li>
+                <li>
+                    <strong>Titles</strong> show after files' names in Browse and under the open file's name, where they
+                    say more than the name does (a part number's). Right-click a file for <strong>Edit title</strong>.
+                    Checking in new parts without part numbers, tick that they're vendors' parts (a McMaster screw,
+                    say), which keep their names.
                 </li>
             </ul>
             <h2>If something's not right</h2>

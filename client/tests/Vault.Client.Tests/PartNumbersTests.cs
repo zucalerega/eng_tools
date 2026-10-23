@@ -47,4 +47,14 @@ public sealed class PartNumbersTests
 
     [Fact]
     public void HowNumbersAreWritten() => Assert.Equal("00000123-001", PartNumbers.Text(123, "001"));
+
+    [Theory]
+    [InlineData("00000123-001.SLDPRT", "Fin bracket", "Fin bracket")] // a part number says nothing of what it is
+    [InlineData("Fin.SLDPRT", "Fin, left side", "Fin, left side")] // someone named it
+    [InlineData("Fin.SLDPRT", "Fin", null)] // as every file's title starts out: not said twice
+    [InlineData("Fin.SLDPRT", "fin", null)]
+    [InlineData("README", "README", null)]
+    [InlineData("Fin.SLDPRT", null, null)] // a server from before titles
+    public void ATitleIsShownWhereItSaysMoreThanTheName(string name, string? title, string? shown) =>
+        Assert.Equal(shown, Titles.Beside(name, title));
 }

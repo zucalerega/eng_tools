@@ -377,6 +377,16 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   (`FileSaveAsNotify2`), the add-in checks the file out and saves it in place
   (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
   to save under another name.
+- **Saving along.** Saving an assembly (or a drawing) saves the files it uses that changed
+  too, and in SolidWorks 2026 that's every file last saved in an older SolidWorks, which
+  counts as changed once it's open: SolidWorks turns each that isn't checked out to you
+  into a Save As. So the first of them asks about them all, once (`SaveAlong`): Yes checks
+  out those that can be, in one go, and saves them; No (the default) leaves them as the
+  vault has them, what changed in them still on screen. Those someone else has, deleted
+  from the vault, or out of date are named and never saved. The file being saved is the
+  active document, or the one Vault saves before a check-in; the answer holds until its
+  save ends (`FileSavePostNotify`), or a minute. Check-in saves only the open files you
+  can save: one that isn't checked out to you can't go in it anyway.
 - **Open files.** SolidWorks holds the files it has open, including parts that an open
   assembly uses, even after the part's own window is closed. Before get latest, undo,
   or a check-out that needs the latest version replaces open files, SolidWorks lets go

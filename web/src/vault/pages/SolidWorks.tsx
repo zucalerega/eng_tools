@@ -152,6 +152,16 @@ export function SolidWorks() {
                     </p>
                 </details>
                 <details>
+                    <summary>Saving an assembly asks about many parts</summary>
+                    <p>
+                        Saving an assembly saves the parts it uses that changed, too, and SolidWorks 2026 counts every
+                        part last saved in an older SolidWorks as changed once it opens it. Vault asks once about the
+                        ones that aren't checked out to you. No, the default, saves only the assembly and leaves the
+                        parts as the vault has them. Yes checks them out and saves them in SolidWorks 2026's format, so
+                        they stop counting as changed; they go in with the assembly when you check it in.
+                    </p>
+                </details>
+                <details>
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like

@@ -98,11 +98,17 @@ While you work:
   why it can't be saved (someone else has it, there's a newer version, or it was deleted
   from the vault since you got it: restore it from its folder's trash in the web app) and
   offers to save your changes under another name.
+- **Saving an assembly** saves the parts it uses that changed, too, and in SolidWorks 2026
+  every part last saved in an older SolidWorks counts as changed. Vault asks about those
+  that aren't checked out to you once, not once each: Yes checks them out and saves them;
+  No, the default, leaves them as the vault has them, what changed in them still on
+  screen. Any it can't save (someone else has it, deleted, out of date) it names.
 - **Check in an assembly** and the new parts it uses, and the parts you changed, go
   into the same check-in. Each is recorded with the version it used, and SolidWorks
   is asked what the assembly references. One that uses a file deleted from the vault since
   you got it isn't checked in, and Vault says to restore that file or take it out of the
-  assembly.
+  assembly. Before checking in, Vault offers to save your open files that changed: only
+  those you can save, checked out to you or new.
 - **Getting the latest version** of an open file updates it in place, along with the
   parts it uses; an open assembly that uses an updated part updates too. Files with
   unsaved changes are never replaced for you.
@@ -401,11 +407,18 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
     temporary folder (`...\IC~~\...`), that's still to fix.
 36. Long messages: open an assembly of many parts saved in an older SolidWorks (so they all
-    count as changed), check the assembly out, and click Check in: "Save changes before
-    checking in?" lists them in Vault's box, which stops short of the screen's bottom with
-    its buttons showing, and scrolls. It moves by its title bar; Y, N, Esc, and Enter answer
-    it as in Windows' message box. A short warning (check in a file someone else has checked
-    out) is only as tall as its text. At 150% and 250% display scaling it looks the same.
+    count as changed), check the assembly out, and save it: Vault's question about the
+    parts it saves along lists them in Vault's box, which stops short of the screen's bottom
+    with its buttons showing, and scrolls. It moves by its title bar; Y, N, Esc, and Enter
+    answer it as in Windows' message box. A short warning (save a file someone else has
+    checked out) is only as tall as its text. At 150% and 250% display scaling it looks the
+    same.
+37. Saving along: in the same assembly, have someone else check out one of the parts. Save
+    the assembly: Vault asks once, lists the parts, names the one someone else has, and has
+    No chosen to start with. Answer No: the assembly saves, the parts don't (SolidWorks still
+    shows them changed), and nothing else asks. Save again and answer Yes: the parts but the
+    other person's are checked out to you and saved. Click Check in: "Save changes before
+    checking in?" lists only files checked out to you or new, if any changed.
 
 ## When something goes wrong
 

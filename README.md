@@ -45,7 +45,10 @@ replaces Kenesto.
 - **Every version is kept.** See who changed what and why, and download any old
   version.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
-  or changed parts it uses. Getting an assembly brings its parts along.
+  or changed parts it uses. Getting an assembly brings its parts along. Saving one in
+  SolidWorks saves its changed parts too, and SolidWorks 2026 counts every part saved in
+  an older SolidWorks as changed: Vault asks once about those you haven't checked out
+  (No, the default, leaves them as they are), not once for each.
 - **Drawings stay with what they show.** A drawing is checked in only if it shows a
   part or assembly in the vault, and only if it's named after it (`Fin.SLDDRW`, or
   `Fin - machining.SLDDRW`, for `Fin.SLDPRT`), so it sits next to it in its folder.

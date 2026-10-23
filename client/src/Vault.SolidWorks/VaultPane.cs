@@ -38,6 +38,9 @@ internal sealed partial class VaultPane : UserControl
     private readonly Timer _fit = new Timer { Interval = 250 };
     private readonly ToolTip _tips = new ToolTip { AutoPopDelay = 20_000 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    // A file Vault itself is saving, before a check-in: the one others are saved along with (SavedAlongWith).
+    private string? _saving;
+    private LeftAlone? _leftAlone;
     private Workspace? _workspace;
     private Account? _me;
     private VaultTree? _vault;
@@ -301,6 +304,10 @@ internal sealed partial class VaultPane : UserControl
         {
             return true; // not in the vault yet, or yours
         }
+        if (SavedAlongWith(path) is { } saving)
+        {
+            return SaveAlong(workspace, saving, path);
+        }
         var name = Path.GetFileName(path);
         if (status.Lock is { } other)
         {
@@ -319,6 +326,98 @@ internal sealed partial class VaultPane : UserControl
         }
         return Ask($"{name} isn't checked out to you. Check it out now and save?") == DialogResult.Yes
             && CheckOutToSave(workspace, path);
+    }
+
+    // The file being saved when SolidWorks saves path along with it, as it saves the parts of an assembly that changed;
+    // null when path is the one being saved: the active document, or the one Vault saves before a check-in.
+    private string? SavedAlongWith(string path)
+    {
+        var saving = _saving ?? _sw.ActiveDocumentPath;
+        return saving != null && !string.Equals(saving, path, StringComparison.OrdinalIgnoreCase) ? saving : null;
+    }
+
+    /// <summary>
+    /// Whether to save a file, not checked out to you, that SolidWorks saves along with the one being saved (saving), as
+    /// it saves the parts of an assembly that changed. Asked once, on the first, for all of them: in SolidWorks 2026,
+    /// every part last saved in an older SolidWorks counts as changed, and a question for each was a question for every
+    /// part of the assembly. Yes checks out those that can be, and saves them; No leaves them as the vault has them,
+    /// what changed in them still on screen. Those someone else has, deleted from the vault, or out of date are named, and
+    /// never saved here.
+    /// </summary>
+    private bool SaveAlong(Workspace workspace, string saving, string path)
+    {
+        if (_leftAlone is { } decided && string.Equals(decided.Saving, saving, StringComparison.OrdinalIgnoreCase)
+            && DateTime.UtcNow < decided.Until && decided.Paths.Contains(path))
+        {
+            return false;
+        }
+        var along = _sw.AllReferences(saving).Where(_sw.HasUnsavedChanges).Append(path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(StatusOf).OfType<FileStatus>()
+            .Where(s => s.FileId != null && !s.CheckedOutByMe)
+            .ToList();
+        var can = along.Where(s => s.Lock == null && s.State is FileState.UpToDate or FileState.Modified).Select(s => s.LocalPath).ToList();
+        var cannot = along.Where(s => !can.Contains(s.LocalPath)).Select(s => $"{Path.GetFileName(s.LocalPath)} ({WhyNotSaved(s)})").ToList();
+        var name = Path.GetFileName(saving);
+        var cannotNote = cannot.Count == 0
+            ? ""
+            : $"\n\n{(cannot.Count == 1 ? "This one isn't" : $"These {cannot.Count} aren't")} saved either way:\n" + string.Join("\n", cannot);
+        var them = can.Count == 1 ? "it" : "them";
+        var save = can.Count > 0
+            && MessageDialog.Show(
+                this,
+                $"Saving {name} also saves {Count(can.Count, "file")} it uses that changed in SolidWorks, but "
+                    + $"{(can.Count == 1 ? "isn't" : "aren't")} checked out to you. (Opening a file saved in an older SolidWorks "
+                    + "changes it.)\n\n" + string.Join("\n", can.Select(Path.GetFileName))
+                    + $"\n\nYes: check {them} out and save {them}.\nNo: leave {them} as the vault has {them}: what changed stays on "
+                    + "screen, unsaved." + cannotNote,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (can.Count == 0)
+        {
+            Warn($"Saving {name} can't save {Count(cannot.Count, "file")} it uses that changed in SolidWorks:\n\n" + string.Join("\n", cannot));
+        }
+        if (save && CheckOutToSave(workspace, can))
+        {
+            var kept = MadeEditable(can);
+            Remember(saving, along.Select(s => s.LocalPath).Where(p => !can.Contains(p) || kept.Contains(Path.GetFileName(p))));
+            return can.Contains(path, StringComparer.OrdinalIgnoreCase) && !kept.Contains(Path.GetFileName(path));
+        }
+        Remember(saving, along.Select(s => s.LocalPath));
+        return false;
+    }
+
+    private static string WhyNotSaved(FileStatus status) => status switch
+    {
+        { Lock: { } other } => $"checked out by {other.User.Name}",
+        { State: FileState.DeletedInVault } => "deleted from the vault since you got it",
+        _ => "a newer version is in the vault",
+    };
+
+    // Files the question said to leave as they are, saved along with saving: SolidWorks comes to each in turn. Until
+    // that save is over (SaveEnded), or a minute has passed, should SolidWorks not say.
+    private void Remember(string saving, IEnumerable<string> paths) =>
+        _leftAlone = new LeftAlone(saving, new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase), DateTime.UtcNow.AddMinutes(1));
+
+    /// <summary>SolidWorks saved a file: if it was the one others were saved along with, that's over.</summary>
+    public void SaveEnded(string path)
+    {
+        if (_leftAlone is { } decided && string.Equals(decided.Saving, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _leftAlone = null;
+        }
+    }
+
+    private sealed class LeftAlone
+    {
+        public LeftAlone(string saving, HashSet<string> paths, DateTime until) => (Saving, Paths, Until) = (saving, paths, until);
+
+        public string Saving { get; }
+
+        public HashSet<string> Paths { get; }
+
+        public DateTime Until { get; }
     }
 
     // A file deleted from the vault since it came here can't be checked out to save it: someone took it out, on
@@ -345,6 +444,10 @@ internal sealed partial class VaultPane : UserControl
         {
             // Checked out while it was open (with the CLI, say): it only needs to become editable.
             return _sw.SetReadOnly(path, false) ? SaveAsChoice.SaveInPlace : SaveAsChoice.ShowDialog;
+        }
+        if (SavedAlongWith(path) is { } saving)
+        {
+            return SaveAlong(workspace, saving, path) ? SaveAsChoice.SaveInPlace : SaveAsChoice.Cancel;
         }
         var reason = status switch
         {
@@ -787,8 +890,9 @@ internal sealed partial class VaultPane : UserControl
         {
             return;
         }
-        // Check in what's on screen: save open documents first.
-        var unsaved = _sw.OpenDocuments().Select(SolidWorksHost.PathOf)
+        // Check in what's on screen: save open documents first. Only those you can save: ones not checked out to you are
+        // read-only, can't go in a check-in, and in SolidWorks 2026 are often only "changed" by opening (SaveAlong).
+        var unsaved = _sw.OpenDocuments().Where(d => !SolidWorksHost.IsReadOnly(d)).Select(SolidWorksHost.PathOf)
             .Where(p => p != null && IsInWorkspace(p) && _sw.HasUnsavedChanges(p)).Cast<string>().ToList();
         if (unsaved.Count > 0)
         {
@@ -803,7 +907,18 @@ internal sealed partial class VaultPane : UserControl
             }
             if (answer == DialogResult.Yes)
             {
-                unsaved.ForEach(p => _sw.Save(p));
+                foreach (var path in unsaved)
+                {
+                    _saving = path; // what SolidWorks saves along with it is asked about once (SaveAlong)
+                    try
+                    {
+                        _sw.Save(path);
+                    }
+                    finally
+                    {
+                        _saving = null;
+                    }
+                }
             }
         }
         using var dialog = new CheckinDialog(paths.Select(Path.GetFileName));
@@ -1303,7 +1418,11 @@ internal sealed partial class VaultPane : UserControl
     /// Check out a file SolidWorks is about to save, and make its document editable. SolidWorks is
     /// waiting on its save event, so this runs synchronously (off this thread).
     /// </summary>
-    private bool CheckOutToSave(Workspace workspace, string path)
+    private bool CheckOutToSave(Workspace workspace, string path) =>
+        CheckOutToSave(workspace, new[] { path }) && MadeEditable(new[] { path }).Count == 0;
+
+    /// <summary>Check out files SolidWorks is about to save, all or none (see the one above).</summary>
+    private bool CheckOutToSave(Workspace workspace, IReadOnlyList<string> paths)
     {
         if (!_gate.Wait(0))
         {
@@ -1314,24 +1433,25 @@ internal sealed partial class VaultPane : UserControl
         {
             // The last refresh can be a minute old: if a newer version was checked in since, checking out
             // would replace the file under your unsaved changes.
-            var current = Task.Run(() => workspace.StatusAsync(new[] { path })).GetAwaiter().GetResult().FirstOrDefault();
-            if (current?.State is not (FileState.UpToDate or FileState.Modified))
+            var current = Task.Run(() => workspace.StatusAsync(paths)).GetAwaiter().GetResult();
+            FileStatus? Now(string path) => current.FirstOrDefault(s => string.Equals(s.LocalPath, path, StringComparison.OrdinalIgnoreCase));
+            var changed = paths.Where(p => Now(p)?.State is not (FileState.UpToDate or FileState.Modified)).ToList();
+            if (changed.Count > 0)
             {
-                Warn(current?.State == FileState.DeletedInVault
-                    ? DeletedSinceYouGotIt(Path.GetFileName(path))
-                    : $"{Path.GetFileName(path)} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
+                var name = Path.GetFileName(changed[0]);
+                Warn(paths.Count > 1
+                    ? $"{Count(changed.Count, "file")} changed in the vault since Vault last looked, so none were checked out. Save "
+                        + "again to be asked again:\n\n" + string.Join("\n", changed.Select(Path.GetFileName))
+                    : Now(changed[0])?.State == FileState.DeletedInVault
+                        ? DeletedSinceYouGotIt(name)
+                        : $"{name} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
                 return false;
             }
-            var checkedOut = Task.Run(() => workspace.CheckoutAsync(new[] { path })).GetAwaiter().GetResult();
+            var checkedOut = Task.Run(() => workspace.CheckoutAsync(paths)).GetAwaiter().GetResult();
             // SolidWorks asks AllowSave next, so it has to see the check-out now, not after the next refresh.
             foreach (var status in checkedOut)
             {
                 _statuses[VaultPaths.Key(status.VaultPath)] = status;
-            }
-            if (!_sw.SetReadOnly(path, false))
-            {
-                Warn($"{Path.GetFileName(path)} is checked out to you now, but SolidWorks kept it read-only. Close it, open it again, and save.");
-                return false;
             }
             return true;
         }
@@ -1346,6 +1466,22 @@ internal sealed partial class VaultPane : UserControl
             _gate.Release();
             RefreshSoon();
         }
+    }
+
+    // Make checked-out files' documents editable; the names of any SolidWorks kept read-only, which it said.
+    private List<string> MadeEditable(IReadOnlyList<string> paths)
+    {
+        var kept = paths.Where(p => !_sw.SetReadOnly(p, false)).Select(Path.GetFileName).ToList();
+        if (kept.Count == 1)
+        {
+            Warn($"{kept[0]} is checked out to you now, but SolidWorks kept it read-only. Close it, open it again, and save.");
+        }
+        else if (kept.Count > 1)
+        {
+            Warn("These are checked out to you now, but SolidWorks kept them read-only. Close them, open them again, and save:\n\n"
+                + string.Join("\n", kept));
+        }
+        return kept;
     }
 
     // Button and menu handlers: nothing may escape into SolidWorks.

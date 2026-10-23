@@ -52,6 +52,18 @@ public sealed class VaultFile
 
     /// <summary>What the latest version uses: files you can see, maybe deleted since. Null from servers older than this.</summary>
     public List<UsedFile>? Uses { get; set; }
+
+    /// <summary>What people call it: its name without its type, until someone names it. Null from servers before titles.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>A vendor's part (a McMaster screw), which keeps the vendor's name rather than taking a part number.</summary>
+    public bool Vendor { get; set; }
+
+    /// <summary>
+    /// The names it had before its renames, oldest first: SolidWorks files saved before then still look for it by them.
+    /// Null from servers before titles.
+    /// </summary>
+    public List<string>? FormerNames { get; set; }
 }
 
 public sealed class VaultFolder
@@ -111,6 +123,10 @@ public sealed class FileDetail
 public sealed class CheckinReference
 {
     public string Path { get; set; } = "";
+
+    /// <summary>The file by id rather than path, which a rename in the same check-in doesn't change (servers from part numbers on).</summary>
+    public long? FileId { get; set; }
+
     public int? Version { get; set; }
 }
 
@@ -120,6 +136,24 @@ public sealed class CheckinItem
     public string Sha256 { get; set; } = "";
     public long Size { get; set; }
     public List<CheckinReference> References { get; set; } = new List<CheckinReference>();
+
+    /// <summary>What it's called; a new file's is otherwise its part number's, or its name's (servers from part numbers on).</summary>
+    public string? Title { get; set; }
+
+    /// <summary>A vendor's part, which keeps its vendor's name; a new file's is otherwise as its name says (a McMaster number).</summary>
+    public bool? Vendor { get; set; }
+
+    /// <summary>The version its changes start from: refused (out_of_date) if the file is past it.</summary>
+    public int? BaseVersion { get; set; }
+}
+
+/// <summary>A file renamed in a check-in: checked out to you on this computer, and an item too, by its new path.</summary>
+public sealed class CheckinRename
+{
+    public long File { get; set; }
+
+    /// <summary>Its new name, in its folder.</summary>
+    public string Name { get; set; } = "";
 }
 
 public sealed class CheckinRequest
@@ -128,20 +162,48 @@ public sealed class CheckinRequest
     public string Host { get; set; } = "";
     public bool KeepCheckedOut { get; set; }
     public List<CheckinItem> Items { get; set; } = new List<CheckinItem>();
+
+    /// <summary>Files renamed in this check-in; every file whose latest version uses one goes in too, saved with its new name.</summary>
+    public List<CheckinRename> Renames { get; set; } = new List<CheckinRename>();
+
+    /// <summary>Find every problem, and change nothing (servers from part numbers on).</summary>
+    public bool DryRun { get; set; }
 }
 
 public sealed class CheckedInFile
 {
-    /// <summary>"created", "updated", or "unchanged".</summary>
+    /// <summary>"created", "updated", "unchanged", or "renamed".</summary>
     public string Status { get; set; } = "";
     public VaultFile File { get; set; } = new VaultFile();
 }
 
+/// <summary>What a dry run says would happen to a file.</summary>
+public sealed class PlannedFile
+{
+    public string Status { get; set; } = "";
+    public string Path { get; set; } = "";
+}
+
+/// <summary>A problem a dry run found, as the check-in's refusal would say it.</summary>
+public sealed class CheckinProblem
+{
+    /// <summary>The refusal's code, as VaultApiException.Code has it.</summary>
+    public string Error { get; set; } = "";
+    public string Message { get; set; } = "";
+    public Dictionary<string, System.Text.Json.JsonElement> Details { get; set; } = new Dictionary<string, System.Text.Json.JsonElement>();
+}
+
 public sealed class CheckinResult
 {
-    /// <summary>Null when nothing changed.</summary>
+    /// <summary>Null when nothing changed, and for a dry run.</summary>
     public long? CheckinId { get; set; }
     public List<CheckedInFile> Files { get; set; } = new List<CheckedInFile>();
+
+    /// <summary>A dry run's: what would happen to each file, if it found no problems.</summary>
+    public List<PlannedFile> Planned { get; set; } = new List<PlannedFile>();
+
+    /// <summary>A dry run's: every problem it found.</summary>
+    public List<CheckinProblem> Problems { get; set; } = new List<CheckinProblem>();
 }
 
 /// <summary>What a move or rename moved, where it is now.</summary>
@@ -159,6 +221,61 @@ public sealed class SyncResult
     public bool Full { get; set; }
     public List<VaultFolder> Folders { get; set; } = new List<VaultFolder>();
     public List<VaultFile> Files { get; set; } = new List<VaultFile>();
+
+    /// <summary>An admin has the vault paused: changes wait until it's back. Null when it isn't (and from older servers).</summary>
+    public PauseInfo? Paused { get; set; }
+}
+
+/// <summary>An admin's pause: every change but theirs, from the computer they paused it on, waits until it's unpaused.</summary>
+public sealed class PauseInfo
+{
+    public UserRef By { get; set; } = new UserRef();
+    public DateTimeOffset Since { get; set; }
+    public string Host { get; set; } = "";
+    public string Reason { get; set; } = "";
+}
+
+/// <summary>Whether new files take part numbers ("off", "offer", or "require"), and the next number to hand out.</summary>
+public sealed class NumberingInfo
+{
+    public string Mode { get; set; } = "off";
+    public long NextNumber { get; set; }
+}
+
+/// <summary>A kind of part number, its last three digits: 001 Part, 501 Assembly.</summary>
+public sealed class PartKind
+{
+    public string Code { get; set; } = "";
+    public string Label { get; set; } = "";
+
+    /// <summary>"part", "assembly", or "any".</summary>
+    public string Applies { get; set; } = "";
+    public bool Retired { get; set; }
+}
+
+/// <summary>A part number handed out: 00000123-001, with what the file that takes it is to be called.</summary>
+public sealed class IssuedNumber
+{
+    public string Number { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Title { get; set; } = "";
+    public DateTimeOffset IssuedAt { get; set; }
+
+    /// <summary>The file that has it, once one does.</summary>
+    public long? FileId { get; set; }
+}
+
+/// <summary>A file's title, or whether it's a vendor's part, to change (null leaves either as it is).</summary>
+public sealed class FileDescription
+{
+    public long File { get; set; }
+    public string? Title { get; set; }
+    public bool? Vendor { get; set; }
+}
+
+internal sealed class IssuedNumberList
+{
+    public List<IssuedNumber> Numbers { get; set; } = new List<IssuedNumber>();
 }
 
 /// <summary>An entry in the activity log (GET /api/activity), newest first.</summary>

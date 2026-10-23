@@ -19,11 +19,12 @@ DIGITS = 8
 LARGEST = 10**DIGITS - 1
 
 # A number, its kind, and then the end of the name or a symbol or a space before more: "00000123-001",
-# "00000123-001 - machining", "00000004-010-6"; not "00000123-0011".
-_NUMBERED = re.compile(r"^(\d{8})-(\d{3})(?![0-9A-Za-z])")
-_KIND = re.compile(r"^\d{3}$")
+# "00000123-001 - machining", "00000004-010-6"; not "00000123-0011". Digits are 0-9 alone (not \d, which takes any
+# script's), as the clients have them.
+_NUMBERED = re.compile(r"^([0-9]{8})-([0-9]{3})(?![0-9A-Za-z])")
+_KIND = re.compile(r"^[0-9]{3}$")
 # McMaster-Carr's part numbers, which their files are named by: 91251A463, 5911K12, "91251A463_Socket Head Screw".
-_MCMASTER = re.compile(r"^\d{4,5}[A-Za-z]\d{1,4}(?![0-9A-Za-z])")
+_MCMASTER = re.compile(r"^[0-9]{4,5}[A-Za-z][0-9]{1,4}(?![0-9A-Za-z])")
 
 # The files that take numbers of their own: SolidWorks parts and assemblies, and STEP and STL files we make. A STEP or
 # STL file whose number a part or an assembly has is an export of it, named after it.

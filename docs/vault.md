@@ -326,7 +326,9 @@ on top of it.
   than skip the check. When SolidWorks can't find a file anyway, the add-in's
   `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's
   here, or else at the file here at the longest end of the path
-  (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
+  (`Workspace.LocalFileFor`). A file renamed since (given its part number, say) is found by
+  the names it had (`former_names`), in its folder, unless a file has that name now: from
+  elsewhere, and in this workspace too, where its copy followed the rename. Checking such an assembly in from SolidWorks records its
   references (see "A check-in of unchanged contents" above); one that uses files the vault
   can't have (missing, or outside the workspace) names them all at once, and nothing is
   checked in.
@@ -348,10 +350,11 @@ on top of it.
   path sent for two files, or another file's short name on Windows) unless it's the
   vault's version already.
 - **Local state.** `.vault/state.json` records the sync cursor, the vault's files (with
-  what each uses) and folders (with your role in each), and each local copy's id,
-  version, hash, size, and write time. A file is rehashed only when its size or write
-  time changes. A workspace whose state is from an older client (`SyncFormat`), or that
-  synced while its server didn't say what files use yet, gets everything once more.
+  what each uses, its title, whether it's a vendor's part, and the names it had) and
+  folders (with your role in each), and each local copy's id, version, hash, size, and
+  write time. A file is rehashed only when its size or write time changes. A workspace
+  whose state is from an older client (`SyncFormat`), or that synced while its server
+  didn't say what files use, or what they're called, yet, gets everything once more.
   From this state each file is one of:
   - up to date
   - out of date

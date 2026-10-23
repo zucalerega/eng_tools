@@ -41,6 +41,15 @@ public sealed class FileStatus
 
     /// <summary>Your role in the file's folder: viewer, editor, lead, or admin (null if unknown).</summary>
     public string? MyRole { get; internal set; }
+
+    /// <summary>What it's called (its name without its type, until someone names it); null if it isn't in the vault.</summary>
+    public string? Title { get; internal set; }
+
+    /// <summary>A vendor's part, which keeps its vendor's name rather than taking a part number.</summary>
+    public bool Vendor { get; internal set; }
+
+    /// <summary>The names it had before its renames, oldest first: SolidWorks files saved then still look for it by them.</summary>
+    public IReadOnlyList<string> FormerNames { get; internal set; } = Array.Empty<string>();
 }
 
 public sealed class GetResult

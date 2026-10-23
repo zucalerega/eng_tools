@@ -353,6 +353,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault resolve <files> --mine` | Settle a conflict (you changed a file here, and someone checked in a newer version since) by keeping yours: it's checked out to you as it is, to check in on top. `--vault` takes the vault's version instead, with yours backed up. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
+| `vault title <file> "what it's called"` | Give a file a title, shown with its name: no new version, and no check-out. `vault status` and `vault history` show titles where they say more than the names do (a part number's), and `history` the names a file had. |
 
 ## Tests
 

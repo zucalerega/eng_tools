@@ -417,7 +417,11 @@ public sealed class Workspace : IDisposable
     /// <summary>
     /// The vault files meant by paths SolidWorks files keep for the files they use (their local paths here, whether
     /// they're here yet or not), and the kept paths that mean none, as of the last refresh. A path in this workspace
-    /// means the file there. A file brought from elsewhere keeps elsewhere's paths: one from Kenesto names its drive
+    /// means the file there. Where the vault has no file there any more, and none is here, the file was deleted, as when
+    /// a folder is uploaded again under another name and the old one deleted, and an assembly saved before then still
+    /// names the old copies (C:\VLT\09_Hopper\Tanks\Fuel Tank.SLDASM, now in Hopper\Tanks): that means the vault file
+    /// whose path ends most like it, with at least its folder's name the same too (see <see cref="MovedFileMeant"/>).
+    /// A file brought from elsewhere keeps elsewhere's paths: one from Kenesto names its drive
     /// (K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT), meaning the vault file whose path ends
     /// the same way, with the most folders matching (09_Hopper/Stringer.SLDPRT). Where others match as well, it
     /// means none of them. A STEP or other CAD file placed with 3D Interconnect is kept as the document SolidWorks made
@@ -441,7 +445,8 @@ public sealed class Workspace : IDisposable
             var here = UnderRoot(kept);
             var vaultPath = here == null
                 ? VaultFileMeant(kept, byKey, byName) ?? MadeFrom(kept, byKey, byName, near)
-                : byKey.TryGetValue(VaultPaths.Key(here), out var found) ? found : null;
+                : byKey.TryGetValue(VaultPaths.Key(here), out var found) ? found
+                : File.Exists(kept) ? null : MovedFileMeant(here, byKey, byName);
             if (vaultPath != null || (here != null && File.Exists(kept))) // or new here, not checked in yet
             {
                 var local = vaultPath == null ? kept : ToLocalPath(vaultPath);
@@ -557,16 +562,20 @@ public sealed class Workspace : IDisposable
     /// The file here that a path kept in a SolidWorks file from elsewhere means, for SolidWorks when it can't find it:
     /// the vault file it means, as <see cref="FindUsedFiles"/> finds it among vaultPaths (the vault's files), if that's
     /// here (C:\VLT\09_Hopper\Stringer.SLDPRT for K:\Yellow Jacket Space Program\Project CAD\09_Hopper\Stringer.SLDPRT);
-    /// else the file here at the longest end of the path (one not checked in yet). Null if there's neither, and for
-    /// paths in this workspace: they mean themselves. It reads no workspace state, so it's safe while one is running.
+    /// else the file here at the longest end of the path (one not checked in yet). Null if there's neither. A path in
+    /// this workspace means itself, unless the vault has no file there any more: then the vault file it means, as
+    /// FindUsedFiles finds it, if that's here. It reads no workspace state, so it's safe while one is running.
     /// </summary>
     public string? LocalFileFor(string keptPath, IEnumerable<string> vaultPaths)
     {
-        if (UnderRoot(keptPath) != null)
-        {
-            return null;
-        }
         var (byKey, byName) = Index(vaultPaths);
+        if (UnderRoot(keptPath) is { } here)
+        {
+            return !byKey.ContainsKey(VaultPaths.Key(here)) && MovedFileMeant(here, byKey, byName) is { } moved
+                && LocalPathOrNull(moved) is { } local && File.Exists(local)
+                ? local
+                : null;
+        }
         if (VaultFileMeant(keptPath, byKey, byName) is { } vaultPath && LocalPathOrNull(vaultPath) is { } meant && File.Exists(meant))
         {
             return meant;
@@ -620,12 +629,7 @@ public sealed class Workspace : IDisposable
         foreach (var key in byName[names[names.Length - 1]])
         {
             var parts = key.Split('/');
-            var matched = 0;
-            while (matched < parts.Length && matched < names.Length
-                && parts[parts.Length - 1 - matched] == names[names.Length - 1 - matched])
-            {
-                matched++;
-            }
+            var matched = EndAlike(parts, names);
             // A vault path that's all of the end of the kept one (the vault's top standing for a folder there) beats
             // one matching as many names with folders above them that don't.
             var score = (2 * matched) + (matched == parts.Length ? 1 : 0);
@@ -639,6 +643,46 @@ public sealed class Workspace : IDisposable
             }
         }
         return best == null || tied ? null : byKey[best];
+    }
+
+    // See FindUsedFiles: the vault file a path here means when the vault has no file there any more and none is here
+    // (here: its vault path). Of the vault's files with its name, the one whose path ends most like it, with at least
+    // its folder's name the same too, so a part not checked in yet is never taken for another of its name; none where
+    // two end alike. The vault's top isn't a folder of the old path's, as it is for a path from elsewhere.
+    private static string? MovedFileMeant(string here, Dictionary<string, string> byKey, ILookup<string, string> byName)
+    {
+        var names = NamesIn(here).Select(VaultPaths.Key).ToArray();
+        if (names.Length < 2)
+        {
+            return null; // only its name to go by
+        }
+        string? best = null;
+        var bestMatched = 1;
+        var tied = false;
+        foreach (var key in byName[names[names.Length - 1]])
+        {
+            var matched = EndAlike(key.Split('/'), names);
+            if (matched > bestMatched)
+            {
+                (best, bestMatched, tied) = (key, matched, false);
+            }
+            else if (matched == bestMatched && best != null)
+            {
+                tied = true;
+            }
+        }
+        return best == null || tied ? null : byKey[best];
+    }
+
+    // How many names two paths' keys, split, have alike from their ends.
+    private static int EndAlike(string[] parts, string[] names)
+    {
+        var matched = 0;
+        while (matched < parts.Length && matched < names.Length && parts[parts.Length - 1 - matched] == names[names.Length - 1 - matched])
+        {
+            matched++;
+        }
+        return matched;
     }
 
     private static string[] NamesIn(string path) => path.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);

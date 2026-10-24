@@ -190,7 +190,7 @@ or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says w
 - **Numbers from before:** Ground Structures named its parts and assemblies by numbers of
   its own (`00000011-001` to `-013` are one project's parts, `00000011-501` its
   assembly), and some have more after them (`00000004-010-6`). They keep their names
-  (migration 0019 records them as `legacy` numbers, which several files may share), and
+  (migration 0021 records them as `legacy` numbers, which several files may share), and
   the numbers handed out start after the largest any file's name had (00000022). New
   Ground Structures files take new numbers.
 - A check-in item's `base_version` says which version its changes start from: if the file

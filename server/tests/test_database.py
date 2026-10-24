@@ -108,7 +108,7 @@ def test_upgrades_keep_the_part_numbers_from_before(tmp_path):
     """Parts and assemblies named by numbers of their own before part numbers (Ground Structures': a project's number,
     then its parts') keep them, and numbers handed out start after the largest any file's name has."""
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
-    migrate(engine, "0018")
+    migrate(engine, "0020")
     when = "'2026-09-01 00:00:00.000000'"
     with engine.begin() as db:
         db.exec_driver_sql(

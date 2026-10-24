@@ -8,8 +8,8 @@ Ground Structures named their parts and assemblies by numbers of their own befor
 parts of one project, and 00000011-501 its assembly). They keep their names, so each is recorded as holding its number
 (legacy), and the numbers handed out start after the largest any file's name has.
 
-Revision ID: 0019
-Revises: 0018
+Revision ID: 0021
+Revises: 0020
 Create Date: 2026-10-23 16:00:00.000000
 """
 
@@ -20,8 +20,8 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0019"
-down_revision: str | None = "0018"
+revision: str = "0021"
+down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -7,11 +7,11 @@ marks files that keep a vendor's name. Both are non-null columns with server def
 without copying files, which most tables point at. former_names keeps where files were before a rename or a move,
 which SolidWorks files that used them still name.
 
-It follows 0017, drawings' PDFs, which merged with it. Other branches' 0017s (the website's, among others) take the next
-numbers when they merge, each pointing at the one before.
+It was 0018 on its branch. Drawings' PDFs, the oldest client, and Piper merged before it as 0017 to 0019, so it follows
+Piper's 0019; other branches' migrations take the next numbers when they merge, each pointing at the one before.
 
-Revision ID: 0018
-Revises: 0017
+Revision ID: 0020
+Revises: 0019
 Create Date: 2026-10-23 12:00:00.000000
 """
 
@@ -20,8 +20,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0018"
-down_revision: str | None = "0017"
+revision: str = "0020"
+down_revision: str | None = "0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

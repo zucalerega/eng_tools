@@ -6,8 +6,8 @@
 #   bash deploy/deploy.sh v0.2.0     # a release tag (or any commit on main)
 #
 # It builds the web app from exactly that commit, in a checkout of its own next to this repository (so what you have
-# open here doesn't matter), ships server/ and web/dist, backs up the database, switches over, and puts the old
-# version back if the new one doesn't answer.
+# open here doesn't matter), ships server/, web/dist, and the docs the help shows, backs up the database, switches over,
+# and puts the old version back if the new one doesn't answer.
 #
 # Needs bash (Git Bash on Windows), git, Node.js 24 with npm, and SSH access to the server. Settings:
 #   YJSP_DEPLOY_HOST=opc@lucazerega.tail07089c.ts.net
@@ -84,6 +84,8 @@ fi
 
 git -C "$work" archive --format=tar HEAD server | run 'sudo rm -rf /opt/yjsp/app/server.new && sudo mkdir -p /opt/yjsp/app/server.new && sudo tar -C /opt/yjsp/app/server.new --strip-components=1 --no-same-owner -xf -'
 tar -C "$work/web" -cf - dist | run 'sudo rm -rf /opt/yjsp/app/web.new && sudo mkdir -p /opt/yjsp/app/web.new && sudo tar -C /opt/yjsp/app/web.new --no-same-owner -xf -'
+# The help (/help, and what the assistant reads), laid out as in the repository: YJSP_HELP_DIR=/opt/yjsp/app/help.
+git -C "$work" archive --format=tar HEAD README.md docs client/src/Vault.SolidWorks/README.md | run 'sudo rm -rf /opt/yjsp/app/help.new && sudo mkdir -p /opt/yjsp/app/help.new && sudo tar -C /opt/yjsp/app/help.new --no-same-owner -xf -'
 
 run 'sudo bash -s' <<'EOF'
 set -euo pipefail
@@ -99,19 +101,25 @@ sync() {
 backup=/srv/yjsp/backups/yjsp-before-deploy-$(date -u +%Y%m%d-%H%M%S).db
 sudo -u yjsp sqlite3 /srv/yjsp/data/yjsp.db ".backup '$backup'" && sudo -u yjsp gzip "$backup" # kept 14 days
 systemctl stop yjsp.service
-rm -rf server.old web.old
+rm -rf server.old web.old help.old
 mv server server.old && mv server.new server && mv server.old/.venv server/.venv # the venv stays where it was
 mv web web.old && mv web.new web
+if [ -d help ]; then mv help help.old; fi # not before the first deploy with the help
+mv help.new help
 sync
 systemctl start yjsp.service
 if healthy; then
     echo "Deployed: YJSP answers."
+    if ! curl -fs http://127.0.0.1:8100/help | grep -q 'id="guide"'; then
+        echo "The help page is empty: set YJSP_HELP_DIR=/opt/yjsp/app/help in /srv/yjsp/.env and restart (docs/deploying.md)." >&2
+    fi
 else
     echo "The new version doesn't answer: putting the old one back." >&2
     journalctl -u yjsp.service --no-pager -n 20 -o cat >&2
     systemctl stop yjsp.service
     mv server/.venv server.old/.venv && rm -rf server && mv server.old server
     rm -rf web && mv web.old web
+    rm -rf help && if [ -d help.old ]; then mv help.old help; fi
     sync
     systemctl start yjsp.service
     healthy && echo "The old version is back." >&2

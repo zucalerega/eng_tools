@@ -16,6 +16,7 @@ import { Link } from "../../router";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
 import { AddInTracker } from "./AddIn";
+import { ClaudeSpending } from "./Claude";
 import { ServerLoad } from "./Load";
 import { SiteUsage } from "./Usage";
 
@@ -165,6 +166,7 @@ function People() {
                 <SiteUsage />
                 <ServerLoad />
                 <AddInTracker />
+                <ClaudeSpending />
                 <DiskSpace />
             </div>
             {open && (

@@ -13,7 +13,7 @@ import { MenuButton, usePopover } from "../../components";
 import { CodeEditor, type CodeEditorHandle, type EditorKeys, type RunError } from "./CodeEditor";
 import type { Attached } from "./complete";
 import { Icon } from "./icons";
-import { Markdown } from "./Markdown";
+import { Markdown } from "../../markdown";
 import { newCell, type Cell } from "./cells";
 import type { PageView } from "./inputs";
 import { cellStatus, isTicking, PythonStatus, RunView, useTicking } from "./Output";

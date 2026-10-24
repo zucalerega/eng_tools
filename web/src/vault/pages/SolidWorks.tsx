@@ -214,7 +214,8 @@ export function SolidWorks() {
                     <summary>Something else</summary>
                     <p>
                         The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log, with a line for each click on Open in
-                        SolidWorks: send it to whoever runs your vault.
+                        SolidWorks: send it to whoever runs your vault. <strong>Help</strong>, the question mark at the
+                        top right, has the rest of the troubleshooting, and Claude, to ask what a message means.
                     </p>
                 </details>
             </div>

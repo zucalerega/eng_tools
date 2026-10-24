@@ -6,9 +6,12 @@ permissions) for the team's SolidWorks and STEP files; it replaces Kenesto. **Yo
 plots the team's test data. **Piper** draws the team's fluid systems as P&IDs (and reads
 Yorg's tests on them). The team trusts them with flight-hardware designs and test
 results, so correctness and not losing data come before speed. README.md is the user
-guide. docs/design.md has the site's design (architecture, sign-in, the web app's
-frame, API conventions, the names from before YJSP); docs/vault.md, docs/yorg.md, and
-docs/piper.md have each app's design, API, and roadmap. Read the design before changing
+guide, and docs/troubleshooting.md says what goes wrong and what every error means; the
+site's help page (/help) shows both, for anyone, and Claude, in the web app's Help, reads
+them. docs/design.md has the site's design (architecture, sign-in, the web app's frame,
+the help and Claude, API conventions, the names from before YJSP); docs/vault.md,
+docs/yorg.md, and docs/piper.md have each app's design, API, and roadmap. Read the design
+before changing
 behavior.
 
 The apps share the server, the database, sign-in and accounts, and the web app's
@@ -22,10 +25,11 @@ do). Piper reads Yorg's tests only through Yorg's API, as a client would (docs/p
 
 | Path | What |
 |---|---|
-| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `api/` sign-in, people, downloads, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, deleting; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
+| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budget, limits, and prompt), `api/` sign-in, people, downloads, the help's pages, Claude's routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, deleting; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
 | `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2026 add-in, which runs in 2025 too (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
-| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `visio.ts` importing Visio, `pdf.ts` the PDF export). Tests run against the real server. |
+| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `visio.ts` importing Visio, `pdf.ts` the PDF export). Tests run against the real server. |
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md` | The site's design, and each app's: design, API, roadmap, open questions. |
+| `docs/troubleshooting.md` | What goes wrong and what to do, and what every error the server sends means. Public, on /help. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
 | `docs/renumbering.md` | Numbering the vault's files all at once: what has to be checked in SolidWorks 2026 first, the plan, and the run. |
 | `deploy/` | `deploy.sh`, which deploys the live site; `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files. |
@@ -81,7 +85,9 @@ cd web && npm ci && npm run check && npm test && npm run build
   the site's help: Yorg's Help page (`web/src/yorg/Help.tsx`, `/yorg/help`), Piper's
   (`web/src/piper/Help.tsx`, `/piper/help`), the SolidWorks page for the add-in
   (`web/src/vault/pages/SolidWorks.tsx`), the page's own hints, and README.md, the user
-  guide. A feature the help doesn't mention isn't done.
+  guide; a new way for something to go wrong goes in docs/troubleshooting.md. A feature
+  the help doesn't mention isn't done. Claude, in Help, knows only the docs `help.PARTS`
+  lists, so what they don't say, it can't answer.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
 - **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and
@@ -101,7 +107,8 @@ cd web && npm ci && npm run check && npm test && npm run build
   (and what a drawing is, and how it changes, in `web/src/piper`), and Vault's client rules in
   `Vault.Client`. Routes, the CLI, and the add-in only translate.
 - **Errors tell people what to do next,** e.g. "X is checked out by Alice on ALICE-PC".
-  Server errors are `ApiError` subclasses with a stable `code`.
+  Server errors are `ApiError` subclasses with a stable `code`, and docs/troubleshooting.md
+  says what each code means (a test fails when one isn't there).
 - **Comments explain why.** Match the style of the code around you.
 - **Dependencies:** add one only with a reason given in the PR. Lockfiles (`uv.lock`,
   `packages.lock.json`, `package-lock.json`) are committed and only change on purpose.
@@ -125,7 +132,9 @@ cd web && npm ci && npm run check && npm test && npm run build
   - web: the rendered app (Testing Library), against the real server started by
     `web/tests/server.ts`, with data set up through the API (`web/tests/team.tsx`)
 
-  Don't mock the protocol.
+  Don't mock the protocol. Claude is the exception: the tests talk to a stand-in for
+  Anthropic's API (`server/tests/fake_claude.py`, `web/tests/claude.ts`), never the real
+  one, which costs money.
 - Tests are offline, deterministic, and isolated: temporary folders, no sleeping to
   wait for timing, no state shared between tests.
 - `tests/test_database.py` fails if models and migrations disagree. Keep it green.
@@ -213,6 +222,10 @@ keep working with older clients:
 - **Secrets** live only in environment variables or the host's secret store. Never put
   them in the repo, in logs, in error messages, or in URLs. `.env` is git-ignored, and
   `server/.env.example` lists every setting.
+- **The help is public:** README.md, the add-in's README, and docs/troubleshooting.md are
+  on /help for anyone, signed in or not (the design docs only for members, as the
+  repository is private). Keep anything private (addresses, keys, the live server's
+  details) out of them; docs/deploying.md isn't on it at all.
 - **Tokens** are stored only as hashes on the server, and DPAPI-encrypted or owner-only
   on clients. Never log tokens or `Authorization` headers.
 - **Paths and permissions:** every vault path goes through `paths.split` /

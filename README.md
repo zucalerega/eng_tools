@@ -26,7 +26,8 @@ invite. Someone without a GT account (a mentor, say) joins by an invite to the a
 use with Google (Admin > People). Admin > People also shows how many people used the site
 each day this past month and how long they spent on it (on the web app, and working in
 SolidWorks with the add-in), who has the SolidWorks add-in (on
-how many computers and which versions, and how many people in all), how hard the server is working
+how many computers and which versions, and how many people in all), what Claude's answers in Help
+have cost, and on whose questions, how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.
@@ -40,6 +41,24 @@ newer than the `Vault-Setup.exe` the site offers, so everyone can update to it.
 Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
 your account only if its email is your GT address; otherwise it makes a new, empty one,
 and what you have checked out stays with the old one.
+
+## Help
+
+The help is at the site's address with `/help` after it, for anyone, signed in or not: this
+guide, the SolidWorks add-in's, and [troubleshooting](docs/troubleshooting.md), which says what
+every error means. Search it (Ctrl+F) for words from a message you saw. **Copy for an AI**, at its
+top, puts all of it on your clipboard as Markdown, to paste into a chat with an AI assistant you
+use, or give the assistant the address of `/help.md`. Signed in, the help also has how Vault and
+Yorg work inside.
+
+In the web app, **Help** (the question mark at the top right) opens beside the page you're on:
+the help, the app's own (Yorg's Help page, Vault's SolidWorks page), and Claude, to ask how to do
+something or what an error means. An error on the page is offered as a question, in a click.
+Claude has read all of the help, and answers with links to it, but it can be wrong: all it knows
+is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
+never paste a password or a key. The tab keeps the conversation until you start a new one. Each
+person can ask so much a day, and the server sets what Claude may spend in all; admins see what
+it has spent, and on whose questions, on Admin > People.
 
 ## Vault: CAD files
 
@@ -377,7 +396,7 @@ the keys.
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
-| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), and [hosting and deploying](docs/deploying.md) | |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 

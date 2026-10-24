@@ -158,12 +158,34 @@ export const valve: Kind = {
     ),
 };
 
-/** A check valve, as a diode: flow goes the way the triangle points, and the bar stops it coming back. */
+// A swing check's two seats, and its disc: hinged at the top of the seat flow comes in by, it swings toward the bottom
+// of the one flow leaves by, drawn as an arrow the way flow goes.
+const HINGE = { x: -12, y: -8 };
+const TIP = { x: 12, y: 8 };
+
+/** The disc's line, from the hinge to the arrowhead's notch, and its arrowhead, `length` long and `half` out to each
+ * side: the point, a barb, the notch, a barb. */
+function disc(length: number, half: number): { line: string; head: string } {
+    const run = Math.hypot(TIP.x - HINGE.x, TIP.y - HINGE.y);
+    const [ux, uy] = [(TIP.x - HINGE.x) / run, (TIP.y - HINGE.y) / run];
+    // A point back from the tip along the disc, and out to one side of it.
+    const at = (back: number, side: number) =>
+        `${(TIP.x - ux * back - uy * side).toFixed(2)} ${(TIP.y - uy * back + ux * side).toFixed(2)}`;
+    return {
+        line: `M${HINGE.x} ${HINGE.y} L${at(length / 2, 0)}`,
+        head: `M${TIP.x} ${TIP.y} L${at(length, half)} L${at(length / 2, 0)} L${at(length, -half)} Z`,
+    };
+}
+
+const DISC = disc(8.5, 3.9);
+
+/** A check valve, as a swing check: the dot is its disc's hinge, on the side flow comes in by (port a), and the arrow
+ * points the way flow goes, to port b. */
 export const check: Kind = {
     id: "check",
     name: "Check valve",
-    box: () => [-20, -10, 20, 10],
-    ports: () => inlinePorts(10),
+    box: () => [-20, -11, 20, 10],
+    ports: () => inlinePorts(20 + HINGE.x), // lines end at the seats
     fields: [
         { key: "cracking", label: "Cracking pressure", type: "text", placeholder: "1 psi" },
         SIZE,
@@ -176,8 +198,10 @@ export const check: Kind = {
     through: true,
     draw: (_part, context) => (
         <>
-            <path d="M-10 -9 L-10 9 L8 0 Z" fill={context.paper} {...ink(context)} />
-            <path d="M10 -10 V10" {...ink(context, 2.4)} />
+            <path d={`M${HINGE.x} ${HINGE.y} V${TIP.y} M${TIP.x} ${HINGE.y} V${TIP.y}`} {...ink(context, 2)} />
+            <path d={DISC.line} fill="none" {...ink(context)} />
+            <path d={DISC.head} fill={context.ink} {...ink(context, 1)} />
+            <circle cx={HINGE.x} cy={HINGE.y} r={2.8} fill={context.ink} />
         </>
     ),
 };

@@ -2,7 +2,7 @@ import { type VaultFile, vaultApi } from "./api";
 import { keptReferences, on, WEB_HOST } from "./checkouts";
 import { kindOf, nameProblem, parentOf, pathKey } from "./paths";
 import { contentsOf, type VaultState } from "./store";
-import { readZip } from "./zip";
+import { readZip } from "../zip";
 
 // Uploading files and whole folders from the browser: each file's contents go up once (the server
 // skips contents it has), then they're all checked in together, as one version each. A .zip can go up

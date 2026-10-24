@@ -8,6 +8,8 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
+import type { Diagram, DiagramDetail, Revision } from "../src/piper/api";
+import { readDrawing, type Drawing } from "../src/piper/drawing";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -249,6 +251,39 @@ export class Team {
     async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
         const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });
         return call<DatasetDetail>("POST", `/api/yorg/datasets?${params}`, who.token, new TextEncoder().encode(csv));
+    }
+
+    /** A Piper diagram (named to be unique to this test), with a drawing, or an empty one. */
+    async diagram(who: Member, name: string, drawing?: Drawing, folder = ""): Promise<DiagramDetail> {
+        return call<DiagramDetail>("POST", "/api/piper/diagrams", who.token, {
+            name: this.named(name),
+            folder,
+            drawing,
+        });
+    }
+
+    /** A Piper diagram's name, as diagram() made it. */
+    named(name: string): string {
+        return `${name} ${this.folder}`;
+    }
+
+    /** A Piper diagram as the server keeps it, its drawing read. */
+    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing }> {
+        const found = await call<DiagramDetail>("GET", `/api/piper/diagrams/${id}`, who.token);
+        return { ...found, read: readDrawing(found.drawing) };
+    }
+
+    /** A drawing saved, as the editor saves one: from the version it was changed from. */
+    async saveDrawing(who: Member, id: number, drawing: Drawing, version: number): Promise<Diagram> {
+        return call<Diagram>("PUT", `/api/piper/diagrams/${id}/drawing`, who.token, { drawing, version });
+    }
+
+    async revisions(who: Member, id: number): Promise<Revision[]> {
+        return call<Revision[]>("GET", `/api/piper/diagrams/${id}/revisions`, who.token);
+    }
+
+    async deleteDiagram(who: Member, id: number): Promise<Diagram> {
+        return call<Diagram>("DELETE", `/api/piper/diagrams/${id}`, who.token);
     }
 }
 

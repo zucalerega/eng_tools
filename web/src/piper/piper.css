@@ -1,0 +1,1044 @@
+/*
+ * Piper: the diagrams' list, the editor (the whole window under the top bar: the library, the drawing, the inspector,
+ * and the test's timeline under them), and Help.
+ */
+
+/* The mark's ball, in the vault's gold, ringed in the top bar's navy (or the page's own, on the site's home). */
+.piper-ball {
+    fill: var(--gold);
+    stroke: var(--topbar);
+    stroke-width: 2.5;
+    paint-order: stroke;
+}
+
+.home-app .piper-ball {
+    stroke: var(--surface);
+}
+
+.piper-small {
+    font-size: 0.82rem;
+}
+
+.piper-loading {
+    padding: 1.5rem;
+}
+
+/* --- the diagrams' list ------------------------------------------------------------------------------------------- */
+
+.piper-lead {
+    max-width: 46rem;
+    margin: -0.5rem 0 1rem;
+}
+
+.piper-diagrams .search {
+    margin-bottom: 1rem;
+}
+
+.piper-folder-row td {
+    background: var(--surface-2);
+}
+
+.piper-folder {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.piper-folder:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
+}
+
+.piper-description {
+    display: block;
+    font-size: 0.82rem;
+    max-width: 32rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.piper-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.piper-chip {
+    padding: 0 0.4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.piper-diagrams .row-actions {
+    margin-left: 0.75rem;
+}
+
+.piper-foot {
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.piper-start {
+    margin: 0.85rem 0;
+    padding: 0;
+    border: none;
+}
+
+.piper-start legend {
+    margin-bottom: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.piper-start .check {
+    display: flex;
+    margin: 0.35rem 0;
+    align-items: flex-start;
+}
+
+.piper-start input {
+    margin-top: 0.3rem;
+}
+
+/* --- the editor --------------------------------------------------------------------------------------------------- */
+
+.piper-editor {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 3.5rem);
+    min-height: 26rem;
+    background: var(--bg);
+}
+
+.piper-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    flex-wrap: wrap;
+    padding: 0.45rem 0.9rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.piper-where {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    font-size: 0.9rem;
+}
+
+.piper-name {
+    display: inline-block;
+    height: auto;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.piper-name:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: none;
+}
+
+.piper-status {
+    min-width: 0;
+    margin-left: 0.5rem;
+    overflow: hidden;
+    font-size: 0.8rem;
+    color: var(--muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.piper-status-offline,
+.piper-status-changed,
+.piper-status-deleted {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.piper-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+}
+
+.piper-tools > button,
+.piper-tools .menu-button,
+.piper-tools .button {
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0 0.55rem;
+    font-size: 0.85rem;
+}
+
+.piper-tools button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.piper-tools svg {
+    display: block;
+}
+
+.piper-separator {
+    width: 1px;
+    height: 1.4rem;
+    margin: 0 0.3rem;
+    background: var(--border);
+}
+
+.piper-zoom {
+    min-width: 3.6rem !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    padding: 0.5rem 0.9rem;
+    background: var(--warning-soft);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+
+.piper-banner-info {
+    background: var(--accent-soft);
+}
+
+.piper-banner span {
+    flex: 1;
+    min-width: 12rem;
+}
+
+.piper-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/* The library: parts by category, two to a row, each its symbol over its name. */
+.piper-library {
+    flex: none;
+    width: 15.5rem;
+    overflow-y: auto;
+    padding: 0.6rem 0.6rem 2rem;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+}
+
+.piper-library-search {
+    width: 100%;
+    margin-bottom: 0.4rem;
+}
+
+.piper-library-none {
+    font-size: 0.85rem;
+}
+
+.piper-library-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    height: auto;
+    margin: 0.5rem 0 0.25rem;
+    padding: 0.2rem 0.1rem;
+    border: none;
+    background: none;
+    color: var(--heading);
+    font-family: var(--font-brand);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.piper-library-head:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
+}
+
+.piper-library-head:disabled {
+    opacity: 1;
+    cursor: default;
+}
+
+.piper-library-head::before {
+    content: "▾";
+    width: 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.piper-library-head[aria-expanded="false"]::before {
+    content: "▸";
+}
+
+.piper-library-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem;
+}
+
+.piper-library-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.2rem;
+    height: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-height: 4.6rem;
+    padding: 0.4rem 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    text-align: center;
+    cursor: grab;
+}
+
+.piper-library-item:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface-2);
+}
+
+.piper-library-item[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.piper-icon {
+    flex: none;
+}
+
+/* The drawing. */
+.piper-stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.piper-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    outline: none;
+}
+
+.piper-placing {
+    cursor: crosshair;
+}
+
+.piper-panning,
+.piper-panning * {
+    cursor: grabbing !important;
+}
+
+.piper-part {
+    cursor: move;
+}
+
+.piper-port {
+    cursor: crosshair;
+}
+
+.piper-port:hover {
+    stroke-width: 2.5;
+}
+
+.piper-end,
+.piper-label {
+    cursor: move;
+}
+
+.piper-segment-level {
+    cursor: ns-resize;
+}
+
+.piper-segment-upright {
+    cursor: ew-resize;
+}
+
+.piper-resize {
+    cursor: nwse-resize;
+}
+
+.piper-still {
+    background: var(--surface);
+}
+
+.piper-empty {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(26rem, 90%);
+    transform: translate(-50%, -50%);
+    padding: 1.2rem 1.4rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    color: var(--muted);
+    pointer-events: none;
+    box-shadow: var(--shadow);
+}
+
+.piper-empty h2 {
+    margin: 0 0 0.5rem;
+}
+
+.piper-empty ol {
+    margin: 0;
+    padding-left: 1.2rem;
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+
+.piper-looking {
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-pop);
+    background: var(--surface);
+}
+
+/* The inspector: what's selected, as a column of fields. */
+.piper-inspector {
+    flex: none;
+    width: 19rem;
+    overflow-y: auto;
+    padding: 0.8rem 0.9rem 2rem;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+
+.piper-inspector-head {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-bottom: 0.6rem;
+}
+
+.piper-inspector-head h2 {
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--text);
+}
+
+.piper-inspector-head p {
+    margin: 0.1rem 0 0;
+    font-size: 0.8rem;
+}
+
+.piper-row {
+    margin: 0.55rem 0;
+}
+
+.piper-row > label,
+.piper-row-label {
+    display: block;
+    margin: 0 0 0.2rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.piper-row-input {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.piper-row-input > input,
+.piper-row-input > select,
+.piper-row-input > textarea,
+.piper-row-input > .piper-fluid-select {
+    flex: 1;
+    min-width: 0;
+    height: 1.9rem;
+    font-size: 0.88rem;
+}
+
+.piper-row-input > textarea {
+    height: auto;
+    padding: 0.35rem 0.6rem;
+    resize: vertical;
+}
+
+.piper-show,
+.piper-remove,
+.piper-close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.piper-show:hover:not(:disabled),
+.piper-remove:hover:not(:disabled),
+.piper-close:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--row-hover);
+    color: var(--text);
+}
+
+.piper-show[aria-pressed="true"] {
+    color: var(--accent);
+}
+
+.piper-states {
+    display: flex;
+    gap: 0.3rem;
+    flex: 1;
+}
+
+.piper-states button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    height: 1.9rem;
+    padding: 0 0.4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.piper-states button[aria-pressed="true"] {
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.piper-swatch {
+    display: inline-block;
+    flex: none;
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+}
+
+.piper-fluid-select {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.piper-fluid-select select {
+    flex: 1;
+    min-width: 0;
+    height: 1.9rem;
+    font-size: 0.88rem;
+}
+
+.piper-add-field {
+    margin: 0.4rem 0 0.2rem;
+}
+
+.piper-add-form {
+    display: flex;
+    gap: 0.3rem;
+    margin: 0.4rem 0;
+}
+
+.piper-add-form input {
+    flex: 1;
+    min-width: 0;
+    height: 1.8rem;
+    font-size: 0.85rem;
+}
+
+.piper-warning {
+    margin: -0.2rem 0 0.5rem;
+    color: var(--warning);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.piper-carry {
+    margin: -0.1rem 0 0.3rem;
+}
+
+.piper-route {
+    margin: 0.8rem 0 0.3rem;
+    font-size: 0.8rem;
+}
+
+.piper-inspector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--border);
+}
+
+.piper-align {
+    margin: 0.8rem 0 0;
+}
+
+.piper-align-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.25rem;
+}
+
+.piper-subhead {
+    margin: 1.2rem 0 0.4rem;
+    font-size: 0.72rem;
+}
+
+.piper-fluids {
+    margin: 0 0 0.5rem;
+    padding: 0;
+    list-style: none;
+}
+
+.piper-fluids li {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.15rem 0;
+}
+
+.piper-fluid-editor {
+    margin: 0.5rem 0;
+}
+
+.piper-fluid-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.25rem 0;
+}
+
+.piper-fluid-row input {
+    min-width: 0;
+    height: 1.7rem;
+    padding: 0 0.4rem;
+    font-size: 0.8rem;
+}
+
+.piper-fluid-row input[type="color"],
+.piper-state-colors input[type="color"] {
+    flex: none;
+    width: 1.9rem;
+    height: 1.7rem;
+    padding: 0.1rem;
+}
+
+.piper-fluid-row input:not([type="color"]) {
+    flex: 1;
+}
+
+.piper-fluid-row .piper-fluid-label {
+    flex: 0 0 4rem;
+    font-weight: 700;
+}
+
+.piper-state-colors {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: flex-start;
+}
+
+/* What a test says of the part selected. */
+.piper-reading {
+    margin-top: 0.9rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.piper-reading p {
+    margin: 0 0 0.4rem;
+}
+
+.piper-reading-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sparkline {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-bottom: 0.4rem;
+}
+
+/* The test's timeline, under the drawing. */
+.piper-test {
+    flex: none;
+    padding: 0.5rem 0.9rem 0.6rem;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+}
+
+.piper-test-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.piper-test-head h2,
+.piper-panel-head h2 {
+    margin: 0;
+    font-size: 0.75rem;
+}
+
+.piper-test-head select {
+    min-width: 14rem;
+    max-width: 28rem;
+    height: 1.9rem;
+    font-size: 0.85rem;
+}
+
+.piper-test-head .piper-close {
+    margin-left: auto;
+}
+
+.piper-test-count {
+    font-size: 0.82rem;
+}
+
+.piper-timeline {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.45rem;
+}
+
+.piper-play {
+    width: 2.2rem;
+}
+
+.piper-track {
+    position: relative;
+    flex: 1;
+    min-width: 8rem;
+}
+
+.piper-track input[type="range"] {
+    width: 100%;
+    height: 1.6rem;
+    padding: 0;
+    border: none;
+    background: none;
+    accent-color: var(--primary);
+}
+
+.piper-event {
+    position: absolute;
+    top: -0.35rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-left: -0.275rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--gold);
+    cursor: pointer;
+}
+
+.piper-time {
+    min-width: 6.5rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.88rem;
+    text-align: right;
+}
+
+.piper-timeline select {
+    height: 1.9rem;
+    font-size: 0.85rem;
+}
+
+.piper-missing {
+    margin: 0.35rem 0 0;
+    color: var(--warning);
+}
+
+/* The history, beside the drawing. */
+.piper-history {
+    flex: none;
+    width: 18rem;
+    overflow-y: auto;
+    padding: 0.7rem 0.9rem 2rem;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    font-size: 0.88rem;
+}
+
+.piper-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.piper-revisions {
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.piper-revisions li {
+    padding: 0.55rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.piper-revisions li[aria-current="true"] {
+    background: var(--accent-soft);
+}
+
+.piper-revision-head {
+    display: flex;
+    align-items: center;
+}
+
+.piper-revision-note {
+    margin: 0.2rem 0 0;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.piper-revisions p {
+    margin: 0.2rem 0 0;
+}
+
+.piper-revision-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+}
+
+@media (max-width: 1100px) {
+    .piper-library {
+        width: 12.5rem;
+    }
+
+    .piper-inspector {
+        width: 16rem;
+    }
+}
+
+/* --- Help --------------------------------------------------------------------------------------------------------- */
+
+.piper-help-layout {
+    display: grid;
+    grid-template-columns: 12rem minmax(0, 46rem);
+    gap: 3rem;
+    align-items: start;
+    margin: 0.5rem 0 3rem;
+}
+
+.piper-help-contents {
+    position: sticky;
+    top: 4.75rem;
+}
+
+.piper-help-contents ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-left: 1px solid var(--border);
+}
+
+.piper-help-contents a {
+    display: block;
+    margin-left: -1px;
+    padding: 0.3rem 0 0.3rem 0.9rem;
+    border-left: 2px solid transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.piper-help-contents a:hover {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.piper-help-contents a[aria-current="true"] {
+    border-left-color: var(--gold);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.piper-help-topics section {
+    padding: 1.5rem 0 1.25rem;
+    border-top: 1px solid var(--border);
+    scroll-margin-top: 4.5rem;
+}
+
+.piper-help-topics section:first-child {
+    padding-top: 0;
+    border-top: none;
+}
+
+.piper-help-topics h2 {
+    margin: 0 0 0.75rem;
+}
+
+.piper-help-topics ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.piper-help-topics li {
+    margin: 0.5rem 0;
+    line-height: 1.6;
+}
+
+.piper-help-topics li::marker {
+    color: var(--muted);
+}
+
+.piper-help code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+}
+
+.piper-help kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font: 600 0.78rem / 1.5 inherit;
+    text-align: center;
+}
+
+.piper-help-keys {
+    margin: 0;
+}
+
+.piper-help-keys div {
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.piper-help-keys div:last-child {
+    border-bottom: none;
+}
+
+.piper-help-keys dt {
+    font-weight: 600;
+}
+
+.piper-help-keys dd {
+    margin: 0;
+    color: var(--muted);
+}
+
+@media (max-width: 900px) {
+    .piper-help-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.5rem;
+    }
+
+    .piper-help-contents {
+        position: static;
+    }
+
+    .piper-help-contents ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 1.1rem;
+        border-left: none;
+    }
+
+    .piper-help-contents a {
+        margin-left: 0;
+        padding: 0.15rem 0;
+        border-left: none;
+    }
+}
+
+/* A file dragged over the diagrams' list: dropped, it's imported. */
+.piper-dropping {
+    outline: 2px dashed var(--accent);
+    outline-offset: 0.75rem;
+    border-radius: var(--radius-large);
+}
+
+.piper-imported {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.piper-imported li {
+    margin: 0.4rem 0;
+}
+
+.piper-imported p {
+    margin: 0.2rem 0 0;
+}

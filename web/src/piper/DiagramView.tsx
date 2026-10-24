@@ -1,0 +1,539 @@
+import { memo, useMemo, type ReactNode } from "react";
+import type { Palette } from "./colors";
+import type { Drawing, Line, Part, Point } from "./drawing";
+import { sharedTags } from "./edit";
+import { fluidOf, isGas } from "./fluids";
+import { grow, middleOfLongest, partTransform, segmentsOf } from "./geometry";
+import { pathsWithHops } from "./hops";
+import { labelPlace, lineLabel, partLabel } from "./labels";
+import { FONT } from "./library/draw";
+import { boxOf, kindOf } from "./library/index";
+import type { DiagramMeta, DrawContext } from "./library/kinds";
+import { linesOn, partsById, pathOf, portsOf } from "./ports";
+import type { ValveState } from "./testdata";
+
+// A drawing, drawn: regions, then lines (in their fluids' colors, hopping where they cross), then parts, their labels,
+// and what a test says of them. The editor draws it with what it needs to be worked on (where a click lands, ports,
+// handles, what's selected); exports draw it bare.
+
+/** What a test says of a part at the time shown: its channel's value, and a valve's state. */
+export interface LiveValue {
+    text: string;
+    state: ValveState | null;
+    missing: boolean; // it names a channel the test doesn't have
+}
+
+export const LINE_STYLES: Record<Line["kind"], { width: number; dash?: string }> = {
+    pipe: { width: 2.5 },
+    tube: { width: 1.8 },
+    hose: { width: 2.2, dash: "10 3 2 3" },
+    pneumatic: { width: 1.4 },
+    electric: { width: 1.3, dash: "7 4" },
+    signal: { width: 1.3, dash: "2 3" },
+};
+
+interface Props {
+    drawing: Drawing;
+    palette: Palette;
+    meta: DiagramMeta;
+    selection?: ReadonlySet<string>;
+    live?: ReadonlyMap<string, LiveValue> | null;
+    /** Drawn to be worked on: where clicks land, handles on what's selected, and ports where they're wanted. */
+    interactive?: boolean;
+    zoom?: number;
+    ports?: ReadonlySet<string> | "all"; // whose ports show: the part under the pointer, or all while a line's drawn
+}
+
+export function DiagramView({
+    drawing,
+    palette,
+    meta,
+    selection = EMPTY,
+    live = null,
+    interactive = false,
+    zoom = 1,
+    ports = EMPTY,
+}: Props) {
+    const parts = useMemo(() => partsById(drawing), [drawing]);
+    const paths = useMemo(() => new Map(drawing.lines.map((line) => [line.id, pathOf(parts, line)])), [drawing, parts]);
+    const hopped = useMemo(() => pathsWithHops(paths), [paths]);
+    const shared = useMemo(() => sharedTags(drawing), [drawing]);
+    const behind = drawing.parts.filter((part) => kindOf(part.kind).behind);
+    const front = drawing.parts.filter((part) => !kindOf(part.kind).behind);
+    const reach = 12 / zoom; // how far from a line a click still lands on it
+
+    const contextOf = (part: Part): DrawContext => {
+        const kind = kindOf(part.kind);
+        const state = live?.get(part.id)?.state ?? null;
+        const normal = part.props.normal;
+        const fill = state
+            ? { open: palette.no, closed: palette.nc, other: palette.other }[state]
+            : kind.state && normal === "NO"
+              ? palette.no
+              : kind.state && normal === "NC"
+                ? palette.nc
+                : null;
+        const holds = fluidOf(drawing, part.props.fluid ?? "");
+        const on = linesOn(drawing, part.id);
+        const piped = on.map(({ line }) => fluidOf(drawing, line.fluid)?.color).find(Boolean) ?? null;
+        return {
+            ink: palette.ink,
+            paper: palette.paper,
+            muted: palette.muted,
+            fill,
+            fluid: holds?.color ?? null,
+            fluidLabel: holds?.label ?? "",
+            gas: holds ? isGas(holds.id) : false,
+            pipe: on.length > 0 ? (piped ?? palette.ink) : null,
+            lines: on.length,
+            states: { no: palette.no, nc: palette.nc },
+            drawing,
+            meta,
+        };
+    };
+
+    return (
+        <g className="piper-drawing">
+            {behind.map((part) => (
+                <PartView
+                    key={part.id}
+                    part={part}
+                    context={contextOf(part)}
+                    interactive={interactive}
+                    box={kindOf(part.kind).box(part, drawing)}
+                />
+            ))}
+            {drawing.lines.map((line) => (
+                <LineView
+                    key={line.id}
+                    line={line}
+                    d={hopped.get(line.id) ?? ""}
+                    path={paths.get(line.id) ?? []}
+                    color={fluidOf(drawing, line.fluid)?.color ?? palette.ink}
+                    halo={selection.has(line.id) ? palette.select : null}
+                    interactive={interactive}
+                    reach={reach}
+                />
+            ))}
+            {drawing.lines.map((line) => {
+                const text = lineLabel(drawing, line);
+                const middle = text ? middleOfLongest(paths.get(line.id) ?? []) : null;
+                // Only where there's room for it beside the line: a short run between two parts goes without.
+                if (!middle || middle.length < Math.max(70, text.length * 6 + 40)) {
+                    return null;
+                }
+                return (
+                    <text
+                        key={`label-${line.id}`}
+                        x={middle.level ? middle.at.x : middle.at.x + 7}
+                        y={middle.level ? middle.at.y - 7 : middle.at.y}
+                        textAnchor={middle.level ? "middle" : "start"}
+                        dominantBaseline={middle.level ? "auto" : "central"}
+                        fontSize={9.5}
+                        fontFamily={FONT}
+                        fontWeight={700}
+                        fill={fluidOf(drawing, line.fluid)?.color ?? palette.ink}
+                        stroke={palette.paper}
+                        strokeWidth={3}
+                        paintOrder="stroke"
+                        pointerEvents="none"
+                    >
+                        {text}
+                    </text>
+                );
+            })}
+            {front.map((part) => (
+                <PartView
+                    key={part.id}
+                    part={part}
+                    context={contextOf(part)}
+                    interactive={interactive}
+                    box={kindOf(part.kind).box(part, drawing)}
+                />
+            ))}
+            {front.map((part) => (
+                <PartLabel
+                    key={`label-${part.id}`}
+                    drawing={drawing}
+                    part={part}
+                    palette={palette}
+                    shared={shared.has(part.tag.trim().toUpperCase())}
+                    interactive={interactive}
+                />
+            ))}
+            {live && <LiveBadges drawing={drawing} live={live} palette={palette} />}
+            {interactive && (
+                <Handles
+                    drawing={drawing}
+                    paths={paths}
+                    selection={selection}
+                    palette={palette}
+                    zoom={zoom}
+                    ports={ports}
+                />
+            )}
+        </g>
+    );
+}
+
+const EMPTY: ReadonlySet<string> = new Set();
+
+const PartView = memo(function PartView({
+    part,
+    context,
+    interactive,
+    box,
+}: {
+    part: Part;
+    context: DrawContext;
+    interactive: boolean;
+    box: readonly [number, number, number, number];
+}) {
+    const kind = kindOf(part.kind);
+    const [x0, y0, x1, y1] = box;
+    return (
+        <g
+            transform={partTransform(part)}
+            data-hit={interactive ? `part:${part.id}` : undefined}
+            data-kind={part.kind}
+            className={interactive ? "piper-part" : undefined}
+            role={interactive ? "button" : undefined}
+            aria-label={interactive ? `${part.tag || kind.name}` : undefined}
+        >
+            {kind.draw(part, context)}
+            {interactive &&
+                // Where a click lands on it: all of its box, not only its strokes. A region's only its edge, so
+                // what's in it can be clicked.
+                (kind.behind ? (
+                    <rect
+                        x={x0}
+                        y={y0}
+                        width={x1 - x0}
+                        height={y1 - y0}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth={12}
+                        pointerEvents="stroke"
+                    />
+                ) : (
+                    <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill="transparent" />
+                ))}
+        </g>
+    );
+});
+
+/** Pneumatic signal lines' marks: a pair of slashes across each segment's middle. */
+function slashes(path: Point[]): string {
+    return segmentsOf(path)
+        .filter(({ a, b }) => Math.hypot(b.x - a.x, b.y - a.y) > 30)
+        .map(({ a, b }) => {
+            const x = (a.x + b.x) / 2;
+            const y = (a.y + b.y) / 2;
+            const level = Math.abs(a.y - b.y) < 1e-6;
+            return level
+                ? `M${x - 5} ${y + 4} L${x - 1} ${y - 4} M${x + 1} ${y + 4} L${x + 5} ${y - 4}`
+                : `M${x - 4} ${y - 5} L${x + 4} ${y - 1} M${x - 4} ${y + 1} L${x + 4} ${y + 5}`;
+        })
+        .join(" ");
+}
+
+/** Flow arrows: one at the middle of each long enough segment, pointing the way the line says flow goes. */
+function arrows(path: Point[], backward: boolean): string {
+    return segmentsOf(path)
+        .filter(({ a, b }) => Math.hypot(b.x - a.x, b.y - a.y) > 50)
+        .map(({ a, b }) => {
+            const [from, to] = backward ? [b, a] : [a, b];
+            const length = Math.hypot(to.x - from.x, to.y - from.y);
+            const ux = (to.x - from.x) / length;
+            const uy = (to.y - from.y) / length;
+            const tip = { x: (a.x + b.x) / 2 + ux * 5, y: (a.y + b.y) / 2 + uy * 5 };
+            const base = { x: tip.x - ux * 10, y: tip.y - uy * 10 };
+            return `M${tip.x} ${tip.y} L${base.x - uy * 5} ${base.y + ux * 5} L${base.x + uy * 5} ${base.y - ux * 5} Z`;
+        })
+        .join(" ");
+}
+
+const LineView = memo(function LineView({
+    line,
+    d,
+    path,
+    color,
+    halo,
+    interactive,
+    reach,
+}: {
+    line: Line;
+    d: string;
+    path: Point[];
+    color: string;
+    halo: string | null;
+    interactive: boolean;
+    reach: number;
+}) {
+    const style = LINE_STYLES[line.kind];
+    return (
+        <g data-line={line.id}>
+            {halo && (
+                <path
+                    d={d}
+                    fill="none"
+                    stroke={halo}
+                    strokeOpacity={0.3}
+                    strokeWidth={style.width + 7}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                />
+            )}
+            <path
+                d={d}
+                fill="none"
+                stroke={color}
+                strokeWidth={style.width}
+                strokeDasharray={style.dash}
+                strokeLinejoin="round"
+            />
+            {line.kind === "pneumatic" && <path d={slashes(path)} fill="none" stroke={color} strokeWidth={1.2} />}
+            {line.arrow !== "none" && <path d={arrows(path, line.arrow === "backward")} fill={color} />}
+            {interactive &&
+                segmentsOf(path).map((segment) => (
+                    <path
+                        key={segment.index}
+                        d={`M${segment.a.x} ${segment.a.y} L${segment.b.x} ${segment.b.y}`}
+                        stroke="transparent"
+                        strokeWidth={reach}
+                        fill="none"
+                        data-hit={`segment:${line.id}:${segment.index}`}
+                        className={
+                            Math.abs(segment.a.y - segment.b.y) < 1e-6 ? "piper-segment-level" : "piper-segment-upright"
+                        }
+                    />
+                ))}
+        </g>
+    );
+});
+
+function PartLabel({
+    drawing,
+    part,
+    palette,
+    shared,
+    interactive,
+}: {
+    drawing: Drawing;
+    part: Part;
+    palette: Palette;
+    shared: boolean;
+    interactive: boolean;
+}) {
+    const rows = partLabel(drawing, part);
+    if (rows.length === 0) {
+        return null;
+    }
+    const { at, anchor } = labelPlace(part, boxOf(part, drawing));
+    return (
+        <text
+            x={at.x}
+            y={at.y}
+            textAnchor={anchor}
+            fontFamily={FONT}
+            stroke={palette.paper}
+            strokeWidth={3}
+            paintOrder="stroke"
+            data-hit={interactive ? `label:${part.id}` : undefined}
+            className={interactive ? "piper-label" : undefined}
+        >
+            {shared && <title>Another part has this tag too</title>}
+            {rows.map((row, index) => (
+                <tspan
+                    key={index}
+                    x={at.x}
+                    dy={index === 0 ? 0 : 12}
+                    fontSize={row.tag ? 11 : 9.5}
+                    fontWeight={row.tag ? 700 : 500}
+                    fill={row.tag && shared ? palette.other : row.tag ? palette.ink : palette.muted}
+                >
+                    {row.text}
+                </tspan>
+            ))}
+        </text>
+    );
+}
+
+/** What a test says of each part, beside it: a sensor's value, a valve's state. */
+function LiveBadges({
+    drawing,
+    live,
+    palette,
+}: {
+    drawing: Drawing;
+    live: ReadonlyMap<string, LiveValue>;
+    palette: Palette;
+}) {
+    const badges: ReactNode[] = [];
+    for (const part of drawing.parts) {
+        const value = live.get(part.id);
+        if (!value) {
+            continue;
+        }
+        const box = boxOf(part, drawing);
+        const text = value.missing ? "no channel" : value.text || "—";
+        const width = text.length * 5.6 + 10;
+        const x = box.x1 + 4;
+        const y = box.y0 - 2;
+        const color = value.missing
+            ? palette.muted
+            : value.state === "open"
+              ? palette.no
+              : value.state === "closed"
+                ? palette.nc
+                : value.state === "other"
+                  ? palette.other
+                  : palette.select;
+        badges.push(
+            <g key={part.id} className="piper-live" data-live={part.id}>
+                <rect
+                    x={x}
+                    y={y - 8}
+                    width={width}
+                    height={15}
+                    rx={4}
+                    fill={palette.paper}
+                    stroke={color}
+                    strokeWidth={1.2}
+                />
+                <text
+                    x={x + width / 2}
+                    y={y}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={9.5}
+                    fontFamily={FONT}
+                    fontWeight={700}
+                    fill={value.missing ? palette.muted : palette.ink}
+                >
+                    {text}
+                </text>
+            </g>,
+        );
+    }
+    return <>{badges}</>;
+}
+
+/** What's needed to work on the drawing: outlines around what's selected, its handles, and ports to draw lines from. */
+function Handles({
+    drawing,
+    paths,
+    selection,
+    palette,
+    zoom,
+    ports,
+}: {
+    drawing: Drawing;
+    paths: Map<string, Point[]>;
+    selection: ReadonlySet<string>;
+    palette: Palette;
+    zoom: number;
+    ports: ReadonlySet<string> | "all";
+}) {
+    const size = 7 / zoom;
+    const handles: ReactNode[] = [];
+    for (const part of drawing.parts) {
+        if (!selection.has(part.id)) {
+            continue;
+        }
+        const box = grow(boxOf(part, drawing), 4);
+        handles.push(
+            <rect
+                key={`box-${part.id}`}
+                x={box.x0}
+                y={box.y0}
+                width={box.x1 - box.x0}
+                height={box.y1 - box.y0}
+                rx={3}
+                fill="none"
+                stroke={palette.select}
+                strokeWidth={1.2 / zoom}
+                strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+                pointerEvents="none"
+            />,
+        );
+        if (kindOf(part.kind).resizable && selection.size === 1) {
+            handles.push(
+                <rect
+                    key={`resize-${part.id}`}
+                    x={part.x + part.w / 2 - size / 2}
+                    y={part.y + part.h / 2 - size / 2}
+                    width={size}
+                    height={size}
+                    fill={palette.paper}
+                    stroke={palette.select}
+                    strokeWidth={1.5 / zoom}
+                    data-hit={`resize:${part.id}`}
+                    className="piper-resize"
+                />,
+            );
+        }
+    }
+    for (const line of drawing.lines) {
+        if (!selection.has(line.id) || selection.size > 1) {
+            continue;
+        }
+        const path = paths.get(line.id) ?? [];
+        for (const segment of segmentsOf(path)) {
+            const level = Math.abs(segment.a.y - segment.b.y) < 1e-6;
+            handles.push(
+                <rect
+                    key={`segment-${line.id}-${segment.index}`}
+                    x={(segment.a.x + segment.b.x) / 2 - size / 2}
+                    y={(segment.a.y + segment.b.y) / 2 - size / 2}
+                    width={size}
+                    height={size}
+                    rx={size / 4}
+                    fill={palette.select}
+                    data-hit={`segment:${line.id}:${segment.index}`}
+                    className={level ? "piper-segment-level" : "piper-segment-upright"}
+                />,
+            );
+        }
+        const ends: ["from" | "to", Point | undefined][] = [
+            ["from", path[0]],
+            ["to", path[path.length - 1]],
+        ];
+        for (const [end, at] of ends) {
+            if (at) {
+                handles.push(
+                    <circle
+                        key={`end-${line.id}-${end}`}
+                        cx={at.x}
+                        cy={at.y}
+                        r={size * 0.7}
+                        fill={palette.paper}
+                        stroke={palette.select}
+                        strokeWidth={1.6 / zoom}
+                        data-hit={`end:${line.id}:${end}`}
+                        className="piper-end"
+                    />,
+                );
+            }
+        }
+    }
+    const showing = ports === "all" ? drawing.parts : drawing.parts.filter((part) => ports.has(part.id));
+    for (const part of showing) {
+        for (const port of portsOf(part)) {
+            handles.push(
+                <circle
+                    key={`port-${part.id}-${port.id}`}
+                    cx={port.at.x}
+                    cy={port.at.y}
+                    r={4.5 / zoom}
+                    fill={palette.paper}
+                    stroke={palette.select}
+                    strokeWidth={1.5 / zoom}
+                    data-hit={`port:${part.id}:${port.id}`}
+                    className="piper-port"
+                />,
+            );
+        }
+    }
+    return <>{handles}</>;
+}

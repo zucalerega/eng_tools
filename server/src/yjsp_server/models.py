@@ -1,5 +1,5 @@
 """The site's tables: accounts, their sign-in tokens, and the settings and whitelist admins choose. Each app keeps
-its own (vault/models.py, yorg/models.py). Timestamps are timezone-aware UTC (db.UTCDateTime)."""
+its own (vault/models.py, yorg/models.py, piper/models.py). Timestamps are timezone-aware UTC (db.UTCDateTime)."""
 
 import enum
 from datetime import datetime

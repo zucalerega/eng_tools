@@ -30,6 +30,12 @@ how many computers and which versions, and how many people in all), how hard the
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.
 
+Under who has the add-in, admins can set the oldest version of the add-in and the `vault`
+command that can change the vault, for when the team needs a release's fixes: older ones can
+still open, get, and browse files, but checking out, checking in, and anything else that
+changes the vault says to update first. It's off until an admin sets it, and it can be no
+newer than the `Vault-Setup.exe` the site offers, so everyone can update to it.
+
 Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
 your account only if its email is your GT address; otherwise it makes a new, empty one,
 and what you have checked out stays with the old one.
@@ -98,7 +104,11 @@ replaces Kenesto.
   assembly checked in on the web doesn't list its parts until it's next checked in from
   SolidWorks; a drawing stays linked to what it shows.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
-  which installs the add-in, and a button that connects it to the vault.
+  which installs the add-in, and a button that connects it to the vault. When there's a
+  newer add-in, **Update** appears at the top of the Vault tab: take it soon, since admins
+  can have the vault stop taking changes from older ones. If they have, the Vault tab says
+  the add-in is too old to make changes: click Update and close SolidWorks (or run the new
+  `Vault-Setup.exe`); until then, you can open and get files as before.
 - **When Open in SolidWorks can't open a file,** Vault says why: the Vault tab comes to the
   front with what it's doing, and a message says what went wrong (a file saved in a newer
   SolidWorks, the add-in turned off, still busy with your last click). Nothing at all

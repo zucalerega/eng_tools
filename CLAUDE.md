@@ -141,6 +141,8 @@ Server:
   200 characters. Compare them with `paths.key()` (`VaultPaths.Key` in C#), never
   `==`. `vault/paths.py` and `VaultPaths.cs` must agree; their tests share cases.
 - Permission checks go through `Access`. A file the user can't see is 404, not 403.
+- Every route that changes the vault takes `ChangingUser`, not `ActiveUser`, so the oldest
+  client admins set holds for it (`clients.refuse_old`). Reads take `ActiveUser`.
 - Timestamps are timezone-aware UTC (`db.UTCDateTime`).
 - When a change makes the server read SolidWorks files differently (`vault/solidworks.py`, `parasolid.py`, `brep.py`),
   bump `solidworks.READER`: the models an older reader made are then read again as they're next wanted. Models Vault
@@ -182,6 +184,10 @@ keep working with older clients:
 - So are the names a client or a browser keeps: the `vault://` link scheme, cookie and
   header names, where clients keep their files. Renaming one means accepting the old name
   until no client needs it, as docs/design.md, "Names from before YJSP", does.
+- The one exception is the admins' to make: the oldest add-in and CLI that can change the
+  vault (Admin > People, `min_client_version`), so a release's fixes reach every laptop.
+  It's off until an admin sets it, older clients can still read, and it can be no newer
+  than the installer offered (docs/design.md, "The oldest client that can make changes").
 
 ## Database migrations
 

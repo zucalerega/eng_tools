@@ -98,6 +98,17 @@ export class Team {
         await call("PATCH", "/api/settings", this.chief.token, { whitelist: on });
     }
 
+    /**
+     * Set the oldest add-in and vault command that can change the vault, as an admin does in Admin > People. Every
+     * test starts with any version allowed, as a new server has it, so any is allowed again when the test finishes.
+     */
+    async oldestClient(version: string | null): Promise<void> {
+        onTestFinished(async () => {
+            await call("PATCH", "/api/settings", this.chief.token, { min_client_version: null });
+        });
+        await call("PATCH", "/api/settings", this.chief.token, { min_client_version: version });
+    }
+
     async settings(): Promise<SiteSettings> {
         return call<SiteSettings>("GET", "/api/settings", this.chief.token);
     }

@@ -230,7 +230,15 @@ on top of it.
   level once it's here (`Workspace.GetUsedFilesAsync`), and `Workspace.FindUsedFiles` takes
   each to the vault file whose path ends the same way, with the most folders matching (none
   if two match as well); those come down with it, and kept paths nothing matches are
-  listed. A file placed with 3D Interconnect (a STEP file, say) is kept as the document
+  listed. A path in the workspace means the file there. Where the vault has no file there
+  any more, and none is on disk, the file was deleted, as when a folder is uploaded again
+  under another name and the old copies deleted: an assembly saved before then still names
+  them (`C:\VLT\09_Hopper\Tanks\Assy - Fuel Tank.SLDASM`, now `Hopper/Tanks/...`). Such a
+  path means the vault file whose path ends most like it, with its folder's name the same
+  at least, so a part not checked in yet is never taken for another of its name (none if
+  two end alike). A copy of the deleted file still on disk (Deleted in the vault, until an
+  update removes it) is what SolidWorks opens there, as before.
+  A file placed with 3D Interconnect (a STEP file, say) is kept as the document
   SolidWorks made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`), never on disk,
   so where no vault file has that name, it means the vault file of the name it was made
   from (`BMS.step`): of several, the one whose folders, from the top, are most like those
@@ -241,7 +249,7 @@ on top of it.
   that's here can be missing its parts, and it waits for a refresh that's running rather
   than skip the check. When SolidWorks can't find a file anyway, the add-in's
   `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's
-  here, or else at the file here at the longest end of the path
+  here, or else, for a path from elsewhere, at the file here at the longest end of the path
   (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
   references (see "A check-in of unchanged contents" above); one that uses files the vault
   can't have (missing, or outside the workspace) names them all at once, and nothing is

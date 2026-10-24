@@ -3,24 +3,15 @@
 from datetime import datetime
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from ..api.schemas import UserRef
+from ..api.schemas import FolderPath, UserRef
 from ..models import User
 from .datasets import can_change
 from .ingest import Delimiter, ReadOptions, TimeFormat
 from .models import Channel, DataFolder, Dataset, Formula, View
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-
-
-def _tidy_folder(value: str) -> str:
-    """A folder path, tidied: forward slashes, no empty or padded parts ("" for none)."""
-    return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
-
-
-# Where a view or a script is kept: a path of folders, as "Hotfires/HF-3", or "" for none (at the top).
-FolderPath = Annotated[str, Field(max_length=300), AfterValidator(_tidy_folder)]
 
 
 def _ref(user: User | None) -> UserRef | None:

@@ -1,5 +1,6 @@
-// Folders that are paths of their own ("Hotfires/HF-3"), not the datasets' folders: saved views', and the Python
-// window's scripts'. The server tidies a path as tidyFolder does (yorg/schemas.py, FolderPath).
+// Folders that are paths of their own ("Hotfires/HF-3"): Yorg's saved views' and scripts' (not its datasets', which
+// are a tree of their own), and Piper's diagrams'. The server tidies a path as tidyFolder does (api/schemas.py,
+// FolderPath).
 
 /** A folder: what's in it, then its folders. */
 export interface Folder<T> {

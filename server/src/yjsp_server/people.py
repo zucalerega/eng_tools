@@ -1,6 +1,7 @@
 """Accounts as admins and their owners change them: inviting, approving, and disabling people, admin rights, the
-whitelist and the emails on it, and your own name; and who has been on when, how many each day, how hard the server
-is working, and how full its disk is.
+whitelist and the emails on it, and your own name; the site's settings (the whitelist, and the oldest Vault client that
+can change the vault); and who has been on when, how many each day, how hard the server is working, and how full its
+disk is.
 
 Vault's index carries people's names and what they may see, so a change here makes every Vault client sync everything
 again (vault.people_changed), and it goes in Vault's activity log (vault.log), the site's only one.
@@ -14,7 +15,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import auth, disk, load, usage
+from . import auth, clients, disk, load, usage
 from .config import Settings
 from .errors import ApiError, Conflict, Forbidden, NotFound
 from .models import SiteSettings, Token, User, UserStatus, WhitelistEmail
@@ -146,7 +147,8 @@ def rename_self(db: Session, user: User, name: str) -> User:
 
 
 def site_settings(db: Session, user: User) -> SiteSettings:
-    """What admins decide for everyone: whether new people need an invite or approval to join (the whitelist)."""
+    """What admins decide for everyone: whether new people need an invite or approval to join (the whitelist), and the
+    oldest Vault client that can change the vault."""
     _require_admin(user)
     return db.get_one(SiteSettings, 1)
 
@@ -170,16 +172,30 @@ def disk_usage(db: Session, admin: User, settings: Settings) -> disk.DiskUsage:
     return disk.measure(db, settings)
 
 
-def update_site_settings(db: Session, admin: User, *, whitelist: bool | None = None) -> SiteSettings:
-    """Turn the whitelist on or off.
+def update_site_settings(
+    db: Session,
+    admin: User,
+    *,
+    whitelist: bool | None = None,
+    min_client_version: str | None = None,
+    offered: str | None = None,
+) -> SiteSettings:
+    """Turn the whitelist on or off, or set the oldest Vault client that can change the vault.
 
     Accounts that already exist keep their status either way. Off, anyone with a Georgia Tech account joins at once
     (auth._sign_in), and anyone still waiting for approval from before would join by signing in again, so they're
     approved now.
+
+    min_client_version is a version like "0.5.4", no newer than the installer offered now (offered, its version), or ""
+    to take changes from any client again; None leaves it as it is (clients.oldest_allowed).
     """
     _require_admin(admin)
+    oldest = None if min_client_version is None else clients.oldest_allowed(min_client_version, offered)
     seq = vault.begin_write(db)
     site = db.get_one(SiteSettings, 1)
+    if min_client_version is not None and oldest != site.min_client_version:
+        site.min_client_version = oldest
+        vault.log(db, admin, "update_settings", min_client_version=oldest)
     if whitelist is not None and whitelist != site.whitelist:
         site.whitelist = whitelist
         vault.log(db, admin, "update_settings", whitelist=whitelist)

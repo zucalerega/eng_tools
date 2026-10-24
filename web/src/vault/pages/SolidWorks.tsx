@@ -49,9 +49,10 @@ export function SolidWorks() {
                             </p>
                             <p>
                                 Have the add-in already? When there's a newer one, <strong>Update</strong> appears at
-                                the top of the Vault tab. Running this setup again updates it too, and keeps your
-                                sign-in and workspace. It installs the add-in new only with SolidWorks 2026; with
-                                SolidWorks 2025, it only updates one that's there.
+                                the top of the Vault tab: take it soon, since the vault can stop taking changes from
+                                older ones. Running this setup again updates it too, and keeps your sign-in and
+                                workspace. It installs the add-in new only with SolidWorks 2026; with SolidWorks 2025,
+                                it only updates one that's there.
                             </p>
                         </>
                     ) : downloads ? (
@@ -118,6 +119,17 @@ export function SolidWorks() {
             </ul>
             <h2>If something's not right</h2>
             <div className="faq">
+                <details>
+                    <summary>Vault says the add-in is too old to make changes</summary>
+                    <p>
+                        The vault takes check-outs, check-ins, and other changes only from the version it names and
+                        newer, so everyone has a release's fixes. Click <strong>Update</strong> at the top of the Vault
+                        tab and say yes to Windows, then close SolidWorks: setup finishes then. No Update there yet?
+                        Close SolidWorks and start it again, or download the installer here (step 1) and run it. Until
+                        then, you can still open and get files.
+                    </p>
+                    <p>The vault command says the same: download the new vault.exe from Other downloads, below.</p>
+                </details>
                 <details>
                     <summary>There's no Vault tab in SolidWorks</summary>
                     <p>

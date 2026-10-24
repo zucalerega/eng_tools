@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, onTestFinished, test, vi } from "vitest";
 import { renderApp, Team } from "./team";
 
-test("the site's address shows both apps, and each goes to its own pages", async () => {
+test("the site's address shows its apps, and each goes to its own pages", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/");
 
@@ -12,8 +12,9 @@ test("the site's address shows both apps, and each goes to its own pages", async
     const vault = home.getByRole("link", { name: /^Vault/ });
     expect(vault.getAttribute("href")).toBe("/vault");
     expect(home.getByRole("link", { name: /^Yorg/ }).getAttribute("href")).toBe("/yorg");
+    expect(home.getByRole("link", { name: /^Piper/ }).getAttribute("href")).toBe("/piper");
     expect(document.title).toBe("YJSP");
-    // Neither app's pages are open, so the top bar has no section of either.
+    // No app's pages are open, so the top bar has no section of any.
     expect(screen.queryByRole("navigation", { name: "Main" })?.textContent ?? "").toBe("");
 
     await userEvent.click(vault);
@@ -22,9 +23,9 @@ test("the site's address shows both apps, and each goes to its own pages", async
     expect(document.title).toBe("Vault");
 });
 
-test("the mark at the top left goes to the site's front page, from either app", async () => {
+test("the mark at the top left goes to the site's front page, from any app", async () => {
     const team = await Team.create();
-    for (const app of ["/vault", "/yorg"]) {
+    for (const app of ["/vault", "/yorg", "/piper"]) {
         renderApp(team.chief, app);
         const home = await screen.findByRole("link", { name: "YJSP home" });
         expect(home.getAttribute("href")).toBe("/");
@@ -61,7 +62,7 @@ test("an old link to a page of the vault's that isn't a file goes there too", as
     expect(await screen.findByRole("link", { name: "Checked out", current: "page" })).toBeTruthy();
 });
 
-test("an address that's no page says so, and offers both apps", async () => {
+test("an address that's no page says so, and offers the apps", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/nowhere");
     expect(await screen.findByText("There's no page here.")).toBeTruthy();

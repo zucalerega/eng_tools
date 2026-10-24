@@ -975,6 +975,16 @@ a.tag:hover {
     margin-left: 0;
 }
 
+/* Under it, the oldest version that can change the vault. */
+.oldest-version {
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.oldest-version .inline-form {
+    margin: 0.75rem 0 0.5rem;
+}
+
 /* Admin > People's trackers: stat tiles, and a chart. */
 
 .tracker-head {

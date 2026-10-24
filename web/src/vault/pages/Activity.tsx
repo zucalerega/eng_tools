@@ -275,6 +275,16 @@ function describe(event: VaultEvent): ReactNode {
                 </>
             );
         case "update_settings":
+            if ("min_client_version" in detail) {
+                return detail.min_client_version ? (
+                    <>
+                        {who} let only add-ins and vault commands {text("min_client_version")} and newer change the
+                        vault
+                    </>
+                ) : (
+                    <>{who} let add-ins and vault commands of any version change the vault</>
+                );
+            }
             return (
                 <>
                     {who} turned the whitelist {detail.whitelist ? "on" : "off"}

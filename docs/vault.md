@@ -296,6 +296,9 @@ These rules keep the data consistent. The code relies on them, so keep them true
 - **Every permission check goes through `access.Access`.** What the user can't see
   answers as what isn't there (see "Permissions"): `vault._find` finds files, and
   `Access.deepest` folders, as they see them.
+- **Every change takes `ChangingUser`.** A route that changes the vault depends on
+  `ChangingUser` (`api/deps.py`), not `ActiveUser`, so the oldest client admins set holds
+  for it (`clients.refuse_old`); reads take `ActiveUser`, so old clients can always read.
 - **Timestamps are timezone-aware UTC.**
 
 ## The local workspace (client)
@@ -450,6 +453,10 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   Windows session, which has the add-in loaded, then installs, keeping sign-in, settings,
   and workspaces. Add-ins before Update (0.4.0 and older) have none: run setup by hand
   once. Add-ins up to 0.5.2 don't check signatures.
+  People take Update when they get round to it, so admins can have the vault take changes
+  only from add-ins (and CLIs) at least as new as a version they set, in Admin > People
+  (design.md, "The oldest client that can make changes"): an older add-in can still open,
+  get, and browse files, and update itself, and anything else it tries says how to update.
 
 - **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
   menu (the vault, the workspace, the web app, sign out); a card for the active document,
@@ -899,6 +906,14 @@ are in [design.md](design.md#api).
 | `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
 | `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |
 | `POST /api/drawings/missing` | which of these `{drawings: [{file_id, version}]}` have no PDF yet, of files you can see: what the add-in makes |
+
+Once admins set the oldest client that can change the vault (design.md, "The oldest client
+that can make changes"), every endpoint here that changes something (the `POST`s and
+`PUT`s, uploads included, but not Caliper's `POST`s, which only read) answers an older
+add-in's or CLI's request with 426 `client_too_old`, a message saying how to update, and
+`details`: `{version, min_client_version}`. It's the one exception to the server's taking
+requests from every older client, and it's off unless an admin sets it, for a release the
+team needs.
 
 ## Roadmap
 

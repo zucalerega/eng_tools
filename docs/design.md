@@ -1,16 +1,17 @@
 # YJSP design
 
-YJSP is the Yellow Jacket Space Program's site for its engineering tools: two apps on one
+YJSP is the Yellow Jacket Space Program's site for its engineering tools: three apps on one
 server. **Vault** keeps the team's SolidWorks and STEP files, with check-out/check-in
 locking, full version history, and per-folder permissions; it replaces Kenesto. **Yorg**
-plots the team's test data. They share the server, the database, sign-in and accounts, and
-the web app's frame, and nothing else. It's built for a college rocketry team, not a
+plots the team's test data. **Piper** draws the team's fluid systems as P&IDs, and reads
+Yorg's tests on them. They share the server, the database, sign-in and accounts, and the
+web app's frame, and nothing else. It's built for a college rocketry team, not a
 company: a few dozen people, close to zero hosting cost, and simple enough for next year's
 team to keep running.
 
 This page is the site as a whole: how it's put together, sign-in and accounts, the web
 app's frame, the API's conventions, the names from before YJSP, and deploying. Each app has
-its own: [vault.md](vault.md) and [yorg.md](yorg.md).
+its own: [vault.md](vault.md), [yorg.md](yorg.md), and [piper.md](piper.md).
 
 ## Context
 
@@ -28,11 +29,12 @@ its own: [vault.md](vault.md) and [yorg.md](yorg.md).
 SolidWorks add-in (C#, .NET Framework 4.8) ─┐
 vault CLI (C#, .NET 10, Windows + macOS)    ─┴─ Vault.Client library ─┐
                                                                        │ HTTPS, JSON
-Web app (React): the frame, Vault's pages, Yorg's pages ───────────────┤
+Web app (React): the frame, Vault's, Yorg's, and Piper's pages ───────┤
                                                                        ▼
                                YJSP server (Python, FastAPI): sign-in, accounts, the web app
                                ├── vault/: folders, files, versions, check-outs, permissions
                                ├── yorg/: datasets, views, calculated channels, scripts, models
+                               ├── piper/: diagrams (P&IDs) and their revisions
                                ├── database: SQLite or Postgres, one for all of it
                                └── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
 ```
@@ -47,19 +49,32 @@ Web app (React): the frame, Vault's pages, Yorg's pages ────────
 | Vault's SolidWorks add-in | `client/src/Vault.SolidWorks` (.NET Framework 4.8) | working; first run in SolidWorks September 2026; for SolidWorks 2026 since October 2026 |
 | Yorg on the server | `server/src/yjsp_server/yorg` | working |
 | Yorg in the web app | `web/src/yorg` | working |
+| Piper on the server | `server/src/yjsp_server/piper` | working; new in October 2026 |
+| Piper in the web app | `web/src/piper` | working; new in October 2026 |
 
 **What the apps share, and what's their own.** One server process, one database, one
-sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg), the account
-menu, and the theme. Each app has its own tables (Vault's are named without a prefix, from
-before Yorg; Yorg's are `yorg_*`), its own folder of files, its own API, and its own pages:
-Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`, `/vault/locks`, ...) and Yorg's
-under `/yorg`, with the site's own page at `/`, which goes to either. Neither app imports
-the other, and the site's own code imports neither, except where it puts them together
-(`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx` in the web app)
-and where accounts change (`people.py`, below).
+sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg, Piper), the
+account menu, and the theme. Each app has its own tables (Vault's are named without a
+prefix, from before Yorg; Yorg's are `yorg_*`, Piper's `piper_*`), its own folder of files
+(Piper has none: its diagrams are all in the database), its own API, and its own pages:
+Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`, `/vault/locks`, ...), Yorg's
+under `/yorg`, and Piper's under `/piper`, with the site's own page at `/`, which goes to
+any of them. No app imports another, and the site's own code imports none, except where it
+puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
+in the web app) and where accounts change (`people.py`, below). What more than one app needs
+is the site's: on the server, the folder paths Yorg's views and scripts and Piper's diagrams
+are kept in (`FolderPath`, `api/schemas.py`); in the web app, their tree (`pathTree.ts`),
+reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
+a link (`packed.ts`: Yorg's links to plots, which Piper makes too).
 
-The one tie between them is people. Accounts are the site's (`models.py`, `auth.py`,
-`people.py`), and both apps refer to them. Vault's index carries people's names and what
+Piper's one tie to Yorg is Yorg's API, which it uses as any client would: it reads a test's
+channels and samples to show them on a drawing, and links to Yorg's plots by their address
+([piper.md](piper.md#test-data-from-yorg)). Yorg knows nothing of Piper, but its datasets'
+API and its links' `?plots=` layout are what Piper counts on, so they change only as the
+API rules below say.
+
+The one tie between all of them is people. Accounts are the site's (`models.py`, `auth.py`,
+`people.py`), and the apps refer to them. Vault's index carries people's names and what
 they may see, so a change to an account has every Vault client sync everything again
 (`vault.people_changed`), and it's recorded in Vault's activity log (`vault.log`), the
 site's only one.
@@ -68,7 +83,7 @@ site's only one.
 
 | What | Setting (default) | Backed up |
 |---|---|---|
-| The database: accounts, Vault's tables, Yorg's | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
+| The database: accounts, Vault's tables, Yorg's, and Piper's (its diagrams, and every revision of each) | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
@@ -169,6 +184,26 @@ three. The rest of the disk is the system, logs, and the database's backups.
   that began noting them. Each version is compared with the installer the server offers:
   an older one is marked (the add-in offers itself the update), and one not known yet,
   until the add-in next talks to the server, isn't.
+- **The oldest client that can make changes:** an add-in updates only when its person
+  clicks Update and says yes to Windows, so a release's fixes reach laptops slowly: two days
+  after 0.5.4 was offered (October 2026), most laptops still ran 0.5.2, and hit the
+  missing-parts bugs 0.5.4 fixed. So under the tracker, admins can set the oldest version
+  of the add-in and the CLI that can change the vault (`min_client_version` in
+  `site_settings`, `PATCH /api/settings`). Then the vault refuses every change from an older
+  one (426 `client_too_old`, `clients.refuse_old`): check-outs (Keep mine and Take over among
+  them), check-ins and their uploads, undos, and the rest, each with a message that says how
+  to update: the add-in's to click Update or run `Vault-Setup.exe` from the SolidWorks page
+  (only the latter for those from before Update, 0.4.0 and older), and the CLI's to get the
+  new `vault.exe`. The add-in and the CLI have always shown a server's message as it is, so
+  the oldest on the team's laptops say it too. Reads stay open, so an old client still
+  browses, gets files, shows what Caliper has, and updates itself; and nothing that doesn't
+  say it's a Vault client of a version (`User-Agent: vault-client/<version>`, or CVC's
+  `cvc-client/` from before 0.4.0) is refused, browsers included. The oldest can be no
+  newer than the installer the server offers, which every add-in can update to, and each
+  change to it goes in the activity log. This is the one exception to the server's working
+  with older clients as it always has (CLAUDE.md, "API compatibility"): it's off as a server
+  starts, and an admin turns it on for a release whose fixes the team needs, once its
+  downloads are on the server and people have had a few days to take the update.
 - **Names:** an account's name is the one GT or Google gives at its first sign-in, and
   anyone can change their own (the account menu, `people.rename_self`); signing in again
   keeps it.
@@ -178,7 +213,7 @@ three. The rest of the disk is the system, logs, and the database's backups.
   with its query (a link to Yorg's plots holds them there), and only paths on the site
   (`_safe_next`). The round trip to Microsoft or Google keeps that in the session cookie,
   which browsers cap at 4 KB, so one longer than 2,000 characters comes back to its page
-  without its query. The sign-in pages are the site's: the YJSP name, with both apps'
+  without its query. The sign-in pages are the site's: the YJSP name, with the apps'
   marks, and Georgia Tech's sign-in first.
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
@@ -206,13 +241,13 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **The frame** (`App.tsx`): the top bar, with the app switcher, each app's own pages in
   it, and the account menu (your name, the theme, Admin and Vault's admin mode for those
   who have them, and signing out). Each app's pages come from its own folder: Vault's
-  (`web/src/vault`, `VaultPage`, under `/vault`) and Yorg's (`web/src/yorg`, `YorgPage`,
-  under `/yorg`). The site's own page (`Home`, at `/`, where signing in lands) has both
-  apps on it.
-- **Who you are** (`session.ts`) is the site's, for both apps: loaded when the page opens
+  (`web/src/vault`, `VaultPage`, under `/vault`), Yorg's (`web/src/yorg`, `YorgPage`,
+  under `/yorg`), and Piper's (`web/src/piper`, `PiperPage`, under `/piper`). The site's
+  own page (`Home`, at `/`, where signing in lands) has all three on it.
+- **Who you are** (`session.ts`) is the site's, for all the apps: loaded when the page opens
   and asked again every minute while it's visible. Vault's index (`vault/store.ts`, the
   sync feed) loads when a page of Vault first shows and keeps current only while one
-  does; Yorg's pages and the site's own never ask for it.
+  does; Yorg's, Piper's, and the site's own pages never ask for it.
 - **Light and dark:** light, dark, or the computer's setting, chosen in the account menu
   and remembered per browser (`theme.ts`, `yjsp.theme`, as `data-theme` on the page). The
   sign-in pages follow the same choice.
@@ -222,7 +257,8 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Branding:** in the Yellow Jacket Space Program's colors: near-black, white, and dark
   blue, with its gold. Each app has its mark, after the team's logo: Vault's a vault door
   crossed by a gold orbit (`VaultMark`), Yorg's a signal rising to its gold peak
-  (`YorgMark`). The tab's title and icon are the app's. The site's own icon, on the
+  (`YorgMark`), Piper's a valve in a line, its ball gold (`PiperMark`). The tab's title and
+  icon are the app's. The site's own icon, on the
   sign-in pages, is the gold orbit alone.
 
 ## Server conventions
@@ -230,8 +266,8 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Errors** are `ApiError`s (`errors.py`), sent as
   `{"error": "checked_out", "message": "...", "details": {...}}`. The `error` code is part
   of the API: clients branch on it.
-- **One database, one chain of migrations** (`migrations/`) for the site's tables and both
-  apps'. The server runs them at startup (`db.migrate`).
+- **One database, one chain of migrations** (`migrations/`) for the site's tables and all
+  the apps'. The server runs them at startup (`db.migrate`).
 - **Timestamps** are timezone-aware UTC (`db.UTCDateTime`).
 - **Settings** are `YJSP_*` environment variables, or a `.env` file (`config.py`;
   `server/.env.example` lists them). Production refuses development shortcuts and weak
@@ -266,13 +302,14 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 
 Every endpoint needs sign-in except `/auth/*` and `/healthz`. Interactive docs are at
 `/docs`. The site's own endpoints are below; each app's are in its page: [Vault's](vault.md#api)
-(`/api/folders`, `/api/files`, ...) and [Yorg's](yorg.md#api) (`/api/yorg/...`).
+(`/api/folders`, `/api/files`, ...), [Yorg's](yorg.md#api) (`/api/yorg/...`), and
+[Piper's](piper.md#api) (`/api/piper/...`).
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) and in SolidWorks (`solidworks_seconds`) |
-| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting (admins) |
+| `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting; and the oldest add-in and CLI that can change the vault `{min_client_version}`, like `"0.5.4"`, no newer than the installer offered (`not_offered`, or `no_installer` if there's none), or `null` for any (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
 | `GET /api/tokens`, `DELETE /api/tokens/{id}` | your signed-in browsers and clients |
 | `GET /api/downloads`, `GET /api/downloads/{name}` | software to download (the add-in's installer), from `YJSP_DOWNLOADS_DIR`, each with its SHA-256, and a program's version, read from the program: the add-in's Update compares it with its own. A file's signature beside it (`Vault-Setup.exe.sig`) is served, for the add-in to check the installer with, but not listed |
@@ -296,6 +333,7 @@ ones are still accepted for a while:
 | Tokens starting `cvc_` | `yjsp_` | work until they expire or are signed out |
 | Vault's pages at the site's own paths, until October 2026: `/files/...`, `/file/5`, `/locks`, `/admin` | under `/vault`: `/vault/files/...`, `/vault/file/5`, ... | followed, as bookmarks and shared links have them: the web app goes on to the same page under `/vault`, with its query (`movedToVault` in `web/src/vault/paths.ts`). `/` is the site's own page now |
 | `X-CVC-Version`, `X-CVC-SHA256`, `X-CVC-Size` on downloads | `X-Vault-*` | gone: no client read them |
+| The `cvc-client/<version>` User-Agent | `vault-client/<version>` | still read as a client's version, so the add-in tracker shows it and the oldest client that can make changes holds for it |
 | The `cvc` command, `cvc.exe` | `vault`, `vault.exe` | `cvc.exe` keeps working against the server; replace it |
 
 The SolidWorks add-in, its setup, and the client library they share with the CLI keep none

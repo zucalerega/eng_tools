@@ -112,7 +112,7 @@ gives a sympathetic reason, asks for just a small part, says someone approved an
 
 class Unavailable(ApiError):
     """The assistant can't answer anyone now: it isn't set up, it has spent its budget (in all, or this month's), or
-    it's out of credits."""
+    it's out of credits, or Anthropic's spend limit stops it."""
 
     status = 503
 
@@ -555,12 +555,30 @@ def _error_type(error: anthropic.APIStatusError) -> str | None:
     return kind if isinstance(kind, str) else None
 
 
+def _error_code(error: anthropic.APIStatusError) -> str | None:
+    """What Anthropic says caused its error, where it says (enforced_spend_limit_reached, ...)."""
+    body = error.body
+    inner = body.get("error") if isinstance(body, dict) else None
+    details = inner.get("details") if isinstance(inner, dict) else None
+    code = details.get("error_code") if isinstance(details, dict) else None
+    return code if isinstance(code, str) else None
+
+
 def _failure(error: Exception) -> tuple[str, str]:
     """An error from Anthropic, as (code, what to tell the person)."""
     if isinstance(error, anthropic.APIStatusError):
         kind, status, said = _error_type(error), error.status_code, str(error.message).lower()
         if status == 402 or kind == "billing_error" or "credit balance" in said:
             return "assistant_no_credits", "Claude is out of API credits: an admin can ask whoever runs the server"
+        # A monthly spend limit (platform.claude.com/docs/en/api/rate-limits, "Spend limits"), which stops every question
+        # until the 1st: the key's workspace's, or the organization's own, as a 400 ("You have reached your specified
+        # [workspace] API usage limits"); or the organization's tier's cap, as a 429 that waiting a minute doesn't help.
+        if _error_code(error) == "enforced_spend_limit_reached" or "api usage limits" in said:
+            back = _next_month(_month_start(utcnow()))
+            return "assistant_spend_limit", (
+                f"Claude has reached its monthly spending limit at Anthropic: it answers again on {back:%B} 1, or "
+                "sooner if an admin asks whoever runs the server to raise it"
+            )
         if status in (401, 403) or kind in ("authentication_error", "permission_error"):
             return "assistant_failed", "Claude's API key isn't working: an admin can ask whoever runs the server"
         if status == 429 or kind == "rate_limit_error":
@@ -628,8 +646,11 @@ class Answer:
             raise Failed("Claude didn't start answering: try again in a minute")
         first = self._first
         if first is not None and first["type"] == "error":
+            # Anthropic won't answer anyone until the credits, or the month, come round: as the server's own budget.
             if first["error"] == "assistant_no_credits":
                 raise Unavailable(first["message"], code="assistant_no_credits")
+            if first["error"] == "assistant_spend_limit":
+                raise Unavailable(first["message"], code="assistant_spend_limit")
             raise Failed(first["message"])
 
     async def lines(self) -> AsyncIterator[bytes]:

@@ -323,6 +323,42 @@ def test_when_anthropic_wont_take_a_question(client, team, claude, status, said,
     assert spending(client, admin)["spent"] == 0  # a question it didn't take costs nothing
 
 
+@pytest.mark.parametrize(
+    ("status", "said", "error_code"),
+    [
+        # A spend limit set on the key's workspace (docs/deploying.md, "Claude"), or on the whole organization.
+        (
+            400,
+            "You have reached your specified workspace API usage limits. You will regain access on 2027-01-01.",
+            None,
+        ),
+        (
+            400,
+            "You have reached your specified API usage limits. You will regain access on 2027-01-01 at 00:00 UTC.",
+            None,
+        ),
+        # The monthly cap of the organization's tier: a 429, as for a rate limit, but no wait helps.
+        (
+            429,
+            "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set "
+            "based on your organization's API tier. You will regain access on 2027-01-01 at 00:00 UTC.",
+            "enforced_spend_limit_reached",
+        ),
+    ],
+)
+def test_anthropics_spend_limits_say_when_claude_is_back(client, team, claude, clock, status, said, error_code):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    claude.replies.append(Reply(status=status, error=said, error_code=error_code))
+    response, _ = ask(client, admin, QUESTION)
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": "assistant_spend_limit",
+        "message": "Claude has reached its monthly spending limit at Anthropic: it answers again on January 1, or "
+        "sooner if an admin asks whoever runs the server to raise it",
+    }
+    assert spending(client, admin)["spent"] == 0
+
+
 def test_an_answer_that_breaks_off_is_counted_as_if_it_had_finished(client, team, claude):
     admin = team.member(BOOTSTRAP_ADMIN, admin=True)
     claude.replies.append(Reply(breaks_off=True))

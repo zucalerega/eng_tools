@@ -319,11 +319,13 @@ files or account, and it does nothing but answer.
   written all it could, as Anthropic may have gone on writing; one that Anthropic's own error
   ended counts what it wrote; and a question Anthropic never began counts nothing. The
   workspace the key belongs to has a spend limit of its own, at Anthropic (deploying.md,
-  "Claude"). Admin > People's *Claude* card shows the spending, this month and in all, and on
-  whose questions.
+  "Claude"), and when Anthropic refuses a question at it, or at the organization's monthly
+  cap, Help says so. Admin > People's *Claude* card shows the spending, this month and in all,
+  and on whose questions.
 - **When it can't answer**, it says why, with a code of its own: not set up (`assistant_off`),
   the budget in all spent (`assistant_spent`), this month's spent, saying when it answers again
-  (`assistant_month_spent`), out of credits at Anthropic (`assistant_no_credits`),
+  (`assistant_month_spent`), out of credits at Anthropic (`assistant_no_credits`), stopped by
+  a monthly spend limit at Anthropic, saying when it answers again (`assistant_spend_limit`),
   your daily limit reached (`assistant_daily_limit`), still answering your last question
   (`assistant_busy`), or Anthropic's API failing (`assistant_failed`).
 

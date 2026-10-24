@@ -686,6 +686,10 @@ a number. A few codes come up in more than one place.
 - **Claude is out of API credits** (`assistant_no_credits`): the site's credits for Claude have run
   out. Credits that come each month come back with the next month's; otherwise, an admin can ask
   whoever runs the server.
+- **Claude has reached its monthly spending limit at Anthropic: it answers again on ...**
+  (`assistant_spend_limit`): Anthropic stopped the site's questions at a monthly limit on its
+  account there, which starts again on the 1st (at 00:00 UTC, the evening before in the US). An
+  admin can ask whoever runs the server to raise it sooner; meanwhile, search this help.
 - **You've asked Claude as much as one person can in a day** (`assistant_daily_limit`): each
   person's questions can cost so much in 24 hours. As your questions from 24 hours ago fall out of
   that, you can ask again.

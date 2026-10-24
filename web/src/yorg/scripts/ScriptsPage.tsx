@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type SetStateActi
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
-import { FolderPicker } from "../FolderPicker";
+import { FolderPicker } from "../../FolderPicker";
 import { foldersOf } from "../../pathTree";
 import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";

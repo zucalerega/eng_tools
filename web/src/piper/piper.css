@@ -57,6 +57,42 @@
     color: var(--accent);
 }
 
+.piper-chevron {
+    width: 0.8rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+/* A diagram dragged onto a folder, as Yorg's saved views are: the folder it's over, and the top (no folder), shown as
+   it's dragged. */
+.piper-diagrams tr[draggable="true"] {
+    cursor: grab;
+}
+
+.piper-diagrams tr.piper-drop-folder td {
+    background: var(--accent-soft);
+}
+
+.piper-diagrams tr.piper-drop-folder td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.piper-drop-top {
+    margin: 0 0 0.75rem;
+    padding: 0.55rem 0.8rem;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 0.88rem;
+    text-align: center;
+}
+
+.piper-drop-top.piper-drop-folder {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
 .piper-description {
     display: block;
     font-size: 0.82rem;
@@ -1028,6 +1064,40 @@
     outline: 2px dashed var(--accent);
     outline-offset: 0.75rem;
     border-radius: var(--radius-large);
+}
+
+/* The Visio drawing to import, as a file: its icon, its name and size, and another to choose instead. */
+.piper-import-file {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.piper-import-name {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.piper-import-name strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.piper-import-name .muted {
+    font-size: 0.82rem;
+}
+
+/* Visio's own blue (inside the dialog, as the site's .file-icon may come after this in the stylesheet). */
+.piper-import-file .file-icon-visio {
+    background: #3955a3;
 }
 
 .piper-imported {

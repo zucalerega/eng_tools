@@ -18,8 +18,8 @@ import {
 import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
-import { FolderPicker } from "./FolderPicker";
-import { folderTree, foldersOf, type Folder } from "../pathTree";
+import { FolderPicker } from "../FolderPicker";
+import { countIn, folderTree, foldersOf, type Folder } from "../pathTree";
 import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";
@@ -1128,10 +1128,6 @@ function storedClosed(): Set<string> {
         return new Set();
     }
 }
-
-/** How many views a folder has, in it and in its folders. */
-const countIn = (folder: Folder<SavedView>): number =>
-    folder.items.length + folder.folders.reduce((sum, inner) => sum + countIn(inner), 0);
 
 const DRAGGED_VIEW = "application/x-yorg-view"; // a saved view's id, as it's dragged onto a folder
 

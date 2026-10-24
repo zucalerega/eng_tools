@@ -1,37 +1,13 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { dataTransfer, drag } from "./drag";
 import { renderApp, Team } from "./team";
 
 // Saved views and scripts in folders of their own: a folder picked from those there are (or a new one typed) as
 // they're saved, and dragged onto a folder, or out of one, on their lists.
 
 const DATA = ["Time (s),PT-TANK (psig)", "0,300", "1,301", "2,299"].join("\n");
-
-/** What a drag carries, as a browser would (jsdom has none). */
-function dataTransfer() {
-    const data: Record<string, string> = {};
-    const types: string[] = [];
-    return {
-        types,
-        dropEffect: "none",
-        effectAllowed: "all",
-        setData(type: string, value: string) {
-            data[type] = value;
-            types.push(type);
-        },
-        getData: (type: string) => data[type] ?? "",
-    };
-}
-
-/** Drag one thing onto another, as a mouse would. */
-function drag(what: Element, onto: () => Element) {
-    const transfer = dataTransfer();
-    fireEvent.dragStart(what, { dataTransfer: transfer });
-    fireEvent.dragOver(onto(), { dataTransfer: transfer });
-    fireEvent.drop(onto(), { dataTransfer: transfer });
-    fireEvent.dragEnd(what, { dataTransfer: transfer });
-}
 
 test("a view's folder is picked from those there are as it's saved", async () => {
     const team = await Team.create();

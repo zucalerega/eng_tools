@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Dialog, Notice, Time } from "../components";
-import { folderTree, foldersOf, tidyFolder, type Folder } from "../pathTree";
+import { FolderPicker } from "../FolderPicker";
+import { formatSize } from "../format";
+import { countIn, folderTree, foldersOf, tidyFolder, type Folder } from "../pathTree";
 import { Link, navigate } from "../router";
 import { piper, type Diagram } from "./api";
 import { emptyDrawing } from "./drawing";
@@ -8,10 +10,13 @@ import { example } from "./example";
 import { fluidOf } from "./fluids";
 import { readVisio, type ImportReport } from "./visio";
 
-// The diagrams, in their folders: each folder's the most recently changed first. Find looks in their names, folders,
-// descriptions, and the tags of their parts and lines (PT-101 finds the diagrams it's on).
+// The diagrams, in their folders: each folder's the most recently changed first, and a diagram dragged onto a folder
+// moves into it, as Yorg's saved views do. Find looks in their names, folders, descriptions, and the tags of their
+// parts and lines (PT-101 finds the diagrams it's on).
 
 const CLOSED = "piper.folders.closed"; // the folders shut in this browser
+const DRAGGED = "application/x-piper-diagram"; // a diagram's id, as it's dragged onto a folder
+const VISIO_FILES = ".vsdx,.vsd,.vdx";
 
 function storedClosed(): Set<string> {
     try {
@@ -29,8 +34,11 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
     const [find, setFind] = useState("");
     const [problem, setProblem] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
-    const [importing, setImporting] = useState<File | boolean>(false); // a file dropped on the page, or true to choose one
-    const [dropping, setDropping] = useState(false);
+    const [importing, setImporting] = useState<File | null>(null); // a Visio drawing picked, or dropped on the page
+    const [dropping, setDropping] = useState(false); // a file, over the page
+    const [dragging, setDragging] = useState(false); // a diagram, onto a folder
+    const [over, setOver] = useState<string | null>(null); // the folder it's over ("": the top)
+    const picker = useRef<HTMLInputElement>(null);
     const [deleting, setDeleting] = useState<Diagram | null>(null);
     const [closed, setClosed] = useState<Set<string>>(storedClosed);
     const words = find.trim();
@@ -95,6 +103,45 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
         }
     }
 
+    /** A diagram into a folder ("": out of its folder), as anyone can: its drawing stays as it is. */
+    async function move(id: number, folder: string) {
+        const diagram = shown?.find((one) => one.id === id);
+        if (!diagram || diagram.folder === folder) {
+            return;
+        }
+        setProblem(null);
+        try {
+            const moved = await piper.change(id, { folder });
+            // Moved, it's the most recently changed: first in its new folder.
+            const put = (list: Diagram[] | null) => list && [moved, ...list.filter((one) => one.id !== id)];
+            setDiagrams(put);
+            setFound(put);
+        } catch (error) {
+            setProblem(message(error));
+        }
+    }
+
+    /** What a folder (or the top) does with a diagram dragged onto it. */
+    const dropOn = (folder: string) => ({
+        onDragOver: (event: DragEvent) => {
+            if (event.dataTransfer.types.includes(DRAGGED)) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setOver(folder);
+            }
+        },
+        onDragLeave: () => setOver((now) => (now === folder ? null : now)),
+        onDrop: (event: DragEvent) => {
+            if (!event.dataTransfer.types.includes(DRAGGED)) {
+                return;
+            }
+            event.preventDefault();
+            setOver(null);
+            setDragging(false);
+            void move(Number(event.dataTransfer.getData(DRAGGED)), folder);
+        },
+    });
+
     async function restore(diagram: Diagram) {
         setProblem(null);
         try {
@@ -109,17 +156,25 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
     function rows(folder: Folder<Diagram>, depth: number): ReactNode[] {
         const shut = !searching && closed.has(folder.path);
         const head = folder.path ? (
-            <tr key={`folder:${folder.path}`} className="piper-folder-row">
+            <tr
+                key={`folder:${folder.path}`}
+                className={`piper-folder-row${over === folder.path ? " piper-drop-folder" : ""}`}
+                {...(deleted ? {} : dropOn(folder.path))}
+            >
                 <td colSpan={4} style={{ paddingLeft: `${depth * 1.25 + 0.75}rem` }}>
                     <button
                         type="button"
                         className="piper-folder"
                         aria-expanded={!shut}
+                        title={folder.path}
                         onClick={() => toggle(folder.path)}
                     >
-                        <span aria-hidden="true">{shut ? "▸" : "▾"}</span>
+                        <span className="piper-chevron" aria-hidden="true">
+                            {shut ? "▸" : "▾"}
+                        </span>
                         <span className="file-icon file-icon-folder" aria-hidden="true" />
                         {folder.name}
+                        <span className="muted">{countIn(folder)}</span>
                     </button>
                 </td>
             </tr>
@@ -132,11 +187,28 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
             head,
             ...folder.folders.flatMap((one) => rows(one, inner)),
             ...folder.items.map((diagram) => (
-                <tr key={diagram.id}>
+                <tr
+                    key={diagram.id}
+                    // Anyone's to drag onto a folder, as anyone can change a diagram; a deleted one stays where it was.
+                    draggable={!deleted}
+                    title={deleted ? undefined : "Drag it onto a folder to move it"}
+                    onDragStart={(event) => {
+                        event.dataTransfer.setData(DRAGGED, String(diagram.id));
+                        event.dataTransfer.effectAllowed = "move";
+                        setDragging(true);
+                    }}
+                    onDragEnd={() => {
+                        setDragging(false);
+                        setOver(null);
+                    }}
+                >
                     <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
                         <Link to={`/piper/diagrams/${diagram.id}`} className="name">
                             {diagram.name}
                         </Link>
+                        {searching && diagram.folder && (
+                            <span className="muted piper-description">in {diagram.folder}</span>
+                        )}
                         {diagram.description && <span className="muted piper-description">{diagram.description}</span>}
                     </td>
                     <td className="numeric">{diagram.parts}</td>
@@ -206,9 +278,12 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                 }
             }}
             onDrop={(event) => {
+                if (deleted || !event.dataTransfer.types.includes("Files")) {
+                    return; // a diagram onto a folder: the folder's
+                }
                 const file = event.dataTransfer.files[0];
                 setDropping(false);
-                if (!deleted && file) {
+                if (file) {
                     event.preventDefault();
                     setImporting(file);
                 }
@@ -218,9 +293,23 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                 <h1 className="page-title">{deleted ? "Deleted diagrams" : "Diagrams"}</h1>
                 {!deleted && (
                     <div className="page-actions">
-                        <button type="button" onClick={() => setImporting(true)}>
+                        <button type="button" onClick={() => picker.current?.click()}>
                             Import Visio…
                         </button>
+                        <input
+                            ref={picker}
+                            type="file"
+                            accept={VISIO_FILES}
+                            hidden
+                            aria-label="Visio drawing to import"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = "";
+                                if (file) {
+                                    setImporting(file);
+                                }
+                            }}
+                        />
                         <button type="button" className="button-primary" onClick={() => setCreating(true)}>
                             New diagram
                         </button>
@@ -241,6 +330,11 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                 onChange={(event) => setFind(event.target.value)}
             />
             {problem && <Notice tone="error">{problem}</Notice>}
+            {dragging && (
+                <div className={`piper-drop-top${over === "" ? " piper-drop-folder" : ""}`} {...dropOn("")}>
+                    Drop here to take it out of its folder
+                </div>
+            )}
             {shown === null ? (
                 <p className="muted">Loading…</p>
             ) : shown.length === 0 ? (
@@ -249,7 +343,7 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                         ? "No diagram has that."
                         : deleted
                           ? "No diagrams are deleted."
-                          : "No diagrams yet. Make the first with New diagram."}
+                          : "No diagrams yet. Make the first with New diagram, or import one from Visio."}
                 </p>
             ) : (
                 <div className="table-scroll">
@@ -269,12 +363,12 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
             <p className="piper-foot">
                 {deleted ? <Link to="/piper">All diagrams</Link> : <Link to="/piper/deleted">Deleted diagrams</Link>}
             </p>
-            {importing !== false && (
+            {importing && (
                 <ImportDialog
-                    file={importing === true ? null : importing}
+                    file={importing}
                     folders={foldersOf(diagrams ?? [])}
                     onDone={(made) => {
-                        setImporting(false);
+                        setImporting(null);
                         if (made.length > 0) {
                             void load();
                         }
@@ -318,6 +412,8 @@ function Fluid({ id }: { id: string }) {
     );
 }
 
+const NO_FOLDER = "None, or a new one, like Vespula/GSE";
+
 function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diagram | null) => void }) {
     const [name, setName] = useState("");
     const [folder, setFolder] = useState("");
@@ -360,18 +456,7 @@ function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diag
             </label>
             <label className="field">
                 Folder
-                <input
-                    value={folder}
-                    list="piper-folders"
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
-                />
-                <datalist id="piper-folders">
-                    {folders.map((path) => (
-                        <option key={path} value={path} />
-                    ))}
-                </datalist>
+                <FolderPicker value={folder} onChange={setFolder} folders={folders} placeholder={NO_FOLDER} />
             </label>
             <fieldset className="piper-start">
                 <legend>Start with</legend>
@@ -425,24 +510,22 @@ function DeleteDialog({ diagram, onDone }: { diagram: Diagram; onDone: (gone: Di
  * diagram is. What became of each page's shapes is said after.
  */
 function ImportDialog({
-    file: dropped,
+    file: picked,
     folders,
     onDone,
 }: {
-    file: File | null;
+    file: File; // picked with Import Visio, or dropped on the page
     folders: string[];
     onDone: (made: Diagram[]) => void;
 }) {
-    const [file, setFile] = useState<File | null>(dropped);
+    const [file, setFile] = useState(picked);
+    const other = useRef<HTMLInputElement>(null);
     const [folder, setFolder] = useState("");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     const [made, setMade] = useState<{ diagram: Diagram; report: ImportReport }[] | null>(null);
 
     async function run() {
-        if (!file) {
-            return;
-        }
         setBusy(true);
         setProblem(null);
         try {
@@ -511,38 +594,42 @@ function ImportDialog({
             title="Import a Visio drawing"
             confirm="Import"
             busy={busy}
-            disabled={!file}
             onConfirm={() => void run()}
             onCancel={() => onDone([])}
         >
+            <div className="piper-import-file">
+                <span className="file-icon file-icon-visio" data-letter="V" aria-hidden="true" />
+                <span className="piper-import-name">
+                    <strong>{file.name}</strong>
+                    <span className="muted">{formatSize(file.size)}</span>
+                </span>
+                <button type="button" className="button-small" disabled={busy} onClick={() => other.current?.click()}>
+                    Choose another…
+                </button>
+                <input
+                    ref={other}
+                    type="file"
+                    accept={VISIO_FILES}
+                    hidden
+                    aria-label="Another Visio drawing"
+                    onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen) {
+                            setFile(chosen);
+                            setProblem(null);
+                        }
+                    }}
+                />
+            </div>
             <p className="muted piper-small">
                 Each page becomes a diagram. Visio's P&ID shapes become Piper's parts (tagged with their text),
                 connectors become lines between them, and colored lines keep their colors as fluids to name. Visio 2013
                 and on save .vsdx files; save an older .vsd as one first.
             </p>
             <label className="field">
-                Visio drawing
-                <input
-                    type="file"
-                    accept=".vsdx,.vsd,.vdx"
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                />
-            </label>
-            {file && <p className="piper-small">{file.name}</p>}
-            <label className="field">
                 Folder
-                <input
-                    value={folder}
-                    list="piper-import-folders"
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
-                />
-                <datalist id="piper-import-folders">
-                    {folders.map((path) => (
-                        <option key={path} value={path} />
-                    ))}
-                </datalist>
+                <FolderPicker value={folder} onChange={setFolder} folders={folders} placeholder={NO_FOLDER} />
             </label>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>

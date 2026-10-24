@@ -5,6 +5,7 @@ import { emptyDrawing, type Drawing } from "../src/piper/drawing";
 import { addPart, connect } from "../src/piper/edit";
 import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
+import { dataTransfer, drag } from "./drag";
 import { renderApp, Team } from "./team";
 import { FEED, GLUE, vsdx } from "./visio";
 
@@ -55,6 +56,47 @@ test("Piper is the site's third app: its diagrams, in their folders", async () =
     expect(table.getByRole("link", { name: team.named("Cold flow stand") })).toBeTruthy();
     expect(table.getByRole("button", { name: /Vespula/ }).getAttribute("aria-expanded")).toBe("true");
     expect(table.getByRole("button", { name: /Prop/ })).toBeTruthy();
+});
+
+test("a diagram's folder is picked from those there are, and diagrams drag into folders and out", async () => {
+    const team = await Team.create();
+    const folder = `Prop ${team.folder}`;
+    await team.diagram(team.chief, "Feed system", undefined, folder);
+    const loose = await team.diagram(team.chief, "Cold flow stand");
+    renderApp(team.chief, "/piper");
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Find diagrams" }), team.folder);
+    const table = within(await screen.findByRole("table", { name: "Diagrams" }));
+    const folderRow = () => table.getByRole("button", { name: new RegExp(folder) }).closest("tr")!;
+    const count = () => folderRow().querySelector(".muted")?.textContent;
+    const row = () => table.getByRole("link", { name: loose.name }).closest("tr")!;
+    await waitFor(() => expect(count()).toBe("1"));
+
+    drag(row(), folderRow);
+    await waitFor(() => expect(count()).toBe("2"));
+    expect(within(row()).getByText(`in ${folder}`)).toBeTruthy(); // found, it says where it is
+    expect((await team.piperDiagram(team.chief, loose.id)).folder).toBe(folder);
+
+    // While one's dragged, the top takes it out of its folder.
+    const transfer = dataTransfer();
+    fireEvent.dragStart(row(), { dataTransfer: transfer });
+    const top = await screen.findByText("Drop here to take it out of its folder");
+    fireEvent.dragOver(top, { dataTransfer: transfer });
+    fireEvent.drop(top, { dataTransfer: transfer });
+    await waitFor(() => expect(count()).toBe("1"));
+    expect(screen.queryByText("Drop here to take it out of its folder")).toBeNull();
+
+    // A new diagram's folder is picked from the list.
+    await userEvent.click(screen.getByRole("button", { name: "New diagram" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "New diagram" }));
+    await userEvent.type(dialog.getByRole("textbox", { name: "Name" }), team.named("Oxidizer side"));
+    await userEvent.click(dialog.getByRole("combobox", { name: "Folder" }));
+    await userEvent.click(
+        within(screen.getByRole("listbox", { name: "Folders" })).getByRole("option", { name: folder }),
+    );
+    await userEvent.click(dialog.getByRole("button", { name: "Make it" }));
+    await screen.findByRole("application", { name: "Drawing" });
+    const made = await team.piperDiagram(team.chief, Number(window.location.pathname.split("/").pop()));
+    expect(made.folder).toBe(folder);
 });
 
 test("New diagram opens the editor: a part placed from the library is tagged, renamed, and saved", async () => {
@@ -331,12 +373,20 @@ test("whoever made a diagram deletes it to Deleted diagrams, and restores it; no
 test("Import Visio makes a diagram of a drawing's page, and says what became of its shapes", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/piper");
-    await userEvent.click(await screen.findByRole("button", { name: "Import Visio…" }));
+    // Import Visio… asks for the file first, as Yorg's Upload data does; the dialog shows it, to change.
+    const picker = await screen.findByLabelText<HTMLInputElement>("Visio drawing to import");
+    const click = vi.spyOn(picker, "click");
+    await userEvent.click(screen.getByRole("button", { name: "Import Visio…" }));
+    expect(click).toHaveBeenCalled();
+    await userEvent.upload(picker, new File(["not this one"], "Other.vsdx"));
     const dialog = within(await screen.findByRole("dialog", { name: "Import a Visio drawing" }));
+    expect(dialog.getByText("Other.vsdx")).toBeTruthy();
     await userEvent.upload(
-        dialog.getByLabelText("Visio drawing"),
+        dialog.getByLabelText("Another Visio drawing"),
         new File([vsdx(FEED, GLUE)], `Feed ${team.folder}.vsdx`),
     );
+    expect(dialog.getByText(`Feed ${team.folder}.vsdx`)).toBeTruthy();
+    expect(dialog.queryByText("Other.vsdx")).toBeNull();
     await userEvent.type(dialog.getByRole("combobox", { name: "Folder" }), "Imported");
     await userEvent.click(dialog.getByRole("button", { name: "Import" }));
     const done = within(await screen.findByRole("dialog", { name: "Imported" }));

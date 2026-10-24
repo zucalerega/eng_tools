@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
+import { FolderPicker } from "../FolderPicker";
 import { formatTime } from "../format";
+import { foldersOf } from "../pathTree";
 import { navigate, usePathname, useSearch } from "../router";
 import { piper, type Diagram, type RevisionDetail } from "./api";
 import { Canvas } from "./Canvas";
@@ -510,9 +512,22 @@ function EmptyHint() {
     );
 }
 
+/** The folders diagrams are in (and those they're in), to pick one from. */
+function useFolders(): string[] {
+    const [folders, setFolders] = useState<string[]>([]);
+    useEffect(() => {
+        piper.diagrams().then(
+            (diagrams) => setFolders(foldersOf(diagrams)),
+            () => {}, // none to pick from: a path can still be typed
+        );
+    }, []);
+    return folders;
+}
+
 function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed: Diagram | null) => void }) {
     const [name, setName] = useState(diagram.name);
     const [folder, setFolder] = useState(diagram.folder);
+    const folders = useFolders();
     const [description, setDescription] = useState(diagram.description);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -540,11 +555,11 @@ function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed:
             </label>
             <label className="field">
                 Folder
-                <input
+                <FolderPicker
                     value={folder}
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
+                    onChange={setFolder}
+                    folders={folders}
+                    placeholder="None, or a new one, like Vespula/GSE"
                 />
             </label>
             <label className="field">

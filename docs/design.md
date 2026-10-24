@@ -67,8 +67,8 @@ any of them. No app imports another, and the site's own code imports none, excep
 puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
 in the web app) and where accounts change (`people.py`, below). What more than one app needs
 is the site's: on the server, the folder paths Yorg's views and scripts and Piper's diagrams
-are kept in (`FolderPath`, `api/schemas.py`); in the web app, their tree (`pathTree.ts`),
-reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
+are kept in (`FolderPath`, `api/schemas.py`); in the web app, their tree (`pathTree.ts`) and
+the box a folder is picked in (`FolderPicker.tsx`), reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
 a link (`packed.ts`: Yorg's links to plots, which Piper makes too).
 
 Piper's one tie to Yorg is Yorg's API, which it uses as any client would: it reads a test's

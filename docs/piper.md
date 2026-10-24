@@ -22,7 +22,10 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   folder is a path of its own (`piper_diagrams.folder`, "Vespula/GSE", "" at the top), tidied
   as Yorg's views' folders are (`FolderPath`, now the site's, in `api/schemas.py`), and the
   Diagrams page arranges them in a tree (the site's `pathTree.ts`, which Yorg's views and
-  scripts use too). Its search looks in names, folders, descriptions, and the tags of the
+  scripts use too), as Yorg's Views tab does: each folder with how many it has, and a diagram
+  dragged onto a folder (or onto the top) moved there, by anyone, as anyone may change one. A
+  folder is picked from those there are, or typed new, with the site's `FolderPicker`, as a
+  view's or a script's is. Its search looks in names, folders, descriptions, and the tags of the
   drawings' parts and lines, so PT-101 finds the diagrams it's on. A new diagram starts empty or
   from an example (`example.ts`: a pressure-fed engine's feed system, built with the editor's own
   changes), and Duplicate copies one.
@@ -160,9 +163,11 @@ what it is, `data-hit`).
 ## Importing from Visio
 
 `visio.ts` reads a Visio drawing in the browser and the page saves each of its pages as a
-diagram (Import Visio on the Diagrams page, or a file dropped on it). A .vsdx (Visio 2013 on) is
-a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too): each page's shapes,
-the masters (stencil shapes) they're instances of, and which connector is glued to which shape.
+diagram (Import Visio on the Diagrams page, which asks for the file first, as Yorg's Upload data
+does, or a file dropped on it; the dialog shows the file, to change, and the folder). A .vsdx
+(Visio 2013 on) is a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too):
+each page's shapes, the masters (stencil shapes) they're instances of, and which connector is
+glued to which shape.
 
 - **Shapes** become parts by their masters' names (Visio's P&ID stencils' "Gate valve",
   "Vessel", "Indicator"..., and the words people use, `NAMES`), turned and flipped as Visio had

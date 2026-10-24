@@ -36,8 +36,14 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <Link to="/piper">New diagram</Link> makes one, empty or from an example (a pressure-fed engine's
-                    feed system) to change or learn from. Give it a folder (<code>Vespula/GSE</code>) to keep it with
-                    others.
+                    feed system) to change or learn from. Give it a folder to keep it with others: pick one there is
+                    from the list, or type a new one (<code>Vespula/GSE</code>).
+                </li>
+                <li>
+                    The diagrams are in their folders, as Yorg&apos;s saved views are: each folder says how many it has,
+                    and a click shuts it or opens it. Drag a diagram onto a folder to move it there, or onto{" "}
+                    <em>Drop here to take it out of its folder</em>, above the list, to put it at the top. Rename,
+                    move, or describe, in the editor, moves it too.
                 </li>
                 <li>
                     A diagram opens to the editor: the library of parts on the left, the drawing in the middle, and on
@@ -238,8 +244,9 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> (or a .vsdx dropped on them) makes a
-                    diagram of each of a Visio drawing's pages, in the folder you give.
+                    <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> asks for the drawing (or drop a
+                    .vsdx on them), then shows it, with <em>Choose another…</em> if it's the wrong one, and the folder
+                    to put it in. <em>Import</em> makes a diagram of each of its pages.
                 </li>
                 <li>
                     Visio's P&ID shapes (its valves, vessels, pumps, instruments...) become Piper's parts, tagged with

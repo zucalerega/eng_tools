@@ -54,6 +54,7 @@ def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, cl
     assert (setting.status_code, setting.json()["min_client_version"]) == (200, "0.5.4")
 
     old = alice | OLD
+    admin = chief | OLD  # for what only admins change
     valve_v2 = team.upload(alice, b"valve v2")  # by a newer client: uploading is a change too, below
     valve_v3 = hashlib.sha256(b"valve v3").hexdigest()
     checkin = {
@@ -81,6 +82,21 @@ def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, cl
             json={"version": 1, "configuration": "Default", "units": "mm", "mesh": valve_v2},
             headers=old,
         ),
+        "drawing PDF": client.put(
+            f"/api/files/{injector['id']}/drawing/pdf", json={"version": 1, "pdf": valve_v2}, headers=old
+        ),
+        "title": client.post(
+            "/api/files/metadata", json={"files": [{"file": injector["id"], "title": "Main injector"}]}, headers=old
+        ),
+        "part number": client.post("/api/numbers", json={"kind": "001"}, headers=old),
+        "give a number back": client.post("/api/numbers/release", json={"numbers": ["00000001-001"]}, headers=old),
+        "numbering": client.put("/api/numbering", json={"mode": "offer"}, headers=admin),
+        "new kind": client.post(
+            "/api/part-kinds", json={"code": "777", "label": "Test", "applies": "part"}, headers=admin
+        ),
+        "change a kind": client.patch("/api/part-kinds/001", json={"label": "Parts"}, headers=admin),
+        "pause": client.put("/api/vault/pause", json={"host": "PC-1", "reason": "testing"}, headers=admin),
+        "unpause": client.delete("/api/vault/pause", headers=admin),
     }
     for what, response in refused.items():
         assert (response.status_code, response.json()["error"]) == (426, "client_too_old"), what
@@ -92,9 +108,12 @@ def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, cl
     )
     assert told["details"] == {"version": "0.5.2", "min_client_version": "0.5.4"}
 
-    # Nothing changed: no versions, check-outs, folders, or models.
+    # Nothing changed: no versions, check-outs, folders, models, titles, numbers, or pause.
     after = files(team, alice, "Engine")
     assert (after["Injector.SLDPRT"]["version"], after["Injector.SLDPRT"]["checked_out"]) == (1, None)
+    assert after["Injector.SLDPRT"]["title"] == "Injector"
+    assert client.get("/api/numbering", headers=chief).json()["mode"] == "off"
+    assert client.get("/api/vault/pause", headers=chief).json() is None
     assert (after["Valve.SLDPRT"]["version"], after["Valve.SLDPRT"]["checked_out"]["host"]) == (1, "PC-1")
     assert [f["name"] for f in team.listing(alice, "")["folders"]] == ["Engine"]
     assert team.listing(alice, "Engine")["folders"] == []

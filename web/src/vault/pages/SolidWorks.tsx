@@ -140,6 +140,14 @@ export function SolidWorks() {
                         on someone's computer. Add those to the vault (upload them here, or check them in from
                         SolidWorks), or take them out of the assembly.
                     </p>
+                    <p>
+                        Vault also finds parts whose folder was uploaded again under another name, with the old one
+                        deleted, though the assembly still names the old folder: it looks for each in a folder of the
+                        same name. If this computer still has copies from the old folder (the Vault tab lists them as
+                        Deleted in the vault), SolidWorks opens those instead: click{" "}
+                        <strong>Update downloaded files</strong> first, which removes them. To move files, use Move
+                        here, which keeps their history and won't leave an assembly without its parts.
+                    </p>
                 </details>
                 <details>
                     <summary>SolidWorks is set up for another vault</summary>

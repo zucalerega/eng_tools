@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fileUrl, folderUrl } from "../src/vault/paths";
-import { renderApp, table, Team } from "./team";
+import { dialogClosed, renderApp, table, Team } from "./team";
 
 // Deleting files and folders from the web app, and bringing them back from the trash.
 
@@ -21,6 +21,7 @@ test("files and folders go to the trash, and come back from it", async () => {
     expect(within(dialog).getByText(/The 2 files in the folder go too/)).toBeTruthy();
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "Motor" })).toBeNull());
+    await dialogClosed();
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Select Notes.txt" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete…" }));

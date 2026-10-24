@@ -4,8 +4,10 @@ Piper, the site's third app, draws the team's fluid systems: its diagrams, each 
 description, and their revisions, each a drawing as the web app saved it, compressed. New tables only: nothing that's
 there changes.
 
-Revision ID: 0017
-Revises: 0016
+It was 0017 when it merged, as were drawings' PDFs and the oldest client's: it follows those, which merged first.
+
+Revision ID: 0019
+Revises: 0018
 Create Date: 2026-10-23 12:07:59.770160
 """
 
@@ -14,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0019"
+down_revision: str | None = "0018"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

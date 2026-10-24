@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fileUrl } from "../src/vault/paths";
-import { renderApp, Team } from "./team";
+import { pressable, renderApp, Team } from "./team";
 
 test("a file's page shows its history and what it uses, and follows check-outs live", async () => {
     const team = await Team.create();
@@ -133,10 +133,11 @@ test("a file checks out and in from the web app, and check-outs are undone", asy
 
     // Undoing a check-out here asks nothing; undoing one on a computer says the changes there stay there.
     await userEvent.click(await screen.findByRole("button", { name: "Check out" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Undo check-out" }));
+    await userEvent.click(await pressable("Undo check-out"));
     await waitFor(async () => expect((await team.file(valve!.id)).checked_out).toBeNull());
     await team.checkout(alice, "Valve.SLDPRT", "ALICE-PC");
-    await userEvent.click(await screen.findByRole("button", { name: "Undo check-out" }));
+    expect(await screen.findByText(/Checked out by you on ALICE-PC/)).toBeTruthy();
+    await userEvent.click(await pressable("Undo check-out"));
     const undo = within(screen.getByRole("dialog"));
     expect(undo.getByText(/Changes you made on ALICE-PC stay there/)).toBeTruthy();
     await userEvent.click(undo.getByRole("button", { name: "Undo check-out" }));

@@ -248,7 +248,8 @@ in `web/src/yorg/index.tsx`).
   step. FullFlow's transient solver runs with two-point Jacobians and 1e-8 tolerances;
   results come back at up to 2,000 points. Built this way, the Vespula example is its
   FullFlow run again: every pressure, temperature, and flow to a few parts in a million
-  (`test_the_vespula_example_is_its_fullflow_run`). A **fit** (`fit.py`, the same kind of
+  (checked when it was built; the server's tests don't run simulations, which take minutes
+  each). A **fit** (`fit.py`, the same kind of
   process, stopped after 30 minutes with the best it found) is SciPy's least squares over
   the knobs picked, each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30
   times its start, within its limits), each try a run of the model; each compared channel
@@ -320,7 +321,7 @@ in `web/src/yorg/index.tsx`).
   ThermoProp installed from PyPI at the server's versions, `yorg_models` and the channels
   written to its files, and `data` read from them; the script reports the run's time as it
   goes, and its result as JSON. Unchanged, the browser's run is the server's to the last
-  digit (`test_a_runs_script_is_what_it_runs` runs the page's script with the page's data).
+  digit.
   Installing takes a minute or two the first time, and importing FullFlow and ThermoProp
   a minute or more (CoolProp's and ThermoProp's data). A changed script isn't saved, and
   Tune (`Tune.tsx`: a fit or an anchored run, side by side in one dialog, each saying what
@@ -446,7 +447,10 @@ in `web/src/yorg/index.tsx`).
 ## API
 
 Yorg's endpoints, all under `/api/yorg`. Every one needs sign-in; how errors look, and the
-site's own endpoints, are in [design.md](design.md#api).
+site's own endpoints, are in [design.md](design.md#api). Piper uses some of them as any client
+would, to show a test on a P&ID (the datasets, a dataset's channels, and their arrays), and
+makes links to plots as Copy link does (`?plots=`): they change only as the API's rules say
+([piper.md](piper.md#test-data-from-yorg)).
 
 | Endpoint | Purpose |
 |---|---|

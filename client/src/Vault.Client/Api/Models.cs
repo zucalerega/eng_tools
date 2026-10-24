@@ -257,3 +257,31 @@ internal sealed class CaliperMissing
 {
     public List<CaliperModelKey> Missing { get; set; } = new List<CaliperModelKey>();
 }
+
+/// <summary>The PDF of a drawing's version, of all its sheets, that Caliper shows in the web app.</summary>
+public sealed class DrawingPdfInfo
+{
+    public long Size { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public UserRef CreatedBy { get; set; } = new UserRef();
+}
+
+/// <summary>A drawing's version: what a PDF is of.</summary>
+internal sealed class DrawingKey
+{
+    public long FileId { get; set; }
+    public int Version { get; set; }
+}
+
+internal sealed class DrawingPdfRequest
+{
+    public int Version { get; set; }
+
+    /// <summary>The SHA-256 of the PDF, uploaded first.</summary>
+    public string Pdf { get; set; } = "";
+}
+
+internal sealed class DrawingsMissing
+{
+    public List<DrawingKey> Missing { get; set; } = new List<DrawingKey>();
+}

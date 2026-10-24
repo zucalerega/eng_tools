@@ -95,9 +95,18 @@ export function fileFormat(name: string): "step" | "iges" | "stl" | null {
     return cadFormat(name) ?? (name.toLowerCase().endsWith(".stl") ? "stl" : null);
 }
 
-/** Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models), and STEP, IGES, and STL files. */
+/** Which of the flat files Caliper shows a file is, by its name: a SolidWorks drawing (its sheets), or a DXF file. */
+export function sheetFormat(name: string): "drawing" | "dxf" | null {
+    const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    return extension === "slddrw" ? "drawing" : extension === "dxf" ? "dxf" : null;
+}
+
+/**
+ * Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models) and drawings (their sheets), and
+ * STEP, IGES, STL, and DXF files.
+ */
 export const opensInCaliper = (name: string): boolean =>
-    ["part", "assembly"].includes(kindOf(name)) || fileFormat(name) !== null;
+    ["part", "assembly"].includes(kindOf(name)) || fileFormat(name) !== null || sheetFormat(name) !== null;
 
 const stem = (name: string) =>
     (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).normalize("NFC").toLowerCase();

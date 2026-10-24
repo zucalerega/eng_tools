@@ -10,6 +10,7 @@ from alembic import context
 
 from yjsp_server import models  # noqa: F401  (registers the site's tables)
 from yjsp_server.db import Base, UTCDateTime, make_engine
+from yjsp_server.piper import models as piper_models  # noqa: F401  (and Piper's)
 from yjsp_server.vault import models as vault_models  # noqa: F401  (and Vault's)
 from yjsp_server.yorg import models as yorg_models  # noqa: F401  (and Yorg's)
 

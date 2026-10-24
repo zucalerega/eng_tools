@@ -49,9 +49,10 @@ export function SolidWorks() {
                             </p>
                             <p>
                                 Have the add-in already? When there's a newer one, <strong>Update</strong> appears at
-                                the top of the Vault tab. Running this setup again updates it too, and keeps your
-                                sign-in and workspace. It installs the add-in new only with SolidWorks 2026; with
-                                SolidWorks 2025, it only updates one that's there.
+                                the top of the Vault tab: take it soon, since the vault can stop taking changes from
+                                older ones. Running this setup again updates it too, and keeps your sign-in and
+                                workspace. It installs the add-in new only with SolidWorks 2026; with SolidWorks 2025,
+                                it only updates one that's there.
                             </p>
                         </>
                     ) : downloads ? (
@@ -100,9 +101,26 @@ export function SolidWorks() {
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts
                     it in SolidWorks, already in the vault and checked out to you.
                 </li>
+                <li>
+                    <strong>For Caliper</strong>, here in the browser: checking in a part or assembly makes the 3D view
+                    it shows, and checking in a drawing saves the PDF of its sheets it shows. For a file from before,
+                    open it and click <strong>Make 3D view</strong> (a part or assembly) or <strong>Make PDF</strong> (a
+                    drawing) on the Vault tab.
+                </li>
             </ul>
             <h2>If something's not right</h2>
             <div className="faq">
+                <details>
+                    <summary>Vault says the add-in is too old to make changes</summary>
+                    <p>
+                        The vault takes check-outs, check-ins, and other changes only from the version it names and
+                        newer, so everyone has a release's fixes. Click <strong>Update</strong> at the top of the Vault
+                        tab and say yes to Windows, then close SolidWorks: setup finishes then. No Update there yet?
+                        Close SolidWorks and start it again, or download the installer here (step 1) and run it. Until
+                        then, you can still open and get files.
+                    </p>
+                    <p>The vault command says the same: download the new vault.exe from Other downloads, below.</p>
+                </details>
                 <details>
                     <summary>There's no Vault tab in SolidWorks</summary>
                     <p>
@@ -139,6 +157,14 @@ export function SolidWorks() {
                         Whatever the vault doesn't have, the Vault tab names, like parts left in Kenesto or saved only
                         on someone's computer. Add those to the vault (upload them here, or check them in from
                         SolidWorks), or take them out of the assembly.
+                    </p>
+                    <p>
+                        Vault also finds parts whose folder was uploaded again under another name, with the old one
+                        deleted, though the assembly still names the old folder: it looks for each in a folder of the
+                        same name. If this computer still has copies from the old folder (the Vault tab lists them as
+                        Deleted in the vault), SolidWorks opens those instead: click{" "}
+                        <strong>Update downloaded files</strong> first, which removes them. To move files, use Move
+                        here, which keeps their history and won't leave an assembly without its parts.
                     </p>
                 </details>
                 <details>

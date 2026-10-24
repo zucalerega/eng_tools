@@ -114,15 +114,21 @@ While you work:
   Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
   file, and from its sub-assemblies, and gets the vault's files whose paths end the same
-  way (`09_Hopper\...`), so they come along like any other assembly's parts. A STEP (or
+  way (`09_Hopper\...`), so they come along like any other assembly's parts. So do the
+  parts of an assembly saved before their folder was uploaded again under another name and
+  the old copies deleted: it still names them in `C:\VLT` (`C:\VLT\09_Hopper\Tanks\...`,
+  now `Hopper\Tanks\...`), and Vault gets the vault's file whose path ends the same way,
+  with its folder's name the same at least (a copy of the old file still here is what
+  SolidWorks opens: Update downloaded files removes those). A STEP (or
   other CAD) file placed with 3D Interconnect is named in the file by the copy SolidWorks
   made of it in its temporary folder (`...\Temp\swx19380\IC~~\BMS.step.SLDASM`), which is
   never on disk: Vault gets the file it was made from (`BMS.step`), and of two with its
   name, the one in the folder most like the assembly's. Parts that aren't in the vault are
   named on the tab (a STEP file by its own name), with their old paths in the log. When
-  SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or
-  by its name, when only one file in the vault has it). Checking in an assembly that still
-  uses files the vault doesn't have lists them all, and checks nothing in.
+  SolidWorks can't find a part, Vault points it at the vault's copy, found the same way (or,
+  for a path from elsewhere, by its name, when only one file in the vault has it).
+  Checking in an assembly that still uses files the vault doesn't have lists them all, and
+  checks nothing in.
 - **New part, New assembly, New drawing** from the web app: SolidWorks makes it here from
   your default template (a drawing with a view of its part or assembly), saves it in the
   workspace, and checks it in at once, checked out to you. Everyone sees it's there and
@@ -134,6 +140,11 @@ While you work:
   brought from Kenesto, or checked in from the web. A part changed and not checked in, or
   with changes not saved, gets none until it is; one loaded lightweight needs the assembly
   set to resolved first. The tab says what it made, and why anything wasn't.
+- **PDFs of drawings for Caliper**: checking in a drawing saves it as a PDF of all its
+  sheets, as File > Save As > PDF does, which Caliper shows in the web app. **Make PDF**, on
+  the tab, does the same for the active drawing, where its version has none: for drawings
+  from before, brought from Kenesto, or checked in from the web. A drawing changed and not
+  checked in, or with changes not saved, gets none until it is.
 - **Time in SolidWorks**, for Admin > People: while SolidWorks is in front and you've used
   the computer in the last five minutes, the add-in's requests to the vault say so, and the
   vault counts that time beside the time the web app is open. SolidWorks left open behind
@@ -393,6 +404,23 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     from the STEP file. Then check the assembly out and check it in from SolidWorks, and
     write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
     temporary folder (`...\IC~~\...`), that's still to fix.
+36. Drawings' PDFs: make a drawing of a part with two sheets (a second sheet with a detail
+    view and a note), dimensions, a hole callout (⌀), and a GD&T frame, and check it in: the
+    tab says it made the PDF Caliper shows, and no PDF window opens. In the web app, Open in
+    Caliper shows both sheets in the browser's PDF viewer, as SolidWorks prints them, the
+    callout and the GD&T frame as SolidWorks draws them; Open PDF shows it in a tab of its
+    own. Open a drawing checked in from the web (or before this release) and click Make PDF:
+    the same; click it again: it says it has its PDF already. Change the drawing without
+    saving and click Make PDF: it says why it didn't. Check `%TEMP%` has no `vault-*.pdf`
+    left.
+37. Uploaded again: check in from SolidWorks an assembly in a folder `Old`, with parts in a
+    subfolder `Old\Parts` and one beside it. Save it as `New\A.SLDASM` (still using `Old`'s
+    parts), upload `Old\Parts` and the other part into `New` in the web app, check
+    `New\A.SLDASM` in, and delete `Old` (Delete anyway). On another PC (or after Free up
+    space), open `New\A.SLDASM` from the Browse tab: the parts from `New\Parts` come down and
+    it opens with them, none grey or ⚠; the tab names the part beside it, which only its name
+    ties to its copy. With a copy of `Old` still on that PC, SolidWorks opens those: Update
+    downloaded files removes them, and then it opens with `New`'s.
 
 ## When something goes wrong
 

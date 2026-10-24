@@ -233,6 +233,15 @@ only a build CI made from one of those, as for a deploy, with its signature. Wit
 with another build's, laptops refuse the update and say why. Add-ins up to 0.5.2 don't
 check signatures: the protection starts on each laptop once it has an add-in newer than that.
 
+**Making everyone update:** laptops take Update when their people get round to it. When the
+team needs a release's fixes, an admin can set the oldest version that can change the vault
+(Admin > People, under the SolidWorks add-in): older add-ins and `vault` commands can then
+still open and get files, but anything that changes the vault says to update first. Put in
+the release's `vault.exe` along with the installer first, since it holds for the CLI too,
+and give people a few days to take the update; the tracker above it shows who hasn't. The
+site refuses a version newer than the `Vault-Setup.exe` it offers, and Allow any version
+takes it off.
+
 ### Signing key
 
 CI signs `Vault-Setup.exe` on pushes to `main` and release tags, never for pull requests

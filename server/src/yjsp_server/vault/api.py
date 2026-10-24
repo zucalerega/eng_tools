@@ -1,5 +1,9 @@
 """Vault API: browse, history, download, check out/in, delete/restore, move/rename, sync, uploads, and who has access
-to each folder."""
+to each folder.
+
+Every change to the vault takes ChangingUser, which refuses it from a Vault client older than the oldest admins let make
+changes (clients.refuse_old); reads take ActiveUser, so old clients can still read. Caliper's POSTs only read (what's
+missing, or the model a file's own 3D view gives), so they're reads too."""
 
 import hashlib
 from typing import Annotated
@@ -9,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .. import disk
-from ..api.deps import DB, ActiveUser, Config
+from ..api.deps import DB, ActiveUser, ChangingUser, Config
 from ..errors import ApiError, Forbidden, TooLarge
 from . import vault
 from .schemas import (
@@ -26,6 +30,12 @@ from .schemas import (
     CheckoutIn,
     DeletedOut,
     DeleteIn,
+    DrawingOut,
+    DrawingPdfIn,
+    DrawingPdfOut,
+    DrawingsMissingIn,
+    DrawingsMissingOut,
+    DrawingWantIn,
     EventOut,
     FileDetailOut,
     FileOut,
@@ -61,7 +71,7 @@ def get_folder(user: ActiveUser, db: DB, path: str = "", deleted: bool = False) 
 
 
 @router.post("/folders", status_code=201)
-def post_folder(body: FolderIn, user: ActiveUser, db: DB) -> FolderOut:
+def post_folder(body: FolderIn, user: ChangingUser, db: DB) -> FolderOut:
     return FolderOut.of(vault.create_folder(db, user, body.path))
 
 
@@ -89,7 +99,7 @@ def get_caliper(file_id: int, user: ActiveUser, db: DB, store: Store) -> Caliper
 
 
 @router.put("/files/{file_id}/caliper")
-def put_caliper(file_id: int, body: CaliperModelIn, user: ActiveUser, db: DB, store: Store) -> CaliperModelOut:
+def put_caliper(file_id: int, body: CaliperModelIn, user: ChangingUser, db: DB, store: Store) -> CaliperModelOut:
     """Save a version's 3D model in one configuration: a part's mesh (upload it first, PUT /api/blobs/{sha256}), or an
     assembly's components. Adding one that's missing takes editor access somewhere; replacing one, to its folder."""
     components = None if body.components is None else [c.model_dump() for c in body.components]
@@ -152,13 +162,67 @@ def get_caliper_mesh(
     return FileResponse(store.path(sha), media_type="application/octet-stream", headers=headers)
 
 
+@router.get("/files/{file_id}/drawing")
+def get_drawing(file_id: int, user: ActiveUser, db: DB, store: Store, version: int) -> DrawingOut:
+    """A drawing's version, for Caliper: the PDF Vault for SolidWorks made of it, if it made one, and its sheets, each
+    with whether SolidWorks saved a picture of it in the file."""
+    return DrawingOut.of(vault.drawing_view(db, store, user, file_id, version))
+
+
+@router.get("/files/{file_id}/drawing/sheet", response_class=Response)
+def get_drawing_sheet(
+    file_id: int, request: Request, user: ActiveUser, db: DB, store: Store, version: int, sheet: int = 1
+) -> Response:
+    """The picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG."""
+    picture = vault.sheet_picture(db, store, user, file_id, version, sheet)
+    # A version never changes, and nor does what's read from it, but how it's read may.
+    headers = {"ETag": f'"{hashlib.sha256(picture).hexdigest()[:32]}"', "Cache-Control": "private, max-age=86400"}
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return Response(picture, media_type="image/png", headers=headers)
+
+
+@router.get("/files/{file_id}/drawing/pdf", response_class=FileResponse)
+def get_drawing_pdf(file_id: int, request: Request, user: ActiveUser, db: DB, store: Store, version: int) -> Response:
+    """The PDF Vault for SolidWorks made of a drawing's version, which Caliper shows in a frame, in the browser's PDF
+    viewer."""
+    name, sha = vault.drawing_pdf(db, user, file_id, version)
+    headers = {
+        "ETag": f'"{sha}"',
+        "Cache-Control": "private, no-cache",  # it can be made again
+        # The site's own pages may frame it; and the site's policy, which allows no plugins, would stop the viewer.
+        "Content-Security-Policy": "frame-ancestors 'self'",
+        "X-Frame-Options": "SAMEORIGIN",
+    }
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(
+        store.path(sha), media_type="application/pdf", filename=name, content_disposition_type="inline", headers=headers
+    )
+
+
+@router.put("/files/{file_id}/drawing/pdf")
+def put_drawing_pdf(file_id: int, body: DrawingPdfIn, user: ActiveUser, db: DB, store: Store) -> DrawingPdfOut:
+    """Save a drawing version's sheets as a PDF (upload it first, PUT /api/blobs/{sha256}), as Vault for SolidWorks
+    does when it checks a drawing in. Adding one that's missing takes editor access somewhere; replacing one, to its
+    folder."""
+    return DrawingPdfOut.of(vault.put_drawing_pdf(db, store, user, file_id, version=body.version, pdf=body.pdf))
+
+
+@router.post("/drawings/missing")
+def post_drawings_missing(body: DrawingsMissingIn, user: ActiveUser, db: DB) -> DrawingsMissingOut:
+    """Which of these drawings' versions have no PDF yet: what Vault for SolidWorks makes."""
+    missing = vault.drawings_missing(db, user, [(d.file_id, d.version) for d in body.drawings])
+    return DrawingsMissingOut(missing=[DrawingWantIn(file_id=f, version=v) for f, v in missing])
+
+
 @router.post("/checkout")
-def post_checkout(body: CheckoutIn, user: ActiveUser, db: DB) -> FilesOut:
+def post_checkout(body: CheckoutIn, user: ChangingUser, db: DB) -> FilesOut:
     return FilesOut.of(vault.checkout(db, user, body.files, body.host, force=body.force))
 
 
 @router.post("/files/{file_id}/revert")
-def post_revert(file_id: int, body: RevertIn, user: ActiveUser, db: DB) -> FileOut:
+def post_revert(file_id: int, body: RevertIn, user: ChangingUser, db: DB) -> FileOut:
     """Make an older version the latest again (a new version with its contents)."""
     return FileOut.of(
         vault.revert(db, user, file_id, body.version, comment=body.comment, host=body.host, force=body.force)
@@ -166,12 +230,12 @@ def post_revert(file_id: int, body: RevertIn, user: ActiveUser, db: DB) -> FileO
 
 
 @router.post("/undo-checkout")
-def post_undo_checkout(body: FilesIn, user: ActiveUser, db: DB) -> FilesOut:
+def post_undo_checkout(body: FilesIn, user: ChangingUser, db: DB) -> FilesOut:
     return FilesOut.of(vault.undo_checkout(db, user, body.files))
 
 
 @router.post("/checkin")
-def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
+def post_checkin(body: CheckinIn, user: ChangingUser, db: DB) -> CheckinOut:
     items = [
         vault.CheckinItem(i.path, i.sha256, i.size, [vault.Reference(r.path, r.version) for r in i.references])
         for i in body.items
@@ -183,31 +247,31 @@ def post_checkin(body: CheckinIn, user: ActiveUser, db: DB) -> CheckinOut:
 
 
 @router.post("/delete")
-def post_delete(body: DeleteIn, user: ActiveUser, db: DB) -> DeletedOut:
+def post_delete(body: DeleteIn, user: ChangingUser, db: DB) -> DeletedOut:
     """Move files, and folders with everything in them, to the trash (GET /api/folders?deleted=true)."""
     return DeletedOut.of(vault.delete(db, user, body.files, folders=body.folders, force=body.force))
 
 
 @router.post("/files/{file_id}/restore")
-def post_restore(file_id: int, user: ActiveUser, db: DB) -> FileOut:
+def post_restore(file_id: int, user: ChangingUser, db: DB) -> FileOut:
     """Bring a deleted file back (and its folder, if that was deleted too)."""
     return FileOut.of(vault.restore(db, user, file_id))
 
 
 @router.post("/folders/{folder_id}/restore")
-def post_restore_folder(folder_id: int, user: ActiveUser, db: DB) -> FolderOut:
+def post_restore_folder(folder_id: int, user: ChangingUser, db: DB) -> FolderOut:
     """Bring a deleted folder back, with everything deleted along with it."""
     return FolderOut.of(vault.restore_folder(db, user, folder_id))
 
 
 @router.post("/move")
-def post_move(body: MoveIn, user: ActiveUser, db: DB) -> MovedOut:
+def post_move(body: MoveIn, user: ChangingUser, db: DB) -> MovedOut:
     """Move files and folders into a folder; what SolidWorks files use has to stay findable."""
     return MovedOut.of(vault.move(db, user, files=body.files, folders=body.folders, to=body.to))
 
 
 @router.post("/rename")
-def post_rename(body: RenameIn, user: ActiveUser, db: DB) -> MovedOut:
+def post_rename(body: RenameIn, user: ChangingUser, db: DB) -> MovedOut:
     """Rename a file (keeping its type) or a folder."""
     return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name))
 
@@ -239,7 +303,7 @@ def get_grants(user: ActiveUser, db: DB, path: str = "") -> GrantsOut:
 
 
 @router.put("/grants")
-def put_grant(body: GrantIn, user: ActiveUser, db: DB) -> GrantsOut:
+def put_grant(body: GrantIn, user: ChangingUser, db: DB) -> GrantsOut:
     """Set (or with role=null, remove) a person's or everyone's role on a folder (leads and admins)."""
     vault.set_grant(db, user, body.path, user_id=body.user_id, role=body.role)
     return GrantsOut.of(*vault.folder_grants(db, user, body.path))
@@ -262,7 +326,7 @@ def head_blob(sha256: str, user: ActiveUser, db: DB) -> Response:
 
 @router.put("/blobs/{sha256}")
 async def put_blob(
-    sha256: str, request: Request, user: ActiveUser, db: DB, store: Store, settings: Config
+    sha256: str, request: Request, user: ChangingUser, db: DB, store: Store, settings: Config
 ) -> JSONResponse:
     """Upload file contents as the raw request body. The server verifies the SHA-256."""
     _check_sha(sha256)

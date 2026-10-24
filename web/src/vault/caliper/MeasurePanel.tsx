@@ -1,19 +1,32 @@
 import type { Units } from "./model";
-import { measureOne, measureTwo, type Entity, type Measurement } from "./measure";
+import type { Reading } from "./measure";
 
 // What's measured, over the view's corner: what's under the mouse, the one or two things picked, and what they are
-// to each other.
+// to each other. The view says what its things are (a face, an edge, or a corner in 3D; a line, an arc, or a corner on
+// a drawing), and how to measure them.
 
-export function MeasurePanel({
+/** What a picked thing is, or two to each other. */
+interface Measured {
+    title: string;
+    readings: Reading[];
+}
+
+export function MeasurePanel<T>({
     hovering,
     picked,
     units,
     clear,
+    one,
+    two,
+    hint,
 }: {
-    hovering: Entity | null;
-    picked: Entity[];
+    hovering: T | null;
+    picked: T[];
     units: Units;
     clear(): void;
+    one(entity: T, units: Units): Measured;
+    two(first: T, second: T, units: Units): Measured;
+    hint: string; // what to click
 }) {
     const [first, second] = picked;
     return (
@@ -26,26 +39,22 @@ export function MeasurePanel({
                     </button>
                 )}
             </div>
-            {picked.length === 0 && (
-                <p className="muted">
-                    Click a face, an edge, or a corner. Click a second to measure between them; a third starts over.
-                </p>
-            )}
-            {first && !second && <Readings measurement={measureOne(first, units)} heading="1" />}
+            {picked.length === 0 && <p className="muted">{hint}</p>}
+            {first && !second && <Readings measurement={one(first, units)} heading="1" />}
             {first && second && (
                 <>
                     {[first, second].map((entity, i) => (
                         <p key={i} className="caliper-picked-line">
                             <span className="caliper-pick-number">{i + 1}</span>
-                            {summary(measureOne(entity, units))}
+                            {summary(one(entity, units))}
                         </p>
                     ))}
-                    <Readings measurement={measureTwo(first, second, units)} result />
+                    <Readings measurement={two(first, second, units)} result />
                 </>
             )}
             {hovering && picked.length < 2 && (
                 <p className="caliper-hovering muted" aria-live="polite">
-                    {summary(measureOne(hovering, units))}
+                    {summary(one(hovering, units))}
                 </p>
             )}
         </aside>
@@ -53,7 +62,7 @@ export function MeasurePanel({
 }
 
 /** One line for what's under the mouse: "Cylinder, diameter 6.350 mm". */
-export function summary(measurement: Measurement): string {
+export function summary(measurement: Measured): string {
     const first = measurement.readings[0];
     return first ? `${measurement.title}, ${first.label.toLowerCase()} ${first.value}` : measurement.title;
 }
@@ -63,7 +72,7 @@ function Readings({
     heading,
     result = false,
 }: {
-    measurement: Measurement;
+    measurement: Measured;
     heading?: string;
     result?: boolean;
 }) {

@@ -89,9 +89,10 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-# The site's two apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/vault/components.tsx),
-# a vault door crossed by a gold orbit with a sliver of the card around it, and Yorg's (YorgMark in web/src/yorg), a
-# signal rising across a pair of axes to its gold peak.
+# The site's apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/vault/components.tsx), a
+# vault door crossed by a gold orbit with a sliver of the card around it; Yorg's (YorgMark in web/src/yorg), a signal
+# rising across a pair of axes to its gold peak; and Piper's (PiperMark in web/src/piper), a valve in a line, its ball
+# gold.
 _GOLD = "#e0a500"
 _VAULT_MARK = (
     '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
@@ -108,6 +109,13 @@ _YORG_MARK = (
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
     '<path d="M9 7v48h48" stroke-width="5"/><path d="M17 45l8-13 8 7 9-20 7 10 6-5" stroke-width="4"/></g>'
     f'<circle cx="42" cy="19" r="5.5" fill="{_GOLD}"/></svg>'
+)
+_PIPER_MARK = (
+    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
+    '<g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M5 40h11M48 40h11"/><path d="M16 28v24l32-24v24z"/><path d="M32 40V15M23 15h18"/></g>'
+    f'<circle cx="32" cy="40" r="6.5" fill="{_GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
+    'paint-order="stroke"/></svg>'
 )
 # The site's own icon: the gold orbit both marks take from the team's logo, on the top bar's navy.
 _FAVICON = "data:image/svg+xml," + quote(
@@ -177,7 +185,7 @@ def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{_esc(tab_title)}</title>
 <link rel="icon" href="{_esc(_FAVICON)}">{_THEME}<style>{_STYLE}</style></head>
-<body><main class="card"><div class="brand"><div class="marks">{_VAULT_MARK}{_YORG_MARK}</div>
+<body><main class="card"><div class="brand"><div class="marks">{_VAULT_MARK}{_YORG_MARK}{_PIPER_MARK}</div>
 <span class="wordmark">{SITE}</span><p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
@@ -236,7 +244,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
     if user is None:
         parts = [
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
-            "history, and Yorg, the test data, plotted.</p>"
+            "history; Yorg, the test data, plotted; and Piper, the fluid systems, drawn.</p>"
         ]
         offered = [_SIGN_INS[name] for name in _SIGN_INS if _provider(request, name) is not None]
         if offered:
@@ -273,7 +281,9 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
 
     body = f'<p class="lead">Signed in as <strong>{_esc(user.display_name)}</strong><br>{_esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
-        body += "<p>An admin needs to approve your account before you can use Vault and Yorg. Check back soon.</p>"
+        body += (
+            "<p>An admin needs to approve your account before you can use Vault, Yorg, and Piper. Check back soon.</p>"
+        )
     elif user.status == UserStatus.DISABLED:
         body += "<p>This account is disabled. If that's a mistake, ask an admin.</p>"
     else:

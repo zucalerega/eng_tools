@@ -10,10 +10,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from ..api.deps import ActiveUser
+from ..api.schemas import FolderPath
 from ..models import User
 from .datasets import can_change, check_can_change
 from .saved import Saved
-from .schemas import FolderPath
 
 router = APIRouter(prefix="/api/yorg/scripts", tags=["yorg-scripts"])
 

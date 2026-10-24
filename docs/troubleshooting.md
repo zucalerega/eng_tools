@@ -518,6 +518,53 @@ a number. A few codes come up in more than one place.
   revert to the latest version, or to one that isn't there. Pick an older version in the history.
 - **Say which computer this is (host)** (`bad_host`): the client didn't say which computer it's on.
   Update the add-in or the `vault` command; if it keeps happening, tell an admin.
+- **... is at v... now, not v..., which these changes start from** (`out_of_date`): someone checked
+  in a newer version after the one your changes (a rename in a check-in, say) were made on. Get its
+  latest version, and make the changes again there.
+
+### Part numbers and titles
+
+- **Say what ... is called**, **...'s title is longer than ... characters**, or **...'s title has a
+  tab or a line break in it** (`bad_title`): a title is one line that says what the file is. Type
+  one, shorter if need be.
+- **... needs a part number** (`part_number_needed`): new parts and assemblies take part numbers
+  now (Admin > Part numbers). Start them with *New part* or *New assembly*, in the web app or in
+  SolidWorks, which gives them one; for a vendor's part, say it's a vendor's.
+- **... wasn't handed out**, or **No part or assembly has ...** (`unknown_part_number`): a file is
+  named by a part number the vault never gave out, or a drawing, PDF, or export is named after the
+  number of a part that isn't in the vault yet. Get a number with *New*, or check the part in
+  first.
+- **... was handed out for ..., so it can't be ...'s**, **Call it ...**, **... is named by a part
+  number, so it isn't a vendor's part**, or **... isn't a part number, like 00000123-001**
+  (`bad_part_number`): the number doesn't fit the file: it's of another kind (a part's number on an
+  assembly, say), the name has more than the number, or it isn't a part number at all. Name the
+  file by its number alone (its title says what it is), or get a number of the right kind.
+- **... is another file's part number** (`part_number_taken`): each part or assembly has a number
+  of its own. Get one with *New*.
+- **... is named by its part number, ..., which never changes** (`part_number_fixed`): a numbered
+  file keeps its name. To say what it is, change its title instead.
+- **... is a file's, for good** (`part_number_used`): a number a file has taken can't be given back.
+  Give back only the ones no file has.
+- **Part numbers aren't handed out yet** (`numbering_off`): an admin turns them on, on Admin > Part
+  numbers. Until then, name new files as before.
+- **... isn't a kind of part number**, **A kind is three digits, like 001**, or **Say what a kind is
+  in a line of at most 100 characters** (`bad_kind`): pick a kind from the list. An admin adding
+  one gives it three digits and a one-line label.
+- **Files have numbers of ... already, so it stays a kind of ...** (`kind_in_use`): what a kind is
+  for can't change once files have numbers of it. Add another kind instead.
+- **Part numbers only go up** (`bad_next_number`): the next number can only move forward, never back
+  to numbers that may have been handed out.
+- **Ask for 1 to ... part numbers at a time** (`bad_count`): ask for fewer at once.
+- **You have ... part numbers you haven't used** (`too_many_numbers`): use the ones you have
+  (*New part* offers them first), or give back the ones you won't, then ask again.
+- **The vault has run out of part numbers** (`numbers_exhausted`): every number has been handed out.
+  Tell an admin.
+- **The vault is paused while ... works on it**, or **... has the vault paused already**
+  (`paused`): an admin is working on the whole vault (numbering its files, say). You can still look
+  at everything and undo your check-outs; changes wait until it's unpaused. Another admin waits for
+  that pause to end before pausing it again.
+- **Say why in at most 500 characters** (`bad_reason`): a pause's reason, which everyone sees, is
+  short. Shorten it.
 
 ### Uploads and downloads
 
@@ -534,6 +581,20 @@ a number. A few codes come up in more than one place.
   isn't a SHA-256. Update the add-in or the `vault` command; if it keeps happening, tell an admin.
 - **There's no download called ...** (`not_found`): the server doesn't offer that file. Ask an
   admin for it.
+
+### Old add-ins and `vault` commands
+
+- **Vault for SolidWorks ... is too old to make changes in this vault, which takes ... and newer**,
+  or **This vault command (...) is too old to make changes in this vault** (`client_too_old`): an
+  admin has set the oldest version that can change the vault. You can still open and get files; to
+  change anything, update first: click *Update* at the top of the Vault tab, then close SolidWorks,
+  or download Vault-Setup.exe (or the new `vault.exe`) from the web app's SolidWorks page.
+- **This server offers no Vault-Setup.exe for add-ins to update to** (`no_installer`): setting the
+  oldest version that can change the vault needs a release's downloads on the server first, so
+  add-ins have something to update to. Put them on (docs/deploying.md), then set it.
+- **No add-in could update to ...: the Vault-Setup.exe this server offers is ...**
+  (`not_offered`): the oldest version can be no newer than the installer the server offers. Put that
+  release's downloads on the server first, or pick a version no newer than it.
 
 ### Caliper
 
@@ -555,6 +616,16 @@ a number. A few codes come up in more than one place.
   says to update the server, tell an admin.
 - **Upload the mesh first** (`blob_missing`): a 3D view's file didn't reach the server. Click
   *Make 3D view* again.
+- **... isn't a SolidWorks drawing**, or **PDFs are of SolidWorks drawings: ... isn't one**
+  (`not_a_drawing`): sheets and PDFs are only for drawings (`.SLDDRW`). Open a part or an assembly
+  in 3D instead.
+- **... has no PDF** (`no_pdf`): that version went in without one (from the web app, or before Vault
+  for SolidWorks made them). Open it in SolidWorks and click *Make PDF* on the Vault tab;
+  meanwhile Caliper shows the pictures of its sheets.
+- **... has no picture of sheet ...** (`no_picture`): SolidWorks saved no picture of that sheet in
+  the file. Make the drawing's PDF in SolidWorks (*Make PDF*).
+- **That isn't a PDF** (`bad_pdf`): what the add-in sent as a drawing's PDF isn't one. Click
+  *Make PDF* again; if it keeps happening, tell an admin, with the add-in's log.
 
 ### Yorg
 
@@ -588,6 +659,17 @@ a number. A few codes come up in more than one place.
   can't run as drawn, and the message names the part and what's wrong. Fix that, and run again.
 - **Other runs are using the server: try again in a minute** (`busy`): two model runs go at once.
   Run it again in a minute.
+
+### Piper
+
+- **You saved ... in another window after you opened it here**, or **... saved ..., or restored it
+  to revision ..., after you opened it** (`changed`): the diagram changed after you opened it. Copy
+  what you need, reload it, and make your changes again on what's there now.
+- **... is deleted: restore it first** (`deleted`): restore the diagram from Piper's deleted
+  diagrams, then change it.
+- **Two parts or lines share the id ...**, **The drawing has text that isn't valid Unicode**, and
+  the like (`invalid_drawing`): the drawing as the web app sent it isn't one the server keeps.
+  Reload the diagram; if it keeps happening, tell an admin, with what you did.
 
 ### Asking Claude
 

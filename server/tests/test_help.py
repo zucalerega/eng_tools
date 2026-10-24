@@ -69,6 +69,7 @@ The log.
 """,
     "docs/vault.md": "# Vault design\n\n## API\n\nCheck-outs and check-ins.\n",
     "docs/yorg.md": "# Yorg design\n\nPlots.\n",
+    "docs/piper.md": "# Piper design\n\nDiagrams.\n",
 }
 
 
@@ -101,7 +102,7 @@ def test_anyone_can_read_the_guide_and_troubleshooting(site):
     assert '<h1 id="troubleshooting">Troubleshooting</h1>' in page.text
     assert "<td><code>checked_out</code></td>" in page.text
     # How it works inside is for members.
-    assert "YJSP design" not in page.text and "Vault design" not in page.text
+    assert "YJSP design" not in page.text and "Vault design" not in page.text and "Piper design" not in page.text
     assert 'href="/?next=/help"' in page.text
     # A name in angle brackets is words, not HTML.
     assert "SolidWorks add-in on &lt;computer&gt;" in page.text
@@ -110,7 +111,7 @@ def test_anyone_can_read_the_guide_and_troubleshooting(site):
 def test_members_see_how_it_works_inside_too(site):
     sign_in(site)
     page = site.get("/help").text
-    for title in ("YJSP design", "Vault design", "Yorg design"):
+    for title in ("YJSP design", "Vault design", "Yorg design", "Piper design"):
         assert title in page
     assert '<a href="#design-api">the design</a>' in page
     assert '<a href="#vault-api">Vault\'s</a>' in page

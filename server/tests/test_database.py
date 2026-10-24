@@ -66,6 +66,86 @@ def test_upgrades_keep_the_vault(tmp_path):
         _folder(db, 4, 1, "MOTOR")
 
 
+def test_upgrades_give_files_titles(tmp_path):
+    """Files take their names, without their types, as their titles; none is a vendor's yet. Their versions, which
+    point at them, come through."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0016")
+    when = "'2026-09-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when}, 0)"
+        )
+        _folder(db, 1, None, "")
+        db.exec_driver_sql(
+            "INSERT INTO files (id, folder_id, name, name_key, latest_version, created_at, created_by, change_seq) "
+            f"VALUES (1, 1, 'Fin Bracket.SLDPRT', 'fin bracket.sldprt', 1, {when}, 1, 1), "
+            f"(2, 1, 'README', 'readme', 1, {when}, 1, 1)"
+        )
+        db.exec_driver_sql(
+            f"INSERT INTO checkins (id, user_id, host, comment, created_at) VALUES (1, 1, 'PC', '', {when})"
+        )
+        db.exec_driver_sql(f"INSERT INTO blobs (sha256, size, created_at) VALUES ('ab', 3, {when})")
+        db.exec_driver_sql(
+            "INSERT INTO versions (id, file_id, number, checkin_id, blob_sha256, size, created_at, created_by) "
+            f"VALUES (1, 1, 1, 1, 'ab', 3, {when}, 1)"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT id, title, vendor FROM files ORDER BY id").all() == [
+            (1, "Fin Bracket", 0),
+            (2, "README", 0),
+        ]
+        assert db.exec_driver_sql("SELECT f.title FROM versions v JOIN files f ON f.id = v.file_id").scalar() == (
+            "Fin Bracket"
+        )
+        assert db.exec_driver_sql("SELECT COUNT(*) FROM former_names").scalar() == 0
+
+
+def test_upgrades_keep_the_part_numbers_from_before(tmp_path):
+    """Parts and assemblies named by numbers of their own before part numbers (Ground Structures': a project's number,
+    then its parts') keep them, and numbers handed out start after the largest any file's name has."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0020")
+    when = "'2026-09-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when}, 0)"
+        )
+        db.exec_driver_sql("INSERT INTO vault_state (id, seq, access_seq) VALUES (1, 5, 0)")
+        _folder(db, 1, None, "")
+        names = [
+            "00000011-001.SLDPRT",
+            "00000011-501.SLDASM",
+            "00000004-010-6.SLDPRT",
+            "00000011-001.SLDDRW",
+            "00000021-001.PDF",
+            "Fin.SLDPRT",
+        ]
+        for id, name in enumerate(names, 1):
+            db.exec_driver_sql(
+                "INSERT INTO files (id, folder_id, name, name_key, latest_version, created_at, created_by, change_seq) "
+                f"VALUES ({id}, 1, '{name}', '{name.lower()}', 1, {when}, 1, 1)"
+            )
+
+    migrate(engine)
+    with engine.connect() as db:
+        held = "SELECT number, kind, file_id, legacy, issued_by FROM part_numbers ORDER BY file_id"
+        assert db.exec_driver_sql(held).all() == [
+            (11, "001", 1, 1, None),
+            (11, "501", 2, 1, None),
+            (4, "010", 3, 1, None),
+        ]
+        assert db.exec_driver_sql("SELECT next_number, numbering FROM vault_state").one() == (22, "off")
+        assert db.exec_driver_sql("SELECT code, applies FROM part_kinds ORDER BY code").all() == [
+            ("001", "part"),
+            ("501", "assembly"),
+        ]
+
+
 def test_upgrades_keep_yorgs_data(tmp_path):
     """Datasets got folders by copying their table (on SQLite), which channels point at."""
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")

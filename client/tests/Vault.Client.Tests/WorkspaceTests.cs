@@ -365,6 +365,31 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task CheckingInWhatUsesAFileDeletedInTheVaultSaysHowToGoOn()
+    {
+        // Someone deleted a sub-assembly that an assembly here still uses: the vault would have a hole in the assembly.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await alice.CheckinAsync([Write(alice, "Legs/Leg Assembly.SLDASM", "legs")], "the legs");
+        await bob.GetLatestAsync([Folder(bob)]);
+        await alice.Api.DeleteAsync([$"{_folder}/Legs/Leg Assembly.SLDASM"]);
+        var legs = Local(bob, "Legs/Leg Assembly.SLDASM");
+        var vehicle = Write(bob, "Vehicle.SLDASM", "vehicle");
+
+        var uses = await Assert.ThrowsAsync<WorkspaceException>(
+            () => bob.CheckinAsync([vehicle], "vehicle", referencesOf: path => path == vehicle ? [legs] : []));
+        Assert.Equal(
+            $"{_folder}/Vehicle.SLDASM uses {_folder}/Legs/Leg Assembly.SLDASM, which was deleted from the vault since you got it. "
+            + "Restore it from its folder's trash in the web app, or take it out of Vehicle.SLDASM, then check in again.",
+            uses.Message);
+        var itself = await Assert.ThrowsAsync<WorkspaceException>(() => bob.CheckinAsync([legs], "legs"));
+        Assert.Equal(
+            $"{_folder}/Legs/Leg Assembly.SLDASM was deleted from the vault since you got it. "
+            + "Restore it from its folder's trash in the web app to check it in.",
+            itself.Message);
+    }
+
+    [Fact]
     public async Task IdenticalCopiesAreRecognized()
     {
         var alice = await WorkspaceAsync("alice");
@@ -662,6 +687,78 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task AFileRenamedIsFoundByTheNameItHad()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        await alice.CheckinAsync([fin], "add fin");
+        Assert.Equal("Fin, left side", Assert.Single(await alice.DescribeAsync([(fin, "Fin, left side", null)])).Title);
+        await bob.GetLatestAsync([Folder(bob)]);
+
+        // Renamed in the vault (given its part number, say): bob's copy follows it, with its title.
+        await alice.Api.RenameAsync($"{_folder}/Fins/Fin.SLDPRT", null, "Fin left.SLDPRT");
+        var status = Assert.Single(await bob.StatusAsync([Folder(bob)]));
+        Assert.Equal(("Fin left.SLDPRT", "Fin, left side", "Fin.SLDPRT"), (Name(status), status.Title, string.Join("|", status.FormerNames)));
+        Assert.Equal("fin", File.ReadAllText(Local(bob, "Fins/Fin left.SLDPRT")));
+
+        // SolidWorks files saved before the rename still name it as it was: here, and from elsewhere.
+        var kenesto = $@"K:\Project CAD\{_folder}\Fins\Fin.SLDPRT";
+        var (inVault, notInVault) = bob.FindUsedFiles([Local(bob, "Fins/Fin.SLDPRT"), kenesto]);
+        Assert.Equal([Local(bob, "Fins/Fin left.SLDPRT")], inVault);
+        Assert.Empty(notInVault);
+        var files = await bob.StatusAsync();
+        Assert.Equal(Local(bob, "Fins/Fin left.SLDPRT"), bob.LocalFileFor(Local(bob, "Fins/Fin.SLDPRT"), files));
+        Assert.Equal(Local(bob, "Fins/Fin left.SLDPRT"), bob.LocalFileFor(kenesto, files));
+    }
+
+    [Fact]
+    public async Task ARenumberingPlanIsMadeFromAWorkspacesSnapshot()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var fin = Write(alice, "Fins/Fin.SLDPRT", "fin");
+        var drawing = Write(alice, "Fins/Fin.SLDDRW", "drawing");
+        await alice.CheckinAsync([fin, drawing], "a fin and its drawing", referencesOf: p => p == drawing ? new[] { fin } : Array.Empty<string>());
+
+        var files = Renumbering.RenumberPlan.FilesOf(await alice.BrowseAsync()).Where(f => f.Path.StartsWith(_folder + "/", StringComparison.Ordinal));
+        var plan = Renumbering.RenumberPlan.Plan(files, new Renumbering.RenumberRules(), 500);
+        Assert.Equal([$"{_folder}/Fins/00000500-001.SLDPRT", $"{_folder}/Fins/00000500-001.SLDDRW"], plan.Renames.Select(r => r.NewPath));
+        Assert.Equal($"drawing of {_folder}/Fins/Fin.SLDPRT", plan.Renames[1].Role); // as the vault knows: what it shows
+    }
+
+    [Fact]
+    public async Task AWorkspaceKnowsWhileTheVaultIsPaused()
+    {
+        var chief = await WorkspaceAsync("chief");
+        var bob = await WorkspaceAsync("bob");
+        await chief.Api.PauseAsync("RENUMBER-PC", "numbering every file");
+        try
+        {
+            await bob.RefreshAsync();
+            Assert.Equal((ServerFixture.Chief, "numbering every file"), (bob.Paused?.By.Email, bob.Paused?.Reason));
+        }
+        finally
+        {
+            await chief.Api.UnpauseAsync();
+        }
+        await bob.RefreshAsync();
+        Assert.Null(bob.Paused);
+    }
+
+    [Fact]
+    public async Task NewFilesCheckedInAsVendorsPartsAreMarked()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bearing = Write(alice, "Bearings/Bearing 6203.SLDPRT", "bearing");
+        var nut = Write(alice, "Bearings/Nut.SLDPRT", "nut");
+        var result = await alice.CheckinAsync([bearing, nut], "bought parts", vendorParts: [bearing]);
+        Assert.Equal((true, false), (Vendor("Bearing 6203.SLDPRT"), Vendor("Nut.SLDPRT")));
+        Assert.True(Assert.Single(await alice.StatusAsync([bearing])).Vendor);
+
+        bool Vendor(string name) => result.Files.Single(f => f.File.Name == name).File.Vendor;
+    }
+
+    [Fact]
     public async Task OpeningAFileFromElsewhereGetsWhatItUsesAtEveryLevel()
     {
         // An assembly from Kenesto that's here, with its sub-assembly and its own part, but not the sub-assembly's parts:
@@ -783,6 +880,60 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task PathsHereToFilesTheVaultNoLongerHasMeanTheirCopiesElsewhere()
+    {
+        // An assembly saved before 09_Hopper was uploaded again as Hopper keeps the old copies' paths here, where
+        // SolidWorks finds nothing now that they're deleted.
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await UploadedAgainAsync(alice, "Fuel");
+        await alice.CheckinAsync(
+            [Write(alice, "Hopper/Structures/Payload Interface.SLDPRT", "interface"), Write(alice, "Elytra/Structures/Payload Interface.SLDPRT", "another")],
+            "two of a name");
+        var mine = Write(bob, "09_Hopper/Tanks/Fuel Baffle.SLDPRT", "bob's, not checked in yet");
+        await bob.RefreshAsync();
+
+        var (inVault, notInVault) = bob.FindUsedFiles(
+        [
+            Local(bob, "09_Hopper/Tanks/Fuel Tank.SLDASM"), // its copy is in a folder of the same name
+            Local(bob, "09_Hopper/Hopper Payload.SLDPRT"), // its copy has only its name in common
+            Local(bob, "09_Hopper/Structures/Payload Interface.SLDPRT"), // two files end like it
+            mine, // here, so it's this one, though Hopper has one that ends like it
+        ]);
+
+        Assert.Equal([Local(bob, "Hopper/Tanks/Fuel Tank.SLDASM"), mine], inVault);
+        Assert.Equal([Local(bob, "09_Hopper/Hopper Payload.SLDPRT"), Local(bob, "09_Hopper/Structures/Payload Interface.SLDPRT")], notInVault);
+
+        // Once its copy is here, SolidWorks, finding nothing at the old path, is pointed at it.
+        var vaultPaths = (await bob.StatusAsync()).Where(s => s.FileId != null).Select(s => s.VaultPath).ToList();
+        Assert.Null(bob.LocalFileFor(Local(bob, "09_Hopper/Tanks/Fuel Tank.SLDASM"), vaultPaths));
+        await bob.GetLatestAsync([Local(bob, "Hopper/Tanks/Fuel Tank.SLDASM"), Local(bob, "Hopper/Hopper Payload.SLDPRT")]);
+        Assert.Equal(Local(bob, "Hopper/Tanks/Fuel Tank.SLDASM"), bob.LocalFileFor(Local(bob, "09_Hopper/Tanks/Fuel Tank.SLDASM"), vaultPaths));
+        Assert.Null(bob.LocalFileFor(Local(bob, "09_Hopper/Hopper Payload.SLDPRT"), vaultPaths)); // its copy is here, but has only its name in common
+    }
+
+    [Fact]
+    public async Task OpeningAnAssemblySavedAgainstDeletedFilesGetsTheirCopiesAtEveryLevel()
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        await UploadedAgainAsync(alice, "LOX");
+        await bob.GetLatestAsync([Local(bob, "Hopper/Assy - Vehicle.SLDASM")]);
+        var keeps = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Assy - Vehicle.SLDASM"] = [Local(bob, "09_Hopper/Tanks/LOX Tank.SLDASM"), Local(bob, "09_Hopper/Hopper Payload.SLDPRT")],
+            ["LOX Tank.SLDASM"] = [Local(bob, "Hopper/Tanks/LOX Baffle.SLDPRT")], // saved since, where its part is now
+        };
+
+        var (got, notInVault) = await bob.GetUsedFilesAsync(
+            Local(bob, "Hopper/Assy - Vehicle.SLDASM"), path => keeps.TryGetValue(Path.GetFileName(path), out var paths) ? paths : [], latest: false);
+
+        Assert.Equal(["LOX Baffle.SLDPRT", "LOX Tank.SLDASM"], got.Downloaded.Select(Name).Order());
+        Assert.Equal("tank", File.ReadAllText(Local(bob, "Hopper/Tanks/LOX Tank.SLDASM")));
+        Assert.Equal([Local(bob, "09_Hopper/Hopper Payload.SLDPRT")], notInVault);
+    }
+
+    [Fact]
     public async Task WhatFilesKeepIsReadOnTheCallersThread()
     {
         // The add-in reads them from SolidWorks, which only answers on its main thread: the task pane's.
@@ -841,6 +992,27 @@ public sealed class WorkspaceTests : IDisposable
             ["Thrust Structure.SLDASM"] = [$@"{kenesto}\Gimbal\Gimbal Ring.SLDPRT", $@"{kenesto}\Gimbal\Stringer.SLDPRT", $@"{kenesto}\Nozzle.SLDPRT"],
         };
         return path => keeps.TryGetValue(Path.GetFileName(path), out var paths) ? paths : [];
+    }
+
+    /// <summary>
+    /// 09_Hopper uploaded again as Hopper by this person, and the old copies deleted, as the team once did: what was in
+    /// 09_Hopper is in the trash, and Hopper has a copy of each, one in a folder of the same name and one not, and the
+    /// tank's part beside it. Tests name their own tanks: a deleted file's path is matched only up to the renamed
+    /// folder, so two tests' tanks, each in its own test folder, would end as alike, on the server they share.
+    /// </summary>
+    private async Task UploadedAgainAsync(Workspace workspace, string tank)
+    {
+        string[] old = [$"09_Hopper/Tanks/{tank} Tank.SLDASM", "09_Hopper/Hopper Payload.SLDPRT"];
+        await workspace.CheckinAsync([.. old.Select(path => Write(workspace, path, "old"))], "the old tree");
+        await workspace.CheckinAsync(
+            [
+                Write(workspace, "Hopper/Assy - Vehicle.SLDASM", "vehicle"),
+                Write(workspace, $"Hopper/Tanks/{tank} Tank.SLDASM", "tank"),
+                Write(workspace, $"Hopper/Tanks/{tank} Baffle.SLDPRT", "baffle"),
+                Write(workspace, "Hopper/Hopper Payload.SLDPRT", "payload"),
+            ],
+            "uploaded again");
+        await workspace.Api.DeleteAsync(old.Select(path => $"{_folder}/{path}"));
     }
 
     [Fact]

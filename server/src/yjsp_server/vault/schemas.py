@@ -6,9 +6,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, FiniteFloat
 
 from ..api.schemas import UserRef
-from . import vault
+from . import numbers, vault
 from .caliper import Color
-from .models import Role
+from .models import Applies, Numbering, PartKind, PartNumber, Role
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 # A file id, or a vault path such as "Structures/Fins/Fin.SLDPRT".
@@ -44,6 +44,10 @@ class FileOut(BaseModel):
     # What the latest version uses (an assembly's parts, a drawing's model), by id: the files you can
     # see, including any deleted since. Clients look them up in their copy of the sync feed.
     uses: list[UseOut]
+    title: str  # what people call it: its name without its type, until someone names it (POST /api/files/metadata)
+    vendor: bool  # a vendor's part (a McMaster screw, say), which keeps the vendor's name rather than a part number
+    # The names it had before its renames, oldest first: SolidWorks files saved before then still look for it by them.
+    former_names: list[str]
 
     @classmethod
     def of(cls, view: vault.FileView) -> "FileOut":
@@ -67,6 +71,9 @@ class FileOut(BaseModel):
             deleted_at=file.deleted_at,
             deleted_by=UserRef.of(view.deleted_by) if view.deleted_by else None,
             uses=[UseOut(file_id=file_id, version=number) for file_id, number in view.uses],
+            title=file.title,
+            vendor=file.vendor,
+            former_names=view.former_names,
         )
 
 
@@ -213,6 +220,16 @@ class RenameIn(BaseModel):
     name: str
 
 
+class DescriptionIn(BaseModel):
+    file: int | str  # an id, or a vault path
+    title: str | None = None  # what it's called; null leaves it as it is
+    vendor: bool | None = None  # whether it's a vendor's part; null leaves it as it is
+
+
+class MetadataIn(BaseModel):
+    files: list[DescriptionIn] = Field(min_length=1, max_length=5000)
+
+
 class MovedOut(BaseModel):
     folders: list[FolderOut]
     files: list[FileOut]
@@ -222,8 +239,80 @@ class MovedOut(BaseModel):
         return cls(folders=[FolderOut.of(f) for f in moved.folders], files=[FileOut.of(f) for f in moved.files])
 
 
+class NumberingOut(BaseModel):
+    mode: (
+        Numbering  # off: not handed out (but to admins); offer: new parts and assemblies take them; require: they must
+    )
+    next_number: int  # the next to hand out
+
+
+class NumberingIn(BaseModel):
+    mode: Numbering | None = None
+    next_number: int | None = Field(default=None, ge=1, le=numbers.LARGEST)  # only ever later
+
+
+class PartKindOut(BaseModel):
+    code: str  # 001: a part number's last three digits
+    label: str  # what it's for: Part, Sheet metal part, Assembly
+    applies: Applies  # what can have one: parts (and STEP and STL files), assemblies, or any
+    retired: bool  # no new numbers of it are handed out
+
+    @classmethod
+    def of(cls, kind: PartKind) -> "PartKindOut":
+        return cls(code=kind.code, label=kind.label, applies=kind.applies, retired=kind.retired)
+
+
+class PartKindIn(BaseModel):
+    code: str
+    label: str
+    applies: Applies
+
+
+class PartKindChangeIn(BaseModel):
+    label: str | None = None
+    applies: Applies | None = None  # only while no file has a number of it
+    retired: bool | None = None
+
+
+class PartNumberOut(BaseModel):
+    number: str  # 00000123-001
+    kind: str
+    title: str  # what the file that takes it is to be called; "" for none
+    issued_at: datetime
+    file_id: int | None  # the file that has it, once one does
+
+    @classmethod
+    def of(cls, issued: PartNumber) -> "PartNumberOut":
+        return cls(
+            number=numbers.text(issued.number, issued.kind),
+            kind=issued.kind,
+            title=issued.title,
+            issued_at=issued.issued_at,
+            file_id=issued.file_id,
+        )
+
+
+class PartNumbersOut(BaseModel):
+    numbers: list[PartNumberOut]
+
+    @classmethod
+    def of(cls, issued: list[PartNumber]) -> "PartNumbersOut":
+        return cls(numbers=[PartNumberOut.of(n) for n in issued])
+
+
+class ReserveIn(BaseModel):
+    kind: str  # a kind's code: 001
+    title: str = ""  # what to call the file that takes it
+    count: int = Field(default=1, ge=1)
+
+
+class ReleaseIn(BaseModel):
+    numbers: list[str] = Field(min_length=1, max_length=10_000)  # 00000123-001, ...
+
+
 class ReferenceIn(BaseModel):
-    path: str
+    path: str = ""  # the file it uses, by vault path; or
+    file_id: int | None = None  # by id, which a rename in the same check-in doesn't change
     version: int | None = Field(default=None, ge=1)  # default: latest, or the one in this check-in
 
 
@@ -232,6 +321,14 @@ class CheckinItemIn(BaseModel):
     sha256: Sha256
     size: int = Field(ge=0)
     references: list[ReferenceIn] = []
+    title: str | None = None  # what it's called; a new file's is otherwise its part number's, or its name's
+    vendor: bool | None = None  # a vendor's part; a new file's is otherwise as its name says (a McMaster number)
+    base_version: int | None = Field(default=None, ge=1)  # the version its changes start from: out_of_date if older
+
+
+class RenamingIn(BaseModel):
+    file: int  # a file checked out to you on this computer, by id
+    name: str  # its new name, in its folder: list it among the items by its new path
 
 
 class CheckinIn(BaseModel):
@@ -239,23 +336,57 @@ class CheckinIn(BaseModel):
     host: str
     keep_checked_out: bool = False
     items: list[CheckinItemIn] = Field(min_length=1, max_length=5000)
+    # Files renamed in this check-in; every file whose latest version uses one goes in too, saved with its new name.
+    renames: list[RenamingIn] = Field(default=[], max_length=5000)
+    dry_run: bool = False  # find every problem, and change nothing
 
 
 class CheckinFileOut(BaseModel):
-    status: Literal["created", "updated", "unchanged"]
+    status: Literal["created", "updated", "unchanged", "renamed"]
     file: FileOut
 
 
+class ProblemOut(BaseModel):
+    error: str  # the error's code, as a refusal has it
+    message: str
+    details: dict[str, Any]  # as a refusal's
+
+
+class PlannedOut(BaseModel):
+    status: Literal["created", "updated", "unchanged", "renamed"]
+    path: str
+
+
 class CheckinOut(BaseModel):
-    checkin_id: int | None  # null when nothing changed
-    files: list[CheckinFileOut]
+    checkin_id: int | None  # null when nothing changed, and for a dry run
+    files: list[CheckinFileOut]  # none for a dry run, which says instead
+    planned: list[PlannedOut] = []  # what would happen to each file, if it found no
+    problems: list[ProblemOut] = []  # problems: every one it found
 
     @classmethod
     def of(cls, result: vault.CheckinResult) -> "CheckinOut":
         return cls(
             checkin_id=result.checkin_id,
             files=[CheckinFileOut(status=status, file=FileOut.of(view)) for status, view in result.files],
+            planned=[PlannedOut(status=status, path=path) for status, path in result.planned],
+            problems=[ProblemOut(error=p.code, message=p.message, details=p.details) for p in result.problems],
         )
+
+
+class PauseOut(BaseModel):
+    by: UserRef  # the admin who paused the vault: their changes, from host, go on
+    since: datetime
+    host: str
+    reason: str
+
+    @classmethod
+    def of(cls, pause: vault.Pause) -> "PauseOut":
+        return cls(by=UserRef.of(pause.by), since=pause.since, host=pause.host, reason=pause.reason)
+
+
+class PauseIn(BaseModel):
+    host: str  # this computer: the admin's changes from it go on
+    reason: str = ""  # what for, shown to everyone
 
 
 class SyncOut(BaseModel):
@@ -263,6 +394,7 @@ class SyncOut(BaseModel):
     full: bool  # true: this is everything you can see; drop anything not listed
     folders: list[FolderOut]
     files: list[FileOut]  # when not full, includes files deleted since (deleted_at set)
+    paused: PauseOut | None = None  # an admin has the vault paused: changes wait until it's back
 
     @classmethod
     def of(cls, result: vault.SyncResult) -> "SyncOut":
@@ -271,6 +403,7 @@ class SyncOut(BaseModel):
             full=result.full,
             folders=[FolderOut.of(f) for f in result.folders],
             files=[FileOut.of(f) for f in result.files],
+            paused=PauseOut.of(result.paused) if result.paused else None,
         )
 
 
@@ -418,3 +551,52 @@ class CaliperMissingIn(BaseModel):
 
 class CaliperMissingOut(BaseModel):
     missing: list[CaliperWantIn]  # those that have no model yet, of files you can see
+
+
+class DrawingPdfOut(BaseModel):
+    size: int
+    created_at: datetime
+    created_by: UserRef
+
+    @classmethod
+    def of(cls, view: vault.PdfView) -> "DrawingPdfOut":
+        return cls(size=view.size, created_at=view.pdf.created_at, created_by=UserRef.of(view.created_by))
+
+
+class SheetOut(BaseModel):
+    name: str  # SolidWorks' name for it ("Sheet1"), or "" where the file doesn't say
+    picture: bool  # whether SolidWorks saved a picture of it in the file (GET .../drawing/sheet)
+
+
+class DrawingOut(BaseModel):
+    version: int
+    pdf: DrawingPdfOut | None  # the PDF Vault for SolidWorks made of it (GET .../drawing/pdf), if it made one
+    sheets: list[SheetOut]  # in order
+    unreadable: str | None  # why its sheets couldn't be read, if they couldn't
+
+    @classmethod
+    def of(cls, view: vault.DrawingView) -> "DrawingOut":
+        return cls(
+            version=view.version,
+            pdf=DrawingPdfOut.of(view.pdf) if view.pdf else None,
+            sheets=[SheetOut(name=sheet.name, picture=sheet.picture is not None) for sheet in view.sheets],
+            unreadable=view.unreadable,
+        )
+
+
+class DrawingPdfIn(BaseModel):
+    version: int = Field(ge=1)
+    pdf: Sha256  # upload it first (PUT /api/blobs/{sha256})
+
+
+class DrawingWantIn(BaseModel):
+    file_id: int
+    version: int
+
+
+class DrawingsMissingIn(BaseModel):
+    drawings: list[DrawingWantIn] = Field(max_length=20_000)
+
+
+class DrawingsMissingOut(BaseModel):
+    missing: list[DrawingWantIn]  # those that have no PDF yet, of files you can see

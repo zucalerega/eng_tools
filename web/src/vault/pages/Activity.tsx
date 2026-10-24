@@ -172,6 +172,65 @@ function describe(event: VaultEvent): ReactNode {
                     {who} renamed {text("moved_from")} to {file}
                 </>
             );
+        case "describe": {
+            // A new title, whether it's a vendor's part, or both, said in one go (vault.describe).
+            const vendor =
+                typeof detail.vendor === "boolean" ? (detail.vendor ? "a vendor's part" : "not a vendor's part") : null;
+            if (typeof detail.title !== "string") {
+                return (
+                    <>
+                        {who} marked {file} as {vendor}
+                    </>
+                );
+            }
+            return (
+                <>
+                    {who} titled {file} “{text("title")}”{detail.was ? ` (it was “${text("was")}”)` : ""}
+                    {vendor && `, and marked it as ${vendor}`}
+                </>
+            );
+        }
+        case "reserve_numbers": {
+            const count = Number(detail.count ?? 1);
+            return (
+                <>
+                    {who} got{" "}
+                    {count === 1 ? `part number ${text("first")}` : `${count} part numbers, from ${text("first")}`}
+                    {detail.title ? ` for “${text("title")}”` : ""}
+                </>
+            );
+        }
+        case "release_numbers": {
+            const given = Array.isArray(detail.numbers) ? detail.numbers.map(String) : [];
+            return (
+                <>
+                    {who} gave back {given.length === 1 ? `part number ${given[0]}` : `${given.length} part numbers`}
+                </>
+            );
+        }
+        case "part_kind":
+            return (
+                <>
+                    {who} {detail.retired ? "retired" : "set"} the kind of part number {text("code")}, “{text("label")}”
+                </>
+            );
+        case "numbering":
+            return (
+                <>
+                    {who}{" "}
+                    {detail.numbering
+                        ? `set part numbers for new files to ${{ off: "off", offer: "offered", require: "required" }[text("numbering")] ?? text("numbering")}`
+                        : `moved the next part number on to ${text("next_number").padStart(8, "0")}`}
+                </>
+            );
+        case "pause":
+            return (
+                <>
+                    {who} paused the vault{detail.reason ? `, for ${text("reason")}` : ""}
+                </>
+            );
+        case "unpause":
+            return <>{who} unpaused the vault</>;
         case "move_folder":
             return (
                 <>
@@ -216,6 +275,16 @@ function describe(event: VaultEvent): ReactNode {
                 </>
             );
         case "update_settings":
+            if ("min_client_version" in detail) {
+                return detail.min_client_version ? (
+                    <>
+                        {who} let only add-ins and vault commands {text("min_client_version")} and newer change the
+                        vault
+                    </>
+                ) : (
+                    <>{who} let add-ins and vault commands of any version change the vault</>
+                );
+            }
             return (
                 <>
                     {who} turned the whitelist {detail.whitelist ? "on" : "off"}

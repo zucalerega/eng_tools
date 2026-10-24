@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "../../router";
-import { caliperUrl } from "../paths";
+import { caliperUrl, titleBeside } from "../paths";
 import { useVault } from "../store";
 import type { Node, Why } from "./model";
 
@@ -48,6 +48,7 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
     const shown = !props.hidden.has(node.id);
     const latest = node.file ? vault.files.get(node.file.id) : undefined;
     const file = latest?.name;
+    const titled = latest ? titleBeside(latest) : null; // what its file is called, where the name doesn't say
     return (
         <li
             role="treeitem"
@@ -88,6 +89,7 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                     <span className={`caliper-kind caliper-kind-${node.kind}`} aria-hidden="true" />
                     {node.name}
                 </button>
+                {titled && <span className="file-title caliper-title">{titled}</span>}
                 {node.file && (
                     <span className="muted caliper-version">
                         v{node.file.version}

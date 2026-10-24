@@ -13,6 +13,37 @@ test("the activity feed says what each check-in was for", async () => {
     expect(comment.closest("li")!.textContent).toContain(`Alice added ${team.folder}/Avionics/Sled.SLDASM`);
 });
 
+test("the activity feed says when a file got a new title, and what it was", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    await team.checkin(alice, { "Fins/Fin.SLDPRT": "fin" });
+    await team.title(alice, "Fins/Fin.SLDPRT", "Fin, left side");
+
+    renderApp(team.chief, "/vault/activity");
+    const lines = (await screen.findAllByText(/titled/)).map((titled) => titled.closest("li")!.textContent);
+    expect(lines).toContainEqual(
+        expect.stringContaining(`Alice titled ${team.folder}/Fins/Fin.SLDPRT “Fin, left side” (it was “Fin”)`),
+    );
+});
+
+test("admins keep the kinds of part numbers, and see that new files are offered them", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, "/vault/admin/numbers");
+    expect(await screen.findByRole("combobox", { name: "New files" })).toHaveProperty("value", "offer");
+    const form = screen.getByRole("form", { name: "New kind" });
+    await userEvent.type(within(form).getByRole("textbox", { name: "Code" }), "777");
+    await userEvent.type(within(form).getByRole("textbox", { name: "What it's for" }), "Test fixture");
+    await userEvent.selectOptions(within(form).getByRole("combobox", { name: "Files" }), "any");
+    await userEvent.click(within(form).getByRole("button", { name: "Add kind" }));
+
+    const kinds = screen.getByRole("table", { name: "Kinds" });
+    const row = (await within(kinds).findByText("777")).closest("tr")!;
+    expect(row.textContent).toContain("Test fixture");
+    expect(row.textContent).toContain("Parts and assemblies");
+    await userEvent.click(within(row).getByRole("button", { name: "Retire 777" }));
+    expect(await within(kinds).findByRole("button", { name: "Bring back 777" })).toBeTruthy();
+});
+
 test("admins see how many people used the site each day for the last month, and for how long, on the web app and in SolidWorks", async () => {
     const team = await Team.create();
     await team.member(`Usage-${team.folder}`); // signed in just now
@@ -100,6 +131,45 @@ test("admins see who has the SolidWorks add-in, on how many computers, and with 
     expect(within(row).getByText("0.5.2").className).not.toContain("status-pending");
     expect(Number(card.getByText("On the newest (0.5.0)").nextElementSibling!.textContent)).toBeGreaterThanOrEqual(1);
     expect(card.getByText(/^Have it: signed in with the add-in on a computer/)).toBeTruthy();
+});
+
+test("admins can have the vault take changes only from add-ins as new as a version they set, and from any again", async () => {
+    const team = await Team.create();
+    await team.oldestClient(null); // any, as a server starts, and again once the test is done
+    renderApp(team.chief, "/vault/admin");
+    const card = within((await screen.findByRole("heading", { name: "SolidWorks add-in" })).closest("section")!);
+    const field = await card.findByLabelText("Oldest version that can make changes");
+    expect(card.getByText(/^Any version can change the vault\./)).toBeTruthy();
+
+    // The installer offered is 0.5.0 (tests/server.ts): no add-in could update to a newer one, so it's refused.
+    await userEvent.type(field, "0.6.0");
+    await userEvent.click(card.getByRole("button", { name: "Save" }));
+    expect((await card.findByRole("alert")).textContent).toMatch(/^No add-in could update to 0\.6\.0/);
+    expect((await team.settings()).min_client_version).toBeNull();
+
+    await userEvent.clear(field);
+    await userEvent.type(field, "0.5.0");
+    await userEvent.click(card.getByRole("button", { name: "Save" }));
+    expect(await card.findByText(/^Only 0\.5\.0 and newer can check files out and in/)).toBeTruthy();
+    expect(card.queryByRole("alert")).toBeNull();
+    expect((await team.settings()).min_client_version).toBe("0.5.0");
+    expect(card.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true); // nothing new to save
+
+    await userEvent.click(card.getByRole("button", { name: "Allow any version" }));
+    expect(await card.findByText(/^Any version can change the vault\./)).toBeTruthy();
+    expect((await team.settings()).min_client_version).toBeNull();
+    expect(card.queryByRole("button", { name: "Allow any version" })).toBeNull();
+});
+
+test("the activity feed says when admins change the oldest version that can make changes", async () => {
+    const team = await Team.create();
+    await team.oldestClient("0.5.0");
+    await team.oldestClient(null);
+    renderApp(team.chief, "/vault/activity");
+    const [newest] = await screen.findAllByText(/ let add-ins and vault commands of any version change the vault$/);
+    const [before] = screen.getAllByText(/ let only add-ins and vault commands 0\.5\.0 and newer change the vault$/);
+    // Newest first.
+    expect(newest!.compareDocumentPosition(before!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {

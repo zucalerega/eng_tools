@@ -12,7 +12,7 @@ page is Vault's own.
 |---|---|
 | On the server: every operation (`vault.py`), the folder tree and permissions (`access.py`), path rules (`paths.py`), file contents (`storage.py`), tables, routes | `server/src/yjsp_server/vault` |
 | In the web app: its pages, and the vault's index (`store.ts`) | `web/src/vault` |
-| Caliper, the 3D viewer: in the web app, and its models on the server (`caliper.py`, the mesh format; `solidworks.py`, reading SolidWorks files' 3D view) | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
+| Caliper, the viewer: in the web app (in 3D; and drawings and DXF files flat, `dxf.ts` reading DXF and `sheet.ts` drawing it), and on the server its models (`caliper.py`, the mesh format; `solidworks.py`, reading SolidWorks files' 3D view, and the pictures of drawings' sheets) and drawings' PDFs | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
 | The workspace library | `client/src/Vault.Client` (netstandard2.0 + net10.0) |
 | The `vault` command | `client/src/Vault.Cli` (.NET 10) |
 | The SolidWorks 2026 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
@@ -34,7 +34,7 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
 - **Works inside SolidWorks** through an add-in. A web app covers browsing,
   history and admin.
 - **See it without SolidWorks.** Caliper shows any part or assembly in 3D in the browser,
-  to turn, cut, and measure, on any computer.
+  to turn, cut, and measure, and any drawing or DXF file flat, on any computer.
 - **Cheap, and easy to hand over.** It runs in the site's one small server. A student can
   read Vault's part of it in an afternoon.
 
@@ -60,6 +60,12 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
   and it can contain versions of many files.
 - **Blob**: file contents, stored once under their SHA-256 hash. An unchanged
   file, or the same STEP file in two folders, takes no extra space.
+- **Title**: what people call a file, `Fin bracket`, shown with its name. It starts as
+  the file's name without its type, and anyone who can edit the file can change it. Part
+  numbers make CAD files' names numbers (`00000123-001.SLDPRT`, "Part numbers" below), and
+  the title is what says what each one is.
+- **Part number**: `00000123-001`, eight digits the vault hands out in order and a kind
+  from a list admins keep. A part's or an assembly's number is its name, for good.
 - **Lock (check-out)**: a file checked out by one person on one computer.
 - **Workspace**: your local copy of the vault, at the same path on every machine
   (default `C:\VLT`).
@@ -116,11 +122,88 @@ or get a new name (a file keeps its type), all or nothing, and never while check
 SolidWorks finds a file that an assembly or drawing uses by its name, in the assembly's
 folder or where it was relative to the assembly. So a move that would lose a file from
 the files using it is refused (`_still_found`): move a part into its assembly's folder,
-or their whole folder together, and rename used files in SolidWorks. Moving or renaming
+or their whole folder together, and rename used files in a check-in (below). Moving or renaming
 a folder, which takes its permissions along, takes a lead of it. Afterwards every client
 syncs everything again (clients know folders by path, and where a file is decides who
 can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
 open moves at a later refresh, and counts as that file meanwhile.
+
+**Renaming in a check-in.** A check-in can rename files too (`renames: [{file, name}]`, by
+id, each in its folder): the way to rename a file that others use, and how the vault's files
+are numbered all at once. Each renamed file is checked out to you on the computer checking in,
+and is an item too, by its new path (`renamed` in what the check-in says); and so is every
+file whose latest version uses it, with a new version, saved with the new name, so no file is
+left naming one that isn't there (`in_use` otherwise, with the files left behind). References
+can name files by id (`{file_id}`), which a rename doesn't change. The renames happen at once,
+so two files can trade names; new names are held to the rules of part numbers, as a rename's
+are. Clients follow a rename by the file's id, without syncing everything again. With
+`dry_run`, the check-in looks for every problem rather than stopping at the first, and changes
+nothing: it says what would happen to each file (`planned`), or lists the problems
+(`problems`, each as a refusal would say it).
+
+The vault keeps where each file was before a rename or a move (`former_names`, but for
+changes of case alone), since SolidWorks files saved before then still name it there:
+Caliper finds parts by those names, and every file the API returns lists the names it
+had (`former_names`, oldest first, each once, without the one it has now).
+
+**Titles and vendors' parts.** `POST /api/files/metadata` says what files are called
+(`title`) and which are vendors' parts (`vendor`: a McMaster screw, say, which keeps the
+vendor's name rather than taking a part number), for up to 5000 files at once, all or
+nothing. Neither is in the file, so neither makes a version, and neither needs a check-out:
+someone else's is fine. It takes editor access to the file's folder, as a rename does. A
+title is trimmed, and refused (`bad_title`) if it's empty, longer than 200 characters, or
+has a tab or a line break in it. A change shows in the activity log (`describe`), and
+clients get it in the sync feed like any other. A check-in item may bring a `title` and
+`vendor` too, which a new file takes, and an existing one changes to, as here.
+
+**Part numbers** (`vault/numbers.py` has the rules, `vault.py` holds the vault to them). A
+part number is `NNNNNNNN-KKK`: eight digits the server hands out in order, and a kind,
+three digits from a list admins keep (`part_kinds`: 001 Part and 501 Assembly to start
+with; a kind is for parts, assemblies, or any, and is retired rather than deleted). A part's
+or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says what it is.
+
+- **Handing them out** (`POST /api/numbers {kind, title, count}`): numbers go up by one and
+  are never handed out twice, even given back unused (`POST /api/numbers/release`).
+  Whether new files take them is an admin's switch (`PUT /api/numbering {mode}`): `off`
+  until the vault's files are numbered (docs/renumbering.md), when only admins get numbers (the renumbering hands
+  them out itself); `offer`, when editors get them too, up to 20 unused at a time
+  (`too_many_numbers`), and the web app and the add-in number new parts and assemblies; and
+  `require`, when a new part, assembly, STEP or STL file needs a number or to be a vendor's
+  part (`part_number_needed`). Files there before go on as they are.
+- **Taking one:** a new part or assembly (or a STEP or STL file of our own) named by a
+  number handed out and not yet used takes it, for good, and with it the title it was handed
+  out with, unless it brings its own. A number not handed out (`unknown_part_number`), or
+  another file's (`part_number_taken`), or of a kind for something else, or a part's name
+  with more than its number in it (`bad_part_number`), is refused. Who it was handed out to
+  doesn't matter: whoever checks in a file named by it takes it.
+- **Named after one:** a drawing, a PDF, or an export (a STEP or STL file) of a numbered
+  part is named after its number, `00000123-001.SLDDRW` or `00000123-001 - machining.PDF`,
+  once a file has it (`unknown_part_number` otherwise). In a check-in, parts and assemblies
+  take their numbers before the files named after them, so they can go in together.
+- **Never changing:** a file with a number can't be renamed to anything else
+  (`part_number_fixed`), though it can move. A file without one can be renamed to a number
+  handed out, and takes it. A drawing renamed stays named after what it shows
+  (`drawing_name`), as a check-in has it.
+- **Vendors' parts** keep their vendors' names: a file named by a McMaster-Carr number
+  (`91251A463_Socket Head Screw.SLDPRT`) comes in marked as a vendor's, and any file can be
+  marked so (`POST /api/files/metadata`). A file named by a part number isn't a vendor's.
+- **Numbers from before:** Ground Structures named its parts and assemblies by numbers of
+  its own (`00000011-001` to `-013` are one project's parts, `00000011-501` its
+  assembly), and some have more after them (`00000004-010-6`). They keep their names
+  (migration 0021 records them as `legacy` numbers, which several files may share), and
+  the numbers handed out start after the largest any file's name had (00000022). New
+  Ground Structures files take new numbers.
+- A check-in item's `base_version` says which version its changes start from: if the file
+  is past it, the check-in is refused (`out_of_date`), so a change made to an old copy
+  isn't checked in over newer ones.
+
+**Pausing the vault.** An admin pauses the vault (`PUT /api/vault/pause {host, reason}`) for
+work on all of it, such as numbering every file at once: every change waits until it's
+unpaused (`DELETE /api/vault/pause`), refused as `paused`, with who paused it and why; but
+the admin's own, from the computer they paused it on (and those that name no computer, such
+as a rename, from anywhere). Looking, downloading, undoing check-outs, Caliper's models, and
+changes to accounts and to who may see what go on. The sync feed says while it's paused
+(`paused`), for the clients to show.
 
 **Delete and restore.** Deleting moves files to a trash that anyone with edit
 access can restore from, with full history. Vault refuses to delete a file that the
@@ -142,8 +225,9 @@ everything again, like a move, and drop it.
 first, with comments, authors, and pinned references, plus the live files whose
 latest version uses this file. Every file the API returns, including in the sync
 feed, also lists what its latest version uses (`uses`: file ids, each with the version
-it was checked in with, limited to files you can see), and who created it and when
-(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`). So the web app and the add-in,
+it was checked in with, limited to files you can see), who created it and when
+(`created_by`, `created_at`) next to who changed it last (`modified_by`, `modified_at`), and
+its `title`, `vendor`, and `former_names` (above). So the web app and the add-in,
 which keep a copy of the feed, know every assembly's parts and where each part is used,
 at every level, without asking for each file. References are by id, so renaming a file
 later won't touch the files that use it.
@@ -212,6 +296,9 @@ These rules keep the data consistent. The code relies on them, so keep them true
 - **Every permission check goes through `access.Access`.** What the user can't see
   answers as what isn't there (see "Permissions"): `vault._find` finds files, and
   `Access.deepest` folders, as they see them.
+- **Every change takes `ChangingUser`.** A route that changes the vault depends on
+  `ChangingUser` (`api/deps.py`), not `ActiveUser`, so the oldest client admins set holds
+  for it (`clients.refuse_old`); reads take `ActiveUser`, so old clients can always read.
 - **Timestamps are timezone-aware UTC.**
 
 ## The local workspace (client)
@@ -230,7 +317,15 @@ on top of it.
   level once it's here (`Workspace.GetUsedFilesAsync`), and `Workspace.FindUsedFiles` takes
   each to the vault file whose path ends the same way, with the most folders matching (none
   if two match as well); those come down with it, and kept paths nothing matches are
-  listed. A file placed with 3D Interconnect (a STEP file, say) is kept as the document
+  listed. A path in the workspace means the file there. Where the vault has no file there
+  any more, and none is on disk, the file was deleted, as when a folder is uploaded again
+  under another name and the old copies deleted: an assembly saved before then still names
+  them (`C:\VLT\09_Hopper\Tanks\Assy - Fuel Tank.SLDASM`, now `Hopper/Tanks/...`). Such a
+  path means the vault file whose path ends most like it, with its folder's name the same
+  at least, so a part not checked in yet is never taken for another of its name (none if
+  two end alike). A copy of the deleted file still on disk (Deleted in the vault, until an
+  update removes it) is what SolidWorks opens there, as before.
+  A file placed with 3D Interconnect (a STEP file, say) is kept as the document
   SolidWorks made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`), never on disk,
   so where no vault file has that name, it means the vault file of the name it was made
   from (`BMS.step`): of several, the one whose folders, from the top, are most like those
@@ -241,8 +336,11 @@ on top of it.
   that's here can be missing its parts, and it waits for a refresh that's running rather
   than skip the check. When SolidWorks can't find a file anyway, the add-in's
   `ReferenceNotFoundNotify` handler points it at the vault file that match means, if it's
-  here, or else at the file here at the longest end of the path
-  (`Workspace.LocalFileFor`). Checking such an assembly in from SolidWorks records its
+  here, or else, for a path from elsewhere, at the file here at the longest end of the path
+  (`Workspace.LocalFileFor`). A file renamed since (given its part number, say) is found by
+  the names it had (`former_names`), in its folder, unless a file has that name now: from
+  elsewhere, and in this workspace too, where its copy followed the rename. Checking such an
+  assembly in from SolidWorks records its
   references (see "A check-in of unchanged contents" above); one that uses files the vault
   can't have (missing, or outside the workspace) names them all at once, and nothing is
   checked in.
@@ -264,10 +362,11 @@ on top of it.
   path sent for two files, or another file's short name on Windows) unless it's the
   vault's version already.
 - **Local state.** `.vault/state.json` records the sync cursor, the vault's files (with
-  what each uses) and folders (with your role in each), and each local copy's id,
-  version, hash, size, and write time. A file is rehashed only when its size or write
-  time changes. A workspace whose state is from an older client (`SyncFormat`), or that
-  synced while its server didn't say what files use yet, gets everything once more.
+  what each uses, its title, whether it's a vendor's part, and the names it had) and
+  folders (with your role in each), and each local copy's id, version, hash, size, and
+  write time. A file is rehashed only when its size or write time changes. A workspace
+  whose state is from an older client (`SyncFormat`), or that synced while its server
+  didn't say what files use, or what they're called, yet, gets everything once more.
   From this state each file is one of:
   - up to date
   - out of date
@@ -310,7 +409,10 @@ on top of it.
   changes, go into the same check-in. Every reference is pinned to the version this
   workspace has, which is the one the assembly was built against. References outside the
   workspace, such as a Toolbox part in `C:\SOLIDWORKS Data`, are refused with a message
-  saying to move them in first. The CLI can't read SolidWorks files, so it doesn't send
+  saying to move them in first, and so is a reference to a file deleted from the vault
+  since it came here, saying to restore it from its folder's trash or take it out of the
+  assembly: checked in, the assembly would have a hole where it was. Saving such a file
+  in SolidWorks says the same, and offers Save As. The CLI can't read SolidWorks files, so it doesn't send
   references, and the server refuses drawings from it (a drawing must show a part or
   assembly).
 
@@ -351,6 +453,10 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   Windows session, which has the add-in loaded, then installs, keeping sign-in, settings,
   and workspaces. Add-ins before Update (0.4.0 and older) have none: run setup by hand
   once. Add-ins up to 0.5.2 don't check signatures.
+  People take Update when they get round to it, so admins can have the vault take changes
+  only from add-ins (and CLIs) at least as new as a version they set, in Admin > People
+  (design.md, "The oldest client that can make changes"): an older add-in can still open,
+  get, and browse files, and update itself, and anything else it tries says how to update.
 
 - **Task pane.** Everything is in the Vault tab: sign-in; a header with your account's
   menu (the vault, the workspace, the web app, sign out); a card for the active document,
@@ -362,7 +468,23 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   in `Theme.cs` and `PaneControls.cs` (flat WinForms controls, and File Explorer's theme for
   the list and tree), drawn without image files, at 96 DPI and scaled. It refreshes every
   20 seconds and after every action, and redraws only when something changed, so what you
-  opened in the tree stays open.
+  opened in the tree stays open. Its questions and warnings are its own box
+  (`MessageDialog`), not Windows' `MessageBox`, which grows with its text past the screen,
+  where neither its title bar nor its buttons can be reached, and can't scroll: Vault's is
+  never taller than 80% of the screen it's on, and a longer message scrolls.
+- **Titles and part numbers.** Files' titles show after their names in Browse and under the
+  active document's name, where they say more than the names do (`Titles.Beside` in
+  `Vault.Client`), with Edit title on a file's right-click menu. Right-clicking a folder in
+  Browse offers New part and New assembly while part numbers are on: a kind and a title
+  (`NewNumberDialog`), the next number handed out, then the new file is started and checked
+  in as one from the web app is. Check in offers to mark new parts going in without part
+  numbers as vendors' parts, ticked to start with when McMaster's numbers name them all. While
+  an admin has the vault paused, the tab says who and why (`Workspace.Paused`, from the sync
+  feed). When SolidWorks can't find a part that was renamed since the file was saved (given its
+  part number, say), the add-in points it at the renamed file by the name it had
+  (`Workspace.LocalFileFor`, over the statuses, which carry former names). Numbering new files
+  as they go in (renaming them, and rewriting the new assemblies that use them) waits on the
+  SolidWorks 2026 checks in docs/renumbering.md.
 - **Offering a check-out.** When you start editing the active document and it isn't
   checked out to you, the add-in offers to check it out. It asks once per document per
   session, and ignores the changes SolidWorks makes while opening a file. Saving such a
@@ -371,6 +493,16 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   (`FileSaveAsNotify2`), the add-in checks the file out and saves it in place
   (`SetSaveAsFileName`), or says who has it or that there's a newer version, and offers
   to save under another name.
+- **Saving along.** Saving an assembly (or a drawing) saves the files it uses that changed
+  too, and in SolidWorks 2026 that's every file last saved in an older SolidWorks, which
+  counts as changed once it's open: SolidWorks turns each that isn't checked out to you
+  into a Save As. So the first of them asks about them all, once (`SaveAlong`): Yes checks
+  out those that can be, in one go, and saves them; No (the default) leaves them as the
+  vault has them, what changed in them still on screen. Those someone else has, deleted
+  from the vault, or out of date are named and never saved. The file being saved is the
+  active document, or the one Vault saves before a check-in; the answer holds until its
+  save ends (`FileSavePostNotify`), or a minute. Check-in saves only the open files you
+  can save: one that isn't checked out to you can't go in it anyway.
 - **Open files.** SolidWorks holds the files it has open, including parts that an open
   assembly uses, even after the part's own window is closed. Before get latest, undo,
   or a check-out that needs the latest version replaces open files, SolidWorks lets go
@@ -432,6 +564,13 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   relative to the top assembly; a sub-assembly's own model has them relative to it). A part
   with unsaved changes, or loaded lightweight (its bodies aren't), gets no model, and the
   tab says so; making models never undoes the check-in before it.
+- **Drawings' PDFs for Caliper.** After a check-in, the add-in saves each drawing it checked
+  in as a PDF of all its sheets, as File > Save As > PDF does (`SolidWorksHost.DrawingPdf`:
+  `ExportPdfData`, every sheet, silently, without opening the PDF after), and uploads it as
+  that version's (`DrawingPdfs` in Vault.Client: it asks the server which versions have
+  none, then saves those). Make PDF does it for the active drawing, where its version has
+  none. A drawing with unsaved changes, or changed and not checked in, gets none, and the
+  tab says so; making a PDF never undoes the check-in before it.
 
 ## In the web app
 
@@ -450,16 +589,32 @@ in the frame the site gives both apps (design.md, "The web app").
     computer, who created it and when, and who changed it last and when; every folder how
     many files in it are checked out. Assemblies (and drawings) open up to show what they
     use, level by level, each with its own status; parts and assemblies link to their
-    drawings. Search (by name, with `*` and `?` patterns, or by path with a `/`) and the
+    drawings. A file's title shows under its name wherever it says more than the name does
+    (`titleBeside` in `paths.ts`: once someone named it, or its name is a part number), here,
+    on its page, in Checked out, in the trash, and in Caliper's tree. Search (by name, title,
+    or a name the file had before, with `*` and `?` patterns, or by path with a `/`) and the
     filters (kind, status, when it was last changed, and by whom) list matching files from
     the folder and every folder in it, or from the whole vault (`browsing.ts`). The sort
     (a dropdown, or the name, date, and size column headings) is remembered per browser.
   - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
-    the top-level ones, its drawings, and its history, with downloads.
-  - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
-    in Caliper, beside Open in SolidWorks on a file's page and in folders.
+    the top-level ones, its drawings, and its history, with downloads; its title, with Edit
+    title… for editors, the names it had before ("Formerly …"), and whether it's a vendor's
+    part.
+  - New part and New assembly (`newFile.tsx`): while part numbers are offered or required,
+    a kind and a title, then Get a number, which hands one out (the user's unused ones are
+    offered first), then Start it in SolidWorks, a second click, as browsers let a link to
+    the add-in start only from a click. While they're offered, Name it yourself instead is
+    the old way; drawings are named after their part, as before. Uploads can mark parts as
+    vendors' (`vendor` on each check-in item). Rename is off for a file named by its part
+    number (`keepsItsName` in `paths.ts`, which has numbers.py's rules and test cases).
+  - Admin > Part numbers: whether new files take numbers, the next number, the kinds, and
+    pausing the vault. While it's paused, every page of the vault says so, with Unpause for
+    admins (from the sync feed's `paused`).
+  - Caliper: a part, an assembly, or a STEP, IGES, or STL file in 3D, or a drawing or a DXF
+    file flat (see "Caliper"), from Open in Caliper, beside Open in SolidWorks on a file's
+    page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.
   - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
     add-in").
@@ -508,7 +663,8 @@ in the frame the site gives both apps (design.md, "The web app").
 Caliper (`web/src/vault/caliper`, at `/vault/caliper/<file id>?version=&configuration=`)
 shows a part or assembly in 3D, to look at and measure, not to change: like SpaceX's
 TotalView, on any computer, without SolidWorks. It draws with WebGL (three.js), and loads
-only when a file is opened in it.
+only when a file is opened in it. It shows drawings and DXF files too, flat, on a page of
+their own that loads without three.js (see "Drawings and DXF files", below).
 
 - **Looking around**, as in a CAD program: drag to turn it about the point under the mouse,
   scroll to zoom where the mouse points, right-drag or shift-drag to pan, double-click a part
@@ -586,10 +742,12 @@ Where the 3D comes from:
       has the vault's files with those names in folders of the names of the folders
       SolidWorks saved them in (a name alone, as STEP imports' SOLID-1, could be any file's):
       the one whose path ends most like the saved one, and none where two end alike, each at
-      the version it had when the assembly's version was made, or its first. So they open on
-      their own as usual. A STEP or IGES file placed in an assembly (SolidWorks' 3D
-      Interconnect) is read in the browser, as the file on its own is (the server says which
-      components are one, `format`), one at a time. SolidWorks keeps one as the document it
+      the version it had when the assembly's version was made, or its first. A file renamed or
+      moved since is found where it was (its former names: "Move and rename"), unless a file
+      is there now, as SolidWorks would open that one. So they open on their own as usual. A
+      STEP or IGES file placed in an assembly (SolidWorks' 3D Interconnect) is read in the
+      browser, as the file on its own is (the server says which components are one,
+      `format`), one at a time. SolidWorks keeps one as the document it
       made of it in its temporary folder (`...\IC~~\BMS.step.SLDASM`, with a document for
       each of the STEP file's own parts under it), with the STEP file's path
       (`swImportedPath`): that path is the component's, found as any other, and the
@@ -658,6 +816,49 @@ Where the 3D comes from:
   one face, which measures as a cylinder. STL keeps no units: its numbers are taken as mm.
   A text STL that doesn't end with `endsolid` was cut off, and says so.
 
+**Drawings and DXF files** (`DrawingPage.tsx`):
+
+- **A SolidWorks drawing shows its PDF.** Vault for SolidWorks saves one of each drawing
+  version it checks in, of all its sheets, as SolidWorks prints them (`drawing_pdfs`), and
+  Caliper shows it in the browser's own PDF viewer, in a frame: its response lets the site's
+  own pages frame it, and doesn't forbid plugins as the rest of the site's responses do,
+  since a browser's PDF viewer is one. A browser that shows no PDFs in a page (Chrome on
+  Android downloads them) gets a link to it instead. Anyone who may upload (an editor
+  anywhere) and can see a drawing can add a PDF its version doesn't have, as the add-in
+  does; making one again, in place of the one there, takes editor rights to its folder. The
+  server checks it's a PDF (`%PDF-`), and serves it as nothing else.
+- **A version without one** (from before Vault for SolidWorks made them, from Kenesto, or
+  checked in from the web) shows the pictures of its sheets that SolidWorks saved in the
+  file for Windows' Explorer, which the server reads (`solidworks.read_sheets`): one of each
+  sheet, 640 x 480, enough to see what's on it, too small to read, so the page says how to
+  get the PDF (Make PDF). A drawing keeps nothing the server could draw itself: SolidWorks
+  draws its views from its models' 3D bodies as it opens it, and its annotations are in its
+  feature tree. This was worked out from the drawings SolidWorks 2020 to 2025 install as
+  samples, all of which it reads.
+- **A DXF file** is read as it is, in the browser (`dxf.ts`): what's in model space (or,
+  where that's empty, the layout it was saved with), its blocks drawn where they're
+  inserted (moved, turned, scaled, mirrored, and in arrays), in its own units (`$INSUNITS`,
+  else `$MEASUREMENT`, else mm, which the page says). It reads lines, arcs, circles,
+  ellipses, polylines (their bulges as arcs, and their widths), splines (NURBS), points,
+  text and MTEXT (without fonts' own formatting, but with AutoCAD's codes: `%%c` as ⌀,
+  stacked fractions and tolerances), dimensions (by the blocks they're drawn with),
+  leaders and multileaders, hatches (solid, or their pattern's lines inside them), solids,
+  and 3D faces, from text and binary files; in layers' and entities' colors (AutoCAD's 256,
+  and true colors; by layer, by block, and layer 0 in a block taking its insert's), with
+  line types' dashes and lines' weights. Anything else (images, 3D solids, viewports,
+  AutoCAD's tables, whose blocks it isn't sure where to put) is counted, and the page says
+  what it left out; so is what's past the first two million entities a file draws (a block
+  arrayed in blocks arrayed in others). The flat patterns and parts the team exported from
+  SolidWorks read as their files have them.
+- **It's drawn** on a canvas (`sheet.ts`), on a sheet of the theme's color (colors too faint
+  on it come out darker, or on a dark one lighter): drag to pan, scroll to zoom where the
+  mouse points, two fingers on a phone, double-click or F to fit. Its layers show and hide
+  (those the file has off or frozen start hidden). **Measuring** picks lines, arcs, circles,
+  and corners (the ends of lines and arcs, and points; where a hole's center line crosses its
+  edge, the hole): one shows a line's length and angle, a circle's diameter, an arc's
+  radius, angle, and length, or a corner's coordinates; two, the distance between them
+  (center to center for circles, from a line square to it), or the angle between two lines.
+
 A model shows what the vault lets you see: a component in a file you can't see is left
 out, with everything in it, and the page says how many were. Anyone who may upload (an
 editor anywhere) and can see a file can add a model its version doesn't have yet, as the
@@ -680,11 +881,16 @@ are in [design.md](design.md#api).
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
 | `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
 | `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
-| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}` |
+| `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}`, with files renamed `{renames}`; or, `{dry_run}`, what it would do |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
 | `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
+| `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
+| `GET/PUT /api/numbering` | whether new files take part numbers `{mode: off, offer, or require}`, and the next number `{next_number}` (admins change them) |
+| `GET/PUT/DELETE /api/vault/pause` | whether an admin has the vault paused, by whom and why; pause it `{host, reason}`; unpause it (admins) |
+| `GET/POST /api/part-kinds`, `PATCH /api/part-kinds/{code}` | the kinds of part numbers `{code, label, applies, retired}` (admins add and change them) |
+| `POST /api/numbers`, `GET /api/numbers`, `POST /api/numbers/release` | hand out part numbers `{kind, title, count}`; yours not used yet; give back unused ones `{numbers}` |
 | `GET /api/checkouts?mine=` | who has what checked out |
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
@@ -695,6 +901,19 @@ are in [design.md](design.md#api).
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
+| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
+| `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |
+| `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
+| `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |
+| `POST /api/drawings/missing` | which of these `{drawings: [{file_id, version}]}` have no PDF yet, of files you can see: what the add-in makes |
+
+Once admins set the oldest client that can change the vault (design.md, "The oldest client
+that can make changes"), every endpoint here that changes something (the `POST`s and
+`PUT`s, uploads included, but not Caliper's `POST`s, which only read) answers an older
+add-in's or CLI's request with 426 `client_too_old`, a message saying how to update, and
+`details`: `{version, min_client_version}`. It's the one exception to the server's taking
+requests from every older client, and it's off unless an admin sets it, for a release the
+team needs.
 
 ## Roadmap
 
@@ -713,12 +932,13 @@ are in [design.md](design.md#api).
    R2 store, with backups off the host (design.md, "Storage").
 6. **Caliper** (October 2026): parts, assemblies, and STEP files in 3D in the browser, to
    turn, cut, and measure; the 3D models of SolidWorks files made by the add-in, or read
-   by the server from the files themselves.
+   by the server from the files themselves. Drawings (their PDFs, which the add-in saves,
+   or the pictures of their sheets SolidWorks saved in them) and DXF files, flat.
 7. **Later**: thumbnails, check-in notifications to team chat, released revisions (A, B,
-   C) for flight hardware, and rename/move with reference repair. In Caliper: drawings,
-   exploded views, and models of the files from Kenesto that the server can't read (saved
-   without their 3D views, or used in configurations their files have none of), made on a
-   computer that only makes them.
+   C) for flight hardware, and rename/move with reference repair. In Caliper: exploded
+   views, and models of the files from Kenesto that the server can't read (saved without
+   their 3D views, or used in configurations their files have none of), and PDFs of the
+   drawings from there, made on a computer that only makes them.
 
 ## Open questions
 

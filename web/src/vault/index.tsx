@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
-import { Notice } from "../components";
+import { lazy, Suspense, useState } from "react";
+import { Notice, Time } from "../components";
+import { vaultApi } from "./api";
 import { Link } from "../router";
 import { WithFolderTree } from "./folderTree";
 import { Activity } from "./pages/Activity";
@@ -10,8 +11,8 @@ import { FilePage } from "./pages/FilePage";
 import { Locks } from "./pages/Locks";
 import { SolidWorks } from "./pages/SolidWorks";
 import { Trash } from "./pages/Trash";
-import { folderFromUrl, VAULT, vaultRoute } from "./paths";
-import { useVault } from "./store";
+import { folderFromUrl, sheetFormat, VAULT, vaultRoute } from "./paths";
+import { useStore, useVault, type VaultState } from "./store";
 
 // Vault: the team's CAD files. Its pages are under /vault (/vault/files/..., /vault/file/5, /vault/locks...), as
 // Yorg's are under /yorg; the app switcher in the top bar goes between them. Its routes below are the paths without
@@ -20,8 +21,10 @@ import { useVault } from "./store";
 export { VaultMark } from "./components";
 export { inVault, movedToVault, VAULT } from "./paths";
 
-// Caliper, the 3D viewer, and three.js with it, load only when a file is opened in it.
+// Caliper, the 3D viewer, and three.js with it, load only when a file is opened in it; drawings and DXF files, which are
+// flat, have a page of their own, without three.js.
 const CaliperPage = lazy(() => import("./caliper/CaliperPage").then((module) => ({ default: module.CaliperPage })));
+const DrawingPage = lazy(() => import("./caliper/DrawingPage").then((module) => ({ default: module.DrawingPage })));
 
 /** Which of Vault's sections a page is in, for the top bar. */
 export function vaultSection(pathname: string): string {
@@ -57,21 +60,24 @@ export function VaultPage({ pathname }: { pathname: string }) {
                     Can't reach the server ({vault.error}). Showing what was here; trying again.
                 </Notice>
             )}
-            {page(vaultRoute(pathname))}
+            <PauseNotice />
+            {page(vaultRoute(pathname), vault)}
         </>
     );
 }
 
-function page(route: string) {
+function page(route: string, vault: VaultState) {
     const file = /^\/file\/(\d+)\/?$/.exec(route);
     if (file) {
         return <FilePage key={file[1]} id={Number(file[1])} />;
     }
     const caliper = /^\/caliper\/(\d+)\/?$/.exec(route);
     if (caliper) {
+        const id = Number(caliper[1]);
+        const Viewer = sheetFormat(vault.files.get(id)?.name ?? "") !== null ? DrawingPage : CaliperPage;
         return (
             <Suspense fallback={<p className="muted caliper-page-message">Loading Caliper…</p>}>
-                <CaliperPage key={caliper[1]} id={Number(caliper[1])} />
+                <Viewer key={caliper[1]} id={id} />
             </Suspense>
         );
     }
@@ -108,6 +114,8 @@ function page(route: string) {
             return <Admin section="whitelist" />;
         case "/admin/access":
             return <Admin section="access" />;
+        case "/admin/numbers":
+            return <Admin section="numbers" />;
         default:
             return (
                 <Notice tone="error">
@@ -115,4 +123,42 @@ function page(route: string) {
                 </Notice>
             );
     }
+}
+
+/** While an admin has the vault paused (docs/vault.md, "Pausing the vault"): changes wait until it's back. */
+function PauseNotice() {
+    const vault = useVault();
+    const store = useStore();
+    const [problem, setProblem] = useState<string | null>(null);
+    const pause = vault.paused;
+    if (!pause) {
+        return null;
+    }
+    async function unpause() {
+        try {
+            await vaultApi.unpause();
+            await store.refresh();
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+        }
+    }
+    const mine = pause.by.id === vault.me?.id;
+    return (
+        <Notice tone="warning">
+            <span className="notice-row">
+                <span>
+                    {mine ? "You paused" : `${pause.by.name} paused`} the vault <Time at={pause.since} />
+                    {pause.reason && `, for ${pause.reason}`}. Check-outs, check-ins, and other changes wait until it's
+                    back{mine ? `, but yours from ${pause.host}` : ""}; you can still look at everything, download, and
+                    undo your check-outs.
+                    {problem && ` ${problem}`}
+                </span>
+                {vault.me?.is_admin && (
+                    <button type="button" onClick={() => void unpause()}>
+                        Unpause
+                    </button>
+                )}
+            </span>
+        </Notice>
+    );
 }

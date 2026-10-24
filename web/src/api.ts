@@ -26,6 +26,9 @@ export interface SiteSettings {
     // On: only the emails on the whitelist, and people an admin invited, can make an account; anyone else who signs
     // in is turned away. Off: anyone with a Georgia Tech account can.
     whitelist: boolean;
+    // The oldest add-in and vault command that can change the vault, like "0.5.4": older ones can still read it, and
+    // are told to update. Null: any version can. It can be no newer than the installer offered.
+    min_client_version: string | null;
 }
 
 /** A Georgia Tech address on the whitelist, with its account once it has one. */
@@ -357,7 +360,10 @@ export const api = {
     updateUser: (id: number, change: { status?: "active" | "disabled"; is_admin?: boolean }) =>
         request<Account>("PATCH", `/api/users/${id}`, change),
     settings: () => request<SiteSettings>("GET", "/api/settings"),
-    /** Turning the whitelist off approves everyone waiting too: anyone with a GT account can join then. */
+    /**
+     * Turning the whitelist off approves everyone waiting too: anyone with a GT account can join then. A null
+     * min_client_version lets any version change the vault again.
+     */
     updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),
     whitelist: () => request<WhitelistEntry[]>("GET", "/api/whitelist"),
     addToWhitelist: (emails: string[]) => request<WhitelistAdded>("POST", "/api/whitelist", { emails }),

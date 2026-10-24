@@ -4,6 +4,7 @@ import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
 import { inPreview, PREVIEW, sitePath } from "./preview";
+import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow } from "./piper";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { setTheme, useTheme, type Theme } from "./theme";
@@ -43,11 +44,12 @@ export function App() {
             chat.belongsTo(me.id); // the tab's conversation is only ever its own person's
         }
     }, [me, chat]);
-    // Two apps share the site and its sign-in: Vault (the CAD files, under /vault), and Yorg (test data, under /yorg).
-    // The site's own page, at / (Home), goes to either. Yorg's preview (/yorg/dev, admins) is Yorg as it will be, with
-    // what's new in its top bar too.
+    // Three apps share the site and its sign-in: Vault (the CAD files, under /vault), Yorg (test data, under /yorg), and
+    // Piper (P&IDs, under /piper). The site's own page, at / (Home), goes to any of them. Yorg's preview (/yorg/dev,
+    // admins) is Yorg as it will be, with what's new in its top bar too.
     const yorg = inYorg(pathname);
     const vaultApp = inVault(pathname);
+    const piperApp = inPiper(pathname);
     const preview = inPreview(pathname) && me?.is_admin === true;
     // A link from before Vault moved under /vault goes on to the same page there, with its query.
     const moved = movedToVault(pathname);
@@ -66,17 +68,26 @@ export function App() {
         }
     }, [vaultApp, store]);
     useEffect(() => {
-        document.title = yorg ? YORG : vaultApp ? "Vault" : SITE;
+        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : SITE;
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
         if (icon) {
             vaultIcon ??= icon.getAttribute("href");
-            icon.setAttribute("href", yorg ? YORG_ICON : vaultApp ? (vaultIcon ?? "") : SITE_ICON);
+            icon.setAttribute(
+                "href",
+                yorg ? YORG_ICON : vaultApp ? (vaultIcon ?? "") : piperApp ? PIPER_ICON : SITE_ICON,
+            );
         }
-    }, [yorg, vaultApp]);
+    }, [yorg, vaultApp, piperApp]);
     if (moved !== null) {
         return null; // for the moment it takes to go on to the page's new address
     }
-    const section = yorg ? yorgSection(pathname) : vaultApp ? vaultSection(pathname) : "";
+    const section = yorg
+        ? yorgSection(pathname)
+        : vaultApp
+          ? vaultSection(pathname)
+          : piperApp
+            ? piperSection(pathname)
+            : "";
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -85,9 +96,9 @@ export function App() {
     return (
         <>
             <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
-                {/* The app's mark, but always home to the site's front page, where both apps are. */}
+                {/* The app's mark, but always home to the site's front page, where all the apps are. */}
                 <Link to="/" className="brand" aria-label={`${SITE} home`}>
-                    {yorg ? <YorgMark /> : vaultApp ? <VaultMark /> : <SiteMark />}
+                    {yorg ? <YorgMark /> : vaultApp ? <VaultMark /> : piperApp ? <PiperMark /> : <SiteMark />}
                 </Link>
                 <nav className="apps" aria-label="Apps">
                     <Link to={VAULT} className="wordmark" aria-current={vaultApp ? "page" : undefined}>
@@ -95,6 +106,9 @@ export function App() {
                     </Link>
                     <Link to="/yorg" className="wordmark" aria-current={yorg ? "page" : undefined}>
                         {YORG}
+                    </Link>
+                    <Link to="/piper" className="wordmark" aria-current={piperApp ? "page" : undefined}>
+                        {PIPER}
                     </Link>
                 </nav>
                 <nav className="nav" aria-label="Main">
@@ -115,14 +129,19 @@ export function App() {
                                 </Link>
                             )}
                         </>
+                    ) : vaultApp ? (
+                        <>
+                            {nav(VAULT, "files", "Files")}
+                            {nav(`${VAULT}/assemblies`, "assemblies", "Assemblies")}
+                            {nav(`${VAULT}/locks`, "locks", "Checked out")}
+                            {nav(`${VAULT}/activity`, "activity", "Activity")}
+                            {nav(`${VAULT}/solidworks`, "solidworks", "SolidWorks")}
+                        </>
                     ) : (
-                        vaultApp && (
+                        piperApp && (
                             <>
-                                {nav(VAULT, "files", "Files")}
-                                {nav(`${VAULT}/assemblies`, "assemblies", "Assemblies")}
-                                {nav(`${VAULT}/locks`, "locks", "Checked out")}
-                                {nav(`${VAULT}/activity`, "activity", "Activity")}
-                                {nav(`${VAULT}/solidworks`, "solidworks", "SolidWorks")}
+                                {nav("/piper", "diagrams", "Diagrams")}
+                                {nav("/piper/help", "help", "Help")}
                             </>
                         )
                     )}
@@ -158,6 +177,10 @@ export function App() {
                 >
                     <VaultPage pathname={pathname} />
                 </main>
+            ) : piperApp ? (
+                <main className={piperWholeWindow(pathname) ? "main-full" : undefined}>
+                    <PiperPage pathname={pathname} />
+                </main>
             ) : (
                 <main>
                     <Home pathname={pathname} />
@@ -189,7 +212,7 @@ function SiteMark({ size = 30 }: { size?: number }) {
     );
 }
 
-/** The site's own page, at its address alone: its two apps, to go to either. */
+/** The site's own page, at its address alone: its apps, to go to any of them. */
 function Home({ pathname }: { pathname: string }) {
     return (
         <section className="home">
@@ -203,6 +226,10 @@ function Home({ pathname }: { pathname: string }) {
                 <Link to="/yorg" className="home-app">
                     <YorgMark size={44} />
                     <span className="home-app-name">{YORG}</span>
+                </Link>
+                <Link to="/piper" className="home-app">
+                    <PiperMark size={44} />
+                    <span className="home-app-name">{PIPER}</span>
                 </Link>
             </div>
         </section>

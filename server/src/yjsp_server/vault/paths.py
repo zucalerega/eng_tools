@@ -59,6 +59,12 @@ def extension(name: str) -> str:
     return key(name[dot:]) if dot > 0 else ""
 
 
+def stem(name: str) -> str:
+    """'Fin' for 'Fin.SLDPRT': a name without its type."""
+    dot = name.rfind(".")
+    return name[:dot] if dot > 0 else name
+
+
 def is_drawing(name: str) -> bool:
     return extension(name) == ".slddrw"
 

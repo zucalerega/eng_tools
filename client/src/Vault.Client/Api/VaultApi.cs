@@ -143,6 +143,49 @@ public sealed class VaultApi : IDisposable
     public Task<Moved> RenameAsync(string? file, string? folder, string name, CancellationToken ct = default) =>
         PostAsync<Moved>("api/rename", new { file, folder, name }, ct);
 
+    /// <summary>Say what files are called, or whether they're vendors' parts: no new version, and no check-out needed.</summary>
+    public async Task<List<VaultFile>> DescribeAsync(IEnumerable<FileDescription> files, CancellationToken ct = default) =>
+        (await PostAsync<FileList>("api/files/metadata", new { files = files.ToList() }, ct).ConfigureAwait(false)).Files;
+
+    /// <summary>Whether new files take part numbers, and the next one; null from servers from before part numbers.</summary>
+    public async Task<NumberingInfo?> NumberingAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await GetAsync<NumberingInfo>("api/numbering", ct).ConfigureAwait(false);
+        }
+        catch (VaultApiException e) when (e.StatusCode == 404)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The kinds of part numbers (their last three digits), retired ones too.</summary>
+    public Task<List<PartKind>> PartKindsAsync(CancellationToken ct = default) => GetAsync<List<PartKind>>("api/part-kinds", ct);
+
+    /// <summary>Hand out the next part numbers, of a kind: a file checked in named by one takes it, and its title.</summary>
+    public async Task<List<IssuedNumber>> ReserveNumbersAsync(string kind, string title = "", int count = 1, CancellationToken ct = default) =>
+        (await PostAsync<IssuedNumberList>("api/numbers", new { kind, title, count }, ct).ConfigureAwait(false)).Numbers;
+
+    /// <summary>Your part numbers that no file has yet, oldest first.</summary>
+    public async Task<List<IssuedNumber>> MyNumbersAsync(CancellationToken ct = default) =>
+        (await GetAsync<IssuedNumberList>("api/numbers", ct).ConfigureAwait(false)).Numbers;
+
+    /// <summary>Give back part numbers you got and didn't use: no file ever takes them.</summary>
+    public async Task<List<IssuedNumber>> ReleaseNumbersAsync(IEnumerable<string> numbers, CancellationToken ct = default) =>
+        (await PostAsync<IssuedNumberList>("api/numbers/release", new { numbers = numbers.ToList() }, ct).ConfigureAwait(false)).Numbers;
+
+    /// <summary>Pause the vault (admins): every change but yours, from host, waits until it's unpaused.</summary>
+    public Task<PauseInfo> PauseAsync(string host, string reason, CancellationToken ct = default) =>
+        SendAsync<PauseInfo>(HttpMethod.Put, "api/vault/pause", new { host, reason }, ct);
+
+    /// <summary>Unpause the vault (admins).</summary>
+    public async Task UnpauseAsync(CancellationToken ct = default)
+    {
+        using var response = await _http.DeleteAsync("api/vault/pause", ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
     /// <summary>A file's 3D models for Caliper: each version's, newest first, in each configuration.</summary>
     public async Task<List<CaliperModelInfo>> CaliperModelsAsync(long fileId, CancellationToken ct = default) =>
         (await GetAsync<CaliperModelList>("api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/caliper", ct).ConfigureAwait(false)).Models;
@@ -154,6 +197,14 @@ public sealed class VaultApi : IDisposable
     /// <summary>Save a version's 3D model: a part's mesh (uploaded first) or an assembly's components.</summary>
     internal Task<CaliperModelInfo> PutCaliperModelAsync(long fileId, CaliperModelRequest request, CancellationToken ct = default) =>
         SendAsync<CaliperModelInfo>(HttpMethod.Put, "api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/caliper", request, ct);
+
+    /// <summary>Which of these drawings' versions have no PDF yet (of files you can see).</summary>
+    internal async Task<List<DrawingKey>> MissingDrawingPdfsAsync(List<DrawingKey> drawings, CancellationToken ct = default) =>
+        (await PostAsync<DrawingsMissing>("api/drawings/missing", new { drawings }, ct).ConfigureAwait(false)).Missing;
+
+    /// <summary>Save a drawing version's PDF, of all its sheets (uploaded first).</summary>
+    internal Task<DrawingPdfInfo> PutDrawingPdfAsync(long fileId, DrawingPdfRequest request, CancellationToken ct = default) =>
+        SendAsync<DrawingPdfInfo>(HttpMethod.Put, "api/files/" + fileId.ToString(CultureInfo.InvariantCulture) + "/drawing/pdf", request, ct);
 
     /// <summary>The last step of browser sign-in (see BrowserSignIn).</summary>
     public Task<IssuedToken> RedeemSignInCodeAsync(string code, string verifier, CancellationToken ct = default) =>

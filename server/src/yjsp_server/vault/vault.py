@@ -8,6 +8,7 @@ function starts with begin_write(); read its docstring before adding one.
 import hashlib
 import re
 import threading
+import unicodedata
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -21,9 +22,27 @@ from sqlalchemy.orm import Session
 from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
-from . import caliper, paths, solidworks
+from . import caliper, numbers, paths, solidworks
 from .access import Access, Tree
-from .models import Blob, CaliperModel, Checkin, Event, File, Folder, Grant, Role, VaultState, Version, VersionRef
+from .models import (
+    Applies,
+    Blob,
+    CaliperModel,
+    Checkin,
+    DrawingPdf,
+    Event,
+    File,
+    Folder,
+    FormerName,
+    Grant,
+    Numbering,
+    PartKind,
+    PartNumber,
+    Role,
+    VaultState,
+    Version,
+    VersionRef,
+)
 from .storage import BlobStore
 
 FileRef = int | str  # a file id, or a vault path
@@ -49,6 +68,8 @@ def begin_write(db: Session) -> int:
     in Postgres): writers run one at a time, the reads that follow see the
     latest committed state, and seq values commit in increasing order. The sync
     feed relies on that order. Rows the operation changes get change_seq = seq.
+    A change to files then calls _check_not_paused, unless it goes on while an
+    admin has the vault paused (pause).
     """
     db.execute(update(VaultState).where(VaultState.id == 1).values(seq=VaultState.seq + 1))
     return db.execute(select(VaultState.seq).where(VaultState.id == 1)).scalar_one()
@@ -123,6 +144,7 @@ class FileView:
     uses: list[tuple[int, int]] = field(default_factory=list)
     deleted_by: User | None = None
     created_by: User | None = None  # who added it: its version 1
+    former_names: list[str] = field(default_factory=list)  # _former_names
 
 
 @dataclass
@@ -167,6 +189,7 @@ class SyncResult:
     full: bool
     folders: list[FolderView]
     files: list[FileView]
+    paused: "Pause | None" = None
 
 
 @dataclass
@@ -212,6 +235,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
         people |= {f.created_by, f.checked_out_by, f.deleted_by}
     users = _users(db, people)
     uses = _uses(db, access, [v.id for _, v in rows])
+    former = _former_names(db, [f for f, _ in rows])
     return [
         FileView(
             f,
@@ -222,6 +246,7 @@ def _file_views(db: Session, tree: Tree, access: Access, rows: list[tuple[File, 
             uses.get(v.id, []),
             users.get(f.deleted_by) if f.deleted_by else None,
             users.get(f.created_by),
+            former.get(f.id, []),
         )
         for f, v in rows
     ]
@@ -252,6 +277,24 @@ def _uses(db: Session, access: Access, version_ids: list[int]) -> dict[int, list
             if access.can(folder_id, Role.VIEWER):
                 uses[version_id].append((file_id, number))
     return uses
+
+
+def _former_names(db: Session, files: list[File]) -> dict[int, list[str]]:
+    """The names each file had before its renames (FormerName), each once, as it was last spelled, in the order the
+    file last left them; not its name now, which a move keeps. By file id, for files that had any."""
+    had: dict[int, dict[str, str]] = defaultdict(dict)  # by file: names by key, oldest first
+    ids = [f.id for f in files]
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(FormerName.file_id, FormerName.path, FormerName.name_key)
+            .where(FormerName.file_id.in_(ids[start : start + _BATCH]))
+            .order_by(FormerName.id)
+        )
+        for file_id, path, key in rows:
+            had[file_id].pop(key, None)  # to the end, as the last it left
+            had[file_id][key] = path.rsplit("/", 1)[-1]
+    found = {f.id: [name for key, name in had[f.id].items() if key != f.name_key] for f in files if f.id in had}
+    return {file_id: names for file_id, names in found.items() if names}
 
 
 # --- finding files ------------------------------------------------------------------------
@@ -447,7 +490,7 @@ def sync(db: Session, user: User, since: int = 0) -> SyncResult:
     ]
     changed = File.deleted_at.is_(None) if full else File.change_seq > since
     rows = [(f, v) for f, v in _with_latest(db, changed) if access.can(f.folder_id, Role.VIEWER)]
-    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows))
+    return SyncResult(seq, full, folders, _file_views(db, tree, access, rows), paused(db))
 
 
 def activity(
@@ -522,6 +565,7 @@ def create_folder(db: Session, user: User, path: str) -> FolderView:
     if not names:
         raise ApiError("The vault root already exists", code="exists")
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     # Only a folder the user can see "exists". One they can't see gets what a free name in the same place gets (from
     # _ensure_folders): that they can't add folders there, which is so, or they'd see it. "Exists" would tell them
@@ -541,6 +585,7 @@ def checkout(db: Session, user: User, refs: list[FileRef], host: str, *, force: 
     """
     host = _host(host)
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     files = _resolve_many(db, tree, access, refs)
     for file in files:
@@ -600,8 +645,17 @@ def undo_checkout(db: Session, user: User, refs: list[FileRef]) -> list[FileView
 
 @dataclass
 class Reference:
-    path: str
+    path: str = ""  # the file's vault path; or
     version: int | None = None  # None: the latest version, or the one in the same check-in
+    file_id: int | None = None  # its id, which a rename in the same check-in doesn't change
+
+
+@dataclass
+class Renaming:
+    """A file renamed in a check-in (checkin): one checked out to you on the computer checking in."""
+
+    file: int  # its id
+    name: str  # its new name, in its folder; its type stays
 
 
 @dataclass
@@ -610,15 +664,33 @@ class CheckinItem:
     sha256: str
     size: int
     references: list[Reference] = field(default_factory=list)
+    title: str | None = None  # what it's called (describe); a new file's is otherwise its number's, or its name's
+    vendor: bool | None = None  # a vendor's part (describe); a new file's is as its name says (numbers.vendors)
+    base_version: int | None = None  # the version its changes start from: refused (out_of_date) if there's a newer one
 
 
-CheckinStatus = Literal["created", "updated", "unchanged"]
+CheckinStatus = Literal["created", "updated", "unchanged", "renamed"]
 
 
 @dataclass
 class CheckinResult:
-    checkin_id: int | None  # None when nothing changed
-    files: list[tuple[CheckinStatus, FileView]]
+    checkin_id: int | None  # None when nothing changed, and for a dry run
+    files: list[tuple[CheckinStatus, FileView]]  # none for a dry run, which has
+    planned: list[tuple[CheckinStatus, str]] = field(default_factory=list)  # what would happen to each, by path
+    problems: list[ApiError] = field(default_factory=list)  # or every problem it found
+
+
+class _Problems:
+    """What's wrong with a check-in: the first is refused at once, but a dry run finds them all (checkin)."""
+
+    def __init__(self, dry_run: bool) -> None:
+        self.dry_run = dry_run
+        self.found: list[ApiError] = []
+
+    def add(self, error: ApiError) -> None:
+        if not self.dry_run:
+            raise error
+        self.found.append(error)
 
 
 def _require_own_lock(db: Session, tree: Tree, file: File, user: User, host: str) -> None:
@@ -636,6 +708,177 @@ def _require_own_lock(db: Session, tree: Tree, file: File, user: User, host: str
         )
 
 
+def _state(db: Session) -> VaultState:
+    state = db.get(VaultState, 1)
+    assert state is not None
+    return state
+
+
+def _holder(db: Session, number: int, kind: str) -> PartNumber | None:
+    """The record of a file that has this part number (in the trash or not), if one has it."""
+    held = PartNumber.number == number, PartNumber.kind == kind, PartNumber.file_id.is_not(None)
+    return db.scalar(select(PartNumber).where(*held).limit(1))
+
+
+def _part_number(db: Session, name: str, *, file: File | None, vendor: bool, new: bool) -> PartNumber | None:
+    """What a file's name (a new file's, or one a file is renamed to) says of its part number, held to the rules
+    (docs/vault.md, "Part numbers"): the number it takes, a part's, an assembly's, or a STEP or STL file's own, for
+    the caller to give it, or the one it has; None for a name after a number another file has (a drawing's, a PDF's,
+    an export's), or a name that's no number.
+
+    Refused: a number not handed out, or someone else's, or of a kind for something else; a part or an assembly named
+    by more than its number; a vendor's part named like a number; and a new part, assembly, STEP or STL file without
+    one, once they need them (Numbering.REQUIRE).
+    """
+    numbered = numbers.parse(name)
+    if numbered is None:
+        needs = new and numbers.holds(name) and _state(db).numbering is Numbering.REQUIRE
+        if needs and not (vendor or numbers.vendors(name)):
+            raise ApiError(
+                f"{name} needs a part number: start new parts and assemblies with New, in the web app or in "
+                "SolidWorks, which gives them one; or, for a vendor's part, say it's a vendor's",
+                code="part_number_needed",
+                name=name,
+            )
+        return None
+    if vendor:
+        _check_vendor(name)
+    own = numbered.text
+    if file is not None:
+        mine = db.scalar(select(PartNumber).where(PartNumber.file_id == file.id))
+        if mine is not None and (mine.number, mine.kind) == (numbered.number, numbered.kind):
+            return mine
+    holder = _holder(db, numbered.number, numbered.kind)
+    if numbers.holds(name) and numbered.exact and holder is None:
+        # It takes the number: one handed out and not yet used, of a kind for what it is.
+        unused = db.scalar(
+            select(PartNumber).where(
+                PartNumber.number == numbered.number,
+                PartNumber.kind == numbered.kind,
+                PartNumber.legacy.is_(False),
+                PartNumber.file_id.is_(None),
+                PartNumber.released_at.is_(None),
+            )
+        )
+        if unused is None:
+            raise ApiError(
+                f"{own} wasn't handed out: get a part number with New, in the web app or in SolidWorks",
+                code="unknown_part_number",
+                name=name,
+            )
+        kind = db.get(PartKind, numbered.kind)
+        if kind is None or not numbers.fits(kind.applies, name):
+            what = "an assembly" if numbers.applies_to(name) == "assembly" else "a part"
+            raise ApiError(
+                f"{own} was handed out for {kind.label if kind else 'something else'}, so it can't be {what}'s",
+                code="bad_part_number",
+                name=name,
+            )
+        return unused
+    if numbers.holds(name) and not numbers.exports(name):
+        if not numbered.exact:
+            raise ApiError(
+                f"Call it {own}{name[len(paths.stem(name)) :]}: a part's or an assembly's name is its number, and "
+                "its title says what it is",
+                code="bad_part_number",
+                name=name,
+            )
+        # Another file has it (where the user may not see it: the number says no more than that).
+        raise Conflict(
+            f"{own} is another file's part number: a part or an assembly takes a number of its own",
+            code="part_number_taken",
+            name=name,
+        )
+    if holder is None:
+        raise ApiError(
+            f"No part or assembly has {own}: a drawing, a PDF, or an export is named after the number of what it's "
+            "of, once that's in the vault",
+            code="unknown_part_number",
+            name=name,
+        )
+    return None
+
+
+def _taking_order(name: str) -> int:
+    """Parts and assemblies take their part numbers first, then STEP and STL files, so that the drawings, PDFs and
+    exports named after them in the same check-in find who has their numbers (_part_number)."""
+    if numbers.holds(name):
+        return 1 if numbers.exports(name) else 0
+    return 2
+
+
+def _rename_in_checkin(
+    db: Session,
+    tree: Tree,
+    access: Access,
+    user: User,
+    host: str,
+    renamings: list[Renaming],
+    problems: _Problems,
+) -> dict[int, tuple[str, str]]:
+    """Rename files for a check-in, before its items are read, which name them by their new paths. Each is checked
+    out to the user on this computer, and its new name, in its folder, is held to part numbers' rules (_renumbered).
+    They're renamed all at once, so names can change places. Moves, as rename's: by file id, its old and new paths."""
+    renaming: dict[int, tuple[File, str]] = {}
+    for change in renamings:
+        try:
+            file = _resolve(db, tree, access, change.file)
+            old = tree.file_path(file)
+            if file.id in renaming:
+                raise ApiError(f"{old} is renamed twice", code="bad_rename", path=old)
+            access.require(file.folder_id, Role.EDITOR, f"rename {old}")
+            _require_own_lock(db, tree, file, user, host)
+            name = paths.clean_name(change.name)
+            if paths.extension(name) != paths.extension(file.name):
+                raise ApiError(f"{name} would change what kind of file {file.name} is", code="bad_rename", path=old)
+            paths.split(paths.join(tree.path(file.folder_id), name))  # still within the length limit
+            renaming[file.id] = (file, name)
+        except ApiError as error:
+            problems.add(error)
+    # Parts and assemblies take their numbers before the drawings named after them (_taking_order).
+    for file, name in sorted(renaming.values(), key=lambda change: _taking_order(change[1])):
+        try:
+            number = _renumbered(db, file, name)
+            if number is not None:
+                number.file_id = file.id  # now, so no other file in the check-in takes it
+                db.flush()
+        except ApiError as error:
+            problems.add(error)
+            del renaming[file.id]
+    # Each new name has to be free once the rest are done: no folder's, nor a file's that keeps its name. One refused
+    # can leave another's taken, so look again until none is.
+    while True:
+        targets: set[tuple[int, str]] = set()
+        refused = None
+        for file, name in renaming.values():
+            target = (file.folder_id, paths.key(name))
+            there = _live_file(db, tree.by_id[file.folder_id], name)
+            if (
+                target in targets
+                or (there is not None and there.id not in renaming)
+                or target[1] in tree.children[file.folder_id]
+            ):
+                refused = file
+                break
+            targets.add(target)
+        if refused is None:
+            break
+        new = paths.join(tree.path(refused.folder_id), renaming.pop(refused.id)[1])
+        problems.add(Conflict(f"{new} is taken", code="exists", path=new))
+    moves = {
+        file.id: (tree.file_path(file), paths.join(tree.path(file.folder_id), name)) for file, name in renaming.values()
+    }
+    for file, _ in renaming.values():
+        file.name_key = f"/renaming/{file.id}"  # out of the way, as no name has a /: names can change places
+    db.flush()
+    for file, name in renaming.values():
+        file.name, file.name_key = name, paths.key(name)
+        _event(db, user, "rename", file=file, path=moves[file.id][1], moved_from=moves[file.id][0])
+    db.flush()
+    _remember(db, user, moves)
+    return moves
+
+
 def checkin(
     db: Session,
     user: User,
@@ -644,52 +887,98 @@ def checkin(
     comment: str = "",
     host: str,
     keep_checked_out: bool = False,
+    renames: list[Renaming] | None = None,
+    dry_run: bool = False,
 ) -> CheckinResult:
     """Check in new versions of your checked-out files and add new files, all or nothing.
 
     Upload each item's contents (PUT /api/blobs/{sha256}) first. New files may
     go in new folders, which are created. An item's references name the files
-    it uses (an assembly's parts, a drawing's model) by vault path; they must be
-    in the vault already, where the user can see them, or in this check-in, and
-    are pinned to the version used.
+    it uses (an assembly's parts, a drawing's model) by vault path or id; they
+    must be in the vault already, where the user can see them, or in this
+    check-in, and are pinned to the version used.
     A file whose contents didn't change gets no new version but is still
     released, unless keep_checked_out is set; if it had no references
     recorded and now has some, it gets a version to record them.
+    A new file's name is held to the rules of part numbers (_part_number): a
+    part named by a number handed out takes it.
+    Files may be renamed in the check-in (_rename_in_checkin): each is an item
+    too, by its new path, and so is every file whose latest version uses one,
+    with a new version, saved with the new name, so none is left naming a file
+    that isn't there. A dry run finds every problem, and changes nothing.
     """
     host = _host(host)
     if not items:
         raise ApiError("Nothing to check in")
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     now = utcnow()
+    problems = _Problems(dry_run)
+    moves = _rename_in_checkin(db, tree, access, user, host, renames or [], problems)
 
-    planned: list[tuple[CheckinItem, list[str], File | None]] = []
+    planned: list[tuple[CheckinItem, list[str], File | None, str | None]] = []
     seen: set[str] = set()
     for item in items:
-        names = paths.split(item.path)
-        if not names:
-            raise ApiError("A check-in item has an empty path", code="bad_path")
-        path = paths.join(*names)
-        if paths.key(path) in seen:
-            raise ApiError(f"{path} is listed twice")
-        seen.add(paths.key(path))
-        blob = db.get(Blob, item.sha256)
-        if blob is None:
-            raise ApiError(f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256)
-        if blob.size != item.size:
-            raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
-        # A file or folder the user can't see is as good as not there: checking one in answers as adding a new file
-        # there would (refused: see Access.deepest).
-        existing = _find(db, tree, access, path)
-        if existing is not None:
-            access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
-            _require_own_lock(db, tree, existing, user, host)
-        else:
-            parent, depth = access.deepest(names[:-1])
-            access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
-            if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
-                raise Conflict(f"{path} is a folder", code="exists", path=path)
-        planned.append((item, names, existing))
+        try:
+            names = paths.split(item.path)
+            if not names:
+                raise ApiError("A check-in item has an empty path", code="bad_path")
+            path = paths.join(*names)
+            if paths.key(path) in seen:
+                raise ApiError(f"{path} is listed twice", path=path)
+            seen.add(paths.key(path))
+            blob = db.get(Blob, item.sha256)
+            if blob is None:
+                raise ApiError(
+                    f"Upload {path} before checking it in", code="blob_missing", path=path, sha256=item.sha256
+                )
+            if blob.size != item.size:
+                raise ApiError(f"The size of {path} doesn't match its upload", code="size_mismatch", path=path)
+            # A file or folder the user can't see is as good as not there: checking one in answers as adding a new
+            # file there would (refused: see Access.deepest).
+            existing = _find(db, tree, access, path)
+            if existing is not None:
+                access.require(existing.folder_id, Role.EDITOR, f"check in {path}")
+                _require_own_lock(db, tree, existing, user, host)
+                if item.vendor:
+                    _check_vendor(existing.name)
+                if item.base_version is not None and item.base_version != existing.latest_version:
+                    raise Conflict(
+                        f"{path} is at v{existing.latest_version} now, not v{item.base_version}, which these "
+                        "changes start from: get its latest version and make them again there",
+                        code="out_of_date",
+                        path=path,
+                        version=existing.latest_version,
+                    )
+            else:
+                parent, depth = access.deepest(names[:-1])
+                access.require(parent.id, Role.EDITOR, f"add files to {tree.label(parent.id)}")
+                if depth == len(names) - 1 and paths.key(names[-1]) in tree.children[parent.id]:
+                    raise Conflict(f"{path} is a folder", code="exists", path=path)
+            planned.append((item, names, existing, None if item.title is None else _title(item.title, path)))
+        except ApiError as error:
+            problems.add(error)
+
+    # A renamed file goes in under its new name, with every file that uses it, so none is left naming it as it was.
+    in_checkin = {existing.id for _, _, existing, _ in planned if existing is not None}
+    users_of: dict[int, list[File]] = {}  # by the id of a renamed file: the files whose latest versions use it
+    for file_id, (_, new) in moves.items():
+        if file_id not in in_checkin:
+            problems.add(
+                ApiError(f"Check {new} in too: it's renamed, and goes in by its new name", code="bad_rename", path=new)
+            )
+        users_of[file_id] = [parent for parent, _, _ in _parents(db, file_id)]
+        left = [parent for parent in users_of[file_id] if parent.id not in in_checkin]
+        if left:
+            problems.add(
+                Conflict(
+                    f"{new} is used by {_named(tree, access, left)}: check them in with it, saved with its new name",
+                    code="in_use",
+                    path=new,
+                    used_by=[tree.file_path(p) for p in left if access.can(p.folder_id, Role.VIEWER)],
+                )
+            )
 
     record: Checkin | None = None
 
@@ -702,24 +991,37 @@ def checkin(
         return record.id
 
     done: dict[str, tuple[CheckinStatus, File, Version, CheckinItem]] = {}
-    for item, names, existing in planned:
+    for item, names, existing, title in sorted(planned, key=lambda plan: _taking_order(plan[1][-1])):
         status: CheckinStatus
         version: Version | None = None
         if existing is None:
+            vendor = numbers.vendors(names[-1]) if item.vendor is None else item.vendor
+            try:
+                number = _part_number(db, names[-1], file=None, vendor=vendor, new=True)
+            except ApiError as error:
+                problems.add(error)
+                continue
             folder = _ensure_folders(db, tree, access, user, names[:-1], seq)
             file = File(
                 folder_id=folder.id,
                 name=names[-1],
                 name_key=paths.key(names[-1]),
+                # Until someone names it (describe): what its number was handed out to be called, or its name.
+                title=title or (number.title if number is not None and number.title else paths.stem(names[-1])),
+                vendor=vendor,
                 latest_version=1,
                 created_at=now,
                 created_by=user.id,
             )
             db.add(file)
             db.flush()
+            if number is not None:
+                number.file_id = file.id
+                db.flush()
             status = "created"
         else:
             file = existing
+            _describe(db, user, tree, file, title, item.vendor)
             latest = _version(db, file.id, file.latest_version)
             # Same contents, same version; unless it's the first time SolidWorks says what it uses (it was
             # uploaded in the web app, which can't tell), which is worth a version that records it.
@@ -749,6 +1051,21 @@ def checkin(
         file.change_seq = seq
         done[paths.key(tree.file_path(file))] = (status, file, version, item)
     db.flush()
+    keys = (paths.key(paths.join(*names)) for _, names, _, _ in planned)
+    done = {key: done[key] for key in keys if key in done}  # as they came
+    by_id = {entry[1].id: entry for entry in done.values()}
+    for file_id, (_, new) in moves.items():
+        kept = [parent for parent in users_of[file_id] if parent.id in by_id and by_id[parent.id][0] == "unchanged"]
+        if kept:
+            problems.add(
+                Conflict(
+                    f"{_named(tree, access, kept)} still name {new} as it was: save them with its new name, then "
+                    "check them in",
+                    code="in_use",
+                    path=new,
+                    used_by=[tree.file_path(p) for p in kept if access.can(p.folder_id, Role.VIEWER)],
+                )
+            )
 
     missing = []
     unlinked: list[str] = []  # drawings that don't show a part or assembly
@@ -759,20 +1076,28 @@ def checkin(
         linked: set[int] = set()
         shows: list[File] = []
         for ref in item.references:
-            ref_names = paths.split(ref.path)
-            in_batch = done.get(paths.key(paths.join(*ref_names)))
+            named = ref.path if ref.file_id is None else f"file {ref.file_id}"
+            if ref.file_id is None and not ref.path.strip():
+                problems.add(ApiError(f"A reference of {tree.file_path(file)} names no file", code="bad_reference"))
+                continue
+            if ref.file_id is not None:
+                in_batch = by_id.get(ref.file_id)
+            else:
+                in_batch = done.get(paths.key(paths.join(*paths.split(ref.path))))
             if in_batch is not None:
                 child, child_version = in_batch[1], in_batch[2].number
             else:
                 # A file the user can't see is missing, as one that isn't there is: they can't use it, and whether
                 # it's there, or which versions it has, stays hidden.
-                child = _find(db, tree, access, ref.path)
-                if child is None:
-                    missing.append({"file": tree.file_path(file), "reference": ref.path})
+                found = _find(db, tree, access, ref.path if ref.file_id is None else ref.file_id)
+                if found is None:
+                    missing.append({"file": tree.file_path(file), "reference": named})
                     continue
+                child = found
                 child_version = ref.version or child.latest_version
                 if child_version > child.latest_version:
-                    raise ApiError(f"{ref.path} has no version {ref.version}", code="bad_reference")
+                    problems.add(ApiError(f"{named} has no version {ref.version}", code="bad_reference"))
+                    continue
             if child.id == file.id or child.id in linked:
                 continue
             linked.add(child.id)
@@ -786,39 +1111,56 @@ def checkin(
             elif not any(paths.named_after(file.name, model.name) for model in shows):
                 misnamed.append({"drawing": tree.file_path(file), "shows": tree.file_path(shows[0])})
     if missing:
-        raise ApiError(
-            "Some referenced files aren't in the vault; add them to this check-in",
-            code="missing_references",
-            missing=missing,
+        problems.add(
+            ApiError(
+                "Some referenced files aren't in the vault; add them to this check-in",
+                code="missing_references",
+                missing=missing,
+            )
         )
     if unlinked:
-        raise ApiError(
-            f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
-            "vault. Check drawings in from SolidWorks, with the Vault add-in: it records what each drawing shows.",
-            code="drawing_without_model",
-            drawings=unlinked,
+        problems.add(
+            ApiError(
+                f"{', '.join(unlinked)} {'doesn' if len(unlinked) == 1 else 'don'}'t show a part or assembly in the "
+                "vault. Check drawings in from SolidWorks, with the Vault add-in: it records what each drawing shows.",
+                code="drawing_without_model",
+                drawings=unlinked,
+            )
         )
     if misnamed:
         first = misnamed[0]
         model = first["shows"].rsplit("/", 1)[-1]
         stem = model.rsplit(".", 1)[0]
-        raise ApiError(
-            f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, so "
-            f'call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
-            code="drawing_name",
-            drawings=misnamed,
+        problems.add(
+            ApiError(
+                f"Name each drawing after what it shows, so they stay together: {first['drawing']} shows {model}, "
+                f'so call it {stem}.SLDDRW, or something that starts with its name, like "{stem} - machining.SLDDRW".',
+                code="drawing_name",
+                drawings=misnamed,
+            )
         )
+    if problems.found:  # a dry run's
+        db.rollback()
+        return CheckinResult(None, [], problems=problems.found)
 
+    def reported(status: CheckinStatus, file: File) -> CheckinStatus:
+        return "renamed" if file.id in moves else status
+
+    if dry_run:
+        planned_out = [(reported(s, f), tree.file_path(f)) for s, f, _, _ in done.values()]
+        db.rollback()
+        return CheckinResult(None, [], planned_out)
     for status, file, version, _ in done.values():
         path = tree.file_path(file)
         if status != "unchanged":
             action = "add" if status == "created" else "checkin"
             _event(db, user, action, file=file, version=version, path=path, number=version.number, host=host)
-        elif not keep_checked_out:
+        elif not keep_checked_out and file.id not in moves:
             _event(db, user, "undo_checkout", file=file, path=path, host=host, unchanged=True)
     db.commit()
     views = _views_by_id(db, tree, access, [f for _, f, _, _ in done.values()])
-    return CheckinResult(record.id if record else None, [(s, views[f.id]) for s, f, _, _ in done.values()])
+    files = [(reported(s, f), views[f.id]) for s, f, _, _ in done.values()]
+    return CheckinResult(record.id if record else None, files)
 
 
 def revert(
@@ -832,6 +1174,7 @@ def revert(
     """
     host = _host(host)
     seq = begin_write(db)
+    _check_not_paused(db, user, host)
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id)
     path = tree.file_path(file)
@@ -897,6 +1240,7 @@ def delete(
     went with it (see restore_folder).
     """
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     chosen = []
     for path in folders or []:
@@ -979,6 +1323,7 @@ def _revive(db: Session, tree: Tree, folder: Folder, seq: int) -> None:
 def restore(db: Session, user: User, file_id: int) -> FileView:
     """Bring a deleted file back, with its full history; and its folder, if that was deleted too."""
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     path = tree.file_path(file)
@@ -1013,6 +1358,7 @@ def restore_folder(db: Session, user: User, folder_id: int) -> FolderView:
     """Bring a deleted folder back with everything deleted along with it, and the folders above it if they
     were deleted too. What was deleted from it before stays in its trash. Takes a lead of it, like deleting it."""
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     folder = tree.by_id.get(folder_id)
     if folder is None or folder.parent_id is None or not access.visible(folder.id):
@@ -1107,6 +1453,15 @@ def _check_moves(db: Session, tree: Tree, access: Access, moves: dict[int, tuple
         )
 
 
+def _remember(db: Session, user: User, moves: dict[int, tuple[str, str]]) -> None:
+    """Keep where moving files were (FormerName): SolidWorks files saved with them there still name them so."""
+    now = utcnow()
+    for file_id, (old, new) in moves.items():
+        if paths.key(old) != paths.key(new):  # a change of case changes nothing to find a file by
+            name_key = paths.key(old.rsplit("/", 1)[-1])
+            db.add(FormerName(file_id=file_id, path=old, name_key=name_key, changed_at=now, changed_by=user.id))
+
+
 def _subtree(tree: Tree, folder: Folder) -> list[Folder]:
     """A folder and every folder under it."""
     found, pending = [], [folder]
@@ -1156,6 +1511,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     go; moving a folder, which takes its permissions along, takes a lead of it.
     """
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     moving_folders = []
     for path in folders:
@@ -1204,6 +1560,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     for _, new in moves.values():
         paths.split(new)  # still within the length limit
     _check_moves(db, tree, access, moves)
+    _remember(db, user, moves)
 
     moved_folders = [f for f in moving_folders if f.parent_id != dest.id]
     moved_files = [f for f in moving_files if f.folder_id != dest.id]
@@ -1224,6 +1581,43 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
     return _finish_move(db, user, seq, moved_files, moved_folders)
 
 
+def _renumbered(db: Session, file: File, name: str) -> PartNumber | None:
+    """The part number a file renamed so has (_part_number), held to the rule that a part number never changes: a
+    file that has one keeps it, in its name. Ground Structures' numbers from before (legacy) may have more after them
+    in their names, which can change."""
+    mine = db.scalar(select(PartNumber).where(PartNumber.file_id == file.id))
+    if mine is not None:
+        numbered = numbers.parse(name)
+        if (
+            numbered is None
+            or (numbered.number, numbered.kind) != (mine.number, mine.kind)
+            or not (mine.legacy or numbered.exact)
+        ):
+            raise Conflict(
+                f"{file.name} is named by its part number, {numbers.text(mine.number, mine.kind)}, which never "
+                "changes: to say what it is, change its title instead",
+                code="part_number_fixed",
+                name=file.name,
+            )
+    return _part_number(db, name, file=file, vendor=file.vendor, new=False)
+
+
+def _check_drawing_name(db: Session, drawing: File, name: str) -> None:
+    """A drawing renamed stays named after a part or assembly it shows, as a check-in has it (checkin)."""
+    if not paths.is_drawing(name):
+        return
+    latest = _version(db, drawing.id, drawing.latest_version)
+    shows = [child for child, _ in _refs_of(db, latest) if paths.is_model(child.name)]
+    if shows and not any(paths.named_after(name, model.name) for model in shows):
+        stem = paths.stem(shows[0].name)
+        raise ApiError(
+            f"Name {drawing.name} after what it shows, {shows[0].name}, so they stay together: {stem}.SLDDRW, or "
+            f'something that starts with its name, like "{stem} - machining.SLDDRW".',
+            code="drawing_name",
+            name=name,
+        )
+
+
 def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str | None = None, name: str) -> Moved:
     """Rename a file (keeping its type) or a folder, where it is.
 
@@ -1233,6 +1627,7 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     """
     new_name = paths.clean_name(name)
     seq = begin_write(db)
+    _check_not_paused(db, user)
     tree, access = _context(db, user)
     if (file is None) == (folder is None):
         raise ApiError("Rename a file or a folder", code="bad_rename")
@@ -1243,6 +1638,8 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         access.require(target.folder_id, Role.EDITOR, f"rename {old}")
         if paths.extension(new_name) != paths.extension(target.name):
             raise ApiError(f"{new_name} would change what kind of file {target.name} is", code="bad_rename")
+        number = _renumbered(db, target, new_name)
+        _check_drawing_name(db, target, new_name)
         parent = tree.by_id[target.folder_id]
         if _taken(db, tree, parent, new_name, target):
             raise Conflict(f"{paths.join(tree.path(parent.id), new_name)} is taken", code="exists")
@@ -1250,8 +1647,11 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         paths.split(new)
         moves[target.id] = (old, new)
         _check_moves(db, tree, access, moves)
+        _remember(db, user, moves)
         _event(db, user, "rename", file=target, path=new, moved_from=old)
         target.name, target.name_key = new_name, paths.key(new_name)
+        if number is not None:
+            number.file_id = target.id
         db.flush()
         return _finish_move(db, user, seq, [target], [])
 
@@ -1272,10 +1672,350 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
     for _, new in moves.values():
         paths.split(new)
     _check_moves(db, tree, access, moves)
+    _remember(db, user, moves)
     _event(db, user, "rename_folder", folder_id=renamed.id, path=new_base, moved_from=old_base)
     renamed.name, renamed.name_key = new_name, paths.key(new_name)
     db.flush()
     return _finish_move(db, user, seq, [], [renamed])
+
+
+_TITLE_MAX = 200  # files.title's size
+
+
+def _title(title: str, path: str) -> str:
+    """A title as it's kept, trimmed; refused if it says nothing, runs long, or has a tab, a line break or another
+    control character, which lists can't show."""
+    title = unicodedata.normalize("NFC", title).strip()
+    if not title:
+        raise ApiError(f"Say what {path} is called", code="bad_title", path=path)
+    if len(title) > _TITLE_MAX:
+        raise ApiError(f"{path}'s title is longer than {_TITLE_MAX} characters", code="bad_title", path=path)
+    if any(unicodedata.category(c) == "Cc" for c in title):
+        raise ApiError(f"{path}'s title has a tab or a line break in it", code="bad_title", path=path)
+    return title
+
+
+@dataclass
+class Description:
+    file: FileRef
+    title: str | None = None  # what it's called; None leaves it
+    vendor: bool | None = None  # whether it's a vendor's part, which keeps the vendor's name; None leaves it
+
+
+def describe(db: Session, user: User, changes: list[Description]) -> list[FileView]:
+    """Say what files are called (their titles) and which are vendors' parts, all or nothing.
+
+    Neither is in the file, so neither makes a version or needs a check-out (someone else's is fine). It takes
+    editor access to the file's folder, as a rename does.
+    """
+    if not changes:
+        raise ApiError("Say which files to describe")
+    seq = begin_write(db)
+    _check_not_paused(db, user)
+    tree, access = _context(db, user)
+    planned: list[tuple[File, str | None, bool | None]] = []
+    seen: set[int] = set()
+    for change in changes:
+        file = _resolve(db, tree, access, change.file)
+        path = tree.file_path(file)
+        if file.id in seen:
+            raise ApiError(f"{path} is listed twice")
+        seen.add(file.id)
+        what = f"name {path}" if change.title is not None else f"say whose part {path} is"
+        access.require(file.folder_id, Role.EDITOR, what)
+        if change.vendor:
+            _check_vendor(file.name)
+        planned.append((file, None if change.title is None else _title(change.title, path), change.vendor))
+
+    for file, title, vendor in planned:
+        if _describe(db, user, tree, file, title, vendor):
+            file.change_seq = seq
+    db.commit()
+    views = _views_by_id(db, tree, access, [file for file, _, _ in planned])
+    return [views[file.id] for file, _, _ in planned]
+
+
+def _check_vendor(name: str) -> None:
+    if numbers.parse(name) is not None:
+        raise ApiError(
+            f"{name} is named by a part number, so it isn't a vendor's part", code="bad_part_number", name=name
+        )
+
+
+def _describe(db: Session, user: User, tree: Tree, file: File, title: str | None, vendor: bool | None) -> bool:
+    """Give a file a title, or say whether it's a vendor's part, where that changes anything, as the activity log
+    says (describe); whether it did. The caller marks the file changed (change_seq)."""
+    detail: dict[str, Any] = {}
+    if title is not None and title != file.title:
+        detail |= {"title": title, "was": file.title}
+        file.title = title
+    if vendor is not None and vendor != file.vendor:
+        detail["vendor"] = file.vendor = vendor
+    if detail:
+        _event(db, user, "describe", file=file, path=tree.file_path(file), **detail)
+    return bool(detail)
+
+
+# --- part numbers (numbers.py; docs/vault.md, "Part numbers") ---------------------------------------
+
+
+_MAX_UNUSED = 20  # numbers an editor may have handed out and not yet used; admins any, to number the whole vault
+_MAX_AT_ONCE = 10_000
+
+
+def _require_admin(user: User, what: str) -> None:
+    if not user.is_admin:
+        raise Forbidden(f"Only admins can {what}")
+
+
+def _label(label: str) -> str:
+    label = unicodedata.normalize("NFC", label).strip()
+    if not label or len(label) > 100 or any(unicodedata.category(c) == "Cc" for c in label):
+        raise ApiError("Say what a kind is in a line of at most 100 characters", code="bad_kind")
+    return label
+
+
+def numbering(db: Session) -> tuple[Numbering, int]:
+    """Whether new files take part numbers, and the next number to hand out."""
+    state = _state(db)
+    return state.numbering, state.next_number
+
+
+def set_numbering(
+    db: Session, user: User, *, mode: Numbering | None = None, next_number: int | None = None
+) -> tuple[Numbering, int]:
+    """An admin turns part numbers on or off for new files, or moves the next number on. Numbers only go up, so none
+    is ever handed out twice."""
+    begin_write(db)
+    _check_not_paused(db, user)
+    _require_admin(user, "change how part numbers are handed out")
+    state = _state(db)
+    detail: dict[str, Any] = {}
+    if next_number is not None and next_number != state.next_number:
+        if next_number < state.next_number or next_number > numbers.LARGEST:
+            raise ApiError(
+                f"Part numbers only go up: the next can be {numbers.digits(state.next_number)} or later",
+                code="bad_next_number",
+            )
+        detail["next_number"] = state.next_number = next_number
+    if mode is not None and mode is not state.numbering:
+        state.numbering = mode
+        detail["numbering"] = mode.value
+    if detail:
+        _event(db, user, "numbering", **detail)
+    db.commit()
+    return numbering(db)
+
+
+def part_kinds(db: Session) -> list[PartKind]:
+    """The kinds of part numbers, retired ones too (their numbers keep them), by code."""
+    return list(db.scalars(select(PartKind).order_by(PartKind.code)))
+
+
+def add_part_kind(db: Session, user: User, code: str, label: str, applies: Applies) -> PartKind:
+    """An admin adds a kind to the list: 002 Sheet metal part, for parts."""
+    begin_write(db)
+    _check_not_paused(db, user)
+    _require_admin(user, "change the kinds of part numbers")
+    if not numbers.is_kind(code):
+        raise ApiError(f"A kind is three digits, like 001, not {code}", code="bad_kind")
+    there = db.get(PartKind, code)
+    if there is not None:
+        raise Conflict(f"{code} is {there.label} already", code="exists")
+    kind = PartKind(code=code, label=_label(label), applies=applies, created_at=utcnow(), created_by=user.id)
+    db.add(kind)
+    _event(db, user, "part_kind", code=code, label=kind.label, applies=applies.value, retired=False)
+    db.commit()
+    return kind
+
+
+def change_part_kind(
+    db: Session,
+    user: User,
+    code: str,
+    *,
+    label: str | None = None,
+    applies: Applies | None = None,
+    retired: bool | None = None,
+) -> PartKind:
+    """An admin renames a kind, retires it (no new numbers of it are handed out) or brings it back, or says what it's
+    for, while no file has a number of it. A kind is never deleted: the numbers handed out keep it."""
+    begin_write(db)
+    _check_not_paused(db, user)
+    _require_admin(user, "change the kinds of part numbers")
+    kind = db.get(PartKind, code)
+    if kind is None:
+        raise NotFound(f"There's no kind {code}")
+    if applies is not None and applies is not kind.applies:
+        if _holder_of_kind(db, code):
+            raise Conflict(
+                f"Files have numbers of {code} already, so it stays a kind of {kind.applies.value}",
+                code="kind_in_use",
+            )
+        kind.applies = applies
+    if label is not None:
+        kind.label = _label(label)
+    if retired is not None:
+        kind.retired = retired
+    _event(db, user, "part_kind", code=code, label=kind.label, applies=kind.applies.value, retired=kind.retired)
+    db.commit()
+    return kind
+
+
+def _holder_of_kind(db: Session, code: str) -> bool:
+    held = PartNumber.kind == code, PartNumber.file_id.is_not(None)
+    return db.scalar(select(PartNumber.id).where(*held).limit(1)) is not None
+
+
+def reserve_numbers(db: Session, user: User, kind: str, *, count: int = 1, title: str = "") -> list[PartNumber]:
+    """Hand out the next part numbers, in order, of a kind: the web app's and the add-in's New, and the vault's
+    renumbering. A file checked in named by one takes it (_part_number), with its title if it's given none of its
+    own. Editors get them once an admin turns part numbers on, up to _MAX_UNUSED unused at a time; admins any."""
+    begin_write(db)
+    _check_not_paused(db, user)
+    state = _state(db)
+    if not user.is_admin:
+        if state.numbering is Numbering.OFF:
+            raise Forbidden(
+                "Part numbers aren't handed out yet: an admin turns them on (Admin > Part numbers)",
+                code="numbering_off",
+            )
+        if not can_upload(db, user):
+            raise Forbidden("Part numbers are for new files: you need editor access to a folder to get them")
+    found = db.get(PartKind, kind)
+    if found is None or found.retired:
+        raise ApiError(f"{kind} isn't a kind of part number: pick one from the list", code="bad_kind")
+    if not 1 <= count <= _MAX_AT_ONCE:
+        raise ApiError(f"Ask for 1 to {_MAX_AT_ONCE} part numbers at a time", code="bad_count")
+    titled = _title(title, "A new file") if title.strip() else ""
+    if not user.is_admin:
+        unused = len(unused_numbers(db, user))
+        if unused + count > _MAX_UNUSED:
+            raise Conflict(
+                f"You have {unused} part numbers you haven't used: use them, or give them back, first",
+                code="too_many_numbers",
+            )
+    first = state.next_number
+    if first + count - 1 > numbers.LARGEST:
+        raise Conflict("The vault has run out of part numbers", code="numbers_exhausted")
+    state.next_number = first + count
+    now = utcnow()
+    issued = [
+        PartNumber(number=n, kind=kind, title=titled, issued_at=now, issued_by=user.id)
+        for n in range(first, first + count)
+    ]
+    db.add_all(issued)
+    _event(db, user, "reserve_numbers", first=numbers.text(first, kind), count=count, title=titled)
+    db.commit()
+    return issued
+
+
+def unused_numbers(db: Session, user: User) -> list[PartNumber]:
+    """The part numbers handed out to someone that no file has yet, and they haven't given back: theirs to use."""
+    mine = (
+        PartNumber.issued_by == user.id,
+        PartNumber.file_id.is_(None),
+        PartNumber.released_at.is_(None),
+        PartNumber.legacy.is_(False),
+    )
+    return list(db.scalars(select(PartNumber).where(*mine).order_by(PartNumber.number)))
+
+
+def release_numbers(db: Session, user: User, texts: list[str]) -> list[PartNumber]:
+    """Give back part numbers handed out and not used: no file ever takes them. Your own; an admin, anyone's."""
+    begin_write(db)
+    _check_not_paused(db, user)
+    now = utcnow()
+    released: list[PartNumber] = []
+    for text in texts:
+        numbered = numbers.parse(text)
+        if numbered is None or not numbered.exact:
+            raise ApiError(f"{text} isn't a part number, like 00000123-001", code="bad_part_number")
+        issued = db.scalar(
+            select(PartNumber).where(
+                PartNumber.number == numbered.number, PartNumber.kind == numbered.kind, PartNumber.legacy.is_(False)
+            )
+        )
+        if issued is None or (issued.issued_by != user.id and not user.is_admin):
+            raise NotFound(f"{numbered.text} isn't one of your part numbers")
+        if issued.file_id is not None:
+            raise Conflict(f"{numbered.text} is a file's, for good", code="part_number_used")
+        if issued.released_at is None:
+            issued.released_at = now
+            released.append(issued)
+    if released:
+        _event(db, user, "release_numbers", numbers=[numbers.text(n.number, n.kind) for n in released])
+    db.commit()
+    return released
+
+
+# --- pausing (docs/vault.md, "Pausing the vault") --------------------------------------------------
+
+
+@dataclass
+class Pause:
+    by: User
+    since: datetime
+    host: str  # the computer the admin paused it on, whose changes go on
+    reason: str
+
+
+def paused(db: Session) -> Pause | None:
+    """Whether an admin has the vault paused: by whom, since when, on which computer, and why."""
+    state = _state(db)
+    if state.paused_at is None or state.paused_by is None:
+        return None
+    by = db.get(User, state.paused_by)
+    assert by is not None
+    return Pause(by, state.paused_at, state.paused_host or "", state.paused_reason)
+
+
+def _check_not_paused(db: Session, user: User, host: str | None = None) -> None:
+    """Refuse a change while an admin has the vault paused: but theirs, from the computer they paused it on (or from
+    anywhere, for a change that names no computer, such as a rename)."""
+    pause = paused(db)
+    if pause is None or (user.id == pause.by.id and host in (None, pause.host)):
+        return
+    raise Conflict(
+        f"The vault is paused while {pause.by.display_name} works on it{': ' + pause.reason if pause.reason else ''}. "
+        "Changes wait until it's back; you can still look at everything, and undo your check-outs.",
+        code="paused",
+        by=pause.by.display_name,
+        since=pause.since.isoformat(),
+        reason=pause.reason,
+    )
+
+
+def pause(db: Session, user: User, *, host: str, reason: str = "") -> Pause:
+    """An admin pauses the vault for work on all of it (numbering every file, say): every change but theirs, from this
+    computer, waits until it's unpaused. Undoing check-outs, and changes to who may see what, go on."""
+    begin_write(db)
+    _require_admin(user, "pause the vault")
+    host, reason = _host(host), reason.strip()
+    if len(reason) > 500:
+        raise ApiError("Say why in at most 500 characters", code="bad_reason")
+    state = _state(db)
+    if state.paused_by is not None and state.paused_by != user.id:
+        pause = paused(db)
+        assert pause is not None
+        raise Conflict(f"{pause.by.display_name} has the vault paused already", code="paused")
+    state.paused_at, state.paused_by, state.paused_host, state.paused_reason = utcnow(), user.id, host, reason
+    _event(db, user, "pause", host=host, reason=reason)
+    db.commit()
+    now = paused(db)
+    assert now is not None
+    return now
+
+
+def unpause(db: Session, user: User) -> None:
+    """An admin ends a pause, theirs or another admin's: changes go on again."""
+    begin_write(db)
+    _require_admin(user, "unpause the vault")
+    state = _state(db)
+    if state.paused_by is not None:
+        _event(db, user, "unpause", paused_by=state.paused_by)
+        state.paused_at, state.paused_by, state.paused_host, state.paused_reason = None, None, None, ""
+    db.commit()
 
 
 def can_upload(db: Session, user: User) -> bool:
@@ -1568,49 +2308,61 @@ def _keep(store: BlobStore, data: bytes) -> tuple[str, int]:
     return sha, len(data)
 
 
-def _by_path[T](names: list[str], same: list[tuple[File, T]], tree: Tree, least: int = 0) -> tuple[File, T] | None:
-    """Of files with a component's name, the one whose path ends most like the one SolidWorks saved for it (names), if
-    at least `least` of their names agree; none when two end alike."""
-    if not same:
-        return None
+def _by_path[T](names: list[str], same: list[tuple[str, File, T]], least: int = 0) -> tuple[File, T] | None:
+    """Of files with a component's name, where they are or were (a vault path each), the one whose path ends most like
+    the one SolidWorks saved for it (names), if at least `least` of their names agree; none when two end alike."""
     mine = [paths.key(name) for name in names]
-
-    def common(file: File) -> int:
-        theirs = [paths.key(name) for name in paths.split(tree.file_path(file))]
+    best: dict[int, tuple[int, File, T]] = {}  # by file: how many names agree, where most do
+    for path, file, value in same:
+        theirs = [paths.key(name) for name in path.split("/")]
         n = 0
         while n < min(len(theirs), len(mine)) and theirs[-1 - n] == mine[-1 - n]:
             n += 1
-        return n
-
-    if len(same) == 1:
-        return same[0] if least == 0 or common(same[0][0]) >= least else None
-    ranked = sorted(same, key=lambda found: common(found[0]), reverse=True)
-    best = common(ranked[0][0])
-    return ranked[0] if best > common(ranked[1][0]) and best >= least else None
+        if file.id not in best or n > best[file.id][0]:
+            best[file.id] = (n, file, value)
+    ranked = sorted(best.values(), key=lambda found: found[0], reverse=True)
+    if not ranked or ranked[0][0] < least or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+        return None
+    return ranked[0][1], ranked[0][2]
 
 
 class _Finder:
     """Which file a component of an assembly's version is, by the path SolidWorks saved for it: one of the version's
-    references with its name; else, as versions from the web app and from Kenesto reference nothing, the vault's file
-    with its name in a folder of its folder's name (not deleted: a name alone, as STEP imports' SOLID-1, could be any
-    file's), at the version it had when the assembly's version was made, or its first."""
+    references with its name, now or before a rename (FormerName); else, as versions from the web app and from Kenesto
+    reference nothing, the vault's file with its name in a folder of its folder's name (not deleted: a name alone, as
+    STEP imports' SOLID-1, could be any file's), or the one that was there before a rename, at the version it had when
+    the assembly's version was made, or its first. A file there now comes first, as SolidWorks would open it."""
 
     def __init__(self, db: Session, tree: Tree, when: datetime) -> None:
         self._db, self._tree, self._when = db, tree, when
         self._named: dict[str, list[File]] = {}
+        self._had: dict[str, list[tuple[str, File]]] = {}  # files that had a name, with where they had it
+
+    def _former(self, key: str) -> list[tuple[str, File]]:
+        if key not in self._had:
+            had = select(FormerName.path, File).join(File, File.id == FormerName.file_id)
+            self._had[key] = [(path, file) for path, file in self._db.execute(had.where(FormerName.name_key == key))]
+        return self._had[key]
 
     def file_of(self, path: str, refs: list[tuple[File, int]]) -> tuple[File, int] | None:
         names = [name for name in re.split(r"[\\/]", path) if name]
         if not names:
             return None
         key = paths.key(names[-1])
-        found = _by_path(names, [(file, version) for file, version in refs if file.name_key == key], self._tree)
+        used = {file.id: version for file, version in refs}
+        theirs = [(self._tree.file_path(file), file, version) for file, version in refs if file.name_key == key]
+        theirs += [(where, file, used[file.id]) for where, file in self._former(key) if file.id in used]
+        found = _by_path(names, theirs)
         if found is not None:
             return found
         if key not in self._named:
             alive = select(File).where(File.name_key == key, File.deleted_at.is_(None))
             self._named[key] = list(self._db.scalars(alive))
-        named = _by_path(names, [(file, 0) for file in self._named[key]], self._tree, least=min(2, len(names)))
+        least = min(2, len(names))
+        named = _by_path(names, [(self._tree.file_path(file), file, 0) for file in self._named[key]], least)
+        if named is None:
+            had = [(where, file, 0) for where, file in self._former(key) if file.deleted_at is None]
+            named = _by_path(names, had, least)
         if named is None:
             return None
         then = self._db.scalar(
@@ -1919,6 +2671,185 @@ def caliper_mesh(
     if model.mesh_sha256 is None:
         raise ApiError(f"{tree.file_path(file)} is an assembly: its parts have the meshes", code="bad_model")
     return model.mesh_sha256
+
+
+# --- Caliper: drawings' sheets ------------------------------------------------------------
+
+
+@dataclass
+class PdfView:
+    """The PDF Vault for SolidWorks made of a drawing's version, for Caliper."""
+
+    pdf: DrawingPdf
+    size: int
+    created_by: User
+
+
+@dataclass
+class DrawingView:
+    """What Caliper shows of a drawing's version: the PDF of it Vault for SolidWorks made, if it made one; and its
+    sheets, each with whether SolidWorks saved a picture of it in the file (or, where they can't be read, why not)."""
+
+    version: int
+    pdf: PdfView | None
+    sheets: list[solidworks.Sheet]
+    unreadable: str | None
+
+
+_PDF = b"%PDF-"
+# Drawings' sheets, by their contents' SHA-256, as they're read for their pictures (solidworks.read_sheets), or why they
+# couldn't be: a version never changes, and its pictures are asked for one by one after its sheets. Kept up to a size.
+_SHEETS: OrderedDict[str, list[solidworks.Sheet] | str] = OrderedDict()
+_SHEETS_KEPT = 16 << 20  # bytes of pictures
+_SHEETS_LOCK = threading.Lock()
+
+
+def _drawing_version(db: Session, tree: Tree, access: Access, file_id: int, version: int) -> tuple[File, Version]:
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    if not paths.is_drawing(file.name):
+        raise ApiError(f"{path} isn't a SolidWorks drawing", code="not_a_drawing")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    return file, target
+
+
+def _weight(kept: list[solidworks.Sheet] | str) -> int:
+    return len(kept) if isinstance(kept, str) else sum(len(sheet.picture or b"") for sheet in kept)
+
+
+def _sheets_of(store: BlobStore, version: Version, name: str) -> list[solidworks.Sheet]:
+    """A drawing version's sheets, with their pictures, read from its file a couple of files at a time and kept for the
+    next look; Unreadable says why not, and Conflict that the server is busy reading other files."""
+    sha = version.blob_sha256
+    with _SHEETS_LOCK:
+        kept = _SHEETS.get(sha)
+        if kept is not None:
+            _SHEETS.move_to_end(sha)
+    if kept is None:
+        if version.size > _MAX_READ:
+            kept = f"It's over {_MAX_READ >> 20} MB, too big to read here"
+        elif not _READING.acquire(timeout=_READING_WAIT):
+            raise Conflict("The server is reading other SolidWorks files: try again in a minute", code="busy")
+        else:
+            try:
+                kept = solidworks.read_sheets(store.path(sha).read_bytes())
+            except solidworks.Unreadable as e:
+                kept = e.message
+            finally:
+                _READING.release()
+        with _SHEETS_LOCK:
+            _SHEETS[sha] = kept
+            while len(_SHEETS) > 1 and sum(_weight(k) for k in _SHEETS.values()) > _SHEETS_KEPT:
+                _SHEETS.popitem(last=False)
+    if isinstance(kept, str):
+        raise solidworks.Unreadable(f"{name}: {kept}")
+    return kept
+
+
+def _pdf_view(db: Session, pdf: DrawingPdf) -> PdfView:
+    blob = db.get(Blob, pdf.pdf_sha256)
+    return PdfView(pdf, blob.size if blob else 0, _users(db, {pdf.created_by})[pdf.created_by])
+
+
+def drawing_view(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> DrawingView:
+    """A drawing's version, for Caliper: its PDF, which Vault for SolidWorks makes when it checks the drawing in; and its
+    sheets, each with the picture of it SolidWorks saved in the file, to show where there's no PDF (as for versions from
+    before Vault for SolidWorks made them). Anyone who can see the file may look."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    pdf = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    try:
+        sheets, unreadable = _sheets_of(store, target, f"{tree.file_path(file)} v{version}"), None
+    except (solidworks.Unreadable, Conflict) as e:
+        sheets, unreadable = [], e.message
+    return DrawingView(version, _pdf_view(db, pdf) if pdf else None, sheets, unreadable)
+
+
+def sheet_picture(db: Session, store: BlobStore, user: User, file_id: int, version: int, sheet: int) -> bytes:
+    """The picture of a drawing version's sheet (1 for the first) that SolidWorks saved in the file: a PNG."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    name = f"{tree.file_path(file)} v{version}"
+    sheets = _sheets_of(store, target, name)
+    picture = sheets[sheet - 1].picture if 1 <= sheet <= len(sheets) else None
+    if picture is None:
+        raise NotFound(f"{name} has no picture of sheet {sheet}", code="no_picture")
+    return picture
+
+
+def drawing_pdf(db: Session, user: User, file_id: int, version: int) -> tuple[str, str]:
+    """The PDF Vault for SolidWorks made of a drawing's version: a name for it ("Fin v3.pdf"), and its blob."""
+    tree, access = _context(db, user)
+    file, target = _drawing_version(db, tree, access, file_id, version)
+    pdf = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    if pdf is None:
+        raise NotFound(f"{tree.file_path(file)} v{version} has no PDF", code="no_pdf")
+    stem = file.name[: len(file.name) - len(paths.extension(file.name))]
+    return f"{stem} v{version}.pdf", pdf.pdf_sha256
+
+
+def drawings_missing(db: Session, user: User, wanted: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Which of these drawings' versions (file id, version) have no PDF yet, of files the user can see: what Vault for
+    SolidWorks asks before making them, so it makes only those."""
+    _, access = _context(db, user)
+    files = _files_by_id(db, {file_id for file_id, _ in wanted})
+    have: set[tuple[int, int]] = set()
+    ids = sorted(files)
+    for start in range(0, len(ids), _BATCH):
+        rows = db.execute(
+            select(Version.file_id, Version.number)
+            .join(DrawingPdf, DrawingPdf.version_id == Version.id)
+            .where(Version.file_id.in_(ids[start : start + _BATCH]))
+        )
+        have.update((file_id, number) for file_id, number in rows)
+
+    def needs(file_id: int, version: int) -> bool:
+        file = files.get(file_id)
+        return (
+            file is not None
+            and paths.is_drawing(file.name)
+            and access.can(file.folder_id, Role.VIEWER)
+            and 1 <= version <= file.latest_version
+            and (file_id, version) not in have
+        )
+
+    return [drawing for drawing in dict.fromkeys(wanted) if needs(*drawing)]
+
+
+def put_drawing_pdf(db: Session, store: BlobStore, user: User, file_id: int, *, version: int, pdf: str) -> PdfView:
+    """Save a drawing version's sheets as a PDF (upload it first, PUT /api/blobs/{sha256}), for Caliper: as Vault for
+    SolidWorks does when it checks a drawing in. Anyone who may upload contents and can see the file may add a PDF its
+    version doesn't have yet; making one again, in place of the one there, takes editor rights to the file's folder."""
+    # Blobs never change, so looking at one can come before the write lock.
+    if not store.exists(pdf):
+        raise ApiError("Upload the PDF first (PUT /api/blobs/{sha256})", code="blob_missing", sha256=pdf)
+    with store.path(pdf).open("rb") as f:
+        if f.read(len(_PDF)) != _PDF:
+            raise ApiError("That isn't a PDF: a PDF starts with %PDF-", code="bad_pdf")
+    begin_write(db)
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    if not can_upload(db, user):
+        raise Forbidden("You need editor access somewhere to add drawings' PDFs")
+    if not paths.is_drawing(file.name):
+        raise ApiError(f"PDFs are of SolidWorks drawings: {path} isn't one", code="not_a_drawing")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    if db.get(Blob, pdf) is None:  # in the store, but its upload was never recorded
+        raise ApiError("Upload the PDF again (PUT /api/blobs/{sha256})", code="blob_missing", sha256=pdf)
+    made = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
+    if made is None:
+        made = DrawingPdf(version_id=target.id)
+        db.add(made)
+    else:
+        access.require(file.folder_id, Role.EDITOR, f"make the PDF of {path} v{version} again")
+    made.pdf_sha256, made.created_at, made.created_by = pdf, utcnow(), user.id
+    db.commit()
+    return _pdf_view(db, made)
 
 
 # --- permissions --------------------------------------------------------------------------

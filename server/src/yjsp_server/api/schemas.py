@@ -1,13 +1,23 @@
-"""Request and response bodies of the site's own API: accounts, sign-in, and tokens. Each app has its own
-(vault/schemas.py, yorg/schemas.py)."""
+"""Request and response bodies of the site's own API: accounts, sign-in, and tokens, and the pieces of bodies the apps
+share. Each app has its own (vault/schemas.py, yorg/schemas.py, piper/schemas.py)."""
 
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from .. import auth, clients
 from ..models import SiteSettings, Token, User, WhitelistEmail
+
+
+def _tidy_folder(value: str) -> str:
+    """A folder path, tidied: forward slashes, no empty or padded parts ("" for none)."""
+    return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
+
+
+# Where an app keeps something in folders that are only paths (Yorg's views and scripts, Piper's diagrams): a path of
+# folders, as "Hotfires/HF-3", or "" for none (at the top).
+FolderPath = Annotated[str, Field(max_length=300), AfterValidator(_tidy_folder)]
 
 
 class UserRef(BaseModel):
@@ -79,10 +89,13 @@ class SiteSettingsOut(BaseModel):
     # On: only the emails on the whitelist and invited people can make an account; anyone else who signs in is turned
     # away. Off: anyone with a Georgia Tech account can.
     whitelist: bool
+    # The oldest Vault client (the add-in, the CLI) that can change the vault, like "0.5.4": older ones' changes are
+    # refused (426 client_too_old), and they can still read it. Null: any client can.
+    min_client_version: str | None
 
     @classmethod
     def of(cls, site: SiteSettings) -> "SiteSettingsOut":
-        return cls(whitelist=site.whitelist)
+        return cls(whitelist=site.whitelist, min_client_version=site.min_client_version)
 
 
 class UsageDayOut(BaseModel):
@@ -198,6 +211,8 @@ class StorageOut(BaseModel):
 
 class SiteSettingsPatch(BaseModel):
     whitelist: bool | None = None  # turning it off approves everyone waiting
+    # A version no newer than the installer offered, or null to take changes from any client again. Left out, it stays.
+    min_client_version: str | None = Field(default=None, max_length=32)
 
 
 class TokenOut(BaseModel):

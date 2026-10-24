@@ -4,7 +4,7 @@ import { formatTime } from "../format";
 import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
-import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks } from "./paths";
+import { caliperUrl, fileUrl, kindOf, opensInCaliper, opensInSolidWorks, sheetFormat, titleBeside } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -44,6 +44,36 @@ export function FileIcon({ name }: { name: string }) {
             aria-hidden="true"
             data-letter={{ part: "P", assembly: "A", drawing: "D", model: "3D", file: "·" }[kind]}
         />
+    );
+}
+
+/**
+ * A file's name, a link to its page, with its title under it where the title says more than the name does: once
+ * someone named it, or its name is a part number (titleBeside). label: the name as the list has it (a path, say).
+ */
+export function FileName({ file, label = file.name }: { file: VaultFile; label?: string }) {
+    const title = titleBeside(file);
+    if (!title) {
+        return (
+            <Link to={fileUrl(file.id)} className="name">
+                <FileIcon name={file.name} />
+                {label}
+            </Link>
+        );
+    }
+    // The name itself (a part number) stays whole, though a path before it may wrap.
+    const at = label.length - file.name.length;
+    return (
+        <span className="file-name">
+            <Link to={fileUrl(file.id)} className="name">
+                <FileIcon name={file.name} />
+                <span>
+                    {label.slice(0, at)}
+                    <span className="file-name-whole">{label.slice(at)}</span>
+                </span>
+            </Link>
+            <span className="file-title">{title}</span>
+        </span>
     );
 }
 
@@ -105,7 +135,16 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
     );
 }
 
-/** Caliper, the 3D viewer, for a part, an assembly, or a STEP or IGES file: right beside Open in SolidWorks. */
+const CALIPER_TITLES = {
+    drawing: "See its sheets, in the browser",
+    dxf: "See it in the browser: zoom in, and measure it",
+    model: "See it in 3D, in the browser: turn it, cut it, measure it",
+};
+
+/**
+ * Caliper, the browser's viewer, for a part, an assembly, or a STEP, IGES, or STL file in 3D, or a drawing or a DXF file
+ * flat: right beside Open in SolidWorks.
+ */
 export function OpenInCaliper({ file, compact = false }: { file: { id: number; name: string }; compact?: boolean }) {
     if (!opensInCaliper(file.name)) {
         return null;
@@ -115,7 +154,7 @@ export function OpenInCaliper({ file, compact = false }: { file: { id: number; n
             className={compact ? "button button-small" : "button"}
             to={caliperUrl(file.id)}
             aria-label="Open in Caliper"
-            title="See it in 3D, in the browser: turn it, cut it, measure it"
+            title={CALIPER_TITLES[sheetFormat(file.name) ?? "model"]}
         >
             {compact ? "Caliper" : "Open in Caliper"}
         </Link>

@@ -71,14 +71,20 @@ def patch_user(user_id: int, body: UserPatch, user: ActiveUser, db: DB) -> UserO
 
 @router.get("/settings")
 def get_site_settings(user: ActiveUser, db: DB) -> SiteSettingsOut:
-    """Whether new people need an invite or an admin's approval to join: the whitelist (admins)."""
+    """Whether new people need an invite or an admin's approval to join (the whitelist), and the oldest Vault client
+    that can change the vault (admins)."""
     return SiteSettingsOut.of(people.site_settings(db, user))
 
 
 @router.patch("/settings")
-def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB) -> SiteSettingsOut:
-    """Turn the whitelist on or off (admins). Off, anyone can join, so it approves everyone waiting too."""
-    return SiteSettingsOut.of(people.update_site_settings(db, user, whitelist=body.whitelist))
+def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB, settings: Config) -> SiteSettingsOut:
+    """Turn the whitelist on or off, or set the oldest Vault client that can change the vault (admins). Off, the
+    whitelist lets anyone join, so it approves everyone waiting too. The oldest client can be no newer than the
+    installer offered for download; null takes changes from any client again."""
+    oldest = (body.min_client_version or "") if "min_client_version" in body.model_fields_set else None
+    offered = version_of(settings.downloads_dir, clients.INSTALLER) if oldest else None  # read only when it's needed
+    site = people.update_site_settings(db, user, whitelist=body.whitelist, min_client_version=oldest, offered=offered)
+    return SiteSettingsOut.of(site)
 
 
 @router.get("/whitelist")

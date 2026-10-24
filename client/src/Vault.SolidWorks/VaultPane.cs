@@ -38,6 +38,9 @@ internal sealed partial class VaultPane : UserControl
     private readonly Timer _fit = new Timer { Interval = 250 };
     private readonly ToolTip _tips = new ToolTip { AutoPopDelay = 20_000 };
     private readonly HashSet<string> _offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    // A file Vault itself is saving, before a check-in: the one others are saved along with (SavedAlongWith).
+    private string? _saving;
+    private LeftAlone? _leftAlone;
     private Workspace? _workspace;
     private Account? _me;
     private VaultTree? _vault;
@@ -74,6 +77,7 @@ internal sealed partial class VaultPane : UserControl
     // The active document's card.
     private readonly Card _documentCard = new Card();
     private readonly Label _documentName = Words("", Theme.Heading);
+    private readonly Label _documentTitle = Words("", color: Theme.Muted); // what it's called, where its name doesn't say
     private readonly Pill _documentStatus = new Pill();
     private readonly Label _documentDetail = Words("", color: Theme.Muted);
     private readonly FlowLayoutPanel _documentActions = Row();
@@ -84,6 +88,7 @@ internal sealed partial class VaultPane : UserControl
     private readonly FlatButton _takeOverButton;
     private readonly FlatButton _drawingButton;
     private readonly FlatButton _caliperButton;
+    private readonly FlatButton _pdfButton;
     private readonly FlatButton _keepMineButton;
     private readonly FlatButton _useVaultButton;
 
@@ -110,6 +115,9 @@ internal sealed partial class VaultPane : UserControl
     // The line at the bottom: what Vault is doing, or how the last thing went.
     private readonly Label _message = Words("");
     private readonly Control _statusBar;
+
+    // While an admin has the vault paused: who, and why. Changes wait until it's back.
+    private readonly Label _pauseNotice = Words("", color: Theme.Ink(Tone.Attention));
 
     /// <summary>Brings the Vault tab to the front of SolidWorks' task pane; the session that made the tab sets it.</summary>
     public Action? ShowTab { get; set; }
@@ -176,6 +184,10 @@ internal sealed partial class VaultPane : UserControl
             "Make 3D view",
             (_, _) => OnActiveDocument(MakeModelsHereAsync),
             "Make the 3D views that Caliper shows in the web app, of this file and of what it uses, where they're missing. Check-ins make them too.");
+        _pdfButton = MakeButton(
+            "Make PDF",
+            (_, _) => OnActiveDocument(MakeDrawingPdfHereAsync),
+            "Make the PDF of this drawing's sheets that Caliper shows in the web app, if this version has none. Check-ins make it too.");
         _keepMineButton = MakeButton(
             "Keep mine...",
             (_, _) => OnActiveDocument(path => KeepMineAsync(new[] { path })),
@@ -186,7 +198,7 @@ internal sealed partial class VaultPane : UserControl
             "Replace your copy with the vault's latest version. Yours is kept in the workspace's .vault\\backup folder.");
         _documentActions.Controls.AddRange(new Control[]
         {
-            _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton, _keepMineButton, _useVaultButton,
+            _checkInButton, _checkOutButton, _getButton, _undoButton, _takeOverButton, _drawingButton, _caliperButton, _pdfButton, _keepMineButton, _useVaultButton,
         });
         _documentActions.Margin = new Padding(0, 6, 0, 0);
         _documentCard.SizeChanged += (_, _) =>
@@ -301,10 +313,19 @@ internal sealed partial class VaultPane : UserControl
         {
             return true; // not in the vault yet, or yours
         }
+        if (SavedAlongWith(path) is { } saving)
+        {
+            return SaveAlong(workspace, saving, path);
+        }
         var name = Path.GetFileName(path);
         if (status.Lock is { } other)
         {
             Warn($"{name} can't be saved: {other.User.Name} has it checked out on {other.Host}.");
+            return false;
+        }
+        if (status.State == FileState.DeletedInVault)
+        {
+            Warn(DeletedSinceYouGotIt(name));
             return false;
         }
         if (status.State is not (FileState.UpToDate or FileState.Modified))
@@ -315,6 +336,104 @@ internal sealed partial class VaultPane : UserControl
         return Ask($"{name} isn't checked out to you. Check it out now and save?") == DialogResult.Yes
             && CheckOutToSave(workspace, path);
     }
+
+    // The file being saved when SolidWorks saves path along with it, as it saves the parts of an assembly that changed;
+    // null when path is the one being saved: the active document, or the one Vault saves before a check-in.
+    private string? SavedAlongWith(string path)
+    {
+        var saving = _saving ?? _sw.ActiveDocumentPath;
+        return saving != null && !string.Equals(saving, path, StringComparison.OrdinalIgnoreCase) ? saving : null;
+    }
+
+    /// <summary>
+    /// Whether to save a file, not checked out to you, that SolidWorks saves along with the one being saved (saving), as
+    /// it saves the parts of an assembly that changed. Asked once, on the first, for all of them: in SolidWorks 2026,
+    /// every part last saved in an older SolidWorks counts as changed, and a question for each was a question for every
+    /// part of the assembly. Yes checks out those that can be, and saves them; No leaves them as the vault has them,
+    /// what changed in them still on screen. Those someone else has, deleted from the vault, or out of date are named, and
+    /// never saved here.
+    /// </summary>
+    private bool SaveAlong(Workspace workspace, string saving, string path)
+    {
+        if (_leftAlone is { } decided && string.Equals(decided.Saving, saving, StringComparison.OrdinalIgnoreCase)
+            && DateTime.UtcNow < decided.Until && decided.Paths.Contains(path))
+        {
+            return false;
+        }
+        var along = _sw.AllReferences(saving).Where(_sw.HasUnsavedChanges).Append(path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(StatusOf).OfType<FileStatus>()
+            .Where(s => s.FileId != null && !s.CheckedOutByMe)
+            .ToList();
+        var can = along.Where(s => s.Lock == null && s.State is FileState.UpToDate or FileState.Modified).Select(s => s.LocalPath).ToList();
+        var cannot = along.Where(s => !can.Contains(s.LocalPath)).Select(s => $"{Path.GetFileName(s.LocalPath)} ({WhyNotSaved(s)})").ToList();
+        var name = Path.GetFileName(saving);
+        var cannotNote = cannot.Count == 0
+            ? ""
+            : $"\n\n{(cannot.Count == 1 ? "This one isn't" : $"These {cannot.Count} aren't")} saved either way:\n" + string.Join("\n", cannot);
+        var them = can.Count == 1 ? "it" : "them";
+        var save = can.Count > 0
+            && MessageDialog.Show(
+                this,
+                $"Saving {name} also saves {Count(can.Count, "file")} it uses that changed in SolidWorks, but "
+                    + $"{(can.Count == 1 ? "isn't" : "aren't")} checked out to you. (Opening a file saved in an older SolidWorks "
+                    + "changes it.)\n\n" + string.Join("\n", can.Select(Path.GetFileName))
+                    + $"\n\nYes: check {them} out and save {them}.\nNo: leave {them} as the vault has {them}: what changed stays on "
+                    + "screen, unsaved." + cannotNote,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (can.Count == 0)
+        {
+            Warn($"Saving {name} can't save {Count(cannot.Count, "file")} it uses that changed in SolidWorks:\n\n" + string.Join("\n", cannot));
+        }
+        if (save && CheckOutToSave(workspace, can))
+        {
+            var kept = MadeEditable(can);
+            Remember(saving, along.Select(s => s.LocalPath).Where(p => !can.Contains(p) || kept.Contains(Path.GetFileName(p))));
+            return can.Contains(path, StringComparer.OrdinalIgnoreCase) && !kept.Contains(Path.GetFileName(path));
+        }
+        Remember(saving, along.Select(s => s.LocalPath));
+        return false;
+    }
+
+    private static string WhyNotSaved(FileStatus status) => status switch
+    {
+        { Lock: { } other } => $"checked out by {other.User.Name}",
+        { State: FileState.DeletedInVault } => "deleted from the vault since you got it",
+        _ => "a newer version is in the vault",
+    };
+
+    // Files the question said to leave as they are, saved along with saving: SolidWorks comes to each in turn. Until
+    // that save is over (SaveEnded), or a minute has passed, should SolidWorks not say.
+    private void Remember(string saving, IEnumerable<string> paths) =>
+        _leftAlone = new LeftAlone(saving, new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase), DateTime.UtcNow.AddMinutes(1));
+
+    /// <summary>SolidWorks saved a file: if it was the one others were saved along with, that's over.</summary>
+    public void SaveEnded(string path)
+    {
+        if (_leftAlone is { } decided && string.Equals(decided.Saving, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _leftAlone = null;
+        }
+    }
+
+    private sealed class LeftAlone
+    {
+        public LeftAlone(string saving, HashSet<string> paths, DateTime until) => (Saving, Paths, Until) = (saving, paths, until);
+
+        public string Saving { get; }
+
+        public HashSet<string> Paths { get; }
+
+        public DateTime Until { get; }
+    }
+
+    // A file deleted from the vault since it came here can't be checked out to save it: someone took it out, on
+    // purpose or not, and only bringing it back puts it in the vault again.
+    private static string DeletedSinceYouGotIt(string name) =>
+        $"{name} can't be saved: it was deleted from the vault since you got it. Restore it from its folder's trash in the web "
+        + "app to keep working on it, or save your work under another name.";
 
     /// <summary>
     /// Called before SolidWorks' Save As dialog for a read-only document. That's what Save opens for
@@ -335,19 +454,26 @@ internal sealed partial class VaultPane : UserControl
             // Checked out while it was open (with the CLI, say): it only needs to become editable.
             return _sw.SetReadOnly(path, false) ? SaveAsChoice.SaveInPlace : SaveAsChoice.ShowDialog;
         }
-        var reason = status.Lock is { } other
-            ? $"{name} is checked out by {other.User.Name} on {other.Host}, so your changes can't be saved to it."
-            : status.State is not (FileState.UpToDate or FileState.Modified)
-                ? $"{name} can't be saved: a newer version is in the vault."
-                : null;
+        if (SavedAlongWith(path) is { } saving)
+        {
+            return SaveAlong(workspace, saving, path) ? SaveAsChoice.SaveInPlace : SaveAsChoice.Cancel;
+        }
+        var reason = status switch
+        {
+            { Lock: { } other } => $"{name} is checked out by {other.User.Name} on {other.Host}, so your changes can't be saved to it.",
+            { State: FileState.DeletedInVault } =>
+                $"{name} was deleted from the vault since you got it, so your changes can't be saved to it. To keep working on it, "
+                + "restore it from its folder's trash in the web app.",
+            { State: not (FileState.UpToDate or FileState.Modified) } => $"{name} can't be saved: a newer version is in the vault.",
+            _ => null,
+        };
         if (reason != null)
         {
-            return Ask(reason + " Save them under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
+            return Ask(reason + "\n\nSave your changes under another name instead?") == DialogResult.Yes ? SaveAsChoice.ShowDialog : SaveAsChoice.Cancel;
         }
-        var answer = MessageBox.Show(
+        var answer = MessageDialog.Show(
             this,
             $"{name} isn't checked out to you.\n\nYes: check it out and save it.\nNo: save your changes under another name.",
-            "Vault",
             MessageBoxButtons.YesNoCancel,
             MessageBoxIcon.Question);
         return answer switch
@@ -503,7 +629,8 @@ internal sealed partial class VaultPane : UserControl
     /// its default template, and it's checked in at once, staying checked out to you, so everyone sees the
     /// name is taken. Changes to the model that you haven't checked in stay out of it.
     /// </summary>
-    private Task NewFileAsync(string path, string? model) => RunAsync($"Starting {Path.GetFileName(path)}", async workspace =>
+    private Task NewFileAsync(string path, string? model, string comment = "Started from the web app") =>
+        RunAsync($"Starting {Path.GetFileName(path)}", async workspace =>
     {
         await workspace.CheckNewFileAsync(path);
         if (model != null)
@@ -518,12 +645,57 @@ internal sealed partial class VaultPane : UserControl
         var uses = ReferenceMap(new[] { path });
         await workspace.CheckinAsync(
             new[] { path },
-            "Started from the web app",
+            comment,
             keepCheckedOut: true,
             referencesOf: p => uses.TryGetValue(p, out var found) ? found : Array.Empty<string>(),
             withChangedReferences: false);
         return $"{Path.GetFileName(path)} is in the vault, checked out to you.";
     });
+
+    /// <summary>
+    /// A new part or assembly in a vault folder, from Browse, named by the next part number: of a kind, with a title
+    /// (NewNumberDialog), then started as a new file from the web app is (NewFileAsync). Part numbers have to be on.
+    /// </summary>
+    private async Task NewNumberedAsync(string folder, bool assembly)
+    {
+        var workspace = _workspace;
+        if (workspace == null)
+        {
+            return;
+        }
+        var what = assembly ? "assembly" : "part";
+        var numbering = await workspace.Api.NumberingAsync();
+        if (numbering == null || numbering.Mode == "off")
+        {
+            Warn("Part numbers aren't handed out yet. Start new parts and assemblies in SolidWorks as before, and save them in "
+                + "the folder they belong in.");
+            return;
+        }
+        var kinds = (await workspace.Api.PartKindsAsync()).Where(k => !k.Retired && (k.Applies == "any" || k.Applies == what)).ToList();
+        using var dialog = new NewNumberDialog(what, folder, kinds);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+        var issued = (await workspace.Api.ReserveNumbersAsync(dialog.Kind, dialog.Title)).First();
+        var name = issued.Number + (assembly ? ".SLDASM" : ".SLDPRT");
+        await NewFileAsync(workspace.ToLocalPath(folder.Length > 0 ? $"{folder}/{name}" : name), null, "Started in SolidWorks");
+    }
+
+    /// <summary>Say what a file is called, shown with its name: not a new version, and no check-out needed.</summary>
+    private async Task EditTitleAsync(FileStatus file)
+    {
+        using var dialog = new TitleDialog(NameOf(file.VaultPath), file.Title ?? "");
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+        await RunAsync("Saving the title", async workspace =>
+        {
+            await workspace.DescribeAsync(new[] { (file.LocalPath, (string?)dialog.Title, (bool?)null) });
+            return $"{NameOf(file.VaultPath)} is called “{dialog.Title}” now.";
+        });
+    }
 
     /// <summary>The active document was changed: offer to check it out if it isn't yours (once per session).</summary>
     public void DocumentModified(string path)
@@ -773,15 +945,15 @@ internal sealed partial class VaultPane : UserControl
         {
             return;
         }
-        // Check in what's on screen: save open documents first.
-        var unsaved = _sw.OpenDocuments().Select(SolidWorksHost.PathOf)
+        // Check in what's on screen: save open documents first. Only those you can save: ones not checked out to you are
+        // read-only, can't go in a check-in, and in SolidWorks 2026 are often only "changed" by opening (SaveAlong).
+        var unsaved = _sw.OpenDocuments().Where(d => !SolidWorksHost.IsReadOnly(d)).Select(SolidWorksHost.PathOf)
             .Where(p => p != null && IsInWorkspace(p) && _sw.HasUnsavedChanges(p)).Cast<string>().ToList();
         if (unsaved.Count > 0)
         {
-            var answer = MessageBox.Show(
+            var answer = MessageDialog.Show(
                 this,
                 "Save changes before checking in?\n\n" + string.Join("\n", unsaved.Select(Path.GetFileName)),
-                "Vault",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question);
             if (answer == DialogResult.Cancel)
@@ -790,30 +962,49 @@ internal sealed partial class VaultPane : UserControl
             }
             if (answer == DialogResult.Yes)
             {
-                unsaved.ForEach(p => _sw.Save(p));
+                foreach (var path in unsaved)
+                {
+                    _saving = path; // what SolidWorks saves along with it is asked about once (SaveAlong)
+                    try
+                    {
+                        _sw.Save(path);
+                    }
+                    finally
+                    {
+                        _saving = null;
+                    }
+                }
             }
         }
-        using var dialog = new CheckinDialog(paths.Select(Path.GetFileName));
+        // Ask SolidWorks what each file uses now, on this thread; check-in reads it on another.
+        var uses = ReferenceMap(paths);
+        // New parts and assemblies without part numbers going in: vendors' parts keep their names (McMaster's numbers say
+        // so by themselves); once numbers are required, others are refused, and New part in Browse gives them one.
+        var unnumbered = paths.Concat(uses.Values.SelectMany(used => used)).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(p => StatusOf(p)?.State == FileState.New && PartNumbers.TakesANumber(p) && PartNumbers.NumberOf(Path.GetFileName(p)) == null)
+            .ToList();
+        using var dialog = new CheckinDialog(paths.Select(Path.GetFileName), unnumbered.Select(Path.GetFileName).ToList());
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             return;
         }
-        // Ask SolidWorks what each file uses now, on this thread; check-in reads it on another.
-        var uses = ReferenceMap(paths);
         await RunAsync("Checking in", async workspace =>
         {
             var result = await workspace.CheckinAsync(
                 paths, dialog.Comment, dialog.KeepCheckedOut,
-                path => uses.TryGetValue(path, out var found) ? found : Array.Empty<string>());
+                path => uses.TryGetValue(path, out var found) ? found : Array.Empty<string>(),
+                vendorParts: dialog.VendorParts ? unnumbered : null);
             foreach (var file in result.Files.Where(f => f.File.CheckedOut == null))
             {
                 _sw.SetReadOnly(workspace.ToLocalPath(file.File.Path), true);
             }
             var checkedIn = $"Checked in {Count(result.Files.Count, "file")}.";
-            // The 3D views of what's checked in, for Caliper in the web app: SolidWorks has it all open now.
+            // The 3D views and drawings' PDFs of what's checked in, for Caliper in the web app: SolidWorks has it all
+            // open now.
             foreach (var path in paths)
             {
-                checkedIn = $"{checkedIn} {await MakeModelsAsync(workspace, path)}".TrimEnd();
+                var made = DrawingPdfs.IsDrawing(path) ? await MakeDrawingPdfAsync(workspace, path) : await MakeModelsAsync(workspace, path);
+                checkedIn = $"{checkedIn} {made}".TrimEnd();
             }
             return checkedIn;
         });
@@ -997,11 +1188,11 @@ internal sealed partial class VaultPane : UserControl
     }
 
     /// <summary>
-    /// The file in the workspace a path kept in a SolidWorks file from elsewhere means (see
-    /// <see cref="Workspace.LocalFileFor"/>), for SolidWorks when it can't find one; null if none is here.
+    /// The file in the workspace a path kept in a SolidWorks file from elsewhere means, or one that names a file renamed
+    /// since (see <see cref="Workspace.LocalFileFor(string, IEnumerable{FileStatus})"/>), for SolidWorks when it can't
+    /// find one; null if none is here.
     /// </summary>
-    public string? LocalFileFor(string keptPath) =>
-        _workspace?.LocalFileFor(keptPath, _statuses.Values.Where(s => s.FileId != null).Select(s => s.VaultPath));
+    public string? LocalFileFor(string keptPath) => _workspace?.LocalFileFor(keptPath, _statuses.Values);
 
     // Where a check-out is: "on LAB-PC", or "in the web app".
     private static string On(string host) => host == Workspace.WebHost ? "in the web app" : $"on {host}";
@@ -1212,6 +1403,7 @@ internal sealed partial class VaultPane : UserControl
                 _statuses[VaultPaths.Key(status.VaultPath)] = status;
             }
             ShowAccount(workspace, me);
+            ShowPause(workspace.Paused);
             // Redrawn only when something changed, so a refresh doesn't close what you had open in the tree.
             var shown = Signature(vault);
             if (shown != _shown)
@@ -1290,7 +1482,11 @@ internal sealed partial class VaultPane : UserControl
     /// Check out a file SolidWorks is about to save, and make its document editable. SolidWorks is
     /// waiting on its save event, so this runs synchronously (off this thread).
     /// </summary>
-    private bool CheckOutToSave(Workspace workspace, string path)
+    private bool CheckOutToSave(Workspace workspace, string path) =>
+        CheckOutToSave(workspace, new[] { path }) && MadeEditable(new[] { path }).Count == 0;
+
+    /// <summary>Check out files SolidWorks is about to save, all or none (see the one above).</summary>
+    private bool CheckOutToSave(Workspace workspace, IReadOnlyList<string> paths)
     {
         if (!_gate.Wait(0))
         {
@@ -1301,22 +1497,25 @@ internal sealed partial class VaultPane : UserControl
         {
             // The last refresh can be a minute old: if a newer version was checked in since, checking out
             // would replace the file under your unsaved changes.
-            var current = Task.Run(() => workspace.StatusAsync(new[] { path })).GetAwaiter().GetResult().FirstOrDefault();
-            if (current?.State is not (FileState.UpToDate or FileState.Modified))
+            var current = Task.Run(() => workspace.StatusAsync(paths)).GetAwaiter().GetResult();
+            FileStatus? Now(string path) => current.FirstOrDefault(s => string.Equals(s.LocalPath, path, StringComparison.OrdinalIgnoreCase));
+            var changed = paths.Where(p => Now(p)?.State is not (FileState.UpToDate or FileState.Modified)).ToList();
+            if (changed.Count > 0)
             {
-                Warn($"{Path.GetFileName(path)} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
+                var name = Path.GetFileName(changed[0]);
+                Warn(paths.Count > 1
+                    ? $"{Count(changed.Count, "file")} changed in the vault since Vault last looked, so none were checked out. Save "
+                        + "again to be asked again:\n\n" + string.Join("\n", changed.Select(Path.GetFileName))
+                    : Now(changed[0])?.State == FileState.DeletedInVault
+                        ? DeletedSinceYouGotIt(name)
+                        : $"{name} can't be saved: a newer version is in the vault. Save your work under another name, then get the latest version.");
                 return false;
             }
-            var checkedOut = Task.Run(() => workspace.CheckoutAsync(new[] { path })).GetAwaiter().GetResult();
+            var checkedOut = Task.Run(() => workspace.CheckoutAsync(paths)).GetAwaiter().GetResult();
             // SolidWorks asks AllowSave next, so it has to see the check-out now, not after the next refresh.
             foreach (var status in checkedOut)
             {
                 _statuses[VaultPaths.Key(status.VaultPath)] = status;
-            }
-            if (!_sw.SetReadOnly(path, false))
-            {
-                Warn($"{Path.GetFileName(path)} is checked out to you now, but SolidWorks kept it read-only. Close it, open it again, and save.");
-                return false;
             }
             return true;
         }
@@ -1331,6 +1530,22 @@ internal sealed partial class VaultPane : UserControl
             _gate.Release();
             RefreshSoon();
         }
+    }
+
+    // Make checked-out files' documents editable; the names of any SolidWorks kept read-only, which it said.
+    private List<string> MadeEditable(IReadOnlyList<string> paths)
+    {
+        var kept = paths.Where(p => !_sw.SetReadOnly(p, false)).Select(Path.GetFileName).ToList();
+        if (kept.Count == 1)
+        {
+            Warn($"{kept[0]} is checked out to you now, but SolidWorks kept it read-only. Close it, open it again, and save.");
+        }
+        else if (kept.Count > 1)
+        {
+            Warn("These are checked out to you now, but SolidWorks kept them read-only. Close them, open them again, and save:\n\n"
+                + string.Join("\n", kept));
+        }
+        return kept;
     }
 
     // Button and menu handlers: nothing may escape into SolidWorks.
@@ -1490,6 +1705,9 @@ internal sealed partial class VaultPane : UserControl
 
     private bool BrowseShown => _browseTab.Checked;
 
+    // The vault path of the folder selected in Browse ("" for the top).
+    private string SelectedFolder() => _tree.SelectedNode?.Tag is TreeFolder folder ? folder.VaultPath : "";
+
     // --- showing ------------------------------------------------------------------------------
 
     private void ShowActiveDocument() => ShowDocument(_sw.ActiveDocumentPath);
@@ -1503,6 +1721,8 @@ internal sealed partial class VaultPane : UserControl
         var status = path == null ? null : StatusOf(path);
         _documentName.Text = path == null ? "No document open" : Path.GetFileName(path);
         _documentName.ForeColor = path == null ? Theme.Muted : Theme.Text;
+        _documentTitle.Text = status?.TitleBeside ?? "";
+        _documentTitle.Visible = _documentTitle.Text.Length > 0;
         var (text, tone, detail) = DescribeDocument(path, status);
         _documentStatus.Show(text, tone);
         _documentStatus.Visible = text.Length > 0;
@@ -1520,8 +1740,9 @@ internal sealed partial class VaultPane : UserControl
         var canTakeOver = status != null && _workspace?.CanTakeOver(status) == true;
         var yoursElsewhere = canTakeOver && status!.Lock!.User.Id == _me?.Id;
         var drawings = status != null && _vault != null ? _vault.Drawings(status) : Array.Empty<FileStatus>();
-        // Caliper's 3D view, for parts and assemblies in the vault (check-ins make it too).
+        // Caliper's 3D view, for parts and assemblies in the vault, and its PDF, for drawings (check-ins make them too).
         var canMakeModel = inVault && Path.GetExtension(path ?? "").ToLowerInvariant() is ".sldprt" or ".sldasm";
+        var canMakePdf = inVault && DrawingPdfs.IsDrawing(path ?? "");
         _takeOverButton.Text = yoursElsewhere ? "Move check-out here..." : "Take over...";
         _drawingButton.Text = drawings.Count > 1 ? "Open drawing ▾" : "Open drawing";
         var primary = canCheckIn ? _checkInButton
@@ -1538,6 +1759,7 @@ internal sealed partial class VaultPane : UserControl
             (_takeOverButton, canTakeOver),
             (_drawingButton, drawings.Count > 0),
             (_caliperButton, canMakeModel),
+            (_pdfButton, canMakePdf),
             (_keepMineButton, conflict),
             (_useVaultButton, conflict));
     }
@@ -1622,6 +1844,19 @@ internal sealed partial class VaultPane : UserControl
     // " since Oct 3 at 14:05", when a check-out started.
     private static string Since(FileLock fileLock) =>
         fileLock.Since == default ? "" : " since " + fileLock.Since.ToLocalTime().ToString("MMM d 'at' HH:mm", CultureInfo.InvariantCulture);
+
+    // While an admin has the vault paused (for numbering every file, say): who, why, and what still works.
+    private void ShowPause(PauseInfo? pause)
+    {
+        _pauseNotice.Visible = pause != null;
+        if (pause != null)
+        {
+            var who = pause.By.Id == _me?.Id ? "You" : pause.By.Name;
+            var why = pause.Reason.Length > 0 ? $", for {pause.Reason}" : "";
+            _pauseNotice.Text = $"{who} paused the vault{why}. Check-outs, check-ins, and other changes wait until it's back; "
+                + "you can still open and get files, and undo your check-outs.";
+        }
+    }
 
     private void ShowAccount(Workspace workspace, Account me)
     {
@@ -1730,14 +1965,13 @@ internal sealed partial class VaultPane : UserControl
         _statusBar.Visible = _message.Text.Length > 0;
     }
 
-    private void Warn(string text) => MessageBox.Show(this, text, "Vault", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    private void Warn(string text) => MessageDialog.Show(this, text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     // For a question with a big answer (a download of many files), No is the default, so Enter doesn't start it.
     private DialogResult Ask(string question, bool defaultNo = false) =>
-        MessageBox.Show(
+        MessageDialog.Show(
             this,
             question,
-            "Vault",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question,
             defaultNo ? MessageBoxDefaultButton.Button2 : MessageBoxDefaultButton.Button1);
@@ -1842,6 +2076,9 @@ internal sealed partial class VaultPane : UserControl
         var keepMine = menu.Items.Add("Keep mine...", null, (_, _) => Safely(() => KeepMineAsync(SelectedPaths())));
         var useVault = menu.Items.Add("Use the vault's version...", null, (_, _) => Safely(() => UseVaultVersionAsync(SelectedPaths())));
         var freeUp = menu.Items.Add("Free up space...", null, (_, _) => Safely(() => FreeUpSpaceAsync(SelectedPaths())));
+        var title = menu.Items.Add("Edit title...", null, (_, _) => Safely(() => EditTitleAsync(SelectedStatuses()[0])));
+        var newPart = menu.Items.Add("New part...", null, (_, _) => Safely(() => NewNumberedAsync(SelectedFolder(), assembly: false)));
+        var newAssembly = menu.Items.Add("New assembly...", null, (_, _) => Safely(() => NewNumberedAsync(SelectedFolder(), assembly: true)));
         var explorer = menu.Items.Add("Show in File Explorer", null, (_, _) => Guarded(() => ShowInExplorer(SelectedPaths())));
         menu.Opening += (_, e) =>
         {
@@ -1853,7 +2090,13 @@ internal sealed partial class VaultPane : UserControl
                 return;
             }
             open.Available = checkOut.Available = undo.Available = takeOver.Available = !folder;
-            explorer.Available = folder;
+            explorer.Available = newPart.Available = newAssembly.Available = folder;
+            newPart.Enabled = newAssembly.Enabled = !_busy;
+            newPart.ToolTipText = newAssembly.ToolTipText = "Start one in this folder, named by the next part number, with a title that says what it is.";
+            // What it's called, shown with its name: an editor's to change, without checking it out.
+            title.Available = !folder && files.Count == 1 && files[0].FileId != null;
+            title.Enabled = !_busy && files.Count == 1 && files[0].MyRole is "editor" or "lead" or "admin";
+            title.ToolTipText = "Say what it's called, shown with its name: not a new version, and no check-out needed.";
             open.Enabled = !_busy;
             checkOut.Enabled = !_busy && files.Any(s => s.FileId != null && s.Lock == null
                 && s.State is FileState.UpToDate or FileState.Outdated or FileState.Modified or FileState.Missing);
@@ -1998,6 +2241,10 @@ internal sealed partial class VaultPane : UserControl
     private TreeNode FileNode(FileStatus file, string key, UsedStatus? used = null, FileStatus? user = null, bool drawing = false)
     {
         var text = new StringBuilder(drawing ? "Drawing: " : "").Append(NameOf(file.VaultPath));
+        if (file.TitleBeside is { } title)
+        {
+            text.Append("  “").Append(title).Append('”'); // what it's called, where its name (a part number) doesn't say
+        }
         if (user != null && FolderOf(file.VaultPath) != FolderOf(user.VaultPath))
         {
             text.Append("  (in ").Append(FolderOf(file.VaultPath)).Append(')');
@@ -2142,7 +2389,8 @@ internal sealed partial class VaultPane : UserControl
         foreach (var file in vault.Files)
         {
             text.Append(file.VaultPath).Append('|').Append(file.State).Append('|').Append(file.LocalVersion).Append('|').Append(file.RemoteVersion)
-                .Append('|').Append(file.Lock?.User.Name).Append('|').Append(file.Lock?.Host).Append('|').Append(file.CheckedOutByMe);
+                .Append('|').Append(file.Lock?.User.Name).Append('|').Append(file.Lock?.Host).Append('|').Append(file.CheckedOutByMe)
+                .Append('|').Append(file.Title).Append('|').Append(string.Join("/", file.FormerNames));
             foreach (var used in vault.Uses(file) ?? Array.Empty<UsedStatus>())
             {
                 text.Append('|').Append(used.FileId).Append('v').Append(used.Version);
@@ -2222,6 +2470,7 @@ internal sealed partial class VaultPane : UserControl
     {
         _documentCard.Add(Words("Active document", Theme.Caption, Theme.Muted));
         _documentCard.Add(_documentName);
+        _documentCard.Add(_documentTitle);
         var status = Row(_documentStatus);
         status.Margin = new Padding(0, 2, 0, 4);
         _documentCard.Add(status);
@@ -2236,7 +2485,9 @@ internal sealed partial class VaultPane : UserControl
 
         var tabs = Row(_changesTab, _browseTab);
         var footer = Row(_updateButton, _everythingButton, _freeUpButton);
-        return Stack(_lists, _documentCard, tabs, _lists, footer);
+        _pauseNotice.Visible = false;
+        _pauseNotice.Margin = new Padding(4, 0, 4, 6);
+        return Stack(_lists, _pauseNotice, _documentCard, tabs, _lists, footer);
     }
 
     private Control StatusBar()

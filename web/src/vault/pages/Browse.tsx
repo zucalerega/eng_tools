@@ -25,11 +25,11 @@ import {
 import { CheckOutDialog, UndoCheckoutDialog } from "../checkin";
 import { canCheckOut } from "../checkouts";
 import { MenuButton, Notice, Time } from "../../components";
-import { FileIcon, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
+import { FileName, FolderIcon, OpenInCaliper, OpenInSolidWorks, StatusLabel } from "../components";
 import { formatDate, formatSize, formatTime } from "../../format";
 import { DeleteDialog, MoveDialog, NewFolderDialog, RenameDialog, UploadDialog } from "../manage";
 import { NewFileDialog, StartedNotice, type NewKind } from "../newFile";
-import { fileUrl, folderUrl, kindOf, parentOf, pathKey, trashUrl, type Kind } from "../paths";
+import { fileUrl, folderUrl, keepsItsName, kindOf, parentOf, pathKey, trashUrl, type Kind } from "../paths";
 import { Link } from "../../router";
 import { atLeast, contentsOf, roleIn, useVault } from "../store";
 import { drawingsOf, UsedVersion, usesOf } from "../structure";
@@ -112,6 +112,7 @@ export function Browse({ folder }: { folder: string }) {
     // Checking out here, in the web app: the picked files nobody has; undoing: the ones checked out to you.
     const checkable = pickedFileList.filter((f) => canCheckOut(vault, f));
     const undoable = pickedFileList.filter((f) => f.checked_out?.user.id === vault.me?.id);
+    const numbered = pickedFileList.some((f) => keepsItsName(f.name)); // a part number never changes
 
     function pick(list: FileList | null, input: HTMLInputElement) {
         if (list && list.length > 0) {
@@ -205,7 +206,7 @@ export function Browse({ folder }: { folder: string }) {
                 <input
                     type="search"
                     className="search"
-                    placeholder="Search by name, like fin or *.SLDASM"
+                    placeholder="Search by name or title, like fin or *.SLDASM"
                     aria-label="Search files"
                     value={filters.search}
                     onChange={(event) => narrow({ search: event.target.value })}
@@ -322,8 +323,14 @@ export function Browse({ folder }: { folder: string }) {
                     <button
                         type="button"
                         onClick={() => setOpen({ dialog: "rename" })}
-                        disabled={picked !== 1 || !foldersMovable}
-                        title={picked !== 1 ? "Rename one at a time" : undefined}
+                        disabled={picked !== 1 || !foldersMovable || numbered}
+                        title={
+                            picked !== 1
+                                ? "Rename one at a time"
+                                : numbered
+                                  ? "Its name is its part number, which never changes: edit its title instead"
+                                  : undefined
+                        }
                     >
                         Rename…
                     </button>
@@ -528,21 +535,20 @@ export function FileTable({
                 {depth === 0 ? pick(fileKey(file), label) : selection && <td className="select" />}
                 <td className="name-cell">
                     <span className="tree-row" style={{ paddingLeft: `${depth * 1.4}rem` }}>
-                        {below.length > 0 ? (
-                            <button
-                                type="button"
-                                className="disclosure"
-                                aria-expanded={isOpen}
-                                aria-label={`${isOpen ? "Hide" : "Show"} what ${label} uses`}
-                                onClick={() => toggle(key)}
-                            />
-                        ) : (
-                            <span className="disclosure-space" />
-                        )}
-                        <Link to={fileUrl(file.id)} className="name">
-                            <FileIcon name={file.name} />
-                            {label}
-                        </Link>
+                        <span className="tree-lead">
+                            {below.length > 0 ? (
+                                <button
+                                    type="button"
+                                    className="disclosure"
+                                    aria-expanded={isOpen}
+                                    aria-label={`${isOpen ? "Hide" : "Show"} what ${label} uses`}
+                                    onClick={() => toggle(key)}
+                                />
+                            ) : (
+                                <span className="disclosure-space" />
+                            )}
+                            <FileName file={file} label={label} />
+                        </span>
                         {user && folder !== parentOf(user.path) && (
                             <span className="muted">in {folder || "the top folder"}</span>
                         )}

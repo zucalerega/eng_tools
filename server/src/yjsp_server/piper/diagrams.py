@@ -1,0 +1,358 @@
+"""Piper's rules: making diagrams, saving their drawings, their history, and who may delete them.
+
+Everyone signed in (and approved) sees every diagram, makes them, and changes them: a P&ID is the team's, and its
+history keeps every drawing, so nothing anyone does to one is lost. Only whoever made one, or an admin, deletes it,
+which keeps everything, so it can come back.
+"""
+
+import json
+import zlib
+from collections.abc import Iterable, Sequence
+from datetime import timedelta
+from typing import Any
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from ..api.schemas import UserRef
+from ..db import utcnow
+from ..errors import Conflict, Forbidden, NotFound, TooLarge
+from ..models import User
+from .models import Diagram, Revision
+from .schemas import InvalidDrawing, check_drawing
+
+EMPTY_DRAWING: dict[str, Any] = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
+MAX_DRAWING_BYTES = 2 * 1024 * 1024  # of JSON: a big P&ID's is a few hundred KB
+# Objects and lists in each other: far deeper than a drawing goes, and well within what the server can send back
+# (pydantic's limit is about 100).
+MAX_DEPTH = 50
+# How long a revision takes its author's saves: an afternoon's editing is a few revisions, not thousands.
+AMEND_WITHIN = timedelta(minutes=30)
+
+
+class Changed(Conflict):
+    """Someone saved the diagram after the version a save was changed from."""
+
+    code = "changed"
+
+
+def can_delete(user: User, diagram: Diagram) -> bool:
+    return user.is_admin or user.id == diagram.created_by
+
+
+def _check_can_delete(user: User, found: Diagram) -> None:
+    if not can_delete(user, found):
+        raise Forbidden(f"Only whoever made {found.name}, or an admin, can delete or restore it", code="not_yours")
+
+
+def _check_not_deleted(found: Diagram) -> None:
+    if found.deleted_at is not None:
+        raise Conflict(f"{found.name} is deleted: restore it first", code="deleted")
+
+
+# --- drawings -----------------------------------------------------------------------------------------------------
+
+
+def _pack(drawing: dict[str, Any]) -> tuple[bytes, int]:
+    """A drawing as it's kept: its JSON, compressed, and the JSON's size. Checked first, so what's kept can always be
+    sent back as it came."""
+    check_drawing(drawing)
+    if not _nested_within(drawing, MAX_DEPTH):
+        raise InvalidDrawing(f"The drawing has objects and lists in each other more than {MAX_DEPTH} deep")
+    try:
+        text = json.dumps(drawing, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+    except UnicodeEncodeError:  # half of a character that takes two (a lone surrogate)
+        raise InvalidDrawing("The drawing has text that isn't valid Unicode") from None
+    except ValueError:  # NaN or infinity, which JSON doesn't have
+        raise InvalidDrawing("The drawing has a number that isn't finite") from None
+    if len(text) > MAX_DRAWING_BYTES:
+        raise TooLarge(f"A drawing can be up to {MAX_DRAWING_BYTES >> 20} MB")
+    return zlib.compress(text), len(text)
+
+
+def _nested_within(value: dict[str, Any], most: int) -> bool:
+    """Whether a value's objects and lists are in each other at most `most` deep (the value itself is 1)."""
+    # By exact type, which is what JSON reads into, and the fastest test: this goes through every value of a drawing.
+    containers = (dict, list)
+    level: list[Any] = [value]
+    for _ in range(most):
+        level = [
+            child
+            for item in level
+            for child in (item.values() if type(item) is dict else item)
+            if type(child) in containers
+        ]
+        if not level:
+            return True
+    return False
+
+
+def unpack(data: bytes) -> dict[str, Any]:
+    """A drawing as it was saved, from a revision's drawing."""
+    return json.loads(zlib.decompress(data))
+
+
+def summarize(drawing: dict[str, Any]) -> dict[str, Any]:
+    """What the list shows and searches: how many parts and lines, their tags, and the lines' fluids, each once."""
+    parts = [part for part in drawing.get("parts") or [] if isinstance(part, dict)]
+    lines = [line for line in drawing.get("lines") or [] if isinstance(line, dict)]
+    return {
+        "parts": len(parts),
+        "lines": len(lines),
+        "tags": _once(item.get("tag") for item in [*parts, *lines]),
+        "fluids": _once(line.get("fluid") for line in lines),
+    }
+
+
+def _once(values: Iterable[Any]) -> list[str]:
+    """The texts that aren't empty, each once, in order."""
+    return list(dict.fromkeys(value.strip() for value in values if isinstance(value, str) and value.strip()))
+
+
+# --- diagrams -----------------------------------------------------------------------------------------------------
+
+
+def diagrams(db: Session, *, deleted: bool = False, q: str = "") -> list[Diagram]:
+    """The most recently changed first. deleted=True: the deleted ones instead. q: only those with every word of it in
+    their name, folder, description, or tags, whatever its case."""
+    gone = Diagram.deleted_at.is_not(None) if deleted else Diagram.deleted_at.is_(None)
+    found = db.scalars(select(Diagram).where(gone).order_by(Diagram.updated_at.desc(), Diagram.id.desc())).all()
+    words = q.casefold().split()
+    return [each for each in found if all(word in _searched(each) for word in words)]
+
+
+def _searched(found: Diagram) -> str:
+    return "\n".join([found.name, found.folder, found.description, *found.summary.get("tags", [])]).casefold()
+
+
+def diagram(db: Session, diagram_id: int) -> Diagram:
+    found = db.get(Diagram, diagram_id, populate_existing=True)
+    if found is None:
+        raise NotFound(f"There's no diagram {diagram_id}")
+    return found
+
+
+def latest_drawing(db: Session, found: Diagram) -> dict[str, Any]:
+    """A diagram's drawing: its latest revision's."""
+    return unpack(_latest(db, found.id).drawing)
+
+
+def add(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    folder: str = "",
+    description: str = "",
+    drawing: dict[str, Any] | None = None,
+) -> Diagram:
+    """A new diagram, at version 1, with its drawing (an empty one if there's none) as revision 1."""
+    drawing = EMPTY_DRAWING if drawing is None else drawing
+    data, size = _pack(drawing)
+    now = utcnow()
+    new = Diagram(
+        name=name,
+        folder=folder,
+        description=description,
+        version=1,
+        revision=1,
+        summary=summarize(drawing),
+        creator=user,
+        editor=user,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(new)
+    db.flush()
+    db.add(Revision(diagram_id=new.id, number=1, drawing=data, size=size, author=user, created_at=now, saved_at=now))
+    db.commit()
+    return new
+
+
+def change(
+    db: Session,
+    user: User,
+    diagram_id: int,
+    *,
+    name: str | None = None,
+    folder: str | None = None,
+    description: str | None = None,
+) -> Diagram:
+    """Rename, move, or describe a diagram (None: as it is). Its drawing, and so its version, don't change."""
+    found = diagram(db, diagram_id)
+    _check_not_deleted(found)
+    wanted = {"name": name, "folder": folder, "description": description}
+    changing = {key: value for key, value in wanted.items() if value is not None and value != getattr(found, key)}
+    if changing:  # only a change moves it up the list
+        for key, value in changing.items():
+            setattr(found, key, value)
+        found.updated_at = utcnow()
+        found.editor = user
+        db.commit()
+    return found
+
+
+def save(
+    db: Session, user: User, diagram_id: int, drawing: dict[str, Any], version: int, *, fresh: bool = False
+) -> Diagram:
+    """Save a diagram's drawing, changed from `version`: taken only if the diagram is still at it, as the next version.
+
+    The latest revision takes the save if it's the same person's, begun less than AMEND_WITHIN before, not named, not
+    restored, and the save isn't `fresh`; otherwise the save begins the next revision. So one person's work never
+    writes over another's in the history, and a named or restored revision stays as it is.
+    """
+    data, size = _pack(drawing)
+    _next_version(db, user, diagram_id, version)
+    found = diagram(db, diagram_id)
+    latest = _latest(db, diagram_id)
+    now = utcnow()
+    if (
+        not fresh
+        and latest.author_id == user.id
+        and not latest.note
+        and latest.restored_from is None
+        and now - latest.created_at < AMEND_WITHIN
+    ):
+        latest.drawing, latest.size, latest.saved_at = data, size, now
+    else:
+        found.revision = latest.number + 1
+        db.add(
+            Revision(
+                diagram_id=found.id,
+                number=found.revision,
+                drawing=data,
+                size=size,
+                author=user,
+                created_at=now,
+                saved_at=now,
+            )
+        )
+    found.summary = summarize(drawing)
+    found.updated_at = now
+    found.editor = user
+    db.commit()
+    return found
+
+
+def _next_version(db: Session, user: User, diagram_id: int, version: int) -> None:
+    """Move a diagram on from `version` to the next, if it's still at it, or say why it isn't (and change nothing).
+
+    The UPDATE is the transaction's first statement, so it takes SQLite's write lock (Postgres' lock on the row), and
+    what's read after it is the latest: saves of a diagram go one at a time, and only one from each version is taken.
+    """
+    moved = db.execute(
+        update(Diagram)
+        .where(Diagram.id == diagram_id, Diagram.version == version, Diagram.deleted_at.is_(None))
+        .values(version=Diagram.version + 1)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if moved:
+        return
+    try:
+        found = diagram(db, diagram_id)
+        _check_not_deleted(found)
+        latest = _latest(db, diagram_id)  # the save since: whose it was, and when
+        if latest.restored_from is None:
+            done = f"saved {found.name}"
+        else:
+            done = f"restored {found.name} to revision {latest.restored_from}"
+        if latest.author_id == user.id:
+            said = f"You {done} in another window after you opened it here"
+        else:
+            said = f"{latest.author.display_name if latest.author else 'Someone'} {done} after you opened it"
+        raise Changed(
+            said,
+            version=found.version,
+            updated_by=UserRef.of(latest.author).model_dump() if latest.author else None,
+            updated_at=latest.saved_at.isoformat(),
+        )
+    finally:
+        db.rollback()  # let the next writer in
+
+
+def _latest(db: Session, diagram_id: int) -> Revision:
+    return db.scalars(
+        select(Revision).where(Revision.diagram_id == diagram_id).order_by(Revision.number.desc()).limit(1)
+    ).one()
+
+
+def remove(db: Session, user: User, diagram_id: int) -> Diagram:
+    """Delete a diagram: it's hidden, with its history kept, until whoever made it, or an admin, restores it."""
+    found = diagram(db, diagram_id)
+    _check_can_delete(user, found)
+    if found.deleted_at is None:
+        found.deleted_at = utcnow()
+        found.deleter = user
+    db.commit()
+    return found
+
+
+def restore(db: Session, user: User, diagram_id: int) -> Diagram:
+    found = diagram(db, diagram_id)
+    _check_can_delete(user, found)
+    found.deleted_at = None
+    found.deleter = None
+    db.commit()
+    return found
+
+
+# --- revisions ----------------------------------------------------------------------------------------------------
+
+
+def revisions(db: Session, diagram_id: int) -> Sequence[Revision]:
+    """A diagram's history, the latest first (their drawings are loaded only if they're asked for)."""
+    diagram(db, diagram_id)
+    return db.scalars(select(Revision).where(Revision.diagram_id == diagram_id).order_by(Revision.number.desc())).all()
+
+
+def revision(db: Session, diagram_id: int, number: int) -> Revision:
+    found = diagram(db, diagram_id)
+    kept = db.scalar(select(Revision).where(Revision.diagram_id == diagram_id, Revision.number == number))
+    if kept is None:
+        raise NotFound(f"{found.name} has no revision {number}")
+    return kept
+
+
+def name_revision(db: Session, diagram_id: int, number: int, note: str) -> Revision:
+    """Name a revision ("Rev B, for HF-3"), which keeps it as it is: the next save begins another. "" takes the name
+    off."""
+    # Wait for a save of the diagram that's under way, and hold the next one until this is done, so a save doesn't
+    # change a revision once it's named. Postgres needs this; SQLite has one writer at a time anyway.
+    db.execute(select(Diagram.id).where(Diagram.id == diagram_id).with_for_update())
+    _check_not_deleted(diagram(db, diagram_id))
+    named = revision(db, diagram_id, number)
+    named.note = note
+    db.commit()
+    return named
+
+
+def restore_revision(db: Session, user: User, diagram_id: int, number: int, version: int) -> Diagram:
+    """Make a revision the drawing again: the next version, taken only if the diagram is still at `version` (as a save
+    is), and a new revision that says where it came from. The drawings after it stay in the history."""
+    _next_version(db, user, diagram_id, version)
+    try:
+        source = revision(db, diagram_id, number)
+    except NotFound:
+        db.rollback()  # the diagram stays at its version
+        raise
+    found = diagram(db, diagram_id)
+    latest = _latest(db, diagram_id)
+    now = utcnow()
+    found.revision = latest.number + 1
+    db.add(
+        Revision(
+            diagram_id=found.id,
+            number=found.revision,
+            drawing=source.drawing,
+            size=source.size,
+            restored_from=source.number,
+            author=user,
+            created_at=now,
+            saved_at=now,
+        )
+    )
+    found.summary = summarize(unpack(source.drawing))
+    found.updated_at = now
+    found.editor = user
+    db.commit()
+    return found

@@ -224,7 +224,7 @@ def test_only_admins_see_or_change_the_whitelist(team, client):
         client.patch("/api/settings", json={"whitelist": True}, headers=alice),
     ):
         assert (response.status_code, response.json()["error"]) == (403, "admin_only")
-    assert client.get("/api/settings", headers=chief).json() == {"whitelist": False}
+    assert client.get("/api/settings", headers=chief).json() == {"whitelist": False, "min_client_version": None}
     # Admin events, like account changes, aren't in anyone else's activity feed.
     team.whitelist(chief, True)
     assert "update_settings" in [e["action"] for e in client.get("/api/activity", headers=chief).json()]

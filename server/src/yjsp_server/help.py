@@ -39,6 +39,7 @@ PARTS = (
     Part("design", "docs/design.md", False),
     Part("vault", "docs/vault.md", False),
     Part("yorg", "docs/yorg.md", False),
+    Part("piper", "docs/piper.md", False),
 )
 
 # CommonMark with tables, and never HTML from the docs: <name> in a sentence stays text.

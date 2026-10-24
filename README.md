@@ -1,14 +1,15 @@
 # YJSP Eng Tools
 
 The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
-the team's SolidWorks and STEP files, and **[Yorg](#yorg-test-data)** (`/yorg`), for its test
-data. The site's address on its own shows both (the mark at the top left goes back to it),
-and the switcher beside it goes between them.
+the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for its test
+data; and **[Piper](#piper-pids)** (`/piper`), for its P&IDs. The site's address on its own
+shows all three (the mark at the top left goes back to it), and the switcher beside it goes
+between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
 > in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
-> [docs/vault.md](docs/vault.md) and [docs/yorg.md](docs/yorg.md) for each app and its
+> [docs/vault.md](docs/vault.md), [docs/yorg.md](docs/yorg.md), and [docs/piper.md](docs/piper.md) for each app and its
 > roadmap.
 
 ## Signing in
@@ -30,6 +31,12 @@ have cost, and on whose questions, how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.
+
+Under who has the add-in, admins can set the oldest version of the add-in and the `vault`
+command that can change the vault, for when the team needs a release's fixes: older ones can
+still open, get, and browse files, but checking out, checking in, and anything else that
+changes the vault says to update first. It's off until an admin sets it, and it can be no
+newer than the `Vault-Setup.exe` the site offers, so everyone can update to it.
 
 Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
 your account only if its email is your GT address; otherwise it makes a new, empty one,
@@ -64,15 +71,42 @@ replaces Kenesto.
 - **Every version is kept.** See who changed what and why, and download any old
   version.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
-  or changed parts it uses. Getting an assembly brings its parts along.
+  or changed parts it uses. Getting an assembly brings its parts along. Saving one in
+  SolidWorks saves its changed parts too, and SolidWorks 2026 counts every part saved in
+  an older SolidWorks as changed: Vault asks once about those you haven't checked out
+  (No, the default, leaves them as they are), not once for each.
 - **Drawings stay with what they show.** A drawing is checked in only if it shows a
   part or assembly in the vault, and only if it's named after it (`Fin.SLDDRW`, or
   `Fin - machining.SLDDRW`, for `Fin.SLDPRT`), so it sits next to it in its folder.
   Check drawings in from SolidWorks: the `vault` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
+- **Every file has a title,** what it's called (`Fin bracket`), shown with its name
+  wherever it says more than the name does: once part numbers make CAD files' names
+  numbers, the title says what each one is. A file's title starts as its name without its
+  type; anyone who can edit the file changes it with **Edit title…** on its page, which
+  isn't a new version and doesn't need it checked out. A renamed file lists the names it
+  had ("Formerly …"), and search finds it by them too.
+- **Part numbers** (`00000123-001`: eight digits the vault hands out in order, then a
+  kind, from a list admins keep) name parts and assemblies, for good: a numbered file
+  can't be renamed, and a name that looks like a part number has to be one the vault
+  handed out. A drawing or PDF of a numbered part is named after its number
+  (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
+  Structures' numbers from before part numbers stay as they are; its new files take new
+  numbers. Once an admin turns them on, **New part** or **New assembly** in the web app asks
+  what kind it is and what it's called (its title), gets the next number (numbers you got and
+  haven't used yet come first), and starts it in SolidWorks. When you upload vendors' parts,
+  tick that they're vendors': they keep their names. Admins turn numbers on (offered, then
+  required), keep the list of kinds, and skip the next number ahead in Admin > Part numbers.
+  In SolidWorks, the Vault tab's Browse shows titles after names (right-click a file for Edit
+  title), and right-click a folder for New part or New assembly; checking in, tick that new
+  parts without numbers are vendors'.
+- **An admin can pause the vault** (Admin > Part numbers) for work on all of it, such as
+  numbering every file at once. While it's paused, a banner says who paused it and why, and
+  check-outs, check-ins and other changes wait; you can still look at everything, download,
+  and undo your check-outs.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
-  search by name and filter by kind, status, date, and person, and sort by name, date,
+  search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every
   level, and whether each file is checked in, who created it, and who changed it last;
   see each file's history and drawings and who has what checked out;
@@ -100,6 +134,15 @@ replaces Kenesto.
   its file. The server reads a version's model once and keeps it; when an update reads files
   better, it reads each one again the first time it's opened after. If Caliper can't read a
   file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
+- **See drawings and DXF files** with **Open in Caliper** too. A SolidWorks drawing shows
+  as a PDF of all its sheets, as SolidWorks prints them, in the browser's own PDF viewer (to
+  zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one
+  each time it checks a drawing in. A version from before (or from Kenesto, or checked in
+  from the web) shows the pictures of its sheets SolidWorks saved in it, which are too small
+  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. A DXF file (a
+  flat pattern for the laser cutter or waterjet, say) is drawn as it is, in its own units:
+  drag to pan, scroll to zoom, show and hide its layers, and measure a line's length, a
+  hole's diameter, or the distance between two holes, lines, or corners.
 - **Check out and in on the web** too, to change a file without SolidWorks (a PDF, a STEP
   file, or on a computer without the add-in): Check out on its page (or for files picked
   in a folder), download it and change it, then Check in… with the new version, or
@@ -108,7 +151,11 @@ replaces Kenesto.
   assembly checked in on the web doesn't list its parts until it's next checked in from
   SolidWorks; a drawing stays linked to what it shows.
 - **SolidWorks in one download:** the web app's SolidWorks page offers `Vault-Setup.exe`,
-  which installs the add-in, and a button that connects it to the vault.
+  which installs the add-in, and a button that connects it to the vault. When there's a
+  newer add-in, **Update** appears at the top of the Vault tab: take it soon, since admins
+  can have the vault stop taking changes from older ones. If they have, the Vault tab says
+  the add-in is too old to make changes: click Update and close SolidWorks (or run the new
+  `Vault-Setup.exe`); until then, you can open and get files as before.
 - **When Open in SolidWorks can't open a file,** Vault says why: the Vault tab comes to the
   front with what it's doing, and a message says what went wrong (a file saved in a newer
   SolidWorks, the add-in turned off, still busy with your last click). Nothing at all
@@ -127,6 +174,13 @@ replaces Kenesto.
   uses files the vault doesn't have, checking it in lists them, to upload them or take them
   out of it. Once the team works from the vault, disconnect Kenesto's drive, so no one
   opens a part from there.
+- **Move files with Move, not by uploading them again:** Move or Rename in the web app
+  keeps a file's history, and refuses a move that would leave an assembly without its
+  parts. Uploading a folder again under another name and deleting the old one starts every
+  file's history over, and assemblies saved before still name the old folder. The add-in
+  finds the new copies when it opens such an assembly (the file whose path ends the same
+  way, in a folder of the same name at least), but check the assembly out, save it, and
+  check it in, so it names them for good.
 
 ## Yorg: test data
 
@@ -283,17 +337,66 @@ the keys.
   script. **Model** runs a model on the test over the time in
   view, and links back to it.
 
+## Piper: P&IDs
+
+The site's third app, **Piper** (the switcher's at the top left), draws the team's fluid
+systems: P&IDs of the test stands, the vehicle's feed system, and the GSE, with the parts
+the team uses, each tagged and described, lines in their fluids' colors, and valves in the
+colors of their normal states. Help, in Piper's top bar, has all of this on one page, with
+the keys.
+
+- **Diagrams**: **New diagram** makes one, empty or from an example (a pressure-fed engine's
+  feed system), in a folder (`Vespula/GSE`). Everyone can open and change every diagram;
+  whoever made one (or an admin) can delete it, to **Deleted diagrams**, where it waits to be
+  restored. **Find diagrams** looks in names, folders, and the tags on each drawing: PT-101
+  finds every diagram it's on.
+- **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
+  click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
+  check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
+  orifices and venturis, flow meters, filters, instruments as ISA bubbles, engines, pumps,
+  vents, tees, a box for anything else, notes, regions, a legend, and a title block. Each is
+  tagged with the next number free (PT-3); **R** turns it, **F** flips it.
+- **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
+  anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
+  as they are until their parts move. Drag a segment to move it; **Route automatically** puts
+  it back. Everything snaps to a grid, and a part being dragged lines up with what its lines
+  go to (a gold guide shows it; **Alt** drags freely). Lines that cross hop over each other.
+- **Into a line**: drop a valve (an orifice, a filter...) on a line and it goes into it;
+  delete it and the line joins up again.
+- **Properties**: select anything to name it and say what it is, on the right: a valve's body,
+  actuation, normal state (NO green, NC red), size, Cv, and rating; a tank's fluid, volume, and
+  MEOP; an orifice's diameter; a line's fluid, type, and size; and any field of your own. The
+  eye beside one shows it under the part's tag.
+- **Fluids**: each line carries one, in its color with its label (LOX, RP-1, GN2...); a line
+  drawn from a run takes its fluid, and **Carry along its run** sets it on the lines beyond.
+  With nothing selected, change the diagram's fluids' colors and labels, or add its own.
+- **Saving and history**: a diagram saves itself as you go; if a save fails, **Not saved**
+  beside its name says why, and it tries again on its own (too big: with your next change).
+  If someone saved it while you had it open, it asks whether to keep yours (theirs stays in
+  the history), save yours as a new diagram, or load theirs. **History** lists its revisions:
+  look at one, name one (Rev B, for HF-3) to keep it as it is, or restore it.
+- **Test data**: pick a test from Yorg, and each instrument shows its channel's value and each
+  valve whether it was open, at the time on the timeline: drag it or play the test. A part
+  reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test
+  with those channels plotted, and the page's address keeps the test and the time.
+- **Visio**: **Import Visio…** (or drop a .vsdx on the diagrams) makes a diagram of each page of
+  a Visio drawing: its P&ID shapes become parts, tagged with their text, its connectors lines
+  between them, and its colored lines fluids to name. Save an old .vsd as a .vsdx first.
+- **Export**: **PDF** on Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs
+  are (a border with its zones, the named revisions, and a title block), vector and searchable;
+  SVG or PNG images; printing; and the parts list as a CSV (a valve list, an instrument list).
+
 ## Layout
 
 | Path | What | Status |
 |---|---|---|
-| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/` | working |
-| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg` | working |
+| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/` | working |
+| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper` | working |
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
-| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 
@@ -351,6 +454,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault resolve <files> --mine` | Settle a conflict (you changed a file here, and someone checked in a newer version since) by keeping yours: it's checked out to you as it is, to check in on top. `--vault` takes the vault's version instead, with yours backed up. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
+| `vault title <file> "what it's called"` | Give a file a title, shown with its name: no new version, and no check-out. `vault status` and `vault history` show titles where they say more than the names do (a part number's), and `history` the names a file had. |
 
 ## Tests
 

@@ -1,8 +1,8 @@
 import { type VaultFile, vaultApi } from "./api";
 import { keptReferences, on, WEB_HOST } from "./checkouts";
-import { kindOf, nameProblem, parentOf, pathKey } from "./paths";
+import { kindOf, nameProblem, parentOf, partNumberOf, pathKey, takesANumber } from "./paths";
 import { contentsOf, type VaultState } from "./store";
-import { readZip } from "./zip";
+import { readZip } from "../zip";
 
 // Uploading files and whole folders from the browser: each file's contents go up once (the server
 // skips contents it has), then they're all checked in together, as one version each. A .zip can go up
@@ -190,12 +190,14 @@ export async function sha256(data: Uint8Array<ArrayBuffer>): Promise<string> {
 
 /**
  * Upload the files' contents (those the server doesn't have yet), then check them all in as one check-in,
- * all or nothing. progress hears which file is going up.
+ * all or nothing. progress hears which file is going up. vendor: the parts, assemblies, STEP and STL files among
+ * them without part numbers are vendors' parts, which keep their vendors' names.
  */
 export async function upload(
     ready: UploadPlan["ready"],
     comment: string,
     progress: (done: number, current: string) => void,
+    vendor = false,
 ): Promise<void> {
     const items = [];
     for (const [index, { source, path, references }] of ready.entries()) {
@@ -205,8 +207,20 @@ export async function upload(
         if (!(await vaultApi.hasBlob(hash))) {
             await vaultApi.uploadBlob(hash, data);
         }
-        items.push({ path, sha256: hash, size: data.length, references: references.map((used) => ({ path: used })) });
+        const vendors = vendor && unnumbered(path) ? { vendor: true } : {};
+        items.push({
+            path,
+            sha256: hash,
+            size: data.length,
+            references: references.map((used) => ({ path: used })),
+            ...vendors,
+        });
     }
     progress(ready.length, "");
     await vaultApi.checkin({ comment: comment.trim() || "Uploaded in the web app", host: WEB_HOST, items });
 }
+
+/** Whether a file going up is a part, an assembly, or a STEP or STL file without a part number: one that needs a
+number once they're required (docs/vault.md, "Part numbers"), unless it's a vendor's part. */
+export const unnumbered = (path: string): boolean =>
+    takesANumber(path) && partNumberOf(path.slice(path.lastIndexOf("/") + 1)) === null;

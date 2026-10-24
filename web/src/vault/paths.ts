@@ -95,12 +95,53 @@ export function fileFormat(name: string): "step" | "iges" | "stl" | null {
     return cadFormat(name) ?? (name.toLowerCase().endsWith(".stl") ? "stl" : null);
 }
 
-/** Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models), and STEP, IGES, and STL files. */
+/** Which of the flat files Caliper shows a file is, by its name: a SolidWorks drawing (its sheets), or a DXF file. */
+export function sheetFormat(name: string): "drawing" | "dxf" | null {
+    const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    return extension === "slddrw" ? "drawing" : extension === "dxf" ? "dxf" : null;
+}
+
+/**
+ * Whether Caliper shows a file: SolidWorks parts and assemblies (from their 3D models) and drawings (their sheets), and
+ * STEP, IGES, STL, and DXF files.
+ */
 export const opensInCaliper = (name: string): boolean =>
-    ["part", "assembly"].includes(kindOf(name)) || fileFormat(name) !== null;
+    ["part", "assembly"].includes(kindOf(name)) || fileFormat(name) !== null || sheetFormat(name) !== null;
 
 const stem = (name: string) =>
     (name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name).normalize("NFC").toLowerCase();
+
+/** "Fin" for "Fin.SLDPRT": a name without its type, as a file's title starts out (stem, in the server's paths.py). */
+export const stemOf = (name: string): string =>
+    name.lastIndexOf(".") > 0 ? name.slice(0, name.lastIndexOf(".")) : name;
+
+/** A file's title where it says more than its name does: someone named it, or its name is a part number. */
+export const titleBeside = (file: { name: string; title: string }): string | null =>
+    file.title && pathKey(file.title) !== pathKey(stemOf(file.name)) ? file.title : null;
+
+// Part numbers, as the server's vault/numbers.py has them (it has the last word, and the same test cases): a number,
+// its kind, then the end of the name or a symbol or a space before more ("00000123-001 - machining").
+const NUMBERED = /^(\d{8})-(\d{3})(?![0-9A-Za-z])/;
+// McMaster-Carr's part numbers, which their files are named by: 91251A463, "91251A463_Socket Head Screw".
+const MCMASTER = /^\d{4,5}[A-Za-z]\d{1,4}(?![0-9A-Za-z])/;
+// The files that take numbers of their own, as against being named after one.
+const HOLDERS = [".sldprt", ".sldasm", ".step", ".stp", ".stl"];
+
+/** The part number a file's name starts with (00000123-001), and whether the name is that alone; null for none. */
+export function partNumberOf(name: string): { number: string; exact: boolean } | null {
+    const stemmed = stemOf(name);
+    const found = NUMBERED.exec(stemmed);
+    return found ? { number: found[0], exact: found[0].length === stemmed.length } : null;
+}
+
+/** Whether a file is named as a vendor names its parts (McMaster-Carr's numbers): such a file keeps its name. */
+export const vendorsName = (name: string): boolean => MCMASTER.test(stemOf(name));
+
+/** Whether a file's type takes a number of its own: a part, an assembly, or a STEP or STL file. */
+export const takesANumber = (name: string): boolean => HOLDERS.some((type) => name.toLowerCase().endsWith(type));
+
+/** Whether a file is named by a part number of its own (a part's, an assembly's), which never changes. */
+export const keepsItsName = (name: string): boolean => partNumberOf(name) !== null && takesANumber(name);
 
 /**
  * Whether a drawing is named after a part or assembly, as the vault requires: Fin.SLDDRW, or

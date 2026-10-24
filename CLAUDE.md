@@ -1,33 +1,37 @@
 # YJSP: agent guide
 
-YJSP is a college rocketry team's site for its engineering tools: two apps on one
+YJSP is a college rocketry team's site for its engineering tools: three apps on one
 server. **Vault** is CAD version control (check-out/check-in, version history, folder
 permissions) for the team's SolidWorks and STEP files; it replaces Kenesto. **Yorg**
-plots the team's test data. The team trusts them with flight-hardware designs and test
+plots the team's test data. **Piper** draws the team's fluid systems as P&IDs (and reads
+Yorg's tests on them). The team trusts them with flight-hardware designs and test
 results, so correctness and not losing data come before speed. README.md is the user
 guide, and docs/troubleshooting.md says what goes wrong and what every error means; the
 site's help page (/help) shows both, for anyone, and Claude, in the web app's Help, reads
 them. docs/design.md has the site's design (architecture, sign-in, the web app's frame,
-the help and Claude, API conventions, the names from before YJSP); docs/vault.md and
-docs/yorg.md have each app's design, API, and roadmap. Read the design before changing
+the help and Claude, API conventions, the names from before YJSP); docs/vault.md,
+docs/yorg.md, and docs/piper.md have each app's design, API, and roadmap. Read the design
+before changing
 behavior.
 
 The apps share the server, the database, sign-in and accounts, and the web app's
-frame, and nothing else. Neither imports the other, and the site's own code imports
-neither, except where it puts them together (`app.py`, `migrations/env.py`, `App.tsx`,
-`main.tsx`) and where accounts change (`people.py` tells Vault). Keep it that way:
-something both apps need belongs to the site.
+frame, and nothing else. No app imports another, and the site's own code imports none,
+except where it puts them together (`app.py`, `migrations/env.py`, `App.tsx`, `main.tsx`)
+and where accounts change (`people.py` tells Vault). Keep it that way: something more than
+one app needs belongs to the site (as `pathTree.ts`, `zip.ts`, `packed.ts`, and `FolderPath`
+do). Piper reads Yorg's tests only through Yorg's API, as a client would (docs/piper.md).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budget, limits, and prompt), `api/` sign-in, people, downloads, the help's pages, Claude's routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). |
+| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budget, limits, and prompt), `api/` sign-in, people, downloads, the help's pages, Claude's routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, deleting; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
 | `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2026 add-in, which runs in 2025 too (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
-| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). Tests run against the real server. |
-| `docs/design.md`, `docs/vault.md`, `docs/yorg.md` | The site's design, and each app's: design, API, roadmap, open questions. |
+| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `visio.ts` importing Visio, `pdf.ts` the PDF export). Tests run against the real server. |
+| `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/troubleshooting.md` | What goes wrong and what to do, and what every error the server sends means. Public, on /help. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
+| `docs/renumbering.md` | Numbering the vault's files all at once: what has to be checked in SolidWorks 2026 first, the plan, and the run. |
 | `deploy/` | `deploy.sh`, which deploys the live site; `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files. |
 | `.github/workflows/ci.yml` | The checks every change must pass, and a release's downloads (`.github/sign-installer.sh` signs the installer). |
 
@@ -78,11 +82,12 @@ cd web && npm ci && npm run check && npm test && npm run build
   commented-out code, no TODO without an issue link.
 - **User-facing changes update the help people read, in the same PR.** Anything people
   see or do differently (a new button, a setting, a rule about who can do what) goes in
-  the site's help: Yorg's Help page (`web/src/yorg/Help.tsx`, `/yorg/help`), the
-  SolidWorks page for the add-in (`web/src/vault/pages/SolidWorks.tsx`), the page's own
-  hints, and README.md, the user guide; a new way for something to go wrong goes in
-  docs/troubleshooting.md. A feature the help doesn't mention isn't done. Claude, in Help,
-  knows only the docs `help.PARTS` lists, so what they don't say, it can't answer.
+  the site's help: Yorg's Help page (`web/src/yorg/Help.tsx`, `/yorg/help`), Piper's
+  (`web/src/piper/Help.tsx`, `/piper/help`), the SolidWorks page for the add-in
+  (`web/src/vault/pages/SolidWorks.tsx`), the page's own hints, and README.md, the user
+  guide; a new way for something to go wrong goes in docs/troubleshooting.md. A feature
+  the help doesn't mention isn't done. Claude, in Help, knows only the docs `help.PARTS`
+  lists, so what they don't say, it can't answer.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
 - **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and
@@ -98,7 +103,8 @@ cd web && npm ci && npm run check && npm test && npm run build
 ## Code standards
 
 - **One home for each rule.** The site's rules live in `auth.py`/`people.py`, Vault's in
-  `vault/vault.py`, Yorg's in `yorg/` (`datasets.py`, ...), and Vault's client rules in
+  `vault/vault.py`, Yorg's in `yorg/` (`datasets.py`, ...), Piper's in `piper/diagrams.py`
+  (and what a drawing is, and how it changes, in `web/src/piper`), and Vault's client rules in
   `Vault.Client`. Routes, the CLI, and the add-in only translate.
 - **Errors tell people what to do next,** e.g. "X is checked out by Alice on ALICE-PC".
   Server errors are `ApiError` subclasses with a stable `code`, and docs/troubleshooting.md
@@ -150,6 +156,8 @@ Server:
   200 characters. Compare them with `paths.key()` (`VaultPaths.Key` in C#), never
   `==`. `vault/paths.py` and `VaultPaths.cs` must agree; their tests share cases.
 - Permission checks go through `Access`. A file the user can't see is 404, not 403.
+- Every route that changes the vault takes `ChangingUser`, not `ActiveUser`, so the oldest
+  client admins set holds for it (`clients.refuse_old`). Reads take `ActiveUser`.
 - Timestamps are timezone-aware UTC (`db.UTCDateTime`).
 - When a change makes the server read SolidWorks files differently (`vault/solidworks.py`, `parasolid.py`, `brep.py`),
   bump `solidworks.READER`: the models an older reader made are then read again as they're next wanted. Models Vault
@@ -191,6 +199,10 @@ keep working with older clients:
 - So are the names a client or a browser keeps: the `vault://` link scheme, cookie and
   header names, where clients keep their files. Renaming one means accepting the old name
   until no client needs it, as docs/design.md, "Names from before YJSP", does.
+- The one exception is the admins' to make: the oldest add-in and CLI that can change the
+  vault (Admin > People, `min_client_version`), so a release's fixes reach every laptop.
+  It's off until an admin sets it, older clients can still read, and it can be no newer
+  than the installer offered (docs/design.md, "The oldest client that can make changes").
 
 ## Database migrations
 

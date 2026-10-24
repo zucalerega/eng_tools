@@ -8,6 +8,8 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
+import type { Diagram, DiagramDetail, Revision } from "../src/piper/api";
+import { readDrawing, type Drawing } from "../src/piper/drawing";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -98,6 +100,17 @@ export class Team {
         await call("PATCH", "/api/settings", this.chief.token, { whitelist: on });
     }
 
+    /**
+     * Set the oldest add-in and vault command that can change the vault, as an admin does in Admin > People. Every
+     * test starts with any version allowed, as a new server has it, so any is allowed again when the test finishes.
+     */
+    async oldestClient(version: string | null): Promise<void> {
+        onTestFinished(async () => {
+            await call("PATCH", "/api/settings", this.chief.token, { min_client_version: null });
+        });
+        await call("PATCH", "/api/settings", this.chief.token, { min_client_version: version });
+    }
+
     async settings(): Promise<SiteSettings> {
         return call<SiteSettings>("GET", "/api/settings", this.chief.token);
     }
@@ -141,6 +154,22 @@ export class Team {
         await call("POST", "/api/checkout", who.token, { files: [this.path(relative)], host });
     }
 
+    /** Rename a file where it is: given its part number, say. */
+    async rename(who: Member, relative: string, name: string): Promise<void> {
+        await call("POST", "/api/rename", who.token, { file: this.path(relative), name });
+    }
+
+    /** A part number handed out (00000123-001), as New gets one; admins get them before numbering is turned on. */
+    async partNumber(who: Member, kind = "001"): Promise<string> {
+        const issued = await call<{ numbers: { number: string }[] }>("POST", "/api/numbers", who.token, { kind });
+        return issued.numbers[0]!.number;
+    }
+
+    /** Say what a file is called (its title), as Edit title does. */
+    async title(who: Member, relative: string, title: string): Promise<void> {
+        await call("POST", "/api/files/metadata", who.token, { files: [{ file: this.path(relative), title }] });
+    }
+
     /** A mesh uploaded as Vault for SolidWorks uploads them, gzip-compressed: its SHA-256. */
     async mesh(who: Member, mesh: Mesh): Promise<string> {
         const data = gzipSync(writeMesh(mesh));
@@ -173,6 +202,14 @@ export class Team {
                 this.chief.token,
             )
         ).models;
+    }
+
+    /** A drawing's PDF, of its latest version, as Vault for SolidWorks saves one when it checks the drawing in. */
+    async drawingPdf(who: Member, file: VaultFile, pdf: string): Promise<void> {
+        const data = new TextEncoder().encode(pdf);
+        const sha256 = createHash("sha256").update(data).digest("hex");
+        await call("PUT", `/api/blobs/${sha256}`, who.token, data);
+        await call("PUT", `/api/files/${file.id}/drawing/pdf`, who.token, { version: file.version, pdf: sha256 });
     }
 
     async file(id: number): Promise<VaultFile> {
@@ -230,6 +267,39 @@ export class Team {
     async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
         const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });
         return call<DatasetDetail>("POST", `/api/yorg/datasets?${params}`, who.token, new TextEncoder().encode(csv));
+    }
+
+    /** A Piper diagram (named to be unique to this test), with a drawing, or an empty one. */
+    async diagram(who: Member, name: string, drawing?: Drawing, folder = ""): Promise<DiagramDetail> {
+        return call<DiagramDetail>("POST", "/api/piper/diagrams", who.token, {
+            name: this.named(name),
+            folder,
+            drawing,
+        });
+    }
+
+    /** A Piper diagram's name, as diagram() made it. */
+    named(name: string): string {
+        return `${name} ${this.folder}`;
+    }
+
+    /** A Piper diagram as the server keeps it, its drawing read. */
+    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing }> {
+        const found = await call<DiagramDetail>("GET", `/api/piper/diagrams/${id}`, who.token);
+        return { ...found, read: readDrawing(found.drawing) };
+    }
+
+    /** A drawing saved, as the editor saves one: from the version it was changed from. */
+    async saveDrawing(who: Member, id: number, drawing: Drawing, version: number): Promise<Diagram> {
+        return call<Diagram>("PUT", `/api/piper/diagrams/${id}/drawing`, who.token, { drawing, version });
+    }
+
+    async revisions(who: Member, id: number): Promise<Revision[]> {
+        return call<Revision[]>("GET", `/api/piper/diagrams/${id}/revisions`, who.token);
+    }
+
+    async deleteDiagram(who: Member, id: number): Promise<Diagram> {
+        return call<Diagram>("DELETE", `/api/piper/diagrams/${id}`, who.token);
     }
 }
 

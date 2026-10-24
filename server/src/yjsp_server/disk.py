@@ -1,7 +1,7 @@
 """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take: for admins, at the
 top of Admin > People in the web app; and whether an upload leaves the server room to work (make_room).
 
-It reads the folders the settings name, so it needs neither app: the live server keeps all three on one disk
+It reads the folders the settings name, so it needs none of the apps: the live server keeps all three on one disk
 (docs/deploying.md), and the disk measured is the one Vault's files are on.
 """
 
@@ -42,7 +42,7 @@ class DiskUsage:
     free: int  # what the server can still write: not the space the system keeps for itself
     vault: int  # Vault's files (YJSP_VAULT_DIR): every version of every file
     yorg: int  # Yorg's (YJSP_YORG_DIR): datasets' uploads and arrays, scripts, and models
-    database: int  # accounts and both apps' tables
+    database: int  # accounts and the apps' tables: all of Piper's diagrams are in it
 
 
 def measure(db: Session, settings: Settings) -> DiskUsage:

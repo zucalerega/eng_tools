@@ -4,8 +4,10 @@ Each question to the assistant (Help in the web app), with the tokens Claude's a
 assistant keeps to its budget and each person to a daily limit (assistant.py). What was asked isn't kept. A new table:
 nothing that's there changes.
 
-Revision ID: 0017
-Revises: 0016
+It was 0017 on its branch, which now follows 0.6.0 (#80): it comes after that's 0022, the vault pause.
+
+Revision ID: 0023
+Revises: 0022
 Create Date: 2026-10-23 12:00:00.000000
 """
 
@@ -14,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0023"
+down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

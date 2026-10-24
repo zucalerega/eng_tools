@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Where people reach the site; Google redirects back to {public_url}/auth/callback, and Microsoft to
     # {public_url}/auth/microsoft/callback.
     public_url: str = "http://localhost:8000"
-    # One database for the site: its accounts, Vault's tables, and Yorg's.
+    # One database for the site: its accounts, and Vault's, Yorg's, and Piper's tables.
     database_url: str = "sqlite:///data/yjsp.db"
     # Signs the sign-in state cookie and the client sign-in confirmation form.
     secret_key: str = DEV_SECRET

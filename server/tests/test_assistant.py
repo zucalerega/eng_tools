@@ -1,13 +1,15 @@
-"""The assistant: Claude answering members' questions from the help, as it writes, within its budget and each person's
-daily limit. Anthropic's API is a stand-in on a port of its own (fake_claude.py), which the real SDK talks to."""
+"""The assistant: Claude answering members' questions from the help, as it writes, within its budgets (in all, and each
+month) and each person's daily limit. Anthropic's API is a stand-in on a port of its own (fake_claude.py), which the real SDK talks to."""
 
 import json
 import threading
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
+from yjsp_server import assistant
 from yjsp_server.app import create_app
 from yjsp_server.assistant import Assistant
 
@@ -30,6 +32,20 @@ def assistant_on(settings, claude):
     settings.anthropic_base_url = claude.url
     settings.assistant_budget = 5.0
     settings.assistant_daily_limit = 1.0
+
+
+class Clock:
+    """The assistant's clock, which a test sets: which month it is, for its monthly budget."""
+
+    def __init__(self, now: datetime):
+        self.now = now
+
+
+@pytest.fixture
+def clock(monkeypatch) -> Clock:
+    clock = Clock(datetime(2026, 12, 30, 12, tzinfo=UTC))
+    monkeypatch.setattr(assistant, "utcnow", lambda: clock.now)
+    return clock
 
 
 def ask(client: TestClient, who: dict[str, str], *conversation: dict[str, str]):
@@ -120,8 +136,9 @@ def test_each_answer_is_counted_at_what_it_cost(client, team, claude):
     # And $0.10 per million read from what was kept.
     assert found["spent"] == pytest.approx(0.207 + 0.0114)
     assert found["today"] == pytest.approx(found["spent"])
-    assert (found["budget"], found["daily_limit"], found["model"], found["effort"]) == (
+    assert (found["budget"], found["monthly_budget"], found["daily_limit"], found["model"], found["effort"]) == (
         5.0,
+        0,
         1.0,
         "claude-sonnet-5-5",
         "high",
@@ -177,6 +194,63 @@ def test_the_budget_stops_it(client, team, claude, settings):
     # Raised, it answers again.
     settings.assistant_budget = 5.0
     assert ask(client, member, QUESTION)[0].status_code == 200
+
+
+def test_a_monthly_budget_stops_it_until_the_next_month(client, team, claude, settings, clock):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    member = team.member("ana@rocketry.test")
+    # As for the API credits a Claude Max plan includes each month: no budget in all, as they come back each month.
+    settings.assistant_budget = 0
+    settings.assistant_monthly_budget = 0.10
+    status = client.get("/api/assistant", headers=admin).json()
+    assert (status["available"], status["monthly_budget"], status["month_spent"]) == (True, 0.10, 0)
+    claude.replies.append(Reply(input_tokens=1000, write_1h=50_000, output_tokens=500))  # $0.207
+    ask(client, member, QUESTION)
+
+    status = client.get("/api/assistant", headers=member).json()
+    assert status["available"] is False
+    assert status["reason"] == "Claude has spent this month's budget for questions: it answers again on January 1"
+    assert status["monthly_budget"] is None and status["month_spent"] is None  # what it has cost is for admins
+    response, _ = ask(client, member, QUESTION)
+    assert (response.status_code, response.json()["error"]) == (503, "assistant_month_spent")
+    assert len(claude.requests) == 1
+    found = spending(client, admin)
+    assert (found["available"], found["budget"], found["monthly_budget"]) == (False, 0, 0.10)
+    assert found["month_spent"] == pytest.approx(0.207) and found["spent"] == pytest.approx(0.207)
+
+    # December, in UTC, to its last second.
+    clock.now = datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC)
+    response, _ = ask(client, member, QUESTION)
+    assert (response.status_code, response.json()["error"]) == (503, "assistant_month_spent")
+    # The next month, it answers again, and counts that month's answers from nothing.
+    clock.now = datetime(2027, 1, 1, tzinfo=UTC)
+    assert client.get("/api/assistant", headers=member).json()["available"] is True
+    response, events = ask(client, member, QUESTION)
+    assert events[-1]["type"] == "done"
+    found = spending(client, admin)
+    assert (found["available"], found["reason"]) == (True, None)
+    assert found["month_spent"] == pytest.approx(0.0007)  # the stand-in's usual answer
+    assert found["spent"] == pytest.approx(0.2077)
+    status = client.get("/api/assistant", headers=admin).json()
+    assert (status["month_spent"], status["spent"]) == (pytest.approx(0.0007), pytest.approx(0.2077))
+
+
+def test_a_budget_in_all_still_holds_with_a_monthly_one(client, team, claude, settings, clock):
+    member = team.member("ana@rocketry.test")
+    settings.assistant_budget = 0.30
+    settings.assistant_monthly_budget = 0.25
+    claude.replies += [Reply(input_tokens=1000, write_1h=50_000, output_tokens=500) for _ in range(2)]  # $0.207 each
+    assert ask(client, member, QUESTION)[0].status_code == 200
+    clock.now = datetime(2027, 1, 10, tzinfo=UTC)
+    assert ask(client, member, QUESTION)[0].status_code == 200
+
+    # Under January's budget, but over the one in all, which doesn't come back with the month.
+    response, _ = ask(client, member, QUESTION)
+    assert (response.status_code, response.json()["error"]) == (503, "assistant_spent")
+    clock.now = datetime(2027, 2, 1, tzinfo=UTC)
+    response, _ = ask(client, member, QUESTION)
+    assert (response.status_code, response.json()["error"]) == (503, "assistant_spent")
+    assert len(claude.requests) == 2
 
 
 def test_each_person_has_a_daily_limit(client, team, claude, settings):
@@ -351,7 +425,15 @@ def test_without_a_key_or_a_budget_there_is_no_assistant(settings, claude):
     assert claude.requests == []
 
 
+def test_without_a_budget_of_either_kind_there_is_no_assistant(client, team, settings):
+    settings.assistant_budget = 0
+    settings.assistant_monthly_budget = 0
+    status = client.get("/api/assistant", headers=team.member("ana@rocketry.test")).json()
+    assert status["available"] is False and status["reason"].startswith("Claude isn't set up on this server")
+
+
 def test_production_needs_a_budget_for_its_key(tmp_path):
-    with pytest.raises(RuntimeError, match="set YJSP_ASSISTANT_BUDGET"):
+    with pytest.raises(RuntimeError, match=r"set YJSP_ASSISTANT_MONTHLY_BUDGET .* or YJSP_ASSISTANT_BUDGET"):
         create_app(production_settings(tmp_path, anthropic_api_key="sk-ant-test"))
     create_app(production_settings(tmp_path, anthropic_api_key="sk-ant-test", assistant_budget=20))
+    create_app(production_settings(tmp_path, anthropic_api_key="sk-ant-test", assistant_monthly_budget=95))

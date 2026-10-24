@@ -81,6 +81,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_ANTHROPIC_API_KEY: "test-key",
             YJSP_ANTHROPIC_BASE_URL: claude.url,
             YJSP_ASSISTANT_BUDGET: "5",
+            YJSP_ASSISTANT_MONTHLY_BUDGET: "3",
         },
     });
     let output = "";

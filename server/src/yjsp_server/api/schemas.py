@@ -277,3 +277,49 @@ class WhitelistAddedOut(BaseModel):
     added: list[str]
     already: list[str]  # on the whitelist before
     not_georgia_tech: list[str]  # left off: only Georgia Tech accounts make accounts
+
+
+class AssistantMessageIn(BaseModel):
+    role: Literal["user", "assistant"]
+    # A question's length, and an answer's, are the assistant's to check (assistant._check), saying which is too long.
+    text: str = Field(max_length=100_000)
+    # A question's: the page of the web app it was asked from, like /vault/file/12.
+    page: str | None = Field(default=None, max_length=300)
+
+
+class AskIn(BaseModel):
+    """A question to the assistant, with the conversation so far: questions and answers in turn, the question last."""
+
+    messages: list[AssistantMessageIn] = Field(min_length=1, max_length=40)
+
+
+class AssistantOut(BaseModel):
+    """What someone sees of the assistant before asking (assistant.Assistant.status)."""
+
+    available: bool  # whether they can ask now
+    reason: str | None  # why not, when they can't
+    model: str
+    day_used: float  # how much of their daily limit their questions in the last 24 hours took, from 0 to 1
+    budget: float | None  # US dollars it may spend in all; for admins only
+    spent: float | None  # what it has spent; for admins only
+
+
+class AssistantSpenderOut(BaseModel):
+    user: UserRef
+    questions: int
+    spent: float  # US dollars
+    last_asked_at: datetime
+
+
+class AssistantSpendingOut(BaseModel):
+    """What the assistant has cost, and on whose questions (assistant.Assistant.spending)."""
+
+    available: bool  # whether people can ask now
+    reason: str | None  # why not, when they can't
+    budget: float  # US dollars it may spend in all
+    spent: float
+    today: float  # in the last 24 hours, everyone's together
+    daily_limit: float  # what one person's questions may cost in 24 hours
+    model: str
+    effort: str
+    people: list[AssistantSpenderOut]  # the most spent first

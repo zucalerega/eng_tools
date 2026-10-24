@@ -416,7 +416,8 @@ export function HelpPage() {
             <p className="lead muted">
                 Upload a CSV from a hotfire or cold flow, and plot its channels together on one time axis. Everyone
                 signed in sees every dataset, view, and calculated channel; only whoever added a dataset (or an admin)
-                changes it.
+                changes it. Stuck? <strong>Help</strong>, the question mark at the top right, has troubleshooting for
+                the whole site, and Claude, to ask.
             </p>
             <div className="yorg-help-layout">
                 <nav className="yorg-help-contents" aria-label="Contents">

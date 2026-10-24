@@ -34,6 +34,10 @@ move over. It adds a **Vault** tab to the task pane with these parts:
   assembly references resolve for everyone (setup makes it). It has a folder for each of
   the vault's folders, to save new parts in, but only the files you've opened, checked
   out, or got: the rest of the vault stays on the server until you need it.
+- **Vault's questions and warnings** come in Vault's own box (`MessageDialog`), not
+  Windows': it's never taller than most of the screen, a long one (a list of files) scrolls
+  and can be copied, and it takes the keys Windows' does: Enter for the highlighted answer,
+  Esc for Cancel (or No, or OK), and Y and N.
 
 The tab keeps up with the vault by itself, every 20 seconds and after anything you do. A
 thin bar under the header runs while Vault is working, and the line at the bottom says
@@ -91,11 +95,20 @@ While you work:
   if it's checked out to you in the web app or on another computer, to move the check-out
   here).
   Saving such a file also offers a check-out first, then saves it in place, or explains
-  why it can't be saved (someone else has it, or there's a newer version) and offers to
-  save your changes under another name.
+  why it can't be saved (someone else has it, there's a newer version, or it was deleted
+  from the vault since you got it: restore it from its folder's trash in the web app) and
+  offers to save your changes under another name.
+- **Saving an assembly** saves the parts it uses that changed, too, and in SolidWorks 2026
+  every part last saved in an older SolidWorks counts as changed. Vault asks about those
+  that aren't checked out to you once, not once each: Yes checks them out and saves them;
+  No, the default, leaves them as the vault has them, what changed in them still on
+  screen. Any it can't save (someone else has it, deleted, out of date) it names.
 - **Check in an assembly** and the new parts it uses, and the parts you changed, go
   into the same check-in. Each is recorded with the version it used, and SolidWorks
-  is asked what the assembly references.
+  is asked what the assembly references. One that uses a file deleted from the vault since
+  you got it isn't checked in, and Vault says to restore that file or take it out of the
+  assembly. Before checking in, Vault offers to save your open files that changed: only
+  those you can save, checked out to you or new.
 - **Getting the latest version** of an open file updates it in place, along with the
   parts it uses; an open assembly that uses an updated part updates too. Files with
   unsaved changes are never replaced for you.
@@ -404,7 +417,27 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     from the STEP file. Then check the assembly out and check it in from SolidWorks, and
     write down what happens: if the check-in refuses the STEP file's copy in SolidWorks'
     temporary folder (`...\IC~~\...`), that's still to fix.
-36. Drawings' PDFs: make a drawing of a part with two sheets (a second sheet with a detail
+36. Titles: in the web app, give a test part a title (Edit title… on its page). Within 20
+    seconds Browse shows it after the part's name, in quotes, and with the part open, the card
+    shows it under the name. Right-click the part in Browse > Edit title…, change it, and
+    Save: the web app shows the new one, and the part is still at the same version.
+37. New part in Browse: with part numbers offered (the web app's Admin > Part numbers), right-click
+    a test folder in Browse > New part…: pick a kind, give a title, and Start it. SolidWorks
+    makes `<number>.SLDPRT` in that folder from your default template, it's in the vault as
+    version 1, checked out to you, and the web app shows its title. With part numbers off, New
+    part… says they aren't handed out yet. Do the same with New assembly….
+38. Vendors' parts: save a new part as `91251A463_Socket Head Screw.SLDPRT` and another as
+    `Bearing.SLDPRT`, and check both in at once. The Check in dialog offers to mark the new parts
+    without part numbers as vendors' (unticked, as `Bearing` isn't named by McMaster's numbers);
+    tick it and check in. In the web app, both files' pages say "Vendor's part".
+39. A part renamed since: upload an assembly and its part from the web app as from Kenesto,
+    get the assembly in SolidWorks, close it, and rename the part in the web app (Fin.SLDPRT to
+    Fin left.SLDPRT). After a refresh, open the assembly: the part is there, with no missing
+    reference: Vault points SolidWorks at the renamed file, by the name it had.
+40. Pause: in the web app, Admin > Part numbers > Pause the vault, for "testing". Within 20
+    seconds the Vault tab says who paused it and why, and checking a file out says the vault is
+    paused. Unpause in the web app: the notice goes, and the check-out works.
+41. Drawings' PDFs: make a drawing of a part with two sheets (a second sheet with a detail
     view and a note), dimensions, a hole callout (⌀), and a GD&T frame, and check it in: the
     tab says it made the PDF Caliper shows, and no PDF window opens. In the web app, Open in
     Caliper shows both sheets in the browser's PDF viewer, as SolidWorks prints them, the
@@ -413,7 +446,20 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     the same; click it again: it says it has its PDF already. Change the drawing without
     saving and click Make PDF: it says why it didn't. Check `%TEMP%` has no `vault-*.pdf`
     left.
-37. Uploaded again: check in from SolidWorks an assembly in a folder `Old`, with parts in a
+42. Long messages: open an assembly of many parts saved in an older SolidWorks (so they all
+    count as changed), check the assembly out, and save it: Vault's question about the
+    parts it saves along lists them in Vault's box, which stops short of the screen's bottom
+    with its buttons showing, and scrolls. It moves by its title bar; Y, N, Esc, and Enter
+    answer it as in Windows' message box. A short warning (save a file someone else has
+    checked out) is only as tall as its text. At 150% and 250% display scaling it looks the
+    same.
+43. Saving along: in the same assembly, have someone else check out one of the parts. Save
+    the assembly: Vault asks once, lists the parts, names the one someone else has, and has
+    No chosen to start with. Answer No: the assembly saves, the parts don't (SolidWorks still
+    shows them changed), and nothing else asks. Save again and answer Yes: the parts but the
+    other person's are checked out to you and saved. Click Check in: "Save changes before
+    checking in?" lists only files checked out to you or new, if any changed.
+44. Uploaded again: check in from SolidWorks an assembly in a folder `Old`, with parts in a
     subfolder `Old\Parts` and one beside it. Save it as `New\A.SLDASM` (still using `Old`'s
     parts), upload `Old\Parts` and the other part into `New` in the web app, check
     `New\A.SLDASM` in, and delete `Old` (Delete anyway). On another PC (or after Free up

@@ -34,6 +34,8 @@ internal static class Program
                                          don't have checked out (they stay in the vault; get brings them back)
           history <file>                 A file's versions (alias: log)
           locks [--mine]                 Who has what checked out
+          title <file> "what it's called"  Give a file a title, shown with its name (its name is its part number,
+                                         say): no new version, and no check-out
 
         Paths are files or folders inside the workspace; a folder means everything in it.
         With no paths, status, get, and free use the current folder: get updates the files you have in it,
@@ -68,6 +70,7 @@ internal static class Program
                 "free" => await FreeAsync(options),
                 "history" or "log" => await HistoryAsync(options),
                 "locks" => await LocksAsync(options),
+                "title" => await TitleAsync(options),
                 _ => throw new UsageException($"Unknown command '{args[0]}'. Run `vault help` for the list."),
             };
         }
@@ -292,7 +295,11 @@ internal static class Program
         using var workspace = OpenWorkspace();
         var detail = await workspace.HistoryAsync(options.Paths[0]);
         var lockText = detail.File.CheckedOut is { } fileLock ? $"  (checked out by {fileLock.User.Name} on {fileLock.Host})" : "";
-        Console.WriteLine(detail.File.Path + lockText);
+        Console.WriteLine(detail.File.Path + Titled(detail.File.Name, detail.File.Title) + lockText);
+        if (detail.File.FormerNames is { Count: > 0 } former)
+        {
+            Console.WriteLine($"  formerly {string.Join(", ", former)}");
+        }
         foreach (var version in detail.Versions)
         {
             Console.WriteLine($"  v{version.Number,-3} {When(version.CreatedAt)}  {version.Author.Name,-16} {version.Comment}");
@@ -379,7 +386,26 @@ internal static class Program
             _ when status.CheckedOutByMe => "  [checked out by you]",
             { } other => $"  [checked out by {other.User.Name} on {other.Host}]",
         };
-        return $"  {state,-16} {version,-10} {Show(status.LocalPath)}{lockText}";
+        return $"  {state,-16} {version,-10} {Show(status.LocalPath)}{Titled(Path.GetFileName(status.VaultPath), status.Title)}{lockText}";
+    }
+
+    // A file's title after its name, where it says more than the name does (Titles.Beside): "  “Fin bracket”".
+    private static string Titled(string name, string? title) => Titles.Beside(name, title) is { } shown ? $"  “{shown}”" : "";
+
+    private static async Task<int> TitleAsync(Options options)
+    {
+        if (options.Paths.Count < 2)
+        {
+            throw new UsageException("Usage: vault title <file> \"what it's called\"");
+        }
+        using var workspace = OpenWorkspace();
+        var title = string.Join(" ", options.Paths.Skip(1));
+        var described = await workspace.DescribeAsync(new[] { (options.Paths[0], (string?)title, (bool?)null) });
+        foreach (var file in described)
+        {
+            Console.WriteLine($"{file.Path} is called “{file.Title}” now.");
+        }
+        return 0;
     }
 
     private static string Show(string localPath) => Path.GetRelativePath(Environment.CurrentDirectory, localPath);

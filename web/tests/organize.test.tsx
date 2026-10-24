@@ -57,6 +57,19 @@ test("a new folder, then files and a whole folder uploaded into it", async () =>
     expect(await screen.findByRole("link", { name: "Board.STEP" })).toBeTruthy();
 });
 
+test("parts uploaded can be vendors', which keep their vendors' names", async () => {
+    const team = await Team.create();
+    renderApp(team.chief, folderUrl(team.folder));
+    fireEvent.change(await screen.findByLabelText("Upload files"), {
+        target: { files: [file("Bearing 6203.SLDPRT", "bearing"), file("Bearing 6203.PDF", "data sheet")] },
+    });
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /vendors' \(McMaster, say\)/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Upload 2 files" }));
+    await userEvent.click(await screen.findByRole("link", { name: "Bearing 6203.SLDPRT" }));
+    expect(await screen.findByText("Vendor's part")).toBeTruthy();
+});
+
 test("a zip goes up as what's in it, or as it is", async () => {
     const team = await Team.create();
     const zip = makeZip([

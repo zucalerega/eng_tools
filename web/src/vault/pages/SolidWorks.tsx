@@ -99,7 +99,16 @@ export function SolidWorks() {
                 </li>
                 <li>
                     <strong>New part</strong> in a folder here, or <strong>New drawing</strong> on a part's page, starts
-                    it in SolidWorks, already in the vault and checked out to you.
+                    it in SolidWorks, already in the vault and checked out to you. Once part numbers are on, a new part
+                    or assembly gets its number here first: say what kind it is and what it's called, and its name is
+                    the number. In SolidWorks, right-click a folder in the Vault tab's Browse for{" "}
+                    <strong>New part</strong> or <strong>New assembly</strong>, which do the same.
+                </li>
+                <li>
+                    <strong>Titles</strong> show after files' names in Browse and under the open file's name, where they
+                    say more than the name does (a part number's). Right-click a file for <strong>Edit title</strong>.
+                    Checking in new parts without part numbers, tick that they're vendors' parts (a McMaster screw,
+                    say), which keep their names.
                 </li>
                 <li>
                     <strong>For Caliper</strong>, here in the browser: checking in a part or assembly makes the 3D view
@@ -168,6 +177,26 @@ export function SolidWorks() {
                     </p>
                 </details>
                 <details>
+                    <summary>Vault won't save or check in a file that was deleted</summary>
+                    <p>
+                        Someone deleted it from the vault since you got it, so there's nowhere to save your changes to
+                        it, and an assembly that still uses it can't be checked in: the vault would have a hole in it.
+                        To keep the file, restore it from the Trash of its folder here. If it's gone for good, take it
+                        out of the assembly in SolidWorks, then check the assembly in. Your changes to the file itself
+                        can still be saved under another name (File &gt; Save As).
+                    </p>
+                </details>
+                <details>
+                    <summary>Saving an assembly asks about many parts</summary>
+                    <p>
+                        Saving an assembly saves the parts it uses that changed, too, and SolidWorks 2026 counts every
+                        part last saved in an older SolidWorks as changed once it opens it. Vault asks once about the
+                        ones that aren't checked out to you. No, the default, saves only the assembly and leaves the
+                        parts as the vault has them. Yes checks them out and saves them in SolidWorks 2026's format, so
+                        they stop counting as changed; they go in with the assembly when you check it in.
+                    </p>
+                </details>
+                <details>
                     <summary>SolidWorks is set up for another vault</summary>
                     <p>
                         Each vault needs a folder of its own. In the Vault tab, sign out, type another folder (like
@@ -185,7 +214,8 @@ export function SolidWorks() {
                     <summary>Something else</summary>
                     <p>
                         The add-in keeps a log in %LOCALAPPDATA%\Vault\addin.log, with a line for each click on Open in
-                        SolidWorks: send it to whoever runs your vault.
+                        SolidWorks: send it to whoever runs your vault. <strong>Help</strong>, the question mark at the
+                        top right, has the rest of the troubleshooting, and Claude, to ask what a message means.
                     </p>
                 </details>
             </div>

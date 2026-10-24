@@ -41,6 +41,33 @@ public sealed class FileStatus
 
     /// <summary>Your role in the file's folder: viewer, editor, lead, or admin (null if unknown).</summary>
     public string? MyRole { get; internal set; }
+
+    /// <summary>What it's called (its name without its type, until someone names it); null if it isn't in the vault.</summary>
+    public string? Title { get; internal set; }
+
+    /// <summary>A vendor's part, which keeps its vendor's name rather than taking a part number.</summary>
+    public bool Vendor { get; internal set; }
+
+    /// <summary>The names it had before its renames, oldest first: SolidWorks files saved then still look for it by them.</summary>
+    public IReadOnlyList<string> FormerNames { get; internal set; } = Array.Empty<string>();
+
+    /// <summary>Its title, where it says more than its name does (see <see cref="Titles.Beside"/>); else null.</summary>
+    public string? TitleBeside => Titles.Beside(VaultPath.Substring(VaultPath.LastIndexOf('/') + 1), Title);
+}
+
+/// <summary>Files' titles: what people call them, shown with their names.</summary>
+public static class Titles
+{
+    /// <summary>
+    /// A file's title where it says more than its name does: once someone named it, or its name is a part number. A
+    /// title that's the name without its type (as every file's starts out) isn't said twice.
+    /// </summary>
+    public static string? Beside(string name, string? title)
+    {
+        var dot = name.LastIndexOf('.');
+        var stem = dot > 0 ? name.Substring(0, dot) : name;
+        return string.IsNullOrEmpty(title) || string.Equals(title, stem, StringComparison.OrdinalIgnoreCase) ? null : title;
+    }
 }
 
 public sealed class GetResult

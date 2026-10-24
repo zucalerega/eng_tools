@@ -8,8 +8,11 @@ from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__, load, people
+from .api import assistant as assistant_api
 from .api import downloads, signin, web
+from .api import help as help_api
 from .api import people as people_api
+from .assistant import Assistant
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
@@ -59,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
     app.state.yorg_runs = Runs(settings.yorg_dir)
     app.state.oauth = signin.make_oauth(settings)
+    app.state.assistant = Assistant(settings, sessions)  # Claude, answering from the help (Help in the web app)
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
@@ -87,7 +91,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     app.include_router(signin.router)
+    app.include_router(help_api.router)
     app.include_router(people_api.router)
+    app.include_router(assistant_api.router)
     app.include_router(downloads.router)
     app.include_router(vault_api.router)
     app.include_router(yorg_api.router)

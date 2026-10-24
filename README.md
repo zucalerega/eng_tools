@@ -26,7 +26,8 @@ invite. Someone without a GT account (a mentor, say) joins by an invite to the a
 use with Google (Admin > People). Admin > People also shows how many people used the site
 each day this past month and how long they spent on it (on the web app, and working in
 SolidWorks with the add-in), who has the SolidWorks add-in (on
-how many computers and which versions, and how many people in all), how hard the server is working
+how many computers and which versions, and how many people in all), what Claude's answers in Help
+have cost, and on whose questions, how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.
@@ -41,6 +42,24 @@ Joined with Google? Keep signing in with Google for now. Signing in with Georgia
 your account only if its email is your GT address; otherwise it makes a new, empty one,
 and what you have checked out stays with the old one.
 
+## Help
+
+The help is at the site's address with `/help` after it, for anyone, signed in or not: this
+guide, the SolidWorks add-in's, and [troubleshooting](docs/troubleshooting.md), which says what
+every error means. Search it (Ctrl+F) for words from a message you saw. **Copy for an AI**, at its
+top, puts all of it on your clipboard as Markdown, to paste into a chat with an AI assistant you
+use, or give the assistant the address of `/help.md`. Signed in, the help also has how Vault and
+Yorg work inside.
+
+In the web app, **Help** (the question mark at the top right) opens beside the page you're on:
+the help, the app's own (Yorg's Help page, Vault's SolidWorks page), and Claude, to ask how to do
+something or what an error means. An error on the page is offered as a question, in a click.
+Claude has read all of the help, and answers with links to it, but it can be wrong: all it knows
+is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
+never paste a password or a key. The tab keeps the conversation until you start a new one. Each
+person can ask so much a day, and the server sets what Claude may spend in all; admins see what
+it has spent, and on whose questions, on Admin > People.
+
 ## Vault: CAD files
 
 Version control for the team's SolidWorks and STEP files: check out, check in, version
@@ -52,15 +71,42 @@ replaces Kenesto.
 - **Every version is kept.** See who changed what and why, and download any old
   version.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
-  or changed parts it uses. Getting an assembly brings its parts along.
+  or changed parts it uses. Getting an assembly brings its parts along. Saving one in
+  SolidWorks saves its changed parts too, and SolidWorks 2026 counts every part saved in
+  an older SolidWorks as changed: Vault asks once about those you haven't checked out
+  (No, the default, leaves them as they are), not once for each.
 - **Drawings stay with what they show.** A drawing is checked in only if it shows a
   part or assembly in the vault, and only if it's named after it (`Fin.SLDDRW`, or
   `Fin - machining.SLDDRW`, for `Fin.SLDPRT`), so it sits next to it in its folder.
   Check drawings in from SolidWorks: the `vault` command can't read what a drawing shows.
 - **Access is per folder:** viewer, editor, or lead, plus admins. Subteams can own
   their folders.
+- **Every file has a title,** what it's called (`Fin bracket`), shown with its name
+  wherever it says more than the name does: once part numbers make CAD files' names
+  numbers, the title says what each one is. A file's title starts as its name without its
+  type; anyone who can edit the file changes it with **Edit title…** on its page, which
+  isn't a new version and doesn't need it checked out. A renamed file lists the names it
+  had ("Formerly …"), and search finds it by them too.
+- **Part numbers** (`00000123-001`: eight digits the vault hands out in order, then a
+  kind, from a list admins keep) name parts and assemblies, for good: a numbered file
+  can't be renamed, and a name that looks like a part number has to be one the vault
+  handed out. A drawing or PDF of a numbered part is named after its number
+  (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
+  Structures' numbers from before part numbers stay as they are; its new files take new
+  numbers. Once an admin turns them on, **New part** or **New assembly** in the web app asks
+  what kind it is and what it's called (its title), gets the next number (numbers you got and
+  haven't used yet come first), and starts it in SolidWorks. When you upload vendors' parts,
+  tick that they're vendors': they keep their names. Admins turn numbers on (offered, then
+  required), keep the list of kinds, and skip the next number ahead in Admin > Part numbers.
+  In SolidWorks, the Vault tab's Browse shows titles after names (right-click a file for Edit
+  title), and right-click a folder for New part or New assembly; checking in, tick that new
+  parts without numbers are vendors'.
+- **An admin can pause the vault** (Admin > Part numbers) for work on all of it, such as
+  numbering every file at once. While it's paused, a banner says who paused it and why, and
+  check-outs, check-ins and other changes wait; you can still look at everything, download,
+  and undo your check-outs.
 - **See everything on the web:** browse the vault with a folder tree beside the files;
-  search by name and filter by kind, status, date, and person, and sort by name, date,
+  search by name or title and filter by kind, status, date, and person, and sort by name, date,
   or size; see what each assembly contains and which assemblies each part is in, at every
   level, and whether each file is checked in, who created it, and who changed it last;
   see each file's history and drawings and who has what checked out;
@@ -350,7 +396,7 @@ the keys.
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
-| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), and [hosting and deploying](docs/deploying.md) | |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 
@@ -408,6 +454,7 @@ In the workspace (`C:\VLT` on Windows):
 | `vault resolve <files> --mine` | Settle a conflict (you changed a file here, and someone checked in a newer version since) by keeping yours: it's checked out to you as it is, to check in on top. `--vault` takes the vault's version instead, with yours backed up. |
 | `vault history <file>` | Every version, with who changed it and why |
 | `vault locks` | Who has what checked out |
+| `vault title <file> "what it's called"` | Give a file a title, shown with its name: no new version, and no check-out. `vault status` and `vault history` show titles where they say more than the names do (a part number's), and `history` the names a file had. |
 
 ## Tests
 

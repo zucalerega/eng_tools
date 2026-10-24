@@ -51,6 +51,23 @@ class Settings(BaseSettings):
     # What the off-site backup (deploy/yjsp-offsite, run by root) last wrote about itself, for Admin > People. Missing:
     # no off-site backup here.
     backup_status: Path = Path("backups/offsite.json")
+    # The help (/help, and what the assistant reads): README.md, docs/, and the add-in's README, as in the repository
+    # (help.py). The default is this repository; the live server keeps a copy of them beside the server.
+    help_dir: Path = Path(__file__).resolve().parents[3]
+    # The assistant: Claude, through Anthropic's API, answering members' questions from the help (assistant.py). It's off
+    # without a key and a budget. The key is a secret, like YJSP_SECRET_KEY: only in the server's .env.
+    anthropic_api_key: str = ""
+    # What the assistant may spend in all, in US dollars: the API credits it has. Once its answers have cost that much,
+    # it stops answering until this is raised (the database keeps what each one cost).
+    assistant_budget: float = 0
+    # What one person's questions may cost in any 24 hours, in US dollars.
+    assistant_daily_limit: float = 1.0
+    # Only models whose prices assistant.PRICES knows, so that every answer is counted at what it cost.
+    assistant_model: Literal["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"] = "claude-sonnet-5-5"
+    # How hard Claude thinks before it answers: higher is slower and costs more, and reasons better.
+    assistant_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+    # Another address for Anthropic's API: a gateway, or the tests' stand-in. Empty: Anthropic's own.
+    anthropic_base_url: str = ""
 
     @property
     def production(self) -> bool:
@@ -83,6 +100,10 @@ class Settings(BaseSettings):
                 problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
+        if self.anthropic_api_key and self.assistant_budget <= 0:
+            problems.append(
+                "set YJSP_ASSISTANT_BUDGET to what the assistant may spend, in US dollars, or unset YJSP_ANTHROPIC_API_KEY"
+            )
         if problems:
             raise RuntimeError("Can't start in production: " + "; ".join(problems))
 

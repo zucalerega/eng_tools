@@ -18,8 +18,9 @@ internal sealed class WorkspaceState
     /// <summary>
     /// What a workspace keeps from the sync feed now. One kept less (an older client's) syncs everything again.
     /// 2: the vault's folders are made here too, which that first full sync does for all of them.
+    /// 3: files' titles, whether they're vendors' parts, and the names they had before.
     /// </summary>
-    public const int CurrentSyncFormat = 2;
+    public const int CurrentSyncFormat = 3;
 
     /// <summary>Sync cursor: the server's seq at the last refresh.</summary>
     public long Seq { get; set; }
@@ -56,11 +57,22 @@ internal sealed class RemoteEntry
     /// <summary>What the latest version uses; null if the server didn't say (older servers).</summary>
     public List<UsedFile>? Uses { get; set; }
 
+    /// <summary>What it's called; null if the server didn't say (servers before titles).</summary>
+    public string? Title { get; set; }
+
+    public bool Vendor { get; set; }
+
+    /// <summary>The names it had before its renames, oldest first; null if the server didn't say (servers before titles).</summary>
+    public List<string>? FormerNames { get; set; }
+
     public static RemoteEntry From(VaultFile file) => new RemoteEntry
     {
         Path = file.Path,
         Version = file.Version,
         Sha256 = file.Sha256,
+        Title = file.Title,
+        Vendor = file.Vendor,
+        FormerNames = file.FormerNames,
         Size = file.Size,
         Lock = file.CheckedOut,
         Uses = file.Uses,

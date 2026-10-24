@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
+import { HelpButton, HelpPanel } from "./help";
 import { inPreview, PREVIEW, sitePath } from "./preview";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow } from "./piper";
 import { Link, navigate, usePathname } from "./router";
@@ -34,6 +36,14 @@ export function App() {
     const vault = useVault();
     const pathname = usePathname();
     const adminMode = useAdminMode(vault);
+    // Help, beside whatever page is open: the guide, and Claude to ask, with this tab's conversation (chat.ts).
+    const [chat] = useState(() => new ChatStore());
+    const [helping, setHelping] = useState(false);
+    useEffect(() => {
+        if (me) {
+            chat.belongsTo(me.id); // the tab's conversation is only ever its own person's
+        }
+    }, [me, chat]);
     // Three apps share the site and its sign-in: Vault (the CAD files, under /vault), Yorg (test data, under /yorg), and
     // Piper (P&IDs, under /piper). The site's own page, at / (Home), goes to any of them. Yorg's preview (/yorg/dev,
     // admins) is Yorg as it will be, with what's new in its top bar too.
@@ -137,6 +147,7 @@ export function App() {
                     )}
                 </nav>
                 <div className="topbar-end">
+                    <HelpButton open={helping} onToggle={() => setHelping(!helping)} />
                     <AccountMenu vault={vault} />
                 </div>
             </header>
@@ -174,6 +185,19 @@ export function App() {
                 <main>
                     <Home pathname={pathname} />
                 </main>
+            )}
+            {helping && (
+                <HelpPanel
+                    chat={chat}
+                    more={
+                        yorg
+                            ? { to: "/yorg/help", label: "Yorg's help" }
+                            : vaultApp
+                              ? { to: `${VAULT}/solidworks`, label: "SolidWorks" }
+                              : undefined
+                    }
+                    onClose={() => setHelping(false)}
+                />
             )}
         </>
     );
@@ -293,7 +317,7 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         </>
                     )}
                     <hr />
-                    <form method="post" action="/auth/logout">
+                    <form method="post" action="/auth/logout" onSubmit={forgetChat}>
                         <button type="submit" className="menu-item">
                             Sign out
                         </button>

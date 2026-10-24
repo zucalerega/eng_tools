@@ -52,6 +52,42 @@ test("a part's page shows where it's used, up to the top-level assembly, and its
     expect(within(drawings).getByRole("button", { name: "New drawing" })).toBeTruthy();
 });
 
+test("editors title a file on its page, without a new version or a check-out", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const [fin] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+    const number = await team.partNumber(team.chief);
+    await team.rename(team.chief, "Fins/Fin.SLDPRT", `${number}.SLDPRT`);
+    await team.checkout(alice, `Fins/${number}.SLDPRT`, "ALICE-PC"); // someone else's check-out is no matter
+
+    renderApp(team.chief, fileUrl(fin!.id));
+    expect(await screen.findByText("Formerly Fin.SLDPRT")).toBeTruthy();
+    const head = screen.getByRole("heading", { name: `${number}.SLDPRT` }).parentElement!;
+    expect(within(head).getByText("Fin")).toBeTruthy(); // its name says nothing of what it is: its title does
+    await userEvent.click(screen.getByRole("button", { name: "Edit title…" }));
+    const dialog = screen.getByRole("dialog");
+    const title = within(dialog).getByRole("textbox", { name: "Title" });
+    await userEvent.clear(title);
+    await userEvent.type(title, "Fin, left side");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(await within(head).findByText("Fin, left side")).toBeTruthy();
+    const titled = await team.file(fin!.id);
+    expect([titled.title, titled.version, titled.checked_out?.host]).toEqual(["Fin, left side", 1, "ALICE-PC"]);
+});
+
+test("viewers don't get to title files", async () => {
+    const team = await Team.create();
+    const viewer = await team.member("Viewer");
+    const [fin] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+    await team.grant(team.folder, null, null); // not everyone's to edit
+    await team.grant(team.folder, viewer.user.id, "viewer");
+
+    renderApp(viewer, fileUrl(fin!.id));
+    expect(await screen.findByRole("heading", { name: "Fin.SLDPRT" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit title…" })).toBeNull();
+});
+
 test("editors can revert a file nobody else has checked out", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

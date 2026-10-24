@@ -46,9 +46,20 @@ from .schemas import (
     GrantIn,
     GrantsOut,
     ListingOut,
+    MetadataIn,
     MovedOut,
     MoveIn,
+    NumberingIn,
+    NumberingOut,
+    PartKindChangeIn,
+    PartKindIn,
+    PartKindOut,
+    PartNumbersOut,
+    PauseIn,
+    PauseOut,
+    ReleaseIn,
     RenameIn,
+    ReserveIn,
     RevertIn,
     SyncOut,
 )
@@ -202,7 +213,7 @@ def get_drawing_pdf(file_id: int, request: Request, user: ActiveUser, db: DB, st
 
 
 @router.put("/files/{file_id}/drawing/pdf")
-def put_drawing_pdf(file_id: int, body: DrawingPdfIn, user: ActiveUser, db: DB, store: Store) -> DrawingPdfOut:
+def put_drawing_pdf(file_id: int, body: DrawingPdfIn, user: ChangingUser, db: DB, store: Store) -> DrawingPdfOut:
     """Save a drawing version's sheets as a PDF (upload it first, PUT /api/blobs/{sha256}), as Vault for SolidWorks
     does when it checks a drawing in. Adding one that's missing takes editor access somewhere; replacing one, to its
     folder."""
@@ -237,11 +248,26 @@ def post_undo_checkout(body: FilesIn, user: ChangingUser, db: DB) -> FilesOut:
 @router.post("/checkin")
 def post_checkin(body: CheckinIn, user: ChangingUser, db: DB) -> CheckinOut:
     items = [
-        vault.CheckinItem(i.path, i.sha256, i.size, [vault.Reference(r.path, r.version) for r in i.references])
+        vault.CheckinItem(
+            i.path,
+            i.sha256,
+            i.size,
+            [vault.Reference(r.path, r.version, r.file_id) for r in i.references],
+            title=i.title,
+            vendor=i.vendor,
+            base_version=i.base_version,
+        )
         for i in body.items
     ]
     result = vault.checkin(
-        db, user, items, comment=body.comment, host=body.host, keep_checked_out=body.keep_checked_out
+        db,
+        user,
+        items,
+        comment=body.comment,
+        host=body.host,
+        keep_checked_out=body.keep_checked_out,
+        renames=[vault.Renaming(r.file, r.name) for r in body.renames],
+        dry_run=body.dry_run,
     )
     return CheckinOut.of(result)
 
@@ -274,6 +300,84 @@ def post_move(body: MoveIn, user: ChangingUser, db: DB) -> MovedOut:
 def post_rename(body: RenameIn, user: ChangingUser, db: DB) -> MovedOut:
     """Rename a file (keeping its type) or a folder."""
     return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name))
+
+
+@router.post("/files/metadata")
+def post_metadata(body: MetadataIn, user: ChangingUser, db: DB) -> FilesOut:
+    """Say what files are called (their titles) and which are vendors' parts: no new version, no check-out."""
+    changes = [vault.Description(f.file, f.title, f.vendor) for f in body.files]
+    return FilesOut.of(vault.describe(db, user, changes))
+
+
+@router.get("/numbering")
+def get_numbering(user: ActiveUser, db: DB) -> NumberingOut:
+    """Whether new files take part numbers, and the next number to hand out."""
+    mode, next_number = vault.numbering(db)
+    return NumberingOut(mode=mode, next_number=next_number)
+
+
+@router.put("/numbering")
+def put_numbering(body: NumberingIn, user: ChangingUser, db: DB) -> NumberingOut:
+    """Turn part numbers on or off for new files, or move the next number on (admins)."""
+    mode, next_number = vault.set_numbering(db, user, mode=body.mode, next_number=body.next_number)
+    return NumberingOut(mode=mode, next_number=next_number)
+
+
+@router.get("/part-kinds")
+def get_part_kinds(user: ActiveUser, db: DB) -> list[PartKindOut]:
+    """The kinds of part numbers, the last three digits, retired ones too."""
+    return [PartKindOut.of(kind) for kind in vault.part_kinds(db)]
+
+
+@router.post("/part-kinds", status_code=201)
+def post_part_kind(body: PartKindIn, user: ChangingUser, db: DB) -> PartKindOut:
+    """Add a kind of part number (admins)."""
+    return PartKindOut.of(vault.add_part_kind(db, user, body.code, body.label, body.applies))
+
+
+@router.patch("/part-kinds/{code}")
+def patch_part_kind(code: str, body: PartKindChangeIn, user: ChangingUser, db: DB) -> PartKindOut:
+    """Rename a kind of part number, retire it or bring it back, or say what it's for (admins)."""
+    kind = vault.change_part_kind(db, user, code, label=body.label, applies=body.applies, retired=body.retired)
+    return PartKindOut.of(kind)
+
+
+@router.post("/numbers")
+def post_numbers(body: ReserveIn, user: ChangingUser, db: DB) -> PartNumbersOut:
+    """Hand out the next part numbers, of a kind, for new files: a file checked in named by one takes it."""
+    return PartNumbersOut.of(vault.reserve_numbers(db, user, body.kind, count=body.count, title=body.title))
+
+
+@router.get("/numbers")
+def get_numbers(user: ActiveUser, db: DB) -> PartNumbersOut:
+    """The part numbers handed out to you that no file has yet."""
+    return PartNumbersOut.of(vault.unused_numbers(db, user))
+
+
+@router.post("/numbers/release")
+def post_release(body: ReleaseIn, user: ChangingUser, db: DB) -> PartNumbersOut:
+    """Give back part numbers not used: no file ever takes them."""
+    return PartNumbersOut.of(vault.release_numbers(db, user, body.numbers))
+
+
+@router.get("/vault/pause")
+def get_pause(user: ActiveUser, db: DB) -> PauseOut | None:
+    """Whether an admin has the vault paused (null: it isn't), by whom, and why."""
+    pause = vault.paused(db)
+    return PauseOut.of(pause) if pause else None
+
+
+@router.put("/vault/pause")
+def put_pause(body: PauseIn, user: ChangingUser, db: DB) -> PauseOut:
+    """Pause the vault (admins): every change but yours, from this computer, waits until it's unpaused."""
+    return PauseOut.of(vault.pause(db, user, host=body.host, reason=body.reason))
+
+
+@router.delete("/vault/pause", status_code=204)
+def delete_pause(user: ChangingUser, db: DB) -> Response:
+    """Unpause the vault (admins)."""
+    vault.unpause(db, user)
+    return Response(status_code=204)
 
 
 @router.get("/checkouts")

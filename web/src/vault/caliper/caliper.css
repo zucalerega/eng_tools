@@ -207,6 +207,15 @@
     font-size: 0.76rem;
 }
 
+/* Its file's title, after the name: it gives way first when the row runs short. */
+.caliper-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 /* Over the end of the row, on hover or focus: they take no room from the name otherwise. */
 .caliper-row-actions {
     position: absolute;

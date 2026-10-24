@@ -1,10 +1,16 @@
 # The image is built from the repository root (docker build -f server/Dockerfile .). It needs only
-# server/ and web/: leave out everything else, and anything local or secret in those two.
+# server/ and web/, and the docs the help shows (help.py's PARTS): leave out everything else, and
+# anything local or secret in those.
 .git
 .github
 .claude
 client
+!client/src/Vault.SolidWorks/README.md
 docs
+!docs/design.md
+!docs/troubleshooting.md
+!docs/vault.md
+!docs/yorg.md
 **/.env
 **/node_modules
 **/.venv

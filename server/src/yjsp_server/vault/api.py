@@ -26,6 +26,12 @@ from .schemas import (
     CheckoutIn,
     DeletedOut,
     DeleteIn,
+    DrawingOut,
+    DrawingPdfIn,
+    DrawingPdfOut,
+    DrawingsMissingIn,
+    DrawingsMissingOut,
+    DrawingWantIn,
     EventOut,
     FileDetailOut,
     FileOut,
@@ -150,6 +156,60 @@ def get_caliper_mesh(
         return Response(status_code=304, headers=headers)
     headers["Content-Encoding"] = "gzip"
     return FileResponse(store.path(sha), media_type="application/octet-stream", headers=headers)
+
+
+@router.get("/files/{file_id}/drawing")
+def get_drawing(file_id: int, user: ActiveUser, db: DB, store: Store, version: int) -> DrawingOut:
+    """A drawing's version, for Caliper: the PDF Vault for SolidWorks made of it, if it made one, and its sheets, each
+    with whether SolidWorks saved a picture of it in the file."""
+    return DrawingOut.of(vault.drawing_view(db, store, user, file_id, version))
+
+
+@router.get("/files/{file_id}/drawing/sheet", response_class=Response)
+def get_drawing_sheet(
+    file_id: int, request: Request, user: ActiveUser, db: DB, store: Store, version: int, sheet: int = 1
+) -> Response:
+    """The picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG."""
+    picture = vault.sheet_picture(db, store, user, file_id, version, sheet)
+    # A version never changes, and nor does what's read from it, but how it's read may.
+    headers = {"ETag": f'"{hashlib.sha256(picture).hexdigest()[:32]}"', "Cache-Control": "private, max-age=86400"}
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return Response(picture, media_type="image/png", headers=headers)
+
+
+@router.get("/files/{file_id}/drawing/pdf", response_class=FileResponse)
+def get_drawing_pdf(file_id: int, request: Request, user: ActiveUser, db: DB, store: Store, version: int) -> Response:
+    """The PDF Vault for SolidWorks made of a drawing's version, which Caliper shows in a frame, in the browser's PDF
+    viewer."""
+    name, sha = vault.drawing_pdf(db, user, file_id, version)
+    headers = {
+        "ETag": f'"{sha}"',
+        "Cache-Control": "private, no-cache",  # it can be made again
+        # The site's own pages may frame it; and the site's policy, which allows no plugins, would stop the viewer.
+        "Content-Security-Policy": "frame-ancestors 'self'",
+        "X-Frame-Options": "SAMEORIGIN",
+    }
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(
+        store.path(sha), media_type="application/pdf", filename=name, content_disposition_type="inline", headers=headers
+    )
+
+
+@router.put("/files/{file_id}/drawing/pdf")
+def put_drawing_pdf(file_id: int, body: DrawingPdfIn, user: ActiveUser, db: DB, store: Store) -> DrawingPdfOut:
+    """Save a drawing version's sheets as a PDF (upload it first, PUT /api/blobs/{sha256}), as Vault for SolidWorks
+    does when it checks a drawing in. Adding one that's missing takes editor access somewhere; replacing one, to its
+    folder."""
+    return DrawingPdfOut.of(vault.put_drawing_pdf(db, store, user, file_id, version=body.version, pdf=body.pdf))
+
+
+@router.post("/drawings/missing")
+def post_drawings_missing(body: DrawingsMissingIn, user: ActiveUser, db: DB) -> DrawingsMissingOut:
+    """Which of these drawings' versions have no PDF yet: what Vault for SolidWorks makes."""
+    missing = vault.drawings_missing(db, user, [(d.file_id, d.version) for d in body.drawings])
+    return DrawingsMissingOut(missing=[DrawingWantIn(file_id=f, version=v) for f, v in missing])
 
 
 @router.post("/checkout")

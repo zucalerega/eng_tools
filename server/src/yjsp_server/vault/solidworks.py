@@ -73,6 +73,15 @@ configuration keeps more appearances (its faces' too), the solid's colors stand.
 
 Some programs that write SolidWorks files leave every stream's CRC field the same, uncomputed. There the solid's own
 checks stand in: it must unpack to exactly the size it says, and its transmit files end exactly where their nodes do.
+
+A drawing keeps no lines or text the server could draw: SolidWorks draws its views from its models' 3D bodies
+(Contents/VBLists keeps them), and its annotations are in its feature tree. What it does keep is a picture of each
+sheet, for Windows' Explorer and SolidWorks' Open dialog, which Caliper shows where it has nothing better (read_sheets):
+
+- SheetPreviews/SheetNames: the sheets' names, in order: their count (a uint16), then each name (a CString) and four
+  bytes, as drawings of one sheet have it.
+- Images/Sheet_N: sheet N's picture (from 0), a PNG of 640 x 480: the whole sheet, too small to read its dimensions.
+- PreviewPNG: the file's own preview, of the sheet SolidWorks had open, for a drawing that keeps no pictures of sheets.
 """
 
 import re
@@ -1248,3 +1257,63 @@ def _read_assembly(data: bytes) -> list[Assembly]:
         if name not in (assembly.configuration for assembly in made):
             made.append(Assembly(configuration=name, units=units, components=components(model, None, 1, data)))
     return made
+
+
+# --- drawings ------------------------------------------------------------------------------------
+
+_SHEET_NAMES = "SheetPreviews/SheetNames"
+_SHEET_PICTURE = "Images/Sheet_{}"
+_PREVIEW = "PreviewPNG"
+_PNG = b"\x89PNG\r\n\x1a\n"
+MAX_SHEETS = 100  # a drawing has a handful of sheets: Caliper shows this many at most
+
+
+@dataclass
+class Sheet:
+    name: str  # SolidWorks' name for it ("Sheet1"), or "" where the file doesn't say
+    picture: bytes | None  # the picture of it SolidWorks saved (a PNG), or None where it saved none
+
+
+def read_sheets(data: bytes) -> list[Sheet]:
+    """A drawing's sheets, in order, each with the picture of it SolidWorks saved in the file: 640 x 480, to see what's
+    on it, not to read it. A drawing that keeps no pictures of its sheets has one sheet here, its file's preview (the
+    sheet SolidWorks had open). Unreadable where there's neither, or the file doesn't read as SolidWorks' do."""
+    try:
+        return _read_sheets(data)
+    except (struct.error, IndexError, ValueError, OverflowError, zlib.error) as e:
+        raise Unreadable("Caliper can't make sense of the pictures of its sheets SolidWorks saved in it") from e
+
+
+def _read_sheets(data: bytes) -> list[Sheet]:
+    pictures = [_SHEET_PICTURE.format(n) for n in range(MAX_SHEETS)]
+    found = _found(data, {_SHEET_NAMES, _PREVIEW, *pictures})
+    names = _sheet_names(found.get(_SHEET_NAMES)) or []
+    count = max(len(names), max((n + 1 for n, name in enumerate(pictures) if name in found), default=0))
+    sheets = [Sheet(names[n] if n < len(names) else "", _png(found.get(pictures[n]))) for n in range(count)]
+    if not any(sheet.picture for sheet in sheets) and (preview := _png(found.get(_PREVIEW))) is not None:
+        return [Sheet(names[0] if len(names) == 1 else "", preview)]
+    if not sheets:
+        raise Unreadable("It isn't a SolidWorks drawing with pictures of its sheets that Caliper can read")
+    return sheets
+
+
+def _sheet_names(stream: bytes | None) -> list[str] | None:
+    """The sheets' names (SheetPreviews/SheetNames), or None where they don't read as expected: they're only names, so
+    the sheets are numbered instead. Each name's four bytes are skipped unless another name follows at once, so
+    the names read as well if those bytes come once, after the last."""
+    if stream is None or len(stream) < 2:
+        return None
+    count, at, names = _u16(stream, 0), 2, []
+    for _ in range(min(count, MAX_SHEETS)):
+        found = _string(stream, at)
+        if found is None:
+            return None
+        name, at = found
+        names.append(name)
+        if stream[at : at + 3] != _STRING:
+            at += 4
+    return names if at <= len(stream) else None
+
+
+def _png(contents: bytes | None) -> bytes | None:
+    return contents if contents is not None and contents.startswith(_PNG) else None

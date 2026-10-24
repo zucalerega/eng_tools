@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Notice, usePopover } from "../../components";
 import { Link, navigate, useSearch } from "../../router";
 import { vaultApi, type CaliperModel, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
-import { caliperUrl, fileFormat, fileUrl, kindOf } from "../paths";
+import { caliperUrl, fileFormat, fileUrl, kindOf, sheetFormat } from "../paths";
 import { ComponentTree } from "./ComponentTree";
+import { useBelowTopBar } from "./layout";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
@@ -15,7 +16,11 @@ import "./caliper.css";
 // Caliper: a part or assembly in 3D, in the browser, to look at and measure, not to change. SolidWorks parts and
 // assemblies show their versions' 3D models: the ones Vault for SolidWorks makes, or else the server reads one from the
 // 3D view SolidWorks saved in the file. STEP, IGES, and STL files are read as they are. At /vault/caliper/<file id>, with
-// ?version= and ?configuration= for which.
+// ?version= and ?configuration= for which. Drawings and DXF files are flat: DrawingPage shows them.
+
+// The vault's routes send drawings and DXF files to their own page, without this one or three.js; here it's only for a
+// file the vault's index doesn't have (one in the trash, say).
+const DrawingPage = lazy(() => import("./DrawingPage").then((module) => ({ default: module.DrawingPage })));
 
 export function CaliperPage({ id }: { id: number }) {
     const search = useSearch();
@@ -30,19 +35,7 @@ export function CaliperPage({ id }: { id: number }) {
     const [unreadable, setUnreadable] = useState<ReadonlyMap<string, string>>(new Map());
     const asked = useRef(new Set<string>());
     const page = useRef<HTMLDivElement>(null);
-
-    // The page takes the rest of the window, under the top bar, however tall that is (it wraps on a phone).
-    useLayoutEffect(() => {
-        const element = page.current;
-        if (!element) {
-            return;
-        }
-        const place = () =>
-            element.style.setProperty("--caliper-top", `${element.getBoundingClientRect().top + window.scrollY}px`);
-        place();
-        window.addEventListener("resize", place);
-        return () => window.removeEventListener("resize", place);
-    });
+    useBelowTopBar(page);
 
     useEffect(() => {
         let current = true;
@@ -101,12 +94,19 @@ export function CaliperPage({ id }: { id: number }) {
     const file = detail.file;
     const kind = kindOf(file.name);
     const cad = fileFormat(file.name) !== null;
+    if (sheetFormat(file.name) !== null) {
+        return (
+            <Suspense fallback={<p className="muted caliper-page-message">Loading…</p>}>
+                <DrawingPage id={id} />
+            </Suspense>
+        );
+    }
     if (kind !== "part" && kind !== "assembly" && !cad) {
         return (
             <div className="caliper-page-message">
                 <Notice tone="info">
-                    Caliper shows SolidWorks parts and assemblies, and STEP, IGES, and STL files, and {file.name} isn't
-                    one. <Link to={fileUrl(file.id)}>Back to {file.name}</Link>
+                    Caliper shows SolidWorks parts, assemblies, and drawings, and STEP, IGES, STL, and DXF files, and{" "}
+                    {file.name} isn't one. <Link to={fileUrl(file.id)}>Back to {file.name}</Link>
                 </Notice>
             </div>
         );
@@ -562,6 +562,9 @@ function CaliperView({
                         picked={picks.map((pick) => pick.entity)}
                         units={units}
                         clear={() => setPicks([])}
+                        one={measureOne}
+                        two={measureTwo}
+                        hint="Click a face, an edge, or a corner. Click a second to measure between them; a third starts over."
                     />
                 )}
             </section>

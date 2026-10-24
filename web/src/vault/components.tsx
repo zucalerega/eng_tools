@@ -4,7 +4,7 @@ import { formatTime } from "../format";
 import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
-import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks } from "./paths";
+import { caliperUrl, kindOf, opensInCaliper, opensInSolidWorks, sheetFormat } from "./paths";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -105,7 +105,16 @@ export function OpenInSolidWorks({ path, compact = false }: { path: string; comp
     );
 }
 
-/** Caliper, the 3D viewer, for a part, an assembly, or a STEP or IGES file: right beside Open in SolidWorks. */
+const CALIPER_TITLES = {
+    drawing: "See its sheets, in the browser",
+    dxf: "See it in the browser: zoom in, and measure it",
+    model: "See it in 3D, in the browser: turn it, cut it, measure it",
+};
+
+/**
+ * Caliper, the browser's viewer, for a part, an assembly, or a STEP, IGES, or STL file in 3D, or a drawing or a DXF file
+ * flat: right beside Open in SolidWorks.
+ */
 export function OpenInCaliper({ file, compact = false }: { file: { id: number; name: string }; compact?: boolean }) {
     if (!opensInCaliper(file.name)) {
         return null;
@@ -115,7 +124,7 @@ export function OpenInCaliper({ file, compact = false }: { file: { id: number; n
             className={compact ? "button button-small" : "button"}
             to={caliperUrl(file.id)}
             aria-label="Open in Caliper"
-            title="See it in 3D, in the browser: turn it, cut it, measure it"
+            title={CALIPER_TITLES[sheetFormat(file.name) ?? "model"]}
         >
             {compact ? "Caliper" : "Open in Caliper"}
         </Link>

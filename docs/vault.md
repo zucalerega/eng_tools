@@ -12,7 +12,7 @@ page is Vault's own.
 |---|---|
 | On the server: every operation (`vault.py`), the folder tree and permissions (`access.py`), path rules (`paths.py`), file contents (`storage.py`), tables, routes | `server/src/yjsp_server/vault` |
 | In the web app: its pages, and the vault's index (`store.ts`) | `web/src/vault` |
-| Caliper, the 3D viewer: in the web app, and its models on the server (`caliper.py`, the mesh format; `solidworks.py`, reading SolidWorks files' 3D view) | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
+| Caliper, the viewer: in the web app (in 3D; and drawings and DXF files flat, `dxf.ts` reading DXF and `sheet.ts` drawing it), and on the server its models (`caliper.py`, the mesh format; `solidworks.py`, reading SolidWorks files' 3D view, and the pictures of drawings' sheets) and drawings' PDFs | `web/src/vault/caliper`, `server/src/yjsp_server/vault` |
 | The workspace library | `client/src/Vault.Client` (netstandard2.0 + net10.0) |
 | The `vault` command | `client/src/Vault.Cli` (.NET 10) |
 | The SolidWorks 2026 add-in, and `vault-open.exe`, which follows the web app's links into it | `client/src/Vault.SolidWorks`, `client/src/Vault.SolidWorks.Open` (.NET Framework 4.8) |
@@ -34,7 +34,7 @@ share it, and it can be developed and tested without SolidWorks, through the CLI
 - **Works inside SolidWorks** through an add-in. A web app covers browsing,
   history and admin.
 - **See it without SolidWorks.** Caliper shows any part or assembly in 3D in the browser,
-  to turn, cut, and measure, on any computer.
+  to turn, cut, and measure, and any drawing or DXF file flat, on any computer.
 - **Cheap, and easy to hand over.** It runs in the site's one small server. A student can
   read Vault's part of it in an afternoon.
 
@@ -440,6 +440,13 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   relative to the top assembly; a sub-assembly's own model has them relative to it). A part
   with unsaved changes, or loaded lightweight (its bodies aren't), gets no model, and the
   tab says so; making models never undoes the check-in before it.
+- **Drawings' PDFs for Caliper.** After a check-in, the add-in saves each drawing it checked
+  in as a PDF of all its sheets, as File > Save As > PDF does (`SolidWorksHost.DrawingPdf`:
+  `ExportPdfData`, every sheet, silently, without opening the PDF after), and uploads it as
+  that version's (`DrawingPdfs` in Vault.Client: it asks the server which versions have
+  none, then saves those). Make PDF does it for the active drawing, where its version has
+  none. A drawing with unsaved changes, or changed and not checked in, gets none, and the
+  tab says so; making a PDF never undoes the check-in before it.
 
 ## In the web app
 
@@ -466,8 +473,9 @@ the site gives both apps (design.md, "The web app").
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
     the top-level ones, its drawings, and its history, with downloads.
-  - Caliper: a part, an assembly, or a STEP or IGES file in 3D (see "Caliper"), from Open
-    in Caliper, beside Open in SolidWorks on a file's page and in folders.
+  - Caliper: a part, an assembly, or a STEP, IGES, or STL file in 3D, or a drawing or a DXF
+    file flat (see "Caliper"), from Open in Caliper, beside Open in SolidWorks on a file's
+    page and in folders.
   - A folder's trash, with a Restore for each folder and file deleted from it.
   - SolidWorks: the add-in's installer, and Connect SolidWorks (see "The SolidWorks
     add-in").
@@ -516,7 +524,8 @@ the site gives both apps (design.md, "The web app").
 Caliper (`web/src/vault/caliper`, at `/vault/caliper/<file id>?version=&configuration=`)
 shows a part or assembly in 3D, to look at and measure, not to change: like SpaceX's
 TotalView, on any computer, without SolidWorks. It draws with WebGL (three.js), and loads
-only when a file is opened in it.
+only when a file is opened in it. It shows drawings and DXF files too, flat, on a page of
+their own that loads without three.js (see "Drawings and DXF files", below).
 
 - **Looking around**, as in a CAD program: drag to turn it about the point under the mouse,
   scroll to zoom where the mouse points, right-drag or shift-drag to pan, double-click a part
@@ -666,6 +675,49 @@ Where the 3D comes from:
   one face, which measures as a cylinder. STL keeps no units: its numbers are taken as mm.
   A text STL that doesn't end with `endsolid` was cut off, and says so.
 
+**Drawings and DXF files** (`DrawingPage.tsx`):
+
+- **A SolidWorks drawing shows its PDF.** Vault for SolidWorks saves one of each drawing
+  version it checks in, of all its sheets, as SolidWorks prints them (`drawing_pdfs`), and
+  Caliper shows it in the browser's own PDF viewer, in a frame: its response lets the site's
+  own pages frame it, and doesn't forbid plugins as the rest of the site's responses do,
+  since a browser's PDF viewer is one. A browser that shows no PDFs in a page (Chrome on
+  Android downloads them) gets a link to it instead. Anyone who may upload (an editor
+  anywhere) and can see a drawing can add a PDF its version doesn't have, as the add-in
+  does; making one again, in place of the one there, takes editor rights to its folder. The
+  server checks it's a PDF (`%PDF-`), and serves it as nothing else.
+- **A version without one** (from before Vault for SolidWorks made them, from Kenesto, or
+  checked in from the web) shows the pictures of its sheets that SolidWorks saved in the
+  file for Windows' Explorer, which the server reads (`solidworks.read_sheets`): one of each
+  sheet, 640 x 480, enough to see what's on it, too small to read, so the page says how to
+  get the PDF (Make PDF). A drawing keeps nothing the server could draw itself: SolidWorks
+  draws its views from its models' 3D bodies as it opens it, and its annotations are in its
+  feature tree. This was worked out from the drawings SolidWorks 2020 to 2025 install as
+  samples, all of which it reads.
+- **A DXF file** is read as it is, in the browser (`dxf.ts`): what's in model space (or,
+  where that's empty, the layout it was saved with), its blocks drawn where they're
+  inserted (moved, turned, scaled, mirrored, and in arrays), in its own units (`$INSUNITS`,
+  else `$MEASUREMENT`, else mm, which the page says). It reads lines, arcs, circles,
+  ellipses, polylines (their bulges as arcs, and their widths), splines (NURBS), points,
+  text and MTEXT (without fonts' own formatting, but with AutoCAD's codes: `%%c` as ⌀,
+  stacked fractions and tolerances), dimensions (by the blocks they're drawn with),
+  leaders and multileaders, hatches (solid, or their pattern's lines inside them), solids,
+  and 3D faces, from text and binary files; in layers' and entities' colors (AutoCAD's 256,
+  and true colors; by layer, by block, and layer 0 in a block taking its insert's), with
+  line types' dashes and lines' weights. Anything else (images, 3D solids, viewports,
+  AutoCAD's tables, whose blocks it isn't sure where to put) is counted, and the page says
+  what it left out; so is what's past the first two million entities a file draws (a block
+  arrayed in blocks arrayed in others). The flat patterns and parts the team exported from
+  SolidWorks read as their files have them.
+- **It's drawn** on a canvas (`sheet.ts`), on a sheet of the theme's color (colors too faint
+  on it come out darker, or on a dark one lighter): drag to pan, scroll to zoom where the
+  mouse points, two fingers on a phone, double-click or F to fit. Its layers show and hide
+  (those the file has off or frozen start hidden). **Measuring** picks lines, arcs, circles,
+  and corners (the ends of lines and arcs, and points; where a hole's center line crosses its
+  edge, the hole): one shows a line's length and angle, a circle's diameter, an arc's
+  radius, angle, and length, or a corner's coordinates; two, the distance between them
+  (center to center for circles, from a line square to it), or the angle between two lines.
+
 A model shows what the vault lets you see: a component in a file you can't see is left
 out, with everything in it, and the page says how many were. Anyone who may upload (an
 editor anywhere) and can see a file can add a model its version doesn't have yet, as the
@@ -703,6 +755,11 @@ are in [design.md](design.md#api).
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
+| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
+| `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |
+| `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
+| `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |
+| `POST /api/drawings/missing` | which of these `{drawings: [{file_id, version}]}` have no PDF yet, of files you can see: what the add-in makes |
 
 ## Roadmap
 
@@ -721,12 +778,13 @@ are in [design.md](design.md#api).
    R2 store, with backups off the host (design.md, "Storage").
 6. **Caliper** (October 2026): parts, assemblies, and STEP files in 3D in the browser, to
    turn, cut, and measure; the 3D models of SolidWorks files made by the add-in, or read
-   by the server from the files themselves.
+   by the server from the files themselves. Drawings (their PDFs, which the add-in saves,
+   or the pictures of their sheets SolidWorks saved in them) and DXF files, flat.
 7. **Later**: thumbnails, check-in notifications to team chat, released revisions (A, B,
-   C) for flight hardware, and rename/move with reference repair. In Caliper: drawings,
-   exploded views, and models of the files from Kenesto that the server can't read (saved
-   without their 3D views, or used in configurations their files have none of), made on a
-   computer that only makes them.
+   C) for flight hardware, and rename/move with reference repair. In Caliper: exploded
+   views, and models of the files from Kenesto that the server can't read (saved without
+   their 3D views, or used in configurations their files have none of), and PDFs of the
+   drawings from there, made on a computer that only makes them.
 
 ## Open questions
 

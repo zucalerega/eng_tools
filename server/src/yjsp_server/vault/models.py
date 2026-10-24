@@ -155,6 +155,21 @@ class CaliperModel(Base):
     reader: Mapped[int | None] = mapped_column(Integer)
 
 
+class DrawingPdf(Base):
+    """A drawing version's sheets as a PDF (in the blob store), for Caliper to show in the web app: Vault for SolidWorks
+    saves one from SolidWorks when it checks a drawing in (docs/vault.md, "Caliper"). It's made from its version and
+    describes it: making it again changes no version."""
+
+    __tablename__ = "drawing_pdfs"
+    __table_args__ = (UniqueConstraint("version_id", name="uq_drawing_pdfs_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("versions.id"))
+    pdf_sha256: Mapped[str] = mapped_column(ForeignKey("blobs.sha256"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
 class Grant(Base):
     """A role on a folder and everything under it, for one user or (user_id None) everyone."""
 

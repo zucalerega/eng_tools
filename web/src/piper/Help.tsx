@@ -90,6 +90,23 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "Finding a part",
+        body: (
+            <ul>
+                <li>
+                    <em>Find a tag</em>, in the toolbar (or <kbd>Ctrl</kbd>+<kbd>F</kbd>), finds a part or a line by its
+                    tag (<code>PUREG</code>, <code>PT-101</code>), whatever its case and with or without its dashes, or
+                    by what it is or holds (<em>regulator</em>, <em>LOX</em>). Pick one, or press <kbd>Enter</kbd> for
+                    the first: the drawing goes to it, selected.
+                </li>
+                <li>
+                    A search on the <Link to="/piper">diagrams</Link> finds the diagrams a tag is on, and each opens at
+                    it.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Lines",
         body: (
             <ul>
@@ -313,6 +330,11 @@ const TOPICS: Topic[] = [
                     properties, and every line's tag, fluid, and ends. Filter it in a spreadsheet for a valve list or an
                     instrument list.
                 </li>
+                <li>
+                    <em>Parts</em>, in the toolbar, shows the same list under the drawing: a table for each kind of part
+                    (ball valves, pressure transducers, tanks...), with how many there are and the specs any of them has
+                    (MAWP, size, Cv, range, channel), then the lines. Click a tag to go to its part.
+                </li>
             </ul>
         ),
     },
@@ -353,6 +375,12 @@ const TOPICS: Topic[] = [
                             <kbd>Ctrl</kbd>+<kbd>A</kbd>
                         </>,
                         "Select everything",
+                    ],
+                    [
+                        <>
+                            <kbd>Ctrl</kbd>+<kbd>F</kbd>
+                        </>,
+                        "Find a part on the drawing by its tag",
                     ],
                     ["Arrows (Shift: five steps)", "Nudge what's selected"],
                     ["Wheel; Ctrl or ⌘ + wheel", "Scroll; zoom"],

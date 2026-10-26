@@ -3,6 +3,7 @@ import { MenuButton } from "../components";
 import { Link } from "../router";
 import type { Diagram } from "./api";
 import type { Commands } from "./commands";
+import { FindBox } from "./FindBox";
 import type { SaveStatus } from "./saving";
 import { useEditor, type EditorStore } from "./store";
 
@@ -53,6 +54,9 @@ const STATUS: Record<SaveStatus, string> = {
     deleted: "Deleted: not saved",
 };
 
+/** The panels the editor opens beside or under the drawing. */
+export type Panel = "test" | "history" | "parts";
+
 export function Toolbar({
     diagram,
     store,
@@ -69,8 +73,8 @@ export function Toolbar({
     commands: Commands;
     status: SaveStatus;
     problem: string | null;
-    panel: "test" | "history" | null;
-    onPanel: (panel: "test" | "history" | null) => void;
+    panel: Panel | null;
+    onPanel: (panel: Panel | null) => void;
     onRename: () => void;
     onExport: (as: ExportKind) => void;
 }) {
@@ -165,6 +169,15 @@ export function Toolbar({
                     <Icon name="plus" />
                 </button>
                 <span className="piper-separator" />
+                <FindBox store={store} commands={commands} />
+                <button
+                    type="button"
+                    aria-pressed={panel === "parts"}
+                    title="Every part, by what it is, with its specs"
+                    onClick={() => onPanel(panel === "parts" ? null : "parts")}
+                >
+                    Parts
+                </button>
                 <button
                     type="button"
                     aria-pressed={panel === "test"}

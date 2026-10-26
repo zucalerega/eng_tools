@@ -351,7 +351,10 @@ the keys.
   it, or onto **Drop here to take it out of its folder** to put it at the top. Everyone can
   open, change, and move every diagram; whoever made one (or an admin) can delete it, to
   **Deleted diagrams**, where it waits to be restored. **Find diagrams** looks in names,
-  folders, and the tags on each drawing: PT-101 finds every diagram it's on.
+  folders, and the tags on each drawing: PT-101 finds every diagram it's on, and each opens at
+  it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
+  it is, and **Parts** lists every part by what it is, with how many and their specs, under
+  the drawing.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,

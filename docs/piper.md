@@ -26,9 +26,10 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   dragged onto a folder (or onto the top) moved there, by anyone, as anyone may change one. A
   folder is picked from those there are, or typed new, with the site's `FolderPicker`, as a
   view's or a script's is. Its search looks in names, folders, descriptions, and the tags of the
-  drawings' parts and lines, so PT-101 finds the diagrams it's on. A new diagram starts empty or
-  from an example (`example.ts`: a pressure-fed engine's feed system, built with the editor's own
-  changes), and Duplicate copies one.
+  drawings' parts and lines, so PT-101 finds the diagrams it's on, and a diagram found opens
+  at what was searched for (`?find=PT-101`, as the editor's find goes to it). A new diagram
+  starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
+  with the editor's own changes), and Duplicate copies one.
 - **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its parts, lines, fluids, and
   style. The server keeps it as the web app sends it, after checking only what it needs
   (`schemas.py`): an object with lists of parts and lines, each with an id no other has, a
@@ -172,6 +173,14 @@ what it is, `data-hit`).
   fails in place (FIP: a double-acting valve, which stays where it was when its air or power
   goes) slate blue, or a diagram's own colors (`style`), which the legend shows. The state isn't
   written beside a valve unless it's shown (its eye, or the diagram's panel, for every valve).
+- **Finding** a part on the drawing (the toolbar's find, Ctrl+F; `find.ts`): by its tag,
+  whatever its case and with or without spaces, dashes, and underscores (as test channels
+  match), then by what it is or holds; a line by its tag or fluid. The tag that's it first,
+  then tags that start with it. Picked, the view frames it, with room around it, and it's
+  selected (`commands.show`).
+- **Parts** (`PartsPanel.tsx`), under the drawing: the parts list the CSV saves (`partTable`),
+  a table for each kind of part in the library's order (valves, instruments, vessels...), with
+  how many and the columns any of them has, then the lines. A tag goes to its part.
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to

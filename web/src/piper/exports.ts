@@ -109,12 +109,19 @@ function listed(drawing: Drawing, fields: Field[], key: string, value: string): 
 /** A cell of CSV: quoted where it has to be. */
 const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
+/** A row of the parts list: what it's of (a part's id, or a line's), and its cells, as the head names them. */
+export interface PartRow {
+    id: string;
+    line: boolean;
+    cells: string[];
+}
+
 /**
  * The parts list: a row for each part (its tag, what it is, its normal state, what it holds or reads, and every
- * property it has), then each line (its tag, fluid, type, and the tags of what it joins). A valve list and an
- * instrument list, filtered in a spreadsheet.
+ * property it has), then each line (its tag, fluid, type, and the tags of what it joins). The table beside the drawing
+ * (PartsPanel) shows it, and partsList saves it as a CSV file: a valve list and an instrument list, in a spreadsheet.
  */
-export function partsList(drawing: Drawing): string {
+export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
     const parts = drawing.parts.filter(
         (part) => !["junction", "text", "region", "legend", "titleblock"].includes(part.kind),
     );
@@ -149,10 +156,10 @@ export function partsList(drawing: Drawing): string {
         "From",
         "To",
     ];
-    const rows = [
+    const rows: PartRow[] = [
         ...parts.map((part) => {
             const kind = kindOf(part.kind);
-            return [
+            const cells = [
                 "Part",
                 part.tag,
                 titleOf(part),
@@ -164,21 +171,32 @@ export function partsList(drawing: Drawing): string {
                 "",
                 "",
             ];
+            return { id: part.id, line: false, cells };
         }),
-        ...drawing.lines.map((line) => [
-            "Line",
-            line.tag,
-            LINE_KINDS.find((entry) => entry.value === line.kind)?.label ?? line.kind,
-            "",
-            fluidOf(drawing, line.fluid)?.label ?? "",
-            "",
-            ...keys.map((key) => line.props[key] ?? ""),
-            line.props.notes ?? "",
-            isPortEnd(line.from) ? (tagOf.get(line.from.part) ?? "") : "",
-            isPortEnd(line.to) ? (tagOf.get(line.to.part) ?? "") : "",
-        ]),
+        ...drawing.lines.map((line) => ({
+            id: line.id,
+            line: true,
+            cells: [
+                "Line",
+                line.tag,
+                LINE_KINDS.find((entry) => entry.value === line.kind)?.label ?? line.kind,
+                "",
+                fluidOf(drawing, line.fluid)?.label ?? "",
+                "",
+                ...keys.map((key) => line.props[key] ?? ""),
+                line.props.notes ?? "",
+                isPortEnd(line.from) ? (tagOf.get(line.from.part) ?? "") : "",
+                isPortEnd(line.to) ? (tagOf.get(line.to.part) ?? "") : "",
+            ],
+        })),
     ];
-    return [head, ...rows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
+    return { head, rows };
+}
+
+/** The parts list as a CSV file's text. */
+export function partsList(drawing: Drawing): string {
+    const { head, rows } = partTable(drawing);
+    return [head, ...rows.map((row) => row.cells)].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
 /** A file saved from the browser. */

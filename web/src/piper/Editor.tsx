@@ -23,7 +23,9 @@ import { EditorStore, useEditor } from "./store";
 import { channelName, findChannel, plotLink } from "./testdata";
 import { PAPERS, pdfOf, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
-import { Toolbar, type ExportKind } from "./Toolbar";
+import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
+import { findOnDrawing } from "./find";
+import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
 
 // A diagram's page: the editor, the whole window under the top bar. The library's on the left, the drawing in the
@@ -35,7 +37,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 export function EditorPage({ id }: { id: number }) {
     const [diagram, setDiagram] = useState<Diagram | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
-    const [panel, setPanel] = useState<"test" | "history" | null>(null);
+    const [panel, setPanel] = useState<Panel | null>(null);
     const [looking, setLooking] = useState<RevisionDetail | null>(null);
     const [renaming, setRenaming] = useState(false);
     const [pdfing, setPdfing] = useState(false);
@@ -50,6 +52,7 @@ export function EditorPage({ id }: { id: number }) {
     const search = new URLSearchParams(useSearch());
     const testParam = Number(search.get("test"));
     const testId = Number.isInteger(testParam) && testParam > 0 ? testParam : null;
+    const finding = search.get("find");
     const [time, setTime] = useState(() => Number(search.get("t")) || 0);
     const { reading, problem: testProblem } = useTest(drawing, testId, time);
 
@@ -82,8 +85,13 @@ export function EditorPage({ id }: { id: number }) {
         if (diagram && !fitted.current) {
             fitted.current = true;
             commands.fit();
+            // Opened from a search (the diagrams' list): at what it found.
+            const first = finding ? findOnDrawing(store.getState().drawing, finding)[0] : undefined;
+            if (first) {
+                commands.show([first.id]);
+            }
         }
-    }, [diagram, commands]);
+    }, [diagram, commands, store, finding]);
 
     // A link to a test opens its panel; the test's start, if the time's not in it.
     useEffect(() => {
@@ -357,6 +365,14 @@ export function EditorPage({ id }: { id: number }) {
                     />
                 )}
             </div>
+            {panel === "parts" && (
+                <PartsPanel
+                    store={store}
+                    commands={commands}
+                    onCsv={() => void exportAs("csv")}
+                    onClose={() => setPanel(null)}
+                />
+            )}
             {panel === "test" && (
                 <TestPanel
                     testId={testId}

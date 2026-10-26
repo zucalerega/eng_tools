@@ -48,6 +48,29 @@ test("ports sit on the grid, at their part's edge, each with an id of its own", 
     }
 });
 
+test("valves come without their state written beside them: their color says it", () => {
+    for (const preset of PRESETS.filter((entry) => kindOf(entry.kind).state)) {
+        expect(preset.shown ?? [], preset.id).not.toContain("normal");
+    }
+});
+
+test("every part that holds pressure lists its MAWP, and a vessel its MEOP beside it", () => {
+    const holds = ["valve", "angle", "valve3", "check", "relief", "regulator", "burst", "qd", "orifice", "venturi"];
+    holds.push("flowmeter", "filter", "instrument", "gauge", "cap", "reducer", "hose", "engine", "pump", "exchanger");
+    for (const id of [...holds, "tank", "sphere", "bottle", "dewar"]) {
+        expect(
+            kindOf(id).fields.map((field) => field.key),
+            id,
+        ).toContain("mawp");
+    }
+    for (const id of ["tank", "sphere", "bottle", "dewar"]) {
+        expect(
+            kindOf(id).fields.map((field) => field.key),
+            id,
+        ).toContain("meop");
+    }
+});
+
 test("parts that go into a line have two ports facing apart across their middle", () => {
     for (const kind of ALL_KINDS.filter((entry) => entry.inline)) {
         const part = newPart(kind.id, { x: 0, y: 0 });

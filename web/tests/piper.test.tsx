@@ -127,6 +127,30 @@ test("New diagram opens the editor: a part placed from the library is tagged, re
     });
 });
 
+test("a part dragged from the library goes where it's let go, and the drag doesn't start placing", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "Dragged onto");
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    // jsdom lays nothing out: the drawing's box is given as reaching right and down from where at() measures from, and
+    // the library's left of it.
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1e6, 1e6));
+    const item = screen.getByRole("button", { name: "Pressure transducer" });
+    const pointer = { pointerId: 1, isPrimary: true, button: 0 };
+    fireEvent.pointerDown(item, { ...pointer, clientX: -120, clientY: 300 });
+    fireEvent.pointerMove(item, { ...pointer, clientX: -60, clientY: 200 }); // over the library still: no part yet
+    expect(within(svg).queryByRole("button", { name: "PT-1" })).toBeNull();
+    fireEvent.pointerMove(item, { ...pointer, ...at(203, 98) });
+    expect(within(svg).getByRole("button", { name: "PT-1" })).toBeTruthy(); // shown where it would go
+    fireEvent.pointerUp(item, { ...pointer, ...at(203, 98) });
+    fireEvent.click(item); // the click a drag ends with
+    expect(item.getAttribute("aria-pressed")).toBe("false");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.parts.map((part) => [part.tag, part.x, part.y])).toEqual([["PT-1", 200, 100]]);
+    });
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };
@@ -212,11 +236,49 @@ test("the inspector says what a part is: its normal state, what it shows, and fi
     await waitFor(async () => {
         const saved = (await team.piperDiagram(team.chief, made.id)).read.parts.find((entry) => entry.id === valve)!;
         expect(saved.props).toMatchObject({ normal: "NC", size: "1/4 in", "Part number": "SS-45S8" });
-        expect(saved.shown).toEqual(["normal", "size"]);
+        expect(saved.shown).toEqual(["size"]);
     });
-    // Under its tag on the drawing: its state and its size.
+    // Under its tag on the drawing: its size. Its state's in its color, not written beside it too, unless it's shown.
     expect(within(svg).getByText("1/4 in")).toBeTruthy();
-    expect(within(svg).getByText("NC")).toBeTruthy();
+    expect(within(svg).queryByText("NC")).toBeNull();
+});
+
+test("the diagram's labels: their size, and fluids and valve states written everywhere or nowhere at once", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const left = place(drawing, "solenoid-valve", 0, 0);
+    const right = place(drawing, "ball-valve", 200, 0);
+    const made = connect(drawing.value, { part: left, port: "b" }, { part: right, port: "a" })!;
+    drawing.value = {
+        ...made.drawing,
+        lines: made.drawing.lines.map((line) => ({ ...line, fluid: "lox", shown: ["fluid"] })),
+    };
+    const diagram = await team.diagram(team.chief, "Labels", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    expect(inspector.getByText("Fluids written on lines: 1 of 1")).toBeTruthy();
+    await userEvent.click(inspector.getByRole("button", { name: "Hide on every line" }));
+    await userEvent.click(inspector.getByRole("button", { name: "Show on every valve" }));
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Label size" }), "small");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, diagram.id)).read;
+        expect(saved.lines[0]!.shown).toEqual([]);
+        expect(saved.parts.map((part) => part.shown.includes("normal"))).toEqual([true, true]);
+        expect(saved.style.labels).toBe("small");
+    });
+    expect(within(svg).getByText("NC")).toBeTruthy(); // the solenoid valve's state, written beside it now
+    // A double-acting valve fails in place: FIP, in a color of its own.
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(200, 0));
+    fireEvent.pointerUp(svg, at(200, 0));
+    await userEvent.click(
+        within(await screen.findByRole("group", { name: "Normal state" })).getByRole("button", { name: /FIP/ }),
+    );
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, diagram.id)).read;
+        expect(saved.parts.find((part) => part.id === right)!.props.normal).toBe("FIP");
+    });
+    expect(within(svg).getByText("FIP")).toBeTruthy();
 });
 
 test("someone else's save is caught: Keep mine saves over it, and theirs stays in the history", async () => {

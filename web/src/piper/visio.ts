@@ -606,7 +606,7 @@ function pageDrawing(
             fluid: fluid || line.fluid,
             tag: tag ?? "",
             arrow: shape.arrows.end ? "forward" : shape.arrows.begin ? "backward" : "none",
-            shown: [...(tag ? ["tag"] : []), "fluid", ...(size ? ["size"] : [])],
+            shown: [...(tag ? ["tag"] : []), ...(size ? ["size"] : [])],
             props: { ...line.props, ...(size ? { size } : {}), ...(rest ? { notes: rest } : {}) },
         }));
         lineOf.set(shape.id, made.id);

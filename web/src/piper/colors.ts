@@ -15,6 +15,7 @@ export interface Palette {
     guide: string; // a snap's guide
     no: string; // normally open, and open in a test
     nc: string; // normally closed, and closed
+    fip: string; // fails in place: a double-acting valve, which stays as it was when its air or power goes
     other: string; // a valve's state in a test that's neither (a fault)
 }
 
@@ -28,6 +29,7 @@ export const LIGHT: Palette = {
     guide: "#e0a500",
     no: "#2e9e4f",
     nc: "#d64541",
+    fip: "#5b7a99",
     other: "#e0a500",
 };
 
@@ -41,6 +43,7 @@ export const DARK: Palette = {
     guide: "#e0a500",
     no: "#3fbf6f",
     nc: "#f0605a",
+    fip: "#86a3c2",
     other: "#e0a500",
 };
 
@@ -49,7 +52,13 @@ export const withStates = (palette: Palette, drawing: Drawing): Palette => ({
     ...palette,
     no: drawing.style.no || palette.no,
     nc: drawing.style.nc || palette.nc,
+    fip: drawing.style.fip || palette.fip,
 });
+
+/** The color a valve's normal state fills it with (NO, NC, FIP), or null if it has none set. */
+export function normalFill(palette: Palette, normal: string | undefined): string | null {
+    return normal === "NO" ? palette.no : normal === "NC" ? palette.nc : normal === "FIP" ? palette.fip : null;
+}
 
 const dark =
     typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;

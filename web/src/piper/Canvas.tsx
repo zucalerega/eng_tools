@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { DiagramView, type LiveValue } from "./DiagramView";
@@ -19,7 +19,7 @@ import {
 import { distance, grow, inBox, snapPoint, type Box, type Dir } from "./geometry";
 import { boxOf, kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
-import { labelPlace } from "./labels";
+import { labelPlace, textSizes } from "./labels";
 import { linesOn, partsById, pathOf, placeEnd, portsOf } from "./ports";
 import { route } from "./route";
 import { snapMove } from "./snap";
@@ -29,8 +29,19 @@ import { useEditor, type Aim, type EditorStore } from "./store";
 // a line, drag a line's segment to move it or its end to another port, drag on nothing to select what's in a box, and
 // the wheel to scroll (with Ctrl or ⌘ to zoom). Space or the middle button drags the view.
 
-/** The library entry being dragged onto the canvas: dragover can't read what's being dragged, so the library says. */
-export const libraryDrag: { preset: string | null } = { preset: null };
+/**
+ * The canvas, for a part dragged from the library (with the pointer, as the browser's own drag-and-drop doesn't start
+ * from a button in every browser): over the canvas, the part's shown where it would go; let go there, it's placed.
+ * Points are the pointer's, in the window; free: Alt, off the grid.
+ */
+export interface LibraryDrop {
+    over(preset: string, client: Point, free: boolean): boolean; // whether it's over the canvas
+    drop(preset: string, client: Point, free: boolean): boolean; // whether it was placed
+    leave(): void;
+}
+
+/** The canvas taking parts from the library now, if one's open. */
+export const libraryDrop: { target: LibraryDrop | null } = { target: null };
 
 type Drag =
     | { kind: "pan"; client: Point; view: { x: number; y: number; zoom: number } }
@@ -221,7 +232,7 @@ export function Canvas({
         if (!preset) {
             return null;
         }
-        const added = addPart(drawing, preset, free ? at : snapPoint(at));
+        const added = addPart(drawing, preset, at, free);
         if (kindOf(preset.kind).inline) {
             const near = lineNear(drawing, at, 10 / now.zoom);
             const into = near ? insertIntoLine(added.drawing, added.id, near.line.id, at) : null;
@@ -231,6 +242,53 @@ export function Canvas({
         }
         return { ...added, into: null };
     }
+
+    // Taking parts dragged from the library, while it's open.
+    const dropTarget = useRef<LibraryDrop | null>(null);
+    dropTarget.current = {
+        over(preset, client, free) {
+            const rect = svg.current?.getBoundingClientRect();
+            const inside =
+                !!rect &&
+                client.x >= rect.left &&
+                client.x <= rect.right &&
+                client.y >= rect.top &&
+                client.y <= rect.bottom;
+            const made = inside ? placed(preset, pointAt({ clientX: client.x, clientY: client.y }), free) : null;
+            if (made) {
+                store.preview(made.drawing, { into: made.into });
+            } else if (store.getState().shown !== store.getState().drawing) {
+                store.cancel();
+            }
+            return inside;
+        },
+        drop(preset, client, free) {
+            const inside = this.over(preset, client, free);
+            const made = inside ? placed(preset, pointAt({ clientX: client.x, clientY: client.y }), free) : null;
+            if (made) {
+                store.commit(made.drawing, [made.id]);
+            } else {
+                store.cancel();
+            }
+            return made !== null;
+        },
+        leave() {
+            store.cancel();
+        },
+    };
+    useEffect(() => {
+        const target: LibraryDrop = {
+            over: (...args) => dropTarget.current!.over(...args),
+            drop: (...args) => dropTarget.current!.drop(...args),
+            leave: () => dropTarget.current!.leave(),
+        };
+        libraryDrop.target = target;
+        return () => {
+            if (libraryDrop.target === target) {
+                libraryDrop.target = null;
+            }
+        };
+    }, []);
 
     function onPointerDown(event: PointerEvent<SVGSVGElement>) {
         if (event.button === 2) {
@@ -316,7 +374,7 @@ export function Canvas({
                 store.select([id]);
                 const part = now.drawing.parts.find((entry) => entry.id === id);
                 if (part) {
-                    const place = labelPlace(part, boxOf(part, now.drawing)).at;
+                    const place = labelPlace(part, boxOf(part, now.drawing), textSizes(now.drawing).tag).at;
                     const offset = part.label ?? { x: place.x - part.x, y: place.y - part.y };
                     drag.current = { kind: "label", part: id, start: at, offset, base: now.drawing, moved: false };
                 }
@@ -536,33 +594,6 @@ export function Canvas({
         }
     }
 
-    function onDragOver(event: DragEvent<SVGSVGElement>) {
-        if (!libraryDrag.preset) {
-            return;
-        }
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-        const made = placed(libraryDrag.preset, pointAt(event), event.altKey);
-        if (made) {
-            store.preview(made.drawing, { into: made.into });
-        }
-    }
-
-    function onDrop(event: DragEvent<SVGSVGElement>) {
-        const preset = libraryDrag.preset;
-        libraryDrag.preset = null;
-        if (!preset) {
-            return;
-        }
-        event.preventDefault();
-        const made = placed(preset, pointAt(event), event.altKey);
-        if (made) {
-            store.commit(made.drawing, [made.id]);
-        } else {
-            store.cancel();
-        }
-    }
-
     const selection = useMemo(() => new Set(state.selection), [state.selection]);
     const drawingLine = state.sketch !== null || state.tool.mode === "line";
     const ports = drawingLine ? ("all" as const) : new Set(hover ? [hover, ...state.selection] : state.selection);
@@ -601,9 +632,13 @@ export function Canvas({
                     onEdit(hit[1]);
                 }
             }}
-            onDragOver={onDragOver}
-            onDragLeave={() => store.cancel()}
-            onDrop={onDrop}
+            // Nothing's dropped here with the browser's own drag-and-drop: a file let go on the drawing isn't opened in
+            // the tab, leaving the editor.
+            onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "none";
+            }}
+            onDrop={(event) => event.preventDefault()}
         >
             <Grid view={view} width={width} height={height} palette={palette} />
             <DiagramView

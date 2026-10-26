@@ -1,5 +1,5 @@
 import { ink, Letters } from "./draw";
-import { MODEL, NOTES, type Kind } from "./kinds";
+import { MAWP, MODEL, NOTES, type Kind } from "./kinds";
 
 // Equipment: what a system is for (an engine), or what moves its fluids (a pump), and where they leave it (a vent).
 
@@ -19,6 +19,7 @@ export const engine: Kind = {
         { key: "pc", label: "Chamber pressure", type: "text", placeholder: "300 psi", prefix: "Pc " },
         { key: "of", label: "O/F", type: "text", placeholder: "2.1", prefix: "O/F " },
         { key: "propellants", label: "Propellants", type: "text", placeholder: "LOX/RP-1" },
+        MAWP,
         NOTES,
     ],
     tag: "beside",
@@ -45,6 +46,7 @@ export const pump: Kind = {
     fields: [
         { key: "flow", label: "Flow", type: "text", placeholder: "2 gpm" },
         { key: "rise", label: "Pressure rise", type: "text", placeholder: "500 psi" },
+        MAWP,
         MODEL,
         NOTES,
     ],
@@ -89,7 +91,7 @@ export const exchanger: Kind = {
         { id: "shell-in", x: 0, y: -20, dir: "up", inset: 0 },
         { id: "shell-out", x: 0, y: 20, dir: "down", inset: 0 },
     ],
-    fields: [{ key: "duty", label: "Duty", type: "text", placeholder: "5 kW" }, MODEL, NOTES],
+    fields: [{ key: "duty", label: "Duty", type: "text", placeholder: "5 kW" }, MAWP, MODEL, NOTES],
     tag: "beside",
     draw: (_part, context) => (
         <>

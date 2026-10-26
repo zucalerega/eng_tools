@@ -67,6 +67,7 @@ export function StatePicker({
     const choices: [string, string, string][] = [
         ["NO", "Normally open", palette.no],
         ["NC", "Normally closed", palette.nc],
+        ["FIP", "Fails in place (double-acting)", palette.fip],
         ["", "Not set", palette.muted],
     ];
     return (

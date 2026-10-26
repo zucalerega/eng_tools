@@ -1,6 +1,6 @@
 import type { Part } from "../drawing";
 import { ink, Letters } from "./draw";
-import { CHANNEL, DAQ, MODEL, NOTES, OUTPUT, RANGE, type Field, type Kind, type Port } from "./kinds";
+import { CHANNEL, DAQ, MAWP, MODEL, NOTES, OUTPUT, RANGE, type Field, type Kind, type Port } from "./kinds";
 
 // Instruments, as ISA 5.1 draws them: a bubble with what it measures in letters over its loop's number (PT over 101),
 // connected to the line it measures by a tap from any side. A test's channel shows its value beside it.
@@ -76,7 +76,7 @@ export const instrument: Kind = {
     name: "Instrument",
     box: () => [-20, -20, 20, 20],
     ports: () => BUBBLE_PORTS,
-    fields: [MEASURES, RANGE, OUTPUT, MODEL, DAQ, CHANNEL, NOTES],
+    fields: [MEASURES, RANGE, OUTPUT, MAWP, MODEL, DAQ, CHANNEL, NOTES],
     title: (part) => MEASURES.options?.find((option) => option.value === part.props.type)?.label ?? "Instrument",
     reads: "value",
     tag: "inside",
@@ -92,7 +92,7 @@ export const gauge: Kind = {
     name: "Pressure gauge",
     box: () => [-15, -15, 15, 20],
     ports: () => [{ id: "bottom", x: 0, y: 20, dir: "down", inset: 5 }],
-    fields: [RANGE, MODEL, NOTES],
+    fields: [RANGE, MAWP, MODEL, NOTES],
     tag: "beside",
     draw: (_part, context) => (
         <>

@@ -65,9 +65,14 @@ export interface Fluid {
     color: string; // #rrggbb
 }
 
+/** How big what's written beside parts and on lines is (labels.ts). */
+export type LabelSize = "small" | "normal" | "large";
+
 export interface Style {
     no: string; // normally open valves' color: "" for the standard one
     nc: string; // normally closed valves'
+    fip: string; // fail-in-place (double-acting) valves'
+    labels: LabelSize;
 }
 
 export interface Drawing {
@@ -78,7 +83,15 @@ export interface Drawing {
     style: Style;
 }
 
-export const emptyDrawing = (): Drawing => ({ format: 1, parts: [], lines: [], fluids: [], style: { no: "", nc: "" } });
+export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal" };
+
+export const emptyDrawing = (): Drawing => ({
+    format: 1,
+    parts: [],
+    lines: [],
+    fluids: [],
+    style: { ...STANDARD_STYLE },
+});
 
 export const isPortEnd = (end: End): end is { part: string; port: string } => "part" in end;
 
@@ -121,7 +134,7 @@ export function newLine(from: End, to: End, fields: Partial<Line> = {}): Line {
         kind: "pipe",
         arrow: "none",
         props: {},
-        shown: ["fluid"],
+        shown: [], // a fluid's color says what it is: its label, on every line, crowds a P&ID
         ...fields,
     };
 }
@@ -164,11 +177,24 @@ function end(value: unknown): End | null {
 
 const ROTATIONS: Rotation[] = [0, 90, 180, 270];
 
+/**
+ * Properties and what's shown of them, with a pressure rating read as the MAWP it is: drawings before MAWP called it
+ * "rating" (a filter's rating is its microns, and stays).
+ */
+function withMawp(props: Record<string, string>, shown: string[], filter: boolean) {
+    if (filter || props.rating === undefined || props.mawp !== undefined) {
+        return { props, shown };
+    }
+    const { rating, ...rest } = props;
+    return { props: { ...rest, mawp: rating }, shown: shown.map((key) => (key === "rating" ? "mawp" : key)) };
+}
+
 function part(value: unknown): Part | null {
     if (!isObject(value) || typeof value.id !== "string" || typeof value.kind !== "string") {
         return null;
     }
     const rotation = num(value.rotation);
+    const { props, shown } = withMawp(texts(value.props), strings(value.shown), value.kind === "filter");
     return {
         id: value.id,
         kind: value.kind,
@@ -177,8 +203,8 @@ function part(value: unknown): Part | null {
         rotation: ROTATIONS.includes(rotation as Rotation) ? (rotation as Rotation) : 0,
         flip: value.flip === true,
         tag: str(value.tag),
-        props: texts(value.props),
-        shown: strings(value.shown),
+        props,
+        shown,
         label: point(value.label),
         text: str(value.text),
         w: Math.max(0, num(value.w)),
@@ -202,6 +228,7 @@ function line(value: unknown, parts: Set<string>): Line | null {
     }
     const kind = LINE_KINDS.find((entry) => entry.value === value.kind)?.value ?? "pipe";
     const arrow = value.arrow === "forward" || value.arrow === "backward" ? value.arrow : "none";
+    const { props, shown } = withMawp(texts(value.props), strings(value.shown), false);
     return {
         id: value.id,
         from,
@@ -214,8 +241,8 @@ function line(value: unknown, parts: Set<string>): Line | null {
         fluid: str(value.fluid),
         kind,
         arrow,
-        props: texts(value.props),
-        shown: Array.isArray(value.shown) ? strings(value.shown) : ["fluid"],
+        props,
+        shown,
     };
 }
 
@@ -240,6 +267,7 @@ export function readDrawing(value: unknown): Drawing {
         .filter((entry) => entry !== null);
     const ids = new Set(parts.map((entry) => entry.id));
     const style = isObject(found.style) ? found.style : {};
+    const labels = style.labels === "small" || style.labels === "large" ? style.labels : "normal";
     return {
         format: 1,
         parts,
@@ -249,6 +277,6 @@ export function readDrawing(value: unknown): Drawing {
         fluids: list(found.fluids)
             .map(fluid)
             .filter((entry) => entry !== null),
-        style: { no: str(style.no), nc: str(style.nc) },
+        style: { no: str(style.no), nc: str(style.nc), fip: str(style.fip), labels },
     };
 }

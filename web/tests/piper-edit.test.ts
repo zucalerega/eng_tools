@@ -203,6 +203,96 @@ test("moving a part routes its lines again; lines routed by hand keep their bend
     expect(line(pipe).points).toEqual(before.map((point) => ({ x: point.x + 50, y: point.y + 50 })));
 });
 
+test("a selection dragged with its lines moves each line once, as it was", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 100);
+    const pipe = join([a, "b"], [b, "a"]);
+    const before = line(pipe).points;
+    // Selected with its parts (a box drawn around them, or select all): the line goes with them, once.
+    drawing = moveItems(drawing, new Set([a, b, pipe]), { x: 50, y: 50 });
+    expect(line(pipe).points).toEqual(before.map((point) => ({ x: point.x + 50, y: point.y + 50 })));
+    expect(orthogonalPath(pipe)).toBe(true);
+});
+
+test("a tee moves with its lines when everything they join moves, and stays a straight run", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const pipe = join([left, "b"], [right, "a"]);
+    const gauge = place("pressure-gauge", 100, -80);
+    const tee = connect(drawing, { part: gauge, port: "bottom" }, { line: pipe, at: { x: 100, y: 0 } })!;
+    drawing = tee.drawing;
+    const junction = drawing.parts.find((entry) => entry.kind === "junction")!;
+    const lines = drawing.lines.map((entry) => entry.id);
+    const runs = new Map(lines.map((id) => [id, pathOf(partsById(drawing), line(id))]));
+    // The valves and the gauge picked, the junction under the lines not: it comes along all the same.
+    for (const ids of [new Set([left, right, gauge]), new Set([left, right, gauge, ...lines])]) {
+        drawing = moveItems(drawing, ids, { x: 30, y: 40 });
+        expect([part(junction.id).x, part(junction.id).y]).toEqual([junction.x + 30, junction.y + 40]);
+        for (const id of lines) {
+            const moved = pathOf(partsById(drawing), line(id));
+            expect(moved).toEqual(runs.get(id)!.map((point) => ({ x: point.x + 30, y: point.y + 40 })));
+        }
+        drawing = moveItems(drawing, ids, { x: -30, y: -40 });
+    }
+});
+
+test("a run of tees comes along with what's on it, and tees on nothing but each other stay", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 300, 0);
+    const pipe = join([left, "b"], [right, "a"]);
+    const first = place("pressure-gauge", 100, -80);
+    drawing = connect(drawing, { part: first, port: "bottom" }, { line: pipe, at: { x: 100, y: 0 } })!.drawing;
+    const second = place("pressure-gauge", 200, -80);
+    const run = drawing.lines.find((entry) => isPortEnd(entry.to) && entry.to.part === right)!;
+    drawing = connect(drawing, { part: second, port: "bottom" }, { line: run.id, at: { x: 200, y: 0 } })!.drawing;
+    const tees = drawing.parts.filter((entry) => entry.kind === "junction").map((entry) => entry.id);
+    expect(tees).toHaveLength(2);
+    drawing = moveItems(drawing, new Set([left, right, first, second]), { x: 0, y: 30 });
+    expect(tees.map((id) => part(id).y)).toEqual([30, 30]);
+    for (const entry of drawing.lines) {
+        expect(orthogonalPath(entry.id), entry.id).toBe(true);
+    }
+    // Moving one valve alone leaves the tees where they are.
+    drawing = moveItems(drawing, new Set([left]), { x: -20, y: 0 });
+    expect(tees.map((id) => [part(id).x, part(id).y])).toEqual([
+        [100, 30],
+        [200, 30],
+    ]);
+});
+
+test("a free end moves only with its line: a line from a moved part to a point stays on that point", () => {
+    fresh();
+    const valve = place("ball-valve", 0, 0);
+    const made = connect(drawing, { part: valve, port: "b" }, { x: 200, y: 100 })!;
+    drawing = made.drawing;
+    drawing = moveItems(drawing, new Set([valve]), { x: 0, y: -40 });
+    expect(line(made.id).to).toEqual({ x: 200, y: 100 });
+    expect(orthogonalPath(made.id)).toBe(true);
+    const path = pathOf(partsById(drawing), line(made.id));
+    expect(path[path.length - 1]).toEqual({ x: 200, y: 100 });
+    // Selected with it, the line takes its free end along.
+    drawing = moveItems(drawing, new Set([valve, made.id]), { x: 20, y: 0 });
+    expect(line(made.id).to).toEqual({ x: 220, y: 100 });
+    expect(orthogonalPath(made.id)).toBe(true);
+});
+
+test("a selected line to a part that stayed keeps its hand routing, following the end that moved", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 100);
+    const pipe = join([a, "b"], [b, "a"]);
+    drawing = moveSegment(drawing, pipe, 1, { x: -60, y: 0 });
+    drawing = moveItems(drawing, new Set([b, pipe]), { x: 0, y: 40 });
+    expect(line(pipe).auto).toBe(false);
+    expect(line(pipe).points).toEqual([
+        { x: 100, y: 0 },
+        { x: 100, y: 140 },
+    ]);
+});
+
 test("turning a part turns its ports, and its lines follow", () => {
     fresh();
     const tank = place("tank", 0, 0);
@@ -304,4 +394,42 @@ test("a drawing reads back whatever its age: what's missing filled in, what can'
     expect(read.lines[0]!.auto).toBe(true);
     expect(read.fluids[0]!.color).toBe("#7f8c9a"); // not a color it can draw
     expect(readDrawing(null)).toEqual(emptyDrawing());
+    // From before labels were sized and FIP had a color: the standard ones.
+    expect(read.style).toEqual({ no: "", nc: "", fip: "", labels: "normal" });
+    expect(readDrawing({ style: { fip: "#123456", labels: "small" } }).style).toMatchObject({
+        fip: "#123456",
+        labels: "small",
+    });
+    // A line saved without saying what it shows shows nothing: a fluid's color says what it carries.
+    expect(read.lines[0]!.shown).toEqual([]);
+});
+
+test("a pressure rating from before MAWP is read as the MAWP it is; a filter's micron rating stays", () => {
+    const read = readDrawing({
+        parts: [
+            { id: "v", kind: "valve", props: { rating: "3000 psi" }, shown: ["rating"] },
+            { id: "f", kind: "filter", props: { rating: "10 µm" }, shown: ["rating"] },
+            { id: "w", kind: "valve", props: { rating: "old", mawp: "6000 psi" } },
+        ],
+        lines: [{ id: "l", from: { x: 0, y: 0 }, to: { x: 50, y: 0 }, props: { rating: "1500 psi" } }],
+    });
+    const [valve, filter, both] = read.parts;
+    expect([valve!.props, valve!.shown]).toEqual([{ mawp: "3000 psi" }, ["mawp"]]);
+    expect([filter!.props, filter!.shown]).toEqual([{ rating: "10 µm" }, ["rating"]]);
+    expect(both!.props).toEqual({ rating: "old", mawp: "6000 psi" }); // a MAWP of its own wins
+    expect(read.lines[0]!.props).toEqual({ mawp: "1500 psi" });
+});
+
+test("new lines don't write their fluid on themselves, and a split line doesn't repeat what it shows", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const pipe = join([left, "b"], [right, "a"]);
+    expect(line(pipe).shown).toEqual([]);
+    drawing = carryFluid(drawing, pipe, "rp1");
+    drawing = { ...drawing, lines: drawing.lines.map((entry) => ({ ...entry, shown: ["fluid", "size"] })) };
+    const gauge = place("pressure-gauge", 100, -80);
+    drawing = connect(drawing, { part: gauge, port: "bottom" }, { line: pipe, at: { x: 100, y: 0 } })!.drawing;
+    const halves = drawing.lines.filter((entry) => entry.fluid === "rp1" && entry.id !== drawing.lines.at(-1)!.id);
+    expect(halves.map((entry) => entry.shown)).toEqual([["fluid", "size"], ["size"]]);
 });

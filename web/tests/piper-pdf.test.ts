@@ -127,3 +127,35 @@ test("a text block prints in its font: Times, Courier, bold, italic, as PDF's st
     expect(content).toMatch(/\/F8 [\d.]+ Tf[\s\S]*?\(Times words\) Tj/); // Times-BoldItalic
     expect(content).toMatch(/\/F9 [\d.]+ Tf[\s\S]*?\(Courier words\) Tj/); // Courier
 });
+
+test("a line of words set in several ways prints as one, anchored as one: each run after its first where it ended", async () => {
+    // The same words twice, centered on the same point: once in one run, once in two (the second red).
+    const figure = {
+        w: 100,
+        h: 40,
+        paths: [],
+        texts: [
+            { x: 0, y: -10, lines: ["AB"], size: 10 },
+            { x: 0, y: 10, lines: ["AB"], runs: [[{ text: "A" }, { text: "B", color: "#ff0000" }]], size: 10 },
+        ],
+        ports: [],
+    };
+    const part = newPart("figure", { x: 0, y: 0 }, { w: 100, h: 40, props: { figure: JSON.stringify(figure) } });
+    const text = latin1(
+        new Uint8Array(await (await pdfOf({ ...emptyDrawing(), parts: [part] }, META, "fit")).arrayBuffer()),
+    );
+    const start = text.indexOf("stream\n") + "stream\n".length;
+    const content = await inflate(
+        Uint8Array.from(text.slice(start, text.indexOf("\nendstream")), (char) => char.charCodeAt(0)),
+    );
+    const left = (words: string) =>
+        [...content.matchAll(new RegExp(`1 0 0 -1 ([\\d.-]+) [\\d.-]+ Tm\\n\\(${words}\\) Tj`, "g"))].map((match) =>
+            Number(match[1]),
+        );
+    const [whole] = left("AB");
+    const [a] = left("A");
+    const [b] = left("B");
+    expect(a).toBeCloseTo(whole!, 1); // its first run starts where the whole line would
+    expect(b! - a!).toBeCloseTo(6.67, 1); // its second where the first ended: Helvetica's A, at 10 points
+    expect(content).toContain("1 0 0 rg"); // the red one, red
+});

@@ -560,15 +560,27 @@ class Writer {
                 x = last.x + this.width(last.text, last.style);
             }
         }
-        for (const run of runs) {
+        // Each chunk of runs (one placed where it says, and those carrying on after it: a line of words set in several
+        // ways) is anchored as one, as SVG anchors a text chunk: from its start, its middle, or its end.
+        const shifts = runs.map(() => 0);
+        for (let start = 0; start < runs.length;) {
+            let end = start + 1;
+            while (end < runs.length && !runs[end]!.chunk) {
+                end++;
+            }
+            const anchor = runs[start]!.style.anchor;
+            const width = runs.slice(start, end).reduce((total, run) => total + this.width(run.text, run.style), 0);
+            shifts.fill(anchor === "middle" ? -width / 2 : anchor === "end" ? -width : 0, start, end);
+            start = end;
+        }
+        for (const [index, run] of runs.entries()) {
             const bytes = encode(run.text.replace(/\s+/g, " "));
             if (bytes.length === 0) {
                 continue;
             }
             const size = run.style.fontSize;
             const spacing = this.spacing(run.style);
-            const width = widthOf(bytes, run.style.bold, run.style.family) * size + spacing * bytes.length;
-            const left = run.x - (run.style.anchor === "middle" ? width / 2 : run.style.anchor === "end" ? width : 0);
+            const left = run.x + shifts[index]!;
             const base =
                 run.y + (run.style.baseline === "central" || run.style.baseline === "middle" ? 0.35 * size : 0);
             const fill = rgb(run.style.fill);

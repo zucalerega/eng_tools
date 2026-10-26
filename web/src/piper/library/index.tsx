@@ -2,6 +2,7 @@ import type { Drawing, Part } from "../drawing";
 import { worldBox, type Box } from "../geometry";
 import { ink } from "./draw";
 import { EQUIPMENT_KINDS } from "./equipment";
+import { figure } from "./figures";
 import { FITTING_KINDS } from "./fittings";
 import { FLOW_KINDS } from "./flow";
 import { INSTRUMENT_KINDS } from "./instruments";
@@ -22,6 +23,7 @@ const ALL: Kind[] = [
     ...EQUIPMENT_KINDS,
     ...FITTING_KINDS,
     ...NOTE_KINDS,
+    figure,
 ];
 
 const KINDS = new Map(ALL.map((kind) => [kind.id, kind]));

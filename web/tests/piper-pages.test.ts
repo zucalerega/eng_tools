@@ -208,7 +208,7 @@ test("a Visio drawing's pages are one diagram's, their fluids shared, one for ea
             name,
             page: name,
             drawing,
-            report: { page: name, parts: 1, lines: 0, notes: 0, boxes: [], dropped: 0 },
+            report: { page: name, parts: 1, lines: 0, notes: 0, figures: 0, drawn: [], dropped: 0 },
         };
     };
     const document = visioDocument([page("Vehicle", "#ff0000"), page("Stand", "#ff0000"), page("GSE", "#cc0000")]);

@@ -898,6 +898,7 @@ function ManyPanel({
 const OWN_PROPS: Record<string, ReadonlySet<string>> = {
     offpage: new Set(["page", "part"]),
     picture: new Set(["image", "imageWidth", "imageHeight"]),
+    figure: new Set(["figure"]),
 };
 
 /**

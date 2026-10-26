@@ -85,7 +85,7 @@ function mendEnds(path: Point[], from: PlacedEnd, to: PlacedEnd, boxes: Box[]): 
  * moved move with it, along the run they're on, so the line stays orthogonal. An end that now faces away from the
  * line is routed around to it (mendEnds).
  */
-function follow(before: Point[], from: PlacedEnd, to: PlacedEnd, boxes: Box[]): Point[] {
+export function follow(before: Point[], from: PlacedEnd, to: PlacedEnd, boxes: Box[]): Point[] {
     const bends = before.slice(1, -1).map((point) => ({ ...point }));
     const was = { from: before[0]!, to: before[before.length - 1]! };
     if (bends.length === 0) {

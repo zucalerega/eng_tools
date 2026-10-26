@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "vitest";
 import { documentOf, emptyDrawing, type Document, type Drawing, type Part } from "../src/piper/drawing";
 import { addPart, connect, updateLine, updatePart } from "../src/piper/edit";
+import { figureOf } from "../src/piper/library/figures";
 import { presetOf } from "../src/piper/library/index";
 import type { Catalog, ModelPart } from "../src/piper/sim/api";
 import { coldFlow, pressurizedFlow, vespula } from "../src/piper/sim/examples";
@@ -9,7 +10,9 @@ import { buildModel, readChoices, roleChoices, type Built } from "../src/piper/s
 import { applyKnobs, comparisons, knobsOf, withModelSetting, withPartSim } from "../src/piper/sim/settings";
 import { ATMOSPHERE, PSI } from "../src/piper/sim/units";
 import type { TestChannel, TestDetail } from "../src/piper/testdata";
+import { readVisio } from "../src/piper/visio";
 import { Team } from "./team";
+import { FEED, GLUE, shape, vsdx } from "./visio";
 
 // A P&ID as a simulation's model (Simulation mode): what each part and line is in it, what flows where, what it's
 // linked to in a test, and its settings, kept on the P&ID. The parts a model can have are the server's (Yorg's
@@ -313,6 +316,47 @@ test("what the model leaves out, or does differently than it might seem, it says
         "BV-1's outlet goes nowhere, so the model has it capped: draw its line on to where it goes (a vent, for the atmosphere).",
         "P-1 isn't simulated: the lines at it end there.",
     ]);
+});
+
+test("figures a drawing imported from Visio has are only drawn: the model says so of those lines end at", async () => {
+    const read = async (shapes: string, glue: string) =>
+        (await readVisio(new Blob([vsdx(shapes, glue)]), "Feed.vsdx"))[0]!.drawing;
+    const said = (part: Part) =>
+        figureOf(part)
+            .texts.flatMap((text) => text.lines)
+            .join(" ");
+    const about = (built: Built, figures: Part[]) =>
+        built.findings.filter((one) => figures.some((part) => one.items.includes(part.id)));
+
+    // The feed system's DAQ box, a line glued to it.
+    const feed = await read(FEED, GLUE);
+    const daq = feed.parts.find((part) => part.kind === "figure")!;
+    expect(about(buildModel(documentOf(feed), catalog, null), [daq])).toEqual([
+        {
+            text: "DAQ is a figure, only drawn, so it isn't simulated: the lines at it end there.",
+            items: [daq.id],
+            problem: false,
+        },
+    ]);
+
+    // And a box of no words, a line glued to it too, and a title that nothing meets: one note of those lines end at.
+    const more = [
+        shape(10, { cells: { PinX: 8, PinY: 1, Width: 2, Height: 0.5 }, text: "Feed system", outline: true }),
+        shape(11, { cells: { PinX: 8, PinY: 3, Width: 1, Height: 0.6 }, outline: true }),
+        shape(12, { master: 5, cells: { BeginX: 7.5, BeginY: 3, EndX: 7, EndY: 3 } }),
+    ].join("");
+    const drawing = await read(FEED + more, `${GLUE}<Connect FromSheet="12" FromCell="BeginX" ToSheet="11"/>`);
+    const figures = drawing.parts.filter((part) => part.kind === "figure");
+    expect(figures.map(said).sort()).toEqual(["", "DAQ", "Feed system"]);
+    const built = buildModel(documentOf(drawing), catalog, null);
+    expect(figures.map((part) => built.placed.get(part.id)?.role)).toEqual(["none", "none", "none"]);
+    const [note] = about(built, figures);
+    expect(about(built, figures).length).toBe(1);
+    expect([note!.text, note!.problem]).toEqual([
+        "2 figures (DAQ) are only drawn, so they aren't simulated: the lines at them end there.",
+        false,
+    ]);
+    expect(note!.items.map((id) => said(figures.find((part) => part.id === id)!)).sort()).toEqual(["", "DAQ"]);
 });
 
 test("a part's settings in the model go back onto it, and onto each line of a point; a fit's, where they fit", () => {

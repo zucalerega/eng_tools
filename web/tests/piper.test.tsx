@@ -963,8 +963,7 @@ test("Import Visio makes a diagram of a drawing, in the folder it's imported in,
     expect(dialog.getByText(new RegExp(`It becomes a diagram in ${place.name}`))).toBeTruthy();
     await userEvent.click(dialog.getByRole("button", { name: "Import" }));
     const done = within(await screen.findByRole("dialog", { name: "Imported" }));
-    expect(done.getByText(/3 parts, 4 lines, 1 note/)).toBeTruthy();
-    expect(done.getByText(/Kept as boxes, since Piper has no part for them: Sheet/)).toBeTruthy();
+    expect(done.getByText(/3 parts, 4 lines, 1 note, 1 shape drawn as in Visio/)).toBeTruthy();
     await userEvent.click(done.getByRole("link", { name: `Feed ${team.folder}` }));
     const svg = await screen.findByRole("application", { name: "Drawing" });
     expect(within(svg).getByRole("button", { name: "V-1" })).toBeTruthy();

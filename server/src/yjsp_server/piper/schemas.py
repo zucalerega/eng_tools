@@ -9,7 +9,7 @@ from pydantic_core import ErrorDetails
 from ..api.schemas import FolderPath, UserRef
 from ..errors import ApiError
 from ..models import User
-from .models import Diagram, Revision
+from .models import Approval, Diagram, Release, Revision
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 MAX_PARTS = 5000
@@ -138,6 +138,16 @@ class RevisionRestoreIn(BaseModel):
     version: int = Field(ge=1)  # the diagram's version, as a save names it
 
 
+class ReleaseIn(BaseModel):
+    revision: int = Field(ge=1)  # the revision to release, by number
+    approvers: list[int] = Field(max_length=100)  # their accounts' ids: at least one besides whoever asks
+    note: str = Field("", max_length=2000)  # what it's for: "For HF-3's test readiness review"
+
+
+class DecisionIn(BaseModel):
+    comment: str = Field("", max_length=2000)  # why, for a rejection
+
+
 class DiagramOut(BaseModel):
     id: int
     name: str
@@ -155,6 +165,8 @@ class DiagramOut(BaseModel):
     deleted_at: datetime | None
     deleted_by: UserRef | None
     can_delete: bool  # you made it (or you're an admin): you can delete it, and restore it
+    released: str | None = None  # its latest release's letter ("B"), if it's been released
+    released_revision: int | None = None  # and the revision that is
 
     @classmethod
     def fields(cls, diagram: Diagram, can_delete: bool) -> dict[str, Any]:
@@ -175,6 +187,8 @@ class DiagramOut(BaseModel):
             "deleted_at": diagram.deleted_at,
             "deleted_by": _ref(diagram.deleter),
             "can_delete": can_delete,
+            "released": diagram.released,
+            "released_revision": diagram.released_revision,
         }
 
     @classmethod
@@ -198,9 +212,11 @@ class RevisionOut(BaseModel):
     saved_at: datetime  # its last save
     author: UserRef | None
     restored_from: int | None  # the revision it's a copy of, if it was restored from one
+    released: str | None = None  # its letter, if it's been released ("B"): it stays as it is
+    release_pending: bool = False  # a release of it is waiting for its approvers: it stays as it is too
 
     @classmethod
-    def fields(cls, revision: Revision) -> dict[str, Any]:
+    def fields(cls, revision: Revision, mark: tuple[str | None, bool] = (None, False)) -> dict[str, Any]:
         return {
             "number": revision.number,
             "note": revision.note,
@@ -209,16 +225,65 @@ class RevisionOut(BaseModel):
             "saved_at": revision.saved_at,
             "author": _ref(revision.author),
             "restored_from": revision.restored_from,
+            "released": mark[0],
+            "release_pending": mark[1],
         }
 
     @classmethod
-    def of(cls, revision: Revision) -> "RevisionOut":
-        return cls(**cls.fields(revision))
+    def of(cls, revision: Revision, mark: tuple[str | None, bool] = (None, False)) -> "RevisionOut":
+        """mark: its release's letter, and whether one's waiting (releases.marks)."""
+        return cls(**cls.fields(revision, mark))
 
 
 class RevisionDetailOut(RevisionOut):
     drawing: dict[str, Any]
 
     @classmethod
-    def of_detail(cls, revision: Revision, drawing: dict[str, Any]) -> "RevisionDetailOut":
-        return cls(**RevisionOut.fields(revision), drawing=drawing)
+    def of_detail(
+        cls, revision: Revision, drawing: dict[str, Any], mark: tuple[str | None, bool] = (None, False)
+    ) -> "RevisionDetailOut":
+        return cls(**RevisionOut.fields(revision, mark), drawing=drawing)
+
+
+class ApprovalOut(BaseModel):
+    approver: UserRef
+    decision: str  # pending, approved, rejected
+    comment: str
+    decided_at: datetime | None
+
+    @classmethod
+    def of(cls, approval: Approval) -> "ApprovalOut":
+        return cls(
+            approver=UserRef.of(approval.approver),
+            decision=approval.decision,
+            comment=approval.comment,
+            decided_at=approval.decided_at,
+        )
+
+
+class ReleaseOut(BaseModel):
+    id: int
+    revision: int  # the revision it releases, by number
+    letter: str | None  # "A", "B"..., once it's released
+    note: str
+    state: str  # pending (waiting for its approvers), released, rejected, withdrawn
+    requested_at: datetime
+    requested_by: UserRef | None
+    decided_at: datetime | None  # when it was released, rejected, or withdrawn
+    approvals: list[ApprovalOut]  # each approver's say, in the order they were named
+    can_withdraw: bool  # it's waiting, and you asked for it (or you're an admin)
+
+    @classmethod
+    def of(cls, release: Release, user: User) -> "ReleaseOut":
+        return cls(
+            id=release.id,
+            revision=release.revision,
+            letter=release.letter,
+            note=release.note,
+            state=release.state,
+            requested_at=release.requested_at,
+            requested_by=_ref(release.requester),
+            decided_at=release.decided_at,
+            approvals=[ApprovalOut.of(approval) for approval in release.approvals],
+            can_withdraw=release.state == "pending" and (release.requested_by == user.id or user.is_admin),
+        )

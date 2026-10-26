@@ -5,7 +5,7 @@ import { pageFor, pathOperators, pdfOf } from "../src/piper/pdf";
 // The PDF export: a whole file (its objects where its cross-reference table says, the page the paper chosen, turned
 // the drawing's way), the drawing in PDF's own operators, and its words as text.
 
-const META = { name: "Feed system", revision: 3, savedAt: "2026-10-23T12:00:00Z", by: "Chief" };
+const META = { name: "Feed system", revision: "12 (after B)", savedAt: "2026-10-23T12:00:00Z", by: "Chief" };
 
 const latin1 = (bytes: Uint8Array) => Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
 
@@ -56,12 +56,12 @@ test("the drawing's in PDF's own operators, its words as text", async () => {
     expect(lines.filter((line) => line === "BT").length).toBe(lines.filter((line) => line === "ET").length);
 });
 
-test("on a drawing sheet: a border with its zones, the named revisions, and a title block", async () => {
+test("on a drawing sheet: a border with its zones, the releases, and a title block", async () => {
     const drawing = example();
     const sheet = {
         project: "Vespula/Prop",
         diagram: 2,
-        revisions: [{ number: 12, note: "Rev B: vent valve for HF-3", date: "2026-10-20", by: "Chief" }],
+        revisions: [{ rev: "B", note: "Vent valve for HF-3", date: "2026-10-20", by: "Bob, Cy" }],
         titleBlock: true,
     };
     const text = latin1(new Uint8Array(await (await pdfOf(drawing, META, "tabloid", sheet)).arrayBuffer()));
@@ -71,7 +71,9 @@ test("on a drawing sheet: a border with its zones, the named revisions, and a ti
     );
     for (const words of [
         "(YELLOW JACKET SPACE PROGRAM) Tj",
-        "(Rev B: vent valve for HF-3) Tj",
+        "(Vent valve for HF-3) Tj",
+        "(Bob, Cy) Tj", // who approved it
+        "(12 \\(after B\\)) Tj", // the revision printed, after Rev B
         "(Vespula/Prop) Tj",
         "(No. 2) Tj",
     ]) {

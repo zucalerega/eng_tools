@@ -90,6 +90,18 @@ export function Toolbar({
                 <button type="button" className="piper-name" title="Rename, move, or describe it" onClick={onRename}>
                     {diagram.name}
                 </button>
+                {diagram.released && (
+                    <span
+                        className={`badge piper-release-badge${
+                            diagram.released_revision === diagram.revision ? " piper-badge-released" : ""
+                        }`}
+                        title={`Rev ${diagram.released} is revision ${diagram.released_revision}: History has its releases`}
+                    >
+                        {diagram.released_revision === diagram.revision
+                            ? `Rev ${diagram.released}, released`
+                            : `Draft after Rev ${diagram.released}`}
+                    </span>
+                )}
                 <span
                     className={`piper-status piper-status-${status}`}
                     role="status"

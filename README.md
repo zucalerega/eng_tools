@@ -383,6 +383,11 @@ the keys.
   If someone saved it while you had it open, it asks whether to keep yours (theirs stays in
   the history), save yours as a new diagram, or load theirs. **History** lists its revisions:
   look at one, name one (Rev B, for HF-3) to keep it as it is, or restore it.
+- **Releases**: for a design review or before a test, **Release…** a revision, saying what
+  it's for, to approvers you pick (at least one besides you). Each approves it or rejects it
+  with why; once all of them approve, it's released as the diagram's next Rev (A, B...) and
+  never changes, and editing goes on in a draft after it. One waits at a time; whoever asked
+  can withdraw it. A PDF on a drawing sheet lists the releases and who approved each.
 - **Test data**: pick a test from Yorg, and each instrument shows its channel's value and each
   valve whether it was open, at the time on the timeline: drag it or play the test. A part
   reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test

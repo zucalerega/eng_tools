@@ -248,6 +248,17 @@ const TOPICS: Topic[] = [
                     <em>Name</em> one (<code>Rev B, for HF-3</code>) to keep it as it is.
                 </li>
                 <li>
+                    Release one for a design review or before a test: <em>Release…</em> on a revision, say what it's
+                    for, and pick its approvers (at least one besides you). Each approves it or rejects it, saying why;
+                    once they all approve, it's the diagram's next release, Rev A, then B..., and it never changes.
+                    Editing goes on in the revisions after it, and the diagram's name says <em>Draft after Rev A</em>.
+                </li>
+                <li>
+                    One release waits at a time, each of a revision after the last released, and whoever asked can
+                    withdraw it. A PDF on a drawing sheet lists the releases, with who approved each, and its title
+                    block says which revision it is (<code>A</code>, or <code>7 (after A)</code>).
+                </li>
+                <li>
                     Whoever made a diagram, or an admin, can delete it: it waits in{" "}
                     <Link to="/piper/deleted">Deleted diagrams</Link>, with its history, to be restored. Deleted while
                     you have it open, it says so; restore it there, and what you changed is saved.

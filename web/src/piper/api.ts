@@ -19,6 +19,8 @@ export interface Diagram {
     deleted_at: string | null;
     deleted_by: UserRef | null;
     can_delete: boolean; // yours, or you're an admin
+    released?: string | null; // its latest release's letter ("B"), if it's had one
+    released_revision?: number | null; // and the revision that is
 }
 
 export interface DiagramDetail extends Diagram {
@@ -33,10 +35,33 @@ export interface Revision {
     saved_at: string; // its last save
     author: UserRef | null;
     restored_from: number | null;
+    released?: string | null; // its letter, if it's been released: it stays as it is
+    release_pending?: boolean; // a release of it is waiting for its approvers: it stays as it is too
 }
 
 export interface RevisionDetail extends Revision {
     drawing: unknown;
+}
+
+export interface Approval {
+    approver: UserRef;
+    decision: "pending" | "approved" | "rejected";
+    comment: string;
+    decided_at: string | null;
+}
+
+/** A revision put forward as a diagram's next release, to the approvers named for it (server: piper/releases.py). */
+export interface Release {
+    id: number;
+    revision: number;
+    letter: string | null; // "A", "B"..., once it's released
+    note: string;
+    state: "pending" | "released" | "rejected" | "withdrawn";
+    requested_at: string;
+    requested_by: UserRef | null;
+    decided_at: string | null;
+    approvals: Approval[];
+    can_withdraw: boolean;
 }
 
 /** What the server says when someone saved a diagram after it was opened here (409 changed). */
@@ -70,4 +95,13 @@ export const piper = {
         request<Revision>("PATCH", `${diagram(id)}/revisions/${number}`, { note }),
     restoreRevision: (id: number, number: number, version: number) =>
         request<DiagramDetail>("POST", `${diagram(id)}/revisions/${number}/restore`, { version }),
+    releases: (id: number) => request<Release[]>("GET", `${diagram(id)}/releases`),
+    /** A revision put forward as the next release, to these approvers (accounts' ids). */
+    requestRelease: (id: number, revision: number, approvers: number[], note: string) =>
+        request<Release>("POST", `${diagram(id)}/releases`, { revision, approvers, note }),
+    approve: (id: number, release: number, comment = "") =>
+        request<Release>("POST", `${diagram(id)}/releases/${release}/approve`, { comment }),
+    reject: (id: number, release: number, comment: string) =>
+        request<Release>("POST", `${diagram(id)}/releases/${release}/reject`, { comment }),
+    withdraw: (id: number, release: number) => request<Release>("POST", `${diagram(id)}/releases/${release}/withdraw`),
 };

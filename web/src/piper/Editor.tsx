@@ -21,7 +21,7 @@ import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
 import { channelName, findChannel, plotLink } from "./testdata";
-import { PAPERS, pdfOf } from "./pdf";
+import { PAPERS, pdfOf, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
 import { Toolbar, type ExportKind } from "./Toolbar";
 import { readers, useTest } from "./useTest";
@@ -111,7 +111,7 @@ export function EditorPage({ id }: { id: number }) {
 
     const meta: DiagramMeta = {
         name: diagram.name,
-        revision: diagram.revision,
+        revision: revisionLabel(diagram, diagram.revision, latestRelease(diagram)),
         savedAt: diagram.updated_at,
         by: diagram.created_by?.name ?? "",
     };
@@ -318,6 +318,7 @@ export function EditorPage({ id }: { id: number }) {
                         <div className="piper-banner piper-looking" role="status">
                             <span>
                                 Revision {looking.number}
+                                {looking.released ? `, Rev ${looking.released}, released` : ""}
                                 {looking.note ? ` (${looking.note})` : ""}, by {looking.author?.name ?? "someone"},{" "}
                                 {formatTime(looking.saved_at)}
                             </span>
@@ -343,6 +344,12 @@ export function EditorPage({ id }: { id: number }) {
                         looking={looking?.number ?? null}
                         onLook={setLooking}
                         onRestore={restoreRevision}
+                        onReleased={(release) =>
+                            setDiagram(
+                                (now) =>
+                                    now && { ...now, released: release.letter, released_revision: release.revision },
+                            )
+                        }
                         onClose={() => {
                             setPanel(null);
                             setLooking(null);
@@ -378,24 +385,19 @@ export function EditorPage({ id }: { id: number }) {
                     onCancel={() => setPdfing(false)}
                     onSave={async (paper, framed) => {
                         const shown = looking ? readDrawing(looking.drawing) : store.getState().drawing;
-                        // On a sheet: its revisions those named, the latest first; its title block the sheet's, unless
-                        // the drawing has its own.
+                        const printed = looking
+                            ? { ...meta, revision: revisionLabel(diagram, looking.number, looking.released) }
+                            : meta;
+                        // On a sheet: its title block the sheet's, unless the drawing has its own.
                         const sheet = framed
                             ? {
                                   project: diagram.folder,
                                   diagram: diagram.id,
-                                  revisions: (await piper.revisions(diagram.id))
-                                      .filter((revision) => revision.note)
-                                      .map((revision) => ({
-                                          number: revision.number,
-                                          note: revision.note,
-                                          date: new Date(revision.saved_at).toLocaleDateString("en-CA"),
-                                          by: revision.author?.name ?? "",
-                                      })),
+                                  revisions: await sheetRevisions(diagram.id),
                                   titleBlock: !shown.parts.some((part) => part.kind === "titleblock"),
                               }
                             : null;
-                        download(fileName(diagram.name, "pdf"), await pdfOf(shown, meta, paper, sheet));
+                        download(fileName(diagram.name, "pdf"), await pdfOf(shown, printed, paper, sheet));
                         setPdfing(false);
                     }}
                 />
@@ -479,6 +481,47 @@ function PdfDialog({
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
+}
+
+/** The diagram's latest revision's letter, if that's the one released. */
+const latestRelease = (diagram: Diagram): string | null =>
+    diagram.released && diagram.released_revision === diagram.revision ? diagram.released : null;
+
+/**
+ * A revision as its title block writes it (DiagramMeta.revision): a released one's letter ("B"), else its number, and
+ * if it's after the diagram's latest release, which ("7 (after B)").
+ */
+function revisionLabel(diagram: Diagram, number: number, letter: string | null | undefined): string {
+    if (letter) {
+        return letter;
+    }
+    const after = diagram.released && number > (diagram.released_revision ?? 0) ? ` (after ${diagram.released})` : "";
+    return `${number}${after}`;
+}
+
+/**
+ * What a sheet lists in its revisions block, the latest first: the diagram's releases, each with its letter, what it
+ * was for, when, and who approved it; or, before it has any, its named revisions.
+ */
+async function sheetRevisions(id: number): Promise<Sheet["revisions"]> {
+    const day = (at: string) => new Date(at).toLocaleDateString("en-CA");
+    const released = (await piper.releases(id)).filter((release) => release.state === "released");
+    if (released.length > 0) {
+        return released.map((release) => ({
+            rev: release.letter ?? "",
+            note: release.note,
+            date: release.decided_at ? day(release.decided_at) : "",
+            by: release.approvals.map((approval) => approval.approver.name).join(", "),
+        }));
+    }
+    return (await piper.revisions(id))
+        .filter((revision) => revision.note)
+        .map((revision) => ({
+            rev: String(revision.number),
+            note: revision.note,
+            date: day(revision.saved_at),
+            by: revision.author?.name ?? "",
+        }));
 }
 
 /** A drawing to look at, not change: a revision from the history, or a deleted diagram. */

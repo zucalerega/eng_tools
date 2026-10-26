@@ -62,6 +62,23 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   history. Naming a revision ("Rev B, for HF-3") keeps it as it is: the next save starts
   another. Any revision opens to look at, and restoring one makes it the drawing again, as a
   new revision that says where it came from; the drawings after it stay in the history.
+- **Releases** (`releases.py`, `piper_releases` and `piper_approvals`) make a revision the P&ID
+  of record, for a design review or before a test. Anyone asks for a revision to be released,
+  saying what it's for and naming its approvers, at least one besides themself (422
+  `needs_approver`), all of them active members. Each approves it or rejects it with a comment;
+  once every one has approved, it's released, with the diagram's next letter (A, B, ... Z, AA,
+  as spreadsheets letter columns), and the diagram notes its latest release
+  (`piper_diagrams.released`, `released_revision`). A rejection ends the request, and so does
+  whoever asked (or an admin) withdrawing it. A revision released, or waiting to be, is kept as
+  it is: a save never amends it (the next starts another revision) and its name stays (409
+  `revision_released`, `release_pending`). A diagram has one release waiting at a time (409
+  `release_pending`), each of a revision after the last released (409 `older_than_released`);
+  only those named approve (403 `not_an_approver`), once (409 `already_decided`). Writes to a
+  diagram's releases go one at a time: each starts with an UPDATE of the diagram's row, which
+  takes SQLite's write lock (Postgres' row lock). The editor's name says "Rev B, released" or
+  "Draft after Rev B"; a PDF on a sheet lists the releases (each one's letter, what it was for,
+  when, and who approved it) where it listed named revisions, and its title block writes the
+  revision printed as its letter, or its number after the latest release ("7 (after B)").
 
 ## The editor
 
@@ -239,15 +256,17 @@ site's own endpoints, are in [design.md](design.md#api).
 | `GET /api/piper/diagrams/{id}/revisions` | its revisions, the latest first, without their drawings |
 | `GET`/`PATCH /api/piper/diagrams/{id}/revisions/{number}` | a revision with its drawing; name it `{note}` ("": no name) |
 | `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` as for a save) |
+| `GET /api/piper/diagrams/{id}/releases` | its releases, the latest asked for first, each with its approvals and `can_withdraw` |
+| `POST /api/piper/diagrams/{id}/releases` | ask for a revision to be released `{revision, approvers, note}` (approvers: accounts' ids): 422 `needs_approver`, 409 `release_pending`, `older_than_released` |
+| `POST /api/piper/diagrams/{id}/releases/{release}/approve`, `/reject` | an approver's say `{comment}`: released with the next letter once all have approved; 403 `not_an_approver`, 409 `already_decided` |
+| `POST /api/piper/diagrams/{id}/releases/{release}/withdraw` | take back a release that's waiting (whoever asked, or an admin, else 403 `not_yours`) |
 
 ## Roadmap
 
 1. **Piper** (first version, October 2026): diagrams with history, the library, lines routed
    and snapped, fluids and states, properties, Visio's drawings imported, exports (PDF on a
-   drawing sheet), test data from Yorg, and a Help page (`Help.tsx`, `/piper/help`: keep it in
-   step with the features). Next:
-   - **Releasing a diagram**: locking one as the P&ID of record (for a test's procedures), so
-     changes go into a new revision that's released in turn.
+   drawing sheet), test data from Yorg, releases with approvers, and a Help page (`Help.tsx`,
+   `/piper/help`: keep it in step with the features). Next:
    - **Several people at once**: seeing who else has a diagram open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.
    - **A diagram as a Yorg model**: a P&ID's parts and lines as a system model to simulate,

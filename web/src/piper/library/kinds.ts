@@ -63,7 +63,9 @@ export interface DrawContext {
 /** The diagram's own particulars, for a title block. */
 export interface DiagramMeta {
     name: string;
-    revision: number | null;
+    // Its revision as a title block writes it: a released one's letter ("B"), else its number ("7"), and after a
+    // release, which release it follows ("7 (after B)"). "": none.
+    revision: string;
     savedAt: string | null; // ISO time of its last save
     by: string; // who made it
 }

@@ -4,12 +4,14 @@ import { Dialog, Notice } from "../components";
 import { FolderPicker } from "../FolderPicker";
 import { formatTime } from "../format";
 import { navigate, usePathname, useSearch } from "../router";
+import { useSession } from "../session";
 import { piper, type Diagram, type RevisionDetail, type Scheme } from "./api";
 import { monochrome } from "./fluids";
 import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
 import { commandsOf, useEditorKeys } from "./commands";
 import { DiagramView } from "./DiagramView";
+import { useEditLock } from "./editing";
 import { pageOf, readDocument, type Document, type Drawing, type Point } from "./drawing";
 import { addPart, drawingBox, updatePart, withPicture } from "./edit";
 import { download, fileName, partsList, pngOf, printDrawing, svgOf } from "./exports";
@@ -29,10 +31,11 @@ import { PageTabs } from "./PageTabs";
 import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
 
-// A diagram's page: the editor, the whole window under the top bar. The library's on the left, the drawing in the
-// middle, the inspector on the right, and under them, when they're open, the test the drawing's read against and its
-// history. A test and the time on its timeline are in the address (?test=5&t=12.5), so a link opens the same moment.
-// Its pages are tabs under the drawing; the drawing is the page being worked on.
+// A diagram's page: the editor, the whole window under the top bar. The drawing's in the middle, the inspector on the
+// right, and under them, when they're open, the test the drawing's read against and its history. A test and the time on
+// its timeline are in the address (?test=5&t=12.5), so a link opens the same moment. Its pages are tabs under the
+// drawing; the drawing is the page being worked on. It opens to be looked at: Edit makes it yours to change, with the
+// library on the left, until you're done (editing.ts). A diagram just made opens to edit (?edit=1).
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -45,7 +48,13 @@ export function EditorPage({ id }: { id: number }) {
     const [pdfing, setPdfing] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const [schemes, setSchemes] = useState<Scheme[] | null>(null);
-    const store = useMemo(() => new EditorStore(), []);
+    const [takingOver, setTakingOver] = useState(false);
+    const { me } = useSession();
+    const store = useMemo(() => {
+        const made = new EditorStore();
+        made.setReadOnly(true); // until it's yours to edit
+        return made;
+    }, []);
     const commands = useMemo(() => commandsOf(store), [store]);
     const drawing = useEditor(store, (state) => state.drawing);
     const page = useEditor(store, (state) => state.page);
@@ -55,12 +64,15 @@ export function EditorPage({ id }: { id: number }) {
     const [lookPage, setLookPage] = useState(0);
     const palette = withStates(usePalette(), drawing);
     const saving = useSaving(store, diagram, setDiagram);
+    const lock = useEditLock(diagram, saving, setDiagram);
     const fitted = useRef(false);
+    const opened = useRef(false); // asked to edit it as it opened (?edit), and did
     const pathname = usePathname();
     const search = new URLSearchParams(useSearch());
     const testParam = Number(search.get("test"));
     const testId = Number.isInteger(testParam) && testParam > 0 ? testParam : null;
     const finding = search.get("find");
+    const toEdit = search.has("edit");
     const [time, setTime] = useState(() => Number(search.get("t")) || 0);
     const { reading, problem: testProblem } = useTest(drawing, testId, time);
 
@@ -106,6 +118,26 @@ export function EditorPage({ id }: { id: number }) {
         }
     }, [diagram, commands, store, finding]);
 
+    // Made just now (or a copy of yours): opened to edit, and the address left as a link to look at it.
+    useEffect(() => {
+        if (diagram && toEdit && !opened.current) {
+            opened.current = true;
+            void lock.start();
+            const query = new URLSearchParams(window.location.search);
+            query.delete("edit");
+            const text = query.toString();
+            navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true, exact: true });
+        }
+    }, [diagram, toEdit]);
+
+    // Saving refused: someone else is editing it now. It's only looked at here, and its banner asks what becomes of
+    // the changes that weren't saved.
+    useEffect(() => {
+        if (saving.status === "locked") {
+            lock.lose(saving.locked, false);
+        }
+    }, [saving.status]);
+
     // A link to a test opens its panel; the test's start, if the time's not in it.
     useEffect(() => {
         if (testId !== null) {
@@ -120,8 +152,11 @@ export function EditorPage({ id }: { id: number }) {
         // Only when a test arrives: the timeline keeps the time in it after that.
     }, [reading?.detail]);
 
-    const editing = diagram !== null && !diagram.deleted_at && looking === null;
-    useEditorKeys(store, commands, editing && !renaming);
+    // The drawing as it is (not a revision, nor deleted): to look at, and, while it's yours, to change.
+    const live = diagram !== null && !diagram.deleted_at && looking === null;
+    const editing = live && lock.mine && saving.status !== "locked";
+    useEffect(() => store.setReadOnly(!editing), [store, editing]);
+    useEditorKeys(store, commands, live && !renaming && !takingOver);
 
     if (problem) {
         return <Notice tone="error">{problem}</Notice>;
@@ -237,6 +272,21 @@ export function EditorPage({ id }: { id: number }) {
         }
     }
 
+    /** What's here, kept as a diagram of its own (beside the one it was opened from), to go on editing. */
+    async function saveMineAsNew() {
+        try {
+            const copy = await piper.create({
+                name: `${diagram!.name} (my changes)`,
+                folder_id: diagram!.folder_id ?? null,
+                description: diagram!.description,
+                drawing: store.getState().document,
+            });
+            navigate(`/piper/diagrams/${copy.id}?edit=1`);
+        } catch (error) {
+            setNotice(`Yours isn't saved as a new diagram: ${message(error)}`);
+        }
+    }
+
     async function restoreRevision(number: number) {
         const restored = await piper.restoreRevision(diagram!.id, number, diagram!.version);
         setLooking(null);
@@ -262,6 +312,8 @@ export function EditorPage({ id }: { id: number }) {
                 commands={commands}
                 status={saving.status}
                 problem={saving.problem}
+                edit={lock}
+                me={me}
                 panel={panel}
                 onPanel={(next) => {
                     setPanel(next);
@@ -270,12 +322,15 @@ export function EditorPage({ id }: { id: number }) {
                     }
                 }}
                 onRename={() => setRenaming(true)}
+                onTakeOver={() => setTakingOver(true)}
                 onExport={(as) => void exportAs(as)}
             />
             {saving.status === "changed" && saving.changed && (
                 <div className="piper-banner" role="alert">
                     <span>
-                        {saving.changed.updated_by?.name ?? "Someone"} saved this diagram at{" "}
+                        {saving.changed.updated_by && saving.changed.updated_by.id === me?.id
+                            ? "You saved this diagram in another window at "
+                            : `${saving.changed.updated_by?.name ?? "Someone"} saved this diagram at `}
                         {formatTime(saving.changed.updated_at)}, after it was opened here. Your changes since aren't
                         saved yet.
                     </span>
@@ -286,23 +341,7 @@ export function EditorPage({ id }: { id: number }) {
                     >
                         Keep mine
                     </button>
-                    <button
-                        type="button"
-                        className="button-small"
-                        onClick={async () => {
-                            try {
-                                const copy = await piper.create({
-                                    name: `${diagram.name} (my changes)`,
-                                    folder_id: diagram.folder_id ?? null,
-                                    description: diagram.description,
-                                    drawing: store.getState().document,
-                                });
-                                navigate(`/piper/diagrams/${copy.id}`);
-                            } catch (error) {
-                                setNotice(`Yours isn't saved as a new diagram: ${message(error)}`);
-                            }
-                        }}
-                    >
+                    <button type="button" className="button-small" onClick={() => void saveMineAsNew()}>
                         Save mine as a new diagram
                     </button>
                     <button
@@ -315,6 +354,48 @@ export function EditorPage({ id }: { id: number }) {
                         }
                     >
                         Load theirs
+                    </button>
+                </div>
+            )}
+            {saving.status === "locked" && (
+                <div className="piper-banner" role="alert">
+                    <span>
+                        {saving.locked?.by.name ?? "Someone else"} is editing this diagram now
+                        {saving.locked ? ` (since ${formatTime(saving.locked.since)})` : ""}, so your changes since your
+                        last save aren't saved.
+                    </span>
+                    <button type="button" className="button-small button-primary" onClick={() => void saveMineAsNew()}>
+                        Save mine as a new diagram
+                    </button>
+                    <button
+                        type="button"
+                        className="button-small"
+                        onClick={() =>
+                            saving.loadTheirs().catch((error: unknown) => {
+                                setNotice(`Theirs didn't load: ${message(error)}`);
+                            })
+                        }
+                    >
+                        Load theirs
+                    </button>
+                </div>
+            )}
+            {lock.taken && saving.status !== "locked" && (
+                <div className="piper-banner piper-banner-info" role="status">
+                    <span>
+                        {lock.taken.by.name} is editing this diagram now, so it's only looked at here. Everything you
+                        changed was saved.
+                    </span>
+                    <button type="button" className="piper-close" aria-label="Dismiss" onClick={lock.dismiss}>
+                        ×
+                    </button>
+                </div>
+            )}
+            {lock.problem && (
+                <div className="piper-banner piper-banner-info" role="alert">
+                    <span>{lock.problem}</span>
+                    <button type="button" className="piper-close" aria-label="Dismiss" onClick={lock.dismiss}>
+                        ×
                     </button>
                 </div>
             )}
@@ -350,7 +431,7 @@ export function EditorPage({ id }: { id: number }) {
             <div className="piper-body">
                 {editing && <LibraryPanel store={store} palette={palette} onPlace={placeInView} />}
                 <div className="piper-stage">
-                    {editing ? (
+                    {live ? (
                         <Canvas
                             store={store}
                             commands={commands}
@@ -376,7 +457,7 @@ export function EditorPage({ id }: { id: number }) {
                             </button>
                         </div>
                     )}
-                    {editing && drawing.parts.length === 0 && <EmptyHint />}
+                    {live && drawing.parts.length === 0 && <EmptyHint editing={editing} />}
                     {(pageCount > 1 || editing || (lookedAt?.pages.length ?? 0) > 1) && (
                         <PageTabs
                             store={store}
@@ -386,7 +467,7 @@ export function EditorPage({ id }: { id: number }) {
                         />
                     )}
                 </div>
-                {editing && (
+                {live && (
                     <Inspector
                         store={store}
                         commands={commands}
@@ -479,6 +560,23 @@ export function EditorPage({ id }: { id: number }) {
                         setPdfing(false);
                     }}
                 />
+            )}
+            {takingOver && (
+                <Dialog
+                    title="Take over editing"
+                    confirm="Take over"
+                    onConfirm={() => {
+                        setTakingOver(false);
+                        void lock.start(true);
+                    }}
+                    onCancel={() => setTakingOver(false)}
+                >
+                    <p>
+                        {diagram.editing?.by.name ?? "Someone"} is editing this diagram. Taking it over makes it yours
+                        to edit instead: what they've saved stays, and they're told, with anything they hadn't saved yet
+                        left in their window for them to save as a diagram of its own.
+                    </p>
+                </Dialog>
             )}
             {renaming && (
                 <RenameDialog
@@ -632,7 +730,15 @@ function StillDrawing({ drawing, meta }: { drawing: Drawing; meta: DiagramMeta }
     );
 }
 
-function EmptyHint() {
+function EmptyHint({ editing }: { editing: boolean }) {
+    if (!editing) {
+        return (
+            <div className="piper-empty">
+                <h2>An empty diagram</h2>
+                <p>Nothing's drawn on it yet. Edit, at the top, to start drawing it.</p>
+            </div>
+        );
+    }
     return (
         <div className="piper-empty">
             <h2>An empty diagram</h2>

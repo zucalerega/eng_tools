@@ -54,8 +54,9 @@ const TOPICS: Topic[] = [
                     descriptions, and parts&apos; tags (<code>PT-101</code> finds the diagrams it&apos;s on).
                 </li>
                 <li>
-                    A diagram opens to the editor: the library of parts on the left, the drawing in the middle, and on
-                    the right whatever's selected, to name and describe. With nothing selected, it's the diagram's
+                    A diagram opens to be looked at: the drawing in the middle, and on the right whatever's selected, as
+                    it is. <em>Edit</em>, at the top, makes it yours to change, with the library of parts on the left; a
+                    diagram you've just made opens ready to edit. With nothing selected, the right side is the diagram's
                     fluids and colors.
                 </li>
                 <li>
@@ -321,13 +322,41 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "Editing, one at a time",
+        body: (
+            <ul>
+                <li>
+                    One person edits a diagram at a time, so no one's changes go over anyone else's. <em>Edit</em> makes
+                    it yours: until you're done, no one else can change it, and the diagrams list and everyone who has
+                    it open see that you're editing it. <em>Done editing</em> saves what&apos;s left and lets anyone
+                    edit it.
+                </li>
+                <li>
+                    While someone else is editing it, it says who, and <em>Edit</em> waits until they're done. You can
+                    still look at it, move around it, select parts to read them, see a test on it, and export it; what
+                    they save shows within half a minute, and as soon as you come back to the tab.
+                </li>
+                <li>
+                    Closing the tab, or going to another page, lets it go at once. Left open with nothing done in it,
+                    it's let go about 25 minutes after the last click or key (back at it, you go on editing, if no one
+                    else has started); a laptop shut or a browser that crashed lets it go ten minutes later.
+                </li>
+                <li>
+                    An admin can <em>Take over</em> from whoever's editing it. Their changes are saved as they make
+                    them; a change of theirs after that isn't saved over yours. They're told, and can save theirs as a
+                    new diagram, or load yours.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Saving and history",
         body: (
             <ul>
                 <li>
-                    A diagram saves itself a second after each change. If someone else saved it while you had it open,
-                    it stops and asks: keep yours (saved over theirs, which stays in the history), save yours as a new
-                    diagram, or load theirs.
+                    A diagram saves itself a second after each change while you're editing it. If it was saved from
+                    another window of yours after you opened it here, it stops and asks: keep yours (saved over the
+                    other, which stays in the history), save yours as a new diagram, or load the other.
                 </li>
                 <li>
                     Beside its name, <em>Not saved</em> says why: out of reach or signed out, it tries again on its own

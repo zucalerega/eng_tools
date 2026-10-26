@@ -16,9 +16,10 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
 ## Diagrams
 
 - **A diagram** is a drawing with a name, a folder, and a description. Everyone signed in (and
-  approved) sees every diagram, makes them, and changes them: a P&ID is the team's, and its
-  history keeps every change, so nothing anyone does to one is lost. Only whoever made one, or
-  an admin, deletes it, which hides it with everything kept, until they restore it.
+  approved) sees every diagram, makes them, and changes them, one person at a time: a P&ID is
+  the team's, and its history keeps every change, so nothing anyone does to one is lost. Only
+  whoever made one, or an admin, deletes it, which hides it with everything kept, until they
+  restore it.
 - **Folders** are their own, as Yorg's datasets' are (`piper_folders`, `folders.py`): each in
   another or at the top, its name unique in it whatever its case (409 `name_taken`), with no
   slashes. A diagram is in one by its id (`folder_id`, null at the top). Anyone makes, renames,
@@ -72,15 +73,41 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   the server refuses a save in format 1 over it (409 `drawing_newer`): a tab still running the
   Piper from before pages would save one page and lose the others. Restoring a revision from
   before pages is deliberate, and allowed.
+- **Editing** is one person at a time, so no one's save goes over anyone else's
+  (`diagrams.take_lock`, `editing.ts`). A diagram opens to be looked at: the store takes no
+  change (`readOnly`), the canvas only pans and selects, and the inspector's fields are only
+  read. **Edit** (`POST .../lock`) holds it for you: the diagram notes who (`locked_by`), since
+  when (`locked_at`), and when their editor last said so (`lock_seen_at`), and the server
+  refuses anyone else's save or restore (409 `locked`, with `details.editing`: who, and
+  since). Someone else editing it already: 409 `locked` to Edit too, unless an admin takes it
+  over (`force`; anyone else 403 `admin_only`). The editor says you're still at it every minute
+  (the same POST), except when nothing's been done in the tab for 15 minutes; the server lets
+  go of a hold it hasn't heard about in 10 minutes (`LOCK_LAPSES`), so a tab left open, a
+  laptop shut, or a browser that crashed never keeps a diagram from the team. Back at it, the
+  next click or key says so again, and you go on if no one else has started. **Done editing**
+  saves what's left, then lets go (`DELETE .../lock`); so do closing the tab and leaving the
+  page (`pagehide`, a `keepalive` request). Anyone's diagram response carries `editing` (null
+  when no one is, it's let go, or the diagram's deleted), so the list badges it, and a page that
+  has it open asks `GET .../lock` (no drawing) every 20 seconds, and on coming back to the tab,
+  for who's editing it and the version it's at, fetching the drawing when it's changed. A save
+  by whoever holds it says they're still at it (and holds it again, if it had lapsed and no one
+  took it); a save by someone not editing it (a tab from before editing, or the API) is taken
+  if no one is. Who holds a diagram changes one at a time: each change starts with an UPDATE of
+  its row (SQLite's write lock, Postgres' row lock). A diagram just made, or a copy, opens to
+  edit (`?edit=1`).
 - **Saving** is automatic: a second after the last change, the web app sends the whole drawing
   with the version it was changed from (`PUT /api/piper/diagrams/{id}/drawing`). The server
   takes it only if the diagram is still at that version (one `UPDATE ... WHERE version = ?`,
   the transaction's first write, so saves of a diagram go one at a time and only one from each
   version is taken), and gives it the next; otherwise someone saved since, and the 409
   `changed` says who, when, and the version it's at (`details`: `updated_by`, `updated_at`,
-  `version`, from the latest revision, so a rename doesn't name the renamer). The page then
-  stops saving and asks: keep yours (saved over theirs, as a revision of its own, so theirs
-  stays in the history), save yours as a new diagram, or load theirs. A diagram deleted since
+  `version`, from the latest revision, so a rename doesn't name the renamer). With editing one
+  at a time, that's a save from another window of yours, or from someone's tab after your hold
+  lapsed. The page then stops saving and asks: keep yours (saved over theirs, as a revision of
+  its own, so theirs stays in the history), save yours as a new diagram, or load theirs.
+  Someone else editing it now (409 `locked`: an admin took it over, or it lapsed and someone
+  took it) stops saving too, and the page is only looked at: save yours as a new diagram (which
+  opens to edit), or load theirs. A diagram deleted since
   it was opened (409 `deleted`) stops saving too, and the page shows it deleted; restoring it
   there saves what wasn't. A save the server can't take as it is (400, 413 too big, 422
   `invalid_drawing`) isn't sent again until the next change, which may fix it; any other
@@ -353,10 +380,13 @@ site's own endpoints, are in [design.md](design.md#api).
 | `PATCH`/`DELETE /api/piper/folders/{id}` | rename or move one `{name, parent_id}` (409 `name_taken`, `cycle`); delete an empty one (409 `not_empty`) |
 | `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder_id, description}` (or `folder`, a path); delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
 | `POST /api/piper/diagrams/{id}/restore` | restore a deleted diagram (whoever made it, or an admin) |
-| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `deleted` if it's deleted, 409 `drawing_newer` if the drawing's in an older format than the diagram's (a page of a diagram with pages); `fresh`: start a new revision even if the latest is yours |
+| `GET /api/piper/diagrams/{id}/lock` | the diagram without its drawing: who's editing it (`editing`: `by`, `since`; null if no one is), and its `version` |
+| `POST /api/piper/diagrams/{id}/lock` | start editing it, or say you're still at it `{force}` (optional body): 409 `locked` if someone else is (`details.editing`), 409 `deleted`; `force`: an admin taking it over (else 403 `admin_only`) |
+| `DELETE /api/piper/diagrams/{id}/lock` | done editing it: anyone can edit it now (nothing changes if it isn't yours) |
+| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `locked` if someone else is editing it (`details.editing`), 409 `deleted` if it's deleted, 409 `drawing_newer` if the drawing's in an older format than the diagram's (a page of a diagram with pages); `fresh`: start a new revision even if the latest is yours |
 | `GET /api/piper/diagrams/{id}/revisions` | its revisions, the latest first, without their drawings |
 | `GET`/`PATCH /api/piper/diagrams/{id}/revisions/{number}` | a revision with its drawing; name it `{note}` ("": no name) |
-| `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` as for a save) |
+| `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` and `locked` as for a save) |
 | `GET /api/piper/diagrams/{id}/releases` | its releases, the latest asked for first, each with its approvals and `can_withdraw` |
 | `POST /api/piper/diagrams/{id}/releases` | ask for a revision to be released `{revision, approvers, note}` (approvers: accounts' ids): 422 `needs_approver`, 409 `release_pending`, `older_than_released` |
 | `POST /api/piper/diagrams/{id}/releases/{release}/approve`, `/reject` | an approver's say `{comment}`: released with the next letter once all have approved; 403 `not_an_approver`, 409 `already_decided` |
@@ -374,7 +404,8 @@ site's own endpoints, are in [design.md](design.md#api).
    drawing sheet), test data from Yorg, releases with approvers, pages with printed sheets and
    off-page connectors between them, pictures of the team's own, and a Help page (`Help.tsx`, `/piper/help`: keep it in
    step with the features). Next:
-   - **Several people at once**: seeing who else has a diagram open, then editing together.
+   - **Several people at once**: one person edits a diagram at a time now, and everyone sees
+     who; next, seeing who else has it open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.
    - **A diagram as a Yorg model**: a P&ID's parts and lines as a system model to simulate,
      once Yorg's models are released.

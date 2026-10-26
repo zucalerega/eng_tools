@@ -64,10 +64,16 @@ class Diagram(Base):
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Who's editing it, if anyone: only they change its drawing until they're done, or until they haven't been heard
+    # from in a while (diagrams.LOCK_LAPSES). locked_at: since when; lock_seen_at: when their editor last said so.
+    locked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    locked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    lock_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
     editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
     deleter: Mapped[User | None] = relationship(foreign_keys=[deleted_by], lazy="selectin")
+    locker: Mapped[User | None] = relationship(foreign_keys=[locked_by], lazy="selectin")
     folder: Mapped[DiagramFolder | None] = relationship(lazy="selectin")
 
     @property

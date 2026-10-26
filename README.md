@@ -349,7 +349,7 @@ the keys.
   open one to see what's in it, with the way back up above its name, and rename it, or delete it
   once it's empty. **New diagram** makes one, empty or from an example (a pressure-fed engine's
   feed system), in the folder you're in. Drag diagrams or folders onto a folder (or a folder in
-  the way back up) to move them, or check diagrams and **Move to…**. Everyone can open, change,
+  the way back up) to move them, or check diagrams and **Move to…**. Everyone can open, edit,
   and move every diagram, and make and change folders; whoever made a diagram (or an admin) can
   delete it, checked ones together with **Delete…**, to **Deleted diagrams**, where they're
   checked and restored together. **Find diagrams** looks in every folder, in names, folders, and
@@ -357,6 +357,14 @@ the keys.
   opens at it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
   it is, on whichever page, and **Parts** lists every part by what it is, with how many and
   their specs, under the drawing.
+- **Editing**: a diagram opens to be looked at. **Edit**, at the top, makes it yours to change:
+  one person edits a diagram at a time, so no one's changes go over anyone else's, and the
+  diagrams list and everyone with it open see who's editing it. **Done editing** saves what's
+  left and lets it go; so does closing the tab, and leaving it alone for about 25 minutes (a
+  laptop shut: ten). While someone else edits it, you can still look around it, read its parts,
+  see a test on it, and export it, and what they save shows within half a minute. An admin can
+  **Take over**; whoever had it is told, and a change of theirs after that can be saved as a
+  new diagram. A diagram you've just made opens ready to edit.
 - **Pages**: a diagram can have pages, as a P&ID's sheets are (the vehicle, the GSE): tabs at
   the foot of the drawing, **+** to add one, and each one's **⋯** menu to rename, move, or
   delete it (undo brings it back). **Printed sheet**, with nothing selected, picks a page's
@@ -405,10 +413,11 @@ the keys.
   change. New diagrams start in the team's default (YJSP standard; an admin picks it), and
   **Colors from**, with nothing selected, gives a diagram another's; when that scheme changes,
   **Take its colors again**. A PDF can be in black and white, to print without color.
-- **Saving and history**: a diagram saves itself as you go; if a save fails, **Not saved**
-  beside its name says why, and it tries again on its own (too big: with your next change).
-  If someone saved it while you had it open, it asks whether to keep yours (theirs stays in
-  the history), save yours as a new diagram, or load theirs. **History** lists its revisions:
+- **Saving and history**: a diagram you're editing saves itself as you go; if a save fails,
+  **Not saved** beside its name says why, and it tries again on its own (too big: with your
+  next change). If you saved it from another window while you had it open here, it asks whether
+  to keep this one (the other stays in the history), save it as a new diagram, or load the
+  other. **History** lists its revisions:
   look at one, name one (Rev B, for HF-3) to keep it as it is, or restore it.
 - **Releases**: for a design review or before a test, **Release…** a revision, saying what
   it's for, to approvers you pick (at least one besides you). Each approves it or rejects it

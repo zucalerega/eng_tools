@@ -46,6 +46,15 @@ export const libraryDrop: { target: LibraryDrop | null } = { target: null };
 
 type Drag =
     | { kind: "pan"; client: Point; view: { x: number; y: number; zoom: number } }
+    // On a drawing only looked at: a drag moves the view; a click selects what it's on (hit), or nothing.
+    | {
+          kind: "look";
+          client: Point;
+          view: { x: number; y: number; zoom: number };
+          hit: string | null;
+          additive: boolean;
+          moved: boolean;
+      }
     | {
           kind: "move";
           start: Point;
@@ -306,6 +315,17 @@ export function Canvas({
             return;
         }
         const hit = hitOf(event.target);
+        if (now.readOnly) {
+            drag.current = {
+                kind: "look",
+                client: { x: event.clientX, y: event.clientY },
+                view: now.view,
+                hit: hit?.[1] ?? null,
+                additive: event.shiftKey || event.ctrlKey || event.metaKey,
+                moved: false,
+            };
+            return;
+        }
         if (now.tool.mode === "place") {
             const made = placed(now.tool.preset, at, event.altKey);
             if (made) {
@@ -436,7 +456,7 @@ export function Canvas({
         const at = pointAt(event);
         const zoom = now.view.zoom;
         if (!current) {
-            const hit = hitOf(event.target);
+            const hit = now.readOnly ? null : hitOf(event.target); // a port to draw from shows only to someone editing
             const id = hit && ["part", "port", "label"].includes(hit[0] ?? "") ? (hit[1] ?? null) : null;
             if (id !== hover) {
                 setHover(id);
@@ -451,6 +471,20 @@ export function Canvas({
         }
         const far = (start: Point) => Math.hypot(at.x - start.x, at.y - start.y) * zoom >= 3;
         switch (current.kind) {
+            case "look":
+                if (
+                    !current.moved &&
+                    Math.hypot(event.clientX - current.client.x, event.clientY - current.client.y) < 3
+                ) {
+                    return;
+                }
+                current.moved = true;
+                store.setView({
+                    ...current.view,
+                    x: current.view.x - (event.clientX - current.client.x) / current.view.zoom,
+                    y: current.view.y - (event.clientY - current.client.y) / current.view.zoom,
+                });
+                break;
             case "pan":
                 store.setView({
                     ...current.view,
@@ -590,6 +624,19 @@ export function Canvas({
         switch (current.kind) {
             case "pan":
                 return;
+            case "look": {
+                const { hit, additive } = current;
+                if (current.moved) {
+                    return;
+                }
+                if (hit && additive) {
+                    const on = now.selection.includes(hit);
+                    store.select(on ? now.selection.filter((entry) => entry !== hit) : [...now.selection, hit]);
+                } else if (hit || !additive) {
+                    store.select(hit ? [hit] : []);
+                }
+                return;
+            }
             case "move":
                 if (!current.moved) {
                     // A click on one of several selected: just it.
@@ -637,7 +684,11 @@ export function Canvas({
 
     const selection = useMemo(() => new Set(state.selection), [state.selection]);
     const drawingLine = state.sketch !== null || state.tool.mode === "line";
-    const ports = drawingLine ? ("all" as const) : new Set(hover ? [hover, ...state.selection] : state.selection);
+    const ports = state.readOnly
+        ? new Set<string>()
+        : drawingLine
+          ? ("all" as const)
+          : new Set(hover ? [hover, ...state.selection] : state.selection);
     const intoPath = useMemo(() => {
         const line = state.into ? shown.lines.find((entry) => entry.id === state.into) : null;
         return line ? pathOf(partsById(shown), line) : null;
@@ -645,12 +696,16 @@ export function Canvas({
     const width = size.width / view.zoom;
     const height = size.height / view.zoom;
     const cursor =
-        space || drag.current?.kind === "pan" ? "piper-panning" : state.tool.mode !== "select" ? "piper-placing" : "";
+        space || drag.current?.kind === "pan" || (drag.current?.kind === "look" && drag.current.moved)
+            ? "piper-panning"
+            : state.tool.mode !== "select"
+              ? "piper-placing"
+              : "";
 
     return (
         <svg
             ref={svg}
-            className={`piper-canvas ${cursor}`}
+            className={`piper-canvas ${cursor}${state.readOnly ? " piper-looked-at" : ""}`}
             role="application"
             aria-label="Drawing"
             viewBox={`${view.x} ${view.y} ${width} ${height}`}
@@ -682,7 +737,7 @@ export function Canvas({
             onDrop={(event) => {
                 event.preventDefault();
                 const file = event.dataTransfer.files[0];
-                if (file) {
+                if (file && !state.readOnly) {
                     onPicture(file, pointAt(event));
                 }
             }}
@@ -696,6 +751,7 @@ export function Canvas({
                 selection={selection}
                 live={live}
                 interactive
+                editable={!state.readOnly}
                 zoom={view.zoom}
                 ports={ports}
             />

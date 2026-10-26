@@ -665,6 +665,13 @@ a number. A few codes come up in more than one place.
 - **You saved ... in another window after you opened it here**, or **... saved ..., or restored it
   to revision ..., after you opened it** (`changed`): the diagram changed after you opened it. Copy
   what you need, reload it, and make your changes again on what's there now.
+- **... is editing ...: you can look at it, and edit it once they're done**, **...: your change
+  isn't saved...**, or **...: restore a revision once they're done** (`locked`): one person
+  edits a diagram at a time, and someone else is editing it. Look at it meanwhile; its Edit
+  works once they're done (Done editing, closing their tab, or about 25 minutes without a
+  click in it). If it was yours and an admin took it over, or you were away long enough for
+  someone else to start, your changes since your last save are still in your window: Save mine
+  as a new diagram keeps them, or Load theirs. An admin can Take over if it can't wait.
 - **... is deleted: restore it first** (`deleted`): restore the diagram from Piper's deleted
   diagrams, then change it.
 - **... has pages, which this tab's Piper is too old to keep: reload the page, then make your change
@@ -692,7 +699,9 @@ a number. A few codes come up in more than one place.
 - **... is the team's default: make another the default first** (`scheme_default`): the team's
   default color scheme can't be deleted. An admin makes another the default on Schemes, then
   this one can go.
-- **Only an admin can pick the team's default color scheme** (`admin_only`): ask an admin.
+- **Only an admin can pick the team's default color scheme**, or **Only an admin can take over
+  editing from someone else** (`admin_only`): ask an admin, or ask whoever's editing the
+  diagram to finish.
 - **There's already a folder called ... there** (`name_taken`): two folders in one can't have the
   same name, whatever its case. Pick another, or use the one there is.
 - **... can't go inside itself** (`cycle`): a folder can't move into one of its own folders.

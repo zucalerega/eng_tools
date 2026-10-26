@@ -302,6 +302,15 @@ export class Team {
         return call<Diagram>("PUT", `/api/piper/diagrams/${id}/drawing`, who.token, { drawing, version });
     }
 
+    /** Start editing a diagram (force: an admin taking it over), as another window would. */
+    async editDiagram(who: Member, id: number, force = false): Promise<Diagram> {
+        return call<Diagram>("POST", `/api/piper/diagrams/${id}/lock`, who.token, { force });
+    }
+
+    async doneEditing(who: Member, id: number): Promise<Diagram> {
+        return call<Diagram>("DELETE", `/api/piper/diagrams/${id}/lock`, who.token);
+    }
+
     async revisions(who: Member, id: number): Promise<Revision[]> {
         return call<Revision[]>("GET", `/api/piper/diagrams/${id}/revisions`, who.token);
     }

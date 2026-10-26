@@ -203,7 +203,11 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                     }}
                 >
                     <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
-                        <Link to={`/piper/diagrams/${diagram.id}`} className="name">
+                        {/* Found by a search: it opens at what was found (a tag on it, PT-101). */}
+                        <Link
+                            to={`/piper/diagrams/${diagram.id}${searching ? `?find=${encodeURIComponent(words)}` : ""}`}
+                            className="name"
+                        >
                             {diagram.name}
                         </Link>
                         {searching && diagram.folder && (

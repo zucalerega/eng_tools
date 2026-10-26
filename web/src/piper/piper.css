@@ -1227,3 +1227,99 @@
 .piper-imported p {
     margin: 0.2rem 0 0;
 }
+
+/* Finding a part on the drawing: a box in the toolbar, with what it finds under it. */
+.piper-find {
+    position: relative;
+}
+
+.piper-find input {
+    width: 11rem;
+    height: 1.9rem;
+    font-size: 0.82rem;
+}
+
+.piper-find-pop {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    left: 0;
+    z-index: 45;
+    min-width: 16rem;
+    max-height: 18rem;
+    overflow-y: auto;
+    padding: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow-pop);
+}
+
+.piper-find-pop p {
+    margin: 0.3rem 0.5rem;
+}
+
+.piper-find-pop ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.piper-find-pop li {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    padding: 0.35rem 0.55rem;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.piper-find-pop li[aria-selected="true"] {
+    background: var(--row-hover);
+}
+
+/* The parts table, under the drawing: a table for each kind of part, then the lines. */
+.piper-parts-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    max-height: 36vh;
+    overflow: auto;
+    margin-top: 0.5rem;
+}
+
+.piper-parts-table {
+    font-size: 0.8rem;
+}
+
+.piper-parts-table caption {
+    padding: 0 0 0.25rem;
+    font-weight: 700;
+    text-align: left;
+}
+
+.piper-parts-table th,
+.piper-parts-table td {
+    padding: 0.25rem 0.6rem;
+    white-space: nowrap;
+}
+
+.piper-parts-table tr[aria-selected="true"] td {
+    background: var(--accent-soft);
+}
+
+.piper-parts-tag {
+    height: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.piper-parts-tag:hover:not(:disabled) {
+    background: none;
+    text-decoration: underline;
+}

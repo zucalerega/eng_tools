@@ -352,6 +352,68 @@ test("a drawing the server won't take says why, and the change that fixes it is 
     expect(await screen.findByText("Saved")).toBeTruthy();
 });
 
+test("Find goes to a part by its tag and selects it; a search on the diagrams' list opens at what it found", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const regulator = place(drawing, "regulator", 0, 0);
+    drawing.value = {
+        ...drawing.value,
+        parts: drawing.value.parts.map((part) =>
+            part.id === regulator ? { ...part, tag: `PUREG${team.folder}` } : part,
+        ),
+    };
+    place(drawing, "pressure-transducer", 400, 0);
+    const made = await team.diagram(team.chief, "Found", drawing.value);
+    const listed = renderApp(team.chief, "/piper");
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Find diagrams" }), `pureg${team.folder}`);
+    const link = await screen.findByRole("link", { name: made.name });
+    expect(link.getAttribute("href")).toBe(
+        `/piper/diagrams/${made.id}?find=${encodeURIComponent(`pureg${team.folder}`)}`,
+    );
+    await userEvent.click(link);
+    // Opened at it, selected: the inspector says what it is.
+    expect(await screen.findByRole("heading", { name: "Pressure regulator" })).toBeTruthy();
+    listed.unmount();
+
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    const box = screen.getByRole("combobox", { name: "Find on the drawing" });
+    fireEvent.keyDown(document.body, { key: "f", ctrlKey: true });
+    expect(document.activeElement).toBe(box);
+    await userEvent.type(box, "pt");
+    expect(within(screen.getByRole("listbox", { name: "Found on the drawing" })).getByText("PT-1")).toBeTruthy();
+    await userEvent.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Pressure transducer" })).toBeTruthy();
+});
+
+test("Parts lists every part by what it is, with its specs, and a tag goes to its part", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const first = place(drawing, "ball-valve", 0, 0);
+    place(drawing, "ball-valve", 200, 0);
+    place(drawing, "tank", 0, 200);
+    drawing.value = {
+        ...drawing.value,
+        parts: drawing.value.parts.map((part) =>
+            part.id === first ? { ...part, props: { ...part.props, mawp: "3000 psi" } } : part,
+        ),
+    };
+    const made = await team.diagram(team.chief, "Listed", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    await userEvent.click(screen.getByRole("button", { name: "Parts" }));
+    const panel = within(await screen.findByRole("region", { name: "Parts" }));
+    expect(panel.getByText("3 parts, 0 lines")).toBeTruthy();
+    const valves = within(panel.getByRole("table", { name: "Ball valve" }));
+    expect(valves.getAllByRole("row")).toHaveLength(3); // its head, and the two
+    expect(valves.getByRole("columnheader", { name: "MAWP" })).toBeTruthy(); // what any of them has
+    expect(valves.getByText("3000 psi")).toBeTruthy();
+    expect(panel.getByRole("table", { name: "Tank" })).toBeTruthy();
+    await userEvent.click(valves.getByRole("button", { name: "BV-1" }));
+    expect(await screen.findByRole("heading", { name: "Ball valve" })).toBeTruthy();
+    expect(valves.getByRole("button", { name: "BV-1" }).closest("tr")!.getAttribute("aria-selected")).toBe("true");
+});
+
 test("History lists the revisions; looking at one shows it, and restoring it makes it the drawing again", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

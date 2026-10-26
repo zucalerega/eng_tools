@@ -875,12 +875,13 @@ export function alignParts(drawing: Drawing, ids: Set<string>, how: Alignment): 
     return followParts(drawing, moved, new Set(offsets.keys()));
 }
 
-/** The box around everything drawn, a little room around it. */
-export function drawingBox(drawing: Drawing): Box | null {
+/** The box around everything drawn (or just these parts and lines), a little room around it. */
+export function drawingBox(drawing: Drawing, only: Set<string> | null = null): Box | null {
     const parts = partsById(drawing);
-    const points = drawing.lines.flatMap((line) => runOf(parts, line) ?? []);
+    const lines = only ? drawing.lines.filter((line) => only.has(line.id)) : drawing.lines;
+    const points = lines.flatMap((line) => runOf(parts, line) ?? []);
     const box = union([
-        ...drawing.parts.map((part) => boxOf(part, drawing)),
+        ...drawing.parts.filter((part) => !only || only.has(part.id)).map((part) => boxOf(part, drawing)),
         ...points.map((point) => ({ x0: point.x, y0: point.y, x1: point.x, y1: point.y })),
     ]);
     return box ? grow(box, 40) : null;

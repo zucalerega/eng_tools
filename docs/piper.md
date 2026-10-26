@@ -30,16 +30,37 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   at what was searched for (`?find=PT-101`, as the editor's find goes to it). A new diagram
   starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
   with the editor's own changes), and Duplicate copies one.
-- **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its parts, lines, fluids, and
-  style. The server keeps it as the web app sends it, after checking only what it needs
-  (`schemas.py`): an object with lists of parts and lines, each with an id no other has, a
-  part with its kind and a finite place, a line with its two ends; no NaN, no text that isn't
-  Unicode, nothing nested more than 50 deep, and at most 2 MB of JSON (422 `invalid_drawing`,
-  saying what's wrong in words, or 413 `too_large`). It notes what the list shows and searches
-  (how many parts and lines, their tags, the lines' fluids). What a part is (a ball valve, its
-  ports, its properties) is the web app's: the server never needs to know. `readDrawing` reads
+- **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its pages, each with its id,
+  name, parts, lines, and printed sheet, and the fluids and style they share (format 2; a
+  drawing from before pages, format 1, has its parts and lines at the top, and is one page).
+  The server keeps it as the web app sends it, after checking only what it needs
+  (`schemas.py`): an object with up to 100 pages, each with an id no other page has and lists
+  of parts and lines, each part and line with an id no other in the whole drawing has (an
+  off-page connector names a part on another page by it), a part with its kind and a finite
+  place, a line with its two ends; at most 5,000 parts and 10,000 lines on all its pages; no
+  NaN, no text that isn't Unicode, nothing nested more than 50 deep, and at most 2 MB of JSON
+  (422 `invalid_drawing`, saying what's wrong in words, "Page 2's part 4 has no kind", or 413
+  `too_large`). It notes what the list shows and searches (how many parts, lines, and pages,
+  their tags, the lines' fluids) and the drawing's format. What a part is (a ball valve, its
+  ports, its properties) is the web app's: the server never needs to know. `readDocument` reads
   any drawing back, filling in what an older one lacks and leaving out what can't be read (a
-  line to a part that isn't there), and a kind it doesn't know is drawn as a dashed box and kept.
+  line to a part that isn't there), and a kind it doesn't know is drawn as a dashed box and
+  kept; the editor works on a page at a time (`pageOf`, `withPage`).
+- **Pages** are a P&ID's sheets: tabs under the drawing (`PageTabs.tsx`) add, rename, move,
+  and delete them, each a change undo goes back through (the editor's undo keeps the whole
+  drawing and the page it was at). A page's **printed sheet** (`sheet`: a paper, which way it's
+  turned, and the paper's top left and scale in the page's units) is set in its panel, fitted
+  to what's on it inside the border and clear of the title block's corner as a PDF would fit
+  it (`fitSheet`); the canvas outlines it (`sheetOutline`), and the PDF prints the page there,
+  so the layout and scale stay put as the drawing changes. An **off-page connector** goes to a
+  page, and a part on it (`props.page`, `props.part`, by id), and is written `TO` and the page's
+  name (its box as wide as its words) until its words are changed; going there switches the
+  page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
+  connectors going nowhere.
+  Find, Parts, and the parts list look through every page. Once a diagram is saved in format 2,
+  the server refuses a save in format 1 over it (409 `drawing_newer`): a tab still running the
+  Piper from before pages would save one page and lose the others. Restoring a revision from
+  before pages is deliberate, and allowed.
 - **Saving** is automatic: a second after the last change, the web app sends the whole drawing
   with the version it was changed from (`PUT /api/piper/diagrams/{id}/drawing`). The server
   takes it only if the diagram is still at that version (one `UPDATE ... WHERE version = ?`,
@@ -214,9 +235,10 @@ what it is, `data-hit`).
   match), then by what it is or holds; a line by its tag or fluid. The tag that's it first,
   then tags that start with it. Picked, the view frames it, with room around it, and it's
   selected (`commands.show`).
-- **Parts** (`PartsPanel.tsx`), under the drawing: the parts list the CSV saves (`partTable`),
-  a table for each kind of part in the library's order (valves, instruments, vessels...), with
-  how many and the columns any of them has, then the lines. A tag goes to its part.
+- **Parts** (`PartsPanel.tsx`), under the drawing: the parts list the CSV saves
+  (`documentTable`, every page's, with each one's page when there's more than one), a table for
+  each kind of part in the library's order (valves, instruments, vessels...), with how many and
+  the columns any of them has, then the lines. A tag goes to its part, on its page.
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to
@@ -231,18 +253,22 @@ what it is, `data-hit`).
     drawing sheet as Visio's P&IDs are: a border with its zones between its two lines (numbered
     from the right, lettered from the foot, about 4¼ inches each, as ANSI's sheets have them),
     the diagram's named revisions, and a title block (the team, the diagram's name, folder,
-    number, revision, who made it, when it was saved), unless the drawing has a title block of
-    its own. The drawing's fitted inside the border, clear of that corner. Tested by its
-    structure (every object where the cross-reference table says) and by MuPDF rendering it.
-  - **SVG** and **PNG** (at twice its size): the drawing alone. **Print** prints the SVG.
+    number, revision, who made it, when it was saved, which sheet of how many), unless the page
+    has a title block of its own. A page for each of the diagram's (`pdfOfPages`): one with a
+    printed sheet on its paper, where its outline shows; one without fitted inside the border,
+    clear of that corner. Tested by its structure (every object where the cross-reference table
+    says) and by MuPDF rendering it.
+  - **SVG** and **PNG** (at twice its size): the page shown, alone. **Print** prints its SVG.
   - **Parts list** (CSV): each part's tag, what it is, normal state, fluid, test channel, every
-    property, and notes, and each line's tag, type, fluid, properties, and the tags it joins: a
-    valve list or an instrument list, filtered in a spreadsheet.
+    property, and notes, and each line's tag, type, fluid, properties, and the tags it joins, on
+    every page (and each one's page, last, when there's more than one): a valve list or an
+    instrument list, filtered in a spreadsheet.
 
 ## Importing from Visio
 
-`visio.ts` reads a Visio drawing in the browser and the page saves each of its pages as a
-diagram (Import Visio on the Diagrams page, which asks for the file first, as Yorg's Upload data
+`visio.ts` reads a Visio drawing in the browser and the page saves it as a diagram, with its
+pages as Visio has them (`visioDocument`: the fluids each page made for its colors are the
+diagram's, one for each) (Import Visio on the Diagrams page, which asks for the file first, as Yorg's Upload data
 does, or a file dropped on it; the dialog shows the file, to change, and the folder). A .vsdx
 (Visio 2013 on) is a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too):
 each page's shapes, the masters (stencil shapes) they're instances of, and which connector is
@@ -293,11 +319,11 @@ site's own endpoints, are in [design.md](design.md#api).
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/piper/diagrams?q=&deleted=` | the diagrams, the most recently changed first, without their drawings; `q`: those whose name, folder, description, or tags have every word (or the deleted ones) |
+| `GET /api/piper/diagrams?q=&deleted=` | the diagrams, the most recently changed first, without their drawings (with `parts`, `lines`, and `pages`, on all its pages); `q`: those whose name, folder, description, or tags have every word (or the deleted ones) |
 | `POST /api/piper/diagrams` | a new diagram `{name, folder, description, drawing}` (`drawing` optional: an empty one) |
 | `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder, description}`; delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
 | `POST /api/piper/diagrams/{id}/restore` | restore a deleted diagram (whoever made it, or an admin) |
-| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `deleted` if it's deleted; `fresh`: start a new revision even if the latest is yours |
+| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `deleted` if it's deleted, 409 `drawing_newer` if the drawing's in an older format than the diagram's (a page of a diagram with pages); `fresh`: start a new revision even if the latest is yours |
 | `GET /api/piper/diagrams/{id}/revisions` | its revisions, the latest first, without their drawings |
 | `GET`/`PATCH /api/piper/diagrams/{id}/revisions/{number}` | a revision with its drawing; name it `{note}` ("": no name) |
 | `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` as for a save) |
@@ -313,14 +339,15 @@ site's own endpoints, are in [design.md](design.md#api).
 
 1. **Piper** (first version, October 2026): diagrams with history, the library, lines routed
    and snapped, fluids and states, properties, Visio's drawings imported, exports (PDF on a
-   drawing sheet), test data from Yorg, releases with approvers, and a Help page (`Help.tsx`,
-   `/piper/help`: keep it in step with the features). Next:
+   drawing sheet), test data from Yorg, releases with approvers, pages with printed sheets and
+   off-page connectors between them, and a Help page (`Help.tsx`, `/piper/help`: keep it in
+   step with the features). Next:
    - **Several people at once**: seeing who else has a diagram open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.
    - **A diagram as a Yorg model**: a P&ID's parts and lines as a system model to simulate,
      once Yorg's models are released.
-   - **Sheets**: several sheets to a diagram, joined by off-page connectors, and a title block
-     part filled in from the diagram's history.
+   - **A title block part filled in from the diagram's history**: its releases, as the sheet's
+     own title block lists them.
 
 ## Open questions
 

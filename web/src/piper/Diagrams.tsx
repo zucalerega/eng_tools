@@ -5,10 +5,10 @@ import { formatSize } from "../format";
 import { countIn, folderTree, foldersOf, tidyFolder, type Folder } from "../pathTree";
 import { Link, navigate } from "../router";
 import { piper, type Diagram } from "./api";
-import { emptyDrawing, type Drawing } from "./drawing";
+import { documentOf, emptyDrawing, pageOf, withPage, type Document } from "./drawing";
 import { example } from "./example";
 import { applyScheme, fluidOf } from "./fluids";
-import { readVisio, type ImportReport } from "./visio";
+import { readVisio, visioDocument, visioName, type ImportReport } from "./visio";
 
 // The diagrams, in their folders: each folder's the most recently changed first, and a diagram dragged onto a folder
 // moves into it, as Yorg's saved views do. Find looks in their names, folders, descriptions, and the tags of their
@@ -215,7 +215,15 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
                         )}
                         {diagram.description && <span className="muted piper-description">{diagram.description}</span>}
                     </td>
-                    <td className="numeric">{diagram.parts}</td>
+                    <td className="numeric">
+                        {diagram.parts}
+                        {(diagram.pages ?? 1) > 1 && (
+                            <span className="muted piper-small" title="On its pages">
+                                {" "}
+                                on {diagram.pages}
+                            </span>
+                        )}
+                    </td>
                     <td>
                         <span className="piper-chips">
                             {diagram.fluids.slice(0, 5).map((id) => (
@@ -418,13 +426,13 @@ function Fluid({ id }: { id: string }) {
 
 const NO_FOLDER = "None, or a new one, like Vespula/GSE";
 
-/** A new diagram's drawing in the team's default color scheme, if it has one (Schemes). */
-async function inTeamColors(drawing: Drawing): Promise<Drawing> {
+/** A new diagram's drawing in the team's default color scheme, if it has one (Schemes): all its pages share it. */
+async function inTeamColors(document: Document): Promise<Document> {
     try {
         const team = (await piper.schemes()).find((scheme) => scheme.is_default);
-        return team ? applyScheme(drawing, team) : drawing;
+        return team ? withPage(document, 0, applyScheme(pageOf(document, 0), team)) : document;
     } catch {
-        return drawing; // the schemes out of reach: Piper's own colors
+        return document; // the schemes out of reach: Piper's own colors
     }
 }
 
@@ -441,7 +449,7 @@ function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diag
                 await piper.create({
                     name: name.trim(),
                     folder: tidyFolder(folder),
-                    drawing: await inTeamColors(start === "example" ? example() : emptyDrawing()),
+                    drawing: await inTeamColors(documentOf(start === "example" ? example() : emptyDrawing())),
                 }),
             );
         } catch (error) {
@@ -520,8 +528,8 @@ function DeleteDialog({ diagram, onDone }: { diagram: Diagram; onDone: (gone: Di
 }
 
 /**
- * A Visio drawing imported: each of its pages a diagram, in a folder, made in this browser (visio.ts) and saved as any
- * diagram is. What became of each page's shapes is said after.
+ * A Visio drawing imported: a diagram, with its pages as Visio had them, in a folder, made in this browser (visio.ts)
+ * and saved as any diagram is. What became of each page's shapes is said after.
  */
 function ImportDialog({
     file: picked,
@@ -537,24 +545,22 @@ function ImportDialog({
     const [folder, setFolder] = useState("");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
-    const [made, setMade] = useState<{ diagram: Diagram; report: ImportReport }[] | null>(null);
+    const [made, setMade] = useState<{ diagram: Diagram; pages: { page: string; report: ImportReport }[] } | null>(
+        null,
+    );
 
     async function run() {
         setBusy(true);
         setProblem(null);
         try {
             const pages = await readVisio(file, file.name);
-            const results: { diagram: Diagram; report: ImportReport }[] = [];
-            for (const page of pages) {
-                const diagram = await piper.create({
-                    name: page.name,
-                    folder: tidyFolder(folder),
-                    description: `Imported from ${file.name}`,
-                    drawing: await inTeamColors(page.drawing),
-                });
-                results.push({ diagram, report: page.report });
-            }
-            setMade(results);
+            const diagram = await piper.create({
+                name: visioName(file.name),
+                folder: tidyFolder(folder),
+                description: `Imported from ${file.name}`,
+                drawing: await inTeamColors(visioDocument(pages)),
+            });
+            setMade({ diagram, pages: pages.map(({ page, report }) => ({ page, report })) });
         } catch (error) {
             setProblem(message(error));
         } finally {
@@ -564,16 +570,17 @@ function ImportDialog({
 
     if (made) {
         return (
-            <Dialog title="Imported" cancel="Close" onCancel={() => onDone(made.map((entry) => entry.diagram))} wide>
+            <Dialog title="Imported" cancel="Close" onCancel={() => onDone([made.diagram])} wide>
+                <p>
+                    <Link to={`/piper/diagrams/${made.diagram.id}`} onClick={() => onDone([made.diagram])}>
+                        {made.diagram.name}
+                    </Link>
+                    {made.pages.length > 1 && <span className="muted">, with {made.pages.length} pages</span>}
+                </p>
                 <ul className="piper-imported">
-                    {made.map(({ diagram, report }) => (
-                        <li key={diagram.id}>
-                            <Link
-                                to={`/piper/diagrams/${diagram.id}`}
-                                onClick={() => onDone(made.map((entry) => entry.diagram))}
-                            >
-                                {diagram.name}
-                            </Link>
+                    {made.pages.map(({ page, report }, index) => (
+                        <li key={index}>
+                            {made.pages.length > 1 && <strong>{page}</strong>}
                             <span className="muted">
                                 {" "}
                                 {[
@@ -637,9 +644,9 @@ function ImportDialog({
                 />
             </div>
             <p className="muted piper-small">
-                Each page becomes a diagram. Visio's P&ID shapes become Piper's parts (tagged with their text),
-                connectors become lines between them, and colored lines keep their colors as fluids to name. Visio 2013
-                and on save .vsdx files; save an older .vsd as one first.
+                It becomes a diagram, its pages as Visio has them. Visio's P&ID shapes become Piper's parts (tagged with
+                their text), connectors become lines between them, and colored lines keep their colors as fluids to
+                name. Visio 2013 and on save .vsdx files; save an older .vsd as one first.
             </p>
             <label className="field">
                 Folder

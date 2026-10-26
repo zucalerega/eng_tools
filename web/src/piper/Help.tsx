@@ -120,12 +120,43 @@ const TOPICS: Topic[] = [
                 <li>
                     <em>Find a tag</em>, in the toolbar (or <kbd>Ctrl</kbd>+<kbd>F</kbd>), finds a part or a line by its
                     tag (<code>PUREG</code>, <code>PT-101</code>), whatever its case and with or without its dashes, or
-                    by what it is or holds (<em>regulator</em>, <em>LOX</em>). Pick one, or press <kbd>Enter</kbd> for
-                    the first: the drawing goes to it, selected.
+                    by what it is or holds (<em>regulator</em>, <em>LOX</em>). It looks through all the diagram's pages,
+                    and says which page each is on. Pick one, or press <kbd>Enter</kbd> for the first: the drawing goes
+                    to it, on its page, selected.
                 </li>
                 <li>
                     A search on the <Link to="/piper">diagrams</Link> finds the diagrams a tag is on, and each opens at
                     it.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Pages and sheets",
+        body: (
+            <ul>
+                <li>
+                    A diagram can have pages, as a P&ID's sheets: the vehicle on one, the ground systems on another.
+                    They're the tabs at the foot of the drawing. <em>+</em> adds one; a page's <em>⋯</em> menu (or a
+                    double-click on its tab) renames it, moves it left or right, or deletes it. Undo brings a deleted
+                    page back. The fluids, colors, and label size are the diagram's, the same on every page.
+                </li>
+                <li>
+                    <em>Printed sheet</em>, in a page's panel (with nothing selected), picks the paper it prints on: its
+                    outline shows on the drawing, with the sheet's border and the corner the title block takes, and the
+                    page prints just there, at that scale, however the drawing changes. <em>Landscape</em> turns it, and{" "}
+                    <em>Fit the sheet to the page</em> moves it to what's on the page now. A page without one is fitted
+                    to the PDF's paper.
+                </li>
+                <li>
+                    An <em>Off-page connector</em> says where a line goes on: pick the page in <em>To page</em>, and the
+                    part it arrives at in <em>At</em> (its connector there, say). It's written <code>TO</code> and the
+                    page's name until you write its words yourself. <em>Go to</em>, or a double-click on it, goes there;
+                    the part it arrives at lists it under <em>Comes from</em>, to go back.
+                </li>
+                <li>
+                    Once a diagram is saved with pages, a tab opened before Piper had them can't save it (it would keep
+                    only one page): it says to reload, which gets the new Piper.
                 </li>
             </ul>
         ),
@@ -320,7 +351,7 @@ const TOPICS: Topic[] = [
                 <li>
                     <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> asks for the drawing (or drop a
                     .vsdx on them), then shows it, with <em>Choose another…</em> if it's the wrong one, and the folder
-                    to put it in. <em>Import</em> makes a diagram of each of its pages.
+                    to put it in. <em>Import</em> makes a diagram of it, its pages as Visio has them.
                 </li>
                 <li>
                     Visio's P&ID shapes (its valves, vessels, pumps, instruments...) become Piper's parts, tagged with
@@ -345,26 +376,28 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    <em>Export, PDF</em> saves the drawing as a PDF on the paper you choose (Tabloid, Letter, ANSI D,
-                    A3, A4, or its own size), turned its way. On a drawing sheet, as a Visio P&ID is: a border with its
-                    zones (numbered across, lettered up), the diagram's named revisions, and a title block (its name,
-                    folder, revision, who drew it, and when), unless the drawing has a title block of its own. It's
+                    <em>Export, PDF</em> saves the drawing as a PDF, a page for each of its pages: on its printed sheet,
+                    if it has one, else on the paper you choose (Tabloid, Letter, ANSI D, A3, A4, or its own size),
+                    turned its way. On a drawing sheet, as a Visio P&ID is: a border with its zones (numbered across,
+                    lettered up), the diagram's named revisions, and a title block (its name, folder, revision, who drew
+                    it, when, and which sheet of how many it is), unless the page has a title block of its own. It's
                     vector: sharp at any size, its tags text you can search.
                 </li>
                 <li>
-                    <em>SVG</em> and <em>PNG</em> save it as an image; <em>Print</em> prints it. Exports are drawn in
-                    the light colors, as on paper. A PDF can be in black and white, for a printer without color: lines
-                    in ink, normally closed valves filled, normally open ones white.
+                    <em>SVG</em> and <em>PNG</em> save the page shown as an image; <em>Print</em> prints it. Exports are
+                    drawn in the light colors, as on paper. A PDF can be in black and white, for a printer without
+                    color: lines in ink, normally closed valves filled, normally open ones white.
                 </li>
                 <li>
                     <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and
-                    properties, and every line's tag, fluid, and ends. Filter it in a spreadsheet for a valve list or an
-                    instrument list.
+                    properties, and every line's tag, fluid, and ends, on all its pages (with each one's page, if
+                    there's more than one). Filter it in a spreadsheet for a valve list or an instrument list.
                 </li>
                 <li>
                     <em>Parts</em>, in the toolbar, shows the same list under the drawing: a table for each kind of part
                     (ball valves, pressure transducers, tanks...), with how many there are and the specs any of them has
-                    (MAWP, size, Cv, range, channel), then the lines. Click a tag to go to its part.
+                    (MAWP, size, Cv, range, channel), then the lines, from all its pages. Click a tag to go to its part,
+                    on its page.
                 </li>
             </ul>
         ),

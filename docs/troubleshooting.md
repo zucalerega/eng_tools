@@ -667,6 +667,10 @@ a number. A few codes come up in more than one place.
   what you need, reload it, and make your changes again on what's there now.
 - **... is deleted: restore it first** (`deleted`): restore the diagram from Piper's deleted
   diagrams, then change it.
+- **... has pages, which this tab's Piper is too old to keep: reload the page, then make your change
+  again** (`drawing_newer`): the tab was opened before Piper had pages, and saving from it would
+  leave out all but one of the diagram's pages. Reload it, which gets the new Piper, and make your
+  change again.
 - **Two parts or lines share the id ...**, **The drawing has text that isn't valid Unicode**, and
   the like (`invalid_drawing`): the drawing as the web app sent it isn't one the server keeps.
   Reload the diagram; if it keeps happening, tell an admin, with what you did.

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { DiagramView, type LiveValue } from "./DiagramView";
-import { PART_SCALES, type Drawing, type Point } from "./drawing";
+import { PART_SCALES, type Drawing, type PageSheet, type Point } from "./drawing";
 import {
     addPart,
     connect,
@@ -21,6 +21,7 @@ import { boxOf, kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
 import { labelPlace, textSizes } from "./labels";
 import { linesOn, partsById, pathOf, placeEnd, portsOf } from "./ports";
+import { PAPERS, sheetOutline } from "./pdf";
 import { route } from "./route";
 import { snapMove } from "./snap";
 import { useEditor, type Aim, type EditorStore } from "./store";
@@ -675,6 +676,7 @@ export function Canvas({
             onDrop={(event) => event.preventDefault()}
         >
             <Grid view={view} width={width} height={height} palette={palette} />
+            {shown.sheet && <SheetOutline sheet={shown.sheet} zoom={view.zoom} palette={palette} />}
             <DiagramView
                 drawing={shown}
                 palette={palette}
@@ -746,6 +748,40 @@ export function Canvas({
                 />
             )}
         </svg>
+    );
+}
+
+/**
+ * Where the page prints, if its sheet's been set: the paper's edge, the sheet's border inside it, and the corner its
+ * title block and revisions can take, as a PDF on a drawing sheet prints them. Under the drawing, and not to be picked.
+ */
+function SheetOutline({ sheet, zoom, palette }: { sheet: PageSheet; zoom: number; palette: Palette }) {
+    const { paper, frame, corner } = sheetOutline(sheet);
+    const rect = (box: Box) => ({ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 });
+    const name = PAPERS.find((entry) => entry.id === sheet.paper)?.name ?? sheet.paper;
+    return (
+        <g className="piper-sheet-outline" pointerEvents="none" aria-hidden="true">
+            <rect {...rect(paper)} fill="none" stroke={palette.muted} strokeWidth={1.5 / zoom} />
+            <rect
+                {...rect(frame)}
+                fill="none"
+                stroke={palette.muted}
+                strokeOpacity={0.6}
+                strokeWidth={1 / zoom}
+                strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+            />
+            <rect
+                {...rect(corner)}
+                fill={palette.muted}
+                fillOpacity={0.08}
+                stroke={palette.muted}
+                strokeOpacity={0.6}
+                strokeWidth={1 / zoom}
+            />
+            <text x={paper.x0} y={paper.y0 - 6 / zoom} fontSize={11 / zoom} fill={palette.muted}>
+                {name}, {sheet.landscape ? "landscape" : "portrait"}: as it prints
+            </text>
+        </g>
     );
 }
 

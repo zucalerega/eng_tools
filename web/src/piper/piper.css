@@ -1367,3 +1367,70 @@
 .piper-scheme p {
     margin: 0.3rem 0;
 }
+
+/* The diagram's pages, as tabs at the foot of the drawing. */
+.piper-pages {
+    position: absolute;
+    left: 0.75rem;
+    bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: calc(100% - 1.5rem);
+    padding: 0.2rem;
+    overflow-x: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-pop);
+    background: var(--surface);
+}
+
+.piper-page-tab {
+    display: flex;
+    align-items: center;
+    flex: none;
+    border-radius: calc(var(--radius) - 2px);
+}
+
+.piper-page-tab > button[role="tab"],
+.piper-page-add {
+    padding: 0.2rem 0.6rem;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.piper-page-tab-on {
+    background: var(--accent-soft);
+}
+
+.piper-page-tab-on > button[role="tab"] {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.piper-page-tab .menu-button {
+    padding: 0.05rem 0.35rem;
+    border: none;
+    background: none;
+    font-size: 0.82rem;
+}
+
+.piper-page-tab .menu-button::after {
+    display: none; /* the dots say it's a menu */
+}
+
+.piper-page-add {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.piper-coming {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+}

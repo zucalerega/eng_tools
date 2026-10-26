@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { piper, type ChangedDetails, type Diagram, type DiagramDetail } from "./api";
-import { readDrawing } from "./drawing";
+import { readDocument } from "./drawing";
 import type { EditorStore } from "./store";
 
 // Saving as you go: a second after the last change, the drawing goes to the server with the version it was changed
@@ -59,7 +59,7 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
             if (id === null || busy.current || halted.current) {
                 return;
             }
-            const { drawing, changes } = store.getState();
+            const { document, changes } = store.getState();
             if (changes === saved.current && !fresh) {
                 setStatus("saved");
                 return;
@@ -67,7 +67,7 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
             busy.current = true;
             setStatus("saving");
             try {
-                const result = await piper.save(id, drawing, version.current, fresh);
+                const result = await piper.save(id, document, version.current, fresh);
                 version.current = result.version;
                 saved.current = changes;
                 setProblem(null);
@@ -156,7 +156,7 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
                 return;
             }
             const latest = await piper.diagram(id);
-            store.load(readDrawing(latest.drawing));
+            store.load(readDocument(latest.drawing));
             version.current = latest.version;
             saved.current = store.getState().changes;
             halted.current = false;
@@ -166,7 +166,7 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
         },
         adopt: (detail: DiagramDetail) => {
             clearTimeout(timer.current);
-            store.load(readDrawing(detail.drawing));
+            store.load(readDocument(detail.drawing));
             version.current = detail.version;
             saved.current = store.getState().changes;
             halted.current = false;

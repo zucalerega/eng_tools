@@ -163,7 +163,7 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
     }
     const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`, "i");
     let highest = 0;
-    for (const tag of [...drawing.parts.map((part) => part.tag), ...taken]) {
+    for (const tag of [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? []), ...taken]) {
         const match = pattern.exec(tag);
         if (match) {
             highest = Math.max(highest, Number(match[1]));
@@ -175,9 +175,9 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
 /** A tag's prefix: what's before its number ("PT" of PT-12, "MOV-OX" of MOV-OX). */
 export const prefixOf = (tag: string): string => /^(.*?)-?\d+$/.exec(tag)?.[1] ?? tag;
 
-/** The tags two or more parts share. */
+/** The tags two or more parts share: on this page, or on it and another of the diagram's. */
 export function sharedTags(drawing: Drawing): Set<string> {
-    const seen = new Set<string>();
+    const seen = new Set((drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
     const shared = new Set<string>();
     for (const part of drawing.parts) {
         const tag = part.tag.trim().toUpperCase();
@@ -786,7 +786,11 @@ export function clipBox(clip: Clip, drawing: Drawing): Box | null {
 export function pasteClip(drawing: Drawing, clip: Clip, by: Point): { drawing: Drawing; ids: string[] } {
     const offset = snapPoint(by);
     const ids = new Map<string, string>();
-    const taken = new Set(drawing.parts.map((part) => part.tag.toUpperCase()).filter(Boolean));
+    const taken = new Set(
+        [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? [])]
+            .map((tag) => tag.toUpperCase())
+            .filter(Boolean),
+    );
     const fresh = new Set<string>();
     const parts = clip.parts.map((part) => {
         const id = newId("p");

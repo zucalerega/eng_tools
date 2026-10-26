@@ -353,8 +353,16 @@ the keys.
   **Deleted diagrams**, where it waits to be restored. **Find diagrams** looks in names,
   folders, and the tags on each drawing: PT-101 finds every diagram it's on, and each opens at
   it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
-  it is, and **Parts** lists every part by what it is, with how many and their specs, under
-  the drawing.
+  it is, on whichever page, and **Parts** lists every part by what it is, with how many and
+  their specs, under the drawing.
+- **Pages**: a diagram can have pages, as a P&ID's sheets are (the vehicle, the GSE): tabs at
+  the foot of the drawing, **+** to add one, and each one's **⋯** menu to rename, move, or
+  delete it (undo brings it back). **Printed sheet**, with nothing selected, picks a page's
+  paper: its outline shows on the drawing, border and title block corner, and the page prints
+  just there; **Fit the sheet to the page** moves it to what's on it. An **Off-page connector**
+  goes to another page, and a part on it (**To page**, **At**): **Go to**, or a double-click,
+  goes there, and the part it arrives at lists it under **Comes from**. Once a diagram has
+  pages, a tab opened before Piper had them is told to reload rather than save one page of it.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
@@ -408,12 +416,14 @@ the keys.
   reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test
   with those channels plotted, and the page's address keeps the test and the time.
 - **Visio**: **Import Visio…** asks for a Visio drawing (or drop a .vsdx on the diagrams), shows
-  it with the folder to put it in, and makes a diagram of each of its pages: its P&ID shapes
+  it with the folder to put it in, and makes a diagram of it, with its pages: its P&ID shapes
   become parts, tagged with their text, its connectors lines between them, and its colored lines
   fluids to name. Save an old .vsd as a .vsdx first.
-- **Export**: **PDF** on Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs
-  are (a border with its zones, the named revisions, and a title block), vector and searchable;
-  SVG or PNG images; printing; and the parts list as a CSV (a valve list, an instrument list).
+- **Export**: **PDF**, a page for each of the diagram's, on its printed sheet or else on
+  Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs are (a border with its
+  zones, the named revisions, and a title block that says which sheet of how many), vector and
+  searchable; SVG or PNG images of the page shown; printing; and the parts list of every page
+  as a CSV (a valve list, an instrument list).
 
 ## Layout
 

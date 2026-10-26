@@ -27,6 +27,12 @@ def drawing(*parts, lines: tuple = (), **more) -> dict:
     return {**EMPTY, "parts": list(parts), "lines": list(lines), **more}
 
 
+def pages(*sheets: tuple[str, dict], **more) -> dict:
+    """A drawing of format 2: each page's id, and what's on it (a drawing())."""
+    listed = [{"id": id, "name": id.upper(), "parts": on["parts"], "lines": on["lines"]} for id, on in sheets]
+    return {"format": 2, "pages": listed, "fluids": [], "style": {}, **more}
+
+
 def make(team, who, name: str = "Feed system", **body) -> dict:
     made = team.client.post(API, json={"name": name, **body}, headers=who)
     assert made.status_code == 201, made.text
@@ -471,6 +477,81 @@ def test_a_drawing_is_checked_before_it_is_kept(team):
     new = team.client.post(API, json={"name": "Valves", "drawing": {"format": 1, "parts": []}}, headers=alice)
     assert (new.status_code, new.json()["message"]) == (422, "The drawing has no list of lines")
     assert [d["name"] for d in team.client.get(API, headers=alice).json()] == ["Feed system"]
+
+
+def test_a_drawing_with_pages_is_kept_and_listed_by_all_of_them(team):
+    alice = team.member("alice@x.test")
+    vehicle = drawing(
+        part("pt", kind="pressure_transducer", tag="PT-101"), lines=(line("l1", "pt", "pt", tag="L-7", fluid="lox"),)
+    )
+    gse = drawing(
+        part("bv", tag="BV-201"),
+        part("off", kind="offpage", props={"page": "vehicle", "part": "pt"}),
+        lines=(line("l2", "bv", "off", fluid="ghe"),),
+    )
+    sent = pages(("vehicle", vehicle), ("gse", gse))
+    made = make(team, alice, drawing=sent)
+    assert json.dumps(made["drawing"]) == json.dumps(sent)
+    assert (made["parts"], made["lines"], made["pages"], made["fluids"]) == (3, 2, 2, ["lox", "ghe"])
+    # Its second page's tags find it too.
+    found = team.client.get(API, params={"q": "bv-201"}, headers=alice).json()
+    assert [d["name"] for d in found] == ["Feed system"]
+    # A drawing from before pages is one.
+    assert make(team, alice, name="Valves", drawing=drawing(part("v1")))["pages"] == 1
+
+
+def test_a_drawing_with_pages_is_checked_page_by_page(team):
+    alice = team.member("alice@x.test")
+    made = make(team, alice)
+
+    def refused(sent) -> str:
+        response = save(team, alice, made, sent, 1)
+        assert (response.status_code, response.json()["error"]) == (422, "invalid_drawing"), response.text
+        return response.json()["message"]
+
+    one = drawing(part("v1"))
+    assert refused({"format": 2, "parts": [], "lines": []}) == "The drawing has no list of pages"
+    assert refused({"format": 2, "pages": []}) == "The drawing has no pages"
+    assert refused({"format": 2, "pages": "one"}) == "The drawing's pages aren't a list"
+    assert refused({"format": 2, "pages": [{"parts": [], "lines": []}]}) == "Page 1 has no id"
+    assert refused({"format": 2, "pages": [{"id": "a", "parts": []}]}) == "Page 1 has no list of lines"
+    assert refused(pages(("a", one), ("b", one))) == "Two parts or lines share the id v1"
+    assert refused(pages(("a", one), ("a", drawing(part("v2"))))) == "Two pages share the id a"
+    assert refused(pages(("a", one), ("b", drawing(part("v2", kind=""))))) == "Page 2's part 1 has no kind"
+    no_end = drawing(lines=({"id": "l1", "from": {"part": "v1"}},))
+    assert refused(pages(("a", one), ("b", no_end))) == "Page 2's line 1 has no end (to)"
+    named = pages(("a", one))
+    named["pages"][0]["name"] = "N" * 101
+    assert refused(named) == "Page 1's name is longer than 100 characters"
+    assert refused({"format": 2, "pages": [named["pages"][0] | {"name": "A"}, "b"]}) == "Page 2 isn't an object"
+    many = pages(*((f"p{n}", drawing()) for n in range(101)))
+    assert refused(many) == "The drawing has more than 100 pages"
+    # As many parts on all its pages as a drawing can have on one.
+    full = pages(*((f"p{n}", drawing(*(part(f"v{n}-{m}") for m in range(1001)))) for n in range(5)))
+    assert refused(full) == "The drawing has more than 5000 parts on its pages"
+    assert opened(team, alice, made)["version"] == 1
+
+
+def test_a_save_from_before_pages_is_refused_over_a_drawing_with_them(team):
+    """A tab opened before Piper had pages would save one page of them: it's told to reload, and nothing changes."""
+    alice = team.member("alice@x.test")
+    made = make(team, alice, drawing=drawing(part("v1")))
+    two = pages(("a", drawing(part("v1"))), ("b", drawing(part("v2"))))
+    after = saved(team, alice, made, two, 1, fresh=True)
+    old = save(team, alice, made, drawing(part("v1"), part("v3")), after["version"])
+    assert (old.status_code, old.json()["error"]) == (409, "drawing_newer"), old.text
+    assert old.json()["message"] == (
+        "Feed system has pages, which this tab's Piper is too old to keep: reload the page, then make your change again"
+    )
+    still = opened(team, alice, made)
+    assert (still["version"], still["revision"], still["pages"]) == (after["version"], 2, 2)
+    assert json.dumps(still["drawing"]) == json.dumps(two)
+
+    # Restoring a revision from before them is meant: it's the drawing again, and saves of its format go again.
+    url = f"{API}/{made['id']}/revisions/1/restore"
+    restored = team.client.post(url, json={"version": after["version"]}, headers=alice)
+    assert (restored.status_code, restored.json()["pages"]) == (200, 1), restored.text
+    assert saved(team, alice, made, drawing(part("v1"), part("v3")), restored.json()["version"])["parts"] == 2
 
 
 # --- releases -----------------------------------------------------------------------------------------------------

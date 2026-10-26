@@ -10,8 +10,9 @@ export interface Diagram {
     description: string;
     version: number; // each save of its drawing names the version it changed, and gets the next
     revision: number; // its latest revision's number
-    parts: number;
+    parts: number; // on all its pages
     lines: number;
+    pages?: number; // how many pages it has (left out by a server from before pages: one)
     fluids: string[]; // the fluids its lines carry, by id
     created_at: string;
     created_by: UserRef | null;

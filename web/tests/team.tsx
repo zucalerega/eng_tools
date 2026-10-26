@@ -9,7 +9,7 @@ import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
 import type { Diagram, DiagramDetail, Revision, Scheme } from "../src/piper/api";
-import { readDrawing, type Drawing } from "../src/piper/drawing";
+import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -283,10 +283,10 @@ export class Team {
         return `${name} ${this.folder}`;
     }
 
-    /** A Piper diagram as the server keeps it, its drawing read. */
-    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing }> {
+    /** A Piper diagram as the server keeps it, its drawing read: its first page, and all of them. */
+    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing; document: Document }> {
         const found = await call<DiagramDetail>("GET", `/api/piper/diagrams/${id}`, who.token);
-        return { ...found, read: readDrawing(found.drawing) };
+        return { ...found, read: readDrawing(found.drawing), document: readDocument(found.drawing) };
     }
 
     /** A drawing saved, as the editor saves one: from the version it was changed from. */

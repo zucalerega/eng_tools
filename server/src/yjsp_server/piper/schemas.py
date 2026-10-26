@@ -12,8 +12,9 @@ from ..models import User
 from .models import Approval, Diagram, Release, Revision, Scheme
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-MAX_PARTS = 5000
+MAX_PARTS = 5000  # in a drawing, on all its pages
 MAX_LINES = 10_000
+MAX_PAGES = 100
 
 
 class InvalidDrawing(ApiError):
@@ -23,7 +24,8 @@ class InvalidDrawing(ApiError):
 
 # --- a drawing ----------------------------------------------------------------------------------------------------
 # What a part and a line are (a ball valve, its ports, its properties) is the web app's (web/src/piper/drawing.ts). The
-# server checks only what it needs, the ids and what the list shows, and keeps the rest as it was sent.
+# server checks only what it needs, the ids and what the list shows, and keeps the rest as it was sent. A drawing of
+# format 1 is one page, its parts and lines; of format 2, it has pages, each with its own.
 
 Id = Annotated[str, Field(strict=True, min_length=1, max_length=64)]
 Tag = Annotated[str, Field(strict=True, max_length=100)]
@@ -52,27 +54,74 @@ class LineShape(_Checked):
     fluid: Annotated[str, Field(strict=True, max_length=64)] = ""
 
 
-class DrawingShape(_Checked):
-    format: int = Field(strict=True, ge=1)
+class PageShape(_Checked):
     parts: list[PartShape] = Field(max_length=MAX_PARTS)
     lines: list[LineShape] = Field(max_length=MAX_LINES)
+
+
+class NamedPageShape(PageShape):
+    id: Id
+    name: Annotated[str, Field(strict=True, max_length=100)] = ""
+
+
+class FormatShape(_Checked):
+    format: int = Field(strict=True, ge=1)
+
+
+class PagesShape(FormatShape):
+    pages: list[NamedPageShape] = Field(min_length=1, max_length=MAX_PAGES)
+
+
+def drawing_format(drawing: dict[str, Any]) -> int:
+    """A drawing's format: 1, from before pages, or 2."""
+    found = drawing.get("format")
+    return found if type(found) is int else 1
+
+
+def drawing_pages(drawing: dict[str, Any]) -> list[dict[str, Any]]:
+    """A checked drawing's pages: a drawing of format 1 is one."""
+    if drawing_format(drawing) >= 2:
+        return [page for page in drawing.get("pages") or [] if isinstance(page, dict)]
+    return [drawing]
 
 
 def check_drawing(drawing: dict[str, Any]) -> None:
     """A drawing has the shape the server needs, or InvalidDrawing says what's wrong with it."""
     try:
-        shape = DrawingShape.model_validate(drawing)
+        if FormatShape.model_validate(drawing).format >= 2:
+            pages: list[PageShape] = list(PagesShape.model_validate(drawing).pages)
+        else:
+            pages = [PageShape.model_validate(drawing)]
     except ValidationError as error:
         raise InvalidDrawing(_in_words(error.errors()[0])) from None
+    parts = [part for page in pages for part in page.parts]
+    lines = [line for page in pages for line in page.lines]
+    if len(parts) > MAX_PARTS:
+        raise InvalidDrawing(f"The drawing has more than {MAX_PARTS} parts on its pages")
+    if len(lines) > MAX_LINES:
+        raise InvalidDrawing(f"The drawing has more than {MAX_LINES} lines on its pages")
+    # Unique in the whole drawing, not only on a page: a jump from one page to a part on another names it by its id.
     seen: set[str] = set()
-    for item in [*shape.parts, *shape.lines]:
+    for item in [*parts, *lines]:
         if item.id in seen:
             raise InvalidDrawing(f"Two parts or lines share the id {item.id}")
         seen.add(item.id)
+    pages_seen: set[str] = set()
+    for page in pages:
+        if isinstance(page, NamedPageShape):
+            if page.id in pages_seen:
+                raise InvalidDrawing(f"Two pages share the id {page.id}")
+            pages_seen.add(page.id)
 
 
 _ITEMS = {"parts": "Part", "lines": "Line"}
-_FIELDS = {"from": "start (from)", "to": "end (to)", "parts": "list of parts", "lines": "list of lines"}
+_FIELDS = {
+    "from": "start (from)",
+    "to": "end (to)",
+    "parts": "list of parts",
+    "lines": "list of lines",
+    "pages": "list of pages",
+}
 _SAID = {
     "missing": "{whose} has no {name}",
     "string_too_short": "{whose} has no {name}",
@@ -84,18 +133,23 @@ _SAID = {
     "greater_than_equal": "{its} has to be at least {ge}",
     "list_type": "{whose}'s {field} aren't a list",
     "too_long": "{whose} has more than {max_length} {field}",
+    "too_short": "{whose} has no {field}",
     "dict_type": "{its} isn't an object",
     "model_type": "{its} isn't an object",
 }
 
 
 def _in_words(error: ErrorDetails) -> str:
-    """What pydantic found wrong, in words: "Part 3 has no kind", "Line 2's end (to) isn't an object"."""
+    """What pydantic found wrong, in words: "Part 3 has no kind", "Page 2's line 4's end (to) isn't an object"."""
     loc = error["loc"]
+    page = ""
+    if len(loc) >= 2 and loc[0] == "pages" and isinstance(loc[1], int):  # on a page, or the page itself
+        page, loc = f"Page {loc[1] + 1}", loc[2:]
     if len(loc) >= 2 and loc[0] in _ITEMS and isinstance(loc[1], int):  # a part or a line, or one of its fields
-        whose, field = f"{_ITEMS[str(loc[0])]} {loc[1] + 1}", str(loc[2]) if len(loc) > 2 else ""
+        item = f"{_ITEMS[str(loc[0])]} {loc[1] + 1}"
+        whose, field = f"{page}'s {item.lower()}" if page else item, str(loc[2]) if len(loc) > 2 else ""
     else:
-        whose, field = "The drawing", str(loc[0]) if loc else ""
+        whose, field = page or "The drawing", str(loc[0]) if loc else ""
     name = _FIELDS.get(field, field)
     its = f"{whose}'s {name}" if field else whose
     said = _SAID.get(error["type"], "{its}: {msg}")
@@ -155,8 +209,9 @@ class DiagramOut(BaseModel):
     description: str
     version: int  # what a save of its drawing names as the version it was changed from
     revision: int  # its latest revision's number
-    parts: int  # how many its drawing has
+    parts: int  # how many its drawing has, on all its pages
     lines: int
+    pages: int = 1  # how many pages its drawing has
     fluids: list[str]  # its lines' fluids, each once
     created_at: datetime
     created_by: UserRef | None
@@ -179,6 +234,7 @@ class DiagramOut(BaseModel):
             "revision": diagram.revision,
             "parts": diagram.summary.get("parts", 0),
             "lines": diagram.summary.get("lines", 0),
+            "pages": diagram.summary.get("pages", 1),
             "fluids": diagram.summary.get("fluids", []),
             "created_at": diagram.created_at,
             "created_by": _ref(diagram.creator),

@@ -47,7 +47,8 @@ test("the drawing's in PDF's own operators, its words as text", async () => {
     const start = text.indexOf("stream\n") + "stream\n".length;
     const end = text.indexOf("\nendstream");
     const content = await inflate(Uint8Array.from(text.slice(start, end), (char) => char.charCodeAt(0)));
-    expect(content).toContain("(PT) Tj"); // an instrument's letters, in its bubble
+    expect(content).toContain("(P) Tj"); // a sensor's letter, in its box
+    expect(content).toContain("(PT-1) Tj"); // and its tag, beside it
     expect(content).toContain("(BV-1) Tj"); // a tag
     expect(content).toContain("(Feed system) Tj"); // the title block's title
     expect(content).toMatch(/ c\n/); // curves: arcs and circles as Béziers

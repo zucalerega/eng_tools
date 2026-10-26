@@ -3,6 +3,7 @@ import { newPart } from "../src/piper/drawing";
 import { unpackJson } from "../src/packed";
 import {
     channelName,
+    channelNames,
     findChannel,
     formatValue,
     outline,
@@ -45,6 +46,15 @@ test("a part reads the channel named in Test channel, or else its tag", () => {
     expect(channelName(newPart("instrument", { x: 0, y: 0 }, { tag: "PT-101", props: { channel: " PT-OX " } }))).toBe(
         "PT-OX",
     );
+});
+
+test("a duplicated or triplicated transducer reads a channel each: those named, or its tag's with A, B, C", () => {
+    const sensor = (props: Record<string, string>) => newPart("instrument", { x: 0, y: 0 }, { tag: "PT-101", props });
+    expect(channelNames(sensor({ count: "2" }))).toEqual(["PT-101A", "PT-101B"]);
+    expect(channelNames(sensor({ count: "3", channel: "PT-OX" }))).toEqual(["PT-OXA", "PT-OXB", "PT-OXC"]);
+    expect(channelNames(sensor({ count: "2", channel: "PT-OX-1, PT-OX-2" }))).toEqual(["PT-OX-1", "PT-OX-2"]);
+    expect(channelNames(sensor({ channel: "PT-OX-1, PT-OX-2" }))).toEqual(["PT-OX-1"]); // one transducer, one
+    expect(channelName(sensor({ count: "2" }))).toBe("PT-101A");
 });
 
 test("channels are found by name whatever their case, then ignoring spaces, dashes, and underscores", () => {

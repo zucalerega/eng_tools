@@ -73,9 +73,21 @@ const TOPICS: Topic[] = [
                     anything else (a DAQ, a test stand), notes, regions, a legend, and a title block.
                 </li>
                 <li>
-                    Each new part is tagged with the next number free (<code>PT-3</code> after <code>PT-2</code>). An
-                    instrument's tag is in its bubble; others' are beside them, where you drag them. Double-click a part
-                    to type its tag.
+                    Each new part is tagged with the next number free (<code>PT-3</code> after <code>PT-2</code>),
+                    beside it, where you drag it. Double-click a part to type its tag.
+                </li>
+                <li>
+                    A sensor is a small box with the letter of what it measures (<code>P</code> pressure, <code>T</code>{" "}
+                    temperature, <code>W</code> force, <code>L</code> level, <code>Z</code> position), its tag at its
+                    side. A duplicated or triplicated transducer (two or three on one tap) is two or three boxes, A, B,
+                    and C: set <em>Transducers</em>, or place one from the library. Each reads its own test channel:
+                    those its <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it
+                    (<code>PT-101A</code>, <code>PT-101B</code>).
+                </li>
+                <li>
+                    Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it (a handle, a
+                    solenoid, a diaphragm, a motor) on a short stem. A regulator's line from its diaphragm goes to the
+                    pressure it holds; an orifice plate sits in its pipe; a vent's open end turns down.
                 </li>
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select

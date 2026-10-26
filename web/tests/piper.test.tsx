@@ -558,6 +558,21 @@ test("a test from Yorg on the drawing: each instrument's value and each valve's 
     expect(String(open.mock.calls[0]![0])).toMatch(new RegExp(`^/yorg/datasets/${data.id}\\?plots=`));
 });
 
+test("a duplicated transducer shows both its channels' values", async () => {
+    const team = await Team.create();
+    const csv = ["Time (s),PT-7A (psi),PT-7B (psi)", "0,100.0,101.5", "1,200.0,201.5"].join("\n");
+    const data = await team.data(team.chief, "Redundant", csv);
+    const drawing = { value: emptyDrawing() };
+    const sensor = place(drawing, "pressure-transducer-2", 0, 0);
+    drawing.value = {
+        ...drawing.value,
+        parts: drawing.value.parts.map((part) => (part.id === sensor ? { ...part, tag: "PT-7" } : part)),
+    };
+    const made = await team.diagram(team.chief, "Redundant", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}?test=${data.id}&t=0.5`);
+    await waitFor(() => expect(badge(sensor)).toBe("100.0 psi / 101.5 psi"));
+});
+
 test("whoever made a diagram deletes it to Deleted diagrams, and restores it; no one else can", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

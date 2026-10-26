@@ -21,7 +21,7 @@ import { kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
-import { channelName, findChannel, plotLink } from "./testdata";
+import { channelNames, findChannel, plotLink } from "./testdata";
 import { PAPERS, pdfOf, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
 import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
@@ -215,7 +215,7 @@ export function EditorPage({ id }: { id: number }) {
         ? [
               ...new Set(
                   readers(drawing)
-                      .map((part) => findChannel(reading.detail, channelName(part))?.name)
+                      .flatMap((part) => channelNames(part).map((name) => findChannel(reading.detail, name)?.name))
                       .filter((name) => name !== undefined),
               ),
           ]

@@ -70,8 +70,37 @@ export function findChannel(detail: TestDetail, name: string): TestChannel | nul
     );
 }
 
-/** The channel a part reads: the one named in its Test channel property, or else its tag. */
-export const channelName = (part: Part): string => (part.props.channel ?? "").trim() || part.tag.trim();
+/**
+ * The channels a part reads: the ones named in its Test channel property (by commas), or else its tag. A duplicated or
+ * triplicated transducer (two or three on one tap) reads one each: those named, or its tag's with A, B, and C after it
+ * (PT-101A, PT-101B).
+ */
+export function channelNames(part: Part): string[] {
+    const named = (part.props.channel ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+    const count = transducers(part);
+    if (count === 1) {
+        return [named[0] || part.tag.trim()].filter(Boolean);
+    }
+    if (named.length >= count) {
+        return named.slice(0, count);
+    }
+    const base = named[0] || part.tag.trim();
+    return base
+        ? "ABC"
+              .slice(0, count)
+              .split("")
+              .map((letter) => `${base}${letter}`)
+        : [];
+}
+
+/** The channel a part reads first: its only one, but for a duplicated or triplicated transducer's. */
+export const channelName = (part: Part): string => channelNames(part)[0] ?? "";
+
+/** How many transducers a part is: 2 or 3 on one tap, as a duplicated or triplicated one is, or 1. */
+export const transducers = (part: Part): number => (part.props.count === "3" ? 3 : part.props.count === "2" ? 2 : 1);
 
 /** A channel's value at a time: its last sample then, or null before its first (or where it's missing). */
 export function valueAt(samples: Samples, t: number): number | null {

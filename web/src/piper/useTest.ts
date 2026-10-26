@@ -4,7 +4,7 @@ import type { LiveValue } from "./DiagramView";
 import type { Drawing, Part } from "./drawing";
 import { kindOf } from "./library/index";
 import {
-    channelName,
+    channelNames,
     findChannel,
     formatValue,
     samplesOf,
@@ -86,7 +86,7 @@ export function useTest(
             return [];
         }
         const names = readers(drawing)
-            .map((part) => findChannel(detail, channelName(part))?.name)
+            .flatMap((part) => channelNames(part).map((name) => findChannel(detail, name)?.name))
             .filter((name) => name !== undefined);
         return [...new Set(names)];
     }, [detail, drawing]);
@@ -130,23 +130,33 @@ export function useTest(
         const live = new Map<string, LiveValue>();
         const missing: Part[] = [];
         for (const part of readers(drawing)) {
-            const name = channelName(part);
-            if (!name) {
+            const names = channelNames(part);
+            if (names.length === 0) {
                 continue; // nothing to read it by yet
             }
-            const channel = findChannel(detail, name);
-            if (!channel) {
+            const channels = names.map((name) => findChannel(detail, name));
+            if (channels.some((channel) => !channel)) {
                 missing.push(part);
+            }
+            const found = channels.filter((channel) => channel !== null);
+            if (found.length === 0) {
                 live.set(part.id, { text: "", state: null, missing: true });
                 continue;
             }
-            const loaded = samples.get(channel.name);
-            const value = loaded ? valueAt(loaded, time) : null;
+            // Each of its channels' values at the time: a duplicated transducer's two, side by side.
+            const values = found.map((channel) => {
+                const loaded = samples.get(channel.name);
+                return { channel, value: loaded ? valueAt(loaded, time) : null };
+            });
             const reads = kindOf(part.kind).reads;
+            const first = values[0]!;
             live.set(part.id, {
-                text: value === null ? "" : formatValue(channel, value),
-                state: value === null || reads !== "state" ? null : stateOf(channel, value),
-                missing: false,
+                text: values
+                    .filter((entry) => entry.value !== null)
+                    .map((entry) => formatValue(entry.channel, entry.value!))
+                    .join(" / "),
+                state: first.value === null || reads !== "state" ? null : stateOf(first.channel, first.value),
+                missing: found.length < names.length,
             });
         }
         return { detail, time, samples, live, missing };

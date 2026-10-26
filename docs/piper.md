@@ -96,12 +96,19 @@ what it is, `data-hit`).
   (10628, 1219) standards draw them, with its size, its ports (where lines connect, each facing
   out of the part, all on the grid), its properties, the prefix of a new one's tag, and how
   it's drawn, in its own frame, centered; and presets, a kind set up as one of the team's parts
-  is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves (ball, gate, globe,
+  is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves are small on their lines,
+  as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
+  14-unit stem; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
+  or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
+  vent's end turns down (a gooseneck). Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
   regulator, burst disc, quick disconnect); vessels (tanks, spheres, bottles and COPVs,
   dewars); flow elements (orifices, venturis, cavitating venturis, flow meters, filters);
   instruments (pressure transducers, gauges, and switches, thermocouples, RTDs, load cells,
-  flow, level, position, and differential pressure sensors, as ISA bubbles); equipment
+  flow, level, position, and differential pressure sensors, each a 20-unit box with ISA's
+  first letter for what it measures, P, T, W, L, Z, ΔP, and the tag at its side; duplicated
+  and triplicated transducers, two or three boxes on one tap, A, B, C, each reading its own
+  channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
   fittings (tees, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
   legend, a title block). The library's search finds a part by any of its names (MOV, PRV,
@@ -110,9 +117,9 @@ what it is, `data-hit`).
   is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's
   drag-and-drop, which Firefox won't start from a button.
 - **Tags** name parts and lines: a new part gets its kind's prefix and the next number free
-  (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is in its bubble, its
-  letters over its number, as ISA draws them; anything else's beside it: under a part in a line
-  going across, beside one in a line going down, under or beside others, or where it's dragged.
+  (BV-3, PT-7), and a tag two parts share is marked. A sensor's tag is at its side; anything
+  else's beside it: under a part in a line going across, beside one in a line going down, under
+  or beside others, or where it's dragged.
   Labels are small beside the symbols (a tag 8 units high against a valve's 20), and a diagram
   makes them all smaller or larger (`style.labels`, `textSizes`). Double-clicking a part goes to
   its tag (or its words, for a note).

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { isPortEnd, newPart } from "../src/piper/drawing";
+import { emptyDrawing, isPortEnd, newPart } from "../src/piper/drawing";
 import { example } from "../src/piper/example";
 import { fluidsOf, fluidsUsed, STANDARD_FLUIDS, withFluid } from "../src/piper/fluids";
 import { OPPOSITE } from "../src/piper/geometry";
@@ -46,6 +46,25 @@ test("ports sit on the grid, at their part's edge, each with an id of its own", 
             expect(inside && !port.many, `${name} ${port.id} is inside its box`).toBe(false);
         }
     }
+});
+
+test("a sensor is a box with the letter of what it measures, small beside a tank, its tag at its side", () => {
+    const sensor = (props: Record<string, string>) => newPart("instrument", { x: 0, y: 0 }, { props });
+    const [x0, y0, x1, y1] = kindOf("instrument").box(sensor({ type: "pressure" }), emptyDrawing());
+    const [, ty0, , ty1] = kindOf("tank").box(newPart("tank", { x: 0, y: 0 }), emptyDrawing());
+    expect([x1 - x0, y1 - y0]).toEqual([20, 20]);
+    expect(y1 - y0).toBeLessThan((ty1 - ty0) / 4);
+    expect(kindOf("instrument").tag).toBe("side");
+    // Two or three on one tap: side by side, their side taps still on the grid.
+    for (const [count, half] of [
+        ["2", 20],
+        ["3", 30],
+    ] as const) {
+        const ports = kindOf("instrument").ports(sensor({ type: "pressure", count }));
+        expect(ports.find((port) => port.id === "right")?.x).toBe(half);
+        expect(ports.find((port) => port.id === "left")?.x).toBe(-half);
+    }
+    expect(titleOf(sensor({ type: "pressure", count: "3" }))).toBe("Triplicated pressure transducer");
 });
 
 test("valves come without their state written beside them: their color says it", () => {

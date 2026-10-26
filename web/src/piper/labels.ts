@@ -60,7 +60,7 @@ export function partLabel(drawing: Drawing, part: Part): { text: string; tag: bo
         return [];
     }
     const rows: { text: string; tag: boolean }[] = [];
-    if (kind.tag === "beside" && part.tag) {
+    if ((kind.tag === "beside" || kind.tag === "side") && part.tag) {
         rows.push({ text: part.tag, tag: true });
     }
     for (const key of part.shown) {
@@ -83,6 +83,9 @@ export function labelPlace(part: Part, box: Box, size = 8): { at: Point; anchor:
     }
     const kind = kindOf(part.kind);
     const below = box.y1 + size + 2;
+    if (kind.tag === "side") {
+        return { at: { x: box.x1 + 5, y: part.y + size / 3 }, anchor: "start" };
+    }
     if (kind.inline) {
         const across = part.rotation === 0 || part.rotation === 180;
         return across

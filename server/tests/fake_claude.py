@@ -22,6 +22,7 @@ class Reply:
     iterations: list[dict[str, Any]] | None = None  # usage.iterations, as with a fallback
     status: int = 200  # another: Anthropic's error, with this message
     error: str = ""
+    error_code: str | None = None  # and this error.details.error_code, as a spend limit's has
     breaks_off: bool = False  # the connection drops partway through the answer
     hold: threading.Event | None = None  # wait for this before answering
     # Partway through the answer, after this many pieces of it: Anthropic's error event (as when it's overloaded), or a
@@ -60,9 +61,10 @@ class FakeClaude:
 
             def _error(self, reply: Reply) -> None:
                 kind = {400: "invalid_request_error", 402: "billing_error", 429: "rate_limit_error"}
-                data = json.dumps(
-                    {"type": "error", "error": {"type": kind.get(reply.status, "api_error"), "message": reply.error}}
-                ).encode()
+                error: dict[str, Any] = {"type": kind.get(reply.status, "api_error"), "message": reply.error}
+                if reply.error_code is not None:
+                    error["details"] = {"error_code": reply.error_code}
+                data = json.dumps({"type": "error", "error": error}).encode()
                 self.send_response(reply.status)
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(data)))

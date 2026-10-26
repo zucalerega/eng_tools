@@ -283,7 +283,9 @@ uses, and not for Claude Code. To set it up:
    come, and nothing is charged (usage is never charged to the plan).
 3. **Make a workspace for the site,** `YJSP`, on the Console's Workspaces page, and give it a
    spend limit (select it, then Spend limits) of the most the site may spend in a month, at
-   most the plan's credits: Anthropic's own cap, in case the server's count is ever off.
+   most the plan's credits: Anthropic's own cap, in case the server's count is ever off. If
+   Anthropic stops the site at it, Help says Claude has reached its monthly spending limit at
+   Anthropic (`assistant_spend_limit`), and answers again on the 1st.
 4. **Make an API key in that workspace,** so the site's questions count against its limit.
    Put it in the server's `.env` as `YJSP_ANTHROPIC_API_KEY`, and never anywhere else.
 5. **Set the server's budget:** `YJSP_ASSISTANT_MONTHLY_BUDGET` in `.env`, a few dollars under

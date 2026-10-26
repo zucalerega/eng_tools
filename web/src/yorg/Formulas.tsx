@@ -4,7 +4,7 @@ import { Dialog, Notice } from "../components";
 import { yorg, type DatasetDetail, type Formula } from "./api";
 import { calculateFor, reloadFormulas } from "./data";
 import { channelsOf, findChannel, FormulaError, readFormula } from "./formula";
-import { formatValue } from "./scale";
+import { formatValue } from "../scale";
 
 // Making and changing a calculated channel: a name, a unit, and an expression over channels, checked as it's typed
 // against the dataset it's being made from.

@@ -1,7 +1,8 @@
 // A diagram's drawing: its pages, each with its parts and the lines between them (and where its printed sheet sits),
-// and the fluids and style they share. Plain JSON: the server keeps it as it's sent (server/src/yjsp_server/piper/
-// schemas.py checks its shape), and readDocument reads it back, filling in what an older drawing didn't have (one from
-// before pages is a page of its own), so a drawing never has to be upgraded on the server.
+// and the fluids, style, and simulation's units they share. Plain JSON: the server keeps it as it's sent
+// (server/src/yjsp_server/piper/schemas.py checks its shape), and readDocument reads it back, filling in what an older
+// drawing didn't have (one from before pages is a page of its own), so a drawing never has to be upgraded on the
+// server. Its format says what a Piper must know to keep all of it: 2 pages, 3 parts' and lines' simulation settings.
 //
 // The editor works on a page at a time: a Drawing, its parts and lines with the fluids and style (pageOf), which is
 // what every change (edit.ts) and what's drawn (DiagramView) takes; withPage puts it back in its document.
@@ -30,6 +31,23 @@ export interface Part {
     h: number;
     scale: number; // how big it's drawn, of its kind's size: one of PART_SCALES
     labelSize: LabelSize | ""; // its tag's and properties' size; "": the diagram's
+    sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
+}
+
+/** Settings in the simulation, in SI units, by the keys of Yorg's system models' catalog (sim/api.ts). */
+export type SimValues = Record<string, number | string>;
+
+/**
+ * What a part is in the diagram's simulation (Simulation mode, sim/model.ts): its settings there, and, where its kind
+ * could be more than one thing in the model (a bottle: a gas supply, or a vessel that blows down), which. What's left
+ * out is as its kind and the P&ID make it, at the catalog's defaults.
+ */
+export interface PartSim {
+    as: string; // "": what its kind makes it; else one of sim/model.ts's ROLES
+    settings: SimValues;
+    // Its channel kept out of the simulation (a valve's command, an instrument's reading): what it would set is the
+    // settings' instead, your own conditions. Without it, its channel's in, where the test has it.
+    unlinked?: boolean;
 }
 
 /** The sizes a part can be drawn at, of its kind's own: half to double. */
@@ -64,6 +82,17 @@ export interface Line {
     arrow: Arrow;
     props: Record<string, string>; // size, wall, material, length...
     shown: string[]; // what its label shows: "tag", "fluid", and property keys
+    sim?: LineSim; // what it is in the diagram's simulation, if that's been set
+}
+
+/**
+ * A line in the diagram's simulation: a liquid line modeled as a line (its friction and its liquid's inertia), with its
+ * settings; and the settings of the gas node its lines make between gas parts (tubing, with its volume and what it
+ * holds at the start), which each of them keeps a copy of.
+ */
+export interface LineSim {
+    line: SimValues | null; // null: not modeled as a line, so its two ends are one point in the model
+    node: SimValues;
 }
 
 /** A fluid lines carry: a standard one (fluids.ts), changed by the diagram, or one of its own. */
@@ -89,6 +118,18 @@ export interface Style {
     schemeAt: string;
 }
 
+/**
+ * The diagram's simulation, shared by its pages: the units its settings are shown in, with pressures above the
+ * atmosphere (gauge) or not; and so how a test's channels without units, or in psi, are read.
+ */
+export interface SimUnits {
+    units: "us" | "si";
+    gauge: boolean;
+    ambient: number; // Pa: the atmosphere, for gauge pressures
+}
+
+export const STANDARD_SIM_UNITS: SimUnits = { units: "us", gauge: true, ambient: 101325 };
+
 /** A page as it'd be printed: on a paper, turned its way, its top left at a point of the page, so many points to a
  * unit. The canvas shows its outline; a PDF prints the page there, as it shows. */
 export interface PageSheet {
@@ -107,12 +148,13 @@ export interface Page {
     sheet: PageSheet | null; // where it's printed, if it's been set: else a PDF fits it to its paper
 }
 
-/** A diagram's drawing as it's saved: its pages, and the fluids and style all of them share. */
+/** A diagram's drawing as it's saved: its pages, and the fluids, style, and simulation's units all of them share. */
 export interface Document {
-    format: 2;
+    format: 3;
     pages: Page[];
     fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
     style: Style;
+    sim?: SimUnits; // left out: STANDARD_SIM_UNITS
 }
 
 /** A page of a drawing, as the editor works on it: its parts and lines, with the fluids and style it shares. */
@@ -123,6 +165,7 @@ export interface Drawing {
     fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
     style: Style;
     sheet?: PageSheet | null; // its page's printed sheet, if it's in a document
+    sim?: SimUnits; // its document's simulation's units, if they've been set
     // The tags on the diagram's other pages, not saved with it: a part placed here is numbered after them, and a tag
     // taken there is said to be (pageOf fills it in).
     elsewhere?: string[];
@@ -143,10 +186,11 @@ export const isPortEnd = (end: End): end is { part: string; port: string } => "p
 /** A document of one page, from a page's drawing: a new diagram's, or one from before pages. */
 export function documentOf(drawing: Drawing, name = "Page 1"): Document {
     return {
-        format: 2,
+        format: 3,
         pages: [{ id: newId("g"), name, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null }],
         fluids: drawing.fluids,
         style: drawing.style,
+        ...(drawing.sim ? { sim: drawing.sim } : {}),
     };
 }
 
@@ -162,21 +206,24 @@ export function pageOf(document: Document, index: number): Drawing {
         fluids: document.fluids,
         style: document.style,
         sheet: page.sheet,
+        ...(document.sim ? { sim: document.sim } : {}),
         elsewhere: document.pages
             .filter((other) => other !== page)
             .flatMap((other) => other.parts.map((part) => part.tag).filter(Boolean)),
     };
 }
 
-/** A document with a page's drawing put back: its parts, lines, and sheet, and the fluids and style all share. */
+/** A document with a page's drawing put back: its parts, lines, and sheet, and the fluids, style, and simulation's
+ * units all share. */
 export function withPage(document: Document, index: number, drawing: Drawing): Document {
     return {
-        ...document,
+        format: document.format,
         pages: document.pages.map((page, at) =>
             at === index ? { ...page, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null } : page,
         ),
         fluids: drawing.fluids,
         style: drawing.style,
+        ...(drawing.sim ? { sim: drawing.sim } : {}),
     };
 }
 
@@ -264,6 +311,49 @@ function end(value: unknown): End | null {
 
 const ROTATIONS: Rotation[] = [0, 90, 180, 270];
 
+/** Settings in the simulation: numbers (finite) and choices, by key. */
+function simValues(value: unknown): SimValues {
+    const found: SimValues = {};
+    if (isObject(value)) {
+        for (const [key, entry] of Object.entries(value)) {
+            if (typeof entry === "string" || (typeof entry === "number" && Number.isFinite(entry))) {
+                found[key] = entry;
+            }
+        }
+    }
+    return found;
+}
+
+const partSim = (value: unknown): { sim?: PartSim } =>
+    isObject(value)
+        ? {
+              sim: {
+                  as: str(value.as),
+                  settings: simValues(value.settings),
+                  ...(value.unlinked === true ? { unlinked: true } : {}),
+              },
+          }
+        : {};
+
+const lineSim = (value: unknown): { sim?: LineSim } =>
+    isObject(value)
+        ? { sim: { line: isObject(value.line) ? simValues(value.line) : null, node: simValues(value.node) } }
+        : {};
+
+function simUnits(value: unknown): { sim?: SimUnits } {
+    if (!isObject(value)) {
+        return {};
+    }
+    const ambient = num(value.ambient, STANDARD_SIM_UNITS.ambient);
+    return {
+        sim: {
+            units: value.units === "si" ? "si" : "us",
+            gauge: value.gauge !== false,
+            ambient: ambient > 0 && ambient < 2e5 ? ambient : STANDARD_SIM_UNITS.ambient,
+        },
+    };
+}
+
 /**
  * Properties and what's shown of them, with a pressure rating read as the MAWP it is: drawings before MAWP called it
  * "rating" (a filter's rating is its microns, and stays).
@@ -301,6 +391,7 @@ function part(value: unknown): Part | null {
             value.labelSize === "small" || value.labelSize === "normal" || value.labelSize === "large"
                 ? value.labelSize
                 : "",
+        ...partSim(value.sim),
     };
 }
 
@@ -335,6 +426,7 @@ function line(value: unknown, parts: Set<string>): Line | null {
         arrow,
         props,
         shown,
+        ...lineSim(value.sim),
     };
 }
 
@@ -390,9 +482,9 @@ export function readDocument(value: unknown): Document {
     if (pages.length === 0) {
         return documentOf(readDrawing(found));
     }
-    const shared = readDrawing({ fluids: found.fluids, style: found.style });
+    const shared = readDrawing({ fluids: found.fluids, style: found.style, sim: found.sim });
     return {
-        format: 2,
+        format: 3,
         pages: pages.map((page, index) => ({
             id: str(page.id) || newId("g"),
             name: str(page.name) || `Page ${index + 1}`,
@@ -401,6 +493,7 @@ export function readDocument(value: unknown): Document {
         })),
         fluids: shared.fluids,
         style: shared.style,
+        ...(shared.sim ? { sim: shared.sim } : {}),
     };
 }
 
@@ -429,5 +522,6 @@ export function readDrawing(value: unknown): Drawing {
             scheme: str(style.scheme),
             schemeAt: str(style.schemeAt),
         },
+        ...simUnits(found.sim),
     };
 }

@@ -39,13 +39,13 @@ def start_run(team, who) -> str:
         ],
     }
     body = {"model": model, "dataset_id": response.json()["id"], "start": 0.0, "end": 1.0}
-    response = team.client.post("/api/yorg/dev/runs", json=body, headers=who)
+    response = team.client.post("/api/yorg/models/runs", json=body, headers=who)
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
 def status_of(team, who, run_id: str) -> dict:
-    response = team.client.get(f"/api/yorg/dev/runs/{run_id}", headers=who)
+    response = team.client.get(f"/api/yorg/models/runs/{run_id}", headers=who)
     assert response.status_code == 200, response.text
     return response.json()
 

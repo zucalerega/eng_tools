@@ -22,7 +22,7 @@ test("a run waits for Python to start and says so, then says each step, and wher
     const pythons = fakePython();
     const team = await Team.create();
     const tank = await team.data(team.chief, "Tank test", TANK);
-    renderApp(team.chief, `/yorg/dev/scripts?dataset=${tank.id}`);
+    renderApp(team.chief, `/yorg/scripts?dataset=${tank.id}`);
     expect(await screen.findByText(/^Starting Python · \d+ s$/)).toBeTruthy();
     await setCode(
         1,
@@ -83,7 +83,7 @@ test("a run waits for Python to start and says so, then says each step, and wher
 test("a failed run shows its traceback, and marks the line it failed on", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, "x = 1\ny = x / 0");
     pythons.latest().say({ type: "ready", version: "3.14.2" });
     await runFirst();
@@ -99,7 +99,7 @@ test("a failed run shows its traceback, and marks the line it failed on", async 
 test("Stop: a run that's waiting doesn't start; one that's running stops Python, which starts again", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, "print(1)");
 
     await runFirst();
@@ -122,7 +122,7 @@ test("Stop: a run that's waiting doesn't start; one that's running stops Python,
 test("Python stays open while you're elsewhere: back on Scripts, the script and its last runs are as they were", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, 'print("hello")');
     pythons.latest().say({ type: "ready", version: "3.14.2" });
     await runFirst();
@@ -144,7 +144,7 @@ test("Python stays open while you're elsewhere: back on Scripts, the script and 
 test("while a script's open, Python gets its slow imports ready; a run waits for that, and says so", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, ""); // once the page is up, and its Python with it
     const fake = pythons.latest();
     fake.say({ type: "ready", version: "3.14.2" });
@@ -172,7 +172,7 @@ test("while a script's open, Python gets its slow imports ready; a run waits for
 test("Python that doesn't start says why, and starts again for a run, or when asked; the run waits for it", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, "print(1)");
     const failed = "Python didn't start: Failed to fetch dynamically imported module";
     pythons.latest().say({ type: "failed", error: "Failed to fetch dynamically imported module" });

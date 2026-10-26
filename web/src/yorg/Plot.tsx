@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import type { AxisSpec, Note, Side } from "./layout";
 import type { Runs } from "./masks";
 import { sampleAt, trace, visibleRange, type Placement, type Samples } from "./samples";
-import { formatDuration, formatTick, ticks } from "./scale";
+import { formatDuration, formatTick, ticks } from "../scale";
 
 // One plot: channels drawn over a time window on a canvas, with a y axis on either side. Everything that changes the
 // view goes up to the workspace (which gives every plot the same window and cursor):

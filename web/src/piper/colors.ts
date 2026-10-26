@@ -13,6 +13,7 @@ export interface Palette {
     gridMajor: string;
     select: string; // what's selected, and where a line will go
     guide: string; // a snap's guide
+    model: string; // a simulation's values: its gold, dark enough to read as words on the paper
     no: string; // normally open, and open in a test
     nc: string; // normally closed, and closed
     fip: string; // fails in place: a double-acting valve, which stays as it was when its air or power goes
@@ -27,6 +28,7 @@ export const LIGHT: Palette = {
     gridMajor: "#dde2ea",
     select: "#1d6fe0",
     guide: "#e0a500",
+    model: "#9c6900",
     no: "#2e9e4f",
     nc: "#d64541",
     fip: "#5b7a99",
@@ -41,6 +43,7 @@ export const DARK: Palette = {
     gridMajor: "#1d2839",
     select: "#7aa7ee",
     guide: "#e0a500",
+    model: "#e0a500",
     no: "#3fbf6f",
     nc: "#f0605a",
     fip: "#86a3c2",

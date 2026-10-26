@@ -1,42 +1,19 @@
 import { useState } from "react";
-import { formatValue } from "../scale";
-import type { Catalog, FitKnob, Setting, Solver, SystemModel } from "./api";
-import { comparisons, heldInSteady, kindOf, knobsOf, partOf, setSetting } from "./model";
+import { formatValue } from "../../scale";
+import type { Catalog, FitKnob, Knob, Solver, SystemModel } from "./api";
+import { comparisons, heldInSteady, knobsOf, partOf, settingOf, withinLimits } from "./settings";
 import { toDisplay, unitOf } from "./units";
 
-// Fitting a model to a test (one of Tune's two ways, Tune.tsx): pick the knobs (settings marked tune), and the server
-// turns them until the model matches the channels it's compared with, run after run. What it found is then yours to
-// apply (or not).
+// Fitting the model to a test (one of Tune's two ways, Tune.tsx): pick the knobs (settings marked tune), and Yorg turns
+// them until the model matches the channels it's compared with, run after run. What it found is then yours to apply to
+// the P&ID's parts (or not).
 
-export const MAX_KNOBS = 8; // the server's: each costs a run per try
+export const MAX_KNOBS = 8; // Yorg's: each costs a run per try
 
 /** A value to four figures: a knob's, without the last digits of its unit conversion. */
-const rounded = (value: number) => formatValue(Number(value.toPrecision(4)));
-
-export interface Knob {
-    part: string;
-    key: string;
-}
+export const rounded = (value: number): string => formatValue(Number(value.toPrecision(4)));
 
 const same = (a: Knob, b: Knob) => a.part === b.part && a.key === b.key;
-
-/** A knob's setting, if the model still has it. */
-function settingOf(model: SystemModel, catalog: Catalog, knob: { part: string; key: string }): Setting | undefined {
-    const part = partOf(model, knob.part);
-    return part ? kindOf(catalog, part.type).settings.find((one) => one.key === knob.key) : undefined;
-}
-
-/** Whether a value is within its setting's limits: an anchor can take a knob past them, which no part can have. */
-function withinLimits(setting: Setting | undefined, value: number): boolean {
-    return (setting?.minimum ?? -Infinity) <= value && value <= (setting?.maximum ?? Infinity);
-}
-
-/** A model with the values a fit (or an anchored run) found, where they're within their settings' limits. */
-export function applyKnobs(model: SystemModel, catalog: Catalog, found: FitKnob[]): SystemModel {
-    return found
-        .filter((knob) => withinLimits(settingOf(model, catalog, knob), knob.value))
-        .reduce((next, knob) => setSetting(next, knob.part, knob.key, knob.value), model);
-}
 
 /** What a fit is asked to do, as the Tune dialog sets it up: the knobs picked, of those that matter in this run. */
 export function useFitChoice(model: SystemModel, catalog: Catalog, solver: Solver, picked: Knob[]) {
@@ -71,19 +48,20 @@ export function FitChoices({ model, choice }: { model: SystemModel; choice: FitC
         <>
             {compared.length === 0 ? (
                 <p className="notice notice-warning">
-                    Nothing to fit to: link a sensor first (a junction&apos;s pressure transducer, a flow meter, an
-                    ullage tank&apos;s pressure).
+                    Nothing to fit to: the model isn&apos;t compared with any of the test&apos;s channels. Tap a
+                    pressure transducer to a line or a tank, or put a flow meter in a line, named as the test&apos;s
+                    channel.
                 </p>
             ) : (
-                <p className="dev-help">
+                <p className="piper-sim-help">
                     Matched to <strong>{compared.map((one) => one.channel).join(", ")}</strong>. Each try is a run for
                     every knob picked, so fewer knobs (and a longer time step) fit faster; it stops after 30 minutes
                     with the best it found.
                 </p>
             )}
-            <fieldset className="dev-knobs">
+            <fieldset className="piper-sim-knobs">
                 <legend>Knobs to fit</legend>
-                {knobs.length === 0 && <p className="muted">This model has no knobs that matter in this run.</p>}
+                {knobs.length === 0 && <p className="muted">The model has no knobs that matter in this run.</p>}
                 {knobs.map(({ part, setting }) => {
                     const knob = { part: part.id, key: setting.key };
                     const value = Number(part.settings[setting.key] ?? setting.default);
@@ -121,6 +99,7 @@ export function FitSummary({
     title = "Fit",
     spread,
     how,
+    editing,
     onApply,
     onDiscard,
 }: {
@@ -131,16 +110,17 @@ export function FitSummary({
     title?: string;
     spread?: Record<string, [number, number]>; // by part.key
     how?: Record<string, string>; // how each knob was found (anchored, fitted), by part.key
+    editing: boolean; // the diagram's yours to change: else it's applied once it is
     onApply: () => void;
     onDiscard: () => void;
 }) {
     const display = model.display;
     return (
-        <section className="dev-fit-found" aria-label={title}>
+        <section className="piper-sim-found" aria-label={title}>
             <p>
                 <strong>{title}</strong> <span className="muted">{note}</span>
             </p>
-            <table className="dev-fit-table">
+            <table className="piper-sim-table">
                 <thead>
                     <tr>
                         <th>Knob</th>
@@ -183,13 +163,14 @@ export function FitSummary({
                     })}
                 </tbody>
             </table>
-            <p className="dev-fit-actions">
-                <button type="button" className="button-primary" onClick={onApply}>
-                    Apply to the model
+            <p className="piper-sim-actions">
+                <button type="button" className="button-primary" disabled={!editing} onClick={onApply}>
+                    Apply to the P&amp;ID
                 </button>
                 <button type="button" onClick={onDiscard}>
                     Discard
                 </button>
+                {!editing && <span className="muted piper-small">Edit the diagram to apply it.</span>}
             </p>
         </section>
     );

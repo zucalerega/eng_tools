@@ -719,5 +719,5 @@ export function visioDocument(imported: ImportedPage[]): PiperDocument {
             sheet: null,
         };
     });
-    return { format: 2, pages, fluids, style: imported[0]?.drawing.style ?? emptyDrawing().style };
+    return { format: 3, pages, fluids, style: imported[0]?.drawing.style ?? emptyDrawing().style };
 }

@@ -5,7 +5,7 @@ import { sharedTags } from "./edit";
 import { fluidOf, isGas } from "./fluids";
 import { grow, middleOfLongest, partTransform, segmentsOf } from "./geometry";
 import { pathsWithHops } from "./hops";
-import { labelPlace, lineLabel, partLabel, textSizes } from "./labels";
+import { badgePlacer, labelPlace, lineLabel, partLabel, textSizes, type BadgePlace } from "./labels";
 import { FONT } from "./library/draw";
 import { boxOf, kindOf } from "./library/index";
 import type { DiagramMeta, DrawContext } from "./library/kinds";
@@ -16,11 +16,13 @@ import type { ValveState } from "./testdata";
 // and what a test says of them. The editor draws it with what it needs to be worked on (where a click lands, ports,
 // handles, what's selected); exports draw it bare.
 
-/** What a test says of a part at the time shown: its channel's value, and a valve's state. */
+/** What a test says of a part at the time shown: its channel's value, and a valve's state; and, in Simulation mode
+ * with a run, what the model says there. */
 export interface LiveValue {
     text: string;
     state: ValveState | null;
     missing: boolean; // it names a channel the test doesn't have
+    model?: string; // the model's value
 }
 
 export const LINE_STYLES: Record<Line["kind"], { width: number; dash?: string }> = {
@@ -60,6 +62,7 @@ export function DiagramView({
     const parts = useMemo(() => partsById(drawing), [drawing]);
     const paths = useMemo(() => new Map(drawing.lines.map((line) => [line.id, pathOf(parts, line)])), [drawing, parts]);
     const hopped = useMemo(() => pathsWithHops(paths), [paths]);
+    const place = useMemo(() => badgePlacer(drawing, paths), [drawing, paths]); // where test values go, if shown
     const shared = useMemo(() => sharedTags(drawing), [drawing]);
     const behind = drawing.parts.filter((part) => kindOf(part.kind).behind);
     const front = drawing.parts.filter((part) => !kindOf(part.kind).behind);
@@ -143,6 +146,7 @@ export function DiagramView({
                     </text>
                 );
             })}
+            {live && <LiveLeaders drawing={drawing} live={live} place={place} palette={palette} />}
             {front.map((part) => (
                 <PartView
                     key={part.id}
@@ -162,7 +166,7 @@ export function DiagramView({
                     interactive={interactive}
                 />
             ))}
-            {live && <LiveBadges drawing={drawing} live={live} palette={palette} />}
+            {live && <LiveBadges drawing={drawing} live={live} place={place} palette={palette} />}
             {interactive && (
                 <Handles
                     drawing={drawing}
@@ -367,60 +371,149 @@ function PartLabel({
     );
 }
 
-/** What a test says of each part, beside it: a sensor's value, a valve's state. */
-function LiveBadges({
+/** How wide a badge's letters are, about: its words are 9.5 bold. */
+const LETTER = 5.6;
+
+/** A badge's color: a valve's state's, a channel the test hasn't got's, the model's gold where it's the model's alone,
+ * else the test's blue. */
+function badgeColor(value: LiveValue, palette: Palette): string {
+    if (value.missing) {
+        return palette.muted;
+    }
+    if (value.state) {
+        return { open: palette.no, closed: palette.nc, other: palette.other }[value.state];
+    }
+    return value.model !== undefined && !value.text ? palette.model : palette.select;
+}
+
+/** How wide a badge of its kind usually is, which its side is chosen for (badgePlacer): a test's value, or the model's
+ * beside it. Not what it says now, so it stays put as that changes. */
+const usualWidth = (value: LiveValue): number => (value.model === undefined ? 60 : 110);
+
+/** The lines that tie each part's badge to it, under the parts, so what's drawn of a part hides its end. */
+function LiveLeaders({
     drawing,
     live,
+    place,
     palette,
 }: {
     drawing: Drawing;
     live: ReadonlyMap<string, LiveValue>;
+    place: (part: Part, width: number) => BadgePlace;
     palette: Palette;
 }) {
+    return (
+        <g className="piper-live-leaders" pointerEvents="none">
+            {drawing.parts.map((part) => {
+                const value = live.get(part.id);
+                if (!value) {
+                    return null;
+                }
+                const { from, to } = place(part, usualWidth(value));
+                return (
+                    <line
+                        key={part.id}
+                        data-leader={part.id}
+                        x1={from.x}
+                        y1={from.y}
+                        x2={to.x}
+                        y2={to.y}
+                        stroke={badgeColor(value, palette)}
+                        strokeWidth={1.2}
+                        strokeLinecap="round"
+                    />
+                );
+            })}
+        </g>
+    );
+}
+
+/**
+ * What a test says of each part, in a badge tied to it by its leader: a sensor's value, a valve's state. In Simulation
+ * mode with a run, the model's value beside it, in gold, in the same badge. Each goes where it's clear of the drawing
+ * (badgePlacer).
+ */
+function LiveBadges({
+    drawing,
+    live,
+    place,
+    palette,
+}: {
+    drawing: Drawing;
+    live: ReadonlyMap<string, LiveValue>;
+    place: (part: Part, width: number) => BadgePlace;
+    palette: Palette;
+}) {
+    const words = (x: number, y: number, text: string, fill: string, anchor: "start" | "middle", model = false) => (
+        <text
+            x={x}
+            y={y}
+            textAnchor={anchor}
+            dominantBaseline="central"
+            fontSize={9.5}
+            fontFamily={FONT}
+            fontWeight={700}
+            fill={fill}
+            {...(model ? { "data-model": "" } : {})}
+        >
+            {text}
+        </text>
+    );
     const badges: ReactNode[] = [];
     for (const part of drawing.parts) {
         const value = live.get(part.id);
         if (!value) {
             continue;
         }
-        const box = boxOf(part, drawing);
-        const text = value.missing ? "no channel" : value.text || "—";
-        const width = text.length * 5.6 + 10;
-        const x = box.x1 + 4;
-        const y = box.y0 - 2;
-        const color = value.missing
-            ? palette.muted
-            : value.state === "open"
-              ? palette.no
-              : value.state === "closed"
-                ? palette.nc
-                : value.state === "other"
-                  ? palette.other
-                  : palette.select;
+        const at = place(part, usualWidth(value));
+        const leftOf = (width: number) => (at.end ? at.x - width : at.x);
+        const y = at.y;
+        const color = badgeColor(value, palette);
+        const tested = value.missing ? "no channel" : value.text;
+        const ink = value.missing ? palette.muted : palette.ink;
+        const frame = (x: number, width: number) => (
+            <rect
+                x={x}
+                y={y - 8}
+                width={width}
+                height={15}
+                rx={4}
+                fill={palette.paper}
+                stroke={color}
+                strokeWidth={1.2}
+            />
+        );
+        if (value.model === undefined) {
+            const text = tested || "—";
+            const width = text.length * LETTER + 10;
+            const x = leftOf(width);
+            badges.push(
+                <g key={part.id} className="piper-live" data-live={part.id}>
+                    {frame(x, width)}
+                    {words(x + width / 2, y, text, ink, "middle")}
+                </g>,
+            );
+            continue;
+        }
+        // The test's, if it says anything here, then a rule, then the model's, in gold.
+        const testWidth = tested ? tested.length * LETTER + 12 : 0;
+        const width = 5 + testWidth + value.model.length * LETTER + 5;
+        const x = leftOf(width);
         badges.push(
             <g key={part.id} className="piper-live" data-live={part.id}>
-                <rect
-                    x={x}
-                    y={y - 8}
-                    width={width}
-                    height={15}
-                    rx={4}
-                    fill={palette.paper}
-                    stroke={color}
-                    strokeWidth={1.2}
-                />
-                <text
-                    x={x + width / 2}
-                    y={y}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={9.5}
-                    fontFamily={FONT}
-                    fontWeight={700}
-                    fill={value.missing ? palette.muted : palette.ink}
-                >
-                    {text}
-                </text>
+                {frame(x, width)}
+                {tested && words(x + 5, y, tested, ink, "start")}
+                {tested && (
+                    <line
+                        x1={x + 5 + testWidth - 6}
+                        y1={y - 5}
+                        x2={x + 5 + testWidth - 6}
+                        y2={y + 5}
+                        stroke={palette.muted}
+                        strokeWidth={0.8}
+                    />
+                )}
+                {words(x + 5 + testWidth, y, value.model, palette.model, "start", true)}
             </g>,
         );
     }

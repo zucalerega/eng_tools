@@ -201,11 +201,11 @@ PARTS: tuple[Part, ...] = (
             ),
             Setting(
                 "mode",
-                "Pressure",
+                "Pressurized by",
                 "choice",
                 "fixed",
                 choices=("fixed", "ullage"),
-                choice_labels=("Fixed", "Gas ullage"),
+                choice_labels=("A fixed pressure", "A gas ullage"),
             ),
             Setting("pressure", "Pressure", "pressure", 300 * PSI, 0.0, 1e9, help="Ullage: at the start"),
             Setting("volume", "Tank volume", "volume", 0.02, 1e-6, 1000.0, only_when=_ULLAGE),
@@ -488,12 +488,6 @@ PARTS: tuple[Part, ...] = (
 )
 
 BY_TYPE = {part.type: part for part in PARTS}
-
-# Part types that have been renamed: saved models may still have the old names.
-RENAMED = {"gas_line": "gas_valve"}
-# Settings that have gone, with the models that had no FullFlow part of their own (an ullage's polytropic exponent, a
-# regulator's lag): saved models may still have them, and they're left out.
-RETIRED = {"tank": ("ullage_model", "polytropic_exponent"), "regulator": ("response_time",)}
 
 
 def settings_of(part_type: str, given: dict[str, Any]) -> dict[str, Any]:

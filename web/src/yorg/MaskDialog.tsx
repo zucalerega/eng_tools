@@ -5,7 +5,7 @@ import { calculateFor } from "./data";
 import { channelsOf, findChannel, FormulaError, readFormula } from "./formula";
 import { newId, type Mask } from "./layout";
 import { measure, runsOf } from "./masks";
-import { formatDuration, formatValue } from "./scale";
+import { formatDuration, formatValue } from "../scale";
 
 // Making and changing a mask: where a test on channels holds (a valve open, a pressure over its redline), written like
 // a calculated channel, or put together from a channel, a comparison, and a value.

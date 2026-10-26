@@ -41,10 +41,13 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   the diagrams it's on, each saying its folder, and a diagram found opens at what was searched
   for (`?find=PT-101`, as the editor's find goes to it). A new diagram
   starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
-  with the editor's own changes), and Duplicate copies one.
+  with the editor's own changes; for admins, Simulation's too, `sim/examples.ts`), and
+  Duplicate copies one.
 - **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its pages, each with its id,
-  name, parts, lines, and printed sheet, and the fluids and style they share (format 2; a
-  drawing from before pages, format 1, has its parts and lines at the top, and is one page).
+  name, parts, lines, and printed sheet, and the fluids, style, and simulation's units they
+  share (format 3, whose parts and lines can have their settings in a simulation, `sim`; format
+  2 had pages without them, and a drawing from before pages, format 1, has its parts and lines
+  at the top, and is one page).
   The server keeps it as the web app sends it, after checking only what it needs
   (`schemas.py`): an object with up to 100 pages, each with an id no other page has and lists
   of parts and lines, each part and line with an id no other in the whole drawing has (an
@@ -69,10 +72,11 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   name (its box as wide as its words) until its words are changed; going there switches the
   page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
   connectors going nowhere.
-  Find, Parts, and the parts list look through every page. Once a diagram is saved in format 2,
-  the server refuses a save in format 1 over it (409 `drawing_newer`): a tab still running the
-  Piper from before pages would save one page and lose the others. Restoring a revision from
-  before pages is deliberate, and allowed.
+  Find, Parts, and the parts list look through every page. The server refuses a save in an
+  older format than the diagram's drawing is in (409 `drawing_newer`, saying what it would
+  lose): a tab still running the Piper from before pages would save one page and lose the
+  others, and one from before simulations would lose its parts' settings. Restoring a revision
+  from before them is deliberate, and allowed.
 - **Editing** is one person at a time, so no one's save goes over anyone else's
   (`diagrams.take_lock`, `editing.ts`). A diagram opens to be looked at: the store takes no
   change (`readOnly`), the canvas only pans and selects, and the inspector's fields are only
@@ -357,13 +361,101 @@ tag: PT-101 reads PT-101 (`testdata.ts`). Names match whatever their case, then 
 dashes, and underscores. A state channel (Yorg numbers a switch's off 0 and on 1) is the
 valve's state; a number channel is open where it isn't 0 (a command, or a position). A value's
 the channel's last sample at the time, to the digits its file had. The parts that name a
-channel the test hasn't are listed.
+channel the test hasn't are listed. A part's value is in a badge off its top right corner, or off
+whichever other corner has less in the way (other parts, labels, lines: `badgePlacer`, in
+`labels.ts`), on a leader to the part, in the badge's color. Leaders are drawn under the parts,
+so a symbol's fill hides its end, and it seems to leave the symbol's outline. The drawing
+decides where a badge goes, not its value, so it stays put as the test plays.
 
-That's Piper's one tie to Yorg, and it's through Yorg's API, as any client's would be: Piper
-asks `/api/yorg/datasets` for the tests, `/api/yorg/datasets/{id}` for a test's channels, and
-their arrays for the samples (each fetched once), and makes Yorg's links to plots as Yorg does
-(`?plots=`, a layout's JSON, deflated and base64url-encoded: the site's `packed.ts`, which both
-use). It imports none of Yorg's code, and Yorg knows nothing of Piper.
+That's Piper's tie to Yorg, with Simulation (below), and it's through Yorg's API, as any
+client's would be: Piper asks `/api/yorg/datasets` for the tests, `/api/yorg/datasets/{id}` for
+a test's channels, and their arrays for the samples (each fetched once), and makes Yorg's links
+to plots as Yorg does (`?plots=`, a layout's JSON, deflated and base64url-encoded: the site's
+`packed.ts`, which both use). It imports none of Yorg's code, and Yorg knows nothing of Piper.
+
+## Simulation
+
+Simulation mode (the editor's Simulation, `?sim=1` in the address; for admins while it's tried
+out, as Yorg's system models are) makes the P&ID a model of its fluid system, which Yorg runs
+with FullFlow against one of its tests ([yorg.md](yorg.md), System models): a run, a fit of its
+knobs, or knobs anchored to sensors, each a process on the server. Piper builds the model from
+the drawing (`web/src/piper/sim/model.ts`, `buildModel`), keeps its settings in the drawing, and
+shows what comes back; Yorg checks the model (`spec.py`) and runs it. Nothing of it shows
+outside the mode: its panel (`SimPanel.tsx`) takes Test data's place, and the inspector gets a
+Simulation box (`SimSection.tsx`). Runs, fits, and anchoring change nothing of the drawing, so
+they go while it's only looked at; setting the model up and Apply to the P&ID change it, so
+they wait for Edit, as every change does (the box's fields are only read, and Apply is off).
+
+- **The model is the P&ID**, all its pages, joined by their off-page connectors (one going to
+  the connector back, or to a tank or an outlet). Its nodes are points with a pressure: tanks
+  (Yorg's `tank`, at a fixed pressure, or under a gas ullage once gas lines reach it), gas
+  supplies and vessels (bottles, and tanks of a gas: a supply at a pressure, `source`, or a
+  vessel that blows down, a `gas_junction` with a wall), outlets (the engine and vents, an
+  engine one for each of its inlets with flow, as a model carries one liquid in each connected
+  set of lines, all at its pressure), and the points between parts, where lines, tees, and
+  plain connections join ports (a `junction` in liquid lines, a `gas_junction` of tubing in gas
+  ones). Its edges carry flow between them, from a part's first port to its second: valves
+  (relief valves, quick disconnects, and burst discs too, as they're set to be), check valves
+  (a valve gas flows through only the way it points; in liquid lines, a valve, which lets flow
+  back), regulators, orifices, cavitating venturis, and liquid lines modeled as lines (Yorg's
+  `line`: friction, and the liquid's inertia). What each kind is comes from `ROLES`, the first
+  of its choices unless its `sim.as` picks another; a pump or a three-way valve isn't
+  simulated, so the lines at it end there. Lines that carry signals aren't in it.
+- **Liquid or gas**: what flows through a part is what its lines' fluids say (Piper's fluids say
+  which are gases), through what carries flow from point to point; failing that, what's on
+  them (a regulator's gas, a venturi's liquid, a supply's or a vessel's gas). A tank's liquid
+  is ThermoProp's for what it holds (LOX is Oxygen, RP-1 RP1; another is Custom, of the density
+  and vapor pressure it's given), and an ullage's gas what its gas lines carry.
+- **Settings** are kept in the drawing, in SI units by the keys of Yorg's catalog
+  (`GET /api/yorg/models/catalog`): a part's on it (`sim.settings`), a line's modeled as a line
+  on it (`sim.line`), and a gas point's on each of its lines (`sim.node`: the first that has
+  each, so lines split or joined keep them); one the catalog no longer has is left out. What
+  isn't set is the catalog's default, or what the P&ID says: a valve's position without a
+  command, from its normal state (a relief valve's and a burst disc's, shut); a command's shut
+  and open values, from its channel (a state's 0 and 1, a number's least and most). The
+  model's ids are the P&ID's, so what's picked to tune survives other changes. The diagram's
+  units (US or SI, gauge or absolute, and the atmosphere) are its document's `sim`, and say how
+  a channel without units is read.
+- **Channels** come from the P&ID, as Test data reads them (`channelNames`): a valve's command
+  is its own; an instrument's pressure or temperature, that of the node it taps (a thermocouple
+  tapping a tank above its liquid, its ullage's, unless it's set to read the liquid's or the
+  wall's); and a flow meter, with no loss of its own, reads the flow of the one part it's in
+  line with (set to be an orifice, it's that, with its own). Only the channels the test has are
+  linked, by their names there, and the panel lists the parts with none. Whether a channel
+  drives the model or is compared with it is the catalog's (a fixed tank follows its
+  transducer; an ullage starts from it). A channel can be left out, for conditions of your own:
+  unchecked in the Simulation box of its part or of what it sets, it's kept on the part whose
+  channel it is (`sim.unlinked`: a valve, an instrument, a flow meter), and isn't linked
+  (`Built.left` has it, for the box to check again), so what it would have set is the part's
+  settings (a valve's position, a tank's pressure).
+- **What the P&ID has to fix** is found before Yorg's checks (`Finding`): what a part carries,
+  unsaid or mixed; two tanks joined with nothing between them; a regulator in liquid lines, a
+  cavitating venturi in gas ones. Notes say what the model does that the drawing might not
+  (a line that goes nowhere is capped, a liquid check valve lets flow back). Each names its
+  parts, to go to; Yorg's own messages name parts by their tags.
+- **Running**: the panel picks the test (the page's `?test=`, as Test data's), the window on
+  the test's clock (◷ takes the timeline's time, and the timeline shades the window), the time
+  step, and the solver, and asks Yorg to run (`POST /api/yorg/models/runs`), fit (`/fits`), or
+  anchor (`/anchors`; `Tune.tsx` has the two side by side), then how it's going (`/runs/{id}`,
+  every 0.6 s, a fit's every second). Results are plotted with the test's channels in the
+  diagram's units (`Chart.tsx`, an SVG plot of Piper's own: a channel's samples drawn each
+  pixel's lowest to highest, the model's line, and a cursor whose click moves the timeline),
+  with RMS and bias; and the drawing shows the run at the timeline's time, a part's in one
+  badge in the diagram's units (`live.ts`): an instrument's or a flow meter's, what the test
+  measured, then the model's in gold (`Palette.model`, a darker gold on white paper, to read);
+  a tank's or a vessel's pressure, unless an instrument on it shows it; the flow through what
+  carries it, while there's any, unless a flow meter in line shows it. An outlet's pressure is
+  what it was given, so it isn't shown. What a fit or an anchored run found goes onto the parts
+  (`applyKnobs`) only when asked, where it's within its setting's limits. Script shows the
+  FullFlow script the server runs for the run as it's set up (`POST /api/yorg/models/script`)
+  and what it imports (`GET /api/yorg/models/library`), to read; How it's modeled
+  (`Reference.tsx`) explains FullFlow, and how each part is built of its components. Results
+  aren't kept: leaving the diagram leaves them.
+- **Examples** (`sim/examples.ts`, on New diagram for admins): a cold flow, a pressurized flow,
+  and Vespula's prop system with its run's data (`vespula-run.csv`), which New diagram adds to
+  Yorg as a test the first time (`POST /api/yorg/datasets`, as Yorg's own upload adds one), and
+  opens the diagram in Simulation mode on it, to edit, as any diagram just made opens. A transient run of Vespula's at 0.1 s steps is
+  its FullFlow run again, every channel to a few parts in a million.
 
 ## API
 
@@ -397,18 +489,24 @@ site's own endpoints, are in [design.md](design.md#api).
 | `POST /api/piper/images` | add a picture, a PNG or a JPEG, as the raw request body (201: its `sha256`, `content_type`, `width`, `height`, `size`; the same bytes again, the same picture); 415 `not_an_image`, 413 `too_large` |
 | `GET /api/piper/images/{sha256}` | a picture's bytes, with its name as its ETag (304 to `If-None-Match`) |
 
+Simulation mode uses Yorg's system models' API (`/api/yorg/models`, [yorg.md](yorg.md#api)), as
+any client would.
+
 ## Roadmap
 
 1. **Piper** (first version, October 2026): diagrams with history, the library, lines routed
    and snapped, fluids and states, properties, Visio's drawings imported, exports (PDF on a
    drawing sheet), test data from Yorg, releases with approvers, pages with printed sheets and
-   off-page connectors between them, pictures of the team's own, and a Help page (`Help.tsx`, `/piper/help`: keep it in
+   off-page connectors between them, pictures of the team's own, Simulation mode (FullFlow,
+   for admins while it's tried out), and a Help page (`Help.tsx`, `/piper/help`: keep it in
    step with the features). Next:
    - **Several people at once**: one person edits a diagram at a time now, and everyone sees
      who; next, seeing who else has it open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.
-   - **A diagram as a Yorg model**: a P&ID's parts and lines as a system model to simulate,
-     once Yorg's models are released.
+   - **Simulation for everyone**, once admins have tried it out.
+   - **A simulation's settings from a part's properties**: a valve's Cv as its CdA, an
+     orifice's diameter and Cd, a tank's volume, a regulator's set pressure, a line's size and
+     length, where they're set and the simulation's aren't.
    - **A title block part filled in from the diagram's history**: its releases, as the sheet's
      own title block lists them.
 

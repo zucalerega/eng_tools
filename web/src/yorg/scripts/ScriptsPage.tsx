@@ -17,7 +17,6 @@ import { python, usePython } from "./python";
 import { Reference } from "./Reference";
 import { keepScript, keptScript, type OpenScript } from "./stored";
 import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
-import "../models/models.css";
 import "./scripts.css";
 
 // Yorg's Python window (Scripts): scripts that pull tests' channels and work them over, with NumPy, SciPy, pandas,

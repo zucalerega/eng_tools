@@ -43,7 +43,7 @@ class Changed(Conflict):
 
 class DrawingNewer(Conflict):
     """A save in an older format than the diagram's drawing is in: from a tab still running an older Piper, which would
-    leave out what it doesn't know of (all but a page of it)."""
+    leave out what it doesn't know of (all but a page of it, or its simulation's settings)."""
 
     code = "drawing_newer"
 
@@ -52,6 +52,10 @@ class Locked(Conflict):
     """Someone else is editing the diagram: until they're done, only they change its drawing."""
 
     code = "locked"
+
+
+# What each format of drawing added, which a tab from before it would leave out: said when its save is refused.
+ADDED = {2: "pages", 3: "simulation settings"}
 
 
 def can_delete(user: User, diagram: Diagram) -> bool:
@@ -239,8 +243,9 @@ def save(
     if drawing_format(drawing) < found.summary.get("format", 1):
         name = found.name
         db.rollback()  # it stays at its version
+        added = ADDED.get(drawing_format(drawing) + 1, "more than this tab's Piper knows of")
         raise DrawingNewer(
-            f"{name} has pages, which this tab's Piper is too old to keep: reload the page, then make your change again"
+            f"{name} has {added}, which this tab's Piper is too old to keep: reload the page, then make your change again"
         )
     now = utcnow()
     _check_editing(db, user, found, now, "your change isn't saved: save yours as a new diagram, or load theirs")

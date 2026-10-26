@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { handoffOf, modelsLink, starterScript, variableName } from "../src/yorg/analysis";
+import { handoffOf, starterScript, variableName } from "../src/yorg/analysis";
 import { parseCells } from "../src/yorg/scripts/cells";
 import { newLayout, newPanel, type Layout } from "../src/yorg/layout";
 import { channelCode, completionAt, inString, testRef, type Attached } from "../src/yorg/scripts/complete";
@@ -168,18 +168,15 @@ describe("from a dataset's or view's page", () => {
         };
     }
 
-    test("what it had goes along: its tests, the channels plotted (each once, no calculated ones), its time", () => {
-        const handoff = handoffOf(layoutWith(), "Overlay");
-        expect(handoff).toEqual({
+    test("what it had goes along: its tests, and the channels plotted (each once, no calculated ones)", () => {
+        expect(handoffOf(layoutWith(), "Overlay")).toEqual({
             title: "Overlay",
             datasets: [3, 4],
             channels: [
                 { dataset: 3, name: "PT-TANK" },
                 { dataset: 4, name: "PT-TANK" },
             ],
-            window: [10, 20],
         });
-        expect(modelsLink(handoff)).toBe("/yorg/models?dataset=3&window=10,20");
     });
 
     test("a page's notebook starts by loading them, then each over the time in view, a moved test's by its clock", () => {

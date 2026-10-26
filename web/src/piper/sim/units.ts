@@ -1,9 +1,10 @@
-import type { Display, Quantity } from "./api";
+import type { SimUnits } from "../drawing";
+import type { Quantity } from "./api";
 
-// Models keep SI units (Pa absolute, K, m, m², m³, kg/s); the page shows them in US or SI engineering units, with
-// pressures gauge (above the atmosphere) or absolute. Channels compared with a model are put in SI from their own
-// units (PT-1 (psig)), or read in the model's when they have none, as the server does with the channels a run follows
-// (server/src/yjsp_server/yorg/system/channels.py).
+// A simulation keeps SI units (Pa absolute, K, m, m², m³, kg/s); Piper shows them in the diagram's units, US or SI
+// engineering units, with pressures gauge (above the atmosphere) or absolute. Channels compared with the model are put
+// in SI from their own units (PT-1 (psig)), or read in the diagram's when they have none, as Yorg does with the
+// channels a run follows (server/src/yjsp_server/yorg/system/channels.py).
 
 export const PSI = 6894.757;
 export const ATMOSPHERE = 101325;
@@ -19,7 +20,7 @@ const FAHRENHEIT: Unit = { label: "°F", scale: 5 / 9, offset: 459.67 };
 const US_PRESSURE: Unit = { label: "psi", scale: PSI };
 const SI_PRESSURE: Unit = { label: "bar", scale: 1e5 };
 
-const SYSTEMS: Record<Display["units"], Partial<Record<Quantity, Unit>>> = {
+const SYSTEMS: Record<SimUnits["units"], Partial<Record<Quantity, Unit>>> = {
     us: {
         pressure: US_PRESSURE,
         pressure_abs: { label: "psia", scale: PSI },
@@ -55,7 +56,7 @@ const SYSTEMS: Record<Display["units"], Partial<Record<Quantity, Unit>>> = {
 };
 
 /** What a quantity is shown in: "psig", "°F", "in²"; "" for ratios and raw numbers. */
-export function unitOf(quantity: Quantity, display: Display): string {
+export function unitOf(quantity: Quantity, display: SimUnits): string {
     const unit = SYSTEMS[display.units][quantity];
     if (!unit) {
         return "";
@@ -64,10 +65,10 @@ export function unitOf(quantity: Quantity, display: Display): string {
 }
 
 /** What's taken off before showing a quantity: the atmosphere, for a pressure shown gauge. */
-const gaugeOf = (quantity: Quantity, display: Display) =>
+const gaugeOf = (quantity: Quantity, display: SimUnits) =>
     quantity === "pressure" && display.gauge ? display.ambient : 0;
 
-export function toDisplay(quantity: Quantity, si: number, display: Display): number {
+export function toDisplay(quantity: Quantity, si: number, display: SimUnits): number {
     const unit = SYSTEMS[display.units][quantity];
     if (!unit) {
         return si;
@@ -75,7 +76,7 @@ export function toDisplay(quantity: Quantity, si: number, display: Display): num
     return (si - gaugeOf(quantity, display)) / unit.scale - (unit.offset ?? 0);
 }
 
-export function fromDisplay(quantity: Quantity, value: number, display: Display): number {
+export function fromDisplay(quantity: Quantity, value: number, display: SimUnits): number {
     const unit = SYSTEMS[display.units][quantity];
     if (!unit) {
         return value;
@@ -84,7 +85,7 @@ export function fromDisplay(quantity: Quantity, value: number, display: Display)
 }
 
 /** The units a run reads channels without a unit in: the model's. */
-export function readingFor(display: Display): { pressure: string; temperature: string; mass_flow: string } {
+export function readingFor(display: SimUnits): { pressure: string; temperature: string; mass_flow: string } {
     return display.units === "us"
         ? { pressure: "psi", temperature: "F", mass_flow: "lbm/s" }
         : { pressure: "bar", temperature: "K", mass_flow: "kg/s" };
@@ -123,7 +124,7 @@ export interface Linear {
 }
 
 /** From SI to the model's units. */
-export function siToDisplayLinear(quantity: Quantity, display: Display): Linear {
+export function siToDisplayLinear(quantity: Quantity, display: SimUnits): Linear {
     const unit = SYSTEMS[display.units][quantity];
     if (!unit) {
         return { scale: 1, offset: 0 };
@@ -132,7 +133,7 @@ export function siToDisplayLinear(quantity: Quantity, display: Display): Linear 
 }
 
 /** From a channel's values (in its unit, or the model's if it has none) to SI. */
-export function channelToSiLinear(quantity: Quantity, unit: string, display: Display): Linear {
+export function channelToSiLinear(quantity: Quantity, unit: string, display: SimUnits): Linear {
     const reading = readingFor(display);
     let found = key(unit);
     if (quantity === "pressure") {

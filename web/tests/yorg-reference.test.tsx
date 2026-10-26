@@ -55,7 +55,7 @@ const example = (of: string, name: string) => ENTRIES.find((entry) => entry.of =
 test("beside a script, the Reference finds yorg's names and puts an example into the code", async () => {
     fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, 'pt = yorg.channel("PT-TANK")');
 
     await userEvent.click(screen.getByRole("button", { name: "Reference" }));
@@ -88,7 +88,7 @@ test("a page's Python has the Reference in its notebook's place, and an example 
     fakePython();
     const team = await Team.create();
     const data = await team.data(team.chief, "Cold flow", ["Time (s),PT-TANK (psig)", "0,300", "1,301"].join("\n"));
-    renderApp(team.chief, `/yorg/dev/datasets/${data.id}`);
+    renderApp(team.chief, `/yorg/datasets/${data.id}`);
     const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
     await userEvent.click(await channels.findByRole("button", { name: /PT-TANK/ }));
     await userEvent.click(screen.getByRole("button", { name: "Python" }));

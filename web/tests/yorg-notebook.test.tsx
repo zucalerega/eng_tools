@@ -19,7 +19,7 @@ const bar = () => within(screen.getByRole("toolbar", { name: "Notebook" }));
 async function notebookWith(code: string): Promise<FakePython> {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, code);
     const fake = pythons.latest();
     fake.say({ type: "ready", version: "3.14.2" });
@@ -118,7 +118,7 @@ test("Escape leaves a cell's code for the notebook's keys: B adds a cell, M make
 test("a notebook is saved as a script with a # %% mark for each cell, and opens again as its cells", async () => {
     const pythons = fakePython();
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     await setCode(1, "pt = 1");
     pythons.latest().say({ type: "ready", version: "3.14.2" });
     await userEvent.type(screen.getByLabelText("Cell 1's title"), "Load");

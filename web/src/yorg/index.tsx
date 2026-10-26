@@ -1,17 +1,13 @@
 import { lazy, Suspense } from "react";
 import { Notice } from "../components";
-import { inPreview, sitePath } from "../preview";
 import { Link } from "../router";
-import { useSession } from "../session";
 import { DatasetsPage } from "./Datasets";
 import { HelpPage } from "./Help";
-import { ModelsPage } from "./models/ModelsPage";
 import { AboutPage, DatasetPage, DeletedPage, ViewPage, ViewsPage } from "./pages";
 import "./yorg.css";
 
 // Yorg: test data, plotted. Its pages live under /yorg; the app switcher in the top bar goes between it and Vault.
 // The Python window and its editor (CodeMirror) load only when Scripts is opened.
-// Under /yorg/dev, admins see it all as it will be with what's new (preview.ts): system models.
 
 export const YORG = "Yorg";
 
@@ -42,11 +38,22 @@ export const YORG_ICON =
             "<circle cx='42' cy='19' r='5.5' fill='#e0a500'/></svg>",
     );
 
+/**
+ * Where a link to Yorg's preview (/yorg/dev/..., which was for admins to try what was new) goes now that it's gone: to
+ * the page it previewed, and its system models to Piper, whose Simulation mode they're in. Null: it isn't one.
+ */
+export function fromPreview(pathname: string): string | null {
+    if (pathname !== "/yorg/dev" && !pathname.startsWith("/yorg/dev/")) {
+        return null;
+    }
+    const path = `/yorg${pathname.slice("/yorg/dev".length)}`;
+    return path === "/yorg/models" ? "/piper" : path;
+}
+
 /** Which of Yorg's sections a path is in, for the top bar. */
 export function yorgSection(pathname: string): string {
-    const path = sitePath(pathname);
-    for (const section of ["views", "help", "models", "scripts"]) {
-        if (path.startsWith(`/yorg/${section}`)) {
+    for (const section of ["views", "help", "scripts"]) {
+        if (pathname.startsWith(`/yorg/${section}`)) {
             return section;
         }
     }
@@ -55,33 +62,23 @@ export function yorgSection(pathname: string): string {
 
 /** Whether a page is a workspace of plots, which takes the whole window. */
 export function isWorkspace(pathname: string): boolean {
-    return /^\/yorg\/(datasets\/\d+|views\/\d+)\/?$/.test(sitePath(pathname));
+    return /^\/yorg\/(datasets\/\d+|views\/\d+)\/?$/.test(pathname);
 }
 
 export function YorgPage({ pathname }: { pathname: string }) {
-    const { me } = useSession();
-    const preview = inPreview(pathname);
-    if (preview && !me) {
-        return <p className="muted">Loading…</p>;
-    }
-    if (!preview || me?.is_admin) {
-        const page = yorgPage(sitePath(pathname).replace(/\/$/, "") || "/yorg", preview);
-        if (page) {
-            return page;
-        }
+    const page = yorgPage(pathname.replace(/\/$/, "") || "/yorg");
+    if (page) {
+        return page;
     }
     return (
         <Notice tone="error">
-            There&apos;s no page here. {/* Out of the preview, unless it's yours to be in. */}
-            <Link to="/yorg" exact={!me?.is_admin}>
-                Go to the test data
-            </Link>
+            There&apos;s no page here. <Link to="/yorg">Go to the test data</Link>
         </Notice>
     );
 }
 
-/** A Yorg page by its path (in the preview, what's new too), or null if there's none. */
-function yorgPage(path: string, preview: boolean) {
+/** A Yorg page by its path, or null if there's none. */
+function yorgPage(path: string) {
     let match = /^\/yorg\/datasets\/(\d+)$/.exec(path);
     if (match) {
         return <DatasetPage key={match[1]} id={Number(match[1])} />;
@@ -107,8 +104,6 @@ function yorgPage(path: string, preview: boolean) {
             return <DeletedPage />;
         case "/yorg/help":
             return <HelpPage />;
-        case "/yorg/models": // what's new: in the preview only, until it's released
-            return preview ? <ModelsPage /> : null;
         case "/yorg/scripts":
             return (
                 <Suspense fallback={<p className="muted">Loading…</p>}>

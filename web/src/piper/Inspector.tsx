@@ -45,9 +45,11 @@ import type { Field } from "./library/kinds";
 import { channelName, findChannel, formatValue, outline, valueAt, type Samples } from "./testdata";
 import { useEditor, type EditorStore } from "./store";
 import type { TestReading } from "./useTest";
+import { DiagramSimSection, LineSimSection, PartSimSection, type SimContext } from "./sim/SimSection";
 
 // The inspector, beside the drawing: what's selected, to name and describe (a part's tag and properties, a line's
-// fluid and size), or, with nothing selected, the diagram's fluids and colors.
+// fluid and size), or, with nothing selected, the diagram's fluids and colors. In Simulation mode, what it is in the
+// model comes first.
 
 interface Props {
     store: EditorStore;
@@ -56,9 +58,10 @@ interface Props {
     test: TestReading | null;
     onPlot: (channels: string[]) => void;
     schemes: Scheme[] | null; // the team's color schemes, for the diagram to take one's colors
+    sim: SimContext | null; // in Simulation mode, the model the P&ID is
 }
 
-export function Inspector({ store, commands, palette, test, onPlot, schemes }: Props) {
+export function Inspector({ store, commands, palette, test, onPlot, schemes, sim }: Props) {
     const { drawing, selection, readOnly } = useEditor(store, (state) => state);
     const parts = drawing.parts.filter((part) => selection.includes(part.id));
     const lines = drawing.lines.filter((line) => selection.includes(line.id));
@@ -66,7 +69,7 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes }: P
     const reading = readOnly && parts.length === 1 && lines.length === 0 && kindOf(parts[0]!.kind).reads ? test : null;
     let body;
     if (parts.length === 0 && lines.length === 0) {
-        body = <DiagramPanel store={store} drawing={drawing} palette={palette} schemes={schemes} />;
+        body = <DiagramPanel store={store} drawing={drawing} palette={palette} schemes={schemes} sim={sim} />;
     } else if (parts.length === 1 && lines.length === 0) {
         body = (
             <PartPanel
@@ -78,10 +81,20 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes }: P
                 palette={palette}
                 test={readOnly ? null : test}
                 onPlot={onPlot}
+                sim={sim}
             />
         );
     } else if (lines.length === 1 && parts.length === 0) {
-        body = <LinePanel key={lines[0]!.id} store={store} commands={commands} line={lines[0]!} drawing={drawing} />;
+        body = (
+            <LinePanel
+                key={lines[0]!.id}
+                store={store}
+                commands={commands}
+                line={lines[0]!}
+                drawing={drawing}
+                sim={sim}
+            />
+        );
     } else {
         body = (
             <ManyPanel
@@ -222,6 +235,7 @@ function PartPanel({
     palette,
     test,
     onPlot,
+    sim,
 }: {
     store: EditorStore;
     commands: Commands;
@@ -230,6 +244,7 @@ function PartPanel({
     palette: Palette;
     test: TestReading | null;
     onPlot: (channels: string[]) => void;
+    sim: SimContext | null;
 }) {
     const kind = kindOf(part.kind);
     const said = part.tag.trim().toUpperCase();
@@ -261,6 +276,7 @@ function PartPanel({
                     {category && <p className="muted">{category.name}</p>}
                 </div>
             </header>
+            {sim && <PartSimSection store={store} sim={sim} part={part} />}
             {kind.tag !== "none" && (
                 <Row label="Tag">
                     {(id) => (
@@ -555,11 +571,13 @@ function LinePanel({
     commands,
     line,
     drawing,
+    sim,
 }: {
     store: EditorStore;
     commands: Commands;
     line: Line;
     drawing: Drawing;
+    sim: SimContext | null;
 }) {
     const change = (key: string, update: (line: Line) => Line) =>
         store.commit(updateLine(store.getState().drawing, line.id, update), undefined, `${line.id}:${key}`);
@@ -590,6 +608,7 @@ function LinePanel({
                     <p className="muted">{fluid ? fluid.name : "No fluid"}</p>
                 </div>
             </header>
+            {sim && <LineSimSection store={store} sim={sim} line={line} />}
             <Row
                 label="Tag"
                 after={
@@ -1112,11 +1131,13 @@ function DiagramPanel({
     drawing,
     palette,
     schemes,
+    sim,
 }: {
     store: EditorStore;
     drawing: Drawing;
     palette: Palette;
     schemes: Scheme[] | null;
+    sim: SimContext | null;
 }) {
     const [editing, setEditing] = useState(false);
     const document = useEditor(store, (state) => state.document);
@@ -1178,6 +1199,7 @@ function DiagramPanel({
                     </p>
                 </div>
             </header>
+            {sim && <DiagramSimSection store={store} document={document} />}
             <SheetSettings store={store} drawing={drawing} />
             <h3 className="piper-subhead">Color scheme</h3>
             <Row label="Colors from">

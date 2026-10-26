@@ -34,11 +34,9 @@ const KNOWN_NAMES: Record<string, string> = {
     sympy: "SymPy",
     pillow: "Pillow",
     micropip: "micropip",
-    fullflow: "FullFlow",
-    thermoprop: "ThermoProp",
 };
 
-/** A package's name as people know it: SciPy for scipy, CoolProp for coolprop, FullFlow for fullflow==2.0.2. */
+/** A package's name as people know it: SciPy for scipy, CoolProp for coolprop==6.8.0. */
 export function packageName(name: string): string {
     const bare = name.split("==")[0]!.trim();
     return KNOWN_NAMES[bare.toLowerCase()] ?? bare;
@@ -99,8 +97,6 @@ export function stepText(step: Step, asked: string[] = []): string {
 const IMPORT_NOTES: Record<string, string> = {
     CoolProp:
         "CoolProp reads its whole fluid library the first time it's imported: 20 seconds to a minute, by the computer, and only once while Python stays open.",
-    yorg_models:
-        "A model's script imports FullFlow and ThermoProp, which read CoolProp's and their own property data the first time: a minute or more, by the computer, and only once while Python stays open.",
 };
 
 /** Why a step takes as long as it does, and whether it will again (null: nothing worth saying). */

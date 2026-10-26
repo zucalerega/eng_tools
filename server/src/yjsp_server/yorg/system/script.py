@@ -1,5 +1,5 @@
-"""A checked system model as a FullFlow script: the code a run runs (network.run executes it), which the Models page
-shows, and runs in the browser once you've changed it.
+"""A checked system model as a FullFlow script: the code a run runs (network.run executes it), which Piper's Simulation
+mode shows (its Script).
 
 The script is the model as FullFlow's own models are written: FullFlow's components, with each fluid's properties from
 ThermoProp through FullFlow's Lookup. Gas valves, orifices, and regulators are CompressibleOrifices; liquid valves and
@@ -11,8 +11,8 @@ components.py, which the script imports as yorg_models) puts the test's channels
 results out.
 
 The script adds components in the order values flow (commands and properties, then flows, then what nodes hold), so
-FullFlow settles each trial in one pass. It depends on the job alone, so the page's copy and the server's are the same
-text. It reads the test's channels from data["part.link"] (their times on the test's clock, values in SI units), which
+FullFlow settles each trial in one pass. It depends on the job alone, so the copy Piper shows and the one the server runs
+are the same text. It reads the test's channels from data["part.link"] (their times on the test's clock, values in SI units), which
 whoever runs it provides.
 
 What goes into the script from the model goes in as Python literals (repr), never as code: a part's name, a channel's,
@@ -220,9 +220,7 @@ class _Writer:
         for anchor in self.job.get("anchors", []):
             self._anchor(anchor)
         self.emit("")
-        self.comment(
-            "Solve it: the result is what the Models page shows (the outputs at each time, and what the run says)"
-        )
+        self.comment("Solve it: the result is what Piper shows (the outputs at each time, and what the run says)")
         self.emit(f"result = run.solve({'' if self.max_points == POINTS else f'max_points={self.max_points}'})")
         return "\n".join(self.lines) + "\n"
 
@@ -300,13 +298,13 @@ class _Writer:
     def _head(self) -> None:
         job = self.job
         how = "steady (FullFlow's quasi-steady sweep)" if self.steady else "transient"
-        self.emit('"""A Yorg system model as a FullFlow script, as Yorg writes it from the model\'s P&ID.')
+        self.emit('"""A system model as a FullFlow script, as Yorg writes it from a Piper P&ID\'s.')
         self.emit("")
         self.emit(
             f"It runs from {_number(job['start'])} to {_number(job['end'])} s on the test's clock, {how}, in time steps "
             f"of {_number(job['dt'])} s."
         )
-        self.emit("The Models page's Run runs it on the server; changed, it runs in your browser.")
+        self.emit("Piper's Simulation mode runs it on the server, as it's written.")
         self.emit("data['part.link'] is a linked channel's samples: their times on the test's clock, and their values")
         self.emit("in SI units (Pa, K, kg/s; a valve's command as it is). Settings are in SI units too.")
         self.emit('"""')
@@ -444,7 +442,7 @@ class _Writer:
                 ),
                 f"ThermoProp's {name}, at its pressure and temperature",
             )
-            self.line(f"run.liquid({tank_id!r}, {liquid})", "what the page says of it, and a check that it's liquid")
+            self.line(f"run.liquid({tank_id!r}, {liquid})", "what Piper says of it, and a check that it's liquid")
             self.liquid[tank_id] = liquid
             self.density[tank_id], self.vapor[tank_id] = f"{liquid}.density", f"{liquid}.saturation_pressure"
         if ullage:
@@ -906,7 +904,7 @@ class _Writer:
             **self.outputs,
         }
         self.emit("")
-        self.comment("What the run reports, by part.output: the Models page plots them")
+        self.comment("What the run reports, by part.output: Piper plots them")
         self.emit("run.record({")
         for key, name in self.probes.items():
             self.emit(f"    {key!r}: {name},")

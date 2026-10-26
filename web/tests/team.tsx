@@ -10,6 +10,7 @@ import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
 import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
+import type { Catalog } from "../src/piper/sim/api";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -317,6 +318,11 @@ export class Team {
 
     async deleteDiagram(who: Member, id: number): Promise<Diagram> {
         return call<Diagram>("DELETE", `/api/piper/diagrams/${id}`, who.token);
+    }
+
+    /** The parts a simulation's model can have, as Yorg's system models have them (admins': the chief's). */
+    async simCatalog(): Promise<Catalog> {
+        return call<Catalog>("GET", "/api/yorg/models/catalog", this.chief.token);
     }
 
     /** A Piper color scheme of this test's own (named to be unique to it): not the team's default, which every

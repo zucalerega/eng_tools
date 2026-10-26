@@ -808,6 +808,22 @@ def test_a_save_from_before_pages_is_refused_over_a_drawing_with_them(team):
     assert saved(team, alice, made, drawing(part("v1"), part("v3")), restored.json()["version"])["parts"] == 2
 
 
+def test_a_save_from_before_simulation_is_refused_over_a_drawing_saved_since(team):
+    """A tab opened before Piper's drawings kept their simulation's settings would save them without: it's told to
+    reload, and nothing changes."""
+    alice = team.member("alice@x.test")
+    made = make(team, alice, drawing=drawing(part("v1")))
+    simulated = {**pages(("a", drawing(part("v1") | {"sim": {"as": "", "settings": {"cda": 5e-5}}}))), "format": 3}
+    after = saved(team, alice, made, simulated, 1)
+    old = save(team, alice, made, pages(("a", drawing(part("v1")))), after["version"])
+    assert (old.status_code, old.json()["error"]) == (409, "drawing_newer"), old.text
+    assert old.json()["message"] == (
+        "Feed system has simulation settings, which this tab's Piper is too old to keep: reload the page, then make "
+        "your change again"
+    )
+    assert json.dumps(opened(team, alice, made)["drawing"]) == json.dumps(simulated)
+
+
 # --- releases -----------------------------------------------------------------------------------------------------
 
 

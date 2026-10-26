@@ -1,10 +1,14 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
-import { emptyDrawing, isPortEnd, newPart } from "../src/piper/drawing";
+import { LIGHT } from "../src/piper/colors";
+import { emptyDrawing, isPortEnd, newLine, newPart, type Part } from "../src/piper/drawing";
 import { example } from "../src/piper/example";
 import { fluidsOf, fluidsUsed, STANDARD_FLUIDS, withFluid } from "../src/piper/fluids";
 import { OPPOSITE } from "../src/piper/geometry";
-import { presetPart } from "../src/piper/icons";
-import { ALL_KINDS, kindOf, PRESETS, searchPresets, titleOf } from "../src/piper/library/index";
+import { PartIcon, presetPart } from "../src/piper/icons";
+import { labelPlace, partLabel } from "../src/piper/labels";
+import { ALL_KINDS, boxOf, kindOf, PRESETS, searchPresets, titleOf } from "../src/piper/library/index";
 import { BODY } from "../src/piper/library/valves";
 import { partsById, pathOf, portsOf } from "../src/piper/ports";
 
@@ -48,23 +52,67 @@ test("ports sit on the grid, at their part's edge, each with an id of its own", 
     }
 });
 
-test("a sensor is a box with the letter of what it measures, small beside a tank, its tag at its side", () => {
-    const sensor = (props: Record<string, string>) => newPart("instrument", { x: 0, y: 0 }, { props });
-    const [x0, y0, x1, y1] = kindOf("instrument").box(sensor({ type: "pressure" }), emptyDrawing());
-    const [, ty0, , ty1] = kindOf("tank").box(newPart("tank", { x: 0, y: 0 }), emptyDrawing());
-    expect([x1 - x0, y1 - y0]).toEqual([20, 20]);
-    expect(y1 - y0).toBeLessThan((ty1 - ty0) / 4);
-    expect(kindOf("instrument").tag).toBe("side");
-    // Two or three on one tap: side by side, their side taps still on the grid.
-    for (const [count, half] of [
-        ["2", 20],
-        ["3", 30],
+/** A part as the library draws it: its symbol's markup. */
+function drawn(part: Part): Document {
+    const markup = renderToStaticMarkup(createElement(PartIcon, { part, palette: LIGHT }));
+    return new DOMParser().parseFromString(markup, "image/svg+xml");
+}
+
+const words = (symbol: Document) => Array.from(symbol.querySelectorAll("text"), (text) => text.textContent);
+
+test("an instrument is a bubble with its tag's letters in it, and its tag at its side, off its lines", () => {
+    const drawing = emptyDrawing();
+    const sensor = (props: Record<string, string>, tag = "PT-101") =>
+        newPart("instrument", { x: 0, y: 0 }, { tag, props });
+    const one = drawn(sensor({ type: "pressure" }));
+    expect(Array.from(one.querySelectorAll("circle"), (circle) => circle.getAttribute("r"))).toEqual(["15"]);
+    expect(one.querySelector("rect")).toBeNull();
+    expect(words(one)).toEqual(["PT"]); // its letters: the rest of its tag is beside it
+    expect(words(drawn(sensor({ type: "temperature" }, "TC-OX-1")))).toEqual(["TC"]);
+    expect(words(drawn(sensor({ type: "pressure" }, "101")))).toEqual(["PT"]); // none in its tag: what it measures
+    // Its whole tag is its label, at its right, level with its middle.
+    const part = sensor({ type: "pressure" });
+    const box = boxOf(part, drawing);
+    expect(partLabel(drawing, part)).toEqual([{ text: "PT-101", tag: true }]);
+    const place = labelPlace(part, box, 8, { ...drawing, parts: [part] });
+    expect(place.anchor).toBe("start");
+    expect(place.at.x).toBeGreaterThan(box.x1);
+    expect(Math.abs(place.at.y - part.y)).toBeLessThan(5);
+    // Tapped from its right, as beside a tank to its right: its tag's at its left, off the line.
+    const tapped = { ...drawing, parts: [part], lines: [newLine({ part: part.id, port: "right" }, { x: 100, y: 0 })] };
+    const left = labelPlace(part, box, 8, tapped);
+    expect(left.anchor).toBe("end");
+    expect(left.at.x).toBeLessThan(box.x0);
+    // Two or three on one tap: bubbles side by side, A, B, and C, their side taps still on the grid.
+    const three = drawn(sensor({ type: "pressure", count: "3" }));
+    expect(three.querySelectorAll("circle")).toHaveLength(3);
+    expect(words(three)).toEqual(["PT", "A", "PT", "B", "PT", "C"]);
+    for (const [count, side] of [
+        ["2", 40],
+        ["3", 50],
     ] as const) {
         const ports = kindOf("instrument").ports(sensor({ type: "pressure", count }));
-        expect(ports.find((port) => port.id === "right")?.x).toBe(half);
-        expect(ports.find((port) => port.id === "left")?.x).toBe(-half);
+        expect(ports.find((port) => port.id === "right")?.x).toBe(side);
+        expect(ports.find((port) => port.id === "left")?.x).toBe(-side);
     }
     expect(titleOf(sensor({ type: "pressure", count: "3" }))).toBe("Triplicated pressure transducer");
+});
+
+test("solenoid, pneumatic, and motorized valves have the same box on their stems, with S, P, or M in it", () => {
+    for (const [actuation, letter] of [
+        ["solenoid", "S"],
+        ["pneumatic", "P"],
+        ["motor", "M"],
+    ] as const) {
+        const valve = newPart("valve", { x: 0, y: 0 }, { props: { body: "ball", actuation } });
+        const symbol = drawn(valve);
+        const boxes = Array.from(symbol.querySelectorAll("rect"), (rect) =>
+            ["x", "y", "width", "height"].map((key) => rect.getAttribute(key)),
+        );
+        expect(boxes, actuation).toEqual([["-6", "-26", "12", "12"]]);
+        expect(words(symbol), actuation).toEqual([letter]);
+        expect(kindOf("valve").box(valve, emptyDrawing())[1], actuation).toBe(-26);
+    }
 });
 
 test("valves come without their state written beside them: their color says it", () => {

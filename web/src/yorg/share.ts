@@ -1,5 +1,4 @@
 import { packJson, unpackJson } from "../packed";
-import { sitePath } from "../preview";
 import type { Layout } from "./layout";
 
 // A link to a page's plots, to send someone what's on screen without saving a view: the page's address with its layout
@@ -15,9 +14,9 @@ export const PLOTS = "plots";
 // view may (MAX_VIEW_BYTES, on the server), and no more.
 const MOST_JSON = 512 * 1024;
 
-/** A link to this page with these plots, on the site's path (the preview's, /yorg/dev/..., are only for admins). */
+/** A link to this page with these plots. */
 export async function plotsLink(layout: Layout): Promise<string> {
-    const link = new URL(sitePath(window.location.pathname), window.location.origin);
+    const link = new URL(window.location.pathname, window.location.origin);
     link.searchParams.set(PLOTS, await packJson(layout));
     return link.toString();
 }

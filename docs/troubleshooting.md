@@ -373,23 +373,34 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   `await micropip.install("tabulate")`), until Python starts again. REFPROP isn't there: it needs
   NIST's license.
 
-### Models (the preview)
+## Piper
 
-- **There's no Models in Yorg's top bar.** System models are in Yorg's preview while they're tried
-  out, and only admins see the preview: *Preview*, at the top right of Yorg. Saved models are every
-  admin's.
-- **A run says a part's channel isn't in the test.** A model runs against any test with the same
-  channel names. Link the part to a channel the test has, or run it against a test that has that
-  channel.
-- **A run says the model can't run as drawn.** The message names the part and what's wrong: a line
-  not connected at both ends, say, or a dataset that isn't ready. Fix that, and run again.
+### Simulation
+
+- **There's no Simulation in Piper's bar.** Simulation mode is for admins while it's tried out.
+- **The Simulation box can't be changed, or Apply to the P&ID is off.** The diagram is only looked
+  at: press *Edit* (if someone else is editing it, it says who; wait until they're done). Runs,
+  fits, and anchoring don't change the drawing, so they work without it.
+- **The Simulation panel lists what keeps the model from running.** Each says which part and what to
+  change, with *Go to*: say what a part's lines carry (give one a fluid; *Carry along its run* gives
+  it to the rest), put a valve or an orifice between two tanks joined by a plain line, or make a part
+  in the wrong lines something else (a regulator in liquid lines, a cavitating venturi in gas ones).
+- **A valve doesn't move, or a transducer isn't compared.** A part reads the test's channel named in
+  its *Test channel*, or else its tag, whatever its case; the panel lists the parts whose channel the
+  test hasn't got. A valve with none stays where its settings have it (closed if it's normally
+  closed), and a sensor with none isn't compared. A channel unchecked in its part's *Simulation*
+  box is left out on purpose, so the part does what its settings say: check it to use the test's.
+- **A transducer still isn't compared.** It has to tap a line or a part the model has: a tank, or
+  the point between two parts. A thermocouple reads a temperature only where the model has one (a
+  tank's liquid or ullage, a gas line's tubing, a bottle), and a flow transmitter isn't compared: put
+  a flow meter in the line instead.
+- **The run's window is in the wrong place.** It's in seconds on the test's clock, as the timeline
+  reads it. Put the timeline where it should start or end, and click ◷ beside *From* or *To*.
 - **A run says other runs are using the server.** Two runs go at once, and a new run of yours
   replaces your last. Try again in a minute; a run stops after 10 minutes, and a fit after 30, with
   the best it found.
-- **The run's window is in the wrong place.** It counts from the dataset's T0, as this browser has
-  it: set T0 on the dataset's plots first.
-- **Run in browser is slow.** FullFlow installs in your browser the first time (a minute or two),
-  and runs several times slower there than on the server. A changed script isn't saved.
+- **A run's results are gone.** They're shown until you leave the diagram, and never saved: run it
+  again. What a fit found is the P&ID's only once you *Apply to the P&ID*.
 
 ## What an error means
 
@@ -651,13 +662,15 @@ a number. A few codes come up in more than one place.
 - **Only whoever added this ..., or an admin, can change it** (`not_yours`): a dataset, folder,
   view, calculated channel, or script is its owner's to change. *Save as a new view*, or
   *Save as…* a script, for a copy of your own.
-- **The dev page is for admins** (`admins_only`): Yorg's preview, with Models, is for admins.
-- **...'s ... is ..., which ... doesn't have** (`no_channel`): a model's part is linked to a channel
-  the test hasn't got. Link it to one the test has, or run it against a test that has it.
-- **Draw the system first**, **... isn't connected at both ends**,
-  **... isn't ready to run against: open it in Yorg first**, and the like (`bad_model`): the model
-  can't run as drawn, and the message names the part and what's wrong. Fix that, and run again.
-- **Other runs are using the server: try again in a minute** (`busy`): two model runs go at once.
+- **Simulations are for admins, while they're tried out** (`admins_only`): Piper's Simulation mode
+  runs Yorg's system models, which are admins' for now.
+- **...'s ... is ..., which ... doesn't have** (`no_channel`): a simulation's part is linked to a
+  channel the test hasn't got. Run it against a test that has it.
+- **Draw the system first**, **... isn't connected to a tank, so nothing says what liquid is there**,
+  **... isn't ready to run against: open it in Yorg first**, and the like (`bad_model`): the P&ID's
+  model can't run as it is, and the message names the part (by its tag) and what's wrong. Fix that
+  in Piper, and run again.
+- **Other runs are using the server: try again in a minute** (`busy`): two simulations go at once.
   Run it again in a minute.
 
 ### Piper
@@ -674,10 +687,10 @@ a number. A few codes come up in more than one place.
   as a new diagram keeps them, or Load theirs. An admin can Take over if it can't wait.
 - **... is deleted: restore it first** (`deleted`): restore the diagram from Piper's deleted
   diagrams, then change it.
-- **... has pages, which this tab's Piper is too old to keep: reload the page, then make your change
-  again** (`drawing_newer`): the tab was opened before Piper had pages, and saving from it would
-  leave out all but one of the diagram's pages. Reload it, which gets the new Piper, and make your
-  change again.
+- **... has pages** (or **simulation settings**)**, which this tab's Piper is too old to keep: reload
+  the page, then make your change again** (`drawing_newer`): the tab was opened before Piper had
+  pages (or kept parts' settings in a simulation), and saving from it would leave them out. Reload
+  it, which gets the new Piper, and make your change again.
 - **Two parts or lines share the id ...**, **The drawing has text that isn't valid Unicode**, and
   the like (`invalid_drawing`): the drawing as the web app sent it isn't one the server keeps.
   Reload the diagram; if it keeps happening, tell an admin, with what you did.
@@ -794,9 +807,9 @@ a number. A few codes come up in more than one place.
   run in your browser.
 - **Notebook**: how a script is laid out: cells run one at a time, sharing their variables, as in
   Jupyter.
-- **Model**: a test stand's feed system, drawn as a P&ID and simulated with FullFlow against a
-  test, in Yorg's preview.
-- **The preview**: Yorg as it will be, with what's new (Models), which only admins see.
+- **Simulation**: a P&ID run as a model of its system, with FullFlow, against a test from Yorg, in
+  Piper's Simulation mode (admins', while it's tried out).
+- **Knob**: a setting of a simulation's part marked *tune*, which Tune… can fit or anchor to a test.
 
 ## Getting more help
 

@@ -2,8 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type Drag
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
-import { inPreview } from "../preview";
-import { Link, navigate, usePathname } from "../router";
+import { Link, navigate } from "../router";
 import {
     DELIMITERS,
     TIME_FORMATS,
@@ -15,12 +14,11 @@ import {
     type SavedView,
     type TimeFormat,
 } from "./api";
-import { handoffOf, modelsLink } from "./analysis";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { FolderPicker } from "../FolderPicker";
 import { countIn, folderTree, foldersOf, type Folder } from "../pathTree";
-import { formatClock, formatDuration, formatRate, formatValue } from "./scale";
+import { formatClock, formatDuration, formatRate, formatValue } from "../scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { Workspace, type ExtraPlot } from "./Workspace";
 
@@ -313,28 +311,6 @@ function usePagePython(page: string, layout: Layout, title: string) {
     };
 }
 
-/**
- * A dataset's or a view's way to its Python (beside its plots) and, in the preview until they're released, to Models (a
- * model run on its test over the time in view).
- */
-function AnalyzeButtons({ layout, title, python }: { layout: Layout; title: string; python: ReactNode }) {
-    const preview = inPreview(usePathname());
-    return (
-        <>
-            {python}
-            {preview && (
-                <Link
-                    className="button"
-                    to={modelsLink(handoffOf(layout, title))}
-                    title="Run a model on this test, over the time in view"
-                >
-                    Model
-                </Link>
-            )}
-        </>
-    );
-}
-
 function DatasetWorkspace({
     detail,
     linked,
@@ -384,7 +360,7 @@ function DatasetWorkspace({
                             Save view
                         </button>
                         <CopyLink layout={layout} />
-                        <AnalyzeButtons layout={layout} title={detail.name} python={python.button} />
+                        {python.button}
                         <Link className="button" to={aboutUrl(detail.id)}>
                             About
                         </Link>
@@ -1436,7 +1412,7 @@ function ViewWorkspace({
                             </button>
                         )}
                         <CopyLink layout={layout} />
-                        <AnalyzeButtons layout={layout} title={meta.name} python={python.button} />
+                        {python.button}
                         <MoreViewActions
                             canChange={view.can_change}
                             onCopy={() => setDialog("copy")}

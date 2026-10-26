@@ -237,6 +237,12 @@ function fluidAt(drawing: Drawing, end: End): string {
 const once = (shown: string[]): string[] => shown.filter((key) => key !== "tag" && key !== "fluid");
 
 /**
+ * What the rest of a line split in two keeps of its simulation: the settings of the gas node it's in, but not its model
+ * as a line, which the line up to the split keeps whole, so the model doesn't have its length twice.
+ */
+const restOf = (line: Line): Pick<Line, "sim"> => (line.sim ? { sim: { line: null, node: line.sim.node } } : {});
+
+/**
  * A line split in two where a point is on it, at a new junction there (on the grid, along its segment): the line up
  * to it keeps its id, and the rest is a new line, the same but for its tag.
  */
@@ -267,6 +273,7 @@ export function splitLine(drawing: Drawing, lineId: string, at: Point): { drawin
         from: end,
         points: run.slice(nearest.segment + 1, -1),
         shown: once(line.shown),
+        ...restOf(line),
     });
     const lines = drawing.lines.flatMap((entry) => (entry.id === lineId ? [first, second] : [entry]));
     return { drawing: { ...drawing, parts: [...drawing.parts, junction], lines }, junction: junction.id };
@@ -358,6 +365,7 @@ export function insertIntoLine(drawing: Drawing, partId: string, lineId: string,
         id: newId("l"),
         tag: "",
         shown: once(line.shown),
+        ...restOf(line),
         from: { part: partId, port: outPort },
         points: simplify([leaving, ...run.slice(nearest.segment + 1, -1), run[run.length - 1]!]).slice(1, -1),
     };

@@ -26,7 +26,7 @@ test("the app switcher goes between the vault and Yorg", async () => {
         within(nav)
             .getAllByRole("link")
             .map((link) => link.textContent),
-    ).toEqual(["Datasets", "Views", "Scripts", "Help", "Preview"]); // Preview: the chief's an admin (yorg-preview.test.tsx)
+    ).toEqual(["Datasets", "Views", "Scripts", "Help"]);
 });
 
 test("Yorg leaves the vault's index alone: it loads once the vault is opened", async () => {
@@ -78,7 +78,7 @@ test("Help says what Yorg does, and how", async () => {
         "Splitting a file into tests",
         "Scripts",
         "Views, links, and exports",
-    ]); // system models are only in the preview
+    ]);
     expect(contents.getByRole("link", { name: "Getting data in" }).getAttribute("aria-current")).toBe("true");
     await userEvent.click(contents.getByRole("link", { name: "Time and T0" }));
     expect(contents.getByRole("link", { name: "Time and T0" }).getAttribute("aria-current")).toBe("true");

@@ -93,8 +93,7 @@ in `web/src/yorg/index.tsx`).
   to be saved; a client from before folders, which sends none, leaves a view where it is.
 - **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
   page without saving a view, so views are kept for what's worth keeping. A link is the
-  page's address on the site (`sitePath`: never the preview's, which only admins open)
-  with its layout in `?plots=`: the JSON a saved view keeps, deflated
+  page's address with its layout in `?plots=`: the JSON a saved view keeps, deflated
   (`CompressionStream("deflate-raw")`) and base64url-encoded (`share.ts`), about 500
   characters for a channel or two and 2 KB for 60. It's in the query, not after a `#`,
   because signing in comes back to a page's path and query; nothing is stored on the
@@ -155,32 +154,24 @@ in `web/src/yorg/index.tsx`).
   A piece says where it came from (`read_info.split_from`), and, having no file of its
   own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
   to the file (or another folder), and are whoever split them's.
-- **Yorg's preview** (`/yorg/dev/...`, admins): the site as it will be with what's new in
-  it, so it can be tried as it'll look before everyone has it. `web/src/preview.ts` maps
-  its paths to the site's (`/yorg/dev/datasets/5` is `/yorg/datasets/5`); `YorgPage` shows
-  the same pages there, and the new ones (Models) only there, and the router sends
-  links followed in the preview to their preview pages (a link marked `exact` leaves it).
-  The top bar, a dataset's or view's Model button, and Help's cards show what's new in the
-  preview. Scripts and a page's Python were in it, and are everyone's now. They take what the page plots (`analysis.ts`: its tests, the channels
-  plotted, the time in view): the page's Python starts on them (`starterScript`), a
-  model's run window is that time.
-  Releasing a feature is showing it outside the preview too (and its API to everyone).
-- **System models** (Models, in the preview while it's tried out): a
-  feed system as a P&ID, simulated with FullFlow (a network solver) and ThermoProp
-  (fluid properties) against a test, to tune it until it matches. `yorg/system/catalog.py`
-  lists the parts, their settings (SI units; some only when others are set a way, as an
-  ullage's wall only with wall heat transfer), links (followed, starting the model, compared,
-  or commanding a valve), and outputs; the web app draws its editor from it
-  (`web/src/yorg/models`, parts between the same two nodes side by side) and `spec.py`
-  checks a model with it (saving takes a half-drawn one;
-  running needs liquid parts between tanks, junctions, and outlets and gas parts between
-  gas supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid
-  parts reaching a tank, whose liquid it carries, and every set of gas parts a supply or an
-  ullage, of one gas). A part renamed (the press line, now a gas valve) is read under its
-  new name. A run is a process of its own (`runner.py`, stopped after 10 minutes; two at a
+- **Yorg's preview** (`/yorg/dev/...`), where admins tried what was new, has gone with
+  nothing new left in it: a link to one of its pages goes on to the page it previewed
+  (`fromPreview`), and to its Models, to Piper.
+- **System models** (admins', while they're tried out): a feed system's model, simulated
+  with FullFlow (a network solver) and ThermoProp (fluid properties) against a test, to tune
+  it until it matches. Piper's Simulation mode builds each model from a P&ID and keeps it in
+  the diagram's drawing ([piper.md](piper.md#simulation)); Yorg runs it, through its API
+  (`/api/yorg/models`), as any client's. `yorg/system/catalog.py` lists the parts, their
+  settings (SI units; some only when others are set a way, as an ullage's wall only with wall
+  heat transfer), links (followed, starting the model, compared, or commanding a valve), and
+  outputs; Piper draws its settings from it, and `spec.py` checks a model with it (running
+  needs liquid parts between tanks, junctions, and outlets and gas parts between gas
+  supplies, gas junctions, tanks' ullages, and outlets; every connected set of liquid parts
+  reaching a tank, whose liquid it carries, and every set of gas parts a supply or an ullage,
+  of one gas). A run is a process of its own (`runner.py`, stopped after 10 minutes; two at a
   time, a new one of yours replacing the last), so a long simulation never slows the site:
   the server cuts the channels the model uses (valve commands, what it follows, what starts
-  it) to the run's window, in SI units by their unit (`channels.py`), and the page asks how
+  it) to the run's window, in SI units by their unit (`channels.py`), and Piper asks how
   it's going. A run is kept from taking the site, one small machine (one CPU, 6 GB), down
   with it (`runs.py`): its process runs in its own folder (its home and temporary folder
   too), in a session of its own (stopping it stops whatever it started), with an
@@ -232,9 +223,7 @@ in `web/src/yorg/index.tsx`).
   ThermoProp's `Propellant`), at each node's pressure (never below where it boils, so a
   drained junction still holds liquid as far as the model knows) and its tank's
   temperature, which follows its channel if it's linked; a custom one has its density and
-  vapor pressure given. Models saved with what had no FullFlow part of its own, an ullage's
-  polytropic exponent or a regulator's response time, open without them
-  (`catalog.RETIRED`). Commands step between 0 and 1 (by the command's open and closed
+  vapor pressure given. Commands step between 0 and 1 (by the command's open and closed
   values), each change a hair after the sample before it: a sample says what held since the
   one before, as FullFlow records a run, so a FullFlow run fed back as a test gets its
   commands when it had them. A rate limit opens a valve over its opening time. What starts
@@ -253,7 +242,7 @@ in `web/src/yorg/index.tsx`).
   process, stopped after 30 minutes with the best it found) is SciPy's least squares over
   the knobs picked, each on a 0-to-1 scale (a positive one as its logarithm over 1/30 to 30
   times its start, within its limits), each try a run of the model; each compared channel
-  (averaged down to 300 points) counts the same, its errors over its swing. The page shows
+  (averaged down to 300 points) counts the same, its errors over its swing. Piper shows
   a fit's best run, and applies what it found only when asked. A **steady** run
   (`solver: steady`) is FullFlow's quasi-steady sweep (`SteadyState` over time): each step
   forces every dynamic part steady (a line's inertia, a gas junction's mass and energy),
@@ -262,7 +251,7 @@ in `web/src/yorg/index.tsx`).
   no steady state), its temperature following its channel too, so steady, neither of their
   sensors can anchor a knob. There,
   SciPy's gradient test is off (as `Transient` has it), which stalled it. An **anchored
-  run** (`POST /api/yorg/dev/anchors`, the same kind of process as a run) pairs knobs with
+  run** (`POST /api/yorg/models/anchors`, the same kind of process as a run) pairs knobs with
   compared sensors: each is FullFlow's `Sensor` (`components.Anchor`) whose balance
   FullFlow solves with the rest in each time step, moving the knob until the model reads
   what the sensor's channel measured (as a share of the channel's size, like the other
@@ -281,53 +270,40 @@ in `web/src/yorg/index.tsx`).
   the step it failed (anchored, each would fail as long again), so it holds the knob, and
   the result says for how much of the span. The result has each knob's history (`anchored`)
   and, from where it was anchored, its median and 10th and 90th percentiles (`anchors`),
-  which the page applies only when asked. What anchoring can't settle is fitted, in the
+  which Piper applies only when asked. What anchoring can't settle is fitted, in the
   same process (`fit.tune`, with the fit's time limit): knobs picked to fit alongside the
   anchors, and, falling back (on unless asked not to), each knob whose anchor didn't work:
   it never matched, matched for under a quarter of its span, or settled past its limits.
   The fit is the one above, its runs anchoring the anchors that worked, compared with the
   sensors they don't use; the result is its best run, with its anchors, and the knobs it
-  took over and why (`fit.fallback`). The browser compares each sensor with its output in
-  the model's units (`units.ts`, like `channels.py`) and says the RMS and bias; the
-  window's times, and the plots', read from the dataset's T0 in this browser. Saved models
-  are JSON files in `YJSP_YORG_DIR/models`, so the models add no tables. The examples are
-  built in the browser (`model.ts`). Vespula's prop system is Saaketh Ramoju's FullFlow
-  model (github.com/saakethramoju/Vespula, `VESPULA_PROP_SYSTEM.py`) in Yorg's parts,
-  linked to `vespula-run.csv`: that model's run as the repository's prop curves came from
-  it (0.1 s steps, bang-bang off), made again with FullFlow 2.0.3 for every channel, its
-  curves matching to 1 part in 10⁸. Picking it uploads the file as a dataset, unless one
-  has its name. Built of the same FullFlow components and ThermoProp properties (real
-  nitrogen, LOX, RP-1), a transient run of it is that run again, to a few parts in a
-  million; the hi-flow switches and relief valves come from their channels, where Vespula
-  works them out (a relief valve opens for single steps). FullFlow, ThermoProp, and
+  took over and why (`fit.fallback`). Piper compares each sensor with its output in the
+  diagram's units (`web/src/piper/sim/units.ts`, like `channels.py`) and says the RMS and
+  bias. Yorg keeps no models: Piper's diagrams do. (The models saved while they were in
+  Yorg's preview are still JSON files in `YJSP_YORG_DIR/models`, which nothing reads now.)
+  The examples are Piper's (`web/src/piper/sim/examples.ts`). Vespula's prop system is Saaketh
+  Ramoju's FullFlow model (github.com/saakethramoju/Vespula, `VESPULA_PROP_SYSTEM.py`) as a
+  P&ID, its instruments, valves, and flow meters naming the channels of `vespula-run.csv`:
+  that model's run as the repository's prop curves came from it (0.1 s steps, bang-bang
+  off), made again with FullFlow 2.0.3 for every channel, its curves matching to 1 part in
+  10⁸. Making it adds the file to Yorg as a test, unless one has its name. Built of the same
+  FullFlow components and ThermoProp properties (real nitrogen, LOX, RP-1), a transient run
+  of it is that run again, to a few parts in a million; the hi-flow switches and relief
+  valves come from their channels, where Vespula works them out (a relief valve opens for
+  single steps). FullFlow, ThermoProp, and
   FullPlot are GPL-3.0: fine for the team's own server, but if the site is ever given to
   others, the GPL applies to it.
-- **A model's script** (the Models page's Script view): a run's code is a FullFlow script
-  that `script.py` writes from the checked model and how it runs (window, time step,
-  solver, anchors), so the page can show the code that runs, and change it. All that comes
-  from the model goes in as a literal (a name as `repr`, a comment on one line): the server
-  runs only code it wrote, the runner's `network.run` writing the script and running it
-  (`exec`, the run's channels its `data`). Its variables are named for the parts. The script
-  imports FullFlow and `yorg_models`: `library.py` (`Run`: the test's channels into the
-  network, as `following`, `starting`, `command`, and `liquid`; the outputs recorded;
-  knobs anchored; the network solved, and the result the page shows) and `components.py`,
-  which import nothing of the server's, so a browser can have them. The page asks for the
-  script (`POST /api/yorg/dev/script`, anchors checked as an anchored run's), for
-  `yorg_models` and the versions of FullFlow and ThermoProp the server has
-  (`GET /api/yorg/dev/library`), and for a run's channels as the runner gets them
-  (`POST /api/yorg/dev/inputs`, a missing sample null). Run runs the script as it's shown:
-  as written, on the server (with anchors, as an anchored run without the fit of what they
-  don't settle); changed, in the tab's Python (Scripts, below), with FullFlow and
-  ThermoProp installed from PyPI at the server's versions, `yorg_models` and the channels
-  written to its files, and `data` read from them; the script reports the run's time as it
-  goes, and its result as JSON. Unchanged, the browser's run is the server's to the last
-  digit.
-  Installing takes a minute or two the first time, and importing FullFlow and ThermoProp
-  a minute or more (CoolProp's and ThermoProp's data). A changed script isn't saved, and
-  Tune (`Tune.tsx`: a fit or an anchored run, side by side in one dialog, each saying what
-  it does) runs the P&ID's model. The Reference (`FullFlowReference.tsx`) is background:
-  what FullFlow is, how each part is built of its components (with the knobs it has, from
-  the catalog), how it models a system and solves it, and what a script is made of.
+- **A model's script** (Piper's Script): a run's code is a FullFlow script that `script.py`
+  writes from the checked model and how it runs (window, time step, solver, anchors), so
+  Piper can show the code that runs. All that comes from the model goes in as a literal (a
+  name as `repr`, a comment on one line): the server runs only code it wrote, the runner's
+  `network.run` writing the script and running it (`exec`, the run's channels its `data`).
+  Its variables are named for the parts. The script imports FullFlow and `yorg_models`:
+  `library.py` (`Run`: the test's channels into the network, as `following`, `starting`,
+  `command`, and `liquid`; the outputs recorded; knobs anchored; the network solved, and the
+  result Piper shows) and `components.py`, which import nothing of the server's. Piper asks
+  for the script (`POST /api/yorg/models/script`, anchors checked as an anchored run's), and
+  for `yorg_models` and the versions of FullFlow and ThermoProp the server has
+  (`GET /api/yorg/models/library`), to show them.
 - **Scripts** (the Python window, everyone's):
   Python people write runs in the browser, never on the server (which runs only the model
   scripts it writes itself): Pyodide (CPython in WebAssembly, pinned
@@ -362,7 +338,7 @@ in `web/src/yorg/index.tsx`).
   the worker (packages, imports, channels), the rest being the script's own. A page can also
   give a run packages to install from PyPI (micropip, whose messages aren't the run's
   output), files to write, and code to run before and after its own, and code can report
-  values back to the page (`report`): that's how the Models page runs a changed script.
+  values back to the page (`report`).
   Stopping a run
   that Python has started ends the worker (a browser can interrupt Python only with a
   `SharedArrayBuffer`, which needs the whole site cross-origin isolated), and Python starts
@@ -448,8 +424,9 @@ in `web/src/yorg/index.tsx`).
 
 Yorg's endpoints, all under `/api/yorg`. Every one needs sign-in; how errors look, and the
 site's own endpoints, are in [design.md](design.md#api). Piper uses some of them as any client
-would, to show a test on a P&ID (the datasets, a dataset's channels, and their arrays), and
-makes links to plots as Copy link does (`?plots=`): they change only as the API's rules say
+would: to show a test on a P&ID (the datasets, a dataset's channels, and their arrays), to
+simulate a P&ID against one (the system models', and adding its example's test), and to make
+links to plots as Copy link does (`?plots=`). They change only as the API's rules say
 ([piper.md](piper.md#test-data-from-yorg)).
 
 | Endpoint | Purpose |
@@ -466,6 +443,11 @@ makes links to plots as Copy link does (`?plots=`): they change only as the API'
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
 | `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder, description, datasets, config}` (`folder` optional: left out, a new view's at the top and a changed one stays put) |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
+| `GET /api/yorg/models/catalog` | the parts a system model can have: their settings (SI), links, and outputs; and the liquids and gases (admins, else 403 `admins_only`, as for each below) |
+| `POST /api/yorg/models/runs` | run a model against a dataset `{model, dataset_id, start, end, dt, solver, reading}` (422 `bad_model`, `no_channel`; 409 `busy`); its `id` |
+| `POST /api/yorg/models/fits`, `/anchors` | fit a model's knobs `{..., knobs}`, or anchor them to sensors `{..., anchors, knobs, fallback}`, as runs |
+| `GET`/`DELETE /api/yorg/models/runs/{id}` | how a run, fit, or anchored run is going, and its result when it's done; stop it |
+| `POST /api/yorg/models/script`, `GET /api/yorg/models/library` | the FullFlow script a run of a model runs `{model, start, end, dt, solver, anchors}`; and what it imports (`yorg_models`), and the versions of FullFlow and ThermoProp |
 
 ## Roadmap
 

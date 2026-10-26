@@ -1,4 +1,5 @@
-// Axis ticks at round numbers, and numbers, times, and durations written for people.
+// Axis ticks at round numbers, and numbers, times, and durations written for people: Yorg's plots, and Piper's
+// simulation's.
 
 const ROUND = [1, 2, 2.5, 5, 10];
 

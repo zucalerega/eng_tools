@@ -1,9 +1,11 @@
 import { request } from "../../api";
+import type { SimUnits } from "../drawing";
 
-// The dev page's API (/api/yorg/dev, for admins): system models, and runs, fits, and anchored runs of them against a
-// test's data; and, for the Script view, the FullFlow script a run runs, what it imports, and a run's data.
-// Every value the server sends or takes is in SI units (Pa absolute, K, m, m², m³, kg/s); units.ts shows them in the
-// model's units.
+// Yorg's system models (/api/yorg/models, for admins while simulations are tried out), as Piper's Simulation mode uses
+// them: as any client of Yorg's API does (docs/piper.md). A model is the P&ID's (sim/model.ts builds it); Yorg runs it
+// with FullFlow against one of its tests, fits its knobs to it, or anchors them to it, and writes the FullFlow script a
+// run runs. Every value it sends or takes is in SI units (Pa absolute, K, m, m², m³, kg/s); units.ts shows them in the
+// diagram's units.
 
 export type Quantity =
     | "pressure" // absolute, shown gauge or absolute
@@ -81,42 +83,25 @@ export interface Catalog {
     gases: string[];
 }
 
-export interface Part {
+export interface ModelPart {
     id: string;
     type: string;
     name: string;
-    x: number;
-    y: number;
     settings: Record<string, number | string>;
     links: Record<string, string>; // a link's key: the channel's name
 }
 
-export interface Edge extends Part {
+export interface ModelEdge extends ModelPart {
     source: string;
     target: string;
 }
 
-export interface Display {
-    units: "us" | "si";
-    gauge: boolean; // pressures shown above the atmosphere
-    ambient: number; // Pa
-}
-
+/** A model as Yorg runs it: its nodes, and the edges that carry flow between them. */
 export interface SystemModel {
     version: 1;
-    nodes: Part[];
-    edges: Edge[];
-    display: Display;
-}
-
-export interface SavedModel {
-    id: string;
-    name: string;
-    created_at: string;
-    created_by: string;
-    updated_at: string;
-    updated_by: string;
-    model?: SystemModel;
+    nodes: ModelPart[];
+    edges: ModelEdge[];
+    display: SimUnits;
 }
 
 /** A tank's liquid in a run: at its temperature, or following a channel's (then over the range it went through). */
@@ -214,11 +199,16 @@ export interface RunRequest {
     solver: Solver;
 }
 
-export interface FitRequest extends RunRequest {
-    knobs: { part: string; key: string }[];
+export interface Knob {
+    part: string;
+    key: string;
 }
 
-/** A knob anchored to a sensor's channel, over a span of the run (on the dataset's clock; left out, all of it). */
+export interface FitRequest extends RunRequest {
+    knobs: Knob[];
+}
+
+/** A knob anchored to a sensor's channel, over a span of the run (on the test's clock; left out, all of it). */
 export interface AnchorPick {
     part: string;
     key: string;
@@ -230,11 +220,11 @@ export interface AnchorPick {
 
 export interface AnchorRequest extends RunRequest {
     anchors: AnchorPick[];
-    knobs: { part: string; key: string }[]; // fitted alongside, to the sensors not anchoring
+    knobs: Knob[]; // fitted alongside, to the sensors not anchoring
     fallback: boolean; // fit each knob whose anchor doesn't work
 }
 
-/** A run as its script has it: the model, its window (on the dataset's clock) and time step, its solver, and, for an
+/** A run as its script has it: the model, its window (on the test's clock) and time step, its solver, and, for an
  * anchored run's script, its anchors. */
 export interface ScriptRequest {
     model: SystemModel;
@@ -246,33 +236,21 @@ export interface ScriptRequest {
 }
 
 /** What a model's script imports besides FullFlow: yorg_models, its files by path; and the packages ("name==version")
- * to install from PyPI to run it as the server does. */
+ * it runs with on the server. */
 export interface ScriptLibrary {
     files: Record<string, string>;
     packages: string[];
 }
 
-/** A run's data, as its script takes it: each channel the model is linked to, by part.link, in the run's window (and
- * a sample each side) on the dataset's clock, in SI units. A missing sample is null. */
-export interface RunInputs {
-    inputs: Record<string, { times: (number | null)[]; values: (number | null)[] }>;
-}
+const BASE = "/api/yorg/models";
 
-export const devApi = {
-    catalog: () => request<Catalog>("GET", "/api/yorg/dev/catalog"),
-    models: () => request<SavedModel[]>("GET", "/api/yorg/dev/models"),
-    model: (id: string) => request<SavedModel>("GET", `/api/yorg/dev/models/${id}`),
-    addModel: (name: string, model: SystemModel) =>
-        request<SavedModel>("POST", "/api/yorg/dev/models", { name, model }),
-    saveModel: (id: string, name: string, model: SystemModel) =>
-        request<SavedModel>("PUT", `/api/yorg/dev/models/${id}`, { name, model }),
-    removeModel: (id: string) => request<void>("DELETE", `/api/yorg/dev/models/${id}`),
-    run: (body: RunRequest) => request<{ id: string }>("POST", "/api/yorg/dev/runs", body),
-    fit: (body: FitRequest) => request<{ id: string }>("POST", "/api/yorg/dev/fits", body),
-    anchor: (body: AnchorRequest) => request<{ id: string }>("POST", "/api/yorg/dev/anchors", body),
-    status: (id: string) => request<RunStatus>("GET", `/api/yorg/dev/runs/${id}`),
-    stop: (id: string) => request<void>("DELETE", `/api/yorg/dev/runs/${id}`),
-    script: (body: ScriptRequest) => request<{ script: string }>("POST", "/api/yorg/dev/script", body),
-    library: () => request<ScriptLibrary>("GET", "/api/yorg/dev/library"),
-    inputs: (body: RunRequest) => request<RunInputs>("POST", "/api/yorg/dev/inputs", body),
+export const simApi = {
+    catalog: () => request<Catalog>("GET", `${BASE}/catalog`),
+    run: (body: RunRequest) => request<{ id: string }>("POST", `${BASE}/runs`, body),
+    fit: (body: FitRequest) => request<{ id: string }>("POST", `${BASE}/fits`, body),
+    anchor: (body: AnchorRequest) => request<{ id: string }>("POST", `${BASE}/anchors`, body),
+    status: (id: string) => request<RunStatus>("GET", `${BASE}/runs/${id}`),
+    stop: (id: string) => request<void>("DELETE", `${BASE}/runs/${id}`),
+    script: (body: ScriptRequest) => request<{ script: string }>("POST", `${BASE}/script`, body),
+    library: () => request<ScriptLibrary>("GET", `${BASE}/library`),
 };

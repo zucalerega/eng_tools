@@ -1,10 +1,10 @@
 """yorg_models: what a Yorg model's script needs besides FullFlow and ThermoProp.
 
-Yorg writes each model as a FullFlow script (script.py) and runs it: on the server for the Models page's Run, and in your
-browser for a script you've changed there, where this file and components.py are the package yorg_models. The script
+Yorg writes each model as a FullFlow script (script.py) and runs it on the server, for Piper's Simulation mode, which
+shows the script and these files (with components.py, the package yorg_models) to read. The script
 builds the model from FullFlow's own components, with ThermoProp's properties through FullFlow's Lookup; Run does the
 rest. It reads the test's channels into the model (data["part.link"]: a linked channel's times on the test's clock, and
-its values in SI units), keeps what the page says about the run (where it started from, its liquids, its notes), anchors
+its values in SI units), keeps what Piper says about the run (where it started from, its liquids, its notes), anchors
 knobs (components.Anchor), and solves it.
 
 The network runs on its own clock from 0 at the window's start: channels are put on that clock, and results go back on
@@ -74,7 +74,7 @@ Series = tuple[np.ndarray, np.ndarray]
 
 
 class ModelError(Exception):
-    """What's wrong with a model or its run, in words, for the Models page."""
+    """What's wrong with a model or its run, in words, for Piper to say."""
 
 
 # A gas node's lines: each (its flow, 1.0 if it flows into the node or -1.0 if out of it, the enthalpy of the gas at
@@ -140,7 +140,7 @@ def _start(state: Any) -> float:
 
 
 class Run:
-    """A model's run: its FullFlow network (net), the test's channels it reads (data), and what the page shows of it.
+    """A model's run: its FullFlow network (net), the test's channels it reads (data), and what Piper shows of it.
 
     start and end are the window, on the test's clock; dt the time step; steady, FullFlow's quasi-steady sweep instead
     of a transient. names are the parts', by id, for what the run says; channels, the channels the model is linked to,
@@ -184,7 +184,7 @@ class Run:
         return (times[keep] - self.start, values[keep]) if keep.any() else None
 
     def starting(self, key: str, otherwise: float, low: float | None = None) -> float:
-        """A value the model starts from: its channel's (data[key]) at the run's start, noted for the page; or, with
+        """A value the model starts from: its channel's (data[key]) at the run's start, noted for Piper; or, with
         no samples, otherwise. At least low, if given."""
         found = self.series(key)
         if found is None:
@@ -241,7 +241,7 @@ class Run:
     # --- properties ----------------------------------------------------------------------------------------------
 
     def liquid(self, tank: str, properties: Any) -> None:
-        """Note a tank's liquid for the page (properties: its Lookup of ThermoProp's): what it is, and its temperature,
+        """Note a tank's liquid for Piper (properties: its Lookup of ThermoProp's): what it is, and its temperature,
         density, and vapor pressure at the run's start, as ThermoProp has them there; and, where its temperature follows
         a channel, over the temperatures that reads. ThermoProp says, in words, where it hasn't the liquid at all (below
         its freezing point, out of its range); where it has it as something else, the run says so."""
@@ -482,7 +482,7 @@ class Run:
     # --- solving --------------------------------------------------------------------------------------------------
 
     def solve(self, max_points: int = MAX_POINTS) -> dict[str, Any]:
-        """Solve the network over the window (FullFlow's Transient, or its steady sweep), and give what the page shows:
+        """Solve the network over the window (FullFlow's Transient, or its steady sweep), and give what Piper shows:
         each output's values at up to max_points times (on the test's clock), the liquids, where the run started
         from, its notes, and, with anchors, each knob's history and what it settled at."""
         solve = SteadyState(self.net).solve if self.steady else Transient(self.net).solve

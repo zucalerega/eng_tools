@@ -6,7 +6,7 @@ import { formatSize } from "../format";
 import { Link, navigate } from "../router";
 import { yorg, type DataFolder, type Dataset } from "./api";
 import { reloadDataset } from "./data";
-import { formatDuration, formatRate } from "./scale";
+import { formatDuration, formatRate } from "../scale";
 import { DATA_FILES, UploadDialog } from "./Upload";
 
 // The datasets, in folders: a folder's own datasets and folders, and every dataset when searching. Datasets and

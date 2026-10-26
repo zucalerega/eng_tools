@@ -56,7 +56,7 @@ test("everyone has the Python window: a script is changed by whoever saved it, a
 
 test("scripts are opened from the examples, saved in folders, uploaded, changed, and deleted", async () => {
     const team = await Team.create();
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     const list = within(await screen.findByRole("complementary", { name: "Scripts" }));
 
     // An example: a notebook, its text first, then its cells of code.
@@ -108,7 +108,7 @@ test("a script works on the tests attached to it: their channels go in the code 
     const team = await Team.create();
     const tank = await team.data(team.chief, "Tank test", TANK);
     const chamber = await team.data(team.chief, "Chamber test", CHAMBER);
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     const data = within(await screen.findByRole("complementary", { name: "Data" }));
     expect(data.getByText("No test attached yet.")).toBeTruthy();
 
@@ -119,9 +119,7 @@ test("a script works on the tests attached to it: their channels go in the code 
     const first = within(await data.findByRole("region", { name: tank.name }));
     const second = within(data.getByRole("region", { name: chamber.name }));
     expect(first.getByText("first")).toBeTruthy();
-    expect(first.getByRole("link", { name: `${tank.name} ↗` }).getAttribute("href")).toBe(
-        `/yorg/dev/datasets/${tank.id}`,
-    );
+    expect(first.getByRole("link", { name: `${tank.name} ↗` }).getAttribute("href")).toBe(`/yorg/datasets/${tank.id}`);
 
     // A click puts a channel in at the cursor: the first test's as it is, another's with its name.
     await setCode(1, "");
@@ -163,7 +161,7 @@ test("two tests with one name (in two folders): each shows its id, and the code 
     const one = await team.data(team.chief, "Twin", TANK);
     const other = await team.data(team.chief, "Twin", TANK);
     expect(other.name).toBe(one.name);
-    renderApp(team.chief, "/yorg/dev/scripts");
+    renderApp(team.chief, "/yorg/scripts");
     const data = within(await screen.findByRole("complementary", { name: "Data" }));
     const label = (id: number) => `${one.name} (${id})`;
     await waitFor(() => expect(data.getAllByRole("option", { name: label(other.id) }).length).toBe(1));

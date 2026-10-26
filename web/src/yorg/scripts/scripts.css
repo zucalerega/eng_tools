@@ -1103,3 +1103,26 @@ button.reference-entry:hover:not(:disabled),
 .tok-operator {
     color: var(--code-punctuation);
 }
+
+/* A notebook's plot's legend: each series' color and name, and its value at the cursor. */
+.scripts-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem 1rem;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.scripts-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.scripts-swatch i {
+    width: 12px;
+    height: 3px;
+    border-radius: 2px;
+}

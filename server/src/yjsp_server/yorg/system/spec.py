@@ -1,15 +1,15 @@
-"""A system model as the web app sends it: nodes and the edges between them, each with its settings and links to
-channels. Saving takes any model whose parts fit together (a half-drawn one is fine); running checks more
-(runnable), and says in words which part is the problem.
+"""A system model as a client sends it (Piper builds one from a P&ID): nodes and the edges between them, each with its
+settings and links to channels. Its parts must fit together (check_shape), and to run it must be one that can be
+simulated (runnable), or the server says in words which part is the problem.
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 from ...errors import ApiError
-from .catalog import BY_TYPE, RENAMED, RETIRED, in_words, settings_of
+from .catalog import BY_TYPE, in_words, settings_of
 
 _ID = r"^[A-Za-z0-9_-]{1,40}$"
 # Where liquid and gas can go: an ullage tank holds both, an outlet takes either.
@@ -30,17 +30,6 @@ class PartIn(BaseModel):
     y: float = 0.0
     settings: dict[str, float | str] = Field(default_factory=dict)
     links: dict[str, str] = Field(default_factory=dict)  # a link's key: the name of the channel in it ("": none)
-
-    @field_validator("type")
-    @classmethod
-    def _renamed(cls, value: str) -> str:
-        return RENAMED.get(value, value)
-
-    @model_validator(mode="after")
-    def _retired(self) -> "PartIn":
-        for key in RETIRED.get(self.type, ()):
-            self.settings.pop(key, None)
-        return self
 
 
 class EdgeIn(PartIn):

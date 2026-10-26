@@ -1,10 +1,8 @@
-"""The dev page's API (/api/yorg/dev), for admins: the parts a system model can have, saved models, and runs of a
-model against a test's data, fits of its knobs to it, and runs with knobs anchored to it; and, for the page's Script
-view, the FullFlow script a run runs, what the script imports, and a run's data, to run a changed script in the
-browser."""
+"""System models' API (/api/yorg/models), for admins while simulations are tried out: the parts a model can have, and
+runs of a model against a test's data, fits of its knobs to it, and runs with knobs anchored to it; and the FullFlow
+script a run runs, what the script imports, and a run's data. Piper's Simulation mode is its client, as any client is:
+it builds each model from a P&ID, and keeps it in the diagram's drawing."""
 
-import json
-import math
 from importlib import metadata
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -18,14 +16,13 @@ from ...models import User
 from .. import datasets
 from ..api import Files
 from ..models import DatasetStatus
-from ..saved import Saved
 from . import catalog, channels
 from .catalog import in_words
 from .runs import Runs
 from .script import Unrunnable, script
-from .spec import BadModel, Runnable, SystemModelIn, check_shape, runnable
+from .spec import BadModel, Runnable, SystemModelIn, runnable
 
-router = APIRouter(prefix="/api/yorg/dev", tags=["yorg-dev"])
+router = APIRouter(prefix="/api/yorg/models", tags=["yorg-models"])
 
 MAX_DURATION = 600.0  # simulated seconds in one run
 MAX_STEPS = 200_000
@@ -37,28 +34,18 @@ PACKAGES = ("fullflow", "thermoprop")  # and what to install from PyPI to run it
 
 def admin_user(user: ActiveUser) -> User:
     if not user.is_admin:
-        raise Forbidden("The dev page is for admins", code="admins_only")
+        raise Forbidden("Simulations are for admins, while they're tried out", code="admins_only")
     return user
 
 
 AdminUser = Annotated[User, Depends(admin_user)]
 
 
-def get_models(request: Request) -> Saved:
-    return request.app.state.yorg_models
-
-
 def get_runs(request: Request) -> Runs:
     return request.app.state.yorg_runs
 
 
-SavedModels = Annotated[Saved, Depends(get_models)]
 ModelRuns = Annotated[Runs, Depends(get_runs)]
-
-
-class ModelSaveIn(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    model: SystemModelIn
 
 
 class ReadingIn(BaseModel):
@@ -130,36 +117,6 @@ def get_catalog(user: AdminUser) -> dict[str, Any]:
     return catalog.as_json()
 
 
-@router.get("/models")
-def get_saved_models(user: AdminUser, models: SavedModels) -> list[dict[str, Any]]:
-    return models.all()
-
-
-@router.post("/models", status_code=201)
-def post_model(body: ModelSaveIn, user: AdminUser, models: SavedModels) -> dict[str, Any]:
-    check_shape(body.model)
-    return models.add(user, name=body.name.strip(), model=body.model.model_dump())
-
-
-@router.get("/models/{model_id}")
-def get_model(model_id: str, user: AdminUser, models: SavedModels) -> dict[str, Any]:
-    saved = models.get(model_id)
-    # As a model is saved now: a part since renamed (a press line, now a gas valve) under its new name.
-    return {**saved, "model": SystemModelIn.model_validate(saved["model"]).model_dump()}
-
-
-@router.put("/models/{model_id}")
-def put_model(model_id: str, body: ModelSaveIn, user: AdminUser, models: SavedModels) -> dict[str, Any]:
-    check_shape(body.model)
-    return models.change(user, model_id, name=body.name.strip(), model=body.model.model_dump())
-
-
-@router.delete("/models/{model_id}", status_code=204)
-def delete_model(model_id: str, user: AdminUser, models: SavedModels) -> Response:
-    models.remove(model_id)
-    return Response(status_code=204)
-
-
 def _window_job(body: WindowIn, checked: Runnable) -> dict[str, Any]:
     """A run's job, but for its data: the checked model, its window and time step, and its solver."""
     return {
@@ -194,7 +151,7 @@ def _job(body: RunIn, db, files, checked: Runnable, strict: bool) -> tuple[dict[
                 continue
             channel = by_name.get(name)
             if channel is None and not strict and catalog.link_role(link, part["settings"]) == "sensor":
-                continue  # compared on the page, which says the test hasn't it
+                continue  # compared in Piper, which says the test hasn't it
             if channel is None:
                 raise channels.NoSuchChannel(
                     f"{part['name']}'s {in_words(link.label)} is {name}, which {dataset.name} doesn't have"
@@ -355,8 +312,7 @@ def post_anchor(body: AnchorRunIn, user: AdminUser, db: DB, files: Files, runs: 
 @router.post("/script")
 def post_script(body: ScriptIn, user: AdminUser) -> dict[str, str]:
     """The FullFlow script a run of the model runs over the window (with anchors, an anchored run's: before any fit of
-    what they don't settle). The server runs it as it is; the Models page shows it, and runs it changed in the
-    browser, with GET /library and POST /inputs."""
+    what they don't settle), as the server runs it: Piper shows it, with what it imports (GET /library)."""
     checked = runnable(body.model)
     job = {**_window_job(body, checked), "anchors": _anchors(body, {**checked.nodes, **checked.edges})}
     try:
@@ -367,27 +323,13 @@ def post_script(body: ScriptIn, user: AdminUser) -> dict[str, str]:
 
 @router.get("/library")
 def get_library(user: AdminUser) -> dict[str, Any]:
-    """What a model's script imports besides FullFlow: yorg_models, a package of two files (by path), and the
-    packages to install from PyPI to run it as the server does (FullFlow and ThermoProp, at the server's versions)."""
+    """What a model's script imports besides FullFlow: yorg_models, a package of two files (by path); and the packages
+    from PyPI it runs with, at the server's versions (FullFlow and ThermoProp)."""
     folder = Path(__file__).parent
     return {
         "files": {name: (folder / source).read_text(encoding="utf-8") for name, source in LIBRARY.items()},
         "packages": [f"{package}=={metadata.version(package)}" for package in PACKAGES],
     }
-
-
-@router.post("/inputs")
-def post_inputs(body: RunIn, user: AdminUser, db: DB, files: Files) -> Response:
-    """A run's data, as a script gets it: each channel the model is linked to (by part.link), its samples in the
-    run's window (and one each side) on the dataset's clock, in SI units. A sample that's missing is null."""
-    _, inputs = _job(body, db, files, runnable(body.model), strict=False)
-
-    def floats(values) -> list[float | None]:
-        return [value if math.isfinite(value) else None for value in values]
-
-    found = {key: {"times": floats(times), "values": floats(values)} for key, (times, values) in inputs.items()}
-    # Written here rather than by FastAPI, which goes through every number on its way: channels have a lot of them.
-    return Response(json.dumps({"inputs": found}, allow_nan=False), media_type="application/json")
 
 
 @router.get("/runs/{run_id}")

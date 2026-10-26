@@ -22,7 +22,7 @@ import { kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
-import { channelNames, findChannel, plotLink } from "./testdata";
+import { channelNames, findChannel, plotLink, type Samples } from "./testdata";
 import { PAPERS, pdfOfPages, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
 import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
@@ -30,12 +30,19 @@ import { findInDocument } from "./find";
 import { PageTabs } from "./PageTabs";
 import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
+import { simApi, type Catalog } from "./sim/api";
+import { simLive } from "./sim/live";
+import { buildModel } from "./sim/model";
+import { NO_SIM, SimPanel, type SimState } from "./sim/SimPanel";
+import type { LiveValue } from "./DiagramView";
 
 // A diagram's page: the editor, the whole window under the top bar. The drawing's in the middle, the inspector on the
 // right, and under them, when they're open, the test the drawing's read against and its history. A test and the time on
 // its timeline are in the address (?test=5&t=12.5), so a link opens the same moment. Its pages are tabs under the
 // drawing; the drawing is the page being worked on. It opens to be looked at: Edit makes it yours to change, with the
-// library on the left, until you're done (editing.ts). A diagram just made opens to edit (?edit=1).
+// library on the left, until you're done (editing.ts). A diagram just made opens to edit (?edit=1). Simulation mode
+// (?sim=1, for admins while it's tried out) shows what the P&ID is as a model, run against the test: its settings on
+// each part in the inspector, and its panel in place of Test data's.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -75,6 +82,17 @@ export function EditorPage({ id }: { id: number }) {
     const toEdit = search.has("edit");
     const [time, setTime] = useState(() => Number(search.get("t")) || 0);
     const { reading, problem: testProblem } = useTest(drawing, testId, time);
+    const canSimulate = me?.is_admin === true;
+    const simulating = canSimulate && search.get("sim") === "1";
+    const pages = useEditor(store, (state) => state.document); // all its pages: the model is all of them
+    const [catalog, setCatalog] = useState<Catalog | null>(null);
+    const [catalogProblem, setCatalogProblem] = useState<string | null>(null);
+    // What Simulation mode's panel has (its settings, a run going, what it found), kept while the diagram's open.
+    const [sim, setSim] = useState<SimState>(NO_SIM);
+    const built = useMemo(
+        () => (simulating && catalog ? buildModel(pages, catalog, reading?.detail ?? null) : null),
+        [simulating, catalog, pages, reading?.detail],
+    );
 
     useEffect(() => {
         let current = true;
@@ -105,6 +123,13 @@ export function EditorPage({ id }: { id: number }) {
         piper.schemes().then(setSchemes, () => setSchemes([]));
     }, []);
 
+    // The parts a model can have (Yorg's), once Simulation mode first wants them.
+    useEffect(() => {
+        if (simulating && !catalog) {
+            simApi.catalog().then(setCatalog, (error: unknown) => setCatalogProblem(message(error)));
+        }
+    }, [simulating, catalog]);
+
     // Opened at the whole drawing, once the canvas has its size.
     useEffect(() => {
         if (diagram && !fitted.current) {
@@ -126,7 +151,7 @@ export function EditorPage({ id }: { id: number }) {
             const query = new URLSearchParams(window.location.search);
             query.delete("edit");
             const text = query.toString();
-            navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true, exact: true });
+            navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
         }
     }, [diagram, toEdit]);
 
@@ -176,6 +201,19 @@ export function EditorPage({ id }: { id: number }) {
     const shownPage = lookedAt ? Math.min(lookPage, lookedAt.pages.length - 1) : page;
     const whole = (): Document => lookedAt ?? store.getState().document;
 
+    /** Simulation mode on, or off: kept in the address, as the test is. */
+    function simulate(on: boolean) {
+        const query = new URLSearchParams(window.location.search);
+        if (on) {
+            query.set("sim", "1");
+            setPanel((now) => (now === "test" ? null : now)); // its panel has the test
+        } else {
+            query.delete("sim");
+        }
+        const text = query.toString();
+        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
+    }
+
     function address(test: number | null, at: number | null) {
         const query = new URLSearchParams(window.location.search);
         if (test === null) {
@@ -190,7 +228,7 @@ export function EditorPage({ id }: { id: number }) {
             }
         }
         const text = query.toString();
-        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true, exact: true });
+        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
     }
 
     async function plot(channels: string[]) {
@@ -294,6 +332,19 @@ export function EditorPage({ id }: { id: number }) {
         setNotice(`Revision ${number} is the drawing again, as revision ${restored.revision}.`);
     }
 
+    // What the drawing shows of the test at the time shown, and in Simulation mode, of the model's run beside it: an
+    // instrument's measured value then in the model's units too, to compare.
+    const modeled = simulating && sim.shown ? simLive(sim.shown, time, reading) : null;
+    const values: Map<string, LiveValue> | null = modeled
+        ? new Map(
+              [...new Set([...(reading?.live.keys() ?? []), ...modeled.keys()])].map((id) => {
+                  const tested = reading?.live.get(id) ?? { text: "", state: null, missing: false };
+                  const run = modeled.get(id);
+                  return [id, run ? { ...tested, text: run.measured ?? tested.text, model: run.model } : tested];
+              }),
+          )
+        : (reading?.live ?? null);
+
     const linked = reading
         ? [
               ...new Set(
@@ -324,6 +375,8 @@ export function EditorPage({ id }: { id: number }) {
                 onRename={() => setRenaming(true)}
                 onTakeOver={() => setTakingOver(true)}
                 onExport={(as) => void exportAs(as)}
+                simulating={simulating}
+                onSimulate={canSimulate ? simulate : null}
             />
             {saving.status === "changed" && saving.changed && (
                 <div className="piper-banner" role="alert">
@@ -437,7 +490,7 @@ export function EditorPage({ id }: { id: number }) {
                             commands={commands}
                             palette={palette}
                             meta={meta}
-                            live={reading?.live ?? null}
+                            live={values}
                             onEdit={edit}
                             onPicture={(file, at) => void dropPicture(file, at)}
                         />
@@ -475,6 +528,7 @@ export function EditorPage({ id }: { id: number }) {
                         test={reading}
                         onPlot={(channels) => void plot(channels)}
                         schemes={schemes}
+                        sim={simulating && catalog && built ? { catalog, built, test: reading?.detail ?? null } : null}
                     />
                 )}
                 {panel === "history" && (
@@ -507,7 +561,34 @@ export function EditorPage({ id }: { id: number }) {
                     onClose={() => setPanel(null)}
                 />
             )}
-            {panel === "test" && (
+            {simulating && (
+                <SimPanel
+                    store={store}
+                    commands={commands}
+                    catalog={catalog}
+                    catalogProblem={catalogProblem}
+                    built={built}
+                    testId={testId}
+                    test={reading?.detail ?? null}
+                    testSamples={reading?.samples ?? NO_SAMPLES}
+                    testProblem={testProblem}
+                    time={time}
+                    state={sim}
+                    onState={setSim}
+                    onTest={(test) => {
+                        setTime(0);
+                        address(test, null);
+                    }}
+                    onTime={(at, settled) => {
+                        setTime(at);
+                        if (settled && testId !== null) {
+                            address(testId, at);
+                        }
+                    }}
+                    onClose={() => simulate(false)}
+                />
+            )}
+            {panel === "test" && !simulating && (
                 <TestPanel
                     testId={testId}
                     time={time}
@@ -592,6 +673,8 @@ export function EditorPage({ id }: { id: number }) {
         </div>
     );
 }
+
+const NO_SAMPLES: ReadonlyMap<string, Samples> = new Map<string, Samples>();
 
 const PAPER = "piper.paper"; // the paper last chosen for a PDF, in this browser
 const SHEET = "piper.sheet"; // and whether it was on a sheet ("no": it wasn't)

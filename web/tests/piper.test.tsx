@@ -2,6 +2,7 @@ import { createEvent, fireEvent, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { beforeAll, expect, onTestFinished, test, vi } from "vitest";
 import type { Diagram } from "../src/piper/api";
+import { LIGHT } from "../src/piper/colors";
 import { emptyDrawing, type Drawing } from "../src/piper/drawing";
 import { addPart, connect } from "../src/piper/edit";
 import { example } from "../src/piper/example";
@@ -871,6 +872,10 @@ test("a test from Yorg on the drawing: each instrument's value and each valve's 
     await waitFor(() => expect(badge(sensor)).toBe("330.0 psi"));
     expect(badge(valve)).toBe("CLOSED");
     expect(panel.getByText(/has no channel for PT-2/)).toBeTruthy();
+    // Each on a leader to its part, in its color: a valve's, its state's.
+    const leader = (part: string) => drawingArea().querySelector(`[data-leader="${part}"]`);
+    expect([leader(sensor), leader(valve)].every(Boolean)).toBe(true);
+    expect(leader(valve)!.getAttribute("stroke")).toBe(LIGHT.nc);
     await waitFor(() => expect(panel.getByRole("combobox", { name: "Test" })).toHaveProperty("value", String(data.id)));
 
     fireEvent.change(panel.getByRole("slider", { name: "Time" }), { target: { value: "0.8" } });

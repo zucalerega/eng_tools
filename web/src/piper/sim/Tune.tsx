@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Dialog } from "../../components";
 import { AnchorChoices, type AnchorPlan, useAnchorPlan } from "./Anchor";
-import type { Catalog, Solver, SystemModel } from "./api";
-import { FitChoices, type Knob, useFitChoice } from "./Fit";
+import type { Catalog, Knob, Solver, SystemModel } from "./api";
+import { FitChoices, useFitChoice } from "./Fit";
 
-// Tuning a model's knobs (settings marked tune) to a test, one of two ways, side by side so it's plain which is which:
+// Tuning the model's knobs (settings marked tune) to a test, one of two ways, side by side so it's plain which is which:
 // a fit (Fit.tsx) runs the model again and again for one best value of each knob; an anchored run (Anchor.tsx) moves
 // each knob within one run, at every time step, until its sensor reads what was measured. Each keeps what was picked
 // for it while the other is shown.
@@ -60,10 +60,13 @@ export function TuneDialog({
             onConfirm={() => (method === "fit" ? onFit(fit.chosen) : onAnchor(anchor.plan))}
             onCancel={onCancel}
         >
-            <fieldset className="dev-methods">
+            <fieldset className="piper-sim-methods">
                 <legend>How</legend>
                 {METHODS.map((one) => (
-                    <label key={one.method} className={`dev-method${method === one.method ? " dev-method-on" : ""}`}>
+                    <label
+                        key={one.method}
+                        className={`piper-sim-method${method === one.method ? " piper-sim-method-on" : ""}`}
+                    >
                         <input
                             type="radio"
                             name="tune-method"

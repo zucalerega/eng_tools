@@ -11,7 +11,8 @@ import type { SaveStatus } from "./saving";
 import { useEditor, type EditorStore } from "./store";
 
 // The editor's bar: where the diagram is and whether it's saved, then Edit (or Done editing, and undo and redo, and the
-// tools, while it's yours), the zoom, and the panels (test data, history), exports, and Help.
+// tools, while it's yours), the zoom, and the panels (test data, history), Simulation mode (for admins, while it's tried
+// out), exports, and Help.
 
 const ICONS: Record<string, ReactNode> = {
     undo: <path d="M6 4 2.5 7.5 6 11M3 7.5h7a3.5 3.5 0 0 1 0 7H8" />,
@@ -74,6 +75,8 @@ export function Toolbar({
     onRename,
     onTakeOver,
     onExport,
+    simulating,
+    onSimulate,
 }: {
     diagram: Diagram;
     store: EditorStore;
@@ -87,6 +90,8 @@ export function Toolbar({
     onRename: () => void;
     onTakeOver: () => void;
     onExport: (as: ExportKind) => void;
+    simulating: boolean;
+    onSimulate: ((on: boolean) => void) | null; // null: not yours to turn on
 }) {
     const { canUndo, canRedo, tool, view } = useEditor(store, (state) => state);
     const folders = diagram.folder ? diagram.folder.split("/") : [];
@@ -238,13 +243,15 @@ export function Toolbar({
                 >
                     Parts
                 </button>
-                <button
-                    type="button"
-                    aria-pressed={panel === "test"}
-                    onClick={() => onPanel(panel === "test" ? null : "test")}
-                >
-                    Test data
-                </button>
+                {!simulating && (
+                    <button
+                        type="button"
+                        aria-pressed={panel === "test"}
+                        onClick={() => onPanel(panel === "test" ? null : "test")}
+                    >
+                        Test data
+                    </button>
+                )}
                 <button
                     type="button"
                     aria-pressed={panel === "history"}
@@ -252,6 +259,16 @@ export function Toolbar({
                 >
                     History
                 </button>
+                {onSimulate && (
+                    <button
+                        type="button"
+                        aria-pressed={simulating}
+                        title="Simulate the P&ID with FullFlow against a test, and tune it to match: its settings show on each part"
+                        onClick={() => onSimulate(!simulating)}
+                    >
+                        Simulation
+                    </button>
+                )}
                 <MenuButton
                     label="Export"
                     items={[

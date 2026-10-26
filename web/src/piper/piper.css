@@ -1442,3 +1442,431 @@
     align-items: center;
     gap: 0.5rem;
 }
+
+/* --- Simulation mode ---------------------------------------------------------------------------------------------- */
+
+/* Its panel, under the drawing: the run's settings, what the model says of the P&ID, the timeline, and the results,
+   which scroll within it so the drawing keeps its room. */
+.piper-sim {
+    display: flex;
+    flex-direction: column;
+    max-height: 42vh;
+    overflow-y: auto;
+}
+
+.piper-sim-run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.piper-sim-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.piper-sim-field input,
+.piper-sim-field select {
+    height: 1.9rem;
+    font-size: 0.85rem;
+}
+
+.piper-sim-field input {
+    width: 6.5rem;
+}
+
+/* A time of the run's window, and its button for the time on the timeline, side by side under its label. */
+.piper-sim-time {
+    display: flex;
+    gap: 0.2rem;
+}
+
+.piper-sim-now {
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    font-size: 1rem;
+}
+
+.piper-sim-findings {
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.82rem;
+}
+
+.piper-sim-findings li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.2rem 0;
+    color: var(--muted);
+}
+
+.piper-sim-findings li span {
+    flex: 1;
+}
+
+.piper-sim-findings .piper-sim-problem {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* What the drawing's values are: the test's, then the model's, in gold. */
+.piper-sim-key {
+    margin: 0.3rem 0 0;
+}
+
+/* A run's window on the timeline. */
+.piper-band {
+    position: absolute;
+    top: 0.35rem;
+    bottom: 0.35rem;
+    border-radius: 3px;
+    background: var(--gold);
+    opacity: 0.28;
+    pointer-events: none;
+}
+
+.piper-sim-body {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.piper-sim-results p {
+    margin: 0.4rem 0 0;
+}
+
+.piper-sim-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr));
+    gap: 0.6rem 1rem;
+    margin-top: 0.5rem;
+}
+
+.piper-sim-chart {
+    margin: 0;
+    min-width: 0;
+}
+
+.piper-sim-chart svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    cursor: crosshair;
+}
+
+.piper-sim-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem 0.9rem;
+    margin-bottom: 0.2rem;
+    font-size: 0.8rem;
+}
+
+.piper-sim-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sim-swatch i {
+    width: 12px;
+    height: 3px;
+    border-radius: 2px;
+}
+
+.piper-sim-fit {
+    margin-left: auto;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sim-grid line {
+    stroke: var(--border);
+    stroke-width: 1;
+}
+
+.piper-sim-grid text {
+    fill: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sim-cursor {
+    stroke: var(--muted);
+    stroke-dasharray: 3 3;
+}
+
+.piper-sim-add {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.piper-sim-add select {
+    max-width: 24rem;
+}
+
+/* What a fit or an anchored run found, to apply to the P&ID. */
+.piper-sim-found {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-large);
+    font-size: 0.85rem;
+}
+
+.piper-sim-found p {
+    margin: 0 0 0.3rem;
+}
+
+.piper-sim-table {
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sim-table th,
+.piper-sim-table td {
+    padding: 0.2rem 0.9rem 0.2rem 0;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.piper-sim-table th {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.piper-sim-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+/* Tune: its two ways side by side, each saying what it does, then what the one picked needs. */
+.piper-sim-methods {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.6rem;
+    margin: 0 0 0.9rem;
+    padding: 0;
+    border: 0;
+}
+
+.piper-sim-methods legend {
+    margin-bottom: 0.4rem;
+    padding: 0;
+    font-weight: 600;
+}
+
+.piper-sim-method {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    cursor: pointer;
+}
+
+.piper-sim-method > span {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.piper-sim-method strong {
+    font-size: 0.95rem;
+}
+
+.piper-sim-method-on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.piper-sim-help {
+    font-size: 0.85rem;
+}
+
+.piper-sim-knobs {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.piper-sim-anchors {
+    width: 100%;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.piper-sim-anchors select {
+    width: 100%;
+    min-width: 12rem;
+}
+
+.piper-sim-anchors input {
+    width: 5.5rem;
+}
+
+.piper-sim-channel {
+    display: block;
+    font-size: 0.8rem;
+}
+
+/* The script, to read. */
+.piper-sim-files {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.5rem 0;
+}
+
+.piper-sim-files button[aria-pressed] {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.piper-sim-files button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.piper-sim-code {
+    max-height: min(62vh, 720px);
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+/* How it's modeled: FullFlow, and how each part is built of its components. */
+.piper-sim-reference p,
+.piper-sim-reference li,
+.piper-sim-reference dd {
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.piper-sim-reference h3 {
+    margin: 1rem 0 0.3rem;
+    font-size: 0.85rem;
+}
+
+.piper-sim-reference ul {
+    margin: 0.4rem 0;
+    padding-left: 1.1rem;
+}
+
+.piper-sim-reference-list {
+    margin: 0.4rem 0;
+}
+
+.piper-sim-reference-list div {
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.piper-sim-reference-list dt {
+    font-weight: 600;
+}
+
+.piper-sim-reference-list dd {
+    margin: 0.15rem 0 0;
+}
+
+.piper-sim-reference-list code {
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+/* The inspector's Simulation section: what the selection is in the model, set apart from what it is on the P&ID. */
+.piper-sim-section {
+    margin: 0.2rem 0 0.8rem;
+    padding: 0.1rem 0.7rem 0.5rem;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius-large);
+}
+
+.piper-sim-section .piper-subhead {
+    margin-top: 0.6rem;
+    color: var(--gold);
+}
+
+.piper-sim-section p {
+    margin: 0.4rem 0;
+}
+
+.piper-sim-linked {
+    display: block;
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 0.82rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.piper-sim-unit {
+    flex: none;
+    font-size: 0.8rem;
+}
+
+.piper-sim-tune {
+    flex: none;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.piper-sim-label {
+    margin: 0.7rem 0 0.2rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.piper-sim-link {
+    margin: 0.3rem 0;
+    font-size: 0.82rem;
+}
+
+.piper-sim-link-label {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+/* A channel in the model, checked: unchecked, its value is the part's own. */
+.piper-sim-use {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+}
+
+.piper-sim-use input {
+    margin-top: 0.15rem;
+}

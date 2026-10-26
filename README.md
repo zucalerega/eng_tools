@@ -255,51 +255,7 @@ the keys.
   on screen without saving a view: the plots, the tests compared and their shifts, the time
   in view, T0, and the rest. Whoever opens it sees those plots as unsaved changes, and can
   Save view to keep them; on a dataset's page they become the plots their browser keeps for
-  it. A link made in the preview opens the site's page, so it works for everyone.
-- **Yorg's preview (admins):** `/yorg/dev/...` is Yorg as it will be with what's new in
-  it: the same data, views, scripts, and help, with Models in its top bar, and Model on a
-  dataset's page. Everyone else's Yorg stays as it is; admins go in with Preview, top right
-  (no one else sees it).
-- **System models (in the preview while it's being tried out):** draw a test stand's feed
-  system as a P&ID: tanks (at a fixed pressure, or under a gas ullage), junctions,
-  outlets, and the lines, valves, orifices, and cavitating venturis between them; and on
-  the gas side (dashed), gas supplies, gas junctions, regulators, gas valves, and gas
-  orifices: press lines into a tank's ullage, and vents out of it. Link its valves to
-  their command channels, what it follows (a tank's pressure, a chamber's, a liquid's
-  temperature, whose density and vapor pressure then follow it through the run) to theirs,
-  and its sensors to what they measured; a tank, a junction, or a gas junction starts from
-  its sensors' values at the run's start (pressure, gas and wall temperatures). Every part
-  is built of FullFlow's components, with ThermoProp's properties: a gas is real unless you
-  set it ideal (at bottle pressures the difference shows), and a liquid has its density at
-  each node's pressure. Run it against a test (FullFlow simulates it on the server)
-  over a window from T0 (the one set on the dataset's plots) to see each sensor's measured
-  and modeled values together, with how far apart they are (RMS and bias). Then tune the
-  settings marked tune (CdAs, a line's friction factor and fittings' K, a valve's opening
-  time, a regulator's set pressure and droop, a venturi's recovery, an ullage's wall hA
-  and its collapse factor, and a vessel's wall hA: a gas junction that's a COPV or a
-  bottle, set to hold its gas in a vessel), or let **Tune…** match them to the test, one
-  of two ways it puts side by side. **Fit**: the server runs the model again and again,
-  turning the knobs you pick until it matches best, and you apply what it found (or not).
-  **Anchor**: pair a knob with a sensor, and in one run FullFlow moves the knob in every
-  time step until the sensor reads what was measured; you see each knob through the run,
-  and apply the median (or not). Give an anchor a span where its knob counts, such as a
-  valve's CdA while it's open. What anchoring can't settle is fitted: knobs you pick to
-  fit alongside the anchors, and any knob FullFlow couldn't anchor (unless you turn that
-  off), the working anchors held in each of the fit's runs.
-  The **Steady** solver settles the lines, junctions, and regulators at once in each time
-  step, with the tanks (and gas junctions linked to a pressure transducer) at the pressure
-  measured: much faster, and without inertia, so a steady anchor can start anywhere.
-  Models are saved for every admin, run against any test with the same channel names, and
-  go to and from files. **Start from an example** has a cold flow, a pressurized flow, and
-  Vespula's prop system (Saaketh's FullFlow model) with its run's data, which it uploads
-  to Yorg the first time: built of the same FullFlow components, a run of it is Saaketh's
-  run again.
-  **Script** shows the model as the FullFlow code that runs it, written from the P&ID, and
-  the code of Yorg's own it imports. Change it (say, to add a FullFlow component Yorg's
-  parts don't have, or to model a part another way) and **Run in browser** runs your
-  script in your browser: FullFlow installs there the first time (a minute or two), and it
-  runs several times slower than the server. A changed script isn't saved.
-  **Reference** explains what FullFlow is and how it models a system and solves it.
+  it.
 - **Scripts:** a Python notebook. Its cells run
   one at a time in the notebook's variables, so the cell that loads the data runs once and
   the ones after it as often as you change them: Shift+Enter runs a cell and goes on, Run all
@@ -346,17 +302,18 @@ colors of their normal states. Help, in Piper's top bar, has all of this on one 
 the keys.
 
 - **Diagrams**: in folders, as Yorg's datasets are. **New folder** makes one where you are;
-  open one to see what's in it, with the way back up above its name, and rename it, or delete it
-  once it's empty. **New diagram** makes one, empty or from an example (a pressure-fed engine's
-  feed system), in the folder you're in. Drag diagrams or folders onto a folder (or a folder in
-  the way back up) to move them, or check diagrams and **Move to…**. Everyone can open, edit,
-  and move every diagram, and make and change folders; whoever made a diagram (or an admin) can
-  delete it, checked ones together with **Delete…**, to **Deleted diagrams**, where they're
-  checked and restored together. **Find diagrams** looks in every folder, in names, folders, and
-  the tags on each drawing: PT-101 finds every diagram it's on, each says its folder, and each
-  opens at it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
-  it is, on whichever page, and **Parts** lists every part by what it is, with how many and
-  their specs, under the drawing.
+  open one to see what's in it, with the way back up above its name, and rename it, or delete
+  it once it's empty. **New diagram** makes one, empty or from an example (a pressure-fed
+  engine's feed system; for admins, three P&IDs to simulate too), in the folder you're in. Drag
+  diagrams or folders onto a folder (or a folder in the way back up) to move them, or check
+  diagrams and **Move to…**. Everyone can open, edit, and move every diagram, and make and
+  change folders; whoever made a diagram (or an admin) can delete it, checked ones together
+  with **Delete…**, to **Deleted diagrams**, where they're checked and restored together.
+  **Find diagrams** looks in every folder, in names, folders, and the tags on each drawing:
+  PT-101 finds every diagram it's on, each says its folder, and each opens at it. In a diagram,
+  **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what it is, on whichever
+  page, and **Parts** lists every part by what it is, with how many and their specs, under the
+  drawing.
 - **Editing**: a diagram opens to be looked at. **Edit**, at the top, makes it yours to change:
   one person edits a diagram at a time, so no one's changes go over anyone else's, and the
   diagrams list and everyone with it open see who's editing it. **Done editing** saves what's
@@ -425,9 +382,45 @@ the keys.
   never changes, and editing goes on in a draft after it. One waits at a time; whoever asked
   can withdraw it. A PDF on a drawing sheet lists the releases and who approved each.
 - **Test data**: pick a test from Yorg, and each instrument shows its channel's value and each
-  valve whether it was open, at the time on the timeline: drag it or play the test. A part
-  reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test
-  with those channels plotted, and the page's address keeps the test and the time.
+  valve whether it was open, in a badge on a line to it, at the time on the timeline: drag it or
+  play the test. A part reads the channel named as its tag (or its **Test channel**). **Plot in
+  Yorg** opens the test with those channels plotted, and the page's address keeps the test and
+  the time.
+- **Simulation (admins, while it's tried out)**: **Simulation**, in the editor's bar, makes the
+  P&ID a model of the system, simulated with FullFlow (Saaketh's network solver) and
+  ThermoProp's properties against a test from Yorg, to tune it until it matches what was
+  measured. What it adds shows only while it's on. The P&ID is the model, drawn as any diagram
+  is: tanks, bottles, the engine, and vents hold the pressures; valves, regulators, orifices,
+  and venturis carry the flow between them; lines and tees join into one point; and whether a
+  part carries liquid or gas comes from its lines' fluids. Select a part and, while you're
+  editing the diagram, the inspector's **Simulation** box sets it up: what it is (a bottle as a
+  supply at a pressure, or a vessel that blows down), its CdA, opening time, a tank's volume and
+  fill and whether its gas is real or ideal; a liquid line can be modeled as a line (friction
+  and inertia), and a gas line's box sets the tubing it's part of. Its channels come from the
+  P&ID: a valve's command is its Test channel or tag, a pressure transducer reads the pressure
+  where it taps, a thermocouple above a tank's liquid reads its ullage, and a flow meter the
+  flow through what it's in line with; a tank's, a supply's, or the engine's transducer drives
+  it, and the rest are compared. Uncheck a channel in its part's **Simulation** box to leave it
+  out and set the conditions yourself: the part then does what its settings say (a valve stays
+  where they have it, a tank holds the pressure set on it). In its panel, pick the test, the
+  run's window (◷ takes the time on the timeline), the time step, and the solver, and **Run**
+  (FullFlow runs on the server): each compared channel is plotted with the model, with how far
+  apart they are (RMS and bias). At the time on the timeline, each instrument's badge on the
+  drawing shows what the test measured, then the model's value in gold, in the diagram's units;
+  a tank shows its pressure, and a valve or an orifice what flows through it, while anything
+  does, in gold alone. **Tune…** matches the knobs (settings marked tune) to the test, one of
+  two ways it puts side by side: **Fit** runs the model again and again, turning the knobs you
+  pick until it matches best; **Anchor** pairs a knob with a sensor, and in one run FullFlow
+  moves the knob in every time step until the sensor reads what was measured (give an anchor a
+  span where its knob counts, such as a valve's CdA while it's open), fitting what anchoring
+  can't settle. **Apply to the P&ID** puts what it found on the parts, once you're editing it;
+  runs and fits don't change the drawing, so they go while it's only looked at. The **Steady**
+  solver settles everything at once in each time step, with tanks at the pressure measured: much
+  faster, without inertia. The panel lists what keeps the model from running, each with **Go
+  to**; **Script** shows the FullFlow code that runs, and **How it's modeled** how each part is
+  built of FullFlow's components. **New diagram** has a cold flow, a pressurized flow, and
+  Vespula's prop system (Saaketh's FullFlow model) with its run's data, which it adds to Yorg
+  the first time: a run of it is Saaketh's run again.
 - **Visio**: **Import Visio…** asks for a Visio drawing (or drop a .vsdx on the diagrams), shows
   it, and makes a diagram of it in the folder you're in, with its pages: its P&ID shapes
   become parts, tagged with their text, its connectors lines between them, and its colored lines

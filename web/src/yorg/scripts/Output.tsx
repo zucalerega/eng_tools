@@ -3,7 +3,7 @@ import { usePlotColors } from "../colors";
 import type { AxisSpec } from "../layout";
 import { Plot, type PlotSeries, type TimeAxis } from "../Plot";
 import { Samples, sampleAt } from "../samples";
-import { formatTick, formatValue, ticks } from "../scale";
+import { formatTick, formatValue, ticks } from "../../scale";
 import { Icon } from "./icons";
 import { breakdown, formatElapsed, formatSeconds, stepNote, stepText, type Step } from "./progress";
 import type { PythonState, RunRecord, ScriptPlotData } from "./python";
@@ -306,12 +306,12 @@ function ScriptPlot({ title, series }: ScriptPlotData) {
             className="scripts-plot"
             title="Drag across to zoom; Ctrl (⌘) and the wheel, or a pinch, zoom too; double-click shows it all"
         >
-            <div className="dev-legend">
+            <div className="scripts-legend">
                 <strong>{title}</strong>
                 {prepared.map((one) => {
                     const point = readouts.get(one.id);
                     return (
-                        <span key={one.id} className="dev-swatch">
+                        <span key={one.id} className="scripts-swatch">
                             <i style={{ background: one.color }} />
                             {one.name}
                             {point && ` ${formatValue(point.y)}${one.unit ? ` ${one.unit}` : ""}`}

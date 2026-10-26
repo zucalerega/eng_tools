@@ -301,8 +301,8 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <em>Test data</em> reads the diagram against a test in <Link to="/yorg">Yorg</Link>: each instrument
-                    shows its channel's value beside it, and each valve its state: open green, closed red, anything else
-                    amber.
+                    shows its channel's value, and each valve its state (open green, closed red, anything else amber),
+                    in a badge on a line to it.
                 </li>
                 <li>
                     A part reads the channel named as its tag (<code>PT-101</code> reads PT-101), or the one in its{" "}
@@ -345,6 +345,60 @@ const TOPICS: Topic[] = [
                     An admin can <em>Take over</em> from whoever's editing it. Their changes are saved as they make
                     them; a change of theirs after that isn't saved over yours. They're told, and can save theirs as a
                     new diagram, or load yours.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Simulation",
+        body: (
+            <ul>
+                <li>
+                    <em>Simulation</em>, in the editor's bar (for admins, while it's tried out), makes the P&amp;ID a
+                    model of the system, simulated with <a href="https://github.com/saakethramoju/FullFlow">FullFlow</a>{" "}
+                    against a test from Yorg, to tune it until it matches what was measured. What it adds shows only
+                    while it's on: turn it off, and the editor is as it was.
+                </li>
+                <li>
+                    The P&amp;ID is the model, drawn as any diagram is. Tanks, bottles, the engine, and vents hold the
+                    pressures; valves, regulators, orifices, and venturis carry the flow between them; lines and tees
+                    join into one point. Whether a part carries liquid or gas comes from its lines' fluids, so give each
+                    run of lines its fluid (<em>Carry along its run</em> does the rest).
+                </li>
+                <li>
+                    Select a part to set it up in the model, in the inspector's <em>Simulation</em> box, while you're
+                    editing the diagram: what it is (a bottle as a supply, or a vessel that blows down), its CdA,
+                    opening time, a tank's volume and fill. Settings marked <em>tune</em> are knobs. A liquid line can
+                    be modeled as a line, with its friction and its liquid's inertia; a gas line's box sets the tubing
+                    it's part of.
+                </li>
+                <li>
+                    Its channels come from the P&amp;ID: a valve's command is its Test channel (or its tag); a pressure
+                    transducer reads the pressure where it taps (a tank's, the point between two valves); a thermocouple
+                    tapping a tank above its liquid reads its ullage; and a flow meter, the flow through what it's in
+                    line with. A tank's, a supply's, or the engine's transducer drives it; the others are compared.
+                    Uncheck a channel in its part's <em>Simulation</em> box to leave it out and set the conditions
+                    yourself: the part then does what its settings say (a valve stays where they have it, a tank holds
+                    the pressure set on it).
+                </li>
+                <li>
+                    In its panel, pick the test, the run's window (<em>◷</em> takes the time on the timeline), the time
+                    step, and the solver, then <em>Run</em>. Each compared channel is plotted with the model, with how
+                    far apart they are. At the time on the timeline, each instrument's badge on the drawing shows what
+                    the test measured, then the model's value in gold, in the diagram's units; a tank shows its
+                    pressure, and a valve or an orifice what flows through it, while anything does, in gold alone. The
+                    panel lists what keeps the model from running, each with <em>Go to</em>.
+                </li>
+                <li>
+                    <em>Tune…</em> fits the knobs you pick (running the model again and again), or anchors each to a
+                    sensor (one run, the knob moved at every time step to match it); <em>Apply to the P&amp;ID</em> puts
+                    what it found on the parts, once you're editing it. Runs, fits, and anchoring don't change the
+                    drawing, so you can run them while it's only looked at. <em>Script</em> shows the FullFlow code that
+                    runs, and <em>How it's modeled</em> how each part is built of FullFlow's components.
+                </li>
+                <li>
+                    <em>New diagram</em> has three P&amp;IDs to simulate: a cold flow, a pressurized flow, and Vespula's
+                    prop system, with its run's data as a test in Yorg.
                 </li>
             </ul>
         ),

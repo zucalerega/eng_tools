@@ -4,10 +4,13 @@ import { MoveDialog, NameDialog } from "../FolderDialogs";
 import { pathTo, within } from "../folders";
 import { formatSize, formatTime } from "../format";
 import { Link, navigate } from "../router";
+import { useSession } from "../session";
 import { piper, type Diagram, type DiagramFolder } from "./api";
-import { documentOf, emptyDrawing, pageOf, withPage, type Document } from "./drawing";
+import { documentOf, emptyDrawing, pageOf, withPage, type Document, type Drawing } from "./drawing";
 import { example } from "./example";
 import { applyScheme, fluidOf } from "./fluids";
+import { coldFlow, pressurizedFlow, vespula, VESPULA_RUN } from "./sim/examples";
+import { addTest, tests } from "./testdata";
 import { readVisio, visioDocument, visioName, type ImportReport } from "./visio";
 
 // The diagrams, in folders, as Yorg's datasets are: a folder's own folders and diagrams, and every diagram when
@@ -500,10 +503,10 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
             {dialog?.kind === "new-diagram" && (
                 <NewDialog
                     folder={here}
-                    onDone={(made) => {
+                    onDone={(made, also = "") => {
                         setDialog(null);
                         if (made) {
-                            navigate(diagramUrl(made.id, "", true));
+                            navigate(`${diagramUrl(made.id, "", true)}${also ? `&${also}` : ""}`);
                         }
                     }}
                 />
@@ -766,22 +769,68 @@ async function inTeamColors(document: Document): Promise<Document> {
     }
 }
 
-/** A new diagram, in the folder it's made in (null: the top): empty, or the example to change or learn from. */
-function NewDialog({ folder, onDone }: { folder: DiagramFolder | null; onDone: (made: Diagram | null) => void }) {
+/** What a new diagram can start as: empty, the example, or (for admins) a P&ID to simulate. */
+type Start = "blank" | "example" | "cold-flow" | "pressurized" | "vespula";
+
+const STARTS: Record<Exclude<Start, "blank">, { drawing: () => Drawing; label: string; simulated: boolean }> = {
+    example: {
+        drawing: example,
+        label: "An example: a pressure-fed engine's feed system, to change or to learn from",
+        simulated: false,
+    },
+    "cold-flow": {
+        drawing: coldFlow,
+        label: "A cold flow to simulate: a tank at a measured pressure, a feed line, a valve, and an injector",
+        simulated: true,
+    },
+    pressurized: {
+        drawing: pressurizedFlow,
+        label: "A pressurized flow to simulate: a bottle, a regulator, and a tank under a gas ullage",
+        simulated: true,
+    },
+    vespula: {
+        drawing: vespula,
+        label: "Vespula's prop system, simulated, with its run's data as a test in Yorg (added once)",
+        simulated: true,
+    },
+};
+
+/** The test of Vespula's run, in Yorg: added the first time it's wanted, found by its name after. */
+async function vespulaTest(): Promise<number> {
+    const found = (await tests()).find((test) => test.name === VESPULA_RUN.test && !test.deleted_at);
+    if (found) {
+        return found.id;
+    }
+    const { default: csv } = await import("./sim/vespula-run.csv?raw");
+    return (await addTest(new File([csv], VESPULA_RUN.file, { type: "text/csv" }), VESPULA_RUN.test)).id;
+}
+
+/** A new diagram, in the folder it's made in (null: the top): empty, the example to change or learn from, or (for
+ * admins) a P&ID to simulate. */
+function NewDialog({
+    folder,
+    onDone,
+}: {
+    folder: DiagramFolder | null;
+    onDone: (made: Diagram | null, also?: string) => void; // also: what else it opens with (sim=1&test=5)
+}) {
+    const { me } = useSession();
     const [name, setName] = useState("");
-    const [start, setStart] = useState<"blank" | "example">("blank");
+    const [start, setStart] = useState<Start>("blank");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     async function create() {
         setBusy(true);
         try {
-            onDone(
-                await piper.create({
-                    name: name.trim(),
-                    folder_id: folder?.id ?? null,
-                    drawing: await inTeamColors(documentOf(start === "example" ? example() : emptyDrawing())),
-                }),
-            );
+            const chosen = start === "blank" ? null : STARTS[start];
+            const test = start === "vespula" ? await vespulaTest() : null;
+            const made = await piper.create({
+                name: name.trim(),
+                folder_id: folder?.id ?? null,
+                drawing: await inTeamColors(documentOf(chosen ? chosen.drawing() : emptyDrawing())),
+            });
+            // A P&ID to simulate opens in Simulation mode, with its test if it has one.
+            onDone(made, chosen?.simulated ? `sim=1${test === null ? "" : `&test=${test}`}` : "");
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -812,15 +861,14 @@ function NewDialog({ folder, onDone }: { folder: DiagramFolder | null; onDone: (
                     <input type="radio" name="start" checked={start === "blank"} onChange={() => setStart("blank")} />
                     An empty drawing
                 </label>
-                <label className="check">
-                    <input
-                        type="radio"
-                        name="start"
-                        checked={start === "example"}
-                        onChange={() => setStart("example")}
-                    />
-                    An example: a pressure-fed engine's feed system, to change or to learn from
-                </label>
+                {(Object.keys(STARTS) as (keyof typeof STARTS)[])
+                    .filter((key) => !STARTS[key].simulated || me?.is_admin)
+                    .map((key) => (
+                        <label key={key} className="check">
+                            <input type="radio" name="start" checked={start === key} onChange={() => setStart(key)} />
+                            {STARTS[key].label}
+                        </label>
+                    ))}
             </fieldset>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>

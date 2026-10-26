@@ -1,14 +1,13 @@
 import type { Layout } from "./layout";
 
-// From a dataset's or a view's plots to its Python and Models: what they have (their tests, the channels plotted, the
-// time in view), so a page's notebook starts on those channels and a model with the test picked, over that time.
+// From a dataset's or a view's plots to its Python: what they have (their tests, and the channels plotted), so a page's
+// notebook starts on those channels.
 
-/** What a dataset's or view's page has, for its Python and Models. */
+/** What a dataset's or view's page has, for its Python. */
 export interface Handoff {
     title: string; // what it is: "Hotfire 3", or the view's name
     datasets: number[]; // the tests plotted, the first first
     channels: { dataset: number; name: string }[]; // those plotted, each once
-    window: [number, number] | null; // the time in view, on the first test's clock
 }
 
 export function handoffOf(layout: Layout, title: string): Handoff {
@@ -24,13 +23,7 @@ export function handoffOf(layout: Layout, title: string): Handoff {
             }
         }
     }
-    return { title, datasets: layout.datasets.map((ref) => ref.id), channels, window: layout.window };
-}
-
-/** Models, with the first test picked and its time in view as the run's window. */
-export function modelsLink(handoff: Handoff): string {
-    const window = handoff.window ? `&window=${handoff.window.map((t) => String(t)).join(",")}` : "";
-    return `/yorg/models?dataset=${handoff.datasets[0] ?? ""}${window}`;
+    return { title, datasets: layout.datasets.map((ref) => ref.id), channels };
 }
 
 /** A Python name for a channel, not one taken already: PT-TANK is pt_tank (then pt_tank_2). */

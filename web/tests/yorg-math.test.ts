@@ -24,7 +24,7 @@ import {
     formatValue,
     niceStep,
     ticks,
-} from "../src/yorg/scale";
+} from "../src/scale";
 
 // What Yorg's plots draw is worked out by these; the canvas only strokes what they give it.
 

@@ -1,7 +1,6 @@
-"""System models (Yorg's dev page): admins draw a feed system, and it runs with FullFlow against a test's data."""
+"""System models (Piper's Simulation mode, for admins): a feed system's model, run with FullFlow against a test's data."""
 
 import ast
-import math
 
 import numpy as np
 import pytest
@@ -55,13 +54,14 @@ def cold_flow_model() -> dict:
     }
 
 
-def test_the_dev_page_is_for_admins(team):
+def test_simulations_are_for_admins(team):
     chief = team.member("chief@x.test", admin=True)
     bob = team.member("bob@x.test")
-    for path in ("/api/yorg/dev/catalog", "/api/yorg/dev/models"):
-        assert team.client.get(path, headers=bob).status_code == 403
-        assert team.client.get(path, headers=chief).status_code == 200
-    catalog = team.client.get("/api/yorg/dev/catalog", headers=chief).json()
+    response = team.client.get("/api/yorg/models/catalog", headers=bob)
+    assert (response.status_code, response.json()["error"]) == (403, "admins_only")
+    body = {"model": cold_flow_model(), "dataset_id": 1, "start": 0, "end": 2}
+    assert team.client.post("/api/yorg/models/runs", json=body, headers=bob).status_code == 403
+    catalog = team.client.get("/api/yorg/models/catalog", headers=chief).json()
     assert {part["type"] for part in catalog["parts"]} >= {
         "tank",
         "junction",
@@ -83,48 +83,6 @@ def test_the_dev_page_is_for_admins(team):
     source = next(part for part in catalog["parts"] if part["type"] == "source")
     gas = next(setting for setting in source["settings"] if setting["key"] == "gas_model")
     assert (gas["default"], gas["choices"]) == ("real", ["real", "ideal"])
-
-
-def test_models_are_saved_changed_and_deleted(team):
-    chief = team.member("chief@x.test", admin=True)
-    created = team.client.post(
-        "/api/yorg/dev/models", json={"name": "Cold flow", "model": cold_flow_model()}, headers=chief
-    )
-    assert created.status_code == 201, created.text
-    saved = created.json()
-    assert (saved["name"], saved["created_by"]) == ("Cold flow", "Chief")
-    assert [m["name"] for m in team.client.get("/api/yorg/dev/models", headers=chief).json()] == ["Cold flow"]
-
-    changed = cold_flow_model()
-    changed["edges"][2]["settings"]["cda"] = 4e-5
-    response = team.client.put(
-        f"/api/yorg/dev/models/{saved['id']}", json={"name": "Cold flow 2", "model": changed}, headers=chief
-    )
-    assert response.status_code == 200, response.text
-    again = team.client.get(f"/api/yorg/dev/models/{saved['id']}", headers=chief).json()
-    assert (again["name"], again["model"]["edges"][2]["settings"]["cda"]) == ("Cold flow 2", 4e-5)
-
-    # A press line saved before gas valves had their name opens as a gas valve; what had no FullFlow part of its own
-    # (an ullage's polytropic exponent, a regulator's lag) is left out.
-    older = cold_flow_model()
-    older["nodes"][0]["settings"].update(mode="ullage", ullage_model="polytropic", polytropic_exponent=1.2)
-    older["nodes"].append(node("gn2", "source", "Bottle"))
-    older["edges"].append(edge("reg", "regulator", "Regulator", "gn2", "tank", {"response_time": 0.05, "droop": 1e5}))
-    older["edges"].append(edge("press", "gas_line", "Press line", "gn2", "tank"))
-    response = team.client.post("/api/yorg/dev/models", json={"name": "Older", "model": older}, headers=chief)
-    assert response.status_code == 201, response.text
-    opened = team.client.get(f"/api/yorg/dev/models/{response.json()['id']}", headers=chief).json()["model"]
-    assert opened["edges"][-1]["type"] == "gas_valve"
-    assert opened["nodes"][0]["settings"] == {**cold_flow_model()["nodes"][0]["settings"], "mode": "ullage"}
-    assert opened["edges"][-2]["settings"] == {"droop": 1e5}
-
-    # A half-drawn model saves; one whose edge ends nowhere doesn't.
-    loose = {"nodes": [node("j", "junction", "Loose end")], "edges": [edge("l", "line", "Line", "j", "nowhere")]}
-    response = team.client.post("/api/yorg/dev/models", json={"name": "Broken", "model": loose}, headers=chief)
-    assert (response.status_code, response.json()["message"]) == (422, "Line isn't connected at both ends")
-
-    assert team.client.delete(f"/api/yorg/dev/models/{saved['id']}", headers=chief).status_code == 204
-    assert team.client.get(f"/api/yorg/dev/models/{saved['id']}", headers=chief).status_code == 404
 
 
 @pytest.mark.parametrize(
@@ -184,6 +142,10 @@ def test_models_are_saved_changed_and_deleted(team):
             ),
             "Regulator holds the pressure where it flows to: connect it to a gas junction or a tank",
         ),
+        (
+            lambda m: m["edges"].append(edge("loose", "line", "Loose line", "j2", "nowhere")),
+            "Loose line isn't connected at both ends",
+        ),
         (lambda m: m["edges"][0]["settings"].update(length=-1), "Feed line's length is below 0.001 (in SI units)"),
         (lambda m: m["edges"][0]["links"].update(command="MOV-01"), "Feed line can't be linked to a command channel"),
     ],
@@ -194,7 +156,7 @@ def test_a_model_that_cant_run_says_why(team, change, message):
     model = cold_flow_model()
     change(model)
     response = team.client.post(
-        "/api/yorg/dev/runs", json={"model": model, "dataset_id": dataset["id"], "start": 0, "end": 2}, headers=chief
+        "/api/yorg/models/runs", json={"model": model, "dataset_id": dataset["id"], "start": 0, "end": 2}, headers=chief
     )
     assert (response.status_code, response.json()["message"]) == (422, message)
 
@@ -314,7 +276,7 @@ def test_a_fit_says_what_it_cant_do(team, knobs, message):
     chief = team.member("chief@x.test", admin=True)
     dataset = upload(team, chief, cold_flow_csv())
     body = {"model": cold_flow_model(), "dataset_id": dataset["id"], "start": 0, "end": 1, "knobs": knobs}
-    response = team.client.post("/api/yorg/dev/fits", json=body, headers=chief)
+    response = team.client.post("/api/yorg/models/fits", json=body, headers=chief)
     assert (response.status_code, response.json()["message"]) == (422, message)
 
 
@@ -328,7 +290,7 @@ def test_a_fit_needs_something_to_compare_with(team):
         "end": 1,
         "knobs": [{"part": "inj", "key": "cda"}],
     }
-    response = team.client.post("/api/yorg/dev/fits", json=body, headers=chief)
+    response = team.client.post("/api/yorg/models/fits", json=body, headers=chief)
     assert (response.status_code, response.json()["message"]) == (
         422,
         "Link a sensor to fit the model to: a pressure transducer, a flow meter, a tank's pressure",
@@ -391,7 +353,7 @@ def test_an_anchor_says_what_it_cant_do(team, change, message):
     chief = team.member("chief@x.test", admin=True)
     dataset = upload(team, chief, cold_flow_csv())
     body = {"model": fit_model(3e-5, 0.03), "dataset_id": dataset["id"], "start": 0, "end": 1, "dt": 0.01, **change}
-    response = team.client.post("/api/yorg/dev/anchors", json=body, headers=chief)
+    response = team.client.post("/api/yorg/models/anchors", json=body, headers=chief)
     assert (response.status_code, response.json()["message"]) == (422, message)
 
 
@@ -402,7 +364,7 @@ def test_an_anchor_to_what_the_model_follows_says_so(team):
 
     def refused(anchor: dict, solver: str = "transient") -> str:
         response = team.client.post(
-            "/api/yorg/dev/anchors", json={**body, "solver": solver, "anchors": [anchor]}, headers=chief
+            "/api/yorg/models/anchors", json={**body, "solver": solver, "anchors": [anchor]}, headers=chief
         )
         assert response.status_code == 422, response.text
         return response.json()["message"]
@@ -450,20 +412,24 @@ def test_an_anchor_to_what_the_model_follows_says_so(team):
 
 
 def script_of(team, who, body: dict) -> str:
-    response = team.client.post("/api/yorg/dev/script", json=body, headers=who)
+    response = team.client.post("/api/yorg/models/script", json=body, headers=who)
     assert response.status_code == 200, response.text
     return response.json()["script"]
 
 
 def data_of(team, who, body: dict) -> dict:
-    """A run's data as POST /inputs gives it, as a script takes it: arrays, a missing sample NaN."""
-    response = team.client.post("/api/yorg/dev/inputs", json=body, headers=who)
-    assert response.status_code == 200, response.text
+    """A run's data as its process gets it (the arrays in its folder's inputs), by part.link: its runner does nothing
+    here."""
+    runs = team.app.state.yorg_runs
+    runs.runner = ["-c", "pass"]
+    response = team.client.post("/api/yorg/models/runs", json=body, headers=who)
+    assert response.status_code == 201, response.text
+    inputs = runs.root / response.json()["id"] / "inputs"
     return {
-        key: tuple(
-            np.array([math.nan if value is None else value for value in found[side]]) for side in ("times", "values")
+        path.name.removesuffix(".t.f64"): tuple(
+            np.fromfile(inputs / f"{path.name.removesuffix('.t.f64')}.{side}.f64", dtype="<f8") for side in ("t", "v")
         )
-        for key, found in response.json()["inputs"].items()
+        for path in inputs.glob("*.t.f64")
     }
 
 
@@ -481,7 +447,7 @@ def test_an_anchored_runs_script_anchors_its_knobs(team):
     ) in text
     # Its anchors are checked as an anchored run's are, and a knob that's not in the model as it runs says so.
     twice = {**body, "anchors": body["anchors"] * 2}
-    response = team.client.post("/api/yorg/dev/script", json=twice, headers=chief)
+    response = team.client.post("/api/yorg/models/script", json=twice, headers=chief)
     assert (response.status_code, response.json()["message"]) == (422, "Injector's CdA is picked twice")
     model = pressurized_model()
     model["nodes"][1]["links"] = {"pressure": "PT-MANIFOLD"}
@@ -491,7 +457,7 @@ def test_an_anchored_runs_script_anchors_its_knobs(team):
         "end": 1.0,
         "anchors": [{"part": "press", "key": "opening_time", "sensor": "gj", "link": "pressure"}],
     }
-    response = team.client.post("/api/yorg/dev/script", json=unlinked, headers=chief)
+    response = team.client.post("/api/yorg/models/script", json=unlinked, headers=chief)
     assert (response.status_code, response.json()["message"]) == (
         422,
         "Press valve's opening time doesn't change anything in this model, so it can't be anchored",

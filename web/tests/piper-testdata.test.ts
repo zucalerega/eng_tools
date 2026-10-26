@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
-import { newPart } from "../src/piper/drawing";
+import { emptyDrawing, newPart } from "../src/piper/drawing";
+import { badgePlacer } from "../src/piper/labels";
+import { inBox } from "../src/piper/geometry";
+import { boxOf } from "../src/piper/library/index";
 import { unpackJson } from "../src/packed";
 import {
     channelName,
@@ -14,8 +17,8 @@ import {
     type TestDetail,
 } from "../src/piper/testdata";
 
-// Reading a test from Yorg on a drawing: which channel a part reads, its value at a time, a valve's state, and the link
-// that plots it in Yorg.
+// Reading a test from Yorg on a drawing: which channel a part reads, its value at a time, a valve's state, where it's
+// shown, and the link that plots it in Yorg.
 
 const channel = (name: string, more: Partial<TestChannel> = {}): TestChannel => ({
     name,
@@ -23,6 +26,8 @@ const channel = (name: string, more: Partial<TestChannel> = {}): TestChannel => 
     kind: "number",
     labels: [],
     decimals: null,
+    min: null,
+    max: null,
     time: "time.f64",
     values: "c1.f64",
     ...more,
@@ -110,4 +115,36 @@ test("Plot in Yorg links to the test with its channels plotted, as Yorg's own li
             },
         ],
     });
+});
+
+test("a part's value goes off its top right corner, or the corner with least in its way, on a leader to it", () => {
+    const sensor = newPart("instrument", { x: 0, y: 0 }, { tag: "PT-101" });
+    const alone = { ...emptyDrawing(), parts: [sensor] };
+    const box = boxOf(sensor, alone);
+    const place = badgePlacer(alone, new Map())(sensor, 110);
+    // Its badge stands off the corner (its bottom edge 6 above the part, its left edge 8 past it), and its leader runs
+    // from about the part's outline, inside its box, to the badge's edge.
+    expect(place).toMatchObject({ x: box.x1 + 8, y: box.y0 - 6 - 7, end: false });
+    expect(inBox(place.from, box)).toBe(true);
+    expect(place.from.x > (box.x0 + box.x1) / 2 && place.from.y < (box.y0 + box.y1) / 2).toBe(true); // toward it
+    expect(place.to).toEqual({ x: box.x1 + 12, y: box.y0 - 6 });
+
+    // A tank 60 to its right, where a test's and a model's value would run into it: then on its left, running left.
+    const probe = newPart("tank", { x: 0, y: 0 }, { tag: "TK-1" });
+    const half = (boxOf(probe, alone).x1 - boxOf(probe, alone).x0) / 2;
+    const tank = { ...probe, x: box.x1 + 60 + half };
+    const beside = { ...alone, parts: [sensor, tank] };
+    const left = badgePlacer(beside, new Map())(sensor, 110);
+    expect(left).toMatchObject({ x: box.x0 - 8, y: box.y0 - 13, end: true });
+    expect(left.to).toEqual({ x: box.x0 - 12, y: box.y0 - 6 });
+    // A narrow badge (a test's value alone) still fits before the tank.
+    expect(badgePlacer(beside, new Map())(sensor, 40).end).toBe(false);
+    // And with a line along its top too, under it.
+    const line = [
+        { x: -200, y: box.y0 - 13 },
+        { x: 200, y: box.y0 - 13 },
+    ];
+    const under = badgePlacer(beside, new Map([["l1", line]]))(sensor, 110);
+    expect(under).toMatchObject({ x: box.x0 - 8, y: box.y1 + 6 + 8, end: true });
+    expect(under.to).toEqual({ x: box.x0 - 12, y: box.y1 + 6 });
 });

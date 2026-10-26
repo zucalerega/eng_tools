@@ -1,8 +1,6 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
-import { linkTarget } from "./preview";
 
-// A small router: the address bar is the state. Links push history entries, and pages read the path. In Yorg's
-// preview (preview.ts), links to Yorg's pages go to their preview ones, unless exact.
+// A small router: the address bar is the state. Links push history entries, and pages read the path.
 
 const listeners = new Set<() => void>();
 
@@ -15,12 +13,11 @@ function subscribe(listener: () => void): () => void {
     };
 }
 
-export function navigate(to: string, options: { replace?: boolean; exact?: boolean } = {}): void {
-    const target = options.exact ? to : linkTarget(to);
+export function navigate(to: string, options: { replace?: boolean } = {}): void {
     if (options.replace) {
-        window.history.replaceState(null, "", target);
+        window.history.replaceState(null, "", to);
     } else {
-        window.history.pushState(null, "", target);
+        window.history.pushState(null, "", to);
     }
     window.scrollTo?.(0, 0);
     listeners.forEach((listener) => listener());
@@ -36,13 +33,7 @@ export function useSearch(): string {
     return useSyncExternalStore(subscribe, () => window.location.search);
 }
 
-export function Link({
-    to,
-    exact = false,
-    onClick,
-    ...props
-}: { to: string; exact?: boolean } & AnchorHTMLAttributes<HTMLAnchorElement>) {
-    const target = exact ? to : linkTarget(to);
+export function Link({ to, onClick, ...props }: { to: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
     function follow(event: MouseEvent<HTMLAnchorElement>) {
         onClick?.(event);
         // Let the browser handle new tabs and windows.
@@ -50,7 +41,7 @@ export function Link({
             return;
         }
         event.preventDefault();
-        navigate(to, { exact }); // where it goes from the page open now
+        navigate(to);
     }
-    return <a {...props} href={target} onClick={follow} />;
+    return <a {...props} href={to} onClick={follow} />;
 }

@@ -1,10 +1,11 @@
-import { request, requestBytes } from "../api";
+import { request, requestBytes, uploadFile } from "../api";
 import { packJson } from "../packed";
 import type { Part } from "./drawing";
 
 // A test from Yorg, read as any client of Yorg's API reads one: its list of tests, a test's channels, and their
-// samples. Piper imports none of Yorg's code; what it knows of Yorg is its API (docs/yorg.md), and the address of its
-// plots, which links carry their layout in (?plots=, as packed.ts packs it).
+// samples (and, for an example simulation, a test of its own added). Piper imports none of Yorg's code; what it knows
+// of Yorg is its API (docs/yorg.md), and the address of its plots, which links carry their layout in (?plots=, as
+// packed.ts packs it).
 
 /** A test as Yorg lists it (one of its datasets). */
 export interface Test {
@@ -23,6 +24,8 @@ export interface TestChannel {
     kind: "number" | "state"; // a state: text, numbered in the order of its labels (a valve's off 0, on 1)
     labels: string[];
     decimals: number | null; // the most digits after the point the file had
+    min: number | null; // its least and most values
+    max: number | null;
     time: string; // its arrays, in the test's data
     values: string;
 }
@@ -41,6 +44,14 @@ export interface TestDetail extends Test {
 export const tests = (): Promise<Test[]> => request<Test[]>("GET", "/api/yorg/datasets");
 
 export const test = (id: number): Promise<TestDetail> => request<TestDetail>("GET", `/api/yorg/datasets/${id}`);
+
+/** A file of test data added to Yorg as a test (one of its datasets), by its name: as Yorg's own upload adds one. */
+export const addTest = (file: File, name: string): Promise<TestDetail> =>
+    uploadFile<TestDetail>(
+        `/api/yorg/datasets?${new URLSearchParams({ filename: file.name, name }).toString()}`,
+        file,
+        () => {},
+    );
 
 /** A channel's samples: their times, and values (NaN where there's none), little-endian float64 as Yorg keeps them. */
 export interface Samples {

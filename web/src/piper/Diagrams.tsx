@@ -934,15 +934,16 @@ function ImportDialog({
                                     `${report.parts} ${report.parts === 1 ? "part" : "parts"}`,
                                     `${report.lines} ${report.lines === 1 ? "line" : "lines"}`,
                                     report.notes > 0 && `${report.notes} ${report.notes === 1 ? "note" : "notes"}`,
+                                    report.figures > 0 &&
+                                        `${report.figures} ${report.figures === 1 ? "shape" : "shapes"} drawn as in Visio`,
                                 ]
                                     .filter(Boolean)
                                     .join(", ")}
                             </span>
-                            {report.boxes.length > 0 && (
+                            {report.drawn.length > 0 && (
                                 <p className="piper-small">
-                                    Kept as boxes, since Piper has no part for them:{" "}
-                                    {[...new Set(report.boxes)].join(", ")}. Replace them with parts from the library,
-                                    or keep them.
+                                    Drawn as in Visio, since Piper has no part for them: {report.drawn.join(", ")}.
+                                    Replace them with parts from the library, or keep them.
                                 </p>
                             )}
                             {report.dropped > 0 && (
@@ -991,10 +992,10 @@ function ImportDialog({
                 />
             </div>
             <p className="muted piper-small">
-                It becomes a diagram {folder ? `in ${folder.name}` : "at the top"}, its pages as Visio has them. Visio's
-                P&ID shapes become Piper's parts (tagged with their text), connectors become lines between them, and
-                colored lines keep their colors as fluids to name. Visio 2013 and on save .vsdx files; save an older
-                .vsd as one first.
+                It becomes a diagram {folder ? `in ${folder.name}` : "at the top"}, its pages as Visio has them. Its
+                valves, sensors, and the rest become Piper's parts (tagged, worked as their actuators say), its
+                connectors lines between them along their routes, and everything else is drawn as Visio drew it. Its key
+                says what its lines carry. Visio 2013 and on save .vsdx files; save an older .vsd as one first.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>

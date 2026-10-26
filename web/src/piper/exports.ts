@@ -136,10 +136,14 @@ export interface PartRow {
  * (PartsPanel) shows it, and partsList saves it as a CSV file: a valve list and an instrument list, in a spreadsheet.
  */
 export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
+    // Its parts: not what's written or drawn on it, nor a figure (a shape drawn as Visio drew it) unless it's tagged, as
+    // a component Piper has no part for is.
     const parts = drawing.parts.filter(
-        (part) => !["junction", "text", "region", "offpage", "legend", "titleblock", "picture"].includes(part.kind),
+        (part) =>
+            !["junction", "text", "region", "offpage", "legend", "titleblock", "picture"].includes(part.kind) &&
+            (part.kind !== "figure" || part.tag !== ""),
     );
-    const skip = new Set(["normal", "fluid", "channel", "notes"]);
+    const skip = new Set(["normal", "fluid", "channel", "notes", "figure"]);
     const keys: string[] = [];
     const labels = new Map<string, string>();
     for (const part of parts) {

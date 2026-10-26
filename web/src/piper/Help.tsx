@@ -451,15 +451,31 @@ const TOPICS: Topic[] = [
                     makes a diagram of it, in the folder you're in, its pages as Visio has them.
                 </li>
                 <li>
-                    Visio's P&ID shapes (its valves, vessels, pumps, instruments...) become Piper's parts, tagged with
-                    their text when it's a tag (<code>PT 101</code> is PT-101). Connectors become lines between the
-                    ports nearest where they were glued, routed Piper's way. A line's text says its fluid (
-                    <code>LOX</code>), else what it's drawn from does, else its color becomes a fluid of the diagram's
-                    own, to rename.
+                    Its valves, regulators, relief valves, orifices, quick disconnects, and sensors become Piper's
+                    parts: by the stencil they're from (a <em>Powered valve</em>, a <em>3/2 valve</em>), or, drawn by
+                    hand, by what their tags say (<code>PRV</code> a relief valve, <code>FTPT</code> a pressure
+                    transducer, <code>FO-1</code> an orifice). Each is tagged with its label, beside it or grouped with
+                    it, given its set pressure (<code>S.P. 145 PSI</code>), and worked as its actuator's letter says (S
+                    a solenoid, P air).
                 </li>
                 <li>
-                    Text stays as notes; a shape Piper has no part for becomes a box with its text, and the import says
-                    which, to replace with parts or keep.
+                    Everything else is drawn as Visio drew it, as a <em>figure</em>: the vehicle and its tanks, a
+                    manifold's box, the drawing's key and title block, its words in their colors and sizes. A figure is
+                    drawn under the lines; click its edge to select it. The import lists the symbols Piper has no part
+                    for, to replace with parts from the library or keep. A figure isn't simulated: put Piper's tanks in
+                    place of drawn ones to simulate them.
+                </li>
+                <li>
+                    Connectors become lines along the routes they had, on the parts' ports where they were glued, and
+                    they follow the parts when you move them. A line carries the fluid its words name, else what a tank
+                    it's drawn from holds, else what the drawing's key says lines in its color carry (
+                    <code>Kerosene (Jet-A)</code>), else its color becomes a fluid of the diagram's own, to rename. The
+                    key's line sizes (<code>3/8" Line</code>) size the lines dashed like them, and its{" "}
+                    <em>Normally open</em> and <em>Normally closed</em> valves color the valves filled like them.
+                </li>
+                <li>
+                    Words stay as notes, in their sizes. A slanted line that joins nothing (a vehicle's outline) is
+                    drawn, not a pipe: Piper's lines go level and upright.
                 </li>
                 <li>
                     Piper reads Visio 2013 and later's .vsdx files. Save an older .vsd (or a .vdx) as a .vsdx in Visio

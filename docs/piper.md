@@ -191,6 +191,22 @@ what it is, `data-hit`).
   25 megapixels (10,000 on a side, as a PDF of it decodes it in the browser), and never
   changed or deleted, as a revision may still show one; the same bytes added again are the
   same picture. It's sent with its name as its ETag, for the browser to keep (`immutable`).
+- **Figures** (`figure`, `library/figures.tsx`): a shape drawn as it was in Visio, for what Piper
+  has no part of its own for (a drawing's vehicle and tanks, a manifold's box, a key, a title
+  block, a symbol from another stencil). Only an import makes one: the library has none. Its
+  drawing is in its props (`figure`, JSON, in its own frame, its middle at 0, 0, at the size it
+  was imported at): SVG path data of moves, lines, and Béziers only (`paths`, each with its
+  fill, line, width, and dashes), words (`texts`: their lines from their first one's baseline,
+  turned about it, each line's runs where they're set in another size, color, or weight), and
+  ports where lines were glued to it (`ports`). What's read of it is checked (`figureOf`: path
+  data of numbers and those letters only, colors as `#rrggbb`), as a drawing is anyone's to
+  send. Black and white (and the near grays a drawing's white often is) are drawn in the
+  page's ink and paper, so it reads on a dark page; other colors as they were. It's drawn
+  under the lines (`behind`), as a vehicle is under its pipes, and clicked at its edge, so
+  what's on it can be; resized by its corner, its drawing stretched to fit and its words kept
+  upright. A tagged one (a symbol Piper has no part for, tagged beside it in Visio) is in the
+  parts list, as a Figure; one without a tag isn't. A web app from before figures shows one as
+  an unknown part's dashed box, and keeps it as it is.
 - **Sizes**: a part's drawn at its kind's size, or from half of it to double (`scale`: 0.5,
   0.75, 1, 1.25, 1.5, 2), from the round handle at a selected part's corner or the inspector.
   Its frame's scaled (`toWorld`, `partTransform`), so its box, what's drawn, and where it's hit
@@ -301,7 +317,8 @@ what it is, `data-hit`).
   - **PDF** (`pdf.ts`): the drawing's SVG turned into PDF's own operators, so it's vector: its
     paths (arcs and curves as Béziers), shapes, and text in PDF's standard Helvetica (nothing
     embedded; its words text that can be searched and copied, each once: a label's halo is
-    marked as having no words of its own). On the paper chosen (Tabloid, Letter, ANSI D, A3,
+    marked as having no words of its own; a line of words set in several ways, a figure's,
+    placed as one, as SVG places it). On the paper chosen (Tabloid, Letter, ANSI D, A3,
     A4, or the drawing's own size), landscape unless the drawing's plainly tall, and on a
     drawing sheet as Visio's P&IDs are: a border with its zones between its two lines (numbered
     from the right, lettered from the foot, about 4¼ inches each, as ANSI's sheets have them),
@@ -323,28 +340,88 @@ what it is, `data-hit`).
 
 ## Importing from Visio
 
-`visio.ts` reads a Visio drawing in the browser and the page saves it as a diagram, with its
-pages as Visio has them (`visioDocument`: the fluids each page made for its colors are the
-diagram's, one for each) (Import Visio on the Diagrams page, which asks for the file first, as Yorg's Upload data
-does, or a file dropped on it; the dialog shows the file, to change, and the folder). A .vsdx
-(Visio 2013 on) is a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too):
-each page's shapes, the masters (stencil shapes) they're instances of, and which connector is
-glued to which shape.
+Import Visio on the Diagrams page (which asks for the file first, as Yorg's Upload data does,
+or a file dropped on it; the dialog shows the file, to change, and the folder) makes a diagram
+of a Visio drawing, in the browser, saved as any diagram is, with its pages as Visio has them
+(`visioDocument`: the fluids each page made are the diagram's, one for each). Its dialog then
+says what became of each page's shapes: how many parts, lines, notes, and shapes drawn as in
+Visio, and which symbols Piper has no part for (by their masters' names, or their tags).
 
-- **Shapes** become parts by their masters' names (Visio's P&ID stencils' "Gate valve",
-  "Vessel", "Indicator"..., and the words people use, `NAMES`), turned and flipped as Visio had
-  them, a hundred units to the inch, or as many as draws their valves as big as Piper's.
-  A shape's text is its tag when it's one (`PT 101`, PT over 101, `MOV-OX`), and a circle tagged
-  as an instrument is one, by its tag's letters (P a pressure transducer, T a thermocouple...).
-  Text that's only text is a note; other words a part had stay as a note under it; a container
-  is a region; and a shape Piper has no part for is a box with its text, which the import names.
-- **Connectors** become lines, routed Piper's way between the ports nearest where they were
-  glued (a free one before one taken), or nearest their ends within reach, or to their points;
-  glued to another connector, a tee. A line carries the fluid its text names, else what it's
-  drawn from holds, else, for a colored line, a fluid of the diagram's own named for its color
-  ("Red lines"), to rename. Its kind comes from its master (pneumatic, electrical) or its dashes;
-  its arrows, size, and tag from Visio.
-- A .vsd (before 2013) or a .vdx can't be read: the import says to save it as a .vsdx in Visio.
+**Reading the file** (`vsdx.ts`). A .vsdx (Visio 2013 on) is a zip of XML (read with the site's
+`zip.ts`, which Vault's uploads use too): its document (the styles and the color table), its
+masters (stencils' shapes), and its pages (each one's shapes and which connector is glued to
+which shape), found by the package's relationships. Each foreground page's shapes are read as
+Visio draws them, on the page:
+
+- **A cell** a shape doesn't set is its master's shape's (an instance writes only what differs,
+  a resized one its rows' new values too), else its style's (its line, fill, and text styles,
+  each based on another, `ShapeSheet`), else Visio's default. A value of `Themed` counts as not
+  set: the import doesn't read themes, so a themed shape takes its styles' values.
+- **Sections** merge by index: an instance's geometry rows over its master's, one by one (a row
+  changed, added, or deleted), and an instance's members are its master's members
+  (`MasterShape`).
+- **Groups** place their members in their frames: a shape's frame is its local pin put on its
+  pin, flipped about it, and turned about it, and a 1-D shape's ends are in its group's frame.
+- **Outlines**: each geometry section's rows become moves, lines, and cubic Béziers, on the page:
+  arcs (ArcTo, by their bow), elliptical arcs, ellipses, relative rows, polylines, NURBS curves
+  (sampled), and splines (through their control points). A section's closed pieces are filled,
+  its open ones not, as Visio fills only what's closed. Hidden layers, guides, and NoShow
+  sections are left out; a foreign shape (a picture) is kept as its box.
+- **Words**: a shape's text (its master's, if it has none of its own) with its paragraphs and line
+  breaks, fields as they show, and runs in each character format; its block placed and turned as
+  its text transform says, aligned, inside its margins, and spaced as its paragraph says (Visio's
+  single is 1.2 of its letters' size, else a size or a share of it, and space before and after).
+  Flipping a shape moves its words but never mirrors them or turns them over, so they turn only
+  as frames are turned (`Turn`).
+- Too big a page (over 20,000 shapes, members included) or part (over 32 MB) is refused; a
+  .vsd (before 2013) or a .vdx can't be read, and the import says to save it as a .vsdx in Visio.
+
+**Making a diagram** (`visio.ts`). A page's scale is as many units to the inch as draw its
+valves as long as Piper's (40), or a hundred where it has none. Its shapes, in Visio's order:
+
+- **Symbols** become parts: by their masters' names (`NAMES`: Visio's P&ID stencils' and the
+  team's, "Powered valve", "Regulator", "3/2 valve", "Relief valves", "Pressure Transducer"...),
+  as the one symbol in a group of it and its labels, or, drawn by hand, by their tags' letters
+  (`presetForTag`: what P&IDs end a tag with, PRV a relief valve, PNREG a regulator, FCK a check
+  valve, PRQD a quick disconnect, FO-1 an orifice, FSWV or OVNT a valve; an instrument's, PT-101 or
+  FTPT, by ISA's first letters or the team's last). A valve's worked as its actuator's letter
+  says (S a solenoid, P air, M a motor), else its name (ISO 1219's 2/2, 3/2, and 5/2 valves are
+  solenoids), else its tag (SV-, PV-). A plain bowtie is Piper's gate valve. Its tag is its
+  label's (a tag, or a tag over a set pressure: "PNRV" over "S.P. 165 PSI"), which is its
+  part's set pressure; a label beside a symbol rather than grouped with it is the nearest
+  untagged one's, and a tag beside a shape drawn by hand says what it is (`attachLabels`). A
+  tank's words naming a fluid are what it holds. It's turned and flipped as its frame is, unless
+  the lines that meet an in-line part all meet it the other way (a stencil can draw a symbol
+  standing up), and put on its lines: across them where they met it, along them between where
+  they met it each side (not where an actuator's air line met its box). It's sized as it was
+  drawn, of its kind's size; its tag is written where it was, unless that was in it (an
+  instrument's, which Piper writes beside it), at about the size it was.
+- **Words** alone are Piper's text, set as they were (size, weight, slant, font, alignment), if
+  Piper's text can say them (dark, not see-through, level or a quarter turned); else a figure.
+- **Groups** with a symbol in them (or a connector glued) are opened, each member placed for
+  itself. **Everything else** is a figure, drawn as Visio drew it: a group whole, as one.
+- **A key** (a drawing's legend): the shapes about a title ("Line KEY", "LEGEND"), near one another
+  and joined to nothing, are drawn as one figure, and read (`keyOf`): the words just right of a
+  line drawn in it name what lines in its color carry, or (a size: 1/4", 3/8") what lines
+  dashed and weighted like it are, and what of (Polyurethane); the words beside a valve in it
+  say which normal state its fill means (Normally open, NC, Fails in place). Without a key a
+  valve's normal state isn't set: a preset's own would be a guess the drawing didn't make.
+- **Connectors** become lines along the routes they had (`auto` false, their runs made exactly
+  level or upright where they nearly were, hops left out), on the ports nearest where they were
+  glued (a free one before one taken, not the one its other end is on; glued to a figure, a port
+  of its own there, facing the way the line leaves it; glued to another connector, a tee), their
+  bends following their ends to Piper's ports (`follow`). A connector glued at an end, or one
+  joined to nothing that's level and upright and a connector's, colored, or ending on a part's
+  port, is a line; a slanted one glued only to drawings (a vehicle's outline, glued to its nose)
+  or joined to nothing, and a line that's drawing (a border's), are figures, as Piper's lines
+  are always level and upright. A line carries the fluid its words name, else what a tank it's
+  drawn from holds (not from its top, unless it holds a gas), else what the key says lines in
+  its color carry (a shade of a key's color, the same hue, is the key's: a standard fluid if it
+  names one no other color does, with the key's color, else one of the diagram's own, named as
+  the key names it), else, colored, one of the diagram's own named for its color ("Red lines"),
+  to rename. Its kind is its master's (pneumatic, electrical, data, tubing, hose), else a pipe:
+  dashes alone say what a key says they do, its size; its arrows, tag, and size words are
+  Visio's.
 
 ## Test data from Yorg
 
@@ -399,8 +476,9 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
   (a valve gas flows through only the way it points; in liquid lines, a valve, which lets flow
   back), regulators, orifices, cavitating venturis, and liquid lines modeled as lines (Yorg's
   `line`: friction, and the liquid's inertia). What each kind is comes from `ROLES`, the first
-  of its choices unless its `sim.as` picks another; a pump or a three-way valve isn't
-  simulated, so the lines at it end there. Lines that carry signals aren't in it.
+  of its choices unless its `sim.as` picks another; a pump, a three-way valve, or a figure
+  (only drawn: an imported drawing's tanks may be) isn't simulated, so the lines at it end
+  there, as the model says (of a figure, where lines do). Lines that carry signals aren't in it.
 - **Liquid or gas**: what flows through a part is what its lines' fluids say (Piper's fluids say
   which are gases), through what carries flow from point to point; failing that, what's on
   them (a regulator's gas, a venturi's liquid, a supply's or a vessel's gas). A tank's liquid
@@ -515,5 +593,15 @@ any client would.
 - Should a part's channel be checked against the team's DAQ channel list, and where would
   that list live: in Yorg, or in Piper?
 - Visio's own stencils differ by version and language; the import knows the English P&ID
-  stencils' names. Drawings made with the team's own stencils may need their names added to
-  `NAMES`.
+  stencils' names and the team's (`NAMES`), and the letters P&IDs tag with. A symbol drawn with
+  another stencil, untagged, comes in as a figure: should its master's name be added, or should
+  Claude (in the site's Help) be asked what the few left over are? Reading a whole drawing that
+  way would cost a few dollars an import and could move its lines; naming what's left, a cent.
+- Visio's themes aren't read: a themed shape takes its styles' colors. Should they be, for
+  drawings made in Visio's default theme (its blue fills)?
+- A tank drawn by hand (Vespula's, a block inside its vehicle, its words "LOX Tank 400 psi
+  84.7 L") is imported as a figure: Piper's tank is a capsule of its own size (scaled at most
+  double) with six ports, and the drawing's lines meet the block all along its sides. So
+  Simulation mode leaves it out. Should Piper's tanks be drawn at any size, with ports where
+  lines meet them, so an import can make one of it (its fluid, pressure, and volume from its
+  words)?

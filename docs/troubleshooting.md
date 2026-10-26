@@ -724,6 +724,20 @@ a number. A few codes come up in more than one place.
   JPEG. Save it as one (File > Export in most programs; a screenshot is a PNG), then add it.
 - **A picture can be up to 5 MB**, or **That picture is ... by ... pixels** (`too_large`): save
   it smaller (fewer pixels, or a JPEG instead of a PNG for a photo), then add it.
+- **... is a Visio drawing from before 2013 (.vsd)**, or **... is a Visio XML drawing (.vdx)**:
+  Piper reads Visio 2013 and later's .vsdx files. Open it in Visio, save it as a .vsdx (File >
+  Save As > Visio Drawing), and import that.
+- **... isn't a Visio drawing (.vsdx), or it's damaged**, **...: it has no pages**, or **Its ...
+  isn't XML Piper can read**: the file isn't a .vsdx, or it's damaged. Open it in Visio and save
+  it again, then import that.
+- **A page has more than 20000 shapes**, **Its ... is too big to read here**, or **A drawing can be
+  up to 2 MB** (`too_large`) on importing a Visio drawing: it's too big to import whole (what's
+  drawn as Visio drew it keeps every outline). In Visio, delete what the P&ID doesn't need (old
+  pages, pictures, hidden layers), or save its pages as drawings of their own, and import those.
+- **A part of an imported drawing is drawn as it was in Visio, not as Piper's part**: Piper didn't
+  know it, by its stencil's name or by its tag. Drag the part it is from the library onto it,
+  give it its tag, draw its lines to it, and delete the figure; the import lists the symbols it
+  drew this way.
 
 ### Asking Claude
 

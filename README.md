@@ -422,9 +422,15 @@ the keys.
   Vespula's prop system (Saaketh's FullFlow model) with its run's data, which it adds to Yorg
   the first time: a run of it is Saaketh's run again.
 - **Visio**: **Import Visio…** asks for a Visio drawing (or drop a .vsdx on the diagrams), shows
-  it, and makes a diagram of it in the folder you're in, with its pages: its P&ID shapes
-  become parts, tagged with their text, its connectors lines between them, and its colored lines
-  fluids to name. Save an old .vsd as a .vsdx first.
+  it, and makes a diagram of it in the folder you're in, with its pages. Its valves, regulators,
+  relief valves, orifices, quick disconnects, and sensors become parts (by their stencil, or by
+  their tags: PRV, FTPT, FO-1), tagged with their labels, with their set pressures, worked as
+  their actuators' letters say; everything else (the vehicle, its tanks, the key, the title
+  block) is drawn as Visio drew it, as figures. Its connectors become lines along their routes,
+  on the parts they were glued to, carrying what the drawing's key (or their words, or their
+  color) says they carry, and sized as the key says. The import lists the symbols Piper has no
+  part for. Figures aren't simulated: to simulate a drawing whose tanks are drawn, put Piper's
+  tanks in their place. Save an old .vsd as a .vsdx first.
 - **Export**: **PDF**, a page for each of the diagram's, on its printed sheet or else on
   Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs are (a border with its
   zones, the named revisions, and a title block that says which sheet of how many), vector and

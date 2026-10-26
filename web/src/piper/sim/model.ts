@@ -10,6 +10,7 @@ import {
     type SimValues,
 } from "../drawing";
 import { isGas } from "../fluids";
+import { figureOf } from "../library/figures";
 import { kindOf, titleOf } from "../library/index";
 import { channelNames, findChannel, type TestChannel, type TestDetail } from "../testdata";
 import type { Catalog, Conditions, Link, ModelEdge, ModelPart, PartKind, Role, Setting, SystemModel } from "./api";
@@ -235,6 +236,30 @@ function endsOf(part: Part): [string, string] | null {
 
 /** A part's name in the model: its tag, or what it is (at most 80 characters, as Yorg takes them). */
 export const nameOf = (part: Part): string => (part.tag.trim() || titleOf(part)).slice(0, 80);
+
+/** A figure's name: its tag, else its first words (DAQ, LOX Tank), as its title says only that it's a figure. */
+const figureName = (part: Part): string =>
+    (
+        part.tag.trim() ||
+        figureOf(part)
+            .texts.flatMap((text) => text.lines)
+            .find((line) => line.trim())
+            ?.trim() ||
+        ""
+    ).slice(0, 80);
+
+/** What the model says of the figures lines end at, all in one, as an imported drawing may have dozens. */
+function drawnNote(figures: Part[]): string {
+    const names = [...new Set(figures.map(figureName).filter(Boolean))];
+    if (figures.length === 1) {
+        return `${names[0] ? `${names[0]} is a figure,` : "A figure is"} only drawn, so it isn't simulated: the lines at it end there.`;
+    }
+    const named =
+        names.length > 0
+            ? ` (${names.slice(0, 8).join(", ")}${names.length > 8 ? `, and ${names.length - 8} more` : ""})`
+            : "";
+    return `${figures.length} figures${named} are only drawn, so they aren't simulated: the lines at them end there.`;
+}
 
 /** A line's name: its tag, else what it joins. */
 function lineName(line: Line, parts: Map<string, Part>): string {
@@ -830,13 +855,27 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
         }
     }
 
+    // A figure (a shape imported from Visio, drawn as it was: a drawing's tanks may be) is only drawn, which is said
+    // of those lines end at, as a drawing has many that none do.
+    const met = new Set(
+        lines.flatMap((line) => [line.from, line.to].flatMap((end) => (isPortEnd(end) ? [end.part] : []))),
+    );
+    const drawn: Part[] = [];
     for (const part of parts) {
         if (!placed.has(part.id)) {
             placed.set(part.id, { role: role(part.id), ids: [], phase: null, reads: null });
         }
         if (part.kind === "pump" || part.kind === "valve3") {
             note(`${nameOf(part)} isn't simulated: the lines at it end there.`, [part.id]);
+        } else if (part.kind === "figure" && met.has(part.id)) {
+            drawn.push(part);
         }
+    }
+    if (drawn.length > 0) {
+        note(
+            drawnNote(drawn),
+            drawn.map((part) => part.id),
+        );
     }
     for (const line of lines) {
         if (!placed.has(line.id)) {

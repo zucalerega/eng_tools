@@ -237,6 +237,10 @@ class DrawingSaveIn(BaseModel):
     fresh: bool = False  # start a new revision, even if the latest is yours and would take this save
 
 
+class LockIn(BaseModel):
+    force: bool = False  # an admin taking over from whoever's editing it
+
+
 class RevisionNoteIn(BaseModel):
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]  # its name; "": none
 
@@ -253,6 +257,13 @@ class ReleaseIn(BaseModel):
 
 class DecisionIn(BaseModel):
     comment: str = Field("", max_length=2000)  # why, for a rejection
+
+
+class EditingOut(BaseModel):
+    """Who's editing a diagram: only they change its drawing until they're done (diagrams.take_lock)."""
+
+    by: UserRef
+    since: datetime
 
 
 class DiagramOut(BaseModel):
@@ -276,9 +287,10 @@ class DiagramOut(BaseModel):
     can_delete: bool  # you made it (or you're an admin): you can delete it, and restore it
     released: str | None = None  # its latest release's letter ("B"), if it's been released
     released_revision: int | None = None  # and the revision that is
+    editing: EditingOut | None = None  # who's editing it, if anyone
 
     @classmethod
-    def fields(cls, diagram: Diagram, can_delete: bool) -> dict[str, Any]:
+    def fields(cls, diagram: Diagram, can_delete: bool, editing: User | None = None) -> dict[str, Any]:
         return {
             "id": diagram.id,
             "name": diagram.name,
@@ -300,19 +312,24 @@ class DiagramOut(BaseModel):
             "can_delete": can_delete,
             "released": diagram.released,
             "released_revision": diagram.released_revision,
+            "editing": (
+                EditingOut(by=UserRef.of(editing), since=diagram.locked_at or diagram.updated_at) if editing else None
+            ),
         }
 
     @classmethod
-    def of(cls, diagram: Diagram, *, can_delete: bool) -> "DiagramOut":
-        return cls(**cls.fields(diagram, can_delete))
+    def of(cls, diagram: Diagram, *, can_delete: bool, editing: User | None = None) -> "DiagramOut":
+        return cls(**cls.fields(diagram, can_delete, editing))
 
 
 class DiagramDetailOut(DiagramOut):
     drawing: dict[str, Any]  # its latest revision's, as the web app saved it
 
     @classmethod
-    def of_detail(cls, diagram: Diagram, drawing: dict[str, Any], *, can_delete: bool) -> "DiagramDetailOut":
-        return cls(**DiagramOut.fields(diagram, can_delete), drawing=drawing)
+    def of_detail(
+        cls, diagram: Diagram, drawing: dict[str, Any], *, can_delete: bool, editing: User | None = None
+    ) -> "DiagramDetailOut":
+        return cls(**DiagramOut.fields(diagram, can_delete, editing), drawing=drawing)
 
 
 class RevisionOut(BaseModel):

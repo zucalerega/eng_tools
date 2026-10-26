@@ -40,6 +40,8 @@ interface Props {
     live?: ReadonlyMap<string, LiveValue> | null;
     /** Drawn to be worked on: where clicks land, handles on what's selected, and ports where they're wanted. */
     interactive?: boolean;
+    /** Worked on by someone editing it: what's selected has handles to drag. Else, only its outline. */
+    editable?: boolean;
     zoom?: number;
     ports?: ReadonlySet<string> | "all"; // whose ports show: the part under the pointer, or all while a line's drawn
 }
@@ -51,6 +53,7 @@ export function DiagramView({
     selection = EMPTY,
     live = null,
     interactive = false,
+    editable = true,
     zoom = 1,
     ports = EMPTY,
 }: Props) {
@@ -165,6 +168,7 @@ export function DiagramView({
                     drawing={drawing}
                     paths={paths}
                     selection={selection}
+                    editable={editable}
                     palette={palette}
                     zoom={zoom}
                     ports={ports}
@@ -428,6 +432,7 @@ function Handles({
     drawing,
     paths,
     selection,
+    editable,
     palette,
     zoom,
     ports,
@@ -435,6 +440,7 @@ function Handles({
     drawing: Drawing;
     paths: Map<string, Point[]>;
     selection: ReadonlySet<string>;
+    editable: boolean;
     palette: Palette;
     zoom: number;
     ports: ReadonlySet<string> | "all";
@@ -462,6 +468,9 @@ function Handles({
             />,
         );
         const outline = boxOf(part, drawing);
+        if (!editable) {
+            continue;
+        }
         if (kindOf(part.kind).resizable && selection.size === 1) {
             // A box, a region, a text block: dragged to a width and height.
             handles.push(
@@ -498,7 +507,7 @@ function Handles({
         }
     }
     for (const line of drawing.lines) {
-        if (!selection.has(line.id) || selection.size > 1) {
+        if (!editable || !selection.has(line.id) || selection.size > 1) {
             continue;
         }
         const path = paths.get(line.id) ?? [];

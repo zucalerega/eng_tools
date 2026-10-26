@@ -24,6 +24,7 @@ from .schemas import (
     FolderIn,
     FolderOut,
     ImageOut,
+    LockIn,
     MoveIn,
     ReleaseIn,
     ReleaseOut,
@@ -40,12 +41,14 @@ router = APIRouter(prefix="/api/piper", tags=["piper"])
 
 
 def _out(diagram: Diagram, user: User) -> DiagramOut:
-    return DiagramOut.of(diagram, can_delete=diagrams.can_delete(user, diagram))
+    return DiagramOut.of(diagram, can_delete=diagrams.can_delete(user, diagram), editing=diagrams.editing(diagram))
 
 
 def _detail(db: Session, diagram: Diagram, user: User) -> DiagramDetailOut:
     drawing = diagrams.latest_drawing(db, diagram)
-    return DiagramDetailOut.of_detail(diagram, drawing, can_delete=diagrams.can_delete(user, diagram))
+    return DiagramDetailOut.of_detail(
+        diagram, drawing, can_delete=diagrams.can_delete(user, diagram), editing=diagrams.editing(diagram)
+    )
 
 
 @router.get("/diagrams")
@@ -124,10 +127,32 @@ def post_restore(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
     return _out(diagrams.restore(db, user, diagram_id), user)
 
 
+@router.get("/diagrams/{diagram_id}/lock")
+def get_lock(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
+    """A diagram without its drawing: who's editing it (editing), and the version it's at, for someone looking at it to
+    ask now and then."""
+    return _out(diagrams.diagram(db, diagram_id), user)
+
+
+@router.post("/diagrams/{diagram_id}/lock")
+def post_lock(diagram_id: int, user: ActiveUser, db: DB, body: LockIn | None = None) -> DiagramOut:
+    """Start editing a diagram, or say you're still at it (every minute or so: else it's let go after 10 minutes).
+    Someone else editing it: 409 `locked`, with who and since when; an admin can take it over (force)."""
+    taken = diagrams.take_lock(db, user, diagram_id, force=body is not None and body.force)
+    return _out(taken, user)
+
+
+@router.delete("/diagrams/{diagram_id}/lock")
+def delete_lock(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
+    """Done editing a diagram: anyone can edit it now."""
+    return _out(diagrams.release_lock(db, user, diagram_id), user)
+
+
 @router.put("/diagrams/{diagram_id}/drawing")
 def put_drawing(diagram_id: int, body: DrawingSaveIn, user: ActiveUser, db: DB) -> DiagramOut:
     """Save a diagram's drawing, changed from `version`. If someone saved it since, 409 `changed`, with the version it's
-    at, who saved it, and when. fresh: begin a new revision even if the latest is yours."""
+    at, who saved it, and when; if someone else is editing it, 409 `locked`, with who. fresh: begin a new revision even
+    if the latest is yours."""
     saved = diagrams.save(db, user, diagram_id, body.drawing, body.version, fresh=body.fresh)
     return _out(saved, user)
 
@@ -162,7 +187,7 @@ def post_restore_revision(
     diagram_id: int, number: int, body: RevisionRestoreIn, user: ActiveUser, db: DB
 ) -> DiagramDetailOut:
     """Make a revision the drawing again, as a new revision, if the diagram is still at `version` (else 409 `changed`,
-    as for a save)."""
+    as for a save) and no one else is editing it (else 409 `locked`)."""
     restored = diagrams.restore_revision(db, user, diagram_id, number, body.version)
     return _detail(db, restored, user)
 

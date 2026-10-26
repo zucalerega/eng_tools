@@ -39,6 +39,12 @@ function place(drawing: { value: Drawing }, preset: string, x: number, y: number
     return added.id;
 }
 
+/** Edit, on a diagram opened to be looked at: it's yours to change, with the library to place parts from. */
+async function startEditing() {
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByRole("button", { name: "Done editing" });
+}
+
 /** What a test's badge beside a part says. */
 const badge = (part: string) => drawingArea().querySelector(`[data-live="${part}"] text`)?.textContent ?? null;
 
@@ -150,6 +156,7 @@ test("New diagram opens the editor: a part placed from the library is tagged, re
     await userEvent.type(dialog.getByRole("textbox", { name: "Name" }), team.named("Stand"));
     await userEvent.click(dialog.getByRole("button", { name: "Make it" }));
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    expect(await screen.findByRole("button", { name: "Done editing" })).toBeTruthy(); // made just now: to edit
     expect(screen.getByRole("heading", { name: "An empty diagram" })).toBeTruthy(); // what to do first
 
     await userEvent.click(screen.getByRole("button", { name: "Pressure transducer" }));
@@ -175,6 +182,7 @@ test("a part dragged from the library goes where it's let go, and the drag doesn
     const made = await team.diagram(team.chief, "Dragged onto");
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     // jsdom lays nothing out: the drawing's box is given as reaching right and down from where at() measures from, and
     // the library's left of it.
     vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1e6, 1e6));
@@ -202,6 +210,7 @@ test("a line drawn from one part's port to another's is routed, and carries the 
     const made = await team.diagram(team.chief, "Pressurant", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     // The pointer on the bottle shows its ports, to drag a line from.
     fireEvent.pointerMove(within(svg).getByRole("button", { name: "B-1" }), at(0, 0));
     const port = await waitFor(() => {
@@ -236,6 +245,7 @@ test("a valve dropped on a line goes into it; deleting it joins the line up agai
     const made = await team.diagram(team.chief, "Into a line", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     await userEvent.click(screen.getByRole("button", { name: "Check valve" }));
     fireEvent.pointerMove(svg, at(150, 3));
     fireEvent.pointerDown(svg, at(150, 3));
@@ -262,6 +272,7 @@ test("the inspector says what a part is: its normal state, what it shows, and fi
     const made = await team.diagram(team.chief, "Inspector", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     const part = within(svg).getByRole("button", { name: "BV-1" });
     fireEvent.pointerDown(part, at(0, 0));
     fireEvent.pointerUp(svg, at(0, 0));
@@ -299,6 +310,7 @@ test("the diagram's labels: their size, and fluids and valve states written ever
     const diagram = await team.diagram(team.chief, "Labels", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
     expect(inspector.getByText("Fluids written on lines: 1 of 1")).toBeTruthy();
     await userEvent.click(inspector.getByRole("button", { name: "Hide on every line" }));
@@ -332,6 +344,7 @@ test("a part's drawn bigger or smaller, its label too, and a text block's set in
     const made = await team.diagram(team.chief, "Sizes", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
     fireEvent.pointerUp(svg, at(0, 0));
     const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
@@ -354,22 +367,23 @@ test("a part's drawn bigger or smaller, its label too, and a text block's set in
     });
 });
 
-test("someone else's save is caught: Keep mine saves over it, and theirs stays in the history", async () => {
+test("a save from another window is caught: Keep mine saves over it, and the other stays in the history", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
     const drawing = { value: emptyDrawing() };
     place(drawing, "ball-valve", 0, 0);
-    const made = await team.diagram(team.chief, "Shared", drawing.value);
+    const made = await team.diagram(bob, "Shared", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     const theirs = { value: drawing.value };
     place(theirs, "pressure-transducer", 100, 100);
-    await team.saveDrawing(bob, made.id, theirs.value, made.version);
+    await team.saveDrawing(team.chief, made.id, theirs.value, made.version); // in another window
 
     await userEvent.click(screen.getByRole("button", { name: "Pressure gauge" }));
     fireEvent.pointerDown(svg, at(200, 0));
     fireEvent.pointerUp(svg, at(200, 0));
-    expect(await screen.findByText(/Bob saved this diagram at/)).toBeTruthy();
+    expect(await screen.findByText(/You saved this diagram in another window at/)).toBeTruthy();
     expect(screen.getByText("Someone else saved it")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Keep mine" }));
     await waitFor(async () => {
@@ -377,8 +391,106 @@ test("someone else's save is caught: Keep mine saves over it, and theirs stays i
         expect(saved.parts.map((part) => part.kind).sort()).toEqual(["gauge", "valve"]);
     });
     const revisions = await team.revisions(team.chief, made.id);
-    expect(revisions.map((revision) => revision.number)).toEqual([3, 2, 1]);
-    expect(revisions[1]!.author?.name).toBe("Bob"); // Bob's, kept
+    expect(revisions.map((revision) => [revision.number, revision.author?.name])).toEqual([
+        [3, team.chief.user.name],
+        [2, team.chief.user.name], // the other window's, kept
+        [1, "Bob"],
+    ]);
+});
+
+test("one person edits a diagram at a time: the others look, see what's saved, and edit once they're done", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "ball-valve", 0, 0);
+    const made = await team.diagram(team.chief, "Taking turns", drawing.value);
+    await team.editDiagram(bob, made.id);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+
+    // Opened to look at: no library, nothing to undo, and the inspector only says what's there.
+    expect(await screen.findByText("Bob is editing")).toBeTruthy();
+    const editButton = screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+    expect(editButton.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Pressure gauge" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
+    fireEvent.pointerMove(svg, at(100, 0)); // a drag moves the view, not the valve
+    fireEvent.pointerUp(svg, at(100, 0));
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0)); // a click selects it
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    expect(inspector.getByRole("textbox", { name: "Tag" }).matches(":disabled")).toBe(true);
+    fireEvent.keyDown(document, { key: "Delete" });
+    expect(within(svg).getByRole("button", { name: "BV-1" })).toBeTruthy();
+
+    // What Bob saves shows as soon as the tab's come back to.
+    const his = { value: drawing.value };
+    place(his, "pressure-transducer", 100, 100);
+    await team.saveDrawing(bob, made.id, his.value, made.version);
+    fireEvent.focus(window);
+    expect(await within(svg).findByRole("button", { name: "PT-1" })).toBeTruthy();
+
+    // Once he's done, it's anyone's to edit: Edit makes it yours, and the list says so.
+    await team.doneEditing(bob, made.id);
+    fireEvent.focus(window);
+    await waitFor(() => expect(editButton.disabled).toBe(false));
+    await startEditing();
+    expect(screen.getByRole("button", { name: "Pressure gauge" })).toBeTruthy();
+    expect((await team.piperDiagram(bob, made.id)).editing?.by.name).toBe(team.chief.user.name);
+    const refused = team.saveDrawing(bob, made.id, drawing.value, 2);
+    await expect(refused).rejects.toThrow(`${team.chief.user.name} is editing`);
+
+    // Done editing lets it go.
+    await userEvent.click(screen.getByRole("button", { name: "Done editing" }));
+    await screen.findByRole("button", { name: "Edit" });
+    expect((await team.piperDiagram(bob, made.id)).editing).toBeNull();
+});
+
+test("an admin takes over editing from someone, once they've said they mean to", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const made = await team.diagram(bob, "Taken over");
+    await team.editDiagram(bob, made.id);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await userEvent.click(await screen.findByRole("button", { name: "Take over" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Take over editing" }));
+    expect(dialog.getByText(/Bob is editing this diagram/)).toBeTruthy();
+    await userEvent.click(dialog.getByRole("button", { name: "Take over" }));
+    await screen.findByRole("button", { name: "Done editing" });
+    expect((await team.piperDiagram(bob, made.id)).editing?.by.name).toBe(team.chief.user.name);
+});
+
+test("a change made after someone took over editing isn't saved over theirs: it's kept as a diagram of its own", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "ball-valve", 0, 0);
+    const made = await team.diagram(bob, "Taken from", drawing.value);
+    renderApp(bob, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    expect(screen.queryByRole("button", { name: "Take over" })).toBeNull(); // nobody's editing it
+    await startEditing();
+    await team.editDiagram(team.chief, made.id, true); // an admin takes it over
+
+    await userEvent.click(screen.getByRole("button", { name: "Pressure gauge" }));
+    fireEvent.pointerDown(svg, at(200, 0));
+    fireEvent.pointerUp(svg, at(200, 0));
+    expect(await screen.findByText(new RegExp(`${team.chief.user.name} is editing this diagram now`))).toBeTruthy();
+    expect(screen.getByText("Someone else is editing it")).toBeTruthy();
+    expect(screen.getByText(`${team.chief.user.name} is editing`)).toBeTruthy(); // who, at the top too
+    expect((await team.piperDiagram(bob, made.id)).read.parts.map((part) => part.kind)).toEqual(["valve"]);
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeTruthy(); // only looked at here now
+
+    await userEvent.click(screen.getByRole("button", { name: "Save mine as a new diagram" }));
+    await screen.findByRole("button", { name: "Done editing" }); // the copy's his, to go on editing
+    const copy = Number(window.location.pathname.split("/").pop());
+    expect(copy).not.toBe(made.id);
+    const kept = await team.piperDiagram(bob, copy);
+    expect([kept.name, kept.read.parts.map((part) => part.kind).sort()]).toEqual([
+        `${made.name} (my changes)`,
+        ["gauge", "valve"],
+    ]);
 });
 
 test("a diagram deleted while it's open says so, and restoring it saves the change it wouldn't take", async () => {
@@ -388,6 +500,7 @@ test("a diagram deleted while it's open says so, and restoring it saves the chan
     const made = await team.diagram(team.chief, "Deleted while open", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     await team.deleteDiagram(team.chief, made.id); // in another window
 
     await userEvent.click(screen.getByRole("button", { name: "Pressure gauge" }));
@@ -410,6 +523,7 @@ test("a drawing the server won't take says why, and the change that fixes it is 
     const made = await team.diagram(team.chief, "Too big", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
     fireEvent.pointerUp(svg, at(0, 0));
     const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
@@ -466,6 +580,7 @@ test("a diagram's pages: added and renamed from their tabs, saved, and an off-pa
     const made = await team.diagram(team.chief, "Pages", drawing.value);
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     const tabs = screen.getByRole("tablist", { name: "Pages" });
     expect(within(tabs).getByRole("tab", { name: "Page 1", selected: true })).toBeTruthy();
 
@@ -542,6 +657,7 @@ test("a picture dropped on the drawing is added there, in its shape; the inspect
     const made = await team.diagram(team.chief, "Pictures");
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
     const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     svg.getBoundingClientRect = () => new DOMRect(0, 0, 1, 1); // the drawing's a pixel wide in jsdom, as at() says
 
     // A file that isn't a picture says so, and isn't put on the drawing.
@@ -630,6 +746,7 @@ test("a diagram takes a scheme's colors, and says when the scheme has changed si
     const diagram = await team.diagram(team.chief, "Schemed", drawing.value);
     const first = renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
     await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
     await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Colors from" }), String(scheme.id));
     const saved = async () => (await team.piperDiagram(team.chief, diagram.id)).read;
     await waitFor(async () => {
@@ -642,6 +759,7 @@ test("a diagram takes a scheme's colors, and says when the scheme has changed si
     // The scheme changes: the diagram says so, and takes the new colors when asked.
     await team.changeScheme(team.chief, scheme.id, { fluids: [{ ...blue, color: "#00aaff" }] });
     renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
+    await startEditing();
     await userEvent.click(await screen.findByRole("button", { name: "Take its colors again" }));
     await waitFor(async () =>
         expect((await saved()).fluids.find((fluid) => fluid.id === "lox")?.color).toBe("#00aaff"),

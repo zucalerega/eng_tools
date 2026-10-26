@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Dialog, Notice, Time } from "../components";
 import { MoveDialog, NameDialog } from "../FolderDialogs";
 import { pathTo, within } from "../folders";
-import { formatSize } from "../format";
+import { formatSize, formatTime } from "../format";
 import { Link, navigate } from "../router";
 import { piper, type Diagram, type DiagramFolder } from "./api";
 import { documentOf, emptyDrawing, pageOf, withPage, type Document } from "./drawing";
@@ -17,8 +17,9 @@ import { readVisio, visioDocument, visioName, type ImportReport } from "./visio"
 // diagram, or an admin, deletes it, as the server allows.
 
 export const folderUrl = (id: number | null): string => (id === null ? "/piper" : `/piper/folders/${id}`);
-const diagramUrl = (id: number, find = ""): string =>
-    `/piper/diagrams/${id}${find ? `?find=${encodeURIComponent(find)}` : ""}`;
+/** A diagram's editor: at what a search found (find), or to edit it (a diagram just made). */
+const diagramUrl = (id: number, find = "", edit = false): string =>
+    `/piper/diagrams/${id}${find ? `?find=${encodeURIComponent(find)}` : edit ? "?edit=1" : ""}`;
 
 const DRAGGED = "application/x-piper-move"; // {diagrams: number[], folder: number | null}
 const VISIO_FILES = ".vsdx,.vsd,.vdx";
@@ -115,7 +116,7 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
                 description: diagram.description,
                 drawing: original.drawing,
             });
-            navigate(diagramUrl(copy.id));
+            navigate(diagramUrl(copy.id, "", true));
         } catch (error) {
             setProblem(message(error));
         }
@@ -423,6 +424,14 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
                                                         Rev {diagram.released}
                                                     </span>
                                                 )}
+                                                {diagram.editing && (
+                                                    <span
+                                                        className="badge piper-badge-editing"
+                                                        title={`Since ${formatTime(diagram.editing.since)}`}
+                                                    >
+                                                        {diagram.editing.by.name} is editing
+                                                    </span>
+                                                )}
                                                 {searching && (
                                                     <p className="muted piper-description">
                                                         in {where(diagram.folder_id)}
@@ -494,7 +503,7 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
                     onDone={(made) => {
                         setDialog(null);
                         if (made) {
-                            navigate(diagramUrl(made.id));
+                            navigate(diagramUrl(made.id, "", true));
                         }
                     }}
                 />

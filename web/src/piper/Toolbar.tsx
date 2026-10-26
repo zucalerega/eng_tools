@@ -1,14 +1,17 @@
 import type { ReactNode } from "react";
+import type { Account } from "../api";
 import { MenuButton } from "../components";
+import { formatTime } from "../format";
 import { Link } from "../router";
 import type { Diagram } from "./api";
 import type { Commands } from "./commands";
+import type { EditLock } from "./editing";
 import { FindBox } from "./FindBox";
 import type { SaveStatus } from "./saving";
 import { useEditor, type EditorStore } from "./store";
 
-// The editor's bar: where the diagram is and whether it's saved, then undo and redo, the tools, the zoom, and the
-// panels (test data, history), exports, and Help.
+// The editor's bar: where the diagram is and whether it's saved, then Edit (or Done editing, and undo and redo, and the
+// tools, while it's yours), the zoom, and the panels (test data, history), exports, and Help.
 
 const ICONS: Record<string, ReactNode> = {
     undo: <path d="M6 4 2.5 7.5 6 11M3 7.5h7a3.5 3.5 0 0 1 0 7H8" />,
@@ -51,6 +54,7 @@ const STATUS: Record<SaveStatus, string> = {
     unsaved: "Not saved yet",
     offline: "Not saved",
     changed: "Someone else saved it",
+    locked: "Someone else is editing it",
     deleted: "Deleted: not saved",
 };
 
@@ -63,9 +67,12 @@ export function Toolbar({
     commands,
     status,
     problem,
+    edit,
+    me,
     panel,
     onPanel,
     onRename,
+    onTakeOver,
     onExport,
 }: {
     diagram: Diagram;
@@ -73,13 +80,19 @@ export function Toolbar({
     commands: Commands;
     status: SaveStatus;
     problem: string | null;
+    edit: EditLock;
+    me: Account | null;
     panel: Panel | null;
     onPanel: (panel: Panel | null) => void;
     onRename: () => void;
+    onTakeOver: () => void;
     onExport: (as: ExportKind) => void;
 }) {
     const { canUndo, canRedo, tool, view } = useEditor(store, (state) => state);
     const folders = diagram.folder ? diagram.folder.split("/") : [];
+    // Someone editing it, not here: someone else, or you in another window.
+    const elsewhere = !edit.mine && !diagram.deleted_at ? (diagram.editing ?? null) : null;
+    const theirs = elsewhere !== null && elsewhere.by.id !== me?.id;
     return (
         <div className="piper-toolbar">
             <nav className="piper-where" aria-label="Where">
@@ -106,53 +119,100 @@ export function Toolbar({
                             : `Draft after Rev ${diagram.released}`}
                     </span>
                 )}
-                <span
-                    className={`piper-status piper-status-${status}`}
-                    role="status"
-                    title={status === "offline" ? (problem ?? undefined) : undefined}
-                >
-                    {STATUS[status]}
-                    {status === "offline" && `: ${problem ?? "trying again…"}`}
-                </span>
+                {(edit.mine || status !== "saved") && (
+                    <span
+                        className={`piper-status piper-status-${status}`}
+                        role="status"
+                        title={status === "offline" ? (problem ?? undefined) : undefined}
+                    >
+                        {STATUS[status]}
+                        {status === "offline" && `: ${problem ?? "trying again…"}`}
+                    </span>
+                )}
             </nav>
             <div className="piper-tools" role="toolbar" aria-label="Tools">
-                <button
-                    type="button"
-                    aria-label="Undo"
-                    title="Undo (Ctrl+Z)"
-                    disabled={!canUndo}
-                    onClick={() => commands.undo()}
-                >
-                    <Icon name="undo" />
-                </button>
-                <button
-                    type="button"
-                    aria-label="Redo"
-                    title="Redo (Ctrl+Shift+Z)"
-                    disabled={!canRedo}
-                    onClick={() => commands.redo()}
-                >
-                    <Icon name="redo" />
-                </button>
-                <span className="piper-separator" />
-                <button
-                    type="button"
-                    aria-label="Select"
-                    title="Select and move (V)"
-                    aria-pressed={tool.mode === "select"}
-                    onClick={() => store.setTool({ mode: "select" })}
-                >
-                    <Icon name="select" />
-                </button>
-                <button
-                    type="button"
-                    aria-label="Draw lines"
-                    title="Draw lines (L): from a port, a line, or anywhere"
-                    aria-pressed={tool.mode === "line"}
-                    onClick={() => store.setTool(tool.mode === "line" ? { mode: "select" } : { mode: "line" })}
-                >
-                    <Icon name="line" />
-                </button>
+                {edit.mine ? (
+                    <>
+                        <button
+                            type="button"
+                            title="Save what's left, and let anyone edit it"
+                            disabled={edit.busy}
+                            onClick={() => void edit.stop()}
+                        >
+                            Done editing
+                        </button>
+                        <span className="piper-separator" />
+                        <button
+                            type="button"
+                            aria-label="Undo"
+                            title="Undo (Ctrl+Z)"
+                            disabled={!canUndo}
+                            onClick={() => commands.undo()}
+                        >
+                            <Icon name="undo" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Redo"
+                            title="Redo (Ctrl+Shift+Z)"
+                            disabled={!canRedo}
+                            onClick={() => commands.redo()}
+                        >
+                            <Icon name="redo" />
+                        </button>
+                        <span className="piper-separator" />
+                        <button
+                            type="button"
+                            aria-label="Select"
+                            title="Select and move (V)"
+                            aria-pressed={tool.mode === "select"}
+                            onClick={() => store.setTool({ mode: "select" })}
+                        >
+                            <Icon name="select" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Draw lines"
+                            title="Draw lines (L): from a port, a line, or anywhere"
+                            aria-pressed={tool.mode === "line"}
+                            onClick={() => store.setTool(tool.mode === "line" ? { mode: "select" } : { mode: "line" })}
+                        >
+                            <Icon name="line" />
+                        </button>
+                    </>
+                ) : (
+                    !diagram.deleted_at && (
+                        <>
+                            {elsewhere && (
+                                <span
+                                    className="piper-editing"
+                                    role="status"
+                                    title={`Since ${formatTime(elsewhere.since)}`}
+                                >
+                                    {theirs ? `${elsewhere.by.name} is editing` : "You're editing it in another window"}
+                                </span>
+                            )}
+                            <button
+                                type="button"
+                                className="button-primary"
+                                title={
+                                    theirs
+                                        ? "It can be edited once they're done"
+                                        : "Make it yours to change: no one else can until you're done"
+                                }
+                                disabled={edit.busy || theirs}
+                                onClick={() => void edit.start()}
+                            >
+                                Edit
+                            </button>
+                            {theirs && me?.is_admin && (
+                                <button type="button" disabled={edit.busy} onClick={onTakeOver}>
+                                    Take over
+                                </button>
+                            )}
+                        </>
+                    )
+                )}
                 <span className="piper-separator" />
                 <button type="button" aria-label="Zoom out" title="Zoom out (-)" onClick={() => commands.zoomBy(0.8)}>
                     <Icon name="minus" />

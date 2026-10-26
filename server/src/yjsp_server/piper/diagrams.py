@@ -1,14 +1,15 @@
 """Piper's rules: making diagrams, saving their drawings, their history, and who may delete them.
 
 Everyone signed in (and approved) sees every diagram, makes them, and changes them: a P&ID is the team's, and its
-history keeps every drawing, so nothing anyone does to one is lost. Only whoever made one, or an admin, deletes it,
-which keeps everything, so it can come back.
+history keeps every drawing, so nothing anyone does to one is lost. One person edits a diagram at a time: whoever's
+editing it holds it, and no one else's save goes over theirs until they're done. Only whoever made one, or an admin,
+deletes it, which keeps everything, so it can come back.
 """
 
 import json
 import zlib
 from collections.abc import Iterable, Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
@@ -20,7 +21,7 @@ from ..errors import Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
 from . import folders
 from .models import Diagram, Release, Revision
-from .schemas import InvalidDrawing, check_drawing, drawing_format, drawing_pages
+from .schemas import EditingOut, InvalidDrawing, check_drawing, drawing_format, drawing_pages
 
 EMPTY_DRAWING: dict[str, Any] = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
 MAX_DRAWING_BYTES = 2 * 1024 * 1024  # of JSON: a big P&ID's is a few hundred KB
@@ -29,6 +30,9 @@ MAX_DRAWING_BYTES = 2 * 1024 * 1024  # of JSON: a big P&ID's is a few hundred KB
 MAX_DEPTH = 50
 # How long a revision takes its author's saves: an afternoon's editing is a few revisions, not thousands.
 AMEND_WITHIN = timedelta(minutes=30)
+# How long a diagram stays held by whoever's editing it without a word from their editor, which says they're still at
+# it every minute while it's open: a laptop shut or a tab that crashed lets it go, so no diagram is held for good.
+LOCK_LAPSES = timedelta(minutes=10)
 
 
 class Changed(Conflict):
@@ -42,6 +46,12 @@ class DrawingNewer(Conflict):
     leave out what it doesn't know of (all but a page of it)."""
 
     code = "drawing_newer"
+
+
+class Locked(Conflict):
+    """Someone else is editing the diagram: until they're done, only they change its drawing."""
+
+    code = "locked"
 
 
 def can_delete(user: User, diagram: Diagram) -> bool:
@@ -220,7 +230,8 @@ def save(
     The latest revision takes the save if it's the same person's, begun less than AMEND_WITHIN before, not named, not
     restored, not released or waiting to be (releases.py), and the save isn't `fresh`; otherwise the save begins the
     next revision. So one person's work never writes over another's in the history, and a named, restored, or released
-    revision stays as it is.
+    revision stays as it is. If someone else is editing it, the save is refused (`locked`); a save by whoever is says
+    they're still at it.
     """
     data, size = _pack(drawing)
     _next_version(db, user, diagram_id, version)
@@ -231,8 +242,11 @@ def save(
         raise DrawingNewer(
             f"{name} has pages, which this tab's Piper is too old to keep: reload the page, then make your change again"
         )
-    latest = _latest(db, diagram_id)
     now = utcnow()
+    _check_editing(db, user, found, now, "your change isn't saved: save yours as a new diagram, or load theirs")
+    if found.locked_by == user.id:  # you're still at it (and, if it had lapsed, hold it again)
+        _hold_for(found, user, now)
+    latest = _latest(db, diagram_id)
     if (
         not fresh
         and latest.author_id == user.id
@@ -414,8 +428,9 @@ def restore_revision(db: Session, user: User, diagram_id: int, number: int, vers
         db.rollback()  # the diagram stays at its version
         raise
     found = diagram(db, diagram_id)
-    latest = _latest(db, diagram_id)
     now = utcnow()
+    _check_editing(db, user, found, now, "restore a revision once they're done")
+    latest = _latest(db, diagram_id)
     found.revision = latest.number + 1
     db.add(
         Revision(
@@ -434,3 +449,82 @@ def restore_revision(db: Session, user: User, diagram_id: int, number: int, vers
     found.editor = user
     db.commit()
     return found
+
+
+# --- editing ------------------------------------------------------------------------------------------------------
+
+
+def editing(found: Diagram, now: datetime | None = None) -> User | None:
+    """Who's editing a diagram, if anyone still is: not once it's deleted, or once their editor hasn't said they're at
+    it in LOCK_LAPSES."""
+    if found.locked_by is None or found.lock_seen_at is None or found.deleted_at is not None:
+        return None
+    if (now or utcnow()) - found.lock_seen_at >= LOCK_LAPSES:
+        return None
+    return found.locker
+
+
+def take_lock(db: Session, user: User, diagram_id: int, *, force: bool = False) -> Diagram:
+    """Start editing a diagram, or say you're still at it: only you change its drawing until you're done (release_lock),
+    or until LOCK_LAPSES without a word. If someone else is editing it, 409 `locked`; an admin can take it over (force),
+    and whoever had it is told when they next save."""
+    if force and not user.is_admin:
+        raise Forbidden("Only an admin can take over editing from someone else", code="admin_only")
+    found = _held(db, diagram_id)
+    now = utcnow()
+    try:
+        check_not_deleted(found)
+    except Conflict:
+        db.rollback()  # let the next writer in
+        raise
+    if not force:
+        _check_editing(db, user, found, now, "you can look at it, and edit it once they're done")
+    _hold_for(found, user, now)
+    db.commit()
+    return found
+
+
+def release_lock(db: Session, user: User, diagram_id: int) -> Diagram:
+    """Done editing a diagram: anyone can edit it now. If it isn't yours (someone took it over), it stays as it is."""
+    found = _held(db, diagram_id)
+    if found.locked_by == user.id:
+        found.locker = found.locked_at = found.lock_seen_at = None
+    db.commit()
+    return found
+
+
+def _held(db: Session, diagram_id: int) -> Diagram:
+    """A diagram as it is now, held until the transaction ends. The UPDATE is the transaction's first statement, so it
+    takes SQLite's write lock (Postgres' lock on the row), and what's read after it is the latest: who's editing it
+    changes one at a time."""
+    db.execute(
+        update(Diagram)
+        .where(Diagram.id == diagram_id)
+        .values(locked_by=Diagram.locked_by)
+        .execution_options(synchronize_session=False)
+    )
+    try:
+        return diagram(db, diagram_id)
+    except NotFound:
+        db.rollback()
+        raise
+
+
+def _check_editing(db: Session, user: User, found: Diagram, now: datetime, then: str) -> None:
+    """Refuse, and change nothing, if someone else is editing the diagram: who is, then what to do."""
+    holder = editing(found, now)
+    if holder is None or holder.id == user.id:
+        return
+    said = f"{holder.display_name} is editing {found.name}: {then}"
+    who = EditingOut(by=UserRef.of(holder), since=found.locked_at or now).model_dump(mode="json")  # as it's sent
+    db.rollback()  # it stays as it was
+    raise Locked(said, editing=who)
+
+
+def _hold_for(found: Diagram, user: User, now: datetime) -> None:
+    """Hold a diagram for you (whoever else was editing it checked first): since now, unless you're editing it
+    already."""
+    holder = editing(found, now)
+    if holder is None or holder.id != user.id:
+        found.locker, found.locked_at = user, now  # the person, so what's loaded of them is too
+    found.lock_seen_at = now

@@ -59,9 +59,11 @@ interface Props {
 }
 
 export function Inspector({ store, commands, palette, test, onPlot, schemes }: Props) {
-    const { drawing, selection } = useEditor(store, (state) => state);
+    const { drawing, selection, readOnly } = useEditor(store, (state) => state);
     const parts = drawing.parts.filter((part) => selection.includes(part.id));
     const lines = drawing.lines.filter((line) => selection.includes(line.id));
+    // Only looked at: everything's shown as it is, to read, not change; a part's test reading can still be plotted.
+    const reading = readOnly && parts.length === 1 && lines.length === 0 && kindOf(parts[0]!.kind).reads ? test : null;
     let body;
     if (parts.length === 0 && lines.length === 0) {
         body = <DiagramPanel store={store} drawing={drawing} palette={palette} schemes={schemes} />;
@@ -74,7 +76,7 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes }: P
                 part={parts[0]!}
                 drawing={drawing}
                 palette={palette}
-                test={test}
+                test={readOnly ? null : test}
                 onPlot={onPlot}
             />
         );
@@ -101,7 +103,10 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes }: P
                     ))}
                 </datalist>
             )}
-            {body}
+            <fieldset className="piper-fieldset" disabled={readOnly}>
+                {body}
+            </fieldset>
+            {reading && <Reading part={parts[0]!} test={reading} palette={palette} onPlot={onPlot} />}
         </aside>
     );
 }

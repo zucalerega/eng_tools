@@ -1,6 +1,6 @@
 // Piper's part of the server's API (server/src/yjsp_server/piper/schemas.py, or /docs on a running server).
 
-import { apiUrl, Bytes, query, request, requestBytes, type UserRef } from "../api";
+import { apiUrl, Bytes, query, request, requestAsLeaving, requestBytes, type UserRef } from "../api";
 import type { SchemeColors } from "./fluids";
 
 export interface Diagram {
@@ -24,6 +24,13 @@ export interface Diagram {
     can_delete: boolean; // yours, or you're an admin
     released?: string | null; // its latest release's letter ("B"), if it's had one
     released_revision?: number | null; // and the revision that is
+    editing?: Editing | null; // who's editing it, if anyone (left out by a server from before editing: no one)
+}
+
+/** Who's editing a diagram: only they change its drawing until they're done (server: piper/diagrams.py). */
+export interface Editing {
+    by: UserRef;
+    since: string;
 }
 
 /** A folder of diagrams, in another folder or at the top (parent_id null). */
@@ -87,6 +94,11 @@ export interface Scheme extends SchemeColors {
 
 export type SchemeBody = Pick<Scheme, "name" | "fluids" | "states">;
 
+/** What the server says when someone else is editing a diagram (409 locked). */
+export interface LockedDetails {
+    editing: Editing;
+}
+
 /** What the server says when someone saved a diagram after it was opened here (409 changed). */
 export interface ChangedDetails {
     version: number;
@@ -126,6 +138,13 @@ export const piper = {
     changeFolder: (id: number, change: { name?: string; parent_id?: number | null }) =>
         request<DiagramFolder>("PATCH", `/api/piper/folders/${id}`, change),
     removeFolder: (id: number) => request<void>("DELETE", `/api/piper/folders/${id}`),
+    /** Who's editing it, and the version it's at, without its drawing. */
+    editing: (id: number) => request<Diagram>("GET", `${diagram(id)}/lock`),
+    /** Start editing it, or say you're still at it; force: an admin taking it over from whoever's editing it. */
+    edit: (id: number, force = false) => request<Diagram>("POST", `${diagram(id)}/lock`, { force }),
+    doneEditing: (id: number) => request<Diagram>("DELETE", `${diagram(id)}/lock`),
+    /** Done editing, as the page closes. */
+    doneEditingAsLeaving: (id: number) => requestAsLeaving("DELETE", `${diagram(id)}/lock`),
     /** Its drawing saved, if it's still at version; fresh: as a new revision, even if the latest is yours. */
     save: (id: number, drawing: unknown, version: number, fresh = false) =>
         request<Diagram>("PUT", `${diagram(id)}/drawing`, { drawing, version, fresh }),

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from yjsp_server.models import User, UserStatus
 from yjsp_server.piper import diagrams
-from yjsp_server.piper.models import Revision
+from yjsp_server.piper.models import Diagram, Revision
 from yjsp_server.piper.releases import letter
 
 API = "/api/piper/diagrams"
@@ -70,6 +70,27 @@ def kept(team, who, diagram: dict, number: int) -> dict:
     response = team.client.get(f"{API}/{diagram['id']}/revisions/{number}", headers=who)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def lock(team, who, diagram: dict, **body):
+    """Start editing a diagram (or say you're still at it)."""
+    return team.client.post(f"{API}/{diagram['id']}/lock", json=body or None, headers=who)
+
+
+def editing(team, who, diagram: dict) -> str | None:
+    """Who's editing a diagram, by their email, as the diagram's lock says."""
+    response = team.client.get(f"{API}/{diagram['id']}/lock", headers=who)
+    assert response.status_code == 200, response.text
+    held = response.json()["editing"]
+    return held["by"]["email"] if held else None
+
+
+def age_lock(team, diagram: dict, minutes: int) -> None:
+    """As if whoever's editing a diagram had last said so `minutes` earlier."""
+    with team.app.state.sessionmaker() as db:
+        found = db.get(Diagram, diagram["id"])
+        found.lock_seen_at -= timedelta(minutes=minutes)
+        db.commit()
 
 
 def age(team, diagram: dict, number: int, minutes: int) -> None:
@@ -414,6 +435,135 @@ def test_restoring_a_revision_makes_it_the_drawing_again(team):
     assert (missing.status_code, missing.json()["message"]) == (404, "Feed system has no revision 9")
     assert opened(team, alice, made)["version"] == 4
     assert saved(team, alice, made, drawing(part("v5")), 4)["version"] == 5
+
+
+def test_one_person_edits_a_diagram_at_a_time(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    made = make(team, alice, drawing=drawing(part("v1")))
+    saved(team, alice, made, drawing(part("v2")), 1)
+    assert editing(team, bob, made) is None
+
+    taken = lock(team, alice, made)
+    assert taken.status_code == 200, taken.text
+    held = taken.json()["editing"]
+    assert held["by"]["email"] == "alice@x.test"
+    assert [d["editing"]["by"]["email"] for d in team.client.get(API, headers=bob).json()] == ["alice@x.test"]
+
+    # Until she's done, no one else edits it, saves over it, or restores a revision of it: each is told who's at it.
+    refused = lock(team, bob, made)
+    assert (refused.status_code, refused.json()["error"]) == (409, "locked")
+    assert (
+        refused.json()["message"] == "Alice is editing Feed system: you can look at it, and edit it once they're done"
+    )
+    assert refused.json()["details"]["editing"] == {"by": held["by"], "since": held["since"]}
+    late = save(team, bob, made, drawing(part("bob")), 2)
+    assert (late.status_code, late.json()["error"]) == (409, "locked")
+    assert late.json()["message"] == (
+        "Alice is editing Feed system: your change isn't saved: save yours as a new diagram, or load theirs"
+    )
+    back = team.client.post(f"{API}/{made['id']}/revisions/1/restore", json={"version": 2}, headers=bob)
+    assert (back.status_code, back.json()["error"]) == (409, "locked")
+    assert opened(team, bob, made)["version"] == 2
+
+    # Her saves go on, and her editor saying she's still at it keeps when she started.
+    assert saved(team, alice, made, drawing(part("v3")), 2)["editing"]["since"] == held["since"]
+    assert lock(team, alice, made).json()["editing"] == held
+    # Anyone can still rename it, and name its revisions: that isn't its drawing.
+    assert team.client.patch(f"{API}/{made['id']}", json={"name": "Feed"}, headers=bob).status_code == 200
+
+    # Bob letting go of what isn't his changes nothing; once she's done, it's anyone's to edit.
+    assert team.client.delete(f"{API}/{made['id']}/lock", headers=bob).json()["editing"]["by"] == held["by"]
+    done = team.client.delete(f"{API}/{made['id']}/lock", headers=alice)
+    assert (done.status_code, done.json()["editing"]) == (200, None)
+    assert lock(team, bob, made).json()["editing"]["by"]["email"] == "bob@x.test"
+    assert saved(team, bob, made, drawing(part("bob")), 3)["version"] == 4
+
+
+def test_a_diagram_no_one_has_heard_from_its_editor_about_in_ten_minutes_is_let_go(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    made = make(team, alice)
+    since = lock(team, alice, made).json()["editing"]["since"]
+
+    # Her editor says she's at it every minute or so: nine minutes since isn't long enough.
+    age_lock(team, made, minutes=9)
+    assert lock(team, bob, made).status_code == 409
+    assert lock(team, alice, made).json()["editing"]["since"] == since
+    age_lock(team, made, minutes=9)
+    assert editing(team, bob, made) == "alice@x.test"
+
+    # Ten minutes without a word (her laptop shut): it's let go, and her save, back, holds it again.
+    age_lock(team, made, minutes=10)
+    assert editing(team, bob, made) is None
+    again = saved(team, alice, made, drawing(part("v1")), 1)
+    assert again["editing"]["by"]["email"] == "alice@x.test"
+    assert again["editing"]["since"] > since
+
+    # Let go again, and taken by Bob: her next save is refused, and says who.
+    age_lock(team, made, minutes=10)
+    assert lock(team, bob, made).status_code == 200
+    late = save(team, alice, made, drawing(part("v2")), 2)
+    assert (late.status_code, late.json()["details"]["editing"]["by"]["email"]) == (409, "bob@x.test")
+
+
+def test_an_admin_takes_over_editing_a_diagram(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    made = make(team, alice)
+    lock(team, alice, made)
+
+    refused = lock(team, bob, made, force=True)
+    assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")
+    taken = lock(team, chief, made, force=True)
+    assert taken.status_code == 200, taken.text
+    assert taken.json()["editing"]["by"]["email"] == "chief@x.test"
+    late = save(team, alice, made, drawing(part("v1")), 1)
+    assert (late.status_code, late.json()["details"]["editing"]["by"]["email"]) == (409, "chief@x.test")
+    assert saved(team, chief, made, drawing(part("v1")), 1)["version"] == 2
+
+
+def test_saves_and_deleted_diagrams_hold_nothing(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    made = make(team, alice)
+
+    # A save by someone not editing it (a tab from before Piper had editing) doesn't hold it for them.
+    assert saved(team, bob, made, drawing(part("v1")), 1)["editing"] is None
+    assert lock(team, alice, made).status_code == 200
+
+    # A deleted diagram is no one's to edit: what was held lets go, and comes back with it.
+    assert team.client.delete(f"{API}/{made['id']}", headers=alice).json()["editing"] is None
+    refused = lock(team, bob, made)
+    assert (refused.status_code, refused.json()["error"]) == (409, "deleted")
+    team.client.post(f"{API}/{made['id']}/restore", headers=alice)
+    assert editing(team, bob, made) == "alice@x.test"
+
+    missing = team.client.post(f"{API}/999/lock", headers=alice)
+    assert missing.status_code == 404
+
+
+def test_of_two_starting_to_edit_at_once_one_does(app, team):
+    alice = team.member("alice@x.test")
+    made = make(team, alice)
+    emails = [f"member{i}@x.test" for i in range(8)]
+    for email in emails:
+        team.member(email)
+
+    def attempt(email: str) -> str:
+        with app.state.sessionmaker() as db:
+            user = db.scalar(select(User).where(User.email == email))
+            try:
+                diagrams.take_lock(db, user, made["id"])
+            except diagrams.Locked:
+                return "locked"
+            return "editing"
+
+    with ThreadPoolExecutor(len(emails)) as pool:
+        results = list(pool.map(attempt, emails))
+    assert sorted(results) == ["editing"] + ["locked"] * 7
+    assert editing(team, alice, made) == emails[results.index("editing")]
 
 
 def test_only_whoever_made_a_diagram_or_an_admin_deletes_it(team):

@@ -207,6 +207,31 @@
     display: block;
 }
 
+/* Who's editing a diagram that's only looked at here. */
+.piper-editing {
+    max-width: 16rem;
+    margin-right: 0.2rem;
+    overflow: hidden;
+    color: var(--warning);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* The inspector's fields, as they are: only read while the diagram's looked at. */
+.piper-fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.piper-fieldset:disabled :is(input, select, textarea, button) {
+    color: var(--muted);
+    cursor: default;
+}
+
 .piper-separator {
     width: 1px;
     height: 1.4rem;
@@ -419,6 +444,15 @@
     cursor: nwse-resize;
 }
 
+/* A drawing only looked at: nothing on it moves, but a drag moves the view. */
+.piper-looked-at,
+.piper-looked-at .piper-part,
+.piper-looked-at .piper-label,
+.piper-looked-at .piper-segment-level,
+.piper-looked-at .piper-segment-upright {
+    cursor: grab;
+}
+
 .piper-still {
     background: var(--surface);
 }
@@ -440,6 +474,11 @@
 
 .piper-empty h2 {
     margin: 0 0 0.5rem;
+}
+
+.piper-empty p {
+    margin: 0;
+    font-size: 0.88rem;
 }
 
 .piper-empty ol {
@@ -916,6 +955,12 @@
     background: var(--accent-soft);
     color: var(--accent);
     font-weight: 700;
+}
+
+.piper-badge-editing {
+    border-color: var(--warning);
+    color: var(--warning);
+    font-weight: 600;
 }
 
 .piper-release-badge {

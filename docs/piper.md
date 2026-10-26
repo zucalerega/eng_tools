@@ -117,6 +117,19 @@ what it is, `data-hit`).
   click (Shift-click to place more), or double-clicked into the middle of the view. The drag
   is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's
   drag-and-drop, which Firefox won't start from a button.
+- **Sizes**: a part's drawn at its kind's size, or from half of it to double (`scale`: 0.5,
+  0.75, 1, 1.25, 1.5, 2), from the round handle at a selected part's corner or the inspector.
+  Its frame's scaled (`toWorld`, `partTransform`), so its box, what's drawn, and where it's hit
+  all are; its ports are put back on the grid (`portsOf`), and a line's drawn to its outline in
+  line with its port, so lines between parts lined up stay straight. Not for what's sized by its
+  width and height (boxes, regions, text blocks), tees, legends, or title blocks. Each part's
+  label can be small, normal, or large of its own (`labelSize`; "" the diagram's).
+- **Text** notes are sized to their words, or, once their corner handle's dragged, blocks of
+  that width and height (`w`, `h`), their words wrapped to it at the spaces, from its top. A
+  note's weight, slant, font (sans serif, serif, monospace), alignment, and border are its
+  properties; a PDF writes them in PDF's standard fonts: Helvetica, Times, and Courier, each
+  regular, bold, italic, and both (F1 to F12; Times measured as nine tenths of Helvetica,
+  near enough to place it).
 - **Tags** name parts and lines: a new part gets its kind's prefix and the next number free
   (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is at its side (its
   left, if a line leaves it to the right), its letters in its bubble; anything

@@ -335,7 +335,9 @@ export function insertIntoLine(drawing: Drawing, partId: string, lineId: string,
     }
     const [inPort, outPort] = kind.inline;
     const local = kind.ports(part);
-    const half = Math.max(...[inPort, outPort].map((id) => Math.abs(local.find((port) => port.id === id)?.x ?? 20)));
+    const half =
+        Math.max(...[inPort, outPort].map((id) => Math.abs(local.find((port) => port.id === id)?.x ?? 20))) *
+        part.scale;
     const level = way === "left" || way === "right";
     const [lo, hi] = level ? [Math.min(a.x, b.x), Math.max(a.x, b.x)] : [Math.min(a.y, b.y), Math.max(a.y, b.y)];
     const fits = hi - lo >= 2 * half;

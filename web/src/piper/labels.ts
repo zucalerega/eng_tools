@@ -28,8 +28,8 @@ const SCALE: Record<LabelSize, number> = { small: 0.8, normal: 1, large: 1.3 };
  * The sizes of what's written beside parts and on lines, in the drawing's units, at its label size: well under the
  * parts' own (a valve's body is 20 high), so the symbols read first.
  */
-export function textSizes(drawing: Drawing): { tag: number; row: number; line: number; gap: number } {
-    const scale = SCALE[drawing.style.labels] ?? 1;
+export function textSizes(drawing: Drawing, part?: Part): { tag: number; row: number; line: number; gap: number } {
+    const scale = SCALE[part?.labelSize || drawing.style.labels] ?? 1;
     return { tag: 8 * scale, row: 7 * scale, line: 7 * scale, gap: 9 * scale };
 }
 

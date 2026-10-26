@@ -281,6 +281,36 @@ test("the diagram's labels: their size, and fluids and valve states written ever
     expect(within(svg).getByText("FIP")).toBeTruthy();
 });
 
+test("a part's drawn bigger or smaller, its label too, and a text block's set in its font and weight", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const valve = place(drawing, "ball-valve", 0, 0);
+    const note = place(drawing, "text", 0, 200);
+    const made = await team.diagram(team.chief, "Sizes", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Size" }), "1.5");
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Label size" }), "large");
+    expect(svg.querySelector("[data-hit='scale:" + valve + "']")).toBeTruthy(); // a handle to drag it to a size
+
+    fireEvent.pointerDown(svg, at(400, 400)); // nothing: then the note
+    fireEvent.pointerUp(svg, at(400, 400));
+    fireEvent.pointerDown(svg.querySelector(`[data-hit='part:${note}']`)!, at(0, 200));
+    fireEvent.pointerUp(svg, at(0, 200));
+    const noteInspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    await userEvent.selectOptions(await noteInspector.findByRole("combobox", { name: "Font" }), "serif");
+    await userEvent.selectOptions(noteInspector.getByRole("combobox", { name: "Weight" }), "bold");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        const [one, two] = [valve, note].map((id) => saved.parts.find((part) => part.id === id)!);
+        expect([one!.scale, one!.labelSize]).toEqual([1.5, "large"]);
+        expect(two!.props).toMatchObject({ font: "serif", weight: "bold" });
+    });
+});
+
 test("someone else's save is caught: Keep mine saves over it, and theirs stays in the history", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

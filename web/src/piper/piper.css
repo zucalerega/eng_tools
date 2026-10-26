@@ -1293,7 +1293,8 @@
 }
 
 .piper-parts-table caption {
-    padding: 0 0 0.25rem;
+    /* In from the edge the tables scroll under: a bold heading's first letter otherwise loses its stem there. */
+    padding: 0 0.2rem 0.25rem;
     font-weight: 700;
     text-align: left;
 }

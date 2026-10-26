@@ -98,16 +98,17 @@ what it is, `data-hit`).
   it's drawn, in its own frame, centered; and presets, a kind set up as one of the team's parts
   is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves are small on their lines,
   as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
-  14-unit stem; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
+  14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
+  a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
   or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
   vent's end turns down (a gooseneck). Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
   regulator, burst disc, quick disconnect); vessels (tanks, spheres, bottles and COPVs,
   dewars); flow elements (orifices, venturis, cavitating venturis, flow meters, filters);
   instruments (pressure transducers, gauges, and switches, thermocouples, RTDs, load cells,
-  flow, level, position, and differential pressure sensors, each a 20-unit box with ISA's
-  first letter for what it measures, P, T, W, L, Z, ΔP, and the tag at its side; duplicated
-  and triplicated transducers, two or three boxes on one tap, A, B, C, each reading its own
+  flow, level, position, and differential pressure sensors, each an ISA bubble with its tag's
+  letters in it, PT, TC, LC, and the whole tag at its side; duplicated and triplicated
+  transducers, two or three bubbles side by side on one tap, A, B, C, each reading its own
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
   fittings (tees, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
@@ -130,7 +131,8 @@ what it is, `data-hit`).
   regular, bold, italic, and both (F1 to F12; Times measured as nine tenths of Helvetica,
   near enough to place it).
 - **Tags** name parts and lines: a new part gets its kind's prefix and the next number free
-  (BV-3, PT-7), and a tag two parts share is marked. A sensor's tag is at its side; anything
+  (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is at its side (its
+  left, if a line leaves it to the right), its letters in its bubble; anything
   else's beside it: under a part in a line going across, beside one in a line going down, under
   or beside others, or where it's dragged.
   Labels are small beside the symbols (a tag 8 units high against a valve's 20), and a diagram

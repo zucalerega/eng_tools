@@ -303,7 +303,7 @@ test("a sensor made duplicated moves its side tap out, and its line follows", ()
     const tap = join([sensor, "right"], [valve, "a"]);
     drawing = updatePart(drawing, sensor, (entry) => ({ ...entry, props: { ...entry.props, count: "2" } }));
     const path = pathOf(partsById(drawing), line(tap));
-    expect(path[0]).toEqual({ x: 20, y: 0 }); // the side of the second box
+    expect(path[0]).toEqual({ x: 30, y: 0 }); // the side of the second bubble
     expect(orthogonalPath(tap)).toBe(true);
 });
 

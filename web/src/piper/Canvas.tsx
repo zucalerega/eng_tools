@@ -375,7 +375,12 @@ export function Canvas({
                 store.select([id]);
                 const part = now.drawing.parts.find((entry) => entry.id === id);
                 if (part) {
-                    const place = labelPlace(part, boxOf(part, now.drawing), textSizes(now.drawing, part).tag).at;
+                    const place = labelPlace(
+                        part,
+                        boxOf(part, now.drawing),
+                        textSizes(now.drawing, part).tag,
+                        now.drawing,
+                    ).at;
                     const offset = part.label ?? { x: place.x - part.x, y: place.y - part.y };
                     drag.current = { kind: "label", part: id, start: at, offset, base: now.drawing, moved: false };
                 }

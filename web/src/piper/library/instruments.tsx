@@ -3,10 +3,10 @@ import { transducers } from "../testdata";
 import { ink, Letters } from "./draw";
 import { CHANNEL, DAQ, MAWP, MODEL, NOTES, OUTPUT, RANGE, type Field, type Kind, type Port } from "./kinds";
 
-// Instruments, as the team draws them: a small box with the letter of what it measures (P for pressure, T for
-// temperature, ISA 5.1's first letters), its tag at its side, connected to the line it measures by a tap from any side.
-// Two or three transducers on one tap (a duplicated or triplicated one, for a measurement that mustn't be lost) are two
-// or three boxes side by side, A, B, and C, each reading its own channel (testdata.ts). A test's value shows beside it.
+// Instruments, as ISA 5.1 draws them: a bubble with what it measures in its tag's letters (PT), its tag at its side,
+// connected to the line it measures by a tap from any side. Two or three transducers on one tap (a duplicated or
+// triplicated one, for a measurement that mustn't be lost) are two or three bubbles side by side, A, B, and C, each
+// reading its own channel (testdata.ts). A test's value shows beside it.
 
 /** An instrument tag's letters and the rest: "PT-101" is PT and 101, "TC-OX-1" TC and OX-1. */
 export function splitTag(tag: string): [string, string] {
@@ -32,20 +32,20 @@ export const MEASURES: Field = {
     ],
 };
 
-/** What a box says it measures: ISA 5.1's first letter for it (W for a weight or force, Z for a position). */
-const LETTER: Record<string, string> = {
-    pressure: "P",
-    temperature: "T",
-    rtd: "T",
-    flow: "F",
-    force: "W",
-    level: "L",
-    position: "Z",
-    switch: "P",
-    dp: "ΔP",
-};
+/** What a bubble says when its tag has no letters of its own: the letters the library tags it with. */
+const LETTERS = new Map([
+    ["pressure", "PT"],
+    ["temperature", "TC"],
+    ["rtd", "RTD"],
+    ["flow", "FT"],
+    ["force", "LC"],
+    ["level", "LT"],
+    ["position", "ZT"],
+    ["switch", "PS"],
+    ["dp", "DPT"],
+]);
 
-const letterOf = (part: Part): string => LETTER[part.props.type ?? ""] ?? (splitTag(part.tag)[0][0] || "?");
+const lettersOf = (part: Part): string => splitTag(part.tag)[0] || (LETTERS.get(part.props.type ?? "") ?? "");
 
 export const COUNT: Field = {
     key: "count",
@@ -58,27 +58,32 @@ export const COUNT: Field = {
     ],
 };
 
-const SIZE = 20; // a box's side: small beside a tank or an engine
+const RADIUS = 15; // a bubble's
 
-/** Half how wide it is: a box for each transducer, side by side. */
-const halfWidth = (part: Part) => (SIZE / 2) * transducers(part);
+/** How far out its side taps are: on the grid, at least 5 past its outer bubbles. */
+const sideOf = (part: Part) => Math.ceil((RADIUS * transducers(part) + 5) / 10) * 10;
 
-/** Its taps: the middle of each side. A duplicated or triplicated one's sides are 20 or 30 out, still on the grid. */
-function sensorPorts(part: Part): Port[] {
-    const half = halfWidth(part);
+/**
+ * Its taps: on each side, drawn on to the bubbles. A duplicated one's top and bottom taps reach in to where its two
+ * bubbles meet, so a line to it ends on both.
+ */
+function bubblePorts(part: Part): Port[] {
+    const count = transducers(part);
+    const side = sideOf(part);
+    const middle = count === 2 ? 20 : 5;
     return [
-        { id: "top", x: 0, y: -SIZE / 2, dir: "up", inset: 0 },
-        { id: "right", x: half, y: 0, dir: "right", inset: 0 },
-        { id: "bottom", x: 0, y: SIZE / 2, dir: "down", inset: 0 },
-        { id: "left", x: -half, y: 0, dir: "left", inset: 0 },
+        { id: "top", x: 0, y: -20, dir: "up", inset: middle },
+        { id: "right", x: side, y: 0, dir: "right", inset: side - RADIUS * count },
+        { id: "bottom", x: 0, y: 20, dir: "down", inset: middle },
+        { id: "left", x: -side, y: 0, dir: "left", inset: side - RADIUS * count },
     ];
 }
 
 export const instrument: Kind = {
     id: "instrument",
     name: "Instrument",
-    box: (part) => [-halfWidth(part), -SIZE / 2, halfWidth(part), SIZE / 2],
-    ports: sensorPorts,
+    box: (part) => [-sideOf(part), -20, sideOf(part), 20],
+    ports: bubblePorts,
     fields: [MEASURES, COUNT, RANGE, OUTPUT, MAWP, MODEL, DAQ, CHANNEL, NOTES],
     title: (part) => {
         const what = MEASURES.options?.find((option) => option.value === part.props.type)?.label ?? "Instrument";
@@ -89,34 +94,27 @@ export const instrument: Kind = {
     tag: "side",
     draw: (part, context) => {
         const count = transducers(part);
-        const letter = letterOf(part);
+        const letters = lettersOf(part);
+        const size = letters.length > 3 ? 7.5 : 9;
         return (
             <>
                 {Array.from({ length: count }, (_, index) => {
-                    const left = -halfWidth(part) + index * SIZE;
+                    const x = (index - (count - 1) / 2) * 2 * RADIUS;
                     return (
                         <g key={index}>
-                            <rect
-                                x={left}
-                                y={-SIZE / 2}
-                                width={SIZE}
-                                height={SIZE}
-                                fill={context.paper}
-                                {...ink(context, 1.4)}
-                            />
-                            <Letters
-                                part={part}
-                                x={left + SIZE / 2}
-                                y={count > 1 ? -1 : 0}
-                                size={letter.length > 1 ? 7.5 : 10}
-                                fill={context.ink}
-                                bold
-                            >
-                                {letter}
-                            </Letters>
-                            {count > 1 && (
-                                <Letters part={part} x={left + SIZE / 2} y={6.5} size={5.5} fill={context.muted}>
-                                    {"ABC"[index]}
+                            <circle cx={x} r={RADIUS} fill={context.paper} stroke={context.ink} strokeWidth={1.6} />
+                            {count > 1 ? (
+                                <>
+                                    <Letters part={part} x={x} y={-4.5} size={size} fill={context.ink} bold>
+                                        {letters}
+                                    </Letters>
+                                    <Letters part={part} x={x} y={6} size={8} fill={context.ink}>
+                                        {"ABC"[index]}
+                                    </Letters>
+                                </>
+                            ) : (
+                                <Letters part={part} x={x} y={0} size={size} fill={context.ink} bold>
+                                    {letters}
                                 </Letters>
                             )}
                         </g>

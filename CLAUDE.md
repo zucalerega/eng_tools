@@ -88,6 +88,14 @@ cd web && npm ci && npm run check && npm test && npm run build
   guide; a new way for something to go wrong goes in docs/troubleshooting.md. A feature
   the help doesn't mention isn't done. Claude, in Help, knows only the docs `help.PARTS`
   lists, so what they don't say, it can't answer.
+- **A PR that changes what people see shows it: screenshots in its description.** Take
+  them from the PR's own branch, running on a scratch server with data made for them, and
+  add one from `main` beside each when the change is to something already there (before
+  and after). They go on the repository's `screenshots` branch, which has nothing else and
+  is never merged, as `pr-<number>/<name>.png`, and the description links each as
+  `https://github.com/zucalerega/eng_tools/blob/screenshots/pr-<number>/<name>.png?raw=true`
+  (the repository is private, so a link anywhere else wouldn't show). Images never go into
+  `main`. A PR whose change can't be seen (the server, the CLI) needs none.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
 - **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and
@@ -96,9 +104,9 @@ cd web && npm ci && npm run check && npm test && npm run build
   and `git merge-base --is-ancestor origin/<branch> origin/main` agrees), and use `-d`,
   not `-D`, so git refuses a branch that isn't. A closed, unmerged PR's branch goes only
   once its work is abandoned or done elsewhere; ask before deleting a branch someone is
-  still working on. When you're done, also stop the servers and background processes
-  you started, and delete their scratch copies and databases: never leave a test or a
-  server running.
+  still working on. The `screenshots` branch stays. When you're done, also stop the
+  servers and background processes you started, and delete their scratch copies and
+  databases: never leave a test or a server running.
 
 ## Code standards
 

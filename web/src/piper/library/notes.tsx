@@ -151,6 +151,9 @@ function legendRows(drawing: Drawing, context?: DrawContext): LegendRow[] {
     if (normal.has("NC")) {
         rows.push({ label: "Normally closed", color: context?.states.nc ?? "", valve: true });
     }
+    if (normal.has("FIP")) {
+        rows.push({ label: "Fails in place", color: context?.states.fip ?? "", valve: true });
+    }
     return rows;
 }
 

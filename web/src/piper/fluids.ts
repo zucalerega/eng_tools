@@ -28,6 +28,8 @@ export const STANDARD_FLUIDS: StandardFluid[] = [
     { id: "pressurant", name: "Pressurant", label: "PRESS", color: "#2e9e4f", gas: true },
     { id: "purge", name: "Purge", label: "PURGE", color: "#5d9b8a", gas: true },
     { id: "vent", name: "Vent", label: "VENT", color: "#9aa3ad", gas: true },
+    // What leaves a chamber or a gas generator: hot, so in a color no propellant or pressurant has.
+    { id: "combustion", name: "Combustion gas", label: "HOT GAS", color: "#e0457b", gas: true },
 ];
 
 const STANDARD = new Map(STANDARD_FLUIDS.map((fluid) => [fluid.id, fluid]));

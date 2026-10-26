@@ -1,11 +1,11 @@
 import { memo, useMemo, type ReactNode } from "react";
-import type { Palette } from "./colors";
+import { normalFill, type Palette } from "./colors";
 import type { Drawing, Line, Part, Point } from "./drawing";
 import { sharedTags } from "./edit";
 import { fluidOf, isGas } from "./fluids";
 import { grow, middleOfLongest, partTransform, segmentsOf } from "./geometry";
 import { pathsWithHops } from "./hops";
-import { labelPlace, lineLabel, partLabel } from "./labels";
+import { labelPlace, lineLabel, partLabel, textSizes } from "./labels";
 import { FONT } from "./library/draw";
 import { boxOf, kindOf } from "./library/index";
 import type { DiagramMeta, DrawContext } from "./library/kinds";
@@ -65,14 +65,11 @@ export function DiagramView({
     const contextOf = (part: Part): DrawContext => {
         const kind = kindOf(part.kind);
         const state = live?.get(part.id)?.state ?? null;
-        const normal = part.props.normal;
         const fill = state
             ? { open: palette.no, closed: palette.nc, other: palette.other }[state]
-            : kind.state && normal === "NO"
-              ? palette.no
-              : kind.state && normal === "NC"
-                ? palette.nc
-                : null;
+            : kind.state
+              ? normalFill(palette, part.props.normal)
+              : null;
         const holds = fluidOf(drawing, part.props.fluid ?? "");
         const on = linesOn(drawing, part.id);
         const piped = on.map(({ line }) => fluidOf(drawing, line.fluid)?.color).find(Boolean) ?? null;
@@ -86,7 +83,7 @@ export function DiagramView({
             gas: holds ? isGas(holds.id) : false,
             pipe: on.length > 0 ? (piped ?? palette.ink) : null,
             lines: on.length,
-            states: { no: palette.no, nc: palette.nc },
+            states: { no: palette.no, nc: palette.nc, fip: palette.fip },
             drawing,
             meta,
         };
@@ -118,23 +115,24 @@ export function DiagramView({
             {drawing.lines.map((line) => {
                 const text = lineLabel(drawing, line);
                 const middle = text ? middleOfLongest(paths.get(line.id) ?? []) : null;
+                const size = textSizes(drawing).line;
                 // Only where there's room for it beside the line: a short run between two parts goes without.
-                if (!middle || middle.length < Math.max(70, text.length * 6 + 40)) {
+                if (!middle || middle.length < Math.max(50, text.length * size * 0.65 + 30)) {
                     return null;
                 }
                 return (
                     <text
                         key={`label-${line.id}`}
-                        x={middle.level ? middle.at.x : middle.at.x + 7}
-                        y={middle.level ? middle.at.y - 7 : middle.at.y}
+                        x={middle.level ? middle.at.x : middle.at.x + 5}
+                        y={middle.level ? middle.at.y - 5 : middle.at.y}
                         textAnchor={middle.level ? "middle" : "start"}
                         dominantBaseline={middle.level ? "auto" : "central"}
-                        fontSize={9.5}
+                        fontSize={size}
                         fontFamily={FONT}
                         fontWeight={700}
                         fill={fluidOf(drawing, line.fluid)?.color ?? palette.ink}
                         stroke={palette.paper}
-                        strokeWidth={3}
+                        strokeWidth={2.5}
                         paintOrder="stroke"
                         pointerEvents="none"
                     >
@@ -329,7 +327,8 @@ function PartLabel({
     if (rows.length === 0) {
         return null;
     }
-    const { at, anchor } = labelPlace(part, boxOf(part, drawing));
+    const sizes = textSizes(drawing);
+    const { at, anchor } = labelPlace(part, boxOf(part, drawing), sizes.tag);
     return (
         <text
             x={at.x}
@@ -337,7 +336,7 @@ function PartLabel({
             textAnchor={anchor}
             fontFamily={FONT}
             stroke={palette.paper}
-            strokeWidth={3}
+            strokeWidth={2.5}
             paintOrder="stroke"
             data-hit={interactive ? `label:${part.id}` : undefined}
             className={interactive ? "piper-label" : undefined}
@@ -347,8 +346,8 @@ function PartLabel({
                 <tspan
                     key={index}
                     x={at.x}
-                    dy={index === 0 ? 0 : 12}
-                    fontSize={row.tag ? 11 : 9.5}
+                    dy={index === 0 ? 0 : sizes.gap}
+                    fontSize={row.tag ? sizes.tag : sizes.row}
                     fontWeight={row.tag ? 700 : 500}
                     fill={row.tag && shared ? palette.other : row.tag ? palette.ink : palette.muted}
                 >

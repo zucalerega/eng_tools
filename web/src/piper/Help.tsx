@@ -42,8 +42,8 @@ const TOPICS: Topic[] = [
                 <li>
                     The diagrams are in their folders, as Yorg&apos;s saved views are: each folder says how many it has,
                     and a click shuts it or opens it. Drag a diagram onto a folder to move it there, or onto{" "}
-                    <em>Drop here to take it out of its folder</em>, above the list, to put it at the top. Rename,
-                    move, or describe, in the editor, moves it too.
+                    <em>Drop here to take it out of its folder</em>, above the list, to put it at the top. Rename, move,
+                    or describe, in the editor, moves it too.
                 </li>
                 <li>
                     A diagram opens to the editor: the library of parts on the left, the drawing in the middle, and on
@@ -82,6 +82,10 @@ const TOPICS: Topic[] = [
                     everything in a box; Shift-click adds to what's selected. Select several to line them up or space
                     them evenly.
                 </li>
+                <li>
+                    Dragged together, parts take the lines between them along as they were, and a tee comes too when
+                    everything on its lines moves; lines to parts left behind follow their ends.
+                </li>
             </ul>
         ),
     },
@@ -103,8 +107,8 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     Drag a line's segment to move it: the line keeps its bends from then on, and follows its ends when
-                    they move. <em>Route automatically</em> (on the right) puts it back. Drag a selected line's end to
-                    another port.
+                    they move. <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
+                    <em>Route again</em> tidies one that's gone wrong. Drag a selected line's end to another port.
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>
                 <li>
@@ -153,9 +157,10 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    Select a part to say what it is: a valve's body, actuation, normal state, size, Cv, and rating; a
-                    tank's fluid, volume, and MEOP; an orifice's diameter and discharge coefficient; an instrument's
-                    range and DAQ channel. Write values with their units (<code>0.062 in</code>).
+                    Select a part to say what it is: a valve's body, actuation, normal state, size, Cv, and MAWP; a
+                    tank's fluid, volume, MEOP, and MAWP; an orifice's diameter and discharge coefficient; an
+                    instrument's range and DAQ channel. Every part that holds pressure, and every line, has its MAWP.
+                    Write values with their units (<code>0.062 in</code>).
                 </li>
                 <li>
                     The eye beside a property shows it under the part's tag on the drawing. <em>Add a field</em> gives a
@@ -170,18 +175,29 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    Each line carries a fluid, drawn in its color with its label: LOX in blue, RP-1 in red, nitrogen in
-                    green, helium in purple... A line drawn from a run takes its fluid. <em>Carry it along its run</em>{" "}
-                    sets the fluid on every line it reaches through valves, fittings, and instruments.
+                    Each line carries a fluid, drawn in its color: LOX in blue, RP-1 in red, nitrogen in green, helium
+                    in purple, combustion gas (HOT GAS) in rose... A line drawn from a run takes its fluid.{" "}
+                    <em>Carry it along its run</em> sets the fluid on every line it reaches through valves, fittings,
+                    and instruments.
+                </li>
+                <li>
+                    Lines don't write their fluid on themselves unless you say so: the eye beside a line's fluid shows
+                    its label, and with nothing selected, <em>Show on every line</em> or <em>Hide on every line</em>{" "}
+                    does it for all of them.
                 </li>
                 <li>
                     A tank holds a fluid too: a liquid fills its lower part, a gas all of it, with the label inside.
                 </li>
-                <li>Valves are drawn by their normal state: normally open (NO) green, normally closed (NC) red.</li>
+                <li>
+                    Valves are drawn by their normal state: normally open (NO) green, normally closed (NC) red, and a
+                    double-acting valve that fails in place (FIP) slate blue. The color says it, so it isn't written
+                    beside them too; <em>Show on every valve</em> (with nothing selected) writes it, or the eye beside
+                    one valve's state.
+                </li>
                 <li>
                     With nothing selected, the right side changes the diagram's fluids (their colors, labels, and
-                    names), adds its own, and sets its valves' colors. The legend (in the library's Notes) lists what
-                    its lines carry and its valves' states.
+                    names), adds its own, sets its valves' colors, and makes its labels smaller or larger. The legend
+                    (in the library's Notes) lists what its lines carry and its valves' states.
                 </li>
             </ul>
         ),

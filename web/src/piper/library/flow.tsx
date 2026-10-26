@@ -1,5 +1,5 @@
 import { ink } from "./draw";
-import { CHANNEL, DAQ, inlinePorts, MODEL, NOTES, RANGE, SIZE, type Field, type Kind } from "./kinds";
+import { CHANNEL, DAQ, inlinePorts, MAWP, MODEL, NOTES, RANGE, SIZE, type Field, type Kind } from "./kinds";
 
 // What's put into a line to measure or shape its flow: orifices, venturis, flow meters, filters.
 
@@ -13,6 +13,7 @@ export const orifice: Kind = {
     fields: [
         { key: "diameter", label: "Diameter", type: "text", placeholder: "0.062 in", prefix: "Ø " },
         CD,
+        MAWP,
         MODEL,
         NOTES,
     ],
@@ -40,6 +41,7 @@ export const venturi: Kind = {
                 { value: "yes", label: "Yes", short: "CAV" },
             ],
         },
+        MAWP,
         MODEL,
         NOTES,
     ],
@@ -72,6 +74,7 @@ export const flowmeter: Kind = {
         },
         RANGE,
         SIZE,
+        MAWP,
         MODEL,
         DAQ,
         CHANNEL,
@@ -94,7 +97,7 @@ export const filter: Kind = {
     name: "Filter",
     box: () => [-20, -12, 20, 12],
     ports: () => inlinePorts(8),
-    fields: [{ key: "rating", label: "Rating", type: "text", placeholder: "10 µm" }, SIZE, MODEL, NOTES],
+    fields: [{ key: "rating", label: "Rating", type: "text", placeholder: "10 µm" }, SIZE, MAWP, MODEL, NOTES],
     tag: "beside",
     inline: ["a", "b"],
     through: true,

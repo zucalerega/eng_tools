@@ -404,7 +404,7 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
 
 /** A fluid's chip: its label, in its color. Standard fluids are known here; a diagram's own say their id. */
 function Fluid({ id }: { id: string }) {
-    const fluid = fluidOf({ format: 1, parts: [], lines: [], fluids: [], style: { no: "", nc: "" } }, id);
+    const fluid = fluidOf(emptyDrawing(), id);
     return (
         <span className="piper-chip" style={fluid ? { borderColor: fluid.color, color: fluid.color } : undefined}>
             {fluid?.label ?? id}

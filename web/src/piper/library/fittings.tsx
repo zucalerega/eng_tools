@@ -1,5 +1,5 @@
 import { ink } from "./draw";
-import { inlinePorts, MATERIAL, MODEL, NOTES, SIZE, type Kind } from "./kinds";
+import { inlinePorts, MATERIAL, MAWP, MODEL, NOTES, SIZE, type Kind } from "./kinds";
 
 // What joins lines, ends them, and changes them: junctions (tees), caps, reducers, and flexible hoses.
 
@@ -20,7 +20,7 @@ export const cap: Kind = {
     name: "Cap",
     box: () => [-20, -8, 0, 8],
     ports: () => [{ id: "in", x: -20, y: 0, dir: "left", inset: 0 }],
-    fields: [SIZE, NOTES],
+    fields: [SIZE, MAWP, NOTES],
     tag: "beside",
     draw: (_part, context) => (
         <>
@@ -35,7 +35,7 @@ export const reducer: Kind = {
     name: "Reducer",
     box: () => [-20, -10, 20, 10],
     ports: () => inlinePorts(10),
-    fields: [{ key: "sizes", label: "Sizes", type: "text", placeholder: "1/2 in × 1/4 in" }, MODEL, NOTES],
+    fields: [{ key: "sizes", label: "Sizes", type: "text", placeholder: "1/2 in × 1/4 in" }, MAWP, MODEL, NOTES],
     tag: "none",
     inline: ["a", "b"],
     through: true,
@@ -48,7 +48,14 @@ export const hose: Kind = {
     name: "Flex hose",
     box: () => [-20, -6, 20, 6],
     ports: () => inlinePorts(0),
-    fields: [SIZE, { key: "length", label: "Length", type: "text", placeholder: "24 in" }, MATERIAL, MODEL, NOTES],
+    fields: [
+        SIZE,
+        { key: "length", label: "Length", type: "text", placeholder: "24 in" },
+        MATERIAL,
+        MAWP,
+        MODEL,
+        NOTES,
+    ],
     tag: "beside",
     inline: ["a", "b"],
     through: true,

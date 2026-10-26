@@ -2,12 +2,12 @@ import { useState } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { LINE_STYLES } from "./DiagramView";
-import { LINE_KINDS, type Drawing, type Fluid, type Line, type Part } from "./drawing";
+import { LINE_KINDS, type Drawing, type Fluid, type LabelSize, type Line, type Part } from "./drawing";
 import { carryFluid, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
 import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
 import { fluidOf, fluidsOf, fluidsUsed, newFluidId, STANDARD_FLUIDS, withFluid } from "./fluids";
 import { PartIcon } from "./icons";
-import { LINE_FIELDS } from "./labels";
+import { LABEL_SIZES, LINE_FIELDS } from "./labels";
 import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
 import type { Field } from "./library/kinds";
 import { channelName, findChannel, formatValue, outline, valueAt, type Samples } from "./testdata";
@@ -613,15 +613,14 @@ function LinePanel({
                     : "Routed by hand: it keeps its bends."}
             </p>
             <div className="piper-inspector-actions">
-                {!line.auto && (
-                    <button
-                        type="button"
-                        className="button-small"
-                        onClick={() => store.commit(rerouteLines(store.getState().drawing, new Set([line.id])))}
-                    >
-                        Route automatically
-                    </button>
-                )}
+                {/* For itself or by hand, a line that's gone wrong is routed afresh. */}
+                <button
+                    type="button"
+                    className="button-small"
+                    onClick={() => store.commit(rerouteLines(store.getState().drawing, new Set([line.id])))}
+                >
+                    {line.auto ? "Route again" : "Route automatically"}
+                </button>
                 <button type="button" className="button-small button-danger" onClick={() => commands.remove()}>
                     Delete
                 </button>
@@ -778,8 +777,35 @@ function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing
     const valves = drawing.parts.filter((part) => kindOf(part.kind).state).length;
     const setFluid = (fluid: Fluid, key: string) =>
         store.commit({ ...drawing, fluids: withFluid(drawing, fluid) }, undefined, `fluid:${fluid.id}:${key}`);
-    const setStyle = (key: "no" | "nc", value: string) =>
+    const setStyle = (key: "no" | "nc" | "fip", value: string) =>
         store.commit({ ...drawing, style: { ...drawing.style, [key]: value } }, undefined, `style:${key}`);
+    // What's written on every line, or every valve, at once: shown everywhere, or nowhere.
+    const showOnLines = (key: string, on: boolean) =>
+        store.commit({
+            ...drawing,
+            lines: drawing.lines.map((line) => ({
+                ...line,
+                shown: on ? [...new Set([...line.shown, key])] : line.shown.filter((entry) => entry !== key),
+            })),
+        });
+    const showOnValves = (on: boolean) =>
+        store.commit({
+            ...drawing,
+            parts: drawing.parts.map((part) =>
+                kindOf(part.kind).state
+                    ? {
+                          ...part,
+                          shown: on
+                              ? [...new Set([...part.shown, "normal"])]
+                              : part.shown.filter((entry) => entry !== "normal"),
+                      }
+                    : part,
+            ),
+        });
+    const labeledLines = drawing.lines.filter((line) => line.shown.includes("fluid")).length;
+    const labeledValves = drawing.parts.filter(
+        (part) => kindOf(part.kind).state && part.shown.includes("normal"),
+    ).length;
     const standard = new Set(STANDARD_FLUIDS.map((fluid) => fluid.id));
     return (
         <>
@@ -880,11 +906,17 @@ function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing
                     <input type="color" value={palette.nc} onChange={(event) => setStyle("nc", event.target.value)} />
                     Normally closed
                 </label>
-                {(drawing.style.no || drawing.style.nc) && (
+                <label className="check">
+                    <input type="color" value={palette.fip} onChange={(event) => setStyle("fip", event.target.value)} />
+                    Fails in place
+                </label>
+                {(drawing.style.no || drawing.style.nc || drawing.style.fip) && (
                     <button
                         type="button"
                         className="button-small"
-                        onClick={() => store.commit({ ...drawing, style: { no: "", nc: "" } })}
+                        onClick={() =>
+                            store.commit({ ...drawing, style: { ...drawing.style, no: "", nc: "", fip: "" } })
+                        }
                     >
                         Standard colors
                     </button>
@@ -892,6 +924,53 @@ function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing
             </div>
             {valves === 0 && (
                 <p className="muted piper-small">Valves are drawn in these colors by their normal states.</p>
+            )}
+            <h3 className="piper-subhead">Labels</h3>
+            <Row label="Label size">
+                {(id) => (
+                    <select
+                        id={id}
+                        value={drawing.style.labels}
+                        onChange={(event) =>
+                            store.commit({
+                                ...drawing,
+                                style: { ...drawing.style, labels: event.target.value as LabelSize },
+                            })
+                        }
+                    >
+                        {LABEL_SIZES.map((size) => (
+                            <option key={size.value} value={size.value}>
+                                {size.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </Row>
+            {drawing.lines.length > 0 && (
+                <div className="piper-label-all">
+                    <span className="muted piper-small">
+                        Fluids written on lines: {labeledLines} of {drawing.lines.length}
+                    </span>
+                    <button type="button" className="button-small" onClick={() => showOnLines("fluid", true)}>
+                        Show on every line
+                    </button>
+                    <button type="button" className="button-small" onClick={() => showOnLines("fluid", false)}>
+                        Hide on every line
+                    </button>
+                </div>
+            )}
+            {valves > 0 && (
+                <div className="piper-label-all">
+                    <span className="muted piper-small">
+                        States written beside valves (NO, NC, FIP): {labeledValves} of {valves}
+                    </span>
+                    <button type="button" className="button-small" onClick={() => showOnValves(true)}>
+                        Show on every valve
+                    </button>
+                    <button type="button" className="button-small" onClick={() => showOnValves(false)}>
+                        Hide on every valve
+                    </button>
+                </div>
             )}
         </>
     );

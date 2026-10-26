@@ -1,5 +1,5 @@
 import { ink, Letters } from "./draw";
-import { HOLDS, MATERIAL, MEOP, MODEL, NOTES, VOLUME, type DrawContext, type Kind, type Port } from "./kinds";
+import { HOLDS, MATERIAL, MAWP, MEOP, MODEL, NOTES, VOLUME, type DrawContext, type Kind, type Port } from "./kinds";
 import type { Part } from "../drawing";
 
 // Vessels: what holds a fluid. Each shows what it holds in that fluid's color: a tank's liquid in its lower part, a gas
@@ -44,7 +44,7 @@ function Contents({
         <>
             <path d={context.gas ? gas : liquid} fill={context.fluid} fillOpacity={0.2} stroke="none" />
             {!context.gas && <path d={level} stroke={context.fluid} strokeWidth={1} />}
-            <Letters part={part} x={0} y={labelAt} size={11} fill={context.fluid} bold>
+            <Letters part={part} x={0} y={labelAt} size={9} fill={context.fluid} bold>
                 {context.fluidLabel}
             </Letters>
         </>
@@ -56,7 +56,7 @@ export const tank: Kind = {
     name: "Tank",
     box: () => [-30, -60, 30, 60],
     ports: () => around(30, 60, 30),
-    fields: [HOLDS, VOLUME, MEOP, MATERIAL, MODEL, NOTES],
+    fields: [HOLDS, VOLUME, MEOP, MAWP, MATERIAL, MODEL, NOTES],
     tag: "beside",
     draw: (part, context) => (
         <>
@@ -79,7 +79,7 @@ export const dewar: Kind = {
     name: "Dewar",
     box: () => [-30, -60, 30, 60],
     ports: () => around(30, 60, 30),
-    fields: [HOLDS, VOLUME, MEOP, MODEL, NOTES],
+    fields: [HOLDS, VOLUME, MEOP, MAWP, MODEL, NOTES],
     tag: "beside",
     draw: (part, context) => (
         <>
@@ -108,7 +108,7 @@ export const sphere: Kind = {
         { id: "left", x: -40, y: 0, dir: "left", inset: 0 },
         { id: "right", x: 40, y: 0, dir: "right", inset: 0 },
     ],
-    fields: [HOLDS, VOLUME, MEOP, MATERIAL, MODEL, NOTES],
+    fields: [HOLDS, VOLUME, MEOP, MAWP, MATERIAL, MODEL, NOTES],
     tag: "beside",
     draw: (part, context) => (
         <>
@@ -139,6 +139,7 @@ export const bottle: Kind = {
         HOLDS,
         VOLUME,
         MEOP,
+        MAWP,
         {
             key: "wrap",
             label: "Construction",
@@ -166,7 +167,7 @@ export const bottle: Kind = {
             )}
             <path d={BOTTLE} fill="none" {...ink(context)} />
             {context.fluid && (
-                <Letters part={part} x={0} y={14} size={10} fill={context.fluid} bold>
+                <Letters part={part} x={0} y={14} size={8} fill={context.fluid} bold>
                     {context.fluidLabel}
                 </Letters>
             )}

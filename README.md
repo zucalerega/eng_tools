@@ -361,17 +361,23 @@ the keys.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts
-  it back. Everything snaps to a grid, and a part being dragged lines up with what its lines
-  go to (a gold guide shows it; **Alt** drags freely). Lines that cross hop over each other.
+  it back (**Route again** tidies a line that routes itself). Parts dragged together take the
+  lines between them along, and a tee comes too. Everything snaps to a grid, and a part being
+  dragged lines up with what its lines go to (a gold guide shows it; **Alt** drags freely).
+  Lines that cross hop over each other.
 - **Into a line**: drop a valve (an orifice, a filter...) on a line and it goes into it;
   delete it and the line joins up again.
 - **Properties**: select anything to name it and say what it is, on the right: a valve's body,
-  actuation, normal state (NO green, NC red), size, Cv, and rating; a tank's fluid, volume, and
-  MEOP; an orifice's diameter; a line's fluid, type, and size; and any field of your own. The
-  eye beside one shows it under the part's tag.
-- **Fluids**: each line carries one, in its color with its label (LOX, RP-1, GN2...); a line
-  drawn from a run takes its fluid, and **Carry along its run** sets it on the lines beyond.
-  With nothing selected, change the diagram's fluids' colors and labels, or add its own.
+  actuation, normal state (NO green, NC red, FIP for a double-acting valve that fails in
+  place), size, Cv, and MAWP; a tank's fluid, volume, MEOP, and MAWP; an orifice's diameter;
+  a line's fluid, type, size, and MAWP; and any field of your own. Every part that holds
+  pressure has a MAWP. The eye beside one shows it under the part's tag.
+- **Fluids**: each line carries one, in its color (LOX blue, RP-1 red, GN2 green, combustion
+  gas rose...); a line drawn from a run takes its fluid, and **Carry along its run** sets it
+  on the lines beyond. A line's fluid and a valve's state aren't written beside them unless you
+  show them (the eye, or with nothing selected, **Show on every line** and **Show on every
+  valve**). With nothing selected, change the diagram's fluids' colors and labels, add its own,
+  or make its labels smaller or larger.
 - **Saving and history**: a diagram saves itself as you go; if a save fails, **Not saved**
   beside its name says why, and it tries again on its own (too big: with your next change).
   If someone saved it while you had it open, it asks whether to keep yours (theirs stays in

@@ -670,6 +670,21 @@ a number. A few codes come up in more than one place.
 - **Two parts or lines share the id ...**, **The drawing has text that isn't valid Unicode**, and
   the like (`invalid_drawing`): the drawing as the web app sent it isn't one the server keeps.
   Reload the diagram; if it keeps happening, tell an admin, with what you did.
+- **Name at least one approver besides yourself**, or **Account ... isn't an active member**
+  (`needs_approver`): a release needs someone else to approve it. Pick approvers from the team.
+- **Revision ... is waiting on ... to approve it** (`release_pending`): a diagram has one release
+  waiting at a time, and a revision waiting to be released keeps its name. Its approvers approve
+  or reject it, or whoever asked withdraws it, first.
+- **Revision ... isn't after Rev ...** (`older_than_released`): each release is of a revision
+  after the last one released. Release a newer revision.
+- **Revision ... is Rev ..., released: it stays as it was** (`revision_released`): a released
+  revision never changes, its name included. Name a later revision instead.
+- **Only the approvers named for this release can approve or reject it** (`not_an_approver`):
+  ask whoever asked for the release to ask again, naming you.
+- **This release was ... already**, or **You've approved this release already**
+  (`already_decided`): the release is over, or you've had your say. History shows where it stands.
+- **Only whoever asked for this release, or an admin, can withdraw it** (`not_yours`): ask them,
+  or reject it if you're one of its approvers.
 
 ### Asking Claude
 

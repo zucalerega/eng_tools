@@ -1,4 +1,4 @@
-"""Piper: the team's diagrams, their drawings saved one version at a time, and their history."""
+"""Piper: the team's diagrams, their drawings saved one version at a time, their history, and their releases."""
 
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from yjsp_server.models import User, UserStatus
 from yjsp_server.piper import diagrams
 from yjsp_server.piper.models import Revision
+from yjsp_server.piper.releases import letter
 
 API = "/api/piper/diagrams"
 EMPTY = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
@@ -470,3 +471,151 @@ def test_a_drawing_is_checked_before_it_is_kept(team):
     new = team.client.post(API, json={"name": "Valves", "drawing": {"format": 1, "parts": []}}, headers=alice)
     assert (new.status_code, new.json()["message"]) == (422, "The drawing has no list of lines")
     assert [d["name"] for d in team.client.get(API, headers=alice).json()] == ["Feed system"]
+
+
+# --- releases -----------------------------------------------------------------------------------------------------
+
+
+def ask_release(team, who, diagram: dict, revision: int, *approvers: str, note: str = ""):
+    body = {"revision": revision, "approvers": [team.ids[email] for email in approvers], "note": note}
+    return team.client.post(f"{API}/{diagram['id']}/releases", json=body, headers=who)
+
+
+def asked(team, who, diagram: dict, revision: int, *approvers: str, note: str = "") -> dict:
+    response = ask_release(team, who, diagram, revision, *approvers, note=note)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def say(team, who, diagram: dict, release: dict, what: str, comment: str = ""):
+    path = f"{API}/{diagram['id']}/releases/{release['id']}/{what}"
+    return team.client.post(path, json={"comment": comment} if what != "withdraw" else None, headers=who)
+
+
+def said(team, who, diagram: dict, release: dict, what: str, comment: str = "") -> dict:
+    response = say(team, who, diagram, release, what, comment)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_a_revision_is_released_once_every_approver_named_approves_it_and_then_never_changes(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    cy = team.member("cy@x.test")
+    made = make(team, alice)
+    first = drawing(part("v1", tag="BV-1"))
+    saved(team, alice, made, first, 1)
+    asking = asked(team, alice, made, 1, "bob@x.test", "cy@x.test", note="For HF-3's readiness review")
+    assert (asking["state"], asking["letter"], asking["revision"], asking["can_withdraw"]) == ("pending", None, 1, True)
+    assert [(a["approver"]["email"], a["decision"]) for a in asking["approvals"]] == [
+        ("bob@x.test", "pending"),
+        ("cy@x.test", "pending"),
+    ]
+    # Waiting to be released, the revision already stays as it is: her next save starts another.
+    after = saved(team, alice, made, drawing(part("v1", tag="BV-1"), part("v2", tag="BV-2")), 2)
+    assert after["revision"] == 2
+    assert kept(team, alice, made, 1)["drawing"] == first
+
+    one = said(team, bob, made, asking, "approve", "Looks right")
+    assert (one["state"], [a["decision"] for a in one["approvals"]]) == ("pending", ["approved", "pending"])
+    both = said(team, cy, made, asking, "approve")
+    assert (both["state"], both["letter"]) == ("released", "A")
+    assert both["decided_at"] is not None
+    assert [(a["approver"]["email"], a["comment"]) for a in both["approvals"]] == [
+        ("bob@x.test", "Looks right"),
+        ("cy@x.test", ""),
+    ]
+    listed = opened(team, bob, made)
+    assert (listed["released"], listed["released_revision"]) == ("A", 1)
+    revisions = team.client.get(f"{API}/{made['id']}/revisions", headers=alice).json()
+    assert [(r["number"], r["released"], r["release_pending"]) for r in revisions] == [
+        (2, None, False),
+        (1, "A", False),
+    ]
+    # Released, its name stays as it was.
+    renamed = team.client.patch(f"{API}/{made['id']}/revisions/1", json={"note": "Changed"}, headers=alice)
+    assert (renamed.status_code, renamed.json()["error"]) == (409, "revision_released")
+
+    # The next release is B, of a later revision.
+    second = asked(team, bob, made, 2, "alice@x.test")
+    assert said(team, alice, made, second, "approve")["letter"] == "B"
+    assert opened(team, alice, made)["released"] == "B"
+    listed = team.client.get(f"{API}/{made['id']}/releases", headers=cy).json()
+    assert [(r["letter"], r["revision"], r["can_withdraw"]) for r in listed] == [("B", 2, False), ("A", 1, False)]
+
+
+def test_a_rejection_ends_a_release_and_whoever_asked_can_withdraw_one(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    admin = team.member("boss@x.test", admin=True)
+    made = make(team, alice)
+    asking = asked(team, alice, made, 1, "bob@x.test")
+    turned = said(team, bob, made, asking, "reject", "PT-101's range is wrong")
+    assert (turned["state"], turned["letter"], turned["approvals"][0]["comment"]) == (
+        "rejected",
+        None,
+        "PT-101's range is wrong",
+    )
+    again = say(team, bob, made, asking, "approve")
+    assert (again.status_code, again.json()["error"]) == (409, "already_decided")
+    assert opened(team, alice, made)["released"] is None
+    # Rejected, the revision can be named again, and put forward again.
+    assert (
+        team.client.patch(f"{API}/{made['id']}/revisions/1", json={"note": "Fixed"}, headers=alice).status_code == 200
+    )
+
+    retry = asked(team, alice, made, 1, "bob@x.test")
+    for stranger in (bob, team.member("cy@x.test")):
+        refused = say(team, stranger, made, retry, "withdraw")
+        assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert said(team, alice, made, retry, "withdraw")["state"] == "withdrawn"
+    third = asked(team, alice, made, 1, "bob@x.test")
+    assert said(team, admin, made, third, "withdraw")["state"] == "withdrawn"  # an admin can too
+
+
+def test_who_can_be_asked_and_when(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    team.member("waiting@x.test", status=UserStatus.PENDING)
+    made = make(team, alice)
+    saved(team, alice, made, drawing(part("v1")), 1, fresh=True)  # revision 2
+
+    for approvers in ((), ("alice@x.test",)):
+        refused = ask_release(team, alice, made, 1, *approvers)
+        assert (refused.status_code, refused.json()["error"]) == (422, "needs_approver"), approvers
+    refused = ask_release(team, alice, made, 1, "waiting@x.test")
+    assert (refused.status_code, refused.json()["error"]) == (422, "needs_approver")
+    missing = ask_release(team, alice, made, 9, "bob@x.test")
+    assert missing.status_code == 404
+
+    # Naming yourself too is fine, beside someone else; both have to approve.
+    asking = asked(team, alice, made, 1, "alice@x.test", "bob@x.test")
+    pending = ask_release(team, bob, made, 2, "alice@x.test")
+    assert (pending.status_code, pending.json()["error"]) == (409, "release_pending")
+    renamed = team.client.patch(f"{API}/{made['id']}/revisions/1", json={"note": "Rev A"}, headers=alice)
+    assert (renamed.status_code, renamed.json()["error"]) == (409, "release_pending")
+    stranger = say(team, team.member("cy@x.test"), made, asking, "approve")
+    assert (stranger.status_code, stranger.json()["error"]) == (403, "not_an_approver")
+    said(team, alice, made, asking, "approve")
+    twice = say(team, alice, made, asking, "approve")
+    assert (twice.status_code, twice.json()["error"]) == (409, "already_decided")
+    assert said(team, bob, made, asking, "approve")["letter"] == "A"
+
+    # Each release is of a revision after the last one released.
+    older = ask_release(team, alice, made, 1, "bob@x.test")
+    assert (older.status_code, older.json()["error"]) == (409, "older_than_released")
+    assert asked(team, alice, made, 2, "bob@x.test")["revision"] == 2
+
+
+def test_release_letters_run_on_past_z():
+    assert [letter(n) for n in (1, 2, 26, 27, 28, 52, 53, 702, 703)] == [
+        "A",
+        "B",
+        "Z",
+        "AA",
+        "AB",
+        "AZ",
+        "BA",
+        "ZZ",
+        "AAA",
+    ]

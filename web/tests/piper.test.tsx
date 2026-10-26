@@ -378,6 +378,40 @@ test("History lists the revisions; looking at one shows it, and restoring it mak
     expect((await team.revisions(team.chief, made.id))[0]).toMatchObject({ number: 3, restored_from: 1 });
 });
 
+test("a revision's released once its approvers approve it: Rev A, kept as it is", async () => {
+    const team = await Team.create();
+    const approver = await team.member(`Approver${team.folder.slice(5)}`);
+    const made = await team.diagram(team.chief, "Released");
+    const asChief = renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    const history = within(await screen.findByRole("complementary", { name: "History" }));
+    await userEvent.click(await history.findByRole("button", { name: "Release…" }));
+    const form = within(history.getByRole("form", { name: "Release revision 1" }));
+    await userEvent.type(form.getByRole("textbox", { name: "What it's for" }), "For HF-3");
+    expect((form.getByRole("button", { name: "Ask for approval" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(await form.findByRole("checkbox", { name: approver.user.name }));
+    await userEvent.click(form.getByRole("button", { name: "Ask for approval" }));
+    const waiting = within(await history.findByRole("region", { name: "Release waiting for approval" }));
+    expect(waiting.getByText("For HF-3")).toBeTruthy();
+    expect(waiting.getByRole("button", { name: "Withdraw" })).toBeTruthy();
+    expect(waiting.queryByRole("button", { name: "Approve" })).toBeNull(); // not the chief's to approve
+    expect(history.queryByRole("button", { name: "Release…" })).toBeNull(); // one waits at a time
+    expect(history.getByText("Waiting for approval")).toBeTruthy();
+    asChief.unmount();
+
+    renderApp(approver, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    const theirs = within(await screen.findByRole("complementary", { name: "History" }));
+    await userEvent.click(await theirs.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("Rev A, released")).toBeTruthy(); // beside the diagram's name
+    const past = within(await theirs.findByRole("region", { name: "Releases" }));
+    expect(past.getByText(new RegExp(`revision 1, approved by ${approver.user.name}`))).toBeTruthy();
+    expect(theirs.queryByRole("button", { name: "Name" })).toBeNull(); // released: kept as it is, its name too
+    expect((await team.revisions(team.chief, made.id))[0]).toMatchObject({ number: 1, released: "A" });
+});
+
 test("a test from Yorg on the drawing: each instrument's value and each valve's state at the time on its timeline", async () => {
     const team = await Team.create();
     const csv = [

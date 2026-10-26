@@ -657,12 +657,14 @@ function textString(text: string): string {
 /**
  * A drawing sheet, as engineering drawings are on (and Visio's P&ID template draws): a border, with the zones' numbers
  * and letters between its two lines to say where on the sheet something is, and in its corner a title block and the
- * diagram's named revisions.
+ * diagram's releases (or, before it has any, its named revisions).
  */
 export interface Sheet {
     project: string; // the diagram's folder
     diagram: number | null; // its number in Piper
-    revisions: { number: number; note: string; date: string; by: string }[]; // its named revisions, the latest first
+    // Its releases, the latest first: each one's letter, what it was for, when, and who approved it. Before it has any,
+    // its named revisions, by number, and who made each.
+    revisions: { rev: string; note: string; date: string; by: string }[];
     titleBlock: boolean; // the sheet's title block: not when the drawing has one of its own
 }
 
@@ -810,7 +812,7 @@ function sheetSvg(page: { width: number; height: number }, sheet: Sheet, meta: D
         `<rect x="${n(x0)}" y="${n(y)}" width="${BLOCK}" height="${n(corner.height)}" fill="#ffffff" stroke="${ink}" stroke-width="1.2"/>`,
     );
 
-    // The named revisions, the latest first, over the title block.
+    // The releases (or named revisions), the latest first, over the title block.
     const revisions = sheet.revisions.slice(0, MOST_REVISIONS);
     if (revisions.length > 0) {
         const columnsAt = [0, 30, 180, 238, BLOCK];
@@ -822,7 +824,7 @@ function sheetSvg(page: { width: number; height: number }, sheet: Sheet, meta: D
         rule(x0, y + 2 * ROW, x0 + BLOCK, y + 2 * ROW);
         revisions.forEach((revision, index) => {
             const top = y + (index + 2) * ROW;
-            const values = [String(revision.number), revision.note, revision.date, revision.by];
+            const values = [revision.rev, revision.note, revision.date, revision.by];
             values.forEach((value, column) =>
                 text(
                     x0 + columnsAt[column]! + 4,
@@ -853,7 +855,7 @@ function sheetSvg(page: { width: number; height: number }, sheet: Sheet, meta: D
             [
                 ["PROJECT", sheet.project || "—"],
                 ["DIAGRAM", sheet.diagram === null ? "" : `No. ${sheet.diagram}`],
-                ["REVISION", meta.revision === null ? "" : String(meta.revision)],
+                ["REVISION", meta.revision],
             ],
             [
                 ["DRAWN", meta.by],

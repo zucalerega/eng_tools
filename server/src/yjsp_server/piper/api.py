@@ -1,4 +1,4 @@
-"""Piper's API (/api/piper): diagrams, saving their drawings, and their revisions."""
+"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions, and their releases."""
 
 from typing import Annotated
 
@@ -7,14 +7,17 @@ from sqlalchemy.orm import Session
 
 from ..api.deps import DB, ActiveUser
 from ..models import User
-from . import diagrams
+from . import diagrams, releases
 from .models import Diagram
 from .schemas import (
+    DecisionIn,
     DiagramChangeIn,
     DiagramDetailOut,
     DiagramIn,
     DiagramOut,
     DrawingSaveIn,
+    ReleaseIn,
+    ReleaseOut,
     RevisionDetailOut,
     RevisionNoteIn,
     RevisionOut,
@@ -84,21 +87,27 @@ def put_drawing(diagram_id: int, body: DrawingSaveIn, user: ActiveUser, db: DB) 
 
 @router.get("/diagrams/{diagram_id}/revisions")
 def get_revisions(diagram_id: int, user: ActiveUser, db: DB) -> list[RevisionOut]:
-    """A diagram's revisions, the latest first, without their drawings."""
-    return [RevisionOut.of(revision) for revision in diagrams.revisions(db, diagram_id)]
+    """A diagram's revisions, the latest first, without their drawings, each with its release's letter if it's been
+    released."""
+    found = diagrams.revisions(db, diagram_id)
+    marks = releases.marks(db, diagram_id)
+    return [RevisionOut.of(revision, marks.get(revision.number, (None, False))) for revision in found]
 
 
 @router.get("/diagrams/{diagram_id}/revisions/{number}")
 def get_revision(diagram_id: int, number: int, user: ActiveUser, db: DB) -> RevisionDetailOut:
     """A revision with its drawing."""
     revision = diagrams.revision(db, diagram_id, number)
-    return RevisionDetailOut.of_detail(revision, diagrams.unpack(revision.drawing))
+    mark = releases.marks(db, diagram_id).get(number, (None, False))
+    return RevisionDetailOut.of_detail(revision, diagrams.unpack(revision.drawing), mark)
 
 
 @router.patch("/diagrams/{diagram_id}/revisions/{number}")
 def patch_revision(diagram_id: int, number: int, body: RevisionNoteIn, user: ActiveUser, db: DB) -> RevisionOut:
-    """Name a revision, which keeps it as it is ("": no name)."""
-    return RevisionOut.of(diagrams.name_revision(db, diagram_id, number, body.note))
+    """Name a revision, which keeps it as it is ("": no name). One that's released, or waiting to be, keeps its name:
+    409 `revision_released`, `release_pending`."""
+    named = diagrams.name_revision(db, diagram_id, number, body.note)
+    return RevisionOut.of(named, releases.marks(db, diagram_id).get(number, (None, False)))
 
 
 @router.post("/diagrams/{diagram_id}/revisions/{number}/restore")
@@ -109,3 +118,38 @@ def post_restore_revision(
     as for a save)."""
     restored = diagrams.restore_revision(db, user, diagram_id, number, body.version)
     return _detail(db, restored, user)
+
+
+@router.get("/diagrams/{diagram_id}/releases")
+def get_releases(diagram_id: int, user: ActiveUser, db: DB) -> list[ReleaseOut]:
+    """A diagram's releases, the latest asked for first: released, waiting for their approvers, and those that weren't
+    (rejected, withdrawn)."""
+    return [ReleaseOut.of(release, user) for release in releases.releases(db, diagram_id)]
+
+
+@router.post("/diagrams/{diagram_id}/releases", status_code=201)
+def post_release(diagram_id: int, body: ReleaseIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Put a revision forward as the diagram's next release, to the approvers named: at least one besides you (422
+    `needs_approver`). One at a time (409 `release_pending`), each after the last released (409
+    `older_than_released`)."""
+    made = releases.request(db, user, diagram_id, body.revision, body.approvers, body.note)
+    return ReleaseOut.of(made, user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/approve")
+def post_approve(diagram_id: int, release_id: int, body: DecisionIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Approve a release you're named for (else 403 `not_an_approver`): it's released, with the next letter, once all
+    its approvers have. 409 `already_decided` if it's over, or you've had your say."""
+    return ReleaseOut.of(releases.decide(db, user, diagram_id, release_id, approve=True, comment=body.comment), user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/reject")
+def post_reject(diagram_id: int, release_id: int, body: DecisionIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Reject a release you're named for, saying why: it ends there."""
+    return ReleaseOut.of(releases.decide(db, user, diagram_id, release_id, approve=False, comment=body.comment), user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/withdraw")
+def post_withdraw(diagram_id: int, release_id: int, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Withdraw a release that's waiting: whoever asked for it, or an admin (else 403 `not_yours`)."""
+    return ReleaseOut.of(releases.withdraw(db, user, diagram_id, release_id), user)

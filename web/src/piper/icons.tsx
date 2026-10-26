@@ -6,7 +6,7 @@ import type { DiagramMeta, Preset } from "./library/kinds";
 
 // Parts drawn small, as the library shows them and the inspector heads what it's showing.
 
-const META: DiagramMeta = { name: "Diagram", revision: 1, savedAt: null, by: "" };
+const META: DiagramMeta = { name: "Diagram", revision: "1", savedAt: null, by: "" };
 
 /** A part as an icon: its kind drawn to fit the box it's in. */
 export function PartIcon({ part, palette, size = 40 }: { part: Part; palette: Palette; size?: number }) {

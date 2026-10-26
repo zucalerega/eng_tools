@@ -1,4 +1,5 @@
-"""Piper's tables: diagrams, and their revisions, each with a drawing as the web app sent it."""
+"""Piper's tables: diagrams, their revisions, each with a drawing as the web app sent it, and their releases, each a
+revision put to the approvers named for it."""
 
 from datetime import datetime
 from typing import Any
@@ -24,6 +25,9 @@ class Diagram(Base):
     # if the diagram is still at it (diagrams.save).
     version: Mapped[int] = mapped_column(default=1)
     revision: Mapped[int] = mapped_column(default=1)  # its latest revision's number
+    # Its latest release, if it has one: the letter ("B"), and the revision that is (releases.py).
+    released: Mapped[str | None] = mapped_column(String(8))
+    released_revision: Mapped[int | None]
     # What the list shows and searches, noted from the drawing as it's saved: {"parts": n, "lines": n, "tags": [...],
     # "fluids": [...]} (diagrams.summarize).
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -60,3 +64,42 @@ class Revision(Base):
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
     author: Mapped[User | None] = relationship(foreign_keys=[author_id], lazy="selectin")
+
+
+class Release(Base):
+    """A revision put forward as the diagram's next release, to the approvers named for it: released, with the next
+    letter, once all of them approve it; or not, if one rejects it or whoever asked withdraws it. A revision that's
+    released (or waiting to be) never changes again (releases.py)."""
+
+    __tablename__ = "piper_releases"
+    # A letter is given once to each diagram; releases that weren't released have none.
+    __table_args__ = (UniqueConstraint("diagram_id", "letter", name="uq_piper_releases_diagram_letter"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    diagram_id: Mapped[int] = mapped_column(ForeignKey("piper_diagrams.id"), index=True)
+    revision: Mapped[int]  # the revision's number
+    letter: Mapped[str | None] = mapped_column(String(8))  # "A", "B", ... "AA", once it's released
+    note: Mapped[str] = mapped_column(Text, default="")  # what it's for: "For HF-3's test readiness review"
+    state: Mapped[str] = mapped_column(String(20), default="pending")  # pending, released, rejected, withdrawn
+    requested_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # when it was released, rejected, or withdrawn
+
+    requester: Mapped[User | None] = relationship(foreign_keys=[requested_by], lazy="selectin")
+    approvals: Mapped[list["Approval"]] = relationship(lazy="selectin", order_by="Approval.id")
+
+
+class Approval(Base):
+    """One approver's say on a release: waiting, approved, or rejected (with why)."""
+
+    __tablename__ = "piper_approvals"
+    __table_args__ = (UniqueConstraint("release_id", "approver_id", name="uq_piper_approvals_release_approver"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_id: Mapped[int] = mapped_column(ForeignKey("piper_releases.id"), index=True)
+    approver_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    decision: Mapped[str] = mapped_column(String(20), default="pending")  # pending, approved, rejected
+    comment: Mapped[str] = mapped_column(Text, default="")
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    approver: Mapped[User] = relationship(foreign_keys=[approver_id], lazy="selectin")

@@ -18,7 +18,7 @@ from ..api.schemas import UserRef
 from ..db import utcnow
 from ..errors import Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
-from .models import Diagram, Revision
+from .models import Diagram, Release, Revision
 from .schemas import InvalidDrawing, check_drawing
 
 EMPTY_DRAWING: dict[str, Any] = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
@@ -45,7 +45,7 @@ def _check_can_delete(user: User, found: Diagram) -> None:
         raise Forbidden(f"Only whoever made {found.name}, or an admin, can delete or restore it", code="not_yours")
 
 
-def _check_not_deleted(found: Diagram) -> None:
+def check_not_deleted(found: Diagram) -> None:
     if found.deleted_at is not None:
         raise Conflict(f"{found.name} is deleted: restore it first", code="deleted")
 
@@ -180,7 +180,7 @@ def change(
 ) -> Diagram:
     """Rename, move, or describe a diagram (None: as it is). Its drawing, and so its version, don't change."""
     found = diagram(db, diagram_id)
-    _check_not_deleted(found)
+    check_not_deleted(found)
     wanted = {"name": name, "folder": folder, "description": description}
     changing = {key: value for key, value in wanted.items() if value is not None and value != getattr(found, key)}
     if changing:  # only a change moves it up the list
@@ -198,8 +198,9 @@ def save(
     """Save a diagram's drawing, changed from `version`: taken only if the diagram is still at it, as the next version.
 
     The latest revision takes the save if it's the same person's, begun less than AMEND_WITHIN before, not named, not
-    restored, and the save isn't `fresh`; otherwise the save begins the next revision. So one person's work never
-    writes over another's in the history, and a named or restored revision stays as it is.
+    restored, not released or waiting to be (releases.py), and the save isn't `fresh`; otherwise the save begins the
+    next revision. So one person's work never writes over another's in the history, and a named, restored, or released
+    revision stays as it is.
     """
     data, size = _pack(drawing)
     _next_version(db, user, diagram_id, version)
@@ -212,6 +213,7 @@ def save(
         and not latest.note
         and latest.restored_from is None
         and now - latest.created_at < AMEND_WITHIN
+        and _release_of(db, diagram_id, latest.number) is None
     ):
         latest.drawing, latest.size, latest.saved_at = data, size, now
     else:
@@ -250,7 +252,7 @@ def _next_version(db: Session, user: User, diagram_id: int, version: int) -> Non
         return
     try:
         found = diagram(db, diagram_id)
-        _check_not_deleted(found)
+        check_not_deleted(found)
         latest = _latest(db, diagram_id)  # the save since: whose it was, and when
         if latest.restored_from is None:
             done = f"saved {found.name}"
@@ -268,6 +270,16 @@ def _next_version(db: Session, user: User, diagram_id: int, version: int) -> Non
         )
     finally:
         db.rollback()  # let the next writer in
+
+
+def _release_of(db: Session, diagram_id: int, number: int) -> Release | None:
+    """A revision's release, if it's released or waiting to be: either way, it's kept as it is."""
+    return db.scalar(
+        select(Release)
+        .where(Release.diagram_id == diagram_id, Release.revision == number, Release.state.in_(("pending", "released")))
+        .order_by(Release.id.desc())
+        .limit(1)
+    )
 
 
 def _latest(db: Session, diagram_id: int) -> Revision:
@@ -319,8 +331,18 @@ def name_revision(db: Session, diagram_id: int, number: int, note: str) -> Revis
     # Wait for a save of the diagram that's under way, and hold the next one until this is done, so a save doesn't
     # change a revision once it's named. Postgres needs this; SQLite has one writer at a time anyway.
     db.execute(select(Diagram.id).where(Diagram.id == diagram_id).with_for_update())
-    _check_not_deleted(diagram(db, diagram_id))
+    check_not_deleted(diagram(db, diagram_id))
     named = revision(db, diagram_id, number)
+    release = _release_of(db, diagram_id, number)
+    if release is not None and release.state == "released":
+        raise Conflict(
+            f"Revision {number} is Rev {release.letter}, released: it stays as it was", code="revision_released"
+        )
+    if release is not None:
+        raise Conflict(
+            f"Revision {number} is waiting to be released: it stays as it is unless the release is withdrawn",
+            code="release_pending",
+        )
     named.note = note
     db.commit()
     return named

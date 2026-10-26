@@ -18,16 +18,27 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
 - **A diagram** is a drawing with a name, a folder, and a description. Everyone signed in (and
   approved) sees every diagram, makes them, and changes them: a P&ID is the team's, and its
   history keeps every change, so nothing anyone does to one is lost. Only whoever made one, or
-  an admin, deletes it, which hides it with everything kept, until they restore it. A diagram's
-  folder is a path of its own (`piper_diagrams.folder`, "Vespula/GSE", "" at the top), tidied
-  as Yorg's views' folders are (`FolderPath`, now the site's, in `api/schemas.py`), and the
-  Diagrams page arranges them in a tree (the site's `pathTree.ts`, which Yorg's views and
-  scripts use too), as Yorg's Views tab does: each folder with how many it has, and a diagram
-  dragged onto a folder (or onto the top) moved there, by anyone, as anyone may change one. A
-  folder is picked from those there are, or typed new, with the site's `FolderPicker`, as a
-  view's or a script's is. Its search looks in names, folders, descriptions, and the tags of the
-  drawings' parts and lines, so PT-101 finds the diagrams it's on, and a diagram found opens
-  at what was searched for (`?find=PT-101`, as the editor's find goes to it). A new diagram
+  an admin, deletes it, which hides it with everything kept, until they restore it.
+- **Folders** are their own, as Yorg's datasets' are (`piper_folders`, `folders.py`): each in
+  another or at the top, its name unique in it whatever its case (409 `name_taken`), with no
+  slashes. A diagram is in one by its id (`folder_id`, null at the top). Anyone makes, renames,
+  and moves a folder (never into itself: 409 `cycle`), as anyone moves a diagram, and deletes
+  one once it's empty (409 `not_empty`); the deleted diagrams that were in it go to the folder
+  it was in, to be restored there. Before folders were their own (until migration 0027), a
+  diagram's folder was a path (`folder`, "Vespula/GSE"); the API still gives it, and still takes
+  one (`FolderPath`), the folders on it made where they aren't there yet (`folders.folder_at`),
+  so clients from before work as they did.
+- **The Diagrams page** works as Yorg's datasets' does: `/piper` and each folder's page
+  (`/piper/folders/{id}`), with the way back up above its name, list a folder's own folders and
+  diagrams; New folder, New diagram, and Import Visio (or a drawing dropped on the page) make
+  theirs in the folder you're in. Diagrams and folders dragged onto a folder (or a folder in the
+  way back up) move there; diagrams checked are moved together (Move to…, the site's
+  `FolderDialogs.tsx`, which Yorg's datasets use too), and deleted together if they're all
+  yours (or you're an admin), each all or nothing on the server. Deleted diagrams have their
+  own page, where they're checked and restored together. Its search looks in every folder, in
+  names, folders, descriptions, and the tags of the drawings' parts and lines, so PT-101 finds
+  the diagrams it's on, each saying its folder, and a diagram found opens at what was searched
+  for (`?find=PT-101`, as the editor's find goes to it). A new diagram
   starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
   with the editor's own changes), and Duplicate copies one.
 - **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its pages, each with its id,
@@ -335,8 +346,12 @@ site's own endpoints, are in [design.md](design.md#api).
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/piper/diagrams?q=&deleted=` | the diagrams, the most recently changed first, without their drawings (with `parts`, `lines`, and `pages`, on all its pages); `q`: those whose name, folder, description, or tags have every word (or the deleted ones) |
-| `POST /api/piper/diagrams` | a new diagram `{name, folder, description, drawing}` (`drawing` optional: an empty one) |
-| `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder, description}`; delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
+| `POST /api/piper/diagrams` | a new diagram `{name, folder_id, description, drawing}` (`drawing` optional: an empty one; or `folder`, a path, whose folders are made where they aren't there) |
+| `POST /api/piper/diagrams/move` | put diagrams in a folder `{diagrams, folder_id}` (null: the top), as anyone can: all of them, or none (404, 409 `deleted`) |
+| `POST /api/piper/diagrams/delete`, `/restore` | delete, or restore, diagrams `{diagrams}`: all of them, or none (403 `not_yours`) |
+| `GET`/`POST /api/piper/folders` | every folder, by name (each with its `parent_id` and `path`); a new one `{name, parent_id}` (409 `name_taken`) |
+| `PATCH`/`DELETE /api/piper/folders/{id}` | rename or move one `{name, parent_id}` (409 `name_taken`, `cycle`); delete an empty one (409 `not_empty`) |
+| `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder_id, description}` (or `folder`, a path); delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
 | `POST /api/piper/diagrams/{id}/restore` | restore a deleted diagram (whoever made it, or an admin) |
 | `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `deleted` if it's deleted, 409 `drawing_newer` if the drawing's in an older format than the diagram's (a page of a diagram with pages); `fresh`: start a new revision even if the latest is yours |
 | `GET /api/piper/diagrams/{id}/revisions` | its revisions, the latest first, without their drawings |

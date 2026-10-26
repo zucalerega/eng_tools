@@ -18,6 +18,7 @@ from ..api.schemas import UserRef
 from ..db import utcnow
 from ..errors import Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
+from . import folders
 from .models import Diagram, Release, Revision
 from .schemas import InvalidDrawing, check_drawing, drawing_format, drawing_pages
 
@@ -133,7 +134,7 @@ def diagrams(db: Session, *, deleted: bool = False, q: str = "") -> list[Diagram
 
 
 def _searched(found: Diagram) -> str:
-    return "\n".join([found.name, found.folder, found.description, *found.summary.get("tags", [])]).casefold()
+    return "\n".join([found.name, found.folder_path, found.description, *found.summary.get("tags", [])]).casefold()
 
 
 def diagram(db: Session, diagram_id: int) -> Diagram:
@@ -153,17 +154,20 @@ def add(
     user: User,
     *,
     name: str,
-    folder: str = "",
+    folder_id: int | None = None,
     description: str = "",
     drawing: dict[str, Any] | None = None,
 ) -> Diagram:
-    """A new diagram, at version 1, with its drawing (an empty one if there's none) as revision 1."""
+    """A new diagram, at version 1, in a folder (None: at the top), with its drawing (an empty one if there's none) as
+    revision 1."""
     drawing = EMPTY_DRAWING if drawing is None else drawing
     data, size = _pack(drawing)
+    if folder_id is not None:
+        folders.folder(db, folder_id)
     now = utcnow()
     new = Diagram(
         name=name,
-        folder=folder,
+        folder_id=folder_id,
         description=description,
         version=1,
         revision=1,
@@ -186,14 +190,19 @@ def change(
     diagram_id: int,
     *,
     name: str | None = None,
-    folder: str | None = None,
+    folder_id: int | None = None,
+    move: bool = False,
     description: str | None = None,
 ) -> Diagram:
-    """Rename, move, or describe a diagram (None: as it is). Its drawing, and so its version, don't change."""
+    """Rename, describe, or (move) put a diagram in a folder (folder_id None: at the top); None: as it is. Its drawing,
+    and so its version, don't change."""
     found = diagram(db, diagram_id)
     check_not_deleted(found)
-    wanted = {"name": name, "folder": folder, "description": description}
+    target = folders.folder(db, folder_id) if move and folder_id is not None else None
+    wanted: dict[str, Any] = {"name": name, "description": description}
     changing = {key: value for key, value in wanted.items() if value is not None and value != getattr(found, key)}
+    if move and folder_id != found.folder_id:
+        changing["folder"] = target  # the folder itself, so what's loaded of it is too
     if changing:  # only a change moves it up the list
         for key, value in changing.items():
             setattr(found, key, value)
@@ -305,24 +314,54 @@ def _latest(db: Session, diagram_id: int) -> Revision:
     ).one()
 
 
+def move_all(db: Session, user: User, diagram_ids: Sequence[int], folder_id: int | None) -> list[Diagram]:
+    """Put diagrams in a folder (None: at the top), as anyone can: all of them, or none if one isn't there or is
+    deleted. Their drawings don't change; each that moves is changed, by you."""
+    target = folders.folder(db, folder_id) if folder_id is not None else None
+    moving = [diagram(db, diagram_id) for diagram_id in dict.fromkeys(diagram_ids)]
+    for found in moving:
+        check_not_deleted(found)
+    now = utcnow()
+    for found in moving:
+        if found.folder_id != folder_id:
+            found.folder, found.updated_at, found.editor = target, now, user
+    db.commit()
+    return moving
+
+
 def remove(db: Session, user: User, diagram_id: int) -> Diagram:
     """Delete a diagram: it's hidden, with its history kept, until whoever made it, or an admin, restores it."""
-    found = diagram(db, diagram_id)
-    _check_can_delete(user, found)
-    if found.deleted_at is None:
-        found.deleted_at = utcnow()
-        found.deleter = user
+    return remove_all(db, user, [diagram_id])[0]
+
+
+def remove_all(db: Session, user: User, diagram_ids: Sequence[int]) -> list[Diagram]:
+    """Delete diagrams, as remove does: all of them, or none if any isn't yours to delete."""
+    removing = [diagram(db, diagram_id) for diagram_id in dict.fromkeys(diagram_ids)]
+    for found in removing:
+        _check_can_delete(user, found)
+    now = utcnow()
+    for found in removing:
+        if found.deleted_at is None:
+            found.deleted_at = now
+            found.deleter = user
     db.commit()
-    return found
+    return removing
 
 
 def restore(db: Session, user: User, diagram_id: int) -> Diagram:
-    found = diagram(db, diagram_id)
-    _check_can_delete(user, found)
-    found.deleted_at = None
-    found.deleter = None
+    return restore_all(db, user, [diagram_id])[0]
+
+
+def restore_all(db: Session, user: User, diagram_ids: Sequence[int]) -> list[Diagram]:
+    """Bring deleted diagrams back, each in its folder: all of them, or none if any isn't yours to restore."""
+    restoring = [diagram(db, diagram_id) for diagram_id in dict.fromkeys(diagram_ids)]
+    for found in restoring:
+        _check_can_delete(user, found)
+    for found in restoring:
+        found.deleted_at = None
+        found.deleter = None
     db.commit()
-    return found
+    return restoring
 
 
 # --- revisions ----------------------------------------------------------------------------------------------------

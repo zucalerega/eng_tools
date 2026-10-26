@@ -197,6 +197,57 @@ def test_upgrades_keep_views(tmp_path):
         )
 
 
+def test_upgrades_give_piper_diagrams_folders_of_their_own(tmp_path):
+    """Diagrams' folder paths became folders, by copying their table (on SQLite), which revisions point at."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0026")
+    with engine.begin() as db:
+        for user_id, email in [(1, "chief@x.test"), (2, "bob@x.test")]:
+            db.exec_driver_sql(
+                "INSERT INTO users (id, email, name, status, is_admin, created_at) "
+                f"VALUES ({user_id}, '{email}', 'Chief', 'active', 1, '2026-09-01 00:00:00.000000')"
+            )
+        # Feed, the first in Vespula/GSE (Bob's); Fill, in it by another case; Igniter, in Vespula/Prop; Scratch, at the top.
+        for diagram_id, name, folder, by, day in [
+            (1, "Fill", "vespula/gse", 1, 3),
+            (2, "Feed", "Vespula/GSE", 2, 2),
+            (3, "Igniter", "Vespula/Prop", 1, 4),
+            (4, "Scratch", "", 1, 5),
+        ]:
+            when = f"'2026-09-0{day} 00:00:00.000000'"
+            db.exec_driver_sql(
+                "INSERT INTO piper_diagrams (id, name, folder, description, version, revision, summary, created_at, "
+                f"created_by, updated_at) VALUES ({diagram_id}, '{name}', '{folder}', '', 1, 1, '{{}}', {when}, {by}, "
+                f"{when})"
+            )
+            db.exec_driver_sql(
+                "INSERT INTO piper_revisions (id, diagram_id, number, drawing, size, note, created_at, saved_at) "
+                f"VALUES ({diagram_id}, {diagram_id}, 1, x'00', 1, '', {when}, {when})"
+            )
+
+    migrate(engine)
+    with engine.connect() as db:
+        folders = {
+            row.id: row
+            for row in db.exec_driver_sql("SELECT id, parent_id, name, created_by, created_at FROM piper_folders")
+        }
+        assert sorted(
+            (row.name, folders[row.parent_id].name if row.parent_id else None) for row in folders.values()
+        ) == [
+            ("GSE", "Vespula"),
+            ("Prop", "Vespula"),
+            ("Vespula", None),
+        ]
+        gse = next(row for row in folders.values() if row.name == "GSE")
+        assert (gse.created_by, gse.created_at[:10]) == (2, "2026-09-02")  # its first diagram's maker, and when
+        placed = db.exec_driver_sql(
+            "SELECT d.name, d.folder_id, r.number FROM piper_diagrams d JOIN piper_revisions r ON "
+            "r.diagram_id = d.id ORDER BY d.id"
+        ).all()
+        named = {name: (folders[folder].name if folder else None, number) for name, folder, number in placed}
+        assert named == {"Fill": ("GSE", 1), "Feed": ("GSE", 1), "Igniter": ("Prop", 1), "Scratch": (None, 1)}
+
+
 def test_upgrades_keep_accounts(tmp_path):
     """Accounts got a Georgia Tech identity: those from before, and what points at them, are as they were."""
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")

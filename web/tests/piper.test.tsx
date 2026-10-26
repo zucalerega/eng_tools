@@ -1,11 +1,12 @@
 import { createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, expect, onTestFinished, test, vi } from "vitest";
+import type { Diagram } from "../src/piper/api";
 import { emptyDrawing, type Drawing } from "../src/piper/drawing";
 import { addPart, connect } from "../src/piper/edit";
 import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
-import { dataTransfer, drag } from "./drag";
+import { drag } from "./drag";
 import { renderApp, Team } from "./team";
 import { jpegHeader, rgbaPng } from "./pngs";
 import { FEED, GLUE, vsdx } from "./visio";
@@ -50,54 +51,95 @@ test("Piper is the site's third app: its diagrams, in their folders", async () =
     expect(within(apps).getByRole("link", { name: "Piper" }).getAttribute("aria-current")).toBe("page");
     expect(await screen.findByRole("heading", { name: "Diagrams" })).toBeTruthy();
     expect(document.title).toBe("Piper");
-    // Found by a word of their names (and here, of this test's): in their folders, each one's folders.
-    await userEvent.type(screen.getByRole("searchbox", { name: "Find diagrams" }), team.folder);
-    const table = within(await screen.findByRole("table", { name: "Diagrams" }));
-    await table.findByRole("link", { name: team.named("Feed system") });
-    expect(table.getByRole("link", { name: team.named("Cold flow stand") })).toBeTruthy();
-    expect(table.getByRole("button", { name: /Vespula/ }).getAttribute("aria-expanded")).toBe("true");
-    expect(table.getByRole("button", { name: /Prop/ })).toBeTruthy();
-});
-
-test("a diagram's folder is picked from those there are, and diagrams drag into folders and out", async () => {
-    const team = await Team.create();
-    const folder = `Prop ${team.folder}`;
-    await team.diagram(team.chief, "Feed system", undefined, folder);
-    const loose = await team.diagram(team.chief, "Cold flow stand");
-    renderApp(team.chief, "/piper");
+    // Found by a word of their names (and here, of this test's), in every folder: each says which it's in.
     await userEvent.type(await screen.findByRole("searchbox", { name: "Find diagrams" }), team.folder);
     const table = within(await screen.findByRole("table", { name: "Diagrams" }));
-    const folderRow = () => table.getByRole("button", { name: new RegExp(folder) }).closest("tr")!;
-    const count = () => folderRow().querySelector(".muted")?.textContent;
-    const row = () => table.getByRole("link", { name: loose.name }).closest("tr")!;
-    await waitFor(() => expect(count()).toBe("1"));
+    const feed = (await table.findByRole("link", { name: team.named("Feed system") })).closest("tr")!;
+    expect(within(feed).getByText("in Vespula/Prop")).toBeTruthy();
+    const loose = table.getByRole("link", { name: team.named("Cold flow stand") }).closest("tr")!;
+    expect(within(loose).getByText("in Diagrams")).toBeTruthy(); // the top
+});
 
-    drag(row(), folderRow);
-    await waitFor(() => expect(count()).toBe("2"));
-    expect(within(row()).getByText(`in ${folder}`)).toBeTruthy(); // found, it says where it is
-    expect((await team.piperDiagram(team.chief, loose.id)).folder).toBe(folder);
+test("folders: made, moved into by choosing or dragging, opened, renamed, and kept while they hold something", async () => {
+    const team = await Team.create();
+    const loose = await team.diagram(team.chief, "Cold flow stand");
+    const other = await team.diagram(team.chief, "Fill line");
+    renderApp(team.chief, "/piper");
+    const table = within(await screen.findByRole("table", { name: "Diagrams" }));
+    const row = (diagram: Diagram) => table.getByRole("link", { name: diagram.name }).closest("tr")!;
+    await table.findByRole("link", { name: loose.name });
 
-    // While one's dragged, the top takes it out of its folder.
-    const transfer = dataTransfer();
-    fireEvent.dragStart(row(), { dataTransfer: transfer });
-    const top = await screen.findByText("Drop here to take it out of its folder");
-    fireEvent.dragOver(top, { dataTransfer: transfer });
-    fireEvent.drop(top, { dataTransfer: transfer });
-    await waitFor(() => expect(count()).toBe("1"));
-    expect(screen.queryByText("Drop here to take it out of its folder")).toBeNull();
+    const folder = team.named("Prop");
+    await userEvent.click(screen.getByRole("button", { name: "New folder" }));
+    const made = within(await screen.findByRole("dialog", { name: "New folder" }));
+    await userEvent.type(made.getByLabelText("Name"), folder);
+    await userEvent.click(made.getByRole("button", { name: "Make it" }));
+    const folderRow = async () => (await table.findByRole("link", { name: folder })).closest("tr")!;
+    expect(within(await folderRow()).getByText("0 diagrams")).toBeTruthy();
 
-    // A new diagram's folder is picked from the list.
-    await userEvent.click(screen.getByRole("button", { name: "New diagram" }));
-    const dialog = within(await screen.findByRole("dialog", { name: "New diagram" }));
-    await userEvent.type(dialog.getByRole("textbox", { name: "Name" }), team.named("Oxidizer side"));
-    await userEvent.click(dialog.getByRole("combobox", { name: "Folder" }));
+    // One chosen and moved there; another dragged onto it.
+    await userEvent.click(within(row(loose)).getByRole("checkbox", { name: `Choose ${loose.name}` }));
+    expect(screen.getByText("1 diagram chosen")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Move to…" }));
+    const move = within(await screen.findByRole("dialog", { name: "Move a diagram" }));
+    await userEvent.click(move.getByRole("radio", { name: folder }));
+    await userEvent.click(move.getByRole("button", { name: "Move" }));
+    await waitFor(() => expect(table.queryByRole("link", { name: loose.name })).toBeNull());
+    drag(row(other), () => table.getByRole("link", { name: folder }).closest("tr")!);
+    await waitFor(() => expect(table.queryByRole("link", { name: other.name })).toBeNull());
+    expect(within(await folderRow()).getByText("2 diagrams")).toBeTruthy();
+    expect((await team.piperDiagram(team.chief, other.id)).folder).toBe(folder);
+
+    // A folder with diagrams in it isn't deleted: the server says why.
+    await userEvent.click(within(await folderRow()).getByRole("button", { name: `Delete ${folder}` }));
     await userEvent.click(
-        within(screen.getByRole("listbox", { name: "Folders" })).getByRole("option", { name: folder }),
+        within(await screen.findByRole("dialog", { name: `Delete ${folder}?` })).getByRole("button", {
+            name: "Delete",
+        }),
     );
+    expect(await screen.findByText(`${folder} isn't empty: move what's in it out first`)).toBeTruthy();
+
+    // In it: its diagrams, the way back up, and a new diagram made there.
+    await userEvent.click(within(await folderRow()).getByRole("link", { name: folder }));
+    expect(await screen.findByRole("heading", { name: folder })).toBeTruthy();
+    const inside = within(await screen.findByRole("table", { name: "Diagrams" }));
+    expect(await inside.findByRole("link", { name: loose.name })).toBeTruthy();
+    expect(inside.getByRole("link", { name: other.name })).toBeTruthy();
+    const crumbs = within(screen.getByRole("navigation", { name: "Folders" }));
+    expect(crumbs.getByRole("link", { name: "Diagrams" }).getAttribute("href")).toBe("/piper");
+    await userEvent.click(screen.getByRole("button", { name: "New diagram" }));
+    const dialog = within(await screen.findByRole("dialog", { name: `New diagram in ${folder}` }));
+    await userEvent.type(dialog.getByRole("textbox", { name: "Name" }), team.named("Oxidizer side"));
     await userEvent.click(dialog.getByRole("button", { name: "Make it" }));
     await screen.findByRole("application", { name: "Drawing" });
-    const made = await team.piperDiagram(team.chief, Number(window.location.pathname.split("/").pop()));
-    expect(made.folder).toBe(folder);
+    const fresh = await team.piperDiagram(team.chief, Number(window.location.pathname.split("/").pop()));
+    expect(fresh.folder).toBe(folder);
+});
+
+test("a folder renamed keeps its diagrams; an empty one is deleted", async () => {
+    const team = await Team.create();
+    const kept = await team.piperFolder(team.chief, "Stand");
+    const empty = await team.piperFolder(team.chief, "Spare");
+    const inside = await team.diagram(team.chief, "Hotfire", undefined, kept.path);
+    renderApp(team.chief, "/piper");
+    const table = within(await screen.findByRole("table", { name: "Diagrams" }));
+    const rowOf = async (name: string) => (await table.findByRole("link", { name })).closest("tr")!;
+
+    await userEvent.click(within(await rowOf(kept.name)).getByRole("button", { name: `Rename ${kept.name}` }));
+    const rename = within(await screen.findByRole("dialog", { name: `Rename ${kept.name}` }));
+    await userEvent.clear(rename.getByLabelText("Name"));
+    await userEvent.type(rename.getByLabelText("Name"), team.named("Hotfire stand"));
+    await userEvent.click(rename.getByRole("button", { name: "Rename" }));
+    expect(within(await rowOf(team.named("Hotfire stand"))).getByText("1 diagram")).toBeTruthy();
+    expect((await team.piperDiagram(team.chief, inside.id)).folder).toBe(team.named("Hotfire stand"));
+
+    await userEvent.click(within(await rowOf(empty.name)).getByRole("button", { name: `Delete ${empty.name}` }));
+    await userEvent.click(
+        within(await screen.findByRole("dialog", { name: `Delete ${empty.name}?` })).getByRole("button", {
+            name: "Delete",
+        }),
+    );
+    await waitFor(() => expect(table.queryByRole("link", { name: empty.name })).toBeNull());
 });
 
 test("New diagram opens the editor: a part placed from the library is tagged, renamed, and saved", async () => {
@@ -736,32 +778,51 @@ test("a duplicated transducer shows both its channels' values", async () => {
     await waitFor(() => expect(badge(sensor)).toBe("100.0 psi / 101.5 psi"));
 });
 
-test("whoever made a diagram deletes it to Deleted diagrams, and restores it; no one else can", async () => {
+test("chosen diagrams are deleted together by whoever made them, and restored together", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");
-    await team.diagram(team.chief, "Old stand");
+    const first = await team.diagram(team.chief, "Old stand");
+    const second = await team.diagram(team.chief, "Old panel");
     const asBob = renderApp(bob, "/piper");
     await userEvent.type(await screen.findByRole("searchbox", { name: "Find diagrams" }), team.folder);
-    const row = async () => (await screen.findByRole("link", { name: team.named("Old stand") })).closest("tr")!;
-    expect(within(await row()).getByRole("button", { name: "Duplicate" })).toBeTruthy();
-    expect(within(await row()).queryByRole("button", { name: "Delete…" })).toBeNull();
+    let table = within(await screen.findByRole("table", { name: "Diagrams" }));
+    await table.findByRole("link", { name: first.name });
+    // Bob can choose them, to move, but not delete them: they're the chief's.
+    await userEvent.click(table.getByRole("checkbox", { name: "Choose every diagram here" }));
+    expect(screen.getByText("2 diagrams chosen")).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Delete…" }).disabled).toBe(true);
     asBob.unmount();
 
     renderApp(team.chief, "/piper");
     await userEvent.type(await screen.findByRole("searchbox", { name: "Find diagrams" }), team.folder);
-    await userEvent.click(within(await row()).getByRole("button", { name: "Delete…" }));
-    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(screen.queryByRole("link", { name: team.named("Old stand") })).toBeNull());
+    table = within(await screen.findByRole("table", { name: "Diagrams" }));
+    await table.findByRole("link", { name: first.name });
+    await userEvent.click(table.getByRole("checkbox", { name: "Choose every diagram here" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Delete 2 diagrams?" }));
+    const listed = within(dialog.getByRole("list", { name: "Diagrams to delete" }));
+    expect(listed.getAllByRole("listitem").map((item) => item.textContent)).toEqual(
+        expect.arrayContaining([first.name, second.name]),
+    );
+    await userEvent.click(dialog.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: first.name })).toBeNull());
+    expect(screen.queryByText(/diagrams? chosen/)).toBeNull();
+
     await userEvent.click(screen.getByRole("link", { name: "Deleted diagrams" }));
     expect(await screen.findByRole("heading", { name: "Deleted diagrams" })).toBeTruthy();
-    await userEvent.type(screen.getByRole("searchbox", { name: "Find diagrams" }), team.folder);
-    await userEvent.click(within(await row()).getByRole("button", { name: "Restore" }));
-    await waitFor(() => expect(screen.queryByRole("link", { name: team.named("Old stand") })).toBeNull());
+    const deleted = within(await screen.findByRole("table", { name: "Deleted diagrams" }));
+    await userEvent.click(within((await deleted.findByText(first.name)).closest("tr")!).getByRole("checkbox"));
+    await userEvent.click(within(deleted.getByText(second.name).closest("tr")!).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(screen.queryByText(first.name)).toBeNull());
+    expect(screen.queryByText(second.name)).toBeNull();
+    expect((await team.piperDiagram(team.chief, first.id)).deleted_at).toBeNull();
 });
 
-test("Import Visio makes a diagram of a drawing's page, and says what became of its shapes", async () => {
+test("Import Visio makes a diagram of a drawing, in the folder it's imported in, and says what became of its shapes", async () => {
     const team = await Team.create();
-    renderApp(team.chief, "/piper");
+    const place = await team.piperFolder(team.chief, "Imported");
+    renderApp(team.chief, `/piper/folders/${place.id}`);
     // Import Visio… asks for the file first, as Yorg's Upload data does; the dialog shows it, to change.
     const picker = await screen.findByLabelText<HTMLInputElement>("Visio drawing to import");
     const click = vi.spyOn(picker, "click");
@@ -776,7 +837,7 @@ test("Import Visio makes a diagram of a drawing's page, and says what became of 
     );
     expect(dialog.getByText(`Feed ${team.folder}.vsdx`)).toBeTruthy();
     expect(dialog.queryByText("Other.vsdx")).toBeNull();
-    await userEvent.type(dialog.getByRole("combobox", { name: "Folder" }), "Imported");
+    expect(dialog.getByText(new RegExp(`It becomes a diagram in ${place.name}`))).toBeTruthy();
     await userEvent.click(dialog.getByRole("button", { name: "Import" }));
     const done = within(await screen.findByRole("dialog", { name: "Imported" }));
     expect(done.getByText(/3 parts, 4 lines, 1 note/)).toBeTruthy();
@@ -785,6 +846,8 @@ test("Import Visio makes a diagram of a drawing's page, and says what became of 
     const svg = await screen.findByRole("application", { name: "Drawing" });
     expect(within(svg).getByRole("button", { name: "V-1" })).toBeTruthy();
     expect(within(svg).getByRole("button", { name: "PT-101" })).toBeTruthy();
+    const imported = await team.piperDiagram(team.chief, Number(window.location.pathname.split("/").pop()));
+    expect(imported.folder_id).toBe(place.id);
 });
 
 test("Export, PDF: the drawing on a drawing sheet, as a PDF file", async () => {

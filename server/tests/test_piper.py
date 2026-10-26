@@ -173,6 +173,107 @@ def test_diagrams_are_found_by_every_word_searched_for(team):
     assert found("lox", deleted="true") == ["Hotfire stand"]
 
 
+# --- folders ------------------------------------------------------------------------------------------------------
+
+FOLDERS = "/api/piper/folders"
+
+
+def folder(team, who, name: str, parent: int | None = None) -> dict:
+    made = team.client.post(FOLDERS, json={"name": name, "parent_id": parent}, headers=who)
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def test_folders_are_made_renamed_and_moved_by_anyone_and_deleted_once_empty(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    vespula = folder(team, alice, " Vespula ")
+    gse = folder(team, alice, "GSE", vespula["id"])
+    assert (gse["path"], gse["parent_id"], gse["created_by"]["email"]) == ("Vespula/GSE", vespula["id"], "alice@x.test")
+
+    # Two in a folder can't differ only in case, and a name has no slashes (a diagram's folder can be its path).
+    taken = team.client.post(FOLDERS, json={"name": "gse", "parent_id": vespula["id"]}, headers=bob)
+    assert (taken.status_code, taken.json()["error"]) == (409, "name_taken")
+    assert team.client.post(FOLDERS, json={"name": "GSE"}, headers=bob).status_code == 201  # at the top, it's free
+    assert team.client.post(FOLDERS, json={"name": "a/b"}, headers=bob).status_code == 422
+    missing = team.client.post(FOLDERS, json={"name": "Ox", "parent_id": 999}, headers=bob)
+    assert (missing.status_code, missing.json()["error"]) == (404, "not_found")
+
+    # Anyone renames or moves one, as anyone moves a diagram; never into itself.
+    renamed = team.client.patch(f"{FOLDERS}/{gse['id']}", json={"name": "Ground"}, headers=bob).json()
+    assert (renamed["name"], renamed["path"], renamed["parent_id"]) == ("Ground", "Vespula/Ground", vespula["id"])
+    cycle = team.client.patch(f"{FOLDERS}/{vespula['id']}", json={"parent_id": gse["id"]}, headers=bob)
+    assert (cycle.status_code, cycle.json()["error"]) == (409, "cycle")
+    listed = team.client.get(FOLDERS, headers=bob).json()
+    assert [(one["name"], one["path"]) for one in listed] == [  # by name, whatever its case
+        ("Ground", "Vespula/Ground"),
+        ("GSE", "GSE"),
+        ("Vespula", "Vespula"),
+    ]
+
+    # One with a diagram in it isn't deleted; once its diagram's deleted, it is, and that diagram goes up a folder.
+    made = make(team, alice, folder_id=gse["id"])
+    assert (made["folder"], made["folder_id"]) == ("Vespula/Ground", gse["id"])
+    busy = team.client.delete(f"{FOLDERS}/{gse['id']}", headers=bob)
+    assert (busy.status_code, busy.json()["error"]) == (409, "not_empty")
+    team.client.delete(f"{API}/{made['id']}", headers=alice)
+    assert team.client.delete(f"{FOLDERS}/{gse['id']}", headers=bob).status_code == 204
+    restored = team.client.post(f"{API}/{made['id']}/restore", headers=alice).json()
+    assert (restored["folder"], restored["folder_id"]) == ("Vespula", vespula["id"])
+    assert team.client.delete(f"{FOLDERS}/{vespula['id']}", headers=bob).json()["error"] == "not_empty"
+
+
+def test_a_diagram_put_in_a_folder_by_its_path_goes_in_the_folders_on_it(team):
+    """As clients from before folders were their own name it: the folders on the path, made where they aren't there."""
+    alice = team.member("alice@x.test")
+    first = make(team, alice, name="Feed", folder="Vespula/GSE")
+    second = make(team, alice, name="Fill", folder=" vespula / gse ")  # whatever its case
+    assert first["folder_id"] == second["folder_id"]
+    assert second["folder"] == "Vespula/GSE"
+    assert [one["path"] for one in team.client.get(FOLDERS, headers=alice).json()] == ["Vespula/GSE", "Vespula"]
+    url = f"{API}/{first['id']}"
+    top = team.client.patch(url, json={"folder_id": None}, headers=alice).json()
+    assert (top["folder"], top["folder_id"]) == ("", None)
+    back = team.client.patch(url, json={"folder": "Vespula"}, headers=alice).json()
+    assert back["folder"] == "Vespula"
+    lost = team.client.patch(url, json={"folder_id": 999}, headers=alice)
+    assert (lost.status_code, lost.json()["error"]) == (404, "not_found")
+    # The list searches the folders' path too.
+    found = team.client.get(API, params={"q": "gse"}, headers=alice).json()
+    assert [one["name"] for one in found] == ["Fill"]
+
+
+def test_diagrams_are_moved_deleted_and_restored_together_or_not_at_all(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    a, b = make(team, alice, name="A"), make(team, alice, name="B")
+    c = make(team, bob, name="C")
+    gse = folder(team, alice, "GSE")
+
+    # Anyone moves anyone's.
+    moved = team.client.post(f"{API}/move", json={"diagrams": [a["id"], c["id"]], "folder_id": gse["id"]}, headers=bob)
+    assert [(one["name"], one["folder"], one["updated_by"]["email"]) for one in moved.json()] == [
+        ("A", "GSE", "bob@x.test"),
+        ("C", "GSE", "bob@x.test"),
+    ]
+    nowhere = team.client.post(f"{API}/move", json={"diagrams": [b["id"], 999], "folder_id": gse["id"]}, headers=bob)
+    assert (nowhere.status_code, nowhere.json()["error"]) == (404, "not_found")
+    assert opened(team, bob, b)["folder"] == ""  # none of them moved
+
+    # Only your own are deleted (or any, for an admin): all of them, or none.
+    mixed = team.client.post(f"{API}/delete", json={"diagrams": [a["id"], c["id"]]}, headers=bob)
+    assert (mixed.status_code, mixed.json()["error"]) == (403, "not_yours")
+    assert opened(team, bob, c)["deleted_at"] is None
+    gone = team.client.post(f"{API}/delete", json={"diagrams": [a["id"], b["id"]]}, headers=alice).json()
+    assert all(one["deleted_at"] for one in gone)
+    stuck = team.client.post(f"{API}/move", json={"diagrams": [a["id"]], "folder_id": None}, headers=alice)
+    assert (stuck.status_code, stuck.json()["error"]) == (409, "deleted")
+    assert team.client.post(f"{API}/restore", json={"diagrams": [a["id"]]}, headers=bob).status_code == 403
+    back = team.client.post(f"{API}/restore", json={"diagrams": [a["id"], b["id"]]}, headers=alice).json()
+    assert [(one["name"], one["folder"], one["deleted_at"]) for one in back] == [("A", "GSE", None), ("B", "", None)]
+    assert team.client.post(f"{API}/delete", json={"diagrams": []}, headers=alice).status_code == 422
+
+
 # --- saving -------------------------------------------------------------------------------------------------------
 
 

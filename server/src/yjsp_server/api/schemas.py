@@ -15,8 +15,8 @@ def _tidy_folder(value: str) -> str:
     return "/".join(part.strip() for part in value.replace("\\", "/").split("/") if part.strip())
 
 
-# Where an app keeps something in folders that are only paths (Yorg's views and scripts, Piper's diagrams): a path of
-# folders, as "Hotfires/HF-3", or "" for none (at the top).
+# Where an app keeps something in folders that are only paths (Yorg's views and scripts), or names a folder by its path
+# (Piper's diagrams, whose folders are their own): a path of folders, as "Hotfires/HF-3", or "" for none (at the top).
 FolderPath = Annotated[str, Field(max_length=300), AfterValidator(_tidy_folder)]
 
 

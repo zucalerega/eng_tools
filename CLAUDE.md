@@ -18,8 +18,8 @@ The apps share the server, the database, sign-in and accounts, and the web app's
 frame, and nothing else. No app imports another, and the site's own code imports none,
 except where it puts them together (`app.py`, `migrations/env.py`, `App.tsx`, `main.tsx`)
 and where accounts change (`people.py` tells Vault). Keep it that way: something more than
-one app needs belongs to the site (as `pathTree.ts`, `FolderPicker.tsx`, `zip.ts`, `packed.ts`,
-and `FolderPath` do). Piper reads Yorg's tests only through Yorg's API, as a client would (docs/piper.md).
+one app needs belongs to the site (as `pathTree.ts`, `FolderPicker.tsx`, `FolderDialogs.tsx`, `zip.ts`,
+`packed.ts`, and `FolderPath` do). Piper reads Yorg's tests only through Yorg's API, as a client would (docs/piper.md).
 
 ## Layout
 

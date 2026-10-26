@@ -693,6 +693,11 @@ a number. A few codes come up in more than one place.
   default color scheme can't be deleted. An admin makes another the default on Schemes, then
   this one can go.
 - **Only an admin can pick the team's default color scheme** (`admin_only`): ask an admin.
+- **There's already a folder called ... there** (`name_taken`): two folders in one can't have the
+  same name, whatever its case. Pick another, or use the one there is.
+- **... can't go inside itself** (`cycle`): a folder can't move into one of its own folders.
+- **... isn't empty: move what's in it out first** (`not_empty`): only an empty folder can be
+  deleted. Move its diagrams and folders out (or delete the diagrams) first.
 - **That isn't a PNG or a JPEG picture** (`not_an_image`): a picture on a drawing is a PNG or a
   JPEG. Save it as one (File > Export in most programs; a screenshot is a PNG), then add it.
 - **A picture can be up to 5 MB**, or **That picture is ... by ... pixels** (`too_large`): save

@@ -36,14 +36,22 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <Link to="/piper">New diagram</Link> makes one, empty or from an example (a pressure-fed engine's
-                    feed system) to change or learn from. Give it a folder to keep it with others: pick one there is
-                    from the list, or type a new one (<code>Vespula/GSE</code>).
+                    feed system) to change or learn from, in the folder you're in.
                 </li>
                 <li>
-                    The diagrams are in their folders, as Yorg&apos;s saved views are: each folder says how many it has,
-                    and a click shuts it or opens it. Drag a diagram onto a folder to move it there, or onto{" "}
-                    <em>Drop here to take it out of its folder</em>, above the list, to put it at the top. Rename, move,
-                    or describe, in the editor, moves it too.
+                    The diagrams are in folders, as Yorg&apos;s datasets are. <em>New folder</em> makes one where you
+                    are; open a folder to see what&apos;s in it, and the way back up is above its name. Each folder says
+                    how many diagrams it holds, and can be renamed, or deleted once it&apos;s empty.
+                </li>
+                <li>
+                    Drag a diagram (or a folder) onto a folder, or onto a folder in the way back up, to move it there.
+                    Or check diagrams, then <em>Move to…</em>; dragging one of those checked takes them all. Checked
+                    ones of yours are deleted together with <em>Delete…</em>, to{" "}
+                    <Link to="/piper/deleted">Deleted diagrams</Link>, where they can be checked and restored together.
+                </li>
+                <li>
+                    <em>Find diagrams</em> looks in every folder, and says which folder each is in: names, folders,
+                    descriptions, and parts&apos; tags (<code>PT-101</code> finds the diagrams it&apos;s on).
                 </li>
                 <li>
                     A diagram opens to the editor: the library of parts on the left, the drawing in the middle, and on
@@ -356,8 +364,8 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> asks for the drawing (or drop a
-                    .vsdx on them), then shows it, with <em>Choose another…</em> if it's the wrong one, and the folder
-                    to put it in. <em>Import</em> makes a diagram of it, its pages as Visio has them.
+                    .vsdx on them), then shows it, with <em>Choose another…</em> if it's the wrong one. <em>Import</em>{" "}
+                    makes a diagram of it, in the folder you're in, its pages as Visio has them.
                 </li>
                 <li>
                     Visio's P&ID shapes (its valves, vessels, pumps, instruments...) become Piper's parts, tagged with

@@ -1016,27 +1016,6 @@
     color: var(--text);
 }
 
-.yorg-move {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    max-height: 50vh;
-    overflow: auto;
-    margin-top: 0.25rem;
-}
-
-.yorg-move-choice {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.3rem 0.5rem;
-    border-radius: var(--radius);
-}
-
-.yorg-move-choice:hover {
-    background: var(--row-hover);
-}
-
 /* A label's editor, by the label. */
 .yorg-note-editor {
     width: min(21rem, calc(100vw - 16px));

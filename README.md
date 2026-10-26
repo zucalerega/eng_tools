@@ -345,14 +345,16 @@ the team uses, each tagged and described, lines in their fluids' colors, and val
 colors of their normal states. Help, in Piper's top bar, has all of this on one page, with
 the keys.
 
-- **Diagrams**: **New diagram** makes one, empty or from an example (a pressure-fed engine's
-  feed system), in a folder picked from those there are or typed new (`Vespula/GSE`). The list
-  keeps them in their folders, as Yorg's saved views are: drag a diagram onto a folder to move
-  it, or onto **Drop here to take it out of its folder** to put it at the top. Everyone can
-  open, change, and move every diagram; whoever made one (or an admin) can delete it, to
-  **Deleted diagrams**, where it waits to be restored. **Find diagrams** looks in names,
-  folders, and the tags on each drawing: PT-101 finds every diagram it's on, and each opens at
-  it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
+- **Diagrams**: in folders, as Yorg's datasets are. **New folder** makes one where you are;
+  open one to see what's in it, with the way back up above its name, and rename it, or delete it
+  once it's empty. **New diagram** makes one, empty or from an example (a pressure-fed engine's
+  feed system), in the folder you're in. Drag diagrams or folders onto a folder (or a folder in
+  the way back up) to move them, or check diagrams and **Move to…**. Everyone can open, change,
+  and move every diagram, and make and change folders; whoever made a diagram (or an admin) can
+  delete it, checked ones together with **Delete…**, to **Deleted diagrams**, where they're
+  checked and restored together. **Find diagrams** looks in every folder, in names, folders, and
+  the tags on each drawing: PT-101 finds every diagram it's on, each says its folder, and each
+  opens at it. In a diagram, **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what
   it is, on whichever page, and **Parts** lists every part by what it is, with how many and
   their specs, under the drawing.
 - **Pages**: a diagram can have pages, as a P&ID's sheets are (the vehicle, the GSE): tabs at
@@ -418,7 +420,7 @@ the keys.
   reads the channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test
   with those channels plotted, and the page's address keeps the test and the time.
 - **Visio**: **Import Visio…** asks for a Visio drawing (or drop a .vsdx on the diagrams), shows
-  it with the folder to put it in, and makes a diagram of it, with its pages: its P&ID shapes
+  it, and makes a diagram of it in the folder you're in, with its pages: its P&ID shapes
   become parts, tagged with their text, its connectors lines between them, and its colored lines
   fluids to name. Save an old .vsd as a .vsdx first.
 - **Export**: **PDF**, a page for each of the diagram's, on its printed sheet or else on

@@ -3,7 +3,6 @@ import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
 import { FolderPicker } from "../FolderPicker";
 import { formatTime } from "../format";
-import { foldersOf } from "../pathTree";
 import { navigate, usePathname, useSearch } from "../router";
 import { piper, type Diagram, type RevisionDetail, type Scheme } from "./api";
 import { monochrome } from "./fluids";
@@ -294,7 +293,7 @@ export function EditorPage({ id }: { id: number }) {
                             try {
                                 const copy = await piper.create({
                                     name: `${diagram.name} (my changes)`,
-                                    folder: diagram.folder,
+                                    folder_id: diagram.folder_id ?? null,
                                     description: diagram.description,
                                     drawing: store.getState().document,
                                 });
@@ -647,12 +646,12 @@ function EmptyHint() {
     );
 }
 
-/** The folders diagrams are in (and those they're in), to pick one from. */
+/** The folders there are, by their paths ("Vespula/GSE"), to pick one from; a new path typed makes its folders. */
 function useFolders(): string[] {
     const [folders, setFolders] = useState<string[]>([]);
     useEffect(() => {
-        piper.diagrams().then(
-            (diagrams) => setFolders(foldersOf(diagrams)),
+        piper.folders().then(
+            (found) => setFolders(found.map((one) => one.path).sort((a, b) => a.localeCompare(b))),
             () => {}, // none to pick from: a path can still be typed
         );
     }, []);

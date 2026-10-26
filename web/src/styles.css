@@ -1583,6 +1583,28 @@ main.main-full {
     flex: 1;
 }
 
+/* Choosing a folder to move what's chosen to (FolderDialogs.tsx): every folder, as a tree. */
+.folder-move {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-height: 50vh;
+    overflow: auto;
+    margin-top: 0.25rem;
+}
+
+.folder-move-choice {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--radius);
+}
+
+.folder-move-choice:hover {
+    background: var(--row-hover);
+}
+
 .drop-target {
     outline: 2px dashed var(--accent);
     outline-offset: 0.75rem;

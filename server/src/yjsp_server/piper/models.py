@@ -1,5 +1,6 @@
-"""Piper's tables: diagrams, their revisions, each with a drawing as the web app sent it, and their releases, each a
-revision put to the approvers named for it; the team's color schemes; and the pictures drawings show."""
+"""Piper's tables: diagrams, in their folders, their revisions, each with a drawing as the web app sent it, and their
+releases, each a revision put to the approvers named for it; the team's color schemes; and the pictures drawings
+show."""
 
 from datetime import datetime
 from typing import Any
@@ -11,6 +12,33 @@ from ..db import Base, UTCDateTime, utcnow
 from ..models import User
 
 
+class DiagramFolder(Base):
+    """A folder of diagrams (the vehicle's, a test stand's), in another folder or at the top (parent_id None), as Yorg's
+    datasets are in folders. Anyone makes, renames, and moves one, and deletes it once it's empty (folders.py)."""
+
+    __tablename__ = "piper_folders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("piper_folders.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200))  # lowercased: two in a folder can't differ only in case
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    parent: Mapped["DiagramFolder | None"] = relationship(remote_side=[id])
+
+    @property
+    def path(self) -> str:
+        """Its folders' names from the top down to it, as a path: "Vespula/GSE"."""
+        names: list[str] = []
+        at: DiagramFolder | None = self
+        while at is not None and len(names) < 100:  # a folder can't be in itself, but a path never goes on forever
+            names.insert(0, at.name)
+            at = at.parent
+        return "/".join(names)
+
+
 class Diagram(Base):
     """A drawing of a fluid system, with its name, folder, and description. Its drawings are its revisions."""
 
@@ -18,8 +46,7 @@ class Diagram(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
-    # Its folder, a path of its own ("Vespula/GSE"; "" at the top), as Yorg's views have.
-    folder: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("piper_folders.id"), index=True)  # None: at the top
     description: Mapped[str] = mapped_column(Text, default="")
     # 1, and one more with every save of its drawing: a save names the version it was changed from, and is taken only
     # if the diagram is still at it (diagrams.save).
@@ -41,6 +68,12 @@ class Diagram(Base):
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
     editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
     deleter: Mapped[User | None] = relationship(foreign_keys=[deleted_by], lazy="selectin")
+    folder: Mapped[DiagramFolder | None] = relationship(lazy="selectin")
+
+    @property
+    def folder_path(self) -> str:
+        """Its folder's path ("Vespula/GSE"), or "" at the top."""
+        return self.folder.path if self.folder else ""
 
 
 class Revision(Base):

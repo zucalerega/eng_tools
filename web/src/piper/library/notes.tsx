@@ -1,10 +1,11 @@
+import { imageHref } from "../api";
 import type { Drawing, Part } from "../drawing";
 import { fluidsUsed } from "../fluids";
 import { FONT, ink } from "./draw";
 import type { DrawContext, Field, Kind } from "./kinds";
 
 // What's written on a drawing rather than built: notes, regions around a part of the system (the vehicle, the GSE),
-// off-page connectors, a legend of its fluids and states, and a title block.
+// off-page connectors, a legend of its fluids and states, a title block, and pictures.
 
 const SIZES: Record<string, number> = { small: 10, "": 13, large: 17, title: 24 };
 
@@ -188,6 +189,62 @@ export const region: Kind = {
             )}
         </>
     ),
+};
+
+/** A picture's shape, width over height, as its pixels are: its box keeps it as it's sized. */
+export function pictureAspect(part: Part): number | null {
+    const width = Number(part.props.imageWidth);
+    const height = Number(part.props.imageHeight);
+    return width > 0 && height > 0 ? width / height : null;
+}
+
+/**
+ * A picture of the team's own (an injector, a TCA), drawn to its box in its own proportions: a PNG or a JPEG added to
+ * Piper (server/.../piper/images.py), named by its SHA-256. Until it has one, a box saying to choose one.
+ */
+export const picture: Kind = {
+    id: "picture",
+    name: "Picture",
+    box: (part) => [-part.w / 2, -part.h / 2, part.w / 2, part.h / 2],
+    ports: () => [],
+    fields: [],
+    tag: "beside",
+    resizable: true,
+    resize: { step: 5, least: [20, 20], aspect: pictureAspect },
+    draw: (part, context) =>
+        part.props.image ? (
+            <image
+                href={imageHref(part.props.image)}
+                x={-part.w / 2}
+                y={-part.h / 2}
+                width={part.w}
+                height={part.h}
+                preserveAspectRatio="xMidYMid meet"
+            />
+        ) : (
+            <>
+                <rect
+                    x={-part.w / 2}
+                    y={-part.h / 2}
+                    width={part.w}
+                    height={part.h}
+                    fill="none"
+                    strokeDasharray="6 4"
+                    {...ink({ ...context, ink: context.muted }, 1.2)}
+                />
+                <text
+                    x={0}
+                    y={0}
+                    fontSize={11}
+                    fontFamily={FONT}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={context.muted}
+                >
+                    Choose a picture
+                </text>
+            </>
+        ),
 };
 
 /**
@@ -396,4 +453,4 @@ export const titleblock: Kind = {
     },
 };
 
-export const NOTE_KINDS: Kind[] = [text, region, offpage, legend, titleblock];
+export const NOTE_KINDS: Kind[] = [text, region, offpage, legend, titleblock, picture];

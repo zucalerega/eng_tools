@@ -134,6 +134,7 @@ export function Canvas({
     meta,
     live,
     onEdit,
+    onPicture,
 }: {
     store: EditorStore;
     commands: Commands;
@@ -141,6 +142,7 @@ export function Canvas({
     meta: DiagramMeta;
     live: ReadonlyMap<string, LiveValue> | null;
     onEdit: (id: string) => void; // a part double-clicked: its tag (or words) to type in
+    onPicture: (file: File, at: Point) => void; // a file dropped on the drawing: a picture, there
 }) {
     const state = useEditor(store, (all) => all);
     const svg = useRef<SVGSVGElement>(null);
@@ -517,12 +519,16 @@ export function Canvas({
                     updatePart(current.base, current.part, (part) => {
                         // From its top left, which stays put: in its kind's steps (a region's the grid's), and no
                         // smaller than its least. (A text block sized to its words until now starts from its box.)
-                        const { step, least } = kindOf(part.kind).resize ?? { step: 10, least: [60, 40] };
+                        // A picture keeps its shape: its height follows its width.
+                        const { step, least, aspect } = kindOf(part.kind).resize ?? { step: 10, least: [60, 40] };
                         const box = boxOf(part, current.base);
                         const left = box.x0;
                         const top = box.y0;
                         const w = Math.max(least[0], Math.round((at.x - left) / step) * step);
-                        const h = Math.max(least[1], Math.round((at.y - top) / step) * step);
+                        const shape = aspect?.(part) ?? null;
+                        const h = shape
+                            ? Math.max(least[1], Math.round(w / shape))
+                            : Math.max(least[1], Math.round((at.y - top) / step) * step);
                         return { ...part, w, h, x: left + w / 2, y: top + h / 2 };
                     }),
                 );
@@ -662,13 +668,19 @@ export function Canvas({
                     onEdit(hit[1]);
                 }
             }}
-            // Nothing's dropped here with the browser's own drag-and-drop: a file let go on the drawing isn't opened in
-            // the tab, leaving the editor.
+            // A file let go on the drawing is a picture to put there, not a page for the tab to open, leaving the
+            // editor. Nothing else is dropped here with the browser's own drag-and-drop.
             onDragOver={(event) => {
                 event.preventDefault();
-                event.dataTransfer.dropEffect = "none";
+                event.dataTransfer.dropEffect = event.dataTransfer.types.includes("Files") ? "copy" : "none";
             }}
-            onDrop={(event) => event.preventDefault()}
+            onDrop={(event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files[0];
+                if (file) {
+                    onPicture(file, pointAt(event));
+                }
+            }}
         >
             <Grid view={view} width={width} height={height} palette={palette} />
             {shown.sheet && <SheetOutline sheet={shown.sheet} zoom={view.zoom} palette={palette} />}

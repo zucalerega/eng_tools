@@ -1,13 +1,16 @@
-"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions and releases, and color schemes."""
+"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions and releases, color schemes, and the
+pictures drawings show."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from ..api.deps import DB, ActiveUser
+from ..errors import TooLarge
 from ..models import User
-from . import diagrams, releases, schemes
+from . import diagrams, images, releases, schemes
 from .models import Diagram, Scheme
 from .schemas import (
     DecisionIn,
@@ -16,6 +19,7 @@ from .schemas import (
     DiagramIn,
     DiagramOut,
     DrawingSaveIn,
+    ImageOut,
     ReleaseIn,
     ReleaseOut,
     RevisionDetailOut,
@@ -200,3 +204,40 @@ def delete_scheme(scheme_id: int, user: ActiveUser, db: DB) -> None:
 def post_default_scheme(scheme_id: int, user: ActiveUser, db: DB) -> SchemeOut:
     """Make a scheme the team's default, which new diagrams start with (admins: else 403 `admin_only`)."""
     return _scheme(schemes.make_default(db, user, scheme_id), user)
+
+
+# --- pictures -----------------------------------------------------------------------------------------------------
+
+# A picture never changes, so a browser keeps it as long as it likes; it's the signed-in team's, not the world's.
+IMAGE_CACHE = "private, max-age=31536000, immutable"
+
+
+@router.post("/images", status_code=201)
+async def post_image(request: Request, user: ActiveUser, db: DB) -> ImageOut:
+    """Add a picture, a PNG or a JPEG, as the raw request body: the one kept, or the same one uploaded before."""
+    limit = images.MAX_IMAGE_BYTES
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise TooLarge(f"A picture can be up to {limit >> 20} MB")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > limit:
+            raise TooLarge(f"A picture can be up to {limit >> 20} MB")
+    image = await run_in_threadpool(images.add, db, user, bytes(data))
+    return ImageOut.of(image)
+
+
+@router.get("/images/{sha256}")
+def get_image(
+    sha256: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request, user: ActiveUser, db: DB
+) -> Response:
+    """A picture's bytes, as it was uploaded. Named by what's in it, so its ETag is its name: a browser that has it
+    asks with If-None-Match and is told it still has it (304)."""
+    tag = f'"{sha256}"'
+    headers = {"ETag": tag, "Cache-Control": IMAGE_CACHE}
+    if tag in [each.strip() for each in request.headers.get("if-none-match", "").split(",")]:
+        images.image(db, sha256)  # it's there: else 404, whatever the browser thinks it has
+        return Response(status_code=304, headers=headers)
+    found = images.image(db, sha256)
+    return Response(found.data, media_type=found.content_type, headers=headers)

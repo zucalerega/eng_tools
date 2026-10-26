@@ -70,7 +70,13 @@ const TOPICS: Topic[] = [
                     <em>thermocouple</em>. Valves (ball, solenoid, pneumatic, motorized, needle, check, relief,
                     regulators, burst discs, quick disconnects), tanks, bottles and COPVs, orifices and venturis, flow
                     meters, filters, instruments (PT, TC, RTD, load cells...), engines, pumps, vents, tees, a box for
-                    anything else (a DAQ, a test stand), notes, regions, a legend, and a title block.
+                    anything else (a DAQ, a test stand), notes, regions, a legend, a title block, and pictures.
+                </li>
+                <li>
+                    A <em>Picture</em> shows a PNG or a JPEG of your own (an injector, a TCA, a photo of the stand), up
+                    to 5 MB: drop the file on the drawing, or place one from the library and choose it on the right (
+                    <em>Replace…</em> changes it). Drag its square corner to size it: it keeps its shape. It's kept in
+                    Piper with the diagram, and the exports (PDF, SVG, PNG) have it in them.
                 </li>
                 <li>
                     Each new part is tagged with the next number free (<code>PT-3</code> after <code>PT-2</code>),

@@ -1,6 +1,9 @@
 """Piper: the team's diagrams, their drawings saved one version at a time, their history, and their releases."""
 
+import hashlib
 import json
+import struct
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
@@ -769,3 +772,85 @@ def test_a_scheme_is_checked_before_it_is_kept(team):
         refused = team.client.post(SCHEMES, json={"name": "Bad", "fluids": fluids, "states": states}, headers=alice)
         assert refused.status_code == 422, (fluids, states)
     assert team.client.patch(f"{SCHEMES}/999", json={"name": "X"}, headers=alice).status_code == 404
+
+
+# --- pictures -----------------------------------------------------------------------------------------------------
+
+
+def png(width: int, height: int, color: bytes = b"\xff\x00\x00\x80") -> bytes:
+    """A PNG of one color, RGBA, as a program saves one."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    rows = b"".join(b"\x00" + color * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def jpeg_header(width: int, height: int) -> bytes:
+    """The start of a JPEG, as far as its size: JFIF's marker, a quantization table, and the frame's header."""
+    app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    tables = b"\xff\xdb" + struct.pack(">H", 67) + bytes(65)
+    frame = b"\xff\xc0" + struct.pack(">HBHHB", 17, 8, height, width, 3) + bytes(9)
+    return b"\xff\xd8" + app0 + tables + frame + b"\xff\xda" + struct.pack(">H", 12) + bytes(10) + b"\xff\xd9"
+
+
+def upload(team, who, data: bytes):
+    return team.client.post("/api/piper/images", content=data, headers={**who, "content-type": "image/png"})
+
+
+def test_a_picture_is_kept_as_it_was_uploaded_and_named_by_what_is_in_it(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    data = png(3, 2)
+    added = upload(team, alice, data)
+    assert added.status_code == 201, added.text
+    body = added.json()
+    sha = hashlib.sha256(data).hexdigest()
+    assert (body["sha256"], body["content_type"], body["width"], body["height"], body["size"]) == (
+        sha,
+        "image/png",
+        3,
+        2,
+        len(data),
+    )
+    assert body["uploaded_by"]["email"] == "alice@x.test"
+    # The same bytes again are the same picture, whoever adds them.
+    again = upload(team, bob, data).json()
+    assert (again["sha256"], again["uploaded_by"]["email"]) == (sha, "alice@x.test")
+    jpeg = upload(team, bob, jpeg_header(640, 480)).json()
+    assert (jpeg["content_type"], jpeg["width"], jpeg["height"]) == ("image/jpeg", 640, 480)
+
+    # Anyone signed in gets it back as it was, kept by the browser as long as it likes.
+    got = team.client.get(f"/api/piper/images/{sha}", headers=bob)
+    assert (got.status_code, got.content, got.headers["content-type"]) == (200, data, "image/png")
+    assert got.headers["etag"] == f'"{sha}"'
+    assert "immutable" in got.headers["cache-control"]
+    kept = team.client.get(f"/api/piper/images/{sha}", headers={**bob, "if-none-match": f'"{sha}"'})
+    assert (kept.status_code, kept.content) == (304, b"")
+    # Not anyone else's, nor one that isn't there.
+    assert team.client.get(f"/api/piper/images/{sha}").status_code == 401
+    missing = team.client.get(f"/api/piper/images/{'0' * 64}", headers=bob)
+    assert (missing.status_code, missing.json()["error"]) == (404, "not_found")
+    assert team.client.get("/api/piper/images/not-a-name", headers=bob).status_code == 422
+
+
+def test_a_picture_has_to_be_a_png_or_a_jpeg_of_a_sensible_size(team):
+    alice = team.member("alice@x.test")
+
+    def refused(data: bytes) -> tuple[int, str, str]:
+        response = upload(team, alice, data)
+        return response.status_code, response.json()["error"], response.json()["message"]
+
+    status, code, said = refused(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+    assert (status, code) == (415, "not_an_image")
+    assert said.startswith("That isn't a PNG or a JPEG picture")
+    assert refused(b"GIF89a" + bytes(20))[:2] == (415, "not_an_image")
+    assert refused(b"")[:2] == (415, "not_an_image")
+    assert refused(png(0, 0))[:2] == (415, "not_an_image")
+    status, code, said = refused(jpeg_header(9000, 9000))
+    assert (status, code) == (413, "too_large")
+    assert said.startswith("That picture is 9000 by 9000 pixels")
+    status, code, said = refused(png(1, 1) + bytes(5 * 1024 * 1024))
+    assert (status, code, said) == (413, "too_large", "A picture can be up to 5 MB")

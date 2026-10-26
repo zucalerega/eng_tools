@@ -11,8 +11,8 @@ import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
 import { commandsOf, useEditorKeys } from "./commands";
 import { DiagramView } from "./DiagramView";
-import { pageOf, readDocument, type Document, type Drawing } from "./drawing";
-import { addPart, drawingBox } from "./edit";
+import { pageOf, readDocument, type Document, type Drawing, type Point } from "./drawing";
+import { addPart, drawingBox, updatePart, withPicture } from "./edit";
 import { download, fileName, partsList, pngOf, printDrawing, svgOf } from "./exports";
 import { HistoryPanel } from "./History";
 import { Inspector } from "./Inspector";
@@ -224,6 +224,20 @@ export function EditorPage({ id }: { id: number }) {
         });
     }
 
+    /** A file dropped on the drawing: added to Piper, and a picture of it put where it was let go. */
+    async function dropPicture(file: File, at: Point) {
+        try {
+            const image = await piper.addImage(file);
+            const added = addPart(store.getState().drawing, presetOf("picture")!, at);
+            store.commit(
+                updatePart(added.drawing, added.id, (part) => withPicture(part, image)),
+                [added.id],
+            );
+        } catch (error) {
+            setNotice(`${file.name} isn't on the drawing: ${message(error)}`);
+        }
+    }
+
     async function restoreRevision(number: number) {
         const restored = await piper.restoreRevision(diagram!.id, number, diagram!.version);
         setLooking(null);
@@ -345,6 +359,7 @@ export function EditorPage({ id }: { id: number }) {
                             meta={meta}
                             live={reading?.live ?? null}
                             onEdit={edit}
+                            onPicture={(file, at) => void dropPicture(file, at)}
                         />
                     ) : (
                         <StillDrawing drawing={lookedAt ? pageOf(lookedAt, shownPage) : drawing} meta={meta} />

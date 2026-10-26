@@ -132,11 +132,22 @@ what it is, `data-hit`).
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
   fittings (tees, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
-  legend, a title block). The library's search finds a part by any of its names (MOV, PRV,
+  legend, a title block, pictures). The library's search finds a part by any of its names (MOV, PRV,
   COPV, cav...). A part is dragged from it onto the drawing, clicked and then placed with a
   click (Shift-click to place more), or double-clicked into the middle of the view. The drag
   is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's
   drag-and-drop, which Firefox won't start from a button.
+- **Pictures** (`picture`): a PNG or a JPEG of the team's own (an injector, a TCA, a photo of
+  the stand), drawn to its box in its own proportions (`preserveAspectRatio` meet), and sized by
+  its corner handle keeping its shape (`resize.aspect`). Dropped on the drawing as a file (the
+  canvas's one use of the browser's drag-and-drop), or chosen in the inspector, it's added to
+  Piper (`POST /api/piper/images`) and the part names it by its SHA-256 (`props.image`, with its
+  pixels' `imageWidth` and `imageHeight`). The server keeps pictures in the database
+  (`piper_images`, `images.py`), so the nightly and off-site backups have them with the
+  drawings: checked as a PNG or a JPEG by their own headers, not their names, up to 5 MB and
+  25 megapixels (10,000 on a side, as a PDF of it decodes it in the browser), and never
+  changed or deleted, as a revision may still show one; the same bytes added again are the
+  same picture. It's sent with its name as its ETag, for the browser to keep (`immutable`).
 - **Sizes**: a part's drawn at its kind's size, or from half of it to double (`scale`: 0.5,
   0.75, 1, 1.25, 1.5, 2), from the round handle at a selected part's corner or the inspector.
   Its frame's scaled (`toWorld`, `partTransform`), so its box, what's drawn, and where it's hit
@@ -256,7 +267,11 @@ what it is, `data-hit`).
     printed sheet on its paper, where its outline shows; one without fitted inside the border,
     clear of that corner. Tested by its structure (every object where the cross-reference table
     says) and by MuPDF rendering it.
-  - **SVG** and **PNG** (at twice its size): the page shown, alone. **Print** prints its SVG.
+  - **SVG** and **PNG** (at twice its size): the page shown, alone, its pictures in it as data
+    (`pictures.ts`; an SVG drawn as an image fetches nothing). **Print** prints its SVG.
+  - **Pictures in a PDF** are its own images: a JPEG as it is (DCTDecode), a PNG decoded
+    (`decodePng`: any color type and depth, its rows unfiltered; an interlaced one through a
+    canvas) into its pixels and its transparency, a soft mask, each deflated.
   - **Parts list** (CSV): each part's tag, what it is, normal state, fluid, test channel, every
     property, and notes, and each line's tag, type, fluid, properties, and the tags it joins, on
     every page (and each one's page, last, when there's more than one): a valve list or an
@@ -332,13 +347,15 @@ site's own endpoints, are in [design.md](design.md#api).
 | `GET`/`POST /api/piper/schemes` | the team's color schemes, its default first; a new one `{name, fluids, states}` |
 | `PATCH`/`DELETE /api/piper/schemes/{id}` | change one (what's left out stays); delete one (whoever made it, or an admin, else 403 `not_yours`; not the default, 409 `scheme_default`) |
 | `POST /api/piper/schemes/{id}/default` | make one the team's default (admins, else 403 `admin_only`) |
+| `POST /api/piper/images` | add a picture, a PNG or a JPEG, as the raw request body (201: its `sha256`, `content_type`, `width`, `height`, `size`; the same bytes again, the same picture); 415 `not_an_image`, 413 `too_large` |
+| `GET /api/piper/images/{sha256}` | a picture's bytes, with its name as its ETag (304 to `If-None-Match`) |
 
 ## Roadmap
 
 1. **Piper** (first version, October 2026): diagrams with history, the library, lines routed
    and snapped, fluids and states, properties, Visio's drawings imported, exports (PDF on a
    drawing sheet), test data from Yorg, releases with approvers, pages with printed sheets and
-   off-page connectors between them, and a Help page (`Help.tsx`, `/piper/help`: keep it in
+   off-page connectors between them, pictures of the team's own, and a Help page (`Help.tsx`, `/piper/help`: keep it in
    step with the features). Next:
    - **Several people at once**: seeing who else has a diagram open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.

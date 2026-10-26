@@ -1,6 +1,7 @@
 // Piper's part of the server's API (server/src/yjsp_server/piper/schemas.py, or /docs on a running server).
 
 import { query, request, type UserRef } from "../api";
+import type { SchemeColors } from "./fluids";
 
 export interface Diagram {
     id: number;
@@ -64,6 +65,16 @@ export interface Release {
     can_withdraw: boolean;
 }
 
+/** One of the team's color schemes (server: piper/schemes.py): its fluids and valve states' colors. */
+export interface Scheme extends SchemeColors {
+    is_default: boolean; // the team's: what new diagrams start with
+    created_by: UserRef | null;
+    updated_by: UserRef | null;
+    can_delete: boolean; // yours (or you're an admin), and not the default
+}
+
+export type SchemeBody = Pick<Scheme, "name" | "fluids" | "states">;
+
 /** What the server says when someone saved a diagram after it was opened here (409 changed). */
 export interface ChangedDetails {
     version: number;
@@ -104,4 +115,10 @@ export const piper = {
     reject: (id: number, release: number, comment: string) =>
         request<Release>("POST", `${diagram(id)}/releases/${release}/reject`, { comment }),
     withdraw: (id: number, release: number) => request<Release>("POST", `${diagram(id)}/releases/${release}/withdraw`),
+    schemes: () => request<Scheme[]>("GET", "/api/piper/schemes"),
+    addScheme: (body: SchemeBody) => request<Scheme>("POST", "/api/piper/schemes", body),
+    changeScheme: (id: number, change: Partial<SchemeBody>) =>
+        request<Scheme>("PATCH", `/api/piper/schemes/${id}`, change),
+    removeScheme: (id: number) => request<void>("DELETE", `/api/piper/schemes/${id}`),
+    makeDefault: (id: number) => request<Scheme>("POST", `/api/piper/schemes/${id}/default`),
 };

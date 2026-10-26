@@ -169,6 +169,20 @@ what it is, `data-hit`).
   (oxidizers blue, fuels red, nitrogen green, helium purple, combustion gas rose...); a diagram
   can change their colors, labels, and names, and add its own, keeping only what differs; the
   legend shows those its lines and vessels use, and its valves' states.
+- **Color schemes** (`piper_schemes`, `schemes.py`; the Schemes page, `Schemes.tsx`) are the
+  team's own colors: each one's fluids (id, name, label, color, gas or not) and the colors of
+  valves' states, made and changed by anyone, deleted by whoever made one or an admin. One is the
+  team's default, an admin's to pick ("YJSP standard", which 0025 seeds with Piper's colors as
+  they were), and can't be deleted while it is (409 `scheme_default`). A diagram takes a
+  scheme's colors into its drawing (`applyScheme`): its fluids become the diagram's own, over what
+  it had, and its state colors the diagram's style, noted with the scheme's id and when it last
+  changed (`style.scheme`, `style.schemeAt`). So a drawing is drawn, exported, and printed the
+  same anywhere, from itself, and a change to the scheme reaches it only when someone takes
+  the colors again: its panel says the scheme has changed (`schemeChanged`). New diagrams and
+  Visio imports start in the team's default. A fluid's `gas` (a tank of it is full of it) is
+  the diagram's, else the standard fluid's (`isGas`). A PDF can be in black and white
+  (`monochrome`): every line in ink, normally closed valves filled in ink, normally open ones
+  white, failing in place grey.
 - **States**: a valve's normal state colors its body: open (NO) green, closed (NC) red, and
   fails in place (FIP: a double-acting valve, which stays where it was when its air or power
   goes) slate blue, or a diagram's own colors (`style`), which the legend shows. The state isn't
@@ -269,6 +283,9 @@ site's own endpoints, are in [design.md](design.md#api).
 | `POST /api/piper/diagrams/{id}/releases` | ask for a revision to be released `{revision, approvers, note}` (approvers: accounts' ids): 422 `needs_approver`, 409 `release_pending`, `older_than_released` |
 | `POST /api/piper/diagrams/{id}/releases/{release}/approve`, `/reject` | an approver's say `{comment}`: released with the next letter once all have approved; 403 `not_an_approver`, 409 `already_decided` |
 | `POST /api/piper/diagrams/{id}/releases/{release}/withdraw` | take back a release that's waiting (whoever asked, or an admin, else 403 `not_yours`) |
+| `GET`/`POST /api/piper/schemes` | the team's color schemes, its default first; a new one `{name, fluids, states}` |
+| `PATCH`/`DELETE /api/piper/schemes/{id}` | change one (what's left out stays); delete one (whoever made it, or an admin, else 403 `not_yours`; not the default, 409 `scheme_default`) |
+| `POST /api/piper/schemes/{id}/default` | make one the team's default (admins, else 403 `admin_only`) |
 
 ## Roadmap
 

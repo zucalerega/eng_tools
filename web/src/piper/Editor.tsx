@@ -5,7 +5,8 @@ import { FolderPicker } from "../FolderPicker";
 import { formatTime } from "../format";
 import { foldersOf } from "../pathTree";
 import { navigate, usePathname, useSearch } from "../router";
-import { piper, type Diagram, type RevisionDetail } from "./api";
+import { piper, type Diagram, type RevisionDetail, type Scheme } from "./api";
+import { monochrome } from "./fluids";
 import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
 import { commandsOf, useEditorKeys } from "./commands";
@@ -42,6 +43,7 @@ export function EditorPage({ id }: { id: number }) {
     const [renaming, setRenaming] = useState(false);
     const [pdfing, setPdfing] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
+    const [schemes, setSchemes] = useState<Scheme[] | null>(null);
     const store = useMemo(() => new EditorStore(), []);
     const commands = useMemo(() => commandsOf(store), [store]);
     const drawing = useEditor(store, (state) => state.drawing);
@@ -79,6 +81,11 @@ export function EditorPage({ id }: { id: number }) {
             current = false;
         };
     }, [id, store]);
+
+    // The team's color schemes, for the diagram's panel to take one's colors from.
+    useEffect(() => {
+        piper.schemes().then(setSchemes, () => setSchemes([]));
+    }, []);
 
     // Opened at the whole drawing, once the canvas has its size.
     useEffect(() => {
@@ -344,6 +351,7 @@ export function EditorPage({ id }: { id: number }) {
                         palette={palette}
                         test={reading}
                         onPlot={(channels) => void plot(channels)}
+                        schemes={schemes}
                     />
                 )}
                 {panel === "history" && (
@@ -399,8 +407,9 @@ export function EditorPage({ id }: { id: number }) {
             {pdfing && (
                 <PdfDialog
                     onCancel={() => setPdfing(false)}
-                    onSave={async (paper, framed) => {
-                        const shown = looking ? readDrawing(looking.drawing) : store.getState().drawing;
+                    onSave={async (paper, framed, mono) => {
+                        const drawn = looking ? readDrawing(looking.drawing) : store.getState().drawing;
+                        const shown = mono ? monochrome(drawn) : drawn;
                         const printed = looking
                             ? { ...meta, revision: revisionLabel(diagram, looking.number, looking.released) }
                             : meta;
@@ -435,6 +444,7 @@ export function EditorPage({ id }: { id: number }) {
 
 const PAPER = "piper.paper"; // the paper last chosen for a PDF, in this browser
 const SHEET = "piper.sheet"; // and whether it was on a sheet ("no": it wasn't)
+const MONO = "piper.mono"; // and whether it was in black and white ("yes": it was)
 
 function remembered(key: string, fallback: string): string {
     try {
@@ -452,11 +462,12 @@ function PdfDialog({
     onSave,
     onCancel,
 }: {
-    onSave: (paper: string, sheet: boolean) => Promise<void>;
+    onSave: (paper: string, sheet: boolean, mono: boolean) => Promise<void>;
     onCancel: () => void;
 }) {
     const [paper, setPaper] = useState(() => remembered(PAPER, "tabloid"));
     const [sheet, setSheet] = useState(() => remembered(SHEET, "yes") !== "no");
+    const [mono, setMono] = useState(() => remembered(MONO, "no") === "yes");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     async function save() {
@@ -464,11 +475,12 @@ function PdfDialog({
         try {
             window.localStorage.setItem(PAPER, paper);
             window.localStorage.setItem(SHEET, sheet ? "yes" : "no");
+            window.localStorage.setItem(MONO, mono ? "yes" : "no");
         } catch {
             // storage blocked: the choices last this once
         }
         try {
-            await onSave(paper, sheet);
+            await onSave(paper, sheet, mono);
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -489,6 +501,11 @@ function PdfDialog({
             <label className="check">
                 <input type="checkbox" checked={sheet} onChange={(event) => setSheet(event.target.checked)} />
                 On a drawing sheet: a border with its zones, a title block, and the named revisions
+            </label>
+            <label className="check">
+                <input type="checkbox" checked={mono} onChange={(event) => setMono(event.target.checked)} />
+                In black and white, for a printer without color: lines in ink, normally closed valves filled, normally
+                open ones left white
             </label>
             <p className="muted piper-small">
                 The drawing's fitted on the page, turned its way, in the light colors as on paper. Its lines and words

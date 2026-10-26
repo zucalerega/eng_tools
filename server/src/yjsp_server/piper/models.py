@@ -103,3 +103,26 @@ class Approval(Base):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     approver: Mapped[User] = relationship(foreign_keys=[approver_id], lazy="selectin")
+
+
+class Scheme(Base):
+    """A color scheme, defined in Piper by the team: the fluids lines carry (each one's name, label, color, and whether
+    it's a gas) and the colors of valves' states. A diagram takes one's colors (the web app applies them to it); the
+    team's default ("YJSP standard") is what new diagrams start with (schemes.py)."""
+
+    __tablename__ = "piper_schemes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # [{"id": "lox", "name": "Liquid oxygen", "label": "LOX", "color": "#2f6fd6", "gas": false}, ...]
+    fluids: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # {"no": "#2e9e4f", "nc": "#d64541", "fip": "#5b7a99", "other": "#e0a500"}
+    states: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    is_default: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")

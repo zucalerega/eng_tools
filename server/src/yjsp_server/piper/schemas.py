@@ -9,7 +9,7 @@ from pydantic_core import ErrorDetails
 from ..api.schemas import FolderPath, UserRef
 from ..errors import ApiError
 from ..models import User
-from .models import Approval, Diagram, Release, Revision
+from .models import Approval, Diagram, Release, Revision, Scheme
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 MAX_PARTS = 5000
@@ -286,4 +286,67 @@ class ReleaseOut(BaseModel):
             decided_at=release.decided_at,
             approvals=[ApprovalOut.of(approval) for approval in release.approvals],
             can_withdraw=release.state == "pending" and (release.requested_by == user.id or user.is_admin),
+        )
+
+
+# --- color schemes ------------------------------------------------------------------------------------------------
+
+Color = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+class SchemeFluid(BaseModel):
+    id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$")]  # "lox", as lines name it
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]  # "Liquid oxygen"
+    label: Annotated[str, StringConstraints(strip_whitespace=True, max_length=12)]  # "LOX", written on lines
+    color: Color
+    gas: bool = False  # a tank of it is full of it, not filled to a level
+
+
+class SchemeStates(BaseModel):
+    no: Color  # normally open valves
+    nc: Color  # normally closed
+    fip: Color  # fail in place (double-acting)
+    other: Color  # a test's state that's neither
+
+
+Fluids = Annotated[list[SchemeFluid], Field(max_length=100)]
+
+
+class SchemeIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    fluids: Fluids
+    states: SchemeStates
+
+
+class SchemeChangeIn(BaseModel):
+    """A new name, fluids, or states: leave out what doesn't change."""
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+    fluids: Fluids | None = None
+    states: SchemeStates | None = None
+
+
+class SchemeOut(BaseModel):
+    id: int
+    name: str
+    fluids: list[SchemeFluid]
+    states: SchemeStates
+    is_default: bool  # the team's: what new diagrams start with
+    created_by: UserRef | None
+    updated_at: datetime  # a diagram that took its colors before this can take them again
+    updated_by: UserRef | None
+    can_delete: bool  # you made it (or you're an admin), and it isn't the default
+
+    @classmethod
+    def of(cls, scheme: Scheme, *, can_delete: bool) -> "SchemeOut":
+        return cls(
+            id=scheme.id,
+            name=scheme.name,
+            fluids=[SchemeFluid(**fluid) for fluid in scheme.fluids],
+            states=SchemeStates(**scheme.states),
+            is_default=scheme.is_default,
+            created_by=_ref(scheme.creator),
+            updated_at=scheme.updated_at,
+            updated_by=_ref(scheme.editor),
+            can_delete=can_delete and not scheme.is_default,
         )

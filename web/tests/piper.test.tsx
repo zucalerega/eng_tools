@@ -414,6 +414,59 @@ test("Parts lists every part by what it is, with its specs, and a tag goes to it
     expect(valves.getByRole("button", { name: "BV-1" }).closest("tr")!.getAttribute("aria-selected")).toBe("true");
 });
 
+test("a diagram takes a scheme's colors, and says when the scheme has changed since", async () => {
+    const team = await Team.create();
+    const blue = { id: "lox", name: "Liquid oxygen", label: "LOX", color: "#0000ff", gas: false };
+    const scheme = await team.scheme(team.chief, "Stand", [blue]);
+    const drawing = { value: emptyDrawing() };
+    const valve = place(drawing, "ball-valve", 0, 0);
+    const made = connect(drawing.value, { part: valve, port: "b" }, { x: 200, y: 0 })!;
+    drawing.value = { ...made.drawing, lines: made.drawing.lines.map((line) => ({ ...line, fluid: "lox" })) };
+    const diagram = await team.diagram(team.chief, "Schemed", drawing.value);
+    const first = renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Colors from" }), String(scheme.id));
+    const saved = async () => (await team.piperDiagram(team.chief, diagram.id)).read;
+    await waitFor(async () => {
+        const read = await saved();
+        expect(read.style.scheme).toBe(String(scheme.id));
+        expect(read.fluids.find((fluid) => fluid.id === "lox")?.color).toBe("#0000ff");
+    });
+    first.unmount();
+
+    // The scheme changes: the diagram says so, and takes the new colors when asked.
+    await team.changeScheme(team.chief, scheme.id, { fluids: [{ ...blue, color: "#00aaff" }] });
+    renderApp(team.chief, `/piper/diagrams/${diagram.id}`);
+    await userEvent.click(await screen.findByRole("button", { name: "Take its colors again" }));
+    await waitFor(async () =>
+        expect((await saved()).fluids.find((fluid) => fluid.id === "lox")?.color).toBe("#00aaff"),
+    );
+});
+
+test("Schemes lists the team's color schemes; one's changed there, its fluids and states together", async () => {
+    const team = await Team.create();
+    const scheme = await team.scheme(team.chief, "Cold flow", [
+        { id: "water", name: "Water", label: "H2O", color: "#22a6d6", gas: false },
+    ]);
+    renderApp(team.chief, "/piper/schemes");
+    expect(await screen.findByRole("heading", { name: "Color schemes" })).toBeTruthy();
+    const card = within(await screen.findByRole("article", { name: scheme.name }));
+    await userEvent.click(card.getByRole("button", { name: "Edit" }));
+    const form = within(await screen.findByRole("form", { name: `Editing ${scheme.name}` }));
+    await userEvent.clear(form.getByRole("textbox", { name: "Water's label" }));
+    await userEvent.type(form.getByRole("textbox", { name: "Water's label" }), "WATER");
+    await userEvent.click(form.getByRole("checkbox", { name: "Gas" }));
+    await userEvent.click(form.getByRole("button", { name: "+ Add a fluid" }));
+    await userEvent.click(form.getByRole("button", { name: "Save" }));
+    await waitFor(async () => {
+        const found = (await team.changeScheme(team.chief, scheme.id, {})).fluids;
+        expect(found.map((fluid) => [fluid.label, fluid.gas])).toEqual([
+            ["WATER", true],
+            ["NEW", false],
+        ]);
+    });
+});
+
 test("History lists the revisions; looking at one shows it, and restoring it makes it the drawing again", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

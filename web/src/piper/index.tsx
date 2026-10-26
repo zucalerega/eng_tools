@@ -9,6 +9,7 @@ import "./piper.css";
 const DiagramsPage = lazy(() => import("./Diagrams").then((module) => ({ default: module.DiagramsPage })));
 const EditorPage = lazy(() => import("./Editor").then((module) => ({ default: module.EditorPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
+const SchemesPage = lazy(() => import("./Schemes").then((module) => ({ default: module.SchemesPage })));
 
 export const PIPER = "Piper";
 
@@ -39,7 +40,8 @@ export const PIPER_ICON =
     );
 
 /** Which of Piper's sections a path is in, for the top bar. */
-export const piperSection = (pathname: string): string => (pathname.startsWith("/piper/help") ? "help" : "diagrams");
+export const piperSection = (pathname: string): string =>
+    pathname.startsWith("/piper/help") ? "help" : pathname.startsWith("/piper/schemes") ? "schemes" : "diagrams";
 
 /** Whether a page is the editor, which takes the whole window. */
 export const piperWholeWindow = (pathname: string): boolean => /^\/piper\/diagrams\/\d+\/?$/.test(pathname);
@@ -69,6 +71,8 @@ function piperPage(path: string) {
             return <DiagramsPage key="deleted" deleted />;
         case "/piper/help":
             return <HelpPage />;
+        case "/piper/schemes":
+            return <SchemesPage />;
     }
     return null;
 }

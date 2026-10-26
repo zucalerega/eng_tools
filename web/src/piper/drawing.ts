@@ -63,6 +63,7 @@ export interface Fluid {
     name: string; // "Liquid oxygen"
     label: string; // what's written on its lines: "LOX"
     color: string; // #rrggbb
+    gas?: boolean; // a tank of it is full of it; left out, a standard fluid's own (fluids.ts), else a liquid
 }
 
 /** How big what's written beside parts and on lines is (labels.ts). */
@@ -73,6 +74,10 @@ export interface Style {
     nc: string; // normally closed valves'
     fip: string; // fail-in-place (double-acting) valves'
     labels: LabelSize;
+    // The team's color scheme its colors were taken from (fluids.ts applyScheme), by id, and when that scheme had
+    // last changed then, to see it's changed since. "": none.
+    scheme: string;
+    schemeAt: string;
 }
 
 export interface Drawing {
@@ -83,7 +88,7 @@ export interface Drawing {
     style: Style;
 }
 
-export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal" };
+export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" };
 
 export const emptyDrawing = (): Drawing => ({
     format: 1,
@@ -256,6 +261,7 @@ function fluid(value: unknown): Fluid | null {
         name: str(value.name, value.id),
         label: str(value.label),
         color: /^#[0-9a-f]{6}$/i.test(color) ? color : "#7f8c9a",
+        ...(typeof value.gas === "boolean" ? { gas: value.gas } : {}),
     };
 }
 
@@ -277,6 +283,13 @@ export function readDrawing(value: unknown): Drawing {
         fluids: list(found.fluids)
             .map(fluid)
             .filter((entry) => entry !== null),
-        style: { no: str(style.no), nc: str(style.nc), fip: str(style.fip), labels },
+        style: {
+            no: str(style.no),
+            nc: str(style.nc),
+            fip: str(style.fip),
+            labels,
+            scheme: str(style.scheme),
+            schemeAt: str(style.schemeAt),
+        },
     };
 }

@@ -212,9 +212,15 @@ const TOPICS: Topic[] = [
                     one valve's state.
                 </li>
                 <li>
-                    With nothing selected, the right side changes the diagram's fluids (their colors, labels, and
-                    names), adds its own, sets its valves' colors, and makes its labels smaller or larger. The legend
-                    (in the library's Notes) lists what its lines carry and its valves' states.
+                    With nothing selected, the right side changes the diagram's fluids (their colors, labels, and names,
+                    and whether each is a gas), adds its own, sets its valves' colors, and makes its labels smaller or
+                    larger. The legend (in the library's Notes) lists what its lines carry and its valves' states.
+                </li>
+                <li>
+                    The team's color schemes are on <Link to="/piper/schemes">Schemes</Link>: each one's fluids and
+                    valve state colors, defined by the team. New diagrams start in the team's default (YJSP standard, an
+                    admin's to pick); <em>Colors from</em>, with nothing selected, gives a diagram another's. When the
+                    scheme changes, the diagram says so: <em>Take its colors again</em>.
                 </li>
             </ul>
         ),
@@ -323,7 +329,8 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     <em>SVG</em> and <em>PNG</em> save it as an image; <em>Print</em> prints it. Exports are drawn in
-                    the light colors, as on paper.
+                    the light colors, as on paper. A PDF can be in black and white, for a printer without color: lines
+                    in ink, normally closed valves filled, normally open ones white.
                 </li>
                 <li>
                     <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and

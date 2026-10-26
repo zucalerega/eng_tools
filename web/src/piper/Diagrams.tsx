@@ -5,9 +5,9 @@ import { formatSize } from "../format";
 import { countIn, folderTree, foldersOf, tidyFolder, type Folder } from "../pathTree";
 import { Link, navigate } from "../router";
 import { piper, type Diagram } from "./api";
-import { emptyDrawing } from "./drawing";
+import { emptyDrawing, type Drawing } from "./drawing";
 import { example } from "./example";
-import { fluidOf } from "./fluids";
+import { applyScheme, fluidOf } from "./fluids";
 import { readVisio, type ImportReport } from "./visio";
 
 // The diagrams, in their folders: each folder's the most recently changed first, and a diagram dragged onto a folder
@@ -418,6 +418,16 @@ function Fluid({ id }: { id: string }) {
 
 const NO_FOLDER = "None, or a new one, like Vespula/GSE";
 
+/** A new diagram's drawing in the team's default color scheme, if it has one (Schemes). */
+async function inTeamColors(drawing: Drawing): Promise<Drawing> {
+    try {
+        const team = (await piper.schemes()).find((scheme) => scheme.is_default);
+        return team ? applyScheme(drawing, team) : drawing;
+    } catch {
+        return drawing; // the schemes out of reach: Piper's own colors
+    }
+}
+
 function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diagram | null) => void }) {
     const [name, setName] = useState("");
     const [folder, setFolder] = useState("");
@@ -431,7 +441,7 @@ function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diag
                 await piper.create({
                     name: name.trim(),
                     folder: tidyFolder(folder),
-                    drawing: start === "example" ? example() : emptyDrawing(),
+                    drawing: await inTeamColors(start === "example" ? example() : emptyDrawing()),
                 }),
             );
         } catch (error) {
@@ -540,7 +550,7 @@ function ImportDialog({
                     name: page.name,
                     folder: tidyFolder(folder),
                     description: `Imported from ${file.name}`,
-                    drawing: page.drawing,
+                    drawing: await inTeamColors(page.drawing),
                 });
                 results.push({ diagram, report: page.report });
             }

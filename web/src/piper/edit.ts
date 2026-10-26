@@ -227,7 +227,7 @@ function fluidAt(drawing: Drawing, end: End): string {
     }
     const holds = part?.props.fluid ?? "";
     // A tank's top is its ullage: what's drawn from there is its pressurant, not its liquid.
-    if (!holds || kind?.through || (end.port === "top" && !isGas(holds))) {
+    if (!holds || kind?.through || (end.port === "top" && !isGas(drawing, holds))) {
         return "";
     }
     return holds;

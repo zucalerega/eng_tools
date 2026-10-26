@@ -4,7 +4,7 @@ import { fits, dataset as loadDataset, formulas as loadFormulas, maskRuns } from
 import { FormulaDialog } from "./Formulas";
 import { isPlotted, type Action, type AxisTarget, type Layout, type Mask, type PanelSpec } from "./layout";
 import { measure } from "./masks";
-import { formatDuration, formatValue } from "./scale";
+import { formatDuration, formatValue } from "../scale";
 import type { Resolved } from "./Workspace";
 import { CHANNEL_TYPE, quantityOf } from "./Workspace";
 

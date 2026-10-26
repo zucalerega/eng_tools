@@ -52,7 +52,7 @@ import {
     type TimeAxis,
 } from "./Plot";
 import { sampleAt, Samples, type Placement } from "./samples";
-import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "./scale";
+import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "../scale";
 import { Sidebar } from "./Sidebar";
 import { SplitDialog } from "./Split";
 

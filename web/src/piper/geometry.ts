@@ -42,12 +42,13 @@ export function dirOf(a: Point, b: Point): Dir | null {
     return dy > 0 ? "down" : "up";
 }
 
-type Placed = Pick<Part, "x" | "y" | "rotation" | "flip">;
+type Placed = Pick<Part, "x" | "y" | "rotation" | "flip"> & { scale?: number };
 
 /** A point of a part's own frame (centered, unturned) in the drawing: flipped, turned clockwise, then moved there. */
 export function toWorld(part: Placed, local: Point): Point {
-    const x = part.flip ? -local.x : local.x;
-    const y = local.y;
+    const scale = part.scale ?? 1;
+    const x = (part.flip ? -local.x : local.x) * scale;
+    const y = local.y * scale;
     switch (part.rotation) {
         case 90:
             return { x: part.x - y, y: part.y + x };
@@ -79,7 +80,8 @@ export function toLocal(part: Placed, world: Point): Point {
         default:
             [x, y] = [dx, dy];
     }
-    return { x: part.flip ? -x : x, y };
+    const scale = part.scale ?? 1;
+    return { x: (part.flip ? -x : x) / scale, y: y / scale };
 }
 
 /** A way a part's frame faces, in the drawing. */
@@ -90,7 +92,9 @@ export function turnDir(part: Placed, dir: Dir): Dir {
 
 /** The SVG transform that draws a part's own frame where it is. */
 export const partTransform = (part: Placed): string =>
-    `translate(${part.x} ${part.y}) rotate(${part.rotation})${part.flip ? " scale(-1 1)" : ""}`;
+    `translate(${part.x} ${part.y}) rotate(${part.rotation})${part.flip ? " scale(-1 1)" : ""}${
+        (part.scale ?? 1) !== 1 ? ` scale(${part.scale})` : ""
+    }`;
 
 /**
  * The transform for something drawn in a part's frame at (x, y) that should read upright however the part is turned

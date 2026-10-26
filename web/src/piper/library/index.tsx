@@ -58,7 +58,6 @@ export const PRESETS: Preset[] = [
         prefix: "BV",
         keywords: "quarter turn manual",
         props: VALVE("ball", "manual"),
-        shown: ["normal"],
     },
     {
         id: "solenoid-valve",
@@ -68,7 +67,6 @@ export const PRESETS: Preset[] = [
         prefix: "SV",
         keywords: "electric sv ncs nos actuated",
         props: VALVE("globe", "solenoid", "NC"),
-        shown: ["normal"],
     },
     {
         id: "pneumatic-valve",
@@ -78,7 +76,6 @@ export const PRESETS: Preset[] = [
         prefix: "PV",
         keywords: "actuated air operated main propellant mpv",
         props: VALVE("ball", "pneumatic", "NC"),
-        shown: ["normal"],
     },
     {
         id: "motor-valve",
@@ -88,7 +85,6 @@ export const PRESETS: Preset[] = [
         prefix: "MV",
         keywords: "mov motor operated servo actuated electric",
         props: VALVE("ball", "motor", "NC"),
-        shown: ["normal"],
     },
     {
         id: "needle-valve",
@@ -98,7 +94,6 @@ export const PRESETS: Preset[] = [
         prefix: "NV",
         keywords: "metering throttle bleed",
         props: VALVE("needle", "manual"),
-        shown: ["normal"],
     },
     {
         id: "gate-valve",
@@ -108,7 +103,6 @@ export const PRESETS: Preset[] = [
         prefix: "GV",
         keywords: "isolation",
         props: VALVE("gate", ""),
-        shown: ["normal"],
     },
     {
         id: "globe-valve",
@@ -118,7 +112,6 @@ export const PRESETS: Preset[] = [
         prefix: "GLV",
         keywords: "throttling",
         props: VALVE("globe", ""),
-        shown: ["normal"],
     },
     {
         id: "butterfly-valve",
@@ -128,7 +121,6 @@ export const PRESETS: Preset[] = [
         prefix: "BFV",
         keywords: "disc",
         props: VALVE("butterfly", ""),
-        shown: ["normal"],
     },
     {
         id: "plug-valve",
@@ -138,7 +130,6 @@ export const PRESETS: Preset[] = [
         prefix: "PLV",
         keywords: "cock",
         props: VALVE("plug", ""),
-        shown: ["normal"],
     },
     {
         id: "check-valve",
@@ -191,7 +182,6 @@ export const PRESETS: Preset[] = [
         category: "valves",
         prefix: "AV",
         keywords: "right angle",
-        shown: ["normal"],
     },
     {
         id: "quick-disconnect",
@@ -301,6 +291,24 @@ export const PRESETS: Preset[] = [
         prefix: "PT",
         keywords: "pressure sensor transmitter pt",
         props: { type: "pressure" },
+    },
+    {
+        id: "pressure-transducer-2",
+        kind: "instrument",
+        name: "Duplicated pressure transducer",
+        category: "instruments",
+        prefix: "PT",
+        keywords: "pressure sensor transmitter pt dual redundant two duplicated",
+        props: { type: "pressure", count: "2" },
+    },
+    {
+        id: "pressure-transducer-3",
+        kind: "instrument",
+        name: "Triplicated pressure transducer",
+        category: "instruments",
+        prefix: "PT",
+        keywords: "pressure sensor transmitter pt triple redundant three triplicated",
+        props: { type: "pressure", count: "3" },
     },
     {
         id: "thermocouple",
@@ -486,6 +494,16 @@ export const PRESETS: Preset[] = [
         text: "TO GSE",
     },
     { id: "legend", kind: "legend", name: "Legend", category: "notes", prefix: "", keywords: "key colors" },
+    {
+        id: "picture",
+        kind: "picture",
+        name: "Picture",
+        category: "notes",
+        prefix: "",
+        keywords: "image photo png jpeg injector tca engine cad render",
+        w: 160,
+        h: 120,
+    },
     {
         id: "title-block",
         kind: "titleblock",

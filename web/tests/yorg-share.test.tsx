@@ -95,12 +95,12 @@ test("a link to a dataset's plots opens them for someone else as they were, and 
     await waitFor(() => expect(plotted()).toEqual(plots.slice(0, 1)));
 });
 
-test("a link to a view's changed plots, copied in the preview, opens on the site as the view changed", async () => {
+test("a link to a view's changed plots opens for someone else as the view changed", async () => {
     const team = await Team.create();
     const alice = await team.member("Alice");
     const data = await team.data(team.chief, "Viewed", HOTFIRE);
     const user = userEvent.setup();
-    const asChief = renderApp(team.chief, `/yorg/dev/datasets/${data.id}`);
+    const asChief = renderApp(team.chief, `/yorg/datasets/${data.id}`);
     await user.click(
         await within(await screen.findByRole("complementary", { name: "Channels" })).findByRole("button", {
             name: /PT-OX-01/,
@@ -112,7 +112,7 @@ test("a link to a view's changed plots, copied in the preview, opens on the site
     await user.type(dialog.getByLabelText("Name"), name);
     await user.click(dialog.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("heading", { name })).toBeTruthy();
-    const id = /^\/yorg\/dev\/views\/(\d+)$/.exec(window.location.pathname)?.[1];
+    const id = /^\/yorg\/views\/(\d+)$/.exec(window.location.pathname)?.[1];
     expect(id).toBeDefined();
 
     // Changed, not saved: a plot of its own for another channel.
@@ -123,7 +123,7 @@ test("a link to a view's changed plots, copied in the preview, opens on the site
     await waitFor(() => expect(plotted()).toEqual(plots));
 
     const link = await copyLink(user);
-    expect(link).toMatch(new RegExp(`^/yorg/views/${id}\\?plots=[\\w-]+$`)); // the site's page: Alice isn't an admin
+    expect(link).toMatch(new RegExp(`^/yorg/views/${id}\\?plots=[\\w-]+$`));
     asChief.unmount();
 
     const asAlice = renderApp(alice, link);

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Dialog, Notice, Time } from "../components";
+import { MoveDialog, NameDialog } from "../FolderDialogs";
+import { pathTo, within } from "../folders";
 import { formatSize } from "../format";
 import { Link, navigate } from "../router";
 import { yorg, type DataFolder, type Dataset } from "./api";
 import { reloadDataset } from "./data";
-import { formatDuration, formatRate } from "./scale";
+import { formatDuration, formatRate } from "../scale";
 import { DATA_FILES, UploadDialog } from "./Upload";
 
 // The datasets, in folders: a folder's own datasets and folders, and every dataset when searching. Datasets and
@@ -19,27 +21,6 @@ const DRAGGED = "application/x-yorg-move"; // {datasets: number[], folder: numbe
 const MAX_LISTED = 8; // datasets a delete names; past that, how many more
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-/** The folders from the top down to this one. */
-function pathTo(id: number | null, byId: ReadonlyMap<number, DataFolder>): DataFolder[] {
-    const path: DataFolder[] = [];
-    for (
-        let at = id === null ? undefined : byId.get(id);
-        at;
-        at = at.parent_id === null ? undefined : byId.get(at.parent_id)
-    ) {
-        path.unshift(at);
-        if (path.length > 100) {
-            break;
-        }
-    }
-    return path;
-}
-
-/** Whether folder is inside (or is) another. */
-function within(folder: number | null, other: number, byId: ReadonlyMap<number, DataFolder>): boolean {
-    return pathTo(folder, byId).some((one) => one.id === other);
-}
 
 export function DatasetsPage({ folder }: { folder: number | null }) {
     const [datasets, setDatasets] = useState<Dataset[] | null>(null);
@@ -515,7 +496,8 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
             {dialog?.kind === "move" && folders && (
                 <MoveDialog
                     folders={folders}
-                    count={selected.size}
+                    title={`Move ${selected.size === 1 ? "a dataset" : `${selected.size} datasets`}`}
+                    top="Datasets"
                     from={folder}
                     onCancel={() => setDialog(null)}
                     onMove={(target) => {
@@ -527,46 +509,6 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
                 />
             )}
         </section>
-    );
-}
-
-function NameDialog({
-    title,
-    confirm,
-    initial = "",
-    onName,
-    onCancel,
-}: {
-    title: string;
-    confirm: string;
-    initial?: string;
-    onName: (name: string) => Promise<void>;
-    onCancel: () => void;
-}) {
-    const [name, setName] = useState(initial);
-    const [busy, setBusy] = useState(false);
-    const [problem, setProblem] = useState<string | null>(null);
-    return (
-        <Dialog
-            title={title}
-            confirm={confirm}
-            busy={busy}
-            disabled={!name.trim() || name.trim() === initial}
-            onConfirm={() => {
-                setBusy(true);
-                onName(name.trim()).catch((error: unknown) => {
-                    setProblem(message(error));
-                    setBusy(false);
-                });
-            }}
-            onCancel={onCancel}
-        >
-            <label className="field">
-                Name
-                <input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
-            </label>
-            {problem && <Notice tone="error">{problem}</Notice>}
-        </Dialog>
     );
 }
 
@@ -602,58 +544,6 @@ function DeleteDialog({
                     {chosen.length > MAX_LISTED && <li className="muted">and {chosen.length - MAX_LISTED} more</li>}
                 </ul>
             )}
-        </Dialog>
-    );
-}
-
-/** Choosing a folder to move datasets to: every folder, as a tree. */
-function MoveDialog({
-    folders,
-    count,
-    from,
-    onMove,
-    onCancel,
-}: {
-    folders: DataFolder[];
-    count: number;
-    from: number | null;
-    onMove: (folder: number | null) => void;
-    onCancel: () => void;
-}) {
-    const [chosen, setChosen] = useState<number | null>(from);
-    const rows: ReactNode[] = [];
-    const add = (parent: number | null, depth: number) => {
-        for (const one of folders.filter((folder) => folder.parent_id === parent)) {
-            rows.push(
-                <label
-                    key={one.id}
-                    className="check yorg-move-choice"
-                    style={{ paddingLeft: `${0.5 + depth * 1.2}rem` }}
-                >
-                    <input type="radio" name="folder" checked={chosen === one.id} onChange={() => setChosen(one.id)} />
-                    <span className="file-icon file-icon-folder" aria-hidden="true" />
-                    {one.name}
-                </label>,
-            );
-            add(one.id, depth + 1);
-        }
-    };
-    add(null, 1);
-    return (
-        <Dialog
-            title={`Move ${count === 1 ? "a dataset" : `${count} datasets`}`}
-            confirm="Move"
-            disabled={chosen === from}
-            onConfirm={() => onMove(chosen)}
-            onCancel={onCancel}
-        >
-            <div className="yorg-move" role="radiogroup" aria-label="To">
-                <label className="check yorg-move-choice">
-                    <input type="radio" name="folder" checked={chosen === null} onChange={() => setChosen(null)} />
-                    Datasets (the top)
-                </label>
-                {rows}
-            </div>
         </Dialog>
     );
 }

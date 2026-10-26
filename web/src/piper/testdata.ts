@@ -1,10 +1,11 @@
-import { request, requestBytes } from "../api";
+import { request, requestBytes, uploadFile } from "../api";
 import { packJson } from "../packed";
 import type { Part } from "./drawing";
 
 // A test from Yorg, read as any client of Yorg's API reads one: its list of tests, a test's channels, and their
-// samples. Piper imports none of Yorg's code; what it knows of Yorg is its API (docs/yorg.md), and the address of its
-// plots, which links carry their layout in (?plots=, as packed.ts packs it).
+// samples (and, for an example simulation, a test of its own added). Piper imports none of Yorg's code; what it knows
+// of Yorg is its API (docs/yorg.md), and the address of its plots, which links carry their layout in (?plots=, as
+// packed.ts packs it).
 
 /** A test as Yorg lists it (one of its datasets). */
 export interface Test {
@@ -23,6 +24,8 @@ export interface TestChannel {
     kind: "number" | "state"; // a state: text, numbered in the order of its labels (a valve's off 0, on 1)
     labels: string[];
     decimals: number | null; // the most digits after the point the file had
+    min: number | null; // its least and most values
+    max: number | null;
     time: string; // its arrays, in the test's data
     values: string;
 }
@@ -41,6 +44,14 @@ export interface TestDetail extends Test {
 export const tests = (): Promise<Test[]> => request<Test[]>("GET", "/api/yorg/datasets");
 
 export const test = (id: number): Promise<TestDetail> => request<TestDetail>("GET", `/api/yorg/datasets/${id}`);
+
+/** A file of test data added to Yorg as a test (one of its datasets), by its name: as Yorg's own upload adds one. */
+export const addTest = (file: File, name: string): Promise<TestDetail> =>
+    uploadFile<TestDetail>(
+        `/api/yorg/datasets?${new URLSearchParams({ filename: file.name, name }).toString()}`,
+        file,
+        () => {},
+    );
 
 /** A channel's samples: their times, and values (NaN where there's none), little-endian float64 as Yorg keeps them. */
 export interface Samples {
@@ -70,8 +81,37 @@ export function findChannel(detail: TestDetail, name: string): TestChannel | nul
     );
 }
 
-/** The channel a part reads: the one named in its Test channel property, or else its tag. */
-export const channelName = (part: Part): string => (part.props.channel ?? "").trim() || part.tag.trim();
+/**
+ * The channels a part reads: the ones named in its Test channel property (by commas), or else its tag. A duplicated or
+ * triplicated transducer (two or three on one tap) reads one each: those named, or its tag's with A, B, and C after it
+ * (PT-101A, PT-101B).
+ */
+export function channelNames(part: Part): string[] {
+    const named = (part.props.channel ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+    const count = transducers(part);
+    if (count === 1) {
+        return [named[0] || part.tag.trim()].filter(Boolean);
+    }
+    if (named.length >= count) {
+        return named.slice(0, count);
+    }
+    const base = named[0] || part.tag.trim();
+    return base
+        ? "ABC"
+              .slice(0, count)
+              .split("")
+              .map((letter) => `${base}${letter}`)
+        : [];
+}
+
+/** The channel a part reads first: its only one, but for a duplicated or triplicated transducer's. */
+export const channelName = (part: Part): string => channelNames(part)[0] ?? "";
+
+/** How many transducers a part is: 2 or 3 on one tap, as a duplicated or triplicated one is, or 1. */
+export const transducers = (part: Part): number => (part.props.count === "3" ? 3 : part.props.count === "2" ? 2 : 1);
 
 /** A channel's value at a time: its last sample then, or null before its first (or where it's missing). */
 export function valueAt(samples: Samples, t: number): number | null {

@@ -1,10 +1,11 @@
+import { imageHref } from "../api";
 import type { Drawing, Part } from "../drawing";
 import { fluidsUsed } from "../fluids";
 import { FONT, ink } from "./draw";
 import type { DrawContext, Field, Kind } from "./kinds";
 
 // What's written on a drawing rather than built: notes, regions around a part of the system (the vehicle, the GSE),
-// off-page connectors, a legend of its fluids and states, and a title block.
+// off-page connectors, a legend of its fluids and states, a title block, and pictures.
 
 const SIZES: Record<string, number> = { small: 10, "": 13, large: 17, title: 24 };
 
@@ -20,46 +21,132 @@ const TEXT_SIZE: Field = {
     ],
 };
 
-const linesOf = (part: Part): string[] => (part.text || "Text").split("\n");
+const choice = (key: string, label: string, options: [string, string][]): Field => ({
+    key,
+    label,
+    type: "select",
+    options: options.map(([value, name]) => ({ value, label: name })),
+});
 
-/** About how wide words are, without a page to measure them on: a little over half their size a letter. */
-const widthOf = (words: string, size: number): number => Math.max(1, words.length) * size * 0.58;
+const TEXT_FIELDS: Field[] = [
+    TEXT_SIZE,
+    choice("weight", "Weight", [
+        ["", "Normal"],
+        ["bold", "Bold"],
+    ]),
+    choice("slant", "Slant", [
+        ["", "Upright"],
+        ["italic", "Italic"],
+    ]),
+    // As a PDF prints them: its standard Helvetica, Times, and Courier.
+    choice("font", "Font", [
+        ["", "Sans serif (Helvetica)"],
+        ["serif", "Serif (Times)"],
+        ["mono", "Monospace (Courier)"],
+    ]),
+    choice("align", "Align", [
+        ["", "Center"],
+        ["left", "Left"],
+        ["right", "Right"],
+    ]),
+    choice("border", "Border", [
+        ["", "None"],
+        ["box", "A box around it"],
+    ]),
+];
 
+/** The fonts a text block's in on screen, as close to the PDF's as a browser has them. */
+const FAMILIES: Record<string, string> = {
+    "": FONT,
+    serif: "Georgia, 'Times New Roman', Times, serif",
+    mono: "'SF Mono', Menlo, Consolas, 'Courier New', monospace",
+};
+
+/** About how wide a letter is, of the size, in each font: words are measured without a page to measure them on. */
+const LETTER_WIDTH: Record<string, number> = { "": 0.56, serif: 0.5, mono: 0.6 };
+
+const sizeOf = (part: Part) => SIZES[part.props.size ?? ""] ?? 13;
+const letterWidth = (part: Part) => (LETTER_WIDTH[part.props.font ?? ""] ?? 0.56) * sizeOf(part);
+
+/** Its words' lines: as they're typed, and, in a block of a set width, wrapped to it at the spaces. */
+function linesOf(part: Part): string[] {
+    const typed = (part.text || "Text").split("\n");
+    if (part.w <= 0) {
+        return typed;
+    }
+    const most = Math.max(1, Math.floor((part.w - 8) / letterWidth(part)));
+    return typed.flatMap((line) => {
+        const wrapped: string[] = [];
+        let now = "";
+        for (const word of line.split(" ")) {
+            const next = now ? `${now} ${word}` : word;
+            if (next.length > most && now) {
+                wrapped.push(now);
+                now = word;
+            } else {
+                now = next;
+            }
+        }
+        return [...wrapped, now];
+    });
+}
+
+/** Its box: a text block's own size, or, until it's given one, its words'. */
 function textBox(part: Part): readonly [number, number, number, number] {
-    const size = SIZES[part.props.size ?? ""] ?? 13;
+    if (part.w > 0) {
+        return [-part.w / 2, -part.h / 2, part.w / 2, part.h / 2];
+    }
+    const size = sizeOf(part);
     const lines = linesOf(part);
-    const w = Math.max(...lines.map((line) => widthOf(line, size))) / 2 + 4;
+    const w = (Math.max(...lines.map((line) => Math.max(1, line.length))) * letterWidth(part)) / 2 + 4;
     const h = (lines.length * size * 1.25) / 2 + 2;
     return [-w, -h, w, h];
 }
 
+/**
+ * Words on the drawing: a note sized to its words, or a text block of a set width and height (dragged to it), its
+ * words wrapped to the width; in a size, weight, slant, and font, aligned, and boxed or not.
+ */
 export const text: Kind = {
     id: "text",
     name: "Text",
     box: textBox,
     ports: () => [],
-    fields: [TEXT_SIZE],
+    fields: TEXT_FIELDS,
     tag: "none",
     text: "Text",
+    resizable: true,
+    resize: { step: 10, least: [40, 20] },
     draw: (part, context) => {
-        const size = SIZES[part.props.size ?? ""] ?? 13;
+        const size = sizeOf(part);
         const lines = linesOf(part);
-        const top = (-(lines.length - 1) * size * 1.25) / 2;
+        const [x0, y0, x1, y1] = textBox(part);
+        const align = part.props.align ?? "";
+        const set = part.w > 0; // a block of its own size: its words from its top, as aligned
+        const x = !set || align === "" ? 0 : align === "left" ? x0 + 4 : x1 - 4;
+        const anchor = !set || align === "" ? "middle" : align === "left" ? "start" : "end";
+        const top = set ? y0 + 4 + size * 0.9 : (-(lines.length - 1) * size * 1.25) / 2;
         return (
-            <text
-                fontSize={size}
-                fontFamily={FONT}
-                fontWeight={part.props.size === "title" ? 700 : 500}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill={part.text ? context.ink : context.muted}
-            >
-                {lines.map((line, index) => (
-                    <tspan key={index} x={0} y={top + index * size * 1.25}>
-                        {line || " "}
-                    </tspan>
-                ))}
-            </text>
+            <>
+                {part.props.border === "box" && (
+                    <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill={context.paper} {...ink(context, 1)} />
+                )}
+                <text
+                    fontSize={size}
+                    fontFamily={FAMILIES[part.props.font ?? ""] ?? FONT}
+                    fontWeight={part.props.weight === "bold" || part.props.size === "title" ? 700 : 500}
+                    fontStyle={part.props.slant === "italic" ? "italic" : undefined}
+                    textAnchor={anchor}
+                    dominantBaseline={set ? undefined : "central"}
+                    fill={part.text ? context.ink : context.muted}
+                >
+                    {lines.map((line, index) => (
+                        <tspan key={index} x={x} y={top + index * size * 1.25}>
+                            {line || " "}
+                        </tspan>
+                    ))}
+                </text>
+            </>
         );
     },
 };
@@ -104,22 +191,88 @@ export const region: Kind = {
     ),
 };
 
-/** Where a line goes on to another drawing: an arrow-shaped box saying where. */
+/** A picture's shape, width over height, as its pixels are: its box keeps it as it's sized. */
+export function pictureAspect(part: Part): number | null {
+    const width = Number(part.props.imageWidth);
+    const height = Number(part.props.imageHeight);
+    return width > 0 && height > 0 ? width / height : null;
+}
+
+/**
+ * A picture of the team's own (an injector, a TCA), drawn to its box in its own proportions: a PNG or a JPEG added to
+ * Piper (server/.../piper/images.py), named by its SHA-256. Until it has one, a box saying to choose one.
+ */
+export const picture: Kind = {
+    id: "picture",
+    name: "Picture",
+    box: (part) => [-part.w / 2, -part.h / 2, part.w / 2, part.h / 2],
+    ports: () => [],
+    fields: [],
+    tag: "beside",
+    resizable: true,
+    resize: { step: 5, least: [20, 20], aspect: pictureAspect },
+    draw: (part, context) =>
+        part.props.image ? (
+            <image
+                href={imageHref(part.props.image)}
+                x={-part.w / 2}
+                y={-part.h / 2}
+                width={part.w}
+                height={part.h}
+                preserveAspectRatio="xMidYMid meet"
+            />
+        ) : (
+            <>
+                <rect
+                    x={-part.w / 2}
+                    y={-part.h / 2}
+                    width={part.w}
+                    height={part.h}
+                    fill="none"
+                    strokeDasharray="6 4"
+                    {...ink({ ...context, ink: context.muted }, 1.2)}
+                />
+                <text
+                    x={0}
+                    y={0}
+                    fontSize={11}
+                    fontFamily={FONT}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={context.muted}
+                >
+                    Choose a picture
+                </text>
+            </>
+        ),
+};
+
+/**
+ * How wide an off-page connector's box is, to its point: 48, or wider for its words (a page's name, TO VEHICLE
+ * STAND), at about two thirds of their size a letter, as bold capitals are.
+ */
+const connectorWidth = (part: Part) => Math.max(48, Math.ceil((part.text || "TO").length * 0.68 * 9) + 8);
+
+/** Where a line goes on to another drawing: an arrow-shaped box saying where, as wide as its words. */
 export const offpage: Kind = {
     id: "offpage",
     name: "Off-page connector",
-    box: () => [-40, -12, 30, 12],
+    box: (part) => [-40, -12, -30 + connectorWidth(part) + 12, 12],
     ports: () => [{ id: "in", x: -40, y: 0, dir: "left", inset: 10 }],
     fields: [],
     tag: "none",
     text: "Goes to",
     draw: (part, context) => (
         <>
-            <path d="M-30 -12 H18 L30 0 L18 12 H-30 Z" fill={context.paper} {...ink(context)} />
+            <path
+                d={`M-30 -12 H${-30 + connectorWidth(part)} l12 12 l-12 12 H-30 Z`}
+                fill={context.paper}
+                {...ink(context)}
+            />
             <text
-                x={-6}
+                x={-30 + connectorWidth(part) / 2}
                 y={0}
-                fontSize={part.text.length > 9 ? 7.5 : 9}
+                fontSize={9}
                 fontFamily={FONT}
                 fontWeight={600}
                 textAnchor="middle"
@@ -150,6 +303,9 @@ function legendRows(drawing: Drawing, context?: DrawContext): LegendRow[] {
     }
     if (normal.has("NC")) {
         rows.push({ label: "Normally closed", color: context?.states.nc ?? "", valve: true });
+    }
+    if (normal.has("FIP")) {
+        rows.push({ label: "Fails in place", color: context?.states.fip ?? "", valve: true });
     }
     return rows;
 }
@@ -287,20 +443,14 @@ export const titleblock: Kind = {
                     YJSP
                 </text>
                 <Cell x={-150} y={-8} label="DRAWING" value={value("number", "")} context={context} />
-                <Cell
-                    x={-50}
-                    y={-8}
-                    label="REVISION"
-                    value={value("revision", meta.revision === null ? "" : String(meta.revision))}
-                    context={context}
-                />
+                <Cell x={-50} y={-8} label="REVISION" value={value("revision", meta.revision)} context={context} />
                 <Cell x={30} y={-8} label="DATE" value={value("date", date)} context={context} />
                 <Cell x={-150} y={16} label="DRAWN" value={value("drawn", meta.by)} context={context} />
                 <Cell x={-50} y={16} label="CHECKED" value={value("checked", "")} context={context} />
-                <Cell x={30} y={16} label="SHEET" value="1 OF 1" context={context} />
+                <Cell x={30} y={16} label="SHEET" value={meta.sheet ?? "1 OF 1"} context={context} />
             </>
         );
     },
 };
 
-export const NOTE_KINDS: Kind[] = [text, region, offpage, legend, titleblock];
+export const NOTE_KINDS: Kind[] = [text, region, offpage, legend, titleblock, picture];

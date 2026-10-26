@@ -58,7 +58,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)
     app.state.vault_store = BlobStore(settings.vault_dir / "blobs")
     app.state.yorg_files = DataFiles(settings.yorg_dir)
-    app.state.yorg_models = Saved(settings.yorg_dir, "model", "model")
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
     app.state.yorg_runs = Runs(settings.yorg_dir)
     app.state.oauth = signin.make_oauth(settings)

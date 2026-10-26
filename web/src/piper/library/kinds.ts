@@ -54,7 +54,7 @@ export interface DrawContext {
     fluidLabel: string;
     gas: boolean; // what it holds is a gas: a tank's all of it, not its lower part
     pipe: string | null; // the color of a line on it: a hose is drawn as the pipe it is
-    states: { no: string; nc: string }; // the colors of normally open and closed valves, for a legend
+    states: { no: string; nc: string; fip: string }; // the colors of valves' normal states, for a legend
     lines: number; // how many lines meet it: a junction shows its dot where three or more do
     drawing: Drawing;
     meta: DiagramMeta;
@@ -63,9 +63,12 @@ export interface DrawContext {
 /** The diagram's own particulars, for a title block. */
 export interface DiagramMeta {
     name: string;
-    revision: number | null;
+    // Its revision as a title block writes it: a released one's letter ("B"), else its number ("7"), and after a
+    // release, which release it follows ("7 (after B)"). "": none.
+    revision: string;
     savedAt: string | null; // ISO time of its last save
     by: string; // who made it
+    sheet?: string; // which page of how many it is, as a title block says it: "2 OF 3" (left out: "1 OF 1")
 }
 
 export interface Kind {
@@ -80,11 +83,15 @@ export interface Kind {
     title?: (part: Part) => string;
     state?: boolean; // it has a normal state, NO or NC, which colors it
     reads?: "value" | "state"; // a test's channel shows its value, or its state
-    tag: "beside" | "inside" | "none"; // where its tag's drawn: beside it, in it (an instrument's bubble), or not
+    // Where its tag's drawn: beside it (under it, or beside it in a line going down), at its side (an instrument's),
+    // in it, or not at all.
+    tag: "beside" | "side" | "inside" | "none";
     inline?: readonly [string, string]; // two ports facing apart: it can be dropped into a line
     through?: boolean; // what flows in flows out: a line's fluid carries on through it
     resizable?: boolean; // a region or a box: dragged to a size
-    resize?: { step: number; least: readonly [number, number] }; // the steps it's sized in, and its least size
+    // The steps it's sized in, and its least size; and the shape it keeps, if it has one (a picture's): width over
+    // height.
+    resize?: { step: number; least: readonly [number, number]; aspect?: (part: Part) => number | null };
     behind?: boolean; // drawn under everything else
     text?: string; // what its words are called, if it has them (a note's Text, a region's Title)
 }
@@ -114,12 +121,14 @@ export const NORMAL: Field = {
         { value: "", label: "Not set" },
         { value: "NO", label: "Normally open", short: "NO" },
         { value: "NC", label: "Normally closed", short: "NC" },
+        { value: "FIP", label: "Fails in place (double-acting)", short: "FIP" },
     ],
 };
 
 export const SIZE: Field = { key: "size", label: "Size", type: "text", placeholder: "1/2 in" };
 export const CV: Field = { key: "cv", label: "Cv", type: "text", placeholder: "1.2", prefix: "Cv " };
-export const RATING: Field = { key: "rating", label: "Pressure rating", type: "text", placeholder: "3000 psi" };
+/** The most pressure it's rated to hold, as each component (and line) on a P&ID lists it: a tank's MEOP is beside. */
+export const MAWP: Field = { key: "mawp", label: "MAWP", type: "text", placeholder: "3000 psi", prefix: "MAWP " };
 export const MODEL: Field = { key: "model", label: "Model", type: "text", placeholder: "Swagelok SS-45S8" };
 export const MATERIAL: Field = { key: "material", label: "Material", type: "text", placeholder: "316 SS" };
 export const NOTES: Field = { key: "notes", label: "Notes", type: "long" };

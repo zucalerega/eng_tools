@@ -1,5 +1,5 @@
 import { ink, Letters } from "./draw";
-import { MODEL, NOTES, type Kind } from "./kinds";
+import { MAWP, MODEL, NOTES, type Kind } from "./kinds";
 
 // Equipment: what a system is for (an engine), or what moves its fluids (a pump), and where they leave it (a vent).
 
@@ -19,6 +19,7 @@ export const engine: Kind = {
         { key: "pc", label: "Chamber pressure", type: "text", placeholder: "300 psi", prefix: "Pc " },
         { key: "of", label: "O/F", type: "text", placeholder: "2.1", prefix: "O/F " },
         { key: "propellants", label: "Propellants", type: "text", placeholder: "LOX/RP-1" },
+        MAWP,
         NOTES,
     ],
     tag: "beside",
@@ -45,6 +46,7 @@ export const pump: Kind = {
     fields: [
         { key: "flow", label: "Flow", type: "text", placeholder: "2 gpm" },
         { key: "rise", label: "Pressure rise", type: "text", placeholder: "500 psi" },
+        MAWP,
         MODEL,
         NOTES,
     ],
@@ -89,7 +91,7 @@ export const exchanger: Kind = {
         { id: "shell-in", x: 0, y: -20, dir: "up", inset: 0 },
         { id: "shell-out", x: 0, y: 20, dir: "down", inset: 0 },
     ],
-    fields: [{ key: "duty", label: "Duty", type: "text", placeholder: "5 kW" }, MODEL, NOTES],
+    fields: [{ key: "duty", label: "Duty", type: "text", placeholder: "5 kW" }, MAWP, MODEL, NOTES],
     tag: "beside",
     draw: (_part, context) => (
         <>
@@ -99,20 +101,20 @@ export const exchanger: Kind = {
     ),
 };
 
-/** Where a line leaves to the air: an arrow out. */
+/** Where a line leaves to the air: its open end turned down (a gooseneck), as vents are drawn, and fitted. */
 export const vent: Kind = {
     id: "vent",
     name: "Vent",
-    box: () => [-20, -8, 15, 8],
+    box: () => [-20, -9, 10, 8],
     ports: () => [{ id: "in", x: -20, y: 0, dir: "left", inset: 0 }],
     fields: [{ key: "to", label: "To", type: "text", placeholder: "Atmosphere" }, NOTES],
     tag: "beside",
     draw: (part, context) => (
         <>
-            <path d="M-20 0 H0" {...ink(context, 2)} />
-            <path d="M0 -7 L14 0 L0 7 Z" fill={context.ink} {...ink(context, 1)} />
+            <path d="M-20 0 H-6 A6 6 0 0 1 6 0 V6" fill="none" stroke={context.pipe ?? context.ink} strokeWidth={2} />
+            <path d="M3 6 H9" {...ink(context, 1.2)} />
             {!part.tag && (
-                <Letters part={part} x={-3} y={-14} size={8} fill={context.muted}>
+                <Letters part={part} x={0} y={-14} size={7} fill={context.muted}>
                     VENT
                 </Letters>
             )}

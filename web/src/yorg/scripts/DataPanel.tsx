@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { linkTarget } from "../../preview";
 import type { Dataset } from "../api";
 import { dataset as loadDataset } from "../data";
 import { datasetUrl } from "../pages";
@@ -67,7 +66,7 @@ export function DataPanel({ datasets, attached, onChange, onChannel }: Props) {
                     <section key={id} className="scripts-test" aria-label={name}>
                         <div className="scripts-test-head">
                             <a
-                                href={linkTarget(datasetUrl(id))}
+                                href={datasetUrl(id)}
                                 target="_blank"
                                 rel="noreferrer"
                                 title="Open the test (in a new tab)"

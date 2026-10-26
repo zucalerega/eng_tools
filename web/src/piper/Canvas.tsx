@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { DiagramView, type LiveValue } from "./DiagramView";
-import type { Drawing, Point } from "./drawing";
+import { PART_SCALES, type Drawing, type PageSheet, type Point } from "./drawing";
 import {
     addPart,
     connect,
@@ -19,8 +19,9 @@ import {
 import { distance, grow, inBox, snapPoint, type Box, type Dir } from "./geometry";
 import { boxOf, kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
-import { labelPlace } from "./labels";
+import { labelPlace, textSizes } from "./labels";
 import { linesOn, partsById, pathOf, placeEnd, portsOf } from "./ports";
+import { PAPERS, sheetOutline } from "./pdf";
 import { route } from "./route";
 import { snapMove } from "./snap";
 import { useEditor, type Aim, type EditorStore } from "./store";
@@ -29,11 +30,31 @@ import { useEditor, type Aim, type EditorStore } from "./store";
 // a line, drag a line's segment to move it or its end to another port, drag on nothing to select what's in a box, and
 // the wheel to scroll (with Ctrl or ⌘ to zoom). Space or the middle button drags the view.
 
-/** The library entry being dragged onto the canvas: dragover can't read what's being dragged, so the library says. */
-export const libraryDrag: { preset: string | null } = { preset: null };
+/**
+ * The canvas, for a part dragged from the library (with the pointer, as the browser's own drag-and-drop doesn't start
+ * from a button in every browser): over the canvas, the part's shown where it would go; let go there, it's placed.
+ * Points are the pointer's, in the window; free: Alt, off the grid.
+ */
+export interface LibraryDrop {
+    over(preset: string, client: Point, free: boolean): boolean; // whether it's over the canvas
+    drop(preset: string, client: Point, free: boolean): boolean; // whether it was placed
+    leave(): void;
+}
+
+/** The canvas taking parts from the library now, if one's open. */
+export const libraryDrop: { target: LibraryDrop | null } = { target: null };
 
 type Drag =
     | { kind: "pan"; client: Point; view: { x: number; y: number; zoom: number } }
+    // On a drawing only looked at: a drag moves the view; a click selects what it's on (hit), or nothing.
+    | {
+          kind: "look";
+          client: Point;
+          view: { x: number; y: number; zoom: number };
+          hit: string | null;
+          additive: boolean;
+          moved: boolean;
+      }
     | {
           kind: "move";
           start: Point;
@@ -56,6 +77,7 @@ type Drag =
     | { kind: "end"; line: string; end: "from" | "to"; base: Drawing; moved: boolean; aim: Aim | null }
     | { kind: "label"; part: string; start: Point; offset: Point; base: Drawing; moved: boolean }
     | { kind: "resize"; part: string; start: Point; base: Drawing; moved: boolean }
+    | { kind: "scale"; part: string; middle: Point; reach: number; scale: number; base: Drawing; moved: boolean }
     | { kind: "marquee"; start: Point; before: string[]; moved: boolean };
 
 /** What's under the pointer: the data-hit of the nearest thing drawn there that says what it is ("part:p1"). */
@@ -121,6 +143,7 @@ export function Canvas({
     meta,
     live,
     onEdit,
+    onPicture,
 }: {
     store: EditorStore;
     commands: Commands;
@@ -128,6 +151,7 @@ export function Canvas({
     meta: DiagramMeta;
     live: ReadonlyMap<string, LiveValue> | null;
     onEdit: (id: string) => void; // a part double-clicked: its tag (or words) to type in
+    onPicture: (file: File, at: Point) => void; // a file dropped on the drawing: a picture, there
 }) {
     const state = useEditor(store, (all) => all);
     const svg = useRef<SVGSVGElement>(null);
@@ -221,7 +245,7 @@ export function Canvas({
         if (!preset) {
             return null;
         }
-        const added = addPart(drawing, preset, free ? at : snapPoint(at));
+        const added = addPart(drawing, preset, at, free);
         if (kindOf(preset.kind).inline) {
             const near = lineNear(drawing, at, 10 / now.zoom);
             const into = near ? insertIntoLine(added.drawing, added.id, near.line.id, at) : null;
@@ -231,6 +255,53 @@ export function Canvas({
         }
         return { ...added, into: null };
     }
+
+    // Taking parts dragged from the library, while it's open.
+    const dropTarget = useRef<LibraryDrop | null>(null);
+    dropTarget.current = {
+        over(preset, client, free) {
+            const rect = svg.current?.getBoundingClientRect();
+            const inside =
+                !!rect &&
+                client.x >= rect.left &&
+                client.x <= rect.right &&
+                client.y >= rect.top &&
+                client.y <= rect.bottom;
+            const made = inside ? placed(preset, pointAt({ clientX: client.x, clientY: client.y }), free) : null;
+            if (made) {
+                store.preview(made.drawing, { into: made.into });
+            } else if (store.getState().shown !== store.getState().drawing) {
+                store.cancel();
+            }
+            return inside;
+        },
+        drop(preset, client, free) {
+            const inside = this.over(preset, client, free);
+            const made = inside ? placed(preset, pointAt({ clientX: client.x, clientY: client.y }), free) : null;
+            if (made) {
+                store.commit(made.drawing, [made.id]);
+            } else {
+                store.cancel();
+            }
+            return made !== null;
+        },
+        leave() {
+            store.cancel();
+        },
+    };
+    useEffect(() => {
+        const target: LibraryDrop = {
+            over: (...args) => dropTarget.current!.over(...args),
+            drop: (...args) => dropTarget.current!.drop(...args),
+            leave: () => dropTarget.current!.leave(),
+        };
+        libraryDrop.target = target;
+        return () => {
+            if (libraryDrop.target === target) {
+                libraryDrop.target = null;
+            }
+        };
+    }, []);
 
     function onPointerDown(event: PointerEvent<SVGSVGElement>) {
         if (event.button === 2) {
@@ -244,6 +315,17 @@ export function Canvas({
             return;
         }
         const hit = hitOf(event.target);
+        if (now.readOnly) {
+            drag.current = {
+                kind: "look",
+                client: { x: event.clientX, y: event.clientY },
+                view: now.view,
+                hit: hit?.[1] ?? null,
+                additive: event.shiftKey || event.ctrlKey || event.metaKey,
+                moved: false,
+            };
+            return;
+        }
         if (now.tool.mode === "place") {
             const made = placed(now.tool.preset, at, event.altKey);
             if (made) {
@@ -316,7 +398,12 @@ export function Canvas({
                 store.select([id]);
                 const part = now.drawing.parts.find((entry) => entry.id === id);
                 if (part) {
-                    const place = labelPlace(part, boxOf(part, now.drawing)).at;
+                    const place = labelPlace(
+                        part,
+                        boxOf(part, now.drawing),
+                        textSizes(now.drawing, part).tag,
+                        now.drawing,
+                    ).at;
                     const offset = part.label ?? { x: place.x - part.x, y: place.y - part.y };
                     drag.current = { kind: "label", part: id, start: at, offset, base: now.drawing, moved: false };
                 }
@@ -325,6 +412,24 @@ export function Canvas({
             case "resize":
                 drag.current = { kind: "resize", part: id, start: at, base: now.drawing, moved: false };
                 break;
+            case "scale": {
+                // Bigger or smaller as the pointer goes out from its middle, or back toward it.
+                const part = now.drawing.parts.find((entry) => entry.id === id);
+                if (part) {
+                    const middle = { x: part.x, y: part.y };
+                    const reach = Math.max(1, distance(at, middle));
+                    drag.current = {
+                        kind: "scale",
+                        part: id,
+                        middle,
+                        reach,
+                        scale: part.scale,
+                        base: now.drawing,
+                        moved: false,
+                    };
+                }
+                break;
+            }
             case "part": {
                 const wasOnly = now.selection.includes(id) && !additive;
                 if (choose(id)) {
@@ -351,7 +456,7 @@ export function Canvas({
         const at = pointAt(event);
         const zoom = now.view.zoom;
         if (!current) {
-            const hit = hitOf(event.target);
+            const hit = now.readOnly ? null : hitOf(event.target); // a port to draw from shows only to someone editing
             const id = hit && ["part", "port", "label"].includes(hit[0] ?? "") ? (hit[1] ?? null) : null;
             if (id !== hover) {
                 setHover(id);
@@ -366,6 +471,20 @@ export function Canvas({
         }
         const far = (start: Point) => Math.hypot(at.x - start.x, at.y - start.y) * zoom >= 3;
         switch (current.kind) {
+            case "look":
+                if (
+                    !current.moved &&
+                    Math.hypot(event.clientX - current.client.x, event.clientY - current.client.y) < 3
+                ) {
+                    return;
+                }
+                current.moved = true;
+                store.setView({
+                    ...current.view,
+                    x: current.view.x - (event.clientX - current.client.x) / current.view.zoom,
+                    y: current.view.y - (event.clientY - current.client.y) / current.view.zoom,
+                });
+                break;
             case "pan":
                 store.setView({
                     ...current.view,
@@ -438,15 +557,29 @@ export function Canvas({
                 store.preview(
                     updatePart(current.base, current.part, (part) => {
                         // From its top left, which stays put: in its kind's steps (a region's the grid's), and no
-                        // smaller than its least.
-                        const { step, least } = kindOf(part.kind).resize ?? { step: 10, least: [60, 40] };
-                        const left = part.x - part.w / 2;
-                        const top = part.y - part.h / 2;
+                        // smaller than its least. (A text block sized to its words until now starts from its box.)
+                        // A picture keeps its shape: its height follows its width.
+                        const { step, least, aspect } = kindOf(part.kind).resize ?? { step: 10, least: [60, 40] };
+                        const box = boxOf(part, current.base);
+                        const left = box.x0;
+                        const top = box.y0;
                         const w = Math.max(least[0], Math.round((at.x - left) / step) * step);
-                        const h = Math.max(least[1], Math.round((at.y - top) / step) * step);
+                        const shape = aspect?.(part) ?? null;
+                        const h = shape
+                            ? Math.max(least[1], Math.round(w / shape))
+                            : Math.max(least[1], Math.round((at.y - top) / step) * step);
                         return { ...part, w, h, x: left + w / 2, y: top + h / 2 };
                     }),
                 );
+                break;
+            }
+            case "scale": {
+                current.moved = true;
+                const wanted = (current.scale * distance(at, current.middle)) / current.reach;
+                const scale = PART_SCALES.reduce((best, each) =>
+                    Math.abs(each - wanted) < Math.abs(best - wanted) ? each : best,
+                );
+                store.preview(updatePart(current.base, current.part, (part) => ({ ...part, scale })));
                 break;
             }
             case "marquee": {
@@ -491,6 +624,19 @@ export function Canvas({
         switch (current.kind) {
             case "pan":
                 return;
+            case "look": {
+                const { hit, additive } = current;
+                if (current.moved) {
+                    return;
+                }
+                if (hit && additive) {
+                    const on = now.selection.includes(hit);
+                    store.select(on ? now.selection.filter((entry) => entry !== hit) : [...now.selection, hit]);
+                } else if (hit || !additive) {
+                    store.select(hit ? [hit] : []);
+                }
+                return;
+            }
             case "move":
                 if (!current.moved) {
                     // A click on one of several selected: just it.
@@ -536,36 +682,13 @@ export function Canvas({
         }
     }
 
-    function onDragOver(event: DragEvent<SVGSVGElement>) {
-        if (!libraryDrag.preset) {
-            return;
-        }
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-        const made = placed(libraryDrag.preset, pointAt(event), event.altKey);
-        if (made) {
-            store.preview(made.drawing, { into: made.into });
-        }
-    }
-
-    function onDrop(event: DragEvent<SVGSVGElement>) {
-        const preset = libraryDrag.preset;
-        libraryDrag.preset = null;
-        if (!preset) {
-            return;
-        }
-        event.preventDefault();
-        const made = placed(preset, pointAt(event), event.altKey);
-        if (made) {
-            store.commit(made.drawing, [made.id]);
-        } else {
-            store.cancel();
-        }
-    }
-
     const selection = useMemo(() => new Set(state.selection), [state.selection]);
     const drawingLine = state.sketch !== null || state.tool.mode === "line";
-    const ports = drawingLine ? ("all" as const) : new Set(hover ? [hover, ...state.selection] : state.selection);
+    const ports = state.readOnly
+        ? new Set<string>()
+        : drawingLine
+          ? ("all" as const)
+          : new Set(hover ? [hover, ...state.selection] : state.selection);
     const intoPath = useMemo(() => {
         const line = state.into ? shown.lines.find((entry) => entry.id === state.into) : null;
         return line ? pathOf(partsById(shown), line) : null;
@@ -573,12 +696,16 @@ export function Canvas({
     const width = size.width / view.zoom;
     const height = size.height / view.zoom;
     const cursor =
-        space || drag.current?.kind === "pan" ? "piper-panning" : state.tool.mode !== "select" ? "piper-placing" : "";
+        space || drag.current?.kind === "pan" || (drag.current?.kind === "look" && drag.current.moved)
+            ? "piper-panning"
+            : state.tool.mode !== "select"
+              ? "piper-placing"
+              : "";
 
     return (
         <svg
             ref={svg}
-            className={`piper-canvas ${cursor}`}
+            className={`piper-canvas ${cursor}${state.readOnly ? " piper-looked-at" : ""}`}
             role="application"
             aria-label="Drawing"
             viewBox={`${view.x} ${view.y} ${width} ${height}`}
@@ -601,11 +728,22 @@ export function Canvas({
                     onEdit(hit[1]);
                 }
             }}
-            onDragOver={onDragOver}
-            onDragLeave={() => store.cancel()}
-            onDrop={onDrop}
+            // A file let go on the drawing is a picture to put there, not a page for the tab to open, leaving the
+            // editor. Nothing else is dropped here with the browser's own drag-and-drop.
+            onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = event.dataTransfer.types.includes("Files") ? "copy" : "none";
+            }}
+            onDrop={(event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files[0];
+                if (file && !state.readOnly) {
+                    onPicture(file, pointAt(event));
+                }
+            }}
         >
             <Grid view={view} width={width} height={height} palette={palette} />
+            {shown.sheet && <SheetOutline sheet={shown.sheet} zoom={view.zoom} palette={palette} />}
             <DiagramView
                 drawing={shown}
                 palette={palette}
@@ -613,6 +751,7 @@ export function Canvas({
                 selection={selection}
                 live={live}
                 interactive
+                editable={!state.readOnly}
                 zoom={view.zoom}
                 ports={ports}
             />
@@ -677,6 +816,40 @@ export function Canvas({
                 />
             )}
         </svg>
+    );
+}
+
+/**
+ * Where the page prints, if its sheet's been set: the paper's edge, the sheet's border inside it, and the corner its
+ * title block and revisions can take, as a PDF on a drawing sheet prints them. Under the drawing, and not to be picked.
+ */
+function SheetOutline({ sheet, zoom, palette }: { sheet: PageSheet; zoom: number; palette: Palette }) {
+    const { paper, frame, corner } = sheetOutline(sheet);
+    const rect = (box: Box) => ({ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 });
+    const name = PAPERS.find((entry) => entry.id === sheet.paper)?.name ?? sheet.paper;
+    return (
+        <g className="piper-sheet-outline" pointerEvents="none" aria-hidden="true">
+            <rect {...rect(paper)} fill="none" stroke={palette.muted} strokeWidth={1.5 / zoom} />
+            <rect
+                {...rect(frame)}
+                fill="none"
+                stroke={palette.muted}
+                strokeOpacity={0.6}
+                strokeWidth={1 / zoom}
+                strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+            />
+            <rect
+                {...rect(corner)}
+                fill={palette.muted}
+                fillOpacity={0.08}
+                stroke={palette.muted}
+                strokeOpacity={0.6}
+                strokeWidth={1 / zoom}
+            />
+            <text x={paper.x0} y={paper.y0 - 6 / zoom} fontSize={11 / zoom} fill={palette.muted}>
+                {name}, {sheet.landscape ? "landscape" : "portrait"}: as it prints
+            </text>
+        </g>
     );
 }
 

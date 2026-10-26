@@ -1,36 +1,54 @@
-"""Piper's API (/api/piper): diagrams, saving their drawings, and their revisions."""
+"""Piper's API (/api/piper): diagrams and their folders, saving their drawings, their revisions and releases, color
+schemes, and the pictures drawings show."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from ..api.deps import DB, ActiveUser
+from ..errors import TooLarge
 from ..models import User
-from . import diagrams
-from .models import Diagram
+from . import diagrams, folders, images, releases, schemes
+from .models import Diagram, Scheme
 from .schemas import (
+    DecisionIn,
     DiagramChangeIn,
     DiagramDetailOut,
     DiagramIn,
     DiagramOut,
+    DiagramsIn,
     DrawingSaveIn,
+    FolderChangeIn,
+    FolderIn,
+    FolderOut,
+    ImageOut,
+    LockIn,
+    MoveIn,
+    ReleaseIn,
+    ReleaseOut,
     RevisionDetailOut,
     RevisionNoteIn,
     RevisionOut,
     RevisionRestoreIn,
+    SchemeChangeIn,
+    SchemeIn,
+    SchemeOut,
 )
 
 router = APIRouter(prefix="/api/piper", tags=["piper"])
 
 
 def _out(diagram: Diagram, user: User) -> DiagramOut:
-    return DiagramOut.of(diagram, can_delete=diagrams.can_delete(user, diagram))
+    return DiagramOut.of(diagram, can_delete=diagrams.can_delete(user, diagram), editing=diagrams.editing(diagram))
 
 
 def _detail(db: Session, diagram: Diagram, user: User) -> DiagramDetailOut:
     drawing = diagrams.latest_drawing(db, diagram)
-    return DiagramDetailOut.of_detail(diagram, drawing, can_delete=diagrams.can_delete(user, diagram))
+    return DiagramDetailOut.of_detail(
+        diagram, drawing, can_delete=diagrams.can_delete(user, diagram), editing=diagrams.editing(diagram)
+    )
 
 
 @router.get("/diagrams")
@@ -42,11 +60,43 @@ def get_diagrams(
     return [_out(diagram, user) for diagram in diagrams.diagrams(db, deleted=deleted, q=q)]
 
 
+def _folder_of(db: Session, user: User, body: DiagramIn | DiagramChangeIn) -> tuple[bool, int | None]:
+    """Whether a request puts a diagram somewhere, and where: its folder_id, or the folder at its path (made where it
+    isn't there yet), as clients from before folders were their own name it."""
+    if "folder_id" in body.model_fields_set:
+        return True, body.folder_id
+    if body.folder is not None:
+        return True, folders.folder_at(db, user, body.folder)
+    return False, None
+
+
 @router.post("/diagrams", status_code=201)
 def post_diagram(body: DiagramIn, user: ActiveUser, db: DB) -> DiagramDetailOut:
     """A new diagram, with its drawing (an empty one if there's none)."""
-    new = diagrams.add(db, user, name=body.name, folder=body.folder, description=body.description, drawing=body.drawing)
+    _, folder_id = _folder_of(db, user, body)
+    new = diagrams.add(
+        db, user, name=body.name, folder_id=folder_id, description=body.description, drawing=body.drawing
+    )
     return _detail(db, new, user)
+
+
+@router.post("/diagrams/move")
+def post_move(body: MoveIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Put diagrams in a folder (folder_id; null: the top), as anyone can: all of them, or none."""
+    return [_out(found, user) for found in diagrams.move_all(db, user, body.diagrams, body.folder_id)]
+
+
+@router.post("/diagrams/delete")
+def post_delete(body: DiagramsIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Delete diagrams, each restorable: all of them, or none (403 `not_yours`) if any isn't yours or you're no
+    admin."""
+    return [_out(found, user) for found in diagrams.remove_all(db, user, body.diagrams)]
+
+
+@router.post("/diagrams/restore")
+def post_restore_all(body: DiagramsIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Restore deleted diagrams, each in its folder: all of them, or none if any isn't yours to restore."""
+    return [_out(found, user) for found in diagrams.restore_all(db, user, body.diagrams)]
 
 
 @router.get("/diagrams/{diagram_id}")
@@ -58,7 +108,10 @@ def get_diagram(diagram_id: int, user: ActiveUser, db: DB) -> DiagramDetailOut:
 @router.patch("/diagrams/{diagram_id}")
 def patch_diagram(diagram_id: int, body: DiagramChangeIn, user: ActiveUser, db: DB) -> DiagramOut:
     """Rename, move, or describe a diagram: what's left out stays as it is."""
-    changed = diagrams.change(db, user, diagram_id, name=body.name, folder=body.folder, description=body.description)
+    move, folder_id = _folder_of(db, user, body)
+    changed = diagrams.change(
+        db, user, diagram_id, name=body.name, folder_id=folder_id, move=move, description=body.description
+    )
     return _out(changed, user)
 
 
@@ -74,31 +127,59 @@ def post_restore(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
     return _out(diagrams.restore(db, user, diagram_id), user)
 
 
+@router.get("/diagrams/{diagram_id}/lock")
+def get_lock(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
+    """A diagram without its drawing: who's editing it (editing), and the version it's at, for someone looking at it to
+    ask now and then."""
+    return _out(diagrams.diagram(db, diagram_id), user)
+
+
+@router.post("/diagrams/{diagram_id}/lock")
+def post_lock(diagram_id: int, user: ActiveUser, db: DB, body: LockIn | None = None) -> DiagramOut:
+    """Start editing a diagram, or say you're still at it (every minute or so: else it's let go after 10 minutes).
+    Someone else editing it: 409 `locked`, with who and since when; an admin can take it over (force)."""
+    taken = diagrams.take_lock(db, user, diagram_id, force=body is not None and body.force)
+    return _out(taken, user)
+
+
+@router.delete("/diagrams/{diagram_id}/lock")
+def delete_lock(diagram_id: int, user: ActiveUser, db: DB) -> DiagramOut:
+    """Done editing a diagram: anyone can edit it now."""
+    return _out(diagrams.release_lock(db, user, diagram_id), user)
+
+
 @router.put("/diagrams/{diagram_id}/drawing")
 def put_drawing(diagram_id: int, body: DrawingSaveIn, user: ActiveUser, db: DB) -> DiagramOut:
     """Save a diagram's drawing, changed from `version`. If someone saved it since, 409 `changed`, with the version it's
-    at, who saved it, and when. fresh: begin a new revision even if the latest is yours."""
+    at, who saved it, and when; if someone else is editing it, 409 `locked`, with who. fresh: begin a new revision even
+    if the latest is yours."""
     saved = diagrams.save(db, user, diagram_id, body.drawing, body.version, fresh=body.fresh)
     return _out(saved, user)
 
 
 @router.get("/diagrams/{diagram_id}/revisions")
 def get_revisions(diagram_id: int, user: ActiveUser, db: DB) -> list[RevisionOut]:
-    """A diagram's revisions, the latest first, without their drawings."""
-    return [RevisionOut.of(revision) for revision in diagrams.revisions(db, diagram_id)]
+    """A diagram's revisions, the latest first, without their drawings, each with its release's letter if it's been
+    released."""
+    found = diagrams.revisions(db, diagram_id)
+    marks = releases.marks(db, diagram_id)
+    return [RevisionOut.of(revision, marks.get(revision.number, (None, False))) for revision in found]
 
 
 @router.get("/diagrams/{diagram_id}/revisions/{number}")
 def get_revision(diagram_id: int, number: int, user: ActiveUser, db: DB) -> RevisionDetailOut:
     """A revision with its drawing."""
     revision = diagrams.revision(db, diagram_id, number)
-    return RevisionDetailOut.of_detail(revision, diagrams.unpack(revision.drawing))
+    mark = releases.marks(db, diagram_id).get(number, (None, False))
+    return RevisionDetailOut.of_detail(revision, diagrams.unpack(revision.drawing), mark)
 
 
 @router.patch("/diagrams/{diagram_id}/revisions/{number}")
 def patch_revision(diagram_id: int, number: int, body: RevisionNoteIn, user: ActiveUser, db: DB) -> RevisionOut:
-    """Name a revision, which keeps it as it is ("": no name)."""
-    return RevisionOut.of(diagrams.name_revision(db, diagram_id, number, body.note))
+    """Name a revision, which keeps it as it is ("": no name). One that's released, or waiting to be, keeps its name:
+    409 `revision_released`, `release_pending`."""
+    named = diagrams.name_revision(db, diagram_id, number, body.note)
+    return RevisionOut.of(named, releases.marks(db, diagram_id).get(number, (None, False)))
 
 
 @router.post("/diagrams/{diagram_id}/revisions/{number}/restore")
@@ -106,6 +187,153 @@ def post_restore_revision(
     diagram_id: int, number: int, body: RevisionRestoreIn, user: ActiveUser, db: DB
 ) -> DiagramDetailOut:
     """Make a revision the drawing again, as a new revision, if the diagram is still at `version` (else 409 `changed`,
-    as for a save)."""
+    as for a save) and no one else is editing it (else 409 `locked`)."""
     restored = diagrams.restore_revision(db, user, diagram_id, number, body.version)
     return _detail(db, restored, user)
+
+
+@router.get("/diagrams/{diagram_id}/releases")
+def get_releases(diagram_id: int, user: ActiveUser, db: DB) -> list[ReleaseOut]:
+    """A diagram's releases, the latest asked for first: released, waiting for their approvers, and those that weren't
+    (rejected, withdrawn)."""
+    return [ReleaseOut.of(release, user) for release in releases.releases(db, diagram_id)]
+
+
+@router.post("/diagrams/{diagram_id}/releases", status_code=201)
+def post_release(diagram_id: int, body: ReleaseIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Put a revision forward as the diagram's next release, to the approvers named: at least one besides you (422
+    `needs_approver`). One at a time (409 `release_pending`), each after the last released (409
+    `older_than_released`)."""
+    made = releases.request(db, user, diagram_id, body.revision, body.approvers, body.note)
+    return ReleaseOut.of(made, user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/approve")
+def post_approve(diagram_id: int, release_id: int, body: DecisionIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Approve a release you're named for (else 403 `not_an_approver`): it's released, with the next letter, once all
+    its approvers have. 409 `already_decided` if it's over, or you've had your say."""
+    return ReleaseOut.of(releases.decide(db, user, diagram_id, release_id, approve=True, comment=body.comment), user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/reject")
+def post_reject(diagram_id: int, release_id: int, body: DecisionIn, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Reject a release you're named for, saying why: it ends there."""
+    return ReleaseOut.of(releases.decide(db, user, diagram_id, release_id, approve=False, comment=body.comment), user)
+
+
+@router.post("/diagrams/{diagram_id}/releases/{release_id}/withdraw")
+def post_withdraw(diagram_id: int, release_id: int, user: ActiveUser, db: DB) -> ReleaseOut:
+    """Withdraw a release that's waiting: whoever asked for it, or an admin (else 403 `not_yours`)."""
+    return ReleaseOut.of(releases.withdraw(db, user, diagram_id, release_id), user)
+
+
+def _scheme(found: Scheme, user: User) -> SchemeOut:
+    return SchemeOut.of(found, can_delete=schemes.can_delete(user, found))
+
+
+@router.get("/schemes")
+def get_schemes(user: ActiveUser, db: DB) -> list[SchemeOut]:
+    """The team's color schemes: its default first, then the rest by name."""
+    return [_scheme(found, user) for found in schemes.schemes(db)]
+
+
+@router.post("/schemes", status_code=201)
+def post_scheme(body: SchemeIn, user: ActiveUser, db: DB) -> SchemeOut:
+    """A new color scheme: its fluids, and the colors of valves' states."""
+    fluids = [fluid.model_dump() for fluid in body.fluids]
+    return _scheme(schemes.add(db, user, name=body.name, fluids=fluids, states=body.states.model_dump()), user)
+
+
+@router.patch("/schemes/{scheme_id}")
+def patch_scheme(scheme_id: int, body: SchemeChangeIn, user: ActiveUser, db: DB) -> SchemeOut:
+    """Rename a scheme, or change its fluids or states: what's left out stays as it is."""
+    changed = schemes.change(
+        db,
+        user,
+        scheme_id,
+        name=body.name,
+        fluids=None if body.fluids is None else [fluid.model_dump() for fluid in body.fluids],
+        states=None if body.states is None else body.states.model_dump(),
+    )
+    return _scheme(changed, user)
+
+
+@router.delete("/schemes/{scheme_id}", status_code=204)
+def delete_scheme(scheme_id: int, user: ActiveUser, db: DB) -> None:
+    """Delete a scheme (whoever made it, or an admin; not the default, 409 `scheme_default`). Diagrams keep the colors
+    they took from it."""
+    schemes.remove(db, user, scheme_id)
+
+
+@router.post("/schemes/{scheme_id}/default")
+def post_default_scheme(scheme_id: int, user: ActiveUser, db: DB) -> SchemeOut:
+    """Make a scheme the team's default, which new diagrams start with (admins: else 403 `admin_only`)."""
+    return _scheme(schemes.make_default(db, user, scheme_id), user)
+
+
+# --- folders ------------------------------------------------------------------------------------------------------
+
+
+@router.get("/folders")
+def get_folders(user: ActiveUser, db: DB) -> list[FolderOut]:
+    """Every folder, by name: each says which it's in (parent_id), for building the tree."""
+    return [FolderOut.of(found) for found in folders.folders(db)]
+
+
+@router.post("/folders", status_code=201)
+def post_folder(body: FolderIn, user: ActiveUser, db: DB) -> FolderOut:
+    """A new folder, in another (parent_id) or at the top: 409 `name_taken` if one there has its name."""
+    return FolderOut.of(folders.add_folder(db, user, name=body.name, parent_id=body.parent_id))
+
+
+@router.patch("/folders/{folder_id}")
+def patch_folder(folder_id: int, body: FolderChangeIn, user: ActiveUser, db: DB) -> FolderOut:
+    """Rename a folder, or move it (parent_id; null: the top): 409 `name_taken`, or `cycle` into itself."""
+    changed = folders.change_folder(
+        db, user, folder_id, name=body.name, parent_id=body.parent_id, move="parent_id" in body.model_fields_set
+    )
+    return FolderOut.of(changed)
+
+
+@router.delete("/folders/{folder_id}", status_code=204)
+def delete_folder(folder_id: int, user: ActiveUser, db: DB) -> Response:
+    """Delete an empty folder (409 `not_empty` if it isn't)."""
+    folders.remove_folder(db, user, folder_id)
+    return Response(status_code=204)
+
+
+# --- pictures -----------------------------------------------------------------------------------------------------
+
+# A picture never changes, so a browser keeps it as long as it likes; it's the signed-in team's, not the world's.
+IMAGE_CACHE = "private, max-age=31536000, immutable"
+
+
+@router.post("/images", status_code=201)
+async def post_image(request: Request, user: ActiveUser, db: DB) -> ImageOut:
+    """Add a picture, a PNG or a JPEG, as the raw request body: the one kept, or the same one uploaded before."""
+    limit = images.MAX_IMAGE_BYTES
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise TooLarge(f"A picture can be up to {limit >> 20} MB")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > limit:
+            raise TooLarge(f"A picture can be up to {limit >> 20} MB")
+    image = await run_in_threadpool(images.add, db, user, bytes(data))
+    return ImageOut.of(image)
+
+
+@router.get("/images/{sha256}")
+def get_image(
+    sha256: Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")], request: Request, user: ActiveUser, db: DB
+) -> Response:
+    """A picture's bytes, as it was uploaded. Named by what's in it, so its ETag is its name: a browser that has it
+    asks with If-None-Match and is told it still has it (304)."""
+    tag = f'"{sha256}"'
+    headers = {"ETag": tag, "Cache-Control": IMAGE_CACHE}
+    if tag in [each.strip() for each in request.headers.get("if-none-match", "").split(",")]:
+        images.image(db, sha256)  # it's there: else 404, whatever the browser thinks it has
+        return Response(status_code=304, headers=headers)
+    found = images.image(db, sha256)
+    return Response(found.data, media_type=found.content_type, headers=headers)

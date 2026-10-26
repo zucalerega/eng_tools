@@ -1,12 +1,14 @@
 import { createElement } from "react";
+import { imageHref, piper } from "./api";
 import { LIGHT, withStates } from "./colors";
 import { DiagramView } from "./DiagramView";
-import { isPortEnd, LINE_KINDS, type Drawing } from "./drawing";
+import { isPortEnd, LINE_KINDS, pageOf, type Document, type Drawing } from "./drawing";
 import { drawingBox } from "./edit";
 import { fluidOf } from "./fluids";
 import { LINE_FIELDS } from "./labels";
 import { kindOf, titleOf } from "./library/index";
 import type { DiagramMeta, Field } from "./library/kinds";
+import { dataUri, type PictureSource } from "./pictures";
 
 // A diagram taken out of Piper: drawn as SVG or PNG, printed (or saved as a PDF from the print dialog), and its parts
 // list as a CSV. Drawn in the light colors, as on paper, whatever the site's theme.
@@ -15,6 +17,7 @@ import type { DiagramMeta, Field } from "./library/kinds";
 export async function svgOf(
     drawing: Drawing,
     meta: DiagramMeta,
+    pictures: PictureSource = piper.imageBytes,
 ): Promise<{ svg: string; width: number; height: number }> {
     // React's server renderer only loads when something's exported: it's no use otherwise.
     const { renderToStaticMarkup } = await import("react-dom/server");
@@ -35,7 +38,17 @@ export async function svgOf(
             createElement(DiagramView, { drawing, palette, meta }),
         ),
     );
-    return { svg: `<?xml version="1.0" encoding="UTF-8"?>\n${markup}`, width, height };
+    // Its pictures in it, so it shows them wherever it's opened, and drawn as an image (which fetches nothing).
+    let svg = markup;
+    const shown = drawing.parts.filter((part) => part.kind === "picture" && part.props.image);
+    for (const sha of new Set(shown.map((part) => part.props.image!))) {
+        try {
+            svg = svg.split(imageHref(sha)).join(dataUri(new Uint8Array(await pictures(sha))));
+        } catch {
+            // out of reach: it stays a link, which a PNG or a PDF of the drawing leaves out
+        }
+    }
+    return { svg: `<?xml version="1.0" encoding="UTF-8"?>\n${svg}`, width, height };
 }
 
 /** The drawing as a PNG, at twice its size (sharp on a high-density screen, and printed). */
@@ -109,14 +122,22 @@ function listed(drawing: Drawing, fields: Field[], key: string, value: string): 
 /** A cell of CSV: quoted where it has to be. */
 const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
+/** A row of the parts list: what it's of (a part's id, or a line's), and its cells, as the head names them. */
+export interface PartRow {
+    id: string;
+    line: boolean;
+    page: number; // which of the diagram's pages it's on
+    cells: string[];
+}
+
 /**
  * The parts list: a row for each part (its tag, what it is, its normal state, what it holds or reads, and every
- * property it has), then each line (its tag, fluid, type, and the tags of what it joins). A valve list and an
- * instrument list, filtered in a spreadsheet.
+ * property it has), then each line (its tag, fluid, type, and the tags of what it joins). The table beside the drawing
+ * (PartsPanel) shows it, and partsList saves it as a CSV file: a valve list and an instrument list, in a spreadsheet.
  */
-export function partsList(drawing: Drawing): string {
+export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
     const parts = drawing.parts.filter(
-        (part) => !["junction", "text", "region", "legend", "titleblock"].includes(part.kind),
+        (part) => !["junction", "text", "region", "offpage", "legend", "titleblock", "picture"].includes(part.kind),
     );
     const skip = new Set(["normal", "fluid", "channel", "notes"]);
     const keys: string[] = [];
@@ -149,10 +170,10 @@ export function partsList(drawing: Drawing): string {
         "From",
         "To",
     ];
-    const rows = [
+    const rows: PartRow[] = [
         ...parts.map((part) => {
             const kind = kindOf(part.kind);
-            return [
+            const cells = [
                 "Part",
                 part.tag,
                 titleOf(part),
@@ -164,21 +185,60 @@ export function partsList(drawing: Drawing): string {
                 "",
                 "",
             ];
+            return { id: part.id, line: false, page: 0, cells };
         }),
-        ...drawing.lines.map((line) => [
-            "Line",
-            line.tag,
-            LINE_KINDS.find((entry) => entry.value === line.kind)?.label ?? line.kind,
-            "",
-            fluidOf(drawing, line.fluid)?.label ?? "",
-            "",
-            ...keys.map((key) => line.props[key] ?? ""),
-            line.props.notes ?? "",
-            isPortEnd(line.from) ? (tagOf.get(line.from.part) ?? "") : "",
-            isPortEnd(line.to) ? (tagOf.get(line.to.part) ?? "") : "",
-        ]),
+        ...drawing.lines.map((line) => ({
+            id: line.id,
+            line: true,
+            page: 0,
+            cells: [
+                "Line",
+                line.tag,
+                LINE_KINDS.find((entry) => entry.value === line.kind)?.label ?? line.kind,
+                "",
+                fluidOf(drawing, line.fluid)?.label ?? "",
+                "",
+                ...keys.map((key) => line.props[key] ?? ""),
+                line.props.notes ?? "",
+                isPortEnd(line.from) ? (tagOf.get(line.from.part) ?? "") : "",
+                isPortEnd(line.to) ? (tagOf.get(line.to.part) ?? "") : "",
+            ],
+        })),
     ];
-    return [head, ...rows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
+    return { head, rows };
+}
+
+/**
+ * The parts list of all a diagram's pages: as a page's, of all of them together, and, if there's more than one, with
+ * the page each is on, last. (A part's id is unique in the diagram, not only on its page.)
+ */
+export function documentTable(document: Document): { head: string[]; rows: PartRow[] } {
+    const drawings = document.pages.map((_, index) => pageOf(document, index));
+    const on = new Map<string, number>();
+    drawings.forEach((drawing, index) => {
+        for (const item of [...drawing.parts, ...drawing.lines]) {
+            on.set(item.id, index);
+        }
+    });
+    const { head, rows } = partTable({
+        ...drawings[0]!,
+        parts: drawings.flatMap((drawing) => drawing.parts),
+        lines: drawings.flatMap((drawing) => drawing.lines),
+    });
+    const placed = rows.map((row) => ({ ...row, page: on.get(row.id) ?? 0 }));
+    if (document.pages.length < 2) {
+        return { head, rows: placed };
+    }
+    return {
+        head: [...head, "Page"],
+        rows: placed.map((row) => ({ ...row, cells: [...row.cells, document.pages[row.page]?.name ?? ""] })),
+    };
+}
+
+/** The parts list of a diagram's pages as a CSV file's text. */
+export function partsList(document: Document): string {
+    const { head, rows } = documentTable(document);
+    return [head, ...rows.map((row) => row.cells)].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
 /** A file saved from the browser. */

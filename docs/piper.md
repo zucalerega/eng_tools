@@ -16,35 +16,102 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
 ## Diagrams
 
 - **A diagram** is a drawing with a name, a folder, and a description. Everyone signed in (and
-  approved) sees every diagram, makes them, and changes them: a P&ID is the team's, and its
-  history keeps every change, so nothing anyone does to one is lost. Only whoever made one, or
-  an admin, deletes it, which hides it with everything kept, until they restore it. A diagram's
-  folder is a path of its own (`piper_diagrams.folder`, "Vespula/GSE", "" at the top), tidied
-  as Yorg's views' folders are (`FolderPath`, now the site's, in `api/schemas.py`), and the
-  Diagrams page arranges them in a tree (the site's `pathTree.ts`, which Yorg's views and
-  scripts use too). Its search looks in names, folders, descriptions, and the tags of the
-  drawings' parts and lines, so PT-101 finds the diagrams it's on. A new diagram starts empty or
-  from an example (`example.ts`: a pressure-fed engine's feed system, built with the editor's own
-  changes), and Duplicate copies one.
-- **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its parts, lines, fluids, and
-  style. The server keeps it as the web app sends it, after checking only what it needs
-  (`schemas.py`): an object with lists of parts and lines, each with an id no other has, a
-  part with its kind and a finite place, a line with its two ends; no NaN, no text that isn't
-  Unicode, nothing nested more than 50 deep, and at most 2 MB of JSON (422 `invalid_drawing`,
-  saying what's wrong in words, or 413 `too_large`). It notes what the list shows and searches
-  (how many parts and lines, their tags, the lines' fluids). What a part is (a ball valve, its
-  ports, its properties) is the web app's: the server never needs to know. `readDrawing` reads
+  approved) sees every diagram, makes them, and changes them, one person at a time: a P&ID is
+  the team's, and its history keeps every change, so nothing anyone does to one is lost. Only
+  whoever made one, or an admin, deletes it, which hides it with everything kept, until they
+  restore it.
+- **Folders** are their own, as Yorg's datasets' are (`piper_folders`, `folders.py`): each in
+  another or at the top, its name unique in it whatever its case (409 `name_taken`), with no
+  slashes. A diagram is in one by its id (`folder_id`, null at the top). Anyone makes, renames,
+  and moves a folder (never into itself: 409 `cycle`), as anyone moves a diagram, and deletes
+  one once it's empty (409 `not_empty`); the deleted diagrams that were in it go to the folder
+  it was in, to be restored there. Before folders were their own (until migration 0027), a
+  diagram's folder was a path (`folder`, "Vespula/GSE"); the API still gives it, and still takes
+  one (`FolderPath`), the folders on it made where they aren't there yet (`folders.folder_at`),
+  so clients from before work as they did.
+- **The Diagrams page** works as Yorg's datasets' does: `/piper` and each folder's page
+  (`/piper/folders/{id}`), with the way back up above its name, list a folder's own folders and
+  diagrams; New folder, New diagram, and Import Visio (or a drawing dropped on the page) make
+  theirs in the folder you're in. Diagrams and folders dragged onto a folder (or a folder in the
+  way back up) move there; diagrams checked are moved together (Move to…, the site's
+  `FolderDialogs.tsx`, which Yorg's datasets use too), and deleted together if they're all
+  yours (or you're an admin), each all or nothing on the server. Deleted diagrams have their
+  own page, where they're checked and restored together. Its search looks in every folder, in
+  names, folders, descriptions, and the tags of the drawings' parts and lines, so PT-101 finds
+  the diagrams it's on, each saying its folder, and a diagram found opens at what was searched
+  for (`?find=PT-101`, as the editor's find goes to it). A new diagram
+  starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
+  with the editor's own changes; for admins, Simulation's too, `sim/examples.ts`), and
+  Duplicate copies one.
+- **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its pages, each with its id,
+  name, parts, lines, and printed sheet, and the fluids, style, and simulation's units they
+  share (format 3, whose parts and lines can have their settings in a simulation, `sim`; format
+  2 had pages without them, and a drawing from before pages, format 1, has its parts and lines
+  at the top, and is one page).
+  The server keeps it as the web app sends it, after checking only what it needs
+  (`schemas.py`): an object with up to 100 pages, each with an id no other page has and lists
+  of parts and lines, each part and line with an id no other in the whole drawing has (an
+  off-page connector names a part on another page by it), a part with its kind and a finite
+  place, a line with its two ends; at most 5,000 parts and 10,000 lines on all its pages; no
+  NaN, no text that isn't Unicode, nothing nested more than 50 deep, and at most 2 MB of JSON
+  (422 `invalid_drawing`, saying what's wrong in words, "Page 2's part 4 has no kind", or 413
+  `too_large`). It notes what the list shows and searches (how many parts, lines, and pages,
+  their tags, the lines' fluids) and the drawing's format. What a part is (a ball valve, its
+  ports, its properties) is the web app's: the server never needs to know. `readDocument` reads
   any drawing back, filling in what an older one lacks and leaving out what can't be read (a
-  line to a part that isn't there), and a kind it doesn't know is drawn as a dashed box and kept.
+  line to a part that isn't there), and a kind it doesn't know is drawn as a dashed box and
+  kept; the editor works on a page at a time (`pageOf`, `withPage`).
+- **Pages** are a P&ID's sheets: tabs under the drawing (`PageTabs.tsx`) add, rename, move,
+  and delete them, each a change undo goes back through (the editor's undo keeps the whole
+  drawing and the page it was at). A page's **printed sheet** (`sheet`: a paper, which way it's
+  turned, and the paper's top left and scale in the page's units) is set in its panel, fitted
+  to what's on it inside the border and clear of the title block's corner as a PDF would fit
+  it (`fitSheet`); the canvas outlines it (`sheetOutline`), and the PDF prints the page there,
+  so the layout and scale stay put as the drawing changes. An **off-page connector** goes to a
+  page, and a part on it (`props.page`, `props.part`, by id), and is written `TO` and the page's
+  name (its box as wide as its words) until its words are changed; going there switches the
+  page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
+  connectors going nowhere.
+  Find, Parts, and the parts list look through every page. The server refuses a save in an
+  older format than the diagram's drawing is in (409 `drawing_newer`, saying what it would
+  lose): a tab still running the Piper from before pages would save one page and lose the
+  others, and one from before simulations would lose its parts' settings. Restoring a revision
+  from before them is deliberate, and allowed.
+- **Editing** is one person at a time, so no one's save goes over anyone else's
+  (`diagrams.take_lock`, `editing.ts`). A diagram opens to be looked at: the store takes no
+  change (`readOnly`), the canvas only pans and selects, and the inspector's fields are only
+  read. **Edit** (`POST .../lock`) holds it for you: the diagram notes who (`locked_by`), since
+  when (`locked_at`), and when their editor last said so (`lock_seen_at`), and the server
+  refuses anyone else's save or restore (409 `locked`, with `details.editing`: who, and
+  since). Someone else editing it already: 409 `locked` to Edit too, unless an admin takes it
+  over (`force`; anyone else 403 `admin_only`). The editor says you're still at it every minute
+  (the same POST), except when nothing's been done in the tab for 15 minutes; the server lets
+  go of a hold it hasn't heard about in 10 minutes (`LOCK_LAPSES`), so a tab left open, a
+  laptop shut, or a browser that crashed never keeps a diagram from the team. Back at it, the
+  next click or key says so again, and you go on if no one else has started. **Done editing**
+  saves what's left, then lets go (`DELETE .../lock`); so do closing the tab and leaving the
+  page (`pagehide`, a `keepalive` request). Anyone's diagram response carries `editing` (null
+  when no one is, it's let go, or the diagram's deleted), so the list badges it, and a page that
+  has it open asks `GET .../lock` (no drawing) every 20 seconds, and on coming back to the tab,
+  for who's editing it and the version it's at, fetching the drawing when it's changed. A save
+  by whoever holds it says they're still at it (and holds it again, if it had lapsed and no one
+  took it); a save by someone not editing it (a tab from before editing, or the API) is taken
+  if no one is. Who holds a diagram changes one at a time: each change starts with an UPDATE of
+  its row (SQLite's write lock, Postgres' row lock). A diagram just made, or a copy, opens to
+  edit (`?edit=1`).
 - **Saving** is automatic: a second after the last change, the web app sends the whole drawing
   with the version it was changed from (`PUT /api/piper/diagrams/{id}/drawing`). The server
   takes it only if the diagram is still at that version (one `UPDATE ... WHERE version = ?`,
   the transaction's first write, so saves of a diagram go one at a time and only one from each
   version is taken), and gives it the next; otherwise someone saved since, and the 409
   `changed` says who, when, and the version it's at (`details`: `updated_by`, `updated_at`,
-  `version`, from the latest revision, so a rename doesn't name the renamer). The page then
-  stops saving and asks: keep yours (saved over theirs, as a revision of its own, so theirs
-  stays in the history), save yours as a new diagram, or load theirs. A diagram deleted since
+  `version`, from the latest revision, so a rename doesn't name the renamer). With editing one
+  at a time, that's a save from another window of yours, or from someone's tab after your hold
+  lapsed. The page then stops saving and asks: keep yours (saved over theirs, as a revision of
+  its own, so theirs stays in the history), save yours as a new diagram, or load theirs.
+  Someone else editing it now (409 `locked`: an admin took it over, or it lapsed and someone
+  took it) stops saving too, and the page is only looked at: save yours as a new diagram (which
+  opens to edit), or load theirs. A diagram deleted since
   it was opened (409 `deleted`) stops saving too, and the page shows it deleted; restoring it
   there saves what wasn't. A save the server can't take as it is (400, 413 too big, 422
   `invalid_drawing`) isn't sent again until the next change, which may fix it; any other
@@ -59,6 +126,23 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   history. Naming a revision ("Rev B, for HF-3") keeps it as it is: the next save starts
   another. Any revision opens to look at, and restoring one makes it the drawing again, as a
   new revision that says where it came from; the drawings after it stay in the history.
+- **Releases** (`releases.py`, `piper_releases` and `piper_approvals`) make a revision the P&ID
+  of record, for a design review or before a test. Anyone asks for a revision to be released,
+  saying what it's for and naming its approvers, at least one besides themself (422
+  `needs_approver`), all of them active members. Each approves it or rejects it with a comment;
+  once every one has approved, it's released, with the diagram's next letter (A, B, ... Z, AA,
+  as spreadsheets letter columns), and the diagram notes its latest release
+  (`piper_diagrams.released`, `released_revision`). A rejection ends the request, and so does
+  whoever asked (or an admin) withdrawing it. A revision released, or waiting to be, is kept as
+  it is: a save never amends it (the next starts another revision) and its name stays (409
+  `revision_released`, `release_pending`). A diagram has one release waiting at a time (409
+  `release_pending`), each of a revision after the last released (409 `older_than_released`);
+  only those named approve (403 `not_an_approver`), once (409 `already_decided`). Writes to a
+  diagram's releases go one at a time: each starts with an UPDATE of the diagram's row, which
+  takes SQLite's write lock (Postgres' row lock). The editor's name says "Rev B, released" or
+  "Draft after Rev B"; a PDF on a sheet lists the releases (each one's letter, what it was for,
+  when, and who approved it) where it listed named revisions, and its title block writes the
+  revision printed as its letter, or its number after the latest release ("7 (after B)").
 
 ## The editor
 
@@ -75,26 +159,66 @@ what it is, `data-hit`).
   (10628, 1219) standards draw them, with its size, its ports (where lines connect, each facing
   out of the part, all on the grid), its properties, the prefix of a new one's tag, and how
   it's drawn, in its own frame, centered; and presets, a kind set up as one of the team's parts
-  is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves (ball, gate, globe,
+  is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves are small on their lines,
+  as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
+  14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
+  a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
+  or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
+  vent's end turns down (a gooseneck). Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
   regulator, burst disc, quick disconnect); vessels (tanks, spheres, bottles and COPVs,
   dewars); flow elements (orifices, venturis, cavitating venturis, flow meters, filters);
   instruments (pressure transducers, gauges, and switches, thermocouples, RTDs, load cells,
-  flow, level, position, and differential pressure sensors, as ISA bubbles); equipment
+  flow, level, position, and differential pressure sensors, each an ISA bubble with its tag's
+  letters in it, PT, TC, LC, and the whole tag at its side; duplicated and triplicated
+  transducers, two or three bubbles side by side on one tap, A, B, C, each reading its own
+  channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
   fittings (tees, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
-  legend, a title block). The library's search finds a part by any of its names (MOV, PRV,
+  legend, a title block, pictures). The library's search finds a part by any of its names (MOV, PRV,
   COPV, cav...). A part is dragged from it onto the drawing, clicked and then placed with a
-  click (Shift-click to place more), or double-clicked into the middle of the view.
+  click (Shift-click to place more), or double-clicked into the middle of the view. The drag
+  is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's
+  drag-and-drop, which Firefox won't start from a button.
+- **Pictures** (`picture`): a PNG or a JPEG of the team's own (an injector, a TCA, a photo of
+  the stand), drawn to its box in its own proportions (`preserveAspectRatio` meet), and sized by
+  its corner handle keeping its shape (`resize.aspect`). Dropped on the drawing as a file (the
+  canvas's one use of the browser's drag-and-drop), or chosen in the inspector, it's added to
+  Piper (`POST /api/piper/images`) and the part names it by its SHA-256 (`props.image`, with its
+  pixels' `imageWidth` and `imageHeight`). The server keeps pictures in the database
+  (`piper_images`, `images.py`), so the nightly and off-site backups have them with the
+  drawings: checked as a PNG or a JPEG by their own headers, not their names, up to 5 MB and
+  25 megapixels (10,000 on a side, as a PDF of it decodes it in the browser), and never
+  changed or deleted, as a revision may still show one; the same bytes added again are the
+  same picture. It's sent with its name as its ETag, for the browser to keep (`immutable`).
+- **Sizes**: a part's drawn at its kind's size, or from half of it to double (`scale`: 0.5,
+  0.75, 1, 1.25, 1.5, 2), from the round handle at a selected part's corner or the inspector.
+  Its frame's scaled (`toWorld`, `partTransform`), so its box, what's drawn, and where it's hit
+  all are; its ports are put back on the grid (`portsOf`), and a line's drawn to its outline in
+  line with its port, so lines between parts lined up stay straight. Not for what's sized by its
+  width and height (boxes, regions, text blocks), tees, legends, or title blocks. Each part's
+  label can be small, normal, or large of its own (`labelSize`; "" the diagram's).
+- **Text** notes are sized to their words, or, once their corner handle's dragged, blocks of
+  that width and height (`w`, `h`), their words wrapped to it at the spaces, from its top. A
+  note's weight, slant, font (sans serif, serif, monospace), alignment, and border are its
+  properties; a PDF writes them in PDF's standard fonts: Helvetica, Times, and Courier, each
+  regular, bold, italic, and both (F1 to F12; Times measured as nine tenths of Helvetica,
+  near enough to place it).
 - **Tags** name parts and lines: a new part gets its kind's prefix and the next number free
-  (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is in its bubble, its
-  letters over its number, as ISA draws them; anything else's beside it: under a part in a line
-  going across, beside one in a line going down, under or beside others, or where it's dragged.
-  Double-clicking a part goes to its tag (or its words, for a note).
+  (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is at its side (its
+  left, if a line leaves it to the right), its letters in its bubble; anything
+  else's beside it: under a part in a line going across, beside one in a line going down, under
+  or beside others, or where it's dragged.
+  Labels are small beside the symbols (a tag 8 units high against a valve's 20), and a diagram
+  makes them all smaller or larger (`style.labels`, `textSizes`). Double-clicking a part goes to
+  its tag (or its words, for a note).
 - **Properties**: each kind has its own (a valve's body, actuation, normal state, size, Cv,
-  rating, and model; a tank's fluid, volume, MEOP, and material; an orifice's diameter and
+  MAWP, and model; a tank's fluid, volume, MEOP, MAWP, and material; an orifice's diameter and
   discharge coefficient; an instrument's range, output, DAQ channel, and test channel; a
-  line's fluid, type, size, wall, material, length, and rating), and any part or line can have
+  line's fluid, type, size, wall, material, length, and MAWP). Every kind that holds pressure
+  has a MAWP (`mawp`); drawings from before it called a valve's or line's "Pressure rating"
+  `rating`, which `readDrawing` reads as its MAWP (a filter's `rating` is its microns, and
+  stays). Any part or line can have
   more, named as the team likes. Values are text, with their units ("0.062 in"), as people
   write them. Any of them can show under the part's tag (the eye beside it).
 - **Lines** connect ports. Dragging from a port (the dots on a part under the pointer) draws
@@ -104,11 +228,16 @@ what it is, `data-hit`).
   the fewest bends (a bend costs three grid squares of length) that doesn't cross a part, and
   keeps off other lines (running along one costs three times its length), by A* over the lines
   through its ends and just clear of the parts' sides. Its bends are kept in the drawing, so it
-  stays as it is until its ends move: moving a part routes its lines again (a line between two
-  parts moved together moves with them). Dragging a line's segment moves it, on the grid, and
+  stays as it is until its ends move: moving a part routes its lines again (`moveItems`). A
+  line whose ends both move (on parts that moved, or free ends of a line that's selected) moves
+  with them once, as it was; a free end moves only with its line; and a junction comes along
+  when every line through it goes to what's moving, so a tee picked up with the parts around it
+  stays a tee. A line with an end that stays is routed again, or follows its end if it was
+  routed by hand, selected or not. Dragging a line's segment moves it, on the grid, and
   routes that line by hand from then on: moving its parts then moves only the bends next to
   them, and an end that comes to face away from its line is routed back around to it, never
-  through its part (`mendEnds`). Route automatically puts a line back. Dragging a selected
+  through its part (`mendEnds`). Route automatically puts a line back, and Route again routes
+  one that routes itself afresh. Dragging a selected
   line's end moves it to another port. Where two lines cross without joining, the one across
   hops over the one down (`hops.ts`). A line's type (pipe, tubing, flex hose, pneumatic,
   electrical, data) is its weight and dashes; flow arrows say which way it flows.
@@ -124,17 +253,45 @@ what it is, `data-hit`).
   shown gold before it's dropped. Deleting it joins the line up again. Deleting a part with
   other lines leaves them, ending where its ports were, to be drawn on to something else; a
   junction left with two lines joins them, and one with one is that line's end.
-- **Fluids** color lines: each line has one, drawn in its color with its label (LOX, RP-1,
-  GN2...) where there's room beside its longest segment, and Carry along its run sets it on
+- **Fluids** color lines: each line has one, drawn in its color, and its label (LOX, RP-1,
+  GN2...) only where it's shown (`shown`), where there's room beside its longest segment: new
+  lines don't show it, as a color on every line says it already, and the diagram's panel shows
+  or hides it on every line at once. Half of a line split by a tee or a part doesn't repeat
+  the other half's label. Carry along its run sets it on
   every line it reaches through valves, fittings, and instruments, up to tanks and engines. A
   line drawn from a run takes its fluid, and one from a tank what the tank holds (not from its
   top, which is its ullage, unless it holds a gas). A tank shows what it holds: a liquid in its
   lower part, a gas filling it, with the label inside. The standard fluids are in `fluids.ts`
-  (oxidizers blue, fuels red, nitrogen green, helium purple...); a diagram can change their
-  colors, labels, and names, and add its own, keeping only what differs; the legend shows those
-  its lines and vessels use, and its valves' states.
-- **States**: a valve's normal state colors its body: open (NO) green and closed (NC) red, or a
-  diagram's own colors, which the legend shows.
+  (oxidizers blue, fuels red, nitrogen green, helium purple, combustion gas rose...); a diagram
+  can change their colors, labels, and names, and add its own, keeping only what differs; the
+  legend shows those its lines and vessels use, and its valves' states.
+- **Color schemes** (`piper_schemes`, `schemes.py`; the Schemes page, `Schemes.tsx`) are the
+  team's own colors: each one's fluids (id, name, label, color, gas or not) and the colors of
+  valves' states, made and changed by anyone, deleted by whoever made one or an admin. One is the
+  team's default, an admin's to pick ("YJSP standard", which 0025 seeds with Piper's colors as
+  they were), and can't be deleted while it is (409 `scheme_default`). A diagram takes a
+  scheme's colors into its drawing (`applyScheme`): its fluids become the diagram's own, over what
+  it had, and its state colors the diagram's style, noted with the scheme's id and when it last
+  changed (`style.scheme`, `style.schemeAt`). So a drawing is drawn, exported, and printed the
+  same anywhere, from itself, and a change to the scheme reaches it only when someone takes
+  the colors again: its panel says the scheme has changed (`schemeChanged`). New diagrams and
+  Visio imports start in the team's default. A fluid's `gas` (a tank of it is full of it) is
+  the diagram's, else the standard fluid's (`isGas`). A PDF can be in black and white
+  (`monochrome`): every line in ink, normally closed valves filled in ink, normally open ones
+  white, failing in place grey.
+- **States**: a valve's normal state colors its body: open (NO) green, closed (NC) red, and
+  fails in place (FIP: a double-acting valve, which stays where it was when its air or power
+  goes) slate blue, or a diagram's own colors (`style`), which the legend shows. The state isn't
+  written beside a valve unless it's shown (its eye, or the diagram's panel, for every valve).
+- **Finding** a part on the drawing (the toolbar's find, Ctrl+F; `find.ts`): by its tag,
+  whatever its case and with or without spaces, dashes, and underscores (as test channels
+  match), then by what it is or holds; a line by its tag or fluid. The tag that's it first,
+  then tags that start with it. Picked, the view frames it, with room around it, and it's
+  selected (`commands.show`).
+- **Parts** (`PartsPanel.tsx`), under the drawing: the parts list the CSV saves
+  (`documentTable`, every page's, with each one's page when there's more than one), a table for
+  each kind of part in the library's order (valves, instruments, vessels...), with how many and
+  the columns any of them has, then the lines. A tag goes to its part, on its page.
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to
@@ -149,20 +306,30 @@ what it is, `data-hit`).
     drawing sheet as Visio's P&IDs are: a border with its zones between its two lines (numbered
     from the right, lettered from the foot, about 4¼ inches each, as ANSI's sheets have them),
     the diagram's named revisions, and a title block (the team, the diagram's name, folder,
-    number, revision, who made it, when it was saved), unless the drawing has a title block of
-    its own. The drawing's fitted inside the border, clear of that corner. Tested by its
-    structure (every object where the cross-reference table says) and by MuPDF rendering it.
-  - **SVG** and **PNG** (at twice its size): the drawing alone. **Print** prints the SVG.
+    number, revision, who made it, when it was saved, which sheet of how many), unless the page
+    has a title block of its own. A page for each of the diagram's (`pdfOfPages`): one with a
+    printed sheet on its paper, where its outline shows; one without fitted inside the border,
+    clear of that corner. Tested by its structure (every object where the cross-reference table
+    says) and by MuPDF rendering it.
+  - **SVG** and **PNG** (at twice its size): the page shown, alone, its pictures in it as data
+    (`pictures.ts`; an SVG drawn as an image fetches nothing). **Print** prints its SVG.
+  - **Pictures in a PDF** are its own images: a JPEG as it is (DCTDecode), a PNG decoded
+    (`decodePng`: any color type and depth, its rows unfiltered; an interlaced one through a
+    canvas) into its pixels and its transparency, a soft mask, each deflated.
   - **Parts list** (CSV): each part's tag, what it is, normal state, fluid, test channel, every
-    property, and notes, and each line's tag, type, fluid, properties, and the tags it joins: a
-    valve list or an instrument list, filtered in a spreadsheet.
+    property, and notes, and each line's tag, type, fluid, properties, and the tags it joins, on
+    every page (and each one's page, last, when there's more than one): a valve list or an
+    instrument list, filtered in a spreadsheet.
 
 ## Importing from Visio
 
-`visio.ts` reads a Visio drawing in the browser and the page saves each of its pages as a
-diagram (Import Visio on the Diagrams page, or a file dropped on it). A .vsdx (Visio 2013 on) is
-a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too): each page's shapes,
-the masters (stencil shapes) they're instances of, and which connector is glued to which shape.
+`visio.ts` reads a Visio drawing in the browser and the page saves it as a diagram, with its
+pages as Visio has them (`visioDocument`: the fluids each page made for its colors are the
+diagram's, one for each) (Import Visio on the Diagrams page, which asks for the file first, as Yorg's Upload data
+does, or a file dropped on it; the dialog shows the file, to change, and the folder). A .vsdx
+(Visio 2013 on) is a zip of XML (read with the site's `zip.ts`, which Vault's uploads use too):
+each page's shapes, the masters (stencil shapes) they're instances of, and which connector is
+glued to which shape.
 
 - **Shapes** become parts by their masters' names (Visio's P&ID stencils' "Gate valve",
   "Vessel", "Indicator"..., and the words people use, `NAMES`), turned and flipped as Visio had
@@ -194,13 +361,101 @@ tag: PT-101 reads PT-101 (`testdata.ts`). Names match whatever their case, then 
 dashes, and underscores. A state channel (Yorg numbers a switch's off 0 and on 1) is the
 valve's state; a number channel is open where it isn't 0 (a command, or a position). A value's
 the channel's last sample at the time, to the digits its file had. The parts that name a
-channel the test hasn't are listed.
+channel the test hasn't are listed. A part's value is in a badge off its top right corner, or off
+whichever other corner has less in the way (other parts, labels, lines: `badgePlacer`, in
+`labels.ts`), on a leader to the part, in the badge's color. Leaders are drawn under the parts,
+so a symbol's fill hides its end, and it seems to leave the symbol's outline. The drawing
+decides where a badge goes, not its value, so it stays put as the test plays.
 
-That's Piper's one tie to Yorg, and it's through Yorg's API, as any client's would be: Piper
-asks `/api/yorg/datasets` for the tests, `/api/yorg/datasets/{id}` for a test's channels, and
-their arrays for the samples (each fetched once), and makes Yorg's links to plots as Yorg does
-(`?plots=`, a layout's JSON, deflated and base64url-encoded: the site's `packed.ts`, which both
-use). It imports none of Yorg's code, and Yorg knows nothing of Piper.
+That's Piper's tie to Yorg, with Simulation (below), and it's through Yorg's API, as any
+client's would be: Piper asks `/api/yorg/datasets` for the tests, `/api/yorg/datasets/{id}` for
+a test's channels, and their arrays for the samples (each fetched once), and makes Yorg's links
+to plots as Yorg does (`?plots=`, a layout's JSON, deflated and base64url-encoded: the site's
+`packed.ts`, which both use). It imports none of Yorg's code, and Yorg knows nothing of Piper.
+
+## Simulation
+
+Simulation mode (the editor's Simulation, `?sim=1` in the address; for admins while it's tried
+out, as Yorg's system models are) makes the P&ID a model of its fluid system, which Yorg runs
+with FullFlow against one of its tests ([yorg.md](yorg.md), System models): a run, a fit of its
+knobs, or knobs anchored to sensors, each a process on the server. Piper builds the model from
+the drawing (`web/src/piper/sim/model.ts`, `buildModel`), keeps its settings in the drawing, and
+shows what comes back; Yorg checks the model (`spec.py`) and runs it. Nothing of it shows
+outside the mode: its panel (`SimPanel.tsx`) takes Test data's place, and the inspector gets a
+Simulation box (`SimSection.tsx`). Runs, fits, and anchoring change nothing of the drawing, so
+they go while it's only looked at; setting the model up and Apply to the P&ID change it, so
+they wait for Edit, as every change does (the box's fields are only read, and Apply is off).
+
+- **The model is the P&ID**, all its pages, joined by their off-page connectors (one going to
+  the connector back, or to a tank or an outlet). Its nodes are points with a pressure: tanks
+  (Yorg's `tank`, at a fixed pressure, or under a gas ullage once gas lines reach it), gas
+  supplies and vessels (bottles, and tanks of a gas: a supply at a pressure, `source`, or a
+  vessel that blows down, a `gas_junction` with a wall), outlets (the engine and vents, an
+  engine one for each of its inlets with flow, as a model carries one liquid in each connected
+  set of lines, all at its pressure), and the points between parts, where lines, tees, and
+  plain connections join ports (a `junction` in liquid lines, a `gas_junction` of tubing in gas
+  ones). Its edges carry flow between them, from a part's first port to its second: valves
+  (relief valves, quick disconnects, and burst discs too, as they're set to be), check valves
+  (a valve gas flows through only the way it points; in liquid lines, a valve, which lets flow
+  back), regulators, orifices, cavitating venturis, and liquid lines modeled as lines (Yorg's
+  `line`: friction, and the liquid's inertia). What each kind is comes from `ROLES`, the first
+  of its choices unless its `sim.as` picks another; a pump or a three-way valve isn't
+  simulated, so the lines at it end there. Lines that carry signals aren't in it.
+- **Liquid or gas**: what flows through a part is what its lines' fluids say (Piper's fluids say
+  which are gases), through what carries flow from point to point; failing that, what's on
+  them (a regulator's gas, a venturi's liquid, a supply's or a vessel's gas). A tank's liquid
+  is ThermoProp's for what it holds (LOX is Oxygen, RP-1 RP1; another is Custom, of the density
+  and vapor pressure it's given), and an ullage's gas what its gas lines carry.
+- **Settings** are kept in the drawing, in SI units by the keys of Yorg's catalog
+  (`GET /api/yorg/models/catalog`): a part's on it (`sim.settings`), a line's modeled as a line
+  on it (`sim.line`), and a gas point's on each of its lines (`sim.node`: the first that has
+  each, so lines split or joined keep them); one the catalog no longer has is left out. What
+  isn't set is the catalog's default, or what the P&ID says: a valve's position without a
+  command, from its normal state (a relief valve's and a burst disc's, shut); a command's shut
+  and open values, from its channel (a state's 0 and 1, a number's least and most). The
+  model's ids are the P&ID's, so what's picked to tune survives other changes. The diagram's
+  units (US or SI, gauge or absolute, and the atmosphere) are its document's `sim`, and say how
+  a channel without units is read.
+- **Channels** come from the P&ID, as Test data reads them (`channelNames`): a valve's command
+  is its own; an instrument's pressure or temperature, that of the node it taps (a thermocouple
+  tapping a tank above its liquid, its ullage's, unless it's set to read the liquid's or the
+  wall's); and a flow meter, with no loss of its own, reads the flow of the one part it's in
+  line with (set to be an orifice, it's that, with its own). Only the channels the test has are
+  linked, by their names there, and the panel lists the parts with none. Whether a channel
+  drives the model or is compared with it is the catalog's (a fixed tank follows its
+  transducer; an ullage starts from it). A channel can be left out, for conditions of your own:
+  unchecked in the Simulation box of its part or of what it sets, it's kept on the part whose
+  channel it is (`sim.unlinked`: a valve, an instrument, a flow meter), and isn't linked
+  (`Built.left` has it, for the box to check again), so what it would have set is the part's
+  settings (a valve's position, a tank's pressure).
+- **What the P&ID has to fix** is found before Yorg's checks (`Finding`): what a part carries,
+  unsaid or mixed; two tanks joined with nothing between them; a regulator in liquid lines, a
+  cavitating venturi in gas ones. Notes say what the model does that the drawing might not
+  (a line that goes nowhere is capped, a liquid check valve lets flow back). Each names its
+  parts, to go to; Yorg's own messages name parts by their tags.
+- **Running**: the panel picks the test (the page's `?test=`, as Test data's), the window on
+  the test's clock (◷ takes the timeline's time, and the timeline shades the window), the time
+  step, and the solver, and asks Yorg to run (`POST /api/yorg/models/runs`), fit (`/fits`), or
+  anchor (`/anchors`; `Tune.tsx` has the two side by side), then how it's going (`/runs/{id}`,
+  every 0.6 s, a fit's every second). Results are plotted with the test's channels in the
+  diagram's units (`Chart.tsx`, an SVG plot of Piper's own: a channel's samples drawn each
+  pixel's lowest to highest, the model's line, and a cursor whose click moves the timeline),
+  with RMS and bias; and the drawing shows the run at the timeline's time, a part's in one
+  badge in the diagram's units (`live.ts`): an instrument's or a flow meter's, what the test
+  measured, then the model's in gold (`Palette.model`, a darker gold on white paper, to read);
+  a tank's or a vessel's pressure, unless an instrument on it shows it; the flow through what
+  carries it, while there's any, unless a flow meter in line shows it. An outlet's pressure is
+  what it was given, so it isn't shown. What a fit or an anchored run found goes onto the parts
+  (`applyKnobs`) only when asked, where it's within its setting's limits. Script shows the
+  FullFlow script the server runs for the run as it's set up (`POST /api/yorg/models/script`)
+  and what it imports (`GET /api/yorg/models/library`), to read; How it's modeled
+  (`Reference.tsx`) explains FullFlow, and how each part is built of its components. Results
+  aren't kept: leaving the diagram leaves them.
+- **Examples** (`sim/examples.ts`, on New diagram for admins): a cold flow, a pressurized flow,
+  and Vespula's prop system with its run's data (`vespula-run.csv`), which New diagram adds to
+  Yorg as a test the first time (`POST /api/yorg/datasets`, as Yorg's own upload adds one), and
+  opens the diagram in Simulation mode on it, to edit, as any diagram just made opens. A transient run of Vespula's at 0.1 s steps is
+  its FullFlow run again, every channel to a few parts in a million.
 
 ## API
 
@@ -209,29 +464,51 @@ site's own endpoints, are in [design.md](design.md#api).
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/piper/diagrams?q=&deleted=` | the diagrams, the most recently changed first, without their drawings; `q`: those whose name, folder, description, or tags have every word (or the deleted ones) |
-| `POST /api/piper/diagrams` | a new diagram `{name, folder, description, drawing}` (`drawing` optional: an empty one) |
-| `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder, description}`; delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
+| `GET /api/piper/diagrams?q=&deleted=` | the diagrams, the most recently changed first, without their drawings (with `parts`, `lines`, and `pages`, on all its pages); `q`: those whose name, folder, description, or tags have every word (or the deleted ones) |
+| `POST /api/piper/diagrams` | a new diagram `{name, folder_id, description, drawing}` (`drawing` optional: an empty one; or `folder`, a path, whose folders are made where they aren't there) |
+| `POST /api/piper/diagrams/move` | put diagrams in a folder `{diagrams, folder_id}` (null: the top), as anyone can: all of them, or none (404, 409 `deleted`) |
+| `POST /api/piper/diagrams/delete`, `/restore` | delete, or restore, diagrams `{diagrams}`: all of them, or none (403 `not_yours`) |
+| `GET`/`POST /api/piper/folders` | every folder, by name (each with its `parent_id` and `path`); a new one `{name, parent_id}` (409 `name_taken`) |
+| `PATCH`/`DELETE /api/piper/folders/{id}` | rename or move one `{name, parent_id}` (409 `name_taken`, `cycle`); delete an empty one (409 `not_empty`) |
+| `GET`/`PATCH`/`DELETE /api/piper/diagrams/{id}` | a diagram with its drawing (a deleted one too); rename, move, or describe it `{name, folder_id, description}` (or `folder`, a path); delete it (restorable: whoever made it, or an admin, else 403 `not_yours`) |
 | `POST /api/piper/diagrams/{id}/restore` | restore a deleted diagram (whoever made it, or an admin) |
-| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `deleted` if it's deleted; `fresh`: start a new revision even if the latest is yours |
+| `GET /api/piper/diagrams/{id}/lock` | the diagram without its drawing: who's editing it (`editing`: `by`, `since`; null if no one is), and its `version` |
+| `POST /api/piper/diagrams/{id}/lock` | start editing it, or say you're still at it `{force}` (optional body): 409 `locked` if someone else is (`details.editing`), 409 `deleted`; `force`: an admin taking it over (else 403 `admin_only`) |
+| `DELETE /api/piper/diagrams/{id}/lock` | done editing it: anyone can edit it now (nothing changes if it isn't yours) |
+| `PUT /api/piper/diagrams/{id}/drawing` | save its drawing `{drawing, version, fresh}`: 409 `changed` if it's no longer at `version` (`details`: `version`, `updated_by`, `updated_at`), 409 `locked` if someone else is editing it (`details.editing`), 409 `deleted` if it's deleted, 409 `drawing_newer` if the drawing's in an older format than the diagram's (a page of a diagram with pages); `fresh`: start a new revision even if the latest is yours |
 | `GET /api/piper/diagrams/{id}/revisions` | its revisions, the latest first, without their drawings |
 | `GET`/`PATCH /api/piper/diagrams/{id}/revisions/{number}` | a revision with its drawing; name it `{note}` ("": no name) |
-| `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` as for a save) |
+| `POST /api/piper/diagrams/{id}/revisions/{number}/restore` | make a revision the drawing again `{version}`, as a new revision (409 `changed` and `locked` as for a save) |
+| `GET /api/piper/diagrams/{id}/releases` | its releases, the latest asked for first, each with its approvals and `can_withdraw` |
+| `POST /api/piper/diagrams/{id}/releases` | ask for a revision to be released `{revision, approvers, note}` (approvers: accounts' ids): 422 `needs_approver`, 409 `release_pending`, `older_than_released` |
+| `POST /api/piper/diagrams/{id}/releases/{release}/approve`, `/reject` | an approver's say `{comment}`: released with the next letter once all have approved; 403 `not_an_approver`, 409 `already_decided` |
+| `POST /api/piper/diagrams/{id}/releases/{release}/withdraw` | take back a release that's waiting (whoever asked, or an admin, else 403 `not_yours`) |
+| `GET`/`POST /api/piper/schemes` | the team's color schemes, its default first; a new one `{name, fluids, states}` |
+| `PATCH`/`DELETE /api/piper/schemes/{id}` | change one (what's left out stays); delete one (whoever made it, or an admin, else 403 `not_yours`; not the default, 409 `scheme_default`) |
+| `POST /api/piper/schemes/{id}/default` | make one the team's default (admins, else 403 `admin_only`) |
+| `POST /api/piper/images` | add a picture, a PNG or a JPEG, as the raw request body (201: its `sha256`, `content_type`, `width`, `height`, `size`; the same bytes again, the same picture); 415 `not_an_image`, 413 `too_large` |
+| `GET /api/piper/images/{sha256}` | a picture's bytes, with its name as its ETag (304 to `If-None-Match`) |
+
+Simulation mode uses Yorg's system models' API (`/api/yorg/models`, [yorg.md](yorg.md#api)), as
+any client would.
 
 ## Roadmap
 
 1. **Piper** (first version, October 2026): diagrams with history, the library, lines routed
    and snapped, fluids and states, properties, Visio's drawings imported, exports (PDF on a
-   drawing sheet), test data from Yorg, and a Help page (`Help.tsx`, `/piper/help`: keep it in
+   drawing sheet), test data from Yorg, releases with approvers, pages with printed sheets and
+   off-page connectors between them, pictures of the team's own, Simulation mode (FullFlow,
+   for admins while it's tried out), and a Help page (`Help.tsx`, `/piper/help`: keep it in
    step with the features). Next:
-   - **Releasing a diagram**: locking one as the P&ID of record (for a test's procedures), so
-     changes go into a new revision that's released in turn.
-   - **Several people at once**: seeing who else has a diagram open, then editing together.
+   - **Several people at once**: one person edits a diagram at a time now, and everyone sees
+     who; next, seeing who else has it open, then editing together.
    - **The team's own parts**: kinds drawn and saved in Piper, beside the standard ones.
-   - **A diagram as a Yorg model**: a P&ID's parts and lines as a system model to simulate,
-     once Yorg's models are released.
-   - **Sheets**: several sheets to a diagram, joined by off-page connectors, and a title block
-     part filled in from the diagram's history.
+   - **Simulation for everyone**, once admins have tried it out.
+   - **A simulation's settings from a part's properties**: a valve's Cv as its CdA, an
+     orifice's diameter and Cd, a tank's volume, a regulator's set pressure, a line's size and
+     length, where they're set and the simulation's aren't.
+   - **A title block part filled in from the diagram's history**: its releases, as the sheet's
+     own title block lists them.
 
 ## Open questions
 

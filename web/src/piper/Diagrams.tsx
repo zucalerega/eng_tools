@@ -1,55 +1,80 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Dialog, Notice, Time } from "../components";
-import { folderTree, foldersOf, tidyFolder, type Folder } from "../pathTree";
+import { MoveDialog, NameDialog } from "../FolderDialogs";
+import { pathTo, within } from "../folders";
+import { formatSize, formatTime } from "../format";
 import { Link, navigate } from "../router";
-import { piper, type Diagram } from "./api";
-import { emptyDrawing } from "./drawing";
+import { useSession } from "../session";
+import { piper, type Diagram, type DiagramFolder } from "./api";
+import { documentOf, emptyDrawing, pageOf, withPage, type Document, type Drawing } from "./drawing";
 import { example } from "./example";
-import { fluidOf } from "./fluids";
-import { readVisio, type ImportReport } from "./visio";
+import { applyScheme, fluidOf } from "./fluids";
+import { coldFlow, pressurizedFlow, vespula, VESPULA_RUN } from "./sim/examples";
+import { addTest, tests } from "./testdata";
+import { readVisio, visioDocument, visioName, type ImportReport } from "./visio";
 
-// The diagrams, in their folders: each folder's the most recently changed first. Find looks in their names, folders,
-// descriptions, and the tags of their parts and lines (PT-101 finds the diagrams it's on).
+// The diagrams, in folders, as Yorg's datasets are: a folder's own folders and diagrams, and every diagram when
+// searching (by name, folder, description, or a part's tag: PT-101 finds the diagrams it's on). Diagrams and folders
+// are moved by dragging them onto a folder (or a folder in the path above), or by choosing them and Move to; chosen
+// diagrams are deleted together. Anyone moves any diagram, and makes, renames, and moves folders; only whoever made a
+// diagram, or an admin, deletes it, as the server allows.
 
-const CLOSED = "piper.folders.closed"; // the folders shut in this browser
+export const folderUrl = (id: number | null): string => (id === null ? "/piper" : `/piper/folders/${id}`);
+/** A diagram's editor: at what a search found (find), or to edit it (a diagram just made). */
+const diagramUrl = (id: number, find = "", edit = false): string =>
+    `/piper/diagrams/${id}${find ? `?find=${encodeURIComponent(find)}` : edit ? "?edit=1" : ""}`;
 
-function storedClosed(): Set<string> {
-    try {
-        return new Set(JSON.parse(window.localStorage.getItem(CLOSED) ?? "[]") as string[]);
-    } catch {
-        return new Set();
-    }
-}
+const DRAGGED = "application/x-piper-move"; // {diagrams: number[], folder: number | null}
+const VISIO_FILES = ".vsdx,.vsd,.vdx";
+const MAX_LISTED = 8; // diagrams a delete names; past that, how many more
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
-    const [diagrams, setDiagrams] = useState<Diagram[] | null>(null);
-    const [found, setFound] = useState<Diagram[] | null>(null);
-    const [find, setFind] = useState("");
-    const [problem, setProblem] = useState<string | null>(null);
-    const [creating, setCreating] = useState(false);
-    const [importing, setImporting] = useState<File | boolean>(false); // a file dropped on the page, or true to choose one
-    const [dropping, setDropping] = useState(false);
-    const [deleting, setDeleting] = useState<Diagram | null>(null);
-    const [closed, setClosed] = useState<Set<string>>(storedClosed);
-    const words = find.trim();
+type Asking =
+    | { kind: "new-folder" }
+    | { kind: "rename"; folder: DiagramFolder }
+    | { kind: "delete-folder"; folder: DiagramFolder }
+    | { kind: "move" }
+    | { kind: "delete-chosen" }
+    | { kind: "new-diagram" }
+    | null;
 
-    const load = () => piper.diagrams({ deleted }).then(setDiagrams, (error: unknown) => setProblem(message(error)));
+export function DiagramsPage({ folder }: { folder: number | null }) {
+    const [diagrams, setDiagrams] = useState<Diagram[] | null>(null);
+    const [folders, setFolders] = useState<DiagramFolder[] | null>(null);
+    const [found, setFound] = useState<Diagram[] | null>(null); // what a search found, in every folder
+    const [filter, setFilter] = useState("");
+    const [problem, setProblem] = useState<string | null>(null);
+    const [selected, setSelected] = useState<Set<number>>(new Set());
+    const [dialog, setDialog] = useState<Asking>(null);
+    const [importing, setImporting] = useState<File | null>(null); // a Visio drawing picked, or dropped on the page
+    const [dropping, setDropping] = useState<string | null>(null); // what a drag is over: "files", or a folder's key
+    const picker = useRef<HTMLInputElement>(null);
+    const words = filter.trim();
+    const searching = words !== "";
+
+    const load = () =>
+        Promise.all([piper.diagrams(), piper.folders()]).then(
+            ([allDiagrams, allFolders]) => {
+                setDiagrams(allDiagrams);
+                setFolders(allFolders);
+            },
+            (error: unknown) => setProblem(message(error)),
+        );
     useEffect(() => {
         void load();
-        // Listed again only when the page is opened for the other list.
-    }, [deleted]);
+    }, []);
+    useEffect(() => setSelected(new Set()), [folder]);
 
     // What's found is the server's to say, since it looks in the drawings' tags: asked once typing pauses.
     useEffect(() => {
-        if (!words) {
+        if (!searching) {
             setFound(null);
             return;
         }
         let current = true;
         const timer = setTimeout(() => {
-            piper.diagrams({ q: words, deleted }).then(
+            piper.diagrams({ q: words }).then(
                 (list) => current && setFound(list),
                 (error: unknown) => current && setProblem(message(error)),
             );
@@ -58,25 +83,30 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
             current = false;
             clearTimeout(timer);
         };
-    }, [words, deleted]);
+    }, [words, searching, diagrams]);
 
-    const shown = words ? found : diagrams;
-    const searching = words !== "";
-    const tree = shown ? folderTree(shown.map((diagram, order) => ({ ...diagram, order }))) : null;
+    const byId = new Map((folders ?? []).map((one) => [one.id, one] as const));
+    const here = folder === null ? null : (byId.get(folder) ?? null);
+    const path = pathTo(folder, byId);
+    const lower = words.toLowerCase().split(/\s+/).filter(Boolean);
+    const allDiagrams = diagrams ?? [];
+    const shownDiagrams = searching ? (found ?? []) : allDiagrams.filter((one) => (one.folder_id ?? null) === folder);
+    const shownFolders = searching
+        ? (folders ?? []).filter((one) => lower.every((word) => one.name.toLowerCase().includes(word)))
+        : (folders ?? []).filter((one) => one.parent_id === folder);
+    const inside = (id: number) => allDiagrams.filter((one) => within(one.folder_id ?? null, id, byId)).length;
+    const where = (id: number | null | undefined) => (id ? (byId.get(id)?.path ?? "Diagrams") : "Diagrams");
+    const chosen = allDiagrams.filter((one) => selected.has(one.id));
+    const theirs = chosen.filter((one) => !one.can_delete);
 
-    function toggle(path: string) {
-        const next = new Set(closed);
-        if (next.has(path)) {
-            next.delete(path);
-        } else {
-            next.add(path);
-        }
-        setClosed(next);
+    async function act(work: () => Promise<unknown>) {
+        setProblem(null);
         try {
-            window.localStorage.setItem(CLOSED, JSON.stringify([...next]));
-        } catch {
-            // storage blocked: shut for this visit
+            await work();
+        } catch (error) {
+            setProblem(message(error));
         }
+        await load();
     }
 
     async function duplicate(diagram: Diagram) {
@@ -85,222 +115,468 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
             const original = await piper.diagram(diagram.id);
             const copy = await piper.create({
                 name: `${diagram.name} copy`,
-                folder: diagram.folder,
+                folder_id: diagram.folder_id ?? null,
                 description: diagram.description,
                 drawing: original.drawing,
             });
-            navigate(`/piper/diagrams/${copy.id}`);
+            navigate(diagramUrl(copy.id, "", true));
         } catch (error) {
             setProblem(message(error));
         }
     }
 
-    async function restore(diagram: Diagram) {
-        setProblem(null);
-        try {
-            await piper.restore(diagram.id);
-            await load();
-            setFound((now) => now?.filter((entry) => entry.id !== diagram.id) ?? null);
-        } catch (error) {
-            setProblem(message(error));
+    // Dragging: a Visio drawing from the computer (imported here), or diagrams and folders onto a folder.
+    const moving = (event: DragEvent) => event.dataTransfer.types.includes(DRAGGED);
+    const dropOn = (target: number | null, key: string) => ({
+        onDragOver: (event: DragEvent) => {
+            if (moving(event)) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.dataTransfer.dropEffect = "move";
+                setDropping(key);
+            }
+        },
+        onDragLeave: () => setDropping((current) => (current === key ? null : current)),
+        onDrop: (event: DragEvent) => {
+            if (!moving(event)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            setDropping(null);
+            const { diagrams: ids, folder: moved } = JSON.parse(event.dataTransfer.getData(DRAGGED)) as {
+                diagrams: number[];
+                folder: number | null;
+            };
+            if (moved !== null) {
+                if (target !== null && within(target, moved, byId)) {
+                    setProblem("A folder can't go inside itself");
+                    return;
+                }
+                void act(() => piper.changeFolder(moved, { parent_id: target }));
+            } else if (ids.length > 0) {
+                void act(() => piper.moveAll(ids, target));
+                setSelected(new Set());
+            }
+        },
+    });
+    const dragDiagrams = (event: DragEvent, diagram: Diagram) => {
+        const ids = selected.has(diagram.id) ? [...selected] : [diagram.id];
+        event.dataTransfer.setData(DRAGGED, JSON.stringify({ diagrams: ids, folder: null }));
+        event.dataTransfer.effectAllowed = "move";
+    };
+    const dragFolder = (event: DragEvent, dragged: DiagramFolder) => {
+        event.dataTransfer.setData(DRAGGED, JSON.stringify({ diagrams: [], folder: dragged.id }));
+        event.dataTransfer.effectAllowed = "move";
+    };
+    const choose = (id: number, on: boolean) => {
+        const next = new Set(selected);
+        if (on) {
+            next.add(id);
+        } else {
+            next.delete(id);
         }
-    }
+        setSelected(next);
+    };
 
-    function rows(folder: Folder<Diagram>, depth: number): ReactNode[] {
-        const shut = !searching && closed.has(folder.path);
-        const head = folder.path ? (
-            <tr key={`folder:${folder.path}`} className="piper-folder-row">
-                <td colSpan={4} style={{ paddingLeft: `${depth * 1.25 + 0.75}rem` }}>
-                    <button
-                        type="button"
-                        className="piper-folder"
-                        aria-expanded={!shut}
-                        onClick={() => toggle(folder.path)}
-                    >
-                        <span aria-hidden="true">{shut ? "▸" : "▾"}</span>
-                        <span className="file-icon file-icon-folder" aria-hidden="true" />
-                        {folder.name}
-                    </button>
-                </td>
-            </tr>
-        ) : null;
-        if (shut) {
-            return [head];
-        }
-        const inner = folder.path ? depth + 1 : depth;
-        return [
-            head,
-            ...folder.folders.flatMap((one) => rows(one, inner)),
-            ...folder.items.map((diagram) => (
-                <tr key={diagram.id}>
-                    <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
-                        <Link to={`/piper/diagrams/${diagram.id}`} className="name">
-                            {diagram.name}
-                        </Link>
-                        {diagram.description && <span className="muted piper-description">{diagram.description}</span>}
-                    </td>
-                    <td className="numeric">{diagram.parts}</td>
-                    <td>
-                        <span className="piper-chips">
-                            {diagram.fluids.slice(0, 5).map((id) => (
-                                <Fluid key={id} id={id} />
-                            ))}
-                        </span>
-                    </td>
-                    <td>
-                        <span className="muted">
-                            {diagram.updated_by?.name ?? "Someone"},{" "}
-                            <Time at={deleted && diagram.deleted_at ? diagram.deleted_at : diagram.updated_at} />
-                        </span>
-                        <span className="row-actions">
-                            {deleted ? (
-                                diagram.can_delete && (
-                                    <button
-                                        type="button"
-                                        className="button-small"
-                                        onClick={() => void restore(diagram)}
-                                    >
-                                        Restore
-                                    </button>
-                                )
-                            ) : (
-                                <>
-                                    <button
-                                        type="button"
-                                        className="button-small"
-                                        onClick={() => void duplicate(diagram)}
-                                    >
-                                        Duplicate
-                                    </button>
-                                    {diagram.can_delete && (
-                                        <button
-                                            type="button"
-                                            className="button-small"
-                                            onClick={() => setDeleting(diagram)}
-                                        >
-                                            Delete…
-                                        </button>
-                                    )}
-                                </>
-                            )}
-                        </span>
-                    </td>
-                </tr>
-            )),
-        ];
-    }
-
+    const files = (event: DragEvent) => event.dataTransfer.types.includes("Files");
     return (
         <section
-            className={`piper-diagrams${dropping ? " piper-dropping" : ""}`}
-            // A Visio drawing dropped anywhere on the page is imported, as Import Visio does.
+            className={`piper-diagrams${dropping === "files" ? " drop-target" : ""}`}
             onDragOver={(event) => {
-                if (!deleted && event.dataTransfer.types.includes("Files")) {
+                if (files(event)) {
                     event.preventDefault();
-                    setDropping(true);
+                    setDropping("files");
                 }
             }}
             onDragLeave={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                    setDropping(false);
+                    setDropping((current) => (current === "files" ? null : current));
                 }
             }}
             onDrop={(event) => {
                 const file = event.dataTransfer.files[0];
-                setDropping(false);
-                if (!deleted && file) {
+                if (files(event) && file) {
                     event.preventDefault();
+                    setDropping(null);
                     setImporting(file);
                 }
             }}
         >
             <div className="page-head">
-                <h1 className="page-title">{deleted ? "Deleted diagrams" : "Diagrams"}</h1>
-                {!deleted && (
-                    <div className="page-actions">
-                        <button type="button" onClick={() => setImporting(true)}>
-                            Import Visio…
-                        </button>
-                        <button type="button" className="button-primary" onClick={() => setCreating(true)}>
-                            New diagram
-                        </button>
-                    </div>
-                )}
-            </div>
-            <p className="muted piper-lead">
-                {deleted
-                    ? "Deleted diagrams keep everything, history and all: whoever made one, or an admin, can restore it."
-                    : "The team's P&IDs: its test stands, the vehicle's feed system, the GSE. Everyone can open and change them, and every change is kept in a diagram's history."}
-            </p>
-            <input
-                type="search"
-                className="search"
-                placeholder="Find diagrams by name, folder, or a part's tag"
-                aria-label="Find diagrams"
-                value={find}
-                onChange={(event) => setFind(event.target.value)}
-            />
-            {problem && <Notice tone="error">{problem}</Notice>}
-            {shown === null ? (
-                <p className="muted">Loading…</p>
-            ) : shown.length === 0 ? (
-                <p className="empty">
-                    {searching
-                        ? "No diagram has that."
-                        : deleted
-                          ? "No diagrams are deleted."
-                          : "No diagrams yet. Make the first with New diagram."}
-                </p>
-            ) : (
-                <div className="table-scroll">
-                    <table className="table" aria-label="Diagrams">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th className="numeric">Parts</th>
-                                <th>Fluids</th>
-                                <th>{deleted ? "Deleted" : "Changed"}</th>
-                            </tr>
-                        </thead>
-                        <tbody>{tree && rows(tree, 0)}</tbody>
-                    </table>
+                <div className="page-title">
+                    {/* In a folder, the way there, above its name: each folder on it takes what's dropped on it. */}
+                    {here && (
+                        <nav className="breadcrumbs" aria-label="Folders">
+                            <Link
+                                to={folderUrl(null)}
+                                className={dropping === "top" ? "piper-drop-folder" : undefined}
+                                {...dropOn(null, "top")}
+                            >
+                                Diagrams
+                            </Link>
+                            {path.slice(0, -1).map((one) => (
+                                <span key={one.id}>
+                                    <span className="separator" aria-hidden="true">
+                                        /
+                                    </span>
+                                    <Link
+                                        to={folderUrl(one.id)}
+                                        className={dropping === `crumb-${one.id}` ? "piper-drop-folder" : undefined}
+                                        {...dropOn(one.id, `crumb-${one.id}`)}
+                                    >
+                                        {one.name}
+                                    </Link>
+                                </span>
+                            ))}
+                        </nav>
+                    )}
+                    <h1>{here?.name ?? "Diagrams"}</h1>
                 </div>
+                <div className="page-actions">
+                    <button type="button" onClick={() => picker.current?.click()}>
+                        Import Visio…
+                    </button>
+                    <input
+                        ref={picker}
+                        type="file"
+                        accept={VISIO_FILES}
+                        hidden
+                        aria-label="Visio drawing to import"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) {
+                                setImporting(file);
+                            }
+                        }}
+                    />
+                    <button type="button" onClick={() => setDialog({ kind: "new-folder" })}>
+                        New folder
+                    </button>
+                    <button type="button" className="button-primary" onClick={() => setDialog({ kind: "new-diagram" })}>
+                        New diagram
+                    </button>
+                </div>
+            </div>
+            {folder === null && (
+                <p className="muted piper-lead">
+                    The team's P&IDs: its test stands, the vehicle's feed system, the GSE. Everyone can open and change
+                    them, and every change is kept in a diagram's history. Make folders to keep a system's diagrams
+                    together, and drag diagrams into them; drop a Visio drawing anywhere on this page to import it.
+                </p>
             )}
-            <p className="piper-foot">
-                {deleted ? <Link to="/piper">All diagrams</Link> : <Link to="/piper/deleted">Deleted diagrams</Link>}
+            {folder !== null && folders !== null && !here && (
+                <Notice tone="warning">
+                    This folder isn't there any more. <Link to="/piper">Back to the diagrams</Link>
+                </Notice>
+            )}
+            {problem && <Notice tone="error">{problem}</Notice>}
+            {diagrams === null && !problem && <p className="muted">Loading…</p>}
+            {diagrams !== null && (
+                <>
+                    <input
+                        type="search"
+                        className="search"
+                        placeholder="Find diagrams, in every folder"
+                        aria-label="Find diagrams"
+                        value={filter}
+                        onChange={(event) => setFilter(event.target.value)}
+                    />
+                    {selected.size > 0 && (
+                        <div className="selection-bar" role="status">
+                            <span>
+                                {selected.size} {selected.size === 1 ? "diagram" : "diagrams"} chosen
+                            </span>
+                            <button type="button" className="button-small" onClick={() => setDialog({ kind: "move" })}>
+                                Move to…
+                            </button>
+                            <button
+                                type="button"
+                                className="button-small"
+                                disabled={theirs.length > 0}
+                                title={
+                                    theirs.length > 0
+                                        ? `Only whoever made a diagram, or an admin, deletes it: ${theirs[0]!.name} isn't yours`
+                                        : undefined
+                                }
+                                onClick={() => setDialog({ kind: "delete-chosen" })}
+                            >
+                                Delete…
+                            </button>
+                            <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
+                                Clear
+                            </button>
+                        </div>
+                    )}
+                    {shownFolders.length === 0 && shownDiagrams.length === 0 ? (
+                        <div className="empty">
+                            {searching
+                                ? found === null
+                                    ? "Looking…"
+                                    : "No diagram has that."
+                                : folder === null
+                                  ? "No diagrams yet. Make the first with New diagram, or import one from Visio."
+                                  : "This folder is empty: make a diagram here, or drag diagrams onto it."}
+                        </div>
+                    ) : (
+                        <div className="table-scroll">
+                            <table className="table piper-list" aria-label="Diagrams">
+                                <thead>
+                                    <tr>
+                                        <th className="select">
+                                            <input
+                                                type="checkbox"
+                                                aria-label="Choose every diagram here"
+                                                disabled={shownDiagrams.length === 0}
+                                                checked={
+                                                    shownDiagrams.length > 0 &&
+                                                    shownDiagrams.every((one) => selected.has(one.id))
+                                                }
+                                                onChange={(event) =>
+                                                    setSelected(
+                                                        new Set(
+                                                            event.target.checked
+                                                                ? shownDiagrams.map((one) => one.id)
+                                                                : [],
+                                                        ),
+                                                    )
+                                                }
+                                            />
+                                        </th>
+                                        <th>Name</th>
+                                        <th className="numeric">Parts</th>
+                                        <th>Fluids</th>
+                                        <th>Changed</th>
+                                        <th />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {shownFolders.map((one) => (
+                                        <tr
+                                            key={`folder-${one.id}`}
+                                            className={`piper-folder-row${dropping === `folder-${one.id}` ? " piper-drop-folder" : ""}`}
+                                            draggable
+                                            onDragStart={(event) => dragFolder(event, one)}
+                                            {...dropOn(one.id, `folder-${one.id}`)}
+                                        >
+                                            <td className="select" />
+                                            <td>
+                                                <Link to={folderUrl(one.id)} className="name folder-name">
+                                                    <span className="file-icon file-icon-folder" aria-hidden="true" />
+                                                    {one.name}
+                                                </Link>
+                                                {searching && one.parent_id !== null && (
+                                                    <p className="muted piper-description">in {where(one.parent_id)}</p>
+                                                )}
+                                            </td>
+                                            <td className="numeric muted" colSpan={2}>
+                                                {inside(one.id) === 1 ? "1 diagram" : `${inside(one.id)} diagrams`}
+                                            </td>
+                                            <td>
+                                                {one.created_by?.name ?? "—"}
+                                                <span className="muted">
+                                                    {" · "}
+                                                    <Time at={one.created_at} />
+                                                </span>
+                                            </td>
+                                            <td className="row-actions">
+                                                <button
+                                                    type="button"
+                                                    className="button-small"
+                                                    aria-label={`Rename ${one.name}`}
+                                                    onClick={() => setDialog({ kind: "rename", folder: one })}
+                                                >
+                                                    Rename
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="button-small"
+                                                    aria-label={`Delete ${one.name}`}
+                                                    onClick={() => setDialog({ kind: "delete-folder", folder: one })}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {shownDiagrams.map((diagram) => (
+                                        <tr
+                                            key={diagram.id}
+                                            draggable
+                                            onDragStart={(event) => dragDiagrams(event, diagram)}
+                                        >
+                                            <td className="select">
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`Choose ${diagram.name}`}
+                                                    checked={selected.has(diagram.id)}
+                                                    onChange={(event) => choose(diagram.id, event.target.checked)}
+                                                />
+                                            </td>
+                                            <td>
+                                                {/* Found by a search: it opens at what was found (a tag on it, PT-101). */}
+                                                <Link
+                                                    to={diagramUrl(diagram.id, searching ? words : "")}
+                                                    className="name"
+                                                >
+                                                    {diagram.name}
+                                                </Link>
+                                                {diagram.released && (
+                                                    <span className="badge piper-badge-released">
+                                                        Rev {diagram.released}
+                                                    </span>
+                                                )}
+                                                {diagram.editing && (
+                                                    <span
+                                                        className="badge piper-badge-editing"
+                                                        title={`Since ${formatTime(diagram.editing.since)}`}
+                                                    >
+                                                        {diagram.editing.by.name} is editing
+                                                    </span>
+                                                )}
+                                                {searching && (
+                                                    <p className="muted piper-description">
+                                                        in {where(diagram.folder_id)}
+                                                    </p>
+                                                )}
+                                                {diagram.description && (
+                                                    <p className="muted piper-description">{diagram.description}</p>
+                                                )}
+                                            </td>
+                                            <td className="numeric">
+                                                {diagram.parts}
+                                                {(diagram.pages ?? 1) > 1 && (
+                                                    <span className="muted piper-small" title="On its pages">
+                                                        {" "}
+                                                        on {diagram.pages}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <span className="piper-chips">
+                                                    {diagram.fluids.slice(0, 5).map((id) => (
+                                                        <Fluid key={id} id={id} />
+                                                    ))}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {diagram.updated_by?.name ?? "—"}
+                                                <span className="muted">
+                                                    {" · "}
+                                                    <Time at={diagram.updated_at} />
+                                                </span>
+                                            </td>
+                                            <td className="row-actions">
+                                                <button
+                                                    type="button"
+                                                    className="button-small"
+                                                    aria-label={`Duplicate ${diagram.name}`}
+                                                    onClick={() => void duplicate(diagram)}
+                                                >
+                                                    Duplicate
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </>
+            )}
+            <p className="muted piper-foot">
+                <Link to="/piper/deleted">Deleted diagrams</Link>
             </p>
-            {importing !== false && (
+            {importing && (
                 <ImportDialog
-                    file={importing === true ? null : importing}
-                    folders={foldersOf(diagrams ?? [])}
+                    file={importing}
+                    folder={here}
                     onDone={(made) => {
-                        setImporting(false);
+                        setImporting(null);
                         if (made.length > 0) {
                             void load();
                         }
                     }}
                 />
             )}
-            {creating && (
+            {dialog?.kind === "new-diagram" && (
                 <NewDialog
-                    folders={foldersOf(diagrams ?? [])}
-                    onDone={(made) => {
-                        setCreating(false);
+                    folder={here}
+                    onDone={(made, also = "") => {
+                        setDialog(null);
                         if (made) {
-                            navigate(`/piper/diagrams/${made.id}`);
+                            navigate(`${diagramUrl(made.id, "", true)}${also ? `&${also}` : ""}`);
                         }
                     }}
                 />
             )}
-            {deleting && (
+            {dialog?.kind === "new-folder" && (
+                <NameDialog
+                    title={here ? `New folder in ${here.name}` : "New folder"}
+                    confirm="Make it"
+                    onCancel={() => setDialog(null)}
+                    onName={async (name) => {
+                        await piper.addFolder(name, folder);
+                        setDialog(null);
+                        await load();
+                    }}
+                />
+            )}
+            {dialog?.kind === "rename" && (
+                <NameDialog
+                    title={`Rename ${dialog.folder.name}`}
+                    confirm="Rename"
+                    initial={dialog.folder.name}
+                    onCancel={() => setDialog(null)}
+                    onName={async (name) => {
+                        await piper.changeFolder(dialog.folder.id, { name });
+                        setDialog(null);
+                        await load();
+                    }}
+                />
+            )}
+            {dialog?.kind === "delete-folder" && (
+                <Dialog
+                    title={`Delete ${dialog.folder.name}?`}
+                    confirm="Delete"
+                    danger
+                    onConfirm={() => {
+                        const gone = dialog.folder;
+                        setDialog(null);
+                        void act(() => piper.removeFolder(gone.id));
+                    }}
+                    onCancel={() => setDialog(null)}
+                >
+                    <p>
+                        Only an empty folder can be deleted: move its diagrams and folders out first. Deleted diagrams
+                        that were in it go to the folder it's in.
+                    </p>
+                </Dialog>
+            )}
+            {dialog?.kind === "delete-chosen" && (
                 <DeleteDialog
-                    diagram={deleting}
-                    onDone={(gone) => {
-                        setDeleting(null);
-                        if (gone) {
-                            setDiagrams((now) => now?.filter((entry) => entry.id !== gone.id) ?? null);
-                            setFound((now) => now?.filter((entry) => entry.id !== gone.id) ?? null);
-                        }
+                    chosen={chosen}
+                    onCancel={() => setDialog(null)}
+                    onDelete={(ids) => {
+                        setDialog(null);
+                        setSelected(new Set());
+                        void act(() => piper.removeAll(ids));
+                    }}
+                />
+            )}
+            {dialog?.kind === "move" && folders && (
+                <MoveDialog
+                    folders={folders}
+                    title={`Move ${selected.size === 1 ? "a diagram" : `${selected.size} diagrams`}`}
+                    top="Diagrams"
+                    from={folder}
+                    onCancel={() => setDialog(null)}
+                    onMove={(target) => {
+                        const ids = [...selected];
+                        setDialog(null);
+                        setSelected(new Set());
+                        void act(() => piper.moveAll(ids, target));
                     }}
                 />
             )}
@@ -308,9 +584,174 @@ export function DiagramsPage({ deleted = false }: { deleted?: boolean }) {
     );
 }
 
+/** The deleted diagrams: each kept, history and all, to restore in its folder; several restored together. */
+export function DeletedPage() {
+    const [diagrams, setDiagrams] = useState<Diagram[] | null>(null);
+    const [problem, setProblem] = useState<string | null>(null);
+    // Chosen to restore together, as diagrams are chosen to move or delete: yours (any, for an admin).
+    const [selected, setSelected] = useState<Set<number>>(new Set());
+    const load = () =>
+        piper.diagrams({ deleted: true }).then(setDiagrams, (error: unknown) => setProblem(message(error)));
+    useEffect(() => {
+        void load();
+    }, []);
+    const choosable = (diagrams ?? []).filter((one) => one.can_delete);
+    async function restore(ids: number[]) {
+        setProblem(null);
+        try {
+            await piper.restoreAll(ids);
+            setSelected((current) => new Set([...current].filter((id) => !ids.includes(id))));
+        } catch (error) {
+            setProblem(message(error));
+        }
+        await load();
+    }
+    return (
+        <section className="piper-diagrams">
+            <div className="page-head">
+                <h1 className="page-title">Deleted diagrams</h1>
+                <div className="page-actions">
+                    <Link className="button" to="/piper">
+                        Back to the diagrams
+                    </Link>
+                </div>
+            </div>
+            <p className="muted piper-lead">
+                A deleted diagram keeps everything, history and all. Restore puts it back in its folder (whoever made
+                it, or an admin); check several to restore them together.
+            </p>
+            {problem && <Notice tone="error">{problem}</Notice>}
+            {diagrams === null && !problem && <p className="muted">Loading…</p>}
+            {diagrams?.length === 0 && <div className="empty">Nothing's been deleted.</div>}
+            {selected.size > 0 && (
+                <div className="selection-bar" role="status">
+                    <span>
+                        {selected.size} {selected.size === 1 ? "diagram" : "diagrams"} chosen
+                    </span>
+                    <button type="button" className="button-small" onClick={() => void restore([...selected])}>
+                        Restore
+                    </button>
+                    <button type="button" className="button-small" onClick={() => setSelected(new Set())}>
+                        Clear
+                    </button>
+                </div>
+            )}
+            {diagrams && diagrams.length > 0 && (
+                <table className="table" aria-label="Deleted diagrams">
+                    <thead>
+                        <tr>
+                            <th className="select">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Choose every deleted diagram"
+                                    disabled={choosable.length === 0}
+                                    checked={choosable.length > 0 && choosable.every((one) => selected.has(one.id))}
+                                    onChange={(event) =>
+                                        setSelected(new Set(event.target.checked ? choosable.map((one) => one.id) : []))
+                                    }
+                                />
+                            </th>
+                            <th>Name</th>
+                            <th>Deleted</th>
+                            <th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {diagrams.map((diagram) => (
+                            <tr key={diagram.id}>
+                                <td className="select">
+                                    {diagram.can_delete && (
+                                        <input
+                                            type="checkbox"
+                                            aria-label={`Choose ${diagram.name}`}
+                                            checked={selected.has(diagram.id)}
+                                            onChange={(event) => {
+                                                const next = new Set(selected);
+                                                if (event.target.checked) {
+                                                    next.add(diagram.id);
+                                                } else {
+                                                    next.delete(diagram.id);
+                                                }
+                                                setSelected(next);
+                                            }}
+                                        />
+                                    )}
+                                </td>
+                                <td>
+                                    <Link to={diagramUrl(diagram.id)} className="name">
+                                        {diagram.name}
+                                    </Link>
+                                    {diagram.folder && <p className="muted piper-description">in {diagram.folder}</p>}
+                                </td>
+                                <td>
+                                    {diagram.deleted_by?.name ?? "—"}
+                                    {diagram.deleted_at && (
+                                        <span className="muted">
+                                            {" · "}
+                                            <Time at={diagram.deleted_at} />
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="row-actions">
+                                    {diagram.can_delete && (
+                                        <button
+                                            type="button"
+                                            className="button-small"
+                                            aria-label={`Restore ${diagram.name}`}
+                                            onClick={() => void restore([diagram.id])}
+                                        >
+                                            Restore
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </section>
+    );
+}
+
+/** Deleting the diagrams chosen: named, so it's clear what goes, and to Deleted diagrams, where they can come back. */
+function DeleteDialog({
+    chosen,
+    onDelete,
+    onCancel,
+}: {
+    chosen: Diagram[];
+    onDelete: (ids: number[]) => void;
+    onCancel: () => void;
+}) {
+    const one = chosen.length === 1;
+    return (
+        <Dialog
+            title={`Delete ${one ? chosen[0]!.name : `${chosen.length} diagrams`}?`}
+            confirm="Delete"
+            danger
+            disabled={chosen.length === 0}
+            onConfirm={() => onDelete(chosen.map((diagram) => diagram.id))}
+            onCancel={onCancel}
+        >
+            <p>
+                {one ? "It goes" : "They go"} to <Link to="/piper/deleted">Deleted diagrams</Link>, history and all,
+                where whoever made {one ? "it" : "them"}, or an admin, can restore {one ? "it" : "them"}.
+            </p>
+            {!one && (
+                <ul className="plain" aria-label="Diagrams to delete">
+                    {chosen.slice(0, MAX_LISTED).map((diagram) => (
+                        <li key={diagram.id}>{diagram.name}</li>
+                    ))}
+                    {chosen.length > MAX_LISTED && <li className="muted">and {chosen.length - MAX_LISTED} more</li>}
+                </ul>
+            )}
+        </Dialog>
+    );
+}
+
 /** A fluid's chip: its label, in its color. Standard fluids are known here; a diagram's own say their id. */
 function Fluid({ id }: { id: string }) {
-    const fluid = fluidOf({ format: 1, parts: [], lines: [], fluids: [], style: { no: "", nc: "" } }, id);
+    const fluid = fluidOf(emptyDrawing(), id);
     return (
         <span className="piper-chip" style={fluid ? { borderColor: fluid.color, color: fluid.color } : undefined}>
             {fluid?.label ?? id}
@@ -318,22 +759,78 @@ function Fluid({ id }: { id: string }) {
     );
 }
 
-function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diagram | null) => void }) {
+/** A new diagram's drawing in the team's default color scheme, if it has one (Schemes): all its pages share it. */
+async function inTeamColors(document: Document): Promise<Document> {
+    try {
+        const team = (await piper.schemes()).find((scheme) => scheme.is_default);
+        return team ? withPage(document, 0, applyScheme(pageOf(document, 0), team)) : document;
+    } catch {
+        return document; // the schemes out of reach: Piper's own colors
+    }
+}
+
+/** What a new diagram can start as: empty, the example, or (for admins) a P&ID to simulate. */
+type Start = "blank" | "example" | "cold-flow" | "pressurized" | "vespula";
+
+const STARTS: Record<Exclude<Start, "blank">, { drawing: () => Drawing; label: string; simulated: boolean }> = {
+    example: {
+        drawing: example,
+        label: "An example: a pressure-fed engine's feed system, to change or to learn from",
+        simulated: false,
+    },
+    "cold-flow": {
+        drawing: coldFlow,
+        label: "A cold flow to simulate: a tank at a measured pressure, a feed line, a valve, and an injector",
+        simulated: true,
+    },
+    pressurized: {
+        drawing: pressurizedFlow,
+        label: "A pressurized flow to simulate: a bottle, a regulator, and a tank under a gas ullage",
+        simulated: true,
+    },
+    vespula: {
+        drawing: vespula,
+        label: "Vespula's prop system, simulated, with its run's data as a test in Yorg (added once)",
+        simulated: true,
+    },
+};
+
+/** The test of Vespula's run, in Yorg: added the first time it's wanted, found by its name after. */
+async function vespulaTest(): Promise<number> {
+    const found = (await tests()).find((test) => test.name === VESPULA_RUN.test && !test.deleted_at);
+    if (found) {
+        return found.id;
+    }
+    const { default: csv } = await import("./sim/vespula-run.csv?raw");
+    return (await addTest(new File([csv], VESPULA_RUN.file, { type: "text/csv" }), VESPULA_RUN.test)).id;
+}
+
+/** A new diagram, in the folder it's made in (null: the top): empty, the example to change or learn from, or (for
+ * admins) a P&ID to simulate. */
+function NewDialog({
+    folder,
+    onDone,
+}: {
+    folder: DiagramFolder | null;
+    onDone: (made: Diagram | null, also?: string) => void; // also: what else it opens with (sim=1&test=5)
+}) {
+    const { me } = useSession();
     const [name, setName] = useState("");
-    const [folder, setFolder] = useState("");
-    const [start, setStart] = useState<"blank" | "example">("blank");
+    const [start, setStart] = useState<Start>("blank");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     async function create() {
         setBusy(true);
         try {
-            onDone(
-                await piper.create({
-                    name: name.trim(),
-                    folder: tidyFolder(folder),
-                    drawing: start === "example" ? example() : emptyDrawing(),
-                }),
-            );
+            const chosen = start === "blank" ? null : STARTS[start];
+            const test = start === "vespula" ? await vespulaTest() : null;
+            const made = await piper.create({
+                name: name.trim(),
+                folder_id: folder?.id ?? null,
+                drawing: await inTeamColors(documentOf(chosen ? chosen.drawing() : emptyDrawing())),
+            });
+            // A P&ID to simulate opens in Simulation mode, with its test if it has one.
+            onDone(made, chosen?.simulated ? `sim=1${test === null ? "" : `&test=${test}`}` : "");
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -341,7 +838,7 @@ function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diag
     }
     return (
         <Dialog
-            title="New diagram"
+            title={folder ? `New diagram in ${folder.name}` : "New diagram"}
             confirm="Make it"
             busy={busy}
             disabled={!name.trim()}
@@ -358,106 +855,59 @@ function NewDialog({ folders, onDone }: { folders: string[]; onDone: (made: Diag
                     onChange={(event) => setName(event.target.value)}
                 />
             </label>
-            <label className="field">
-                Folder
-                <input
-                    value={folder}
-                    list="piper-folders"
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
-                />
-                <datalist id="piper-folders">
-                    {folders.map((path) => (
-                        <option key={path} value={path} />
-                    ))}
-                </datalist>
-            </label>
             <fieldset className="piper-start">
                 <legend>Start with</legend>
                 <label className="check">
                     <input type="radio" name="start" checked={start === "blank"} onChange={() => setStart("blank")} />
                     An empty drawing
                 </label>
-                <label className="check">
-                    <input
-                        type="radio"
-                        name="start"
-                        checked={start === "example"}
-                        onChange={() => setStart("example")}
-                    />
-                    An example: a pressure-fed engine's feed system, to change or to learn from
-                </label>
+                {(Object.keys(STARTS) as (keyof typeof STARTS)[])
+                    .filter((key) => !STARTS[key].simulated || me?.is_admin)
+                    .map((key) => (
+                        <label key={key} className="check">
+                            <input type="radio" name="start" checked={start === key} onChange={() => setStart(key)} />
+                            {STARTS[key].label}
+                        </label>
+                    ))}
             </fieldset>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
 }
 
-function DeleteDialog({ diagram, onDone }: { diagram: Diagram; onDone: (gone: Diagram | null) => void }) {
-    const [busy, setBusy] = useState(false);
-    const [problem, setProblem] = useState<string | null>(null);
-    return (
-        <Dialog
-            title={`Delete ${diagram.name}?`}
-            confirm="Delete"
-            danger
-            busy={busy}
-            onConfirm={async () => {
-                setBusy(true);
-                try {
-                    onDone(await piper.remove(diagram.id));
-                } catch (error) {
-                    setProblem(message(error));
-                    setBusy(false);
-                }
-            }}
-            onCancel={() => onDone(null)}
-        >
-            <p>It goes to Deleted diagrams, with its history, until whoever made it, or an admin, restores it.</p>
-            {problem && <Notice tone="error">{problem}</Notice>}
-        </Dialog>
-    );
-}
-
 /**
- * A Visio drawing imported: each of its pages a diagram, in a folder, made in this browser (visio.ts) and saved as any
- * diagram is. What became of each page's shapes is said after.
+ * A Visio drawing imported: a diagram, with its pages as Visio had them, in the folder it's imported in, made in this
+ * browser (visio.ts) and saved as any diagram is. What became of each page's shapes is said after.
  */
 function ImportDialog({
-    file: dropped,
-    folders,
+    file: picked,
+    folder,
     onDone,
 }: {
-    file: File | null;
-    folders: string[];
+    file: File; // picked with Import Visio, or dropped on the page
+    folder: DiagramFolder | null; // the folder it goes in (null: the top)
     onDone: (made: Diagram[]) => void;
 }) {
-    const [file, setFile] = useState<File | null>(dropped);
-    const [folder, setFolder] = useState("");
+    const [file, setFile] = useState(picked);
+    const other = useRef<HTMLInputElement>(null);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
-    const [made, setMade] = useState<{ diagram: Diagram; report: ImportReport }[] | null>(null);
+    const [made, setMade] = useState<{ diagram: Diagram; pages: { page: string; report: ImportReport }[] } | null>(
+        null,
+    );
 
     async function run() {
-        if (!file) {
-            return;
-        }
         setBusy(true);
         setProblem(null);
         try {
             const pages = await readVisio(file, file.name);
-            const results: { diagram: Diagram; report: ImportReport }[] = [];
-            for (const page of pages) {
-                const diagram = await piper.create({
-                    name: page.name,
-                    folder: tidyFolder(folder),
-                    description: `Imported from ${file.name}`,
-                    drawing: page.drawing,
-                });
-                results.push({ diagram, report: page.report });
-            }
-            setMade(results);
+            const diagram = await piper.create({
+                name: visioName(file.name),
+                folder_id: folder?.id ?? null,
+                description: `Imported from ${file.name}`,
+                drawing: await inTeamColors(visioDocument(pages)),
+            });
+            setMade({ diagram, pages: pages.map(({ page, report }) => ({ page, report })) });
         } catch (error) {
             setProblem(message(error));
         } finally {
@@ -467,16 +917,17 @@ function ImportDialog({
 
     if (made) {
         return (
-            <Dialog title="Imported" cancel="Close" onCancel={() => onDone(made.map((entry) => entry.diagram))} wide>
+            <Dialog title="Imported" cancel="Close" onCancel={() => onDone([made.diagram])} wide>
+                <p>
+                    <Link to={`/piper/diagrams/${made.diagram.id}`} onClick={() => onDone([made.diagram])}>
+                        {made.diagram.name}
+                    </Link>
+                    {made.pages.length > 1 && <span className="muted">, with {made.pages.length} pages</span>}
+                </p>
                 <ul className="piper-imported">
-                    {made.map(({ diagram, report }) => (
-                        <li key={diagram.id}>
-                            <Link
-                                to={`/piper/diagrams/${diagram.id}`}
-                                onClick={() => onDone(made.map((entry) => entry.diagram))}
-                            >
-                                {diagram.name}
-                            </Link>
+                    {made.pages.map(({ page, report }, index) => (
+                        <li key={index}>
+                            {made.pages.length > 1 && <strong>{page}</strong>}
                             <span className="muted">
                                 {" "}
                                 {[
@@ -511,39 +962,40 @@ function ImportDialog({
             title="Import a Visio drawing"
             confirm="Import"
             busy={busy}
-            disabled={!file}
             onConfirm={() => void run()}
             onCancel={() => onDone([])}
         >
-            <p className="muted piper-small">
-                Each page becomes a diagram. Visio's P&ID shapes become Piper's parts (tagged with their text),
-                connectors become lines between them, and colored lines keep their colors as fluids to name. Visio 2013
-                and on save .vsdx files; save an older .vsd as one first.
-            </p>
-            <label className="field">
-                Visio drawing
+            <div className="piper-import-file">
+                <span className="file-icon file-icon-visio" data-letter="V" aria-hidden="true" />
+                <span className="piper-import-name">
+                    <strong>{file.name}</strong>
+                    <span className="muted">{formatSize(file.size)}</span>
+                </span>
+                <button type="button" className="button-small" disabled={busy} onClick={() => other.current?.click()}>
+                    Choose another…
+                </button>
                 <input
+                    ref={other}
                     type="file"
-                    accept=".vsdx,.vsd,.vdx"
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                    accept={VISIO_FILES}
+                    hidden
+                    aria-label="Another Visio drawing"
+                    onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen) {
+                            setFile(chosen);
+                            setProblem(null);
+                        }
+                    }}
                 />
-            </label>
-            {file && <p className="piper-small">{file.name}</p>}
-            <label className="field">
-                Folder
-                <input
-                    value={folder}
-                    list="piper-import-folders"
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
-                />
-                <datalist id="piper-import-folders">
-                    {folders.map((path) => (
-                        <option key={path} value={path} />
-                    ))}
-                </datalist>
-            </label>
+            </div>
+            <p className="muted piper-small">
+                It becomes a diagram {folder ? `in ${folder.name}` : "at the top"}, its pages as Visio has them. Visio's
+                P&ID shapes become Piper's parts (tagged with their text), connectors become lines between them, and
+                colored lines keep their colors as fluids to name. Visio 2013 and on save .vsdx files; save an older
+                .vsd as one first.
+            </p>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );

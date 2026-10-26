@@ -42,6 +42,11 @@ export function folderTree<T extends { name: string; folder: string; order?: num
     return top;
 }
 
+/** How many things a folder has, in it and in its folders, as its row says beside its name. */
+export function countIn<T>(folder: Folder<T>): number {
+    return folder.items.length + folder.folders.reduce((sum, inner) => sum + countIn(inner), 0);
+}
+
 /** The folders things are in, and those folders' folders: Hotfires, then Hotfires/HF-3 (each once, sorted). */
 export function foldersOf(items: { folder: string }[]): string[] {
     const all = new Set<string>();

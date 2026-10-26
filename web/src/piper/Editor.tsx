@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
+import { FolderPicker } from "../FolderPicker";
 import { formatTime } from "../format";
 import { navigate, usePathname, useSearch } from "../router";
-import { piper, type Diagram, type RevisionDetail } from "./api";
+import { useSession } from "../session";
+import { piper, type Diagram, type RevisionDetail, type Scheme } from "./api";
+import { monochrome } from "./fluids";
 import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
 import { commandsOf, useEditorKeys } from "./commands";
 import { DiagramView } from "./DiagramView";
-import { readDrawing, type Drawing } from "./drawing";
-import { addPart, drawingBox } from "./edit";
+import { useEditLock } from "./editing";
+import { pageOf, readDocument, type Document, type Drawing, type Point } from "./drawing";
+import { addPart, drawingBox, updatePart, withPicture } from "./edit";
 import { download, fileName, partsList, pngOf, printDrawing, svgOf } from "./exports";
 import { HistoryPanel } from "./History";
 import { Inspector } from "./Inspector";
@@ -18,45 +22,84 @@ import { kindOf, presetOf } from "./library/index";
 import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
-import { channelName, findChannel, plotLink } from "./testdata";
-import { PAPERS, pdfOf } from "./pdf";
+import { channelNames, findChannel, plotLink, type Samples } from "./testdata";
+import { PAPERS, pdfOfPages, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
-import { Toolbar, type ExportKind } from "./Toolbar";
+import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
+import { findInDocument } from "./find";
+import { PageTabs } from "./PageTabs";
+import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
+import { simApi, type Catalog } from "./sim/api";
+import { simLive } from "./sim/live";
+import { buildModel } from "./sim/model";
+import { NO_SIM, SimPanel, type SimState } from "./sim/SimPanel";
+import type { LiveValue } from "./DiagramView";
 
-// A diagram's page: the editor, the whole window under the top bar. The library's on the left, the drawing in the
-// middle, the inspector on the right, and under them, when they're open, the test the drawing's read against and its
-// history. A test and the time on its timeline are in the address (?test=5&t=12.5), so a link opens the same moment.
+// A diagram's page: the editor, the whole window under the top bar. The drawing's in the middle, the inspector on the
+// right, and under them, when they're open, the test the drawing's read against and its history. A test and the time on
+// its timeline are in the address (?test=5&t=12.5), so a link opens the same moment. Its pages are tabs under the
+// drawing; the drawing is the page being worked on. It opens to be looked at: Edit makes it yours to change, with the
+// library on the left, until you're done (editing.ts). A diagram just made opens to edit (?edit=1). Simulation mode
+// (?sim=1, for admins while it's tried out) shows what the P&ID is as a model, run against the test: its settings on
+// each part in the inspector, and its panel in place of Test data's.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function EditorPage({ id }: { id: number }) {
     const [diagram, setDiagram] = useState<Diagram | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
-    const [panel, setPanel] = useState<"test" | "history" | null>(null);
+    const [panel, setPanel] = useState<Panel | null>(null);
     const [looking, setLooking] = useState<RevisionDetail | null>(null);
     const [renaming, setRenaming] = useState(false);
     const [pdfing, setPdfing] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
-    const store = useMemo(() => new EditorStore(), []);
+    const [schemes, setSchemes] = useState<Scheme[] | null>(null);
+    const [takingOver, setTakingOver] = useState(false);
+    const { me } = useSession();
+    const store = useMemo(() => {
+        const made = new EditorStore();
+        made.setReadOnly(true); // until it's yours to edit
+        return made;
+    }, []);
     const commands = useMemo(() => commandsOf(store), [store]);
     const drawing = useEditor(store, (state) => state.drawing);
+    const page = useEditor(store, (state) => state.page);
+    const pageCount = useEditor(store, (state) => state.document.pages.length);
+    // A revision looked at: all its pages, and which of them is shown.
+    const lookedAt = useMemo(() => (looking ? readDocument(looking.drawing) : null), [looking]);
+    const [lookPage, setLookPage] = useState(0);
     const palette = withStates(usePalette(), drawing);
     const saving = useSaving(store, diagram, setDiagram);
+    const lock = useEditLock(diagram, saving, setDiagram);
     const fitted = useRef(false);
+    const opened = useRef(false); // asked to edit it as it opened (?edit), and did
     const pathname = usePathname();
     const search = new URLSearchParams(useSearch());
     const testParam = Number(search.get("test"));
     const testId = Number.isInteger(testParam) && testParam > 0 ? testParam : null;
+    const finding = search.get("find");
+    const toEdit = search.has("edit");
     const [time, setTime] = useState(() => Number(search.get("t")) || 0);
     const { reading, problem: testProblem } = useTest(drawing, testId, time);
+    const canSimulate = me?.is_admin === true;
+    const simulating = canSimulate && search.get("sim") === "1";
+    const pages = useEditor(store, (state) => state.document); // all its pages: the model is all of them
+    const [catalog, setCatalog] = useState<Catalog | null>(null);
+    const [catalogProblem, setCatalogProblem] = useState<string | null>(null);
+    // What Simulation mode's panel has (its settings, a run going, what it found), kept while the diagram's open.
+    const [sim, setSim] = useState<SimState>(NO_SIM);
+    const built = useMemo(
+        () => (simulating && catalog ? buildModel(pages, catalog, reading?.detail ?? null) : null),
+        [simulating, catalog, pages, reading?.detail],
+    );
 
     useEffect(() => {
         let current = true;
         piper.diagram(id).then(
             (found) => {
                 if (current) {
-                    store.load(readDrawing(found.drawing));
+                    store.load(readDocument(found.drawing));
                     setDiagram(found);
                 }
             },
@@ -75,13 +118,50 @@ export function EditorPage({ id }: { id: number }) {
         };
     }, [id, store]);
 
+    // The team's color schemes, for the diagram's panel to take one's colors from.
+    useEffect(() => {
+        piper.schemes().then(setSchemes, () => setSchemes([]));
+    }, []);
+
+    // The parts a model can have (Yorg's), once Simulation mode first wants them.
+    useEffect(() => {
+        if (simulating && !catalog) {
+            simApi.catalog().then(setCatalog, (error: unknown) => setCatalogProblem(message(error)));
+        }
+    }, [simulating, catalog]);
+
     // Opened at the whole drawing, once the canvas has its size.
     useEffect(() => {
         if (diagram && !fitted.current) {
             fitted.current = true;
             commands.fit();
+            // Opened from a search (the diagrams' list): at what it found, on whichever page.
+            const first = finding ? findInDocument(store.getState().document, finding)[0] : undefined;
+            if (first) {
+                commands.goTo(first.page, [first.id]);
+            }
         }
-    }, [diagram, commands]);
+    }, [diagram, commands, store, finding]);
+
+    // Made just now (or a copy of yours): opened to edit, and the address left as a link to look at it.
+    useEffect(() => {
+        if (diagram && toEdit && !opened.current) {
+            opened.current = true;
+            void lock.start();
+            const query = new URLSearchParams(window.location.search);
+            query.delete("edit");
+            const text = query.toString();
+            navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
+        }
+    }, [diagram, toEdit]);
+
+    // Saving refused: someone else is editing it now. It's only looked at here, and its banner asks what becomes of
+    // the changes that weren't saved.
+    useEffect(() => {
+        if (saving.status === "locked") {
+            lock.lose(saving.locked, false);
+        }
+    }, [saving.status]);
 
     // A link to a test opens its panel; the test's start, if the time's not in it.
     useEffect(() => {
@@ -97,8 +177,11 @@ export function EditorPage({ id }: { id: number }) {
         // Only when a test arrives: the timeline keeps the time in it after that.
     }, [reading?.detail]);
 
-    const editing = diagram !== null && !diagram.deleted_at && looking === null;
-    useEditorKeys(store, commands, editing && !renaming);
+    // The drawing as it is (not a revision, nor deleted): to look at, and, while it's yours, to change.
+    const live = diagram !== null && !diagram.deleted_at && looking === null;
+    const editing = live && lock.mine && saving.status !== "locked";
+    useEffect(() => store.setReadOnly(!editing), [store, editing]);
+    useEditorKeys(store, commands, live && !renaming && !takingOver);
 
     if (problem) {
         return <Notice tone="error">{problem}</Notice>;
@@ -109,10 +192,27 @@ export function EditorPage({ id }: { id: number }) {
 
     const meta: DiagramMeta = {
         name: diagram.name,
-        revision: diagram.revision,
+        revision: revisionLabel(diagram, diagram.revision, latestRelease(diagram)),
         savedAt: diagram.updated_at,
         by: diagram.created_by?.name ?? "",
+        sheet: sheetLabel(lookedAt ? lookPage : page, lookedAt?.pages.length ?? pageCount),
     };
+    // What's shown: the page worked on, or the revision's looked at.
+    const shownPage = lookedAt ? Math.min(lookPage, lookedAt.pages.length - 1) : page;
+    const whole = (): Document => lookedAt ?? store.getState().document;
+
+    /** Simulation mode on, or off: kept in the address, as the test is. */
+    function simulate(on: boolean) {
+        const query = new URLSearchParams(window.location.search);
+        if (on) {
+            query.set("sim", "1");
+            setPanel((now) => (now === "test" ? null : now)); // its panel has the test
+        } else {
+            query.delete("sim");
+        }
+        const text = query.toString();
+        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
+    }
 
     function address(test: number | null, at: number | null) {
         const query = new URLSearchParams(window.location.search);
@@ -128,7 +228,7 @@ export function EditorPage({ id }: { id: number }) {
             }
         }
         const text = query.toString();
-        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true, exact: true });
+        navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
     }
 
     async function plot(channels: string[]) {
@@ -139,22 +239,25 @@ export function EditorPage({ id }: { id: number }) {
     }
 
     async function exportAs(as: ExportKind) {
-        const shown = looking ? readDrawing(looking.drawing) : store.getState().drawing;
+        // A picture of the page shown (named for it, if there's more than one); the parts of all of them.
+        const document = whole();
+        const shown = pageOf(document, shownPage);
+        const named = document.pages.length > 1 ? `${diagram!.name} ${document.pages[shownPage]!.name}` : diagram!.name;
         try {
             if (as === "pdf") {
                 setPdfing(true); // which paper, first
             } else if (as === "svg") {
                 const { svg } = await svgOf(shown, meta);
-                download(fileName(diagram!.name, "svg"), new Blob([svg], { type: "image/svg+xml" }));
+                download(fileName(named, "svg"), new Blob([svg], { type: "image/svg+xml" }));
             } else if (as === "png") {
-                download(fileName(diagram!.name, "png"), await pngOf(shown, meta));
+                download(fileName(named, "png"), await pngOf(shown, meta));
             } else if (as === "print") {
                 await printDrawing(shown, meta);
             } else {
                 // A byte-order mark first, so Excel reads it as UTF-8 (µm, Ø).
                 download(
                     fileName(`${diagram!.name} parts`, "csv"),
-                    new Blob(["﻿", partsList(shown)], { type: "text/csv" }),
+                    new Blob(["﻿", partsList(document)], { type: "text/csv" }),
                 );
             }
         } catch (error) {
@@ -173,10 +276,16 @@ export function EditorPage({ id }: { id: number }) {
         }
     }
 
-    /** A part double-clicked: its tag (or its words) to type. */
+    /** A part double-clicked: its tag (or its words) to type; or, an off-page connector that goes somewhere, there. */
     function edit(partId: string) {
+        const { drawing: now, document: saved } = store.getState();
+        const part = now.parts.find((entry) => entry.id === partId);
+        const target = part?.kind === "offpage" ? saved.pages.findIndex((page) => page.id === part.props.page) : -1;
+        if (part && target >= 0) {
+            commands.goTo(target, part.props.part ? [part.props.part] : []);
+            return;
+        }
         store.select([partId]);
-        const part = store.getState().drawing.parts.find((entry) => entry.id === partId);
         const field = part && kindOf(part.kind).text ? "text" : "tag";
         setTimeout(() => {
             const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -187,6 +296,35 @@ export function EditorPage({ id }: { id: number }) {
         });
     }
 
+    /** A file dropped on the drawing: added to Piper, and a picture of it put where it was let go. */
+    async function dropPicture(file: File, at: Point) {
+        try {
+            const image = await piper.addImage(file);
+            const added = addPart(store.getState().drawing, presetOf("picture")!, at);
+            store.commit(
+                updatePart(added.drawing, added.id, (part) => withPicture(part, image)),
+                [added.id],
+            );
+        } catch (error) {
+            setNotice(`${file.name} isn't on the drawing: ${message(error)}`);
+        }
+    }
+
+    /** What's here, kept as a diagram of its own (beside the one it was opened from), to go on editing. */
+    async function saveMineAsNew() {
+        try {
+            const copy = await piper.create({
+                name: `${diagram!.name} (my changes)`,
+                folder_id: diagram!.folder_id ?? null,
+                description: diagram!.description,
+                drawing: store.getState().document,
+            });
+            navigate(`/piper/diagrams/${copy.id}?edit=1`);
+        } catch (error) {
+            setNotice(`Yours isn't saved as a new diagram: ${message(error)}`);
+        }
+    }
+
     async function restoreRevision(number: number) {
         const restored = await piper.restoreRevision(diagram!.id, number, diagram!.version);
         setLooking(null);
@@ -194,11 +332,24 @@ export function EditorPage({ id }: { id: number }) {
         setNotice(`Revision ${number} is the drawing again, as revision ${restored.revision}.`);
     }
 
+    // What the drawing shows of the test at the time shown, and in Simulation mode, of the model's run beside it: an
+    // instrument's measured value then in the model's units too, to compare.
+    const modeled = simulating && sim.shown ? simLive(sim.shown, time, reading) : null;
+    const values: Map<string, LiveValue> | null = modeled
+        ? new Map(
+              [...new Set([...(reading?.live.keys() ?? []), ...modeled.keys()])].map((id) => {
+                  const tested = reading?.live.get(id) ?? { text: "", state: null, missing: false };
+                  const run = modeled.get(id);
+                  return [id, run ? { ...tested, text: run.measured ?? tested.text, model: run.model } : tested];
+              }),
+          )
+        : (reading?.live ?? null);
+
     const linked = reading
         ? [
               ...new Set(
                   readers(drawing)
-                      .map((part) => findChannel(reading.detail, channelName(part))?.name)
+                      .flatMap((part) => channelNames(part).map((name) => findChannel(reading.detail, name)?.name))
                       .filter((name) => name !== undefined),
               ),
           ]
@@ -212,6 +363,8 @@ export function EditorPage({ id }: { id: number }) {
                 commands={commands}
                 status={saving.status}
                 problem={saving.problem}
+                edit={lock}
+                me={me}
                 panel={panel}
                 onPanel={(next) => {
                     setPanel(next);
@@ -220,12 +373,17 @@ export function EditorPage({ id }: { id: number }) {
                     }
                 }}
                 onRename={() => setRenaming(true)}
+                onTakeOver={() => setTakingOver(true)}
                 onExport={(as) => void exportAs(as)}
+                simulating={simulating}
+                onSimulate={canSimulate ? simulate : null}
             />
             {saving.status === "changed" && saving.changed && (
                 <div className="piper-banner" role="alert">
                     <span>
-                        {saving.changed.updated_by?.name ?? "Someone"} saved this diagram at{" "}
+                        {saving.changed.updated_by && saving.changed.updated_by.id === me?.id
+                            ? "You saved this diagram in another window at "
+                            : `${saving.changed.updated_by?.name ?? "Someone"} saved this diagram at `}
                         {formatTime(saving.changed.updated_at)}, after it was opened here. Your changes since aren't
                         saved yet.
                     </span>
@@ -236,23 +394,7 @@ export function EditorPage({ id }: { id: number }) {
                     >
                         Keep mine
                     </button>
-                    <button
-                        type="button"
-                        className="button-small"
-                        onClick={async () => {
-                            try {
-                                const copy = await piper.create({
-                                    name: `${diagram.name} (my changes)`,
-                                    folder: diagram.folder,
-                                    description: diagram.description,
-                                    drawing: store.getState().drawing,
-                                });
-                                navigate(`/piper/diagrams/${copy.id}`);
-                            } catch (error) {
-                                setNotice(`Yours isn't saved as a new diagram: ${message(error)}`);
-                            }
-                        }}
-                    >
+                    <button type="button" className="button-small" onClick={() => void saveMineAsNew()}>
                         Save mine as a new diagram
                     </button>
                     <button
@@ -265,6 +407,48 @@ export function EditorPage({ id }: { id: number }) {
                         }
                     >
                         Load theirs
+                    </button>
+                </div>
+            )}
+            {saving.status === "locked" && (
+                <div className="piper-banner" role="alert">
+                    <span>
+                        {saving.locked?.by.name ?? "Someone else"} is editing this diagram now
+                        {saving.locked ? ` (since ${formatTime(saving.locked.since)})` : ""}, so your changes since your
+                        last save aren't saved.
+                    </span>
+                    <button type="button" className="button-small button-primary" onClick={() => void saveMineAsNew()}>
+                        Save mine as a new diagram
+                    </button>
+                    <button
+                        type="button"
+                        className="button-small"
+                        onClick={() =>
+                            saving.loadTheirs().catch((error: unknown) => {
+                                setNotice(`Theirs didn't load: ${message(error)}`);
+                            })
+                        }
+                    >
+                        Load theirs
+                    </button>
+                </div>
+            )}
+            {lock.taken && saving.status !== "locked" && (
+                <div className="piper-banner piper-banner-info" role="status">
+                    <span>
+                        {lock.taken.by.name} is editing this diagram now, so it's only looked at here. Everything you
+                        changed was saved.
+                    </span>
+                    <button type="button" className="piper-close" aria-label="Dismiss" onClick={lock.dismiss}>
+                        ×
+                    </button>
+                </div>
+            )}
+            {lock.problem && (
+                <div className="piper-banner piper-banner-info" role="alert">
+                    <span>{lock.problem}</span>
+                    <button type="button" className="piper-close" aria-label="Dismiss" onClick={lock.dismiss}>
+                        ×
                     </button>
                 </div>
             )}
@@ -300,22 +484,24 @@ export function EditorPage({ id }: { id: number }) {
             <div className="piper-body">
                 {editing && <LibraryPanel store={store} palette={palette} onPlace={placeInView} />}
                 <div className="piper-stage">
-                    {editing ? (
+                    {live ? (
                         <Canvas
                             store={store}
                             commands={commands}
                             palette={palette}
                             meta={meta}
-                            live={reading?.live ?? null}
+                            live={values}
                             onEdit={edit}
+                            onPicture={(file, at) => void dropPicture(file, at)}
                         />
                     ) : (
-                        <StillDrawing drawing={looking ? readDrawing(looking.drawing) : drawing} meta={meta} />
+                        <StillDrawing drawing={lookedAt ? pageOf(lookedAt, shownPage) : drawing} meta={meta} />
                     )}
                     {looking && (
                         <div className="piper-banner piper-looking" role="status">
                             <span>
                                 Revision {looking.number}
+                                {looking.released ? `, Rev ${looking.released}, released` : ""}
                                 {looking.note ? ` (${looking.note})` : ""}, by {looking.author?.name ?? "someone"},{" "}
                                 {formatTime(looking.saved_at)}
                             </span>
@@ -324,23 +510,42 @@ export function EditorPage({ id }: { id: number }) {
                             </button>
                         </div>
                     )}
-                    {editing && drawing.parts.length === 0 && <EmptyHint />}
+                    {live && drawing.parts.length === 0 && <EmptyHint editing={editing} />}
+                    {(pageCount > 1 || editing || (lookedAt?.pages.length ?? 0) > 1) && (
+                        <PageTabs
+                            store={store}
+                            commands={commands}
+                            editing={editing}
+                            looking={lookedAt && { pages: lookedAt.pages, at: shownPage, onGo: setLookPage }}
+                        />
+                    )}
                 </div>
-                {editing && (
+                {live && (
                     <Inspector
                         store={store}
                         commands={commands}
                         palette={palette}
                         test={reading}
                         onPlot={(channels) => void plot(channels)}
+                        schemes={schemes}
+                        sim={simulating && catalog && built ? { catalog, built, test: reading?.detail ?? null } : null}
                     />
                 )}
                 {panel === "history" && (
                     <HistoryPanel
                         diagram={diagram}
                         looking={looking?.number ?? null}
-                        onLook={setLooking}
+                        onLook={(revision) => {
+                            setLooking(revision);
+                            setLookPage(store.getState().page); // at the page worked on, if it has it
+                        }}
                         onRestore={restoreRevision}
+                        onReleased={(release) =>
+                            setDiagram(
+                                (now) =>
+                                    now && { ...now, released: release.letter, released_revision: release.revision },
+                            )
+                        }
                         onClose={() => {
                             setPanel(null);
                             setLooking(null);
@@ -348,7 +553,42 @@ export function EditorPage({ id }: { id: number }) {
                     />
                 )}
             </div>
-            {panel === "test" && (
+            {panel === "parts" && (
+                <PartsPanel
+                    store={store}
+                    commands={commands}
+                    onCsv={() => void exportAs("csv")}
+                    onClose={() => setPanel(null)}
+                />
+            )}
+            {simulating && (
+                <SimPanel
+                    store={store}
+                    commands={commands}
+                    catalog={catalog}
+                    catalogProblem={catalogProblem}
+                    built={built}
+                    testId={testId}
+                    test={reading?.detail ?? null}
+                    testSamples={reading?.samples ?? NO_SAMPLES}
+                    testProblem={testProblem}
+                    time={time}
+                    state={sim}
+                    onState={setSim}
+                    onTest={(test) => {
+                        setTime(0);
+                        address(test, null);
+                    }}
+                    onTime={(at, settled) => {
+                        setTime(at);
+                        if (settled && testId !== null) {
+                            address(testId, at);
+                        }
+                    }}
+                    onClose={() => simulate(false)}
+                />
+            )}
+            {panel === "test" && !simulating && (
                 <TestPanel
                     testId={testId}
                     time={time}
@@ -374,29 +614,50 @@ export function EditorPage({ id }: { id: number }) {
             {pdfing && (
                 <PdfDialog
                     onCancel={() => setPdfing(false)}
-                    onSave={async (paper, framed) => {
-                        const shown = looking ? readDrawing(looking.drawing) : store.getState().drawing;
-                        // On a sheet: its revisions those named, the latest first; its title block the sheet's, unless
-                        // the drawing has its own.
-                        const sheet = framed
-                            ? {
-                                  project: diagram.folder,
-                                  diagram: diagram.id,
-                                  revisions: (await piper.revisions(diagram.id))
-                                      .filter((revision) => revision.note)
-                                      .map((revision) => ({
-                                          number: revision.number,
-                                          note: revision.note,
-                                          date: new Date(revision.saved_at).toLocaleDateString("en-CA"),
-                                          by: revision.author?.name ?? "",
-                                      })),
-                                  titleBlock: !shown.parts.some((part) => part.kind === "titleblock"),
-                              }
-                            : null;
-                        download(fileName(diagram.name, "pdf"), await pdfOf(shown, meta, paper, sheet));
+                    onSave={async (paper, framed, mono) => {
+                        // Every page, a sheet each: which of how many it is in its title block.
+                        const document = whole();
+                        const printed = looking
+                            ? { ...meta, revision: revisionLabel(diagram, looking.number, looking.released) }
+                            : meta;
+                        const revisions = framed ? await sheetRevisions(diagram.id) : [];
+                        const drawn = document.pages.map((_, index) => {
+                            const each = pageOf(document, index);
+                            return {
+                                drawing: mono ? monochrome(each) : each,
+                                meta: { ...printed, sheet: sheetLabel(index, document.pages.length) },
+                                // On a sheet: its title block the sheet's, unless the page has its own.
+                                sheet: framed
+                                    ? {
+                                          project: diagram.folder,
+                                          diagram: diagram.id,
+                                          revisions,
+                                          titleBlock: !each.parts.some((part) => part.kind === "titleblock"),
+                                      }
+                                    : null,
+                            };
+                        });
+                        download(fileName(diagram.name, "pdf"), await pdfOfPages(drawn, paper));
                         setPdfing(false);
                     }}
                 />
+            )}
+            {takingOver && (
+                <Dialog
+                    title="Take over editing"
+                    confirm="Take over"
+                    onConfirm={() => {
+                        setTakingOver(false);
+                        void lock.start(true);
+                    }}
+                    onCancel={() => setTakingOver(false)}
+                >
+                    <p>
+                        {diagram.editing?.by.name ?? "Someone"} is editing this diagram. Taking it over makes it yours
+                        to edit instead: what they've saved stays, and they're told, with anything they hadn't saved yet
+                        left in their window for them to save as a diagram of its own.
+                    </p>
+                </Dialog>
             )}
             {renaming && (
                 <RenameDialog
@@ -413,8 +674,11 @@ export function EditorPage({ id }: { id: number }) {
     );
 }
 
+const NO_SAMPLES: ReadonlyMap<string, Samples> = new Map<string, Samples>();
+
 const PAPER = "piper.paper"; // the paper last chosen for a PDF, in this browser
 const SHEET = "piper.sheet"; // and whether it was on a sheet ("no": it wasn't)
+const MONO = "piper.mono"; // and whether it was in black and white ("yes": it was)
 
 function remembered(key: string, fallback: string): string {
     try {
@@ -432,11 +696,12 @@ function PdfDialog({
     onSave,
     onCancel,
 }: {
-    onSave: (paper: string, sheet: boolean) => Promise<void>;
+    onSave: (paper: string, sheet: boolean, mono: boolean) => Promise<void>;
     onCancel: () => void;
 }) {
     const [paper, setPaper] = useState(() => remembered(PAPER, "tabloid"));
     const [sheet, setSheet] = useState(() => remembered(SHEET, "yes") !== "no");
+    const [mono, setMono] = useState(() => remembered(MONO, "no") === "yes");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     async function save() {
@@ -444,11 +709,12 @@ function PdfDialog({
         try {
             window.localStorage.setItem(PAPER, paper);
             window.localStorage.setItem(SHEET, sheet ? "yes" : "no");
+            window.localStorage.setItem(MONO, mono ? "yes" : "no");
         } catch {
             // storage blocked: the choices last this once
         }
         try {
-            await onSave(paper, sheet);
+            await onSave(paper, sheet, mono);
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -470,13 +736,64 @@ function PdfDialog({
                 <input type="checkbox" checked={sheet} onChange={(event) => setSheet(event.target.checked)} />
                 On a drawing sheet: a border with its zones, a title block, and the named revisions
             </label>
+            <label className="check">
+                <input type="checkbox" checked={mono} onChange={(event) => setMono(event.target.checked)} />
+                In black and white, for a printer without color: lines in ink, normally closed valves filled, normally
+                open ones left white
+            </label>
             <p className="muted piper-small">
-                The drawing's fitted on the page, turned its way, in the light colors as on paper. Its lines and words
-                stay sharp at any size, and its tags can be searched.
+                Each page of the diagram on a sheet of its own. A page whose printed sheet is set (in its panel, with
+                nothing selected) prints where its outline shows, on its own paper; the others are fitted on this paper,
+                turned their way. In the light colors, as on paper: its lines and words stay sharp at any size, and its
+                tags can be searched.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
+}
+
+/** Which sheet of how many a page is, as its title block says: "2 OF 3". */
+const sheetLabel = (index: number, count: number) => `${Math.min(index, count - 1) + 1} OF ${count}`;
+
+/** The diagram's latest revision's letter, if that's the one released. */
+const latestRelease = (diagram: Diagram): string | null =>
+    diagram.released && diagram.released_revision === diagram.revision ? diagram.released : null;
+
+/**
+ * A revision as its title block writes it (DiagramMeta.revision): a released one's letter ("B"), else its number, and
+ * if it's after the diagram's latest release, which ("7 (after B)").
+ */
+function revisionLabel(diagram: Diagram, number: number, letter: string | null | undefined): string {
+    if (letter) {
+        return letter;
+    }
+    const after = diagram.released && number > (diagram.released_revision ?? 0) ? ` (after ${diagram.released})` : "";
+    return `${number}${after}`;
+}
+
+/**
+ * What a sheet lists in its revisions block, the latest first: the diagram's releases, each with its letter, what it
+ * was for, when, and who approved it; or, before it has any, its named revisions.
+ */
+async function sheetRevisions(id: number): Promise<Sheet["revisions"]> {
+    const day = (at: string) => new Date(at).toLocaleDateString("en-CA");
+    const released = (await piper.releases(id)).filter((release) => release.state === "released");
+    if (released.length > 0) {
+        return released.map((release) => ({
+            rev: release.letter ?? "",
+            note: release.note,
+            date: release.decided_at ? day(release.decided_at) : "",
+            by: release.approvals.map((approval) => approval.approver.name).join(", "),
+        }));
+    }
+    return (await piper.revisions(id))
+        .filter((revision) => revision.note)
+        .map((revision) => ({
+            rev: String(revision.number),
+            note: revision.note,
+            date: day(revision.saved_at),
+            by: revision.author?.name ?? "",
+        }));
 }
 
 /** A drawing to look at, not change: a revision from the history, or a deleted diagram. */
@@ -496,7 +813,15 @@ function StillDrawing({ drawing, meta }: { drawing: Drawing; meta: DiagramMeta }
     );
 }
 
-function EmptyHint() {
+function EmptyHint({ editing }: { editing: boolean }) {
+    if (!editing) {
+        return (
+            <div className="piper-empty">
+                <h2>An empty diagram</h2>
+                <p>Nothing's drawn on it yet. Edit, at the top, to start drawing it.</p>
+            </div>
+        );
+    }
     return (
         <div className="piper-empty">
             <h2>An empty diagram</h2>
@@ -510,9 +835,22 @@ function EmptyHint() {
     );
 }
 
+/** The folders there are, by their paths ("Vespula/GSE"), to pick one from; a new path typed makes its folders. */
+function useFolders(): string[] {
+    const [folders, setFolders] = useState<string[]>([]);
+    useEffect(() => {
+        piper.folders().then(
+            (found) => setFolders(found.map((one) => one.path).sort((a, b) => a.localeCompare(b))),
+            () => {}, // none to pick from: a path can still be typed
+        );
+    }, []);
+    return folders;
+}
+
 function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed: Diagram | null) => void }) {
     const [name, setName] = useState(diagram.name);
     const [folder, setFolder] = useState(diagram.folder);
+    const folders = useFolders();
     const [description, setDescription] = useState(diagram.description);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -540,11 +878,11 @@ function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed:
             </label>
             <label className="field">
                 Folder
-                <input
+                <FolderPicker
                     value={folder}
-                    maxLength={300}
-                    placeholder="Vespula/GSE (empty: at the top)"
-                    onChange={(event) => setFolder(event.target.value)}
+                    onChange={setFolder}
+                    folders={folders}
+                    placeholder="None, or a new one, like Vespula/GSE"
                 />
             </label>
             <label className="field">

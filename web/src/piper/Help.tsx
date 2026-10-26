@@ -36,12 +36,27 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <Link to="/piper">New diagram</Link> makes one, empty or from an example (a pressure-fed engine's
-                    feed system) to change or learn from. Give it a folder (<code>Vespula/GSE</code>) to keep it with
-                    others.
+                    feed system) to change or learn from, in the folder you're in.
                 </li>
                 <li>
-                    A diagram opens to the editor: the library of parts on the left, the drawing in the middle, and on
-                    the right whatever's selected, to name and describe. With nothing selected, it's the diagram's
+                    The diagrams are in folders, as Yorg&apos;s datasets are. <em>New folder</em> makes one where you
+                    are; open a folder to see what&apos;s in it, and the way back up is above its name. Each folder says
+                    how many diagrams it holds, and can be renamed, or deleted once it&apos;s empty.
+                </li>
+                <li>
+                    Drag a diagram (or a folder) onto a folder, or onto a folder in the way back up, to move it there.
+                    Or check diagrams, then <em>Move to…</em>; dragging one of those checked takes them all. Checked
+                    ones of yours are deleted together with <em>Delete…</em>, to{" "}
+                    <Link to="/piper/deleted">Deleted diagrams</Link>, where they can be checked and restored together.
+                </li>
+                <li>
+                    <em>Find diagrams</em> looks in every folder, and says which folder each is in: names, folders,
+                    descriptions, and parts&apos; tags (<code>PT-101</code> finds the diagrams it&apos;s on).
+                </li>
+                <li>
+                    A diagram opens to be looked at: the drawing in the middle, and on the right whatever's selected, as
+                    it is. <em>Edit</em>, at the top, makes it yours to change, with the library of parts on the left; a
+                    diagram you've just made opens ready to edit. With nothing selected, the right side is the diagram's
                     fluids and colors.
                 </li>
                 <li>
@@ -64,17 +79,99 @@ const TOPICS: Topic[] = [
                     <em>thermocouple</em>. Valves (ball, solenoid, pneumatic, motorized, needle, check, relief,
                     regulators, burst discs, quick disconnects), tanks, bottles and COPVs, orifices and venturis, flow
                     meters, filters, instruments (PT, TC, RTD, load cells...), engines, pumps, vents, tees, a box for
-                    anything else (a DAQ, a test stand), notes, regions, a legend, and a title block.
+                    anything else (a DAQ, a test stand), notes, regions, a legend, a title block, and pictures.
                 </li>
                 <li>
-                    Each new part is tagged with the next number free (<code>PT-3</code> after <code>PT-2</code>). An
-                    instrument's tag is in its bubble; others' are beside them, where you drag them. Double-click a part
-                    to type its tag.
+                    A <em>Picture</em> shows a PNG or a JPEG of your own (an injector, a TCA, a photo of the stand), up
+                    to 5 MB: drop the file on the drawing, or place one from the library and choose it on the right (
+                    <em>Replace…</em> changes it). Drag its square corner to size it: it keeps its shape. It's kept in
+                    Piper with the diagram, and the exports (PDF, SVG, PNG) have it in them.
+                </li>
+                <li>
+                    Each new part is tagged with the next number free (<code>PT-3</code> after <code>PT-2</code>),
+                    beside it, where you drag it. Double-click a part to type its tag.
+                </li>
+                <li>
+                    An instrument is a bubble with its tag's letters in it (<code>PT</code>, <code>TC</code>,{" "}
+                    <code>LC</code>), its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated
+                    transducer (two or three on one tap) is two or three bubbles side by side, A, B, and C: set{" "}
+                    <em>Transducers</em>, or place one from the library. Each reads its own test channel: those its{" "}
+                    <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it (
+                    <code>PT-101A</code>, <code>PT-101B</code>).
+                </li>
+                <li>
+                    Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
+                    stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
+                    <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
+                    orifice plate sits in its pipe; a vent's open end turns down.
                 </li>
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select
                     everything in a box; Shift-click adds to what's selected. Select several to line them up or space
                     them evenly.
+                </li>
+                <li>
+                    Drag the round handle at a selected part's corner to make it bigger or smaller, from half its size
+                    to double, or pick its <em>Size</em> on the right; its ports stay on the grid, so its lines stay
+                    straight. <em>Label size</em> makes its tag and properties smaller or larger than the diagram's.
+                </li>
+                <li>
+                    A <em>Text</em> note is sized to its words until you drag its square corner handle: then it's a
+                    block of that width and height, its words wrapped to it. Its weight (bold), slant (italic), font
+                    (sans serif, serif, or monospace, which print as Helvetica, Times, and Courier), alignment, and a
+                    box around it are on the right.
+                </li>
+                <li>
+                    Dragged together, parts take the lines between them along as they were, and a tee comes too when
+                    everything on its lines moves; lines to parts left behind follow their ends.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Finding a part",
+        body: (
+            <ul>
+                <li>
+                    <em>Find a tag</em>, in the toolbar (or <kbd>Ctrl</kbd>+<kbd>F</kbd>), finds a part or a line by its
+                    tag (<code>PUREG</code>, <code>PT-101</code>), whatever its case and with or without its dashes, or
+                    by what it is or holds (<em>regulator</em>, <em>LOX</em>). It looks through all the diagram's pages,
+                    and says which page each is on. Pick one, or press <kbd>Enter</kbd> for the first: the drawing goes
+                    to it, on its page, selected.
+                </li>
+                <li>
+                    A search on the <Link to="/piper">diagrams</Link> finds the diagrams a tag is on, and each opens at
+                    it.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Pages and sheets",
+        body: (
+            <ul>
+                <li>
+                    A diagram can have pages, as a P&ID's sheets: the vehicle on one, the ground systems on another.
+                    They're the tabs at the foot of the drawing. <em>+</em> adds one; a page's <em>⋯</em> menu (or a
+                    double-click on its tab) renames it, moves it left or right, or deletes it. Undo brings a deleted
+                    page back. The fluids, colors, and label size are the diagram's, the same on every page.
+                </li>
+                <li>
+                    <em>Printed sheet</em>, in a page's panel (with nothing selected), picks the paper it prints on: its
+                    outline shows on the drawing, with the sheet's border and the corner the title block takes, and the
+                    page prints just there, at that scale, however the drawing changes. <em>Landscape</em> turns it, and{" "}
+                    <em>Fit the sheet to the page</em> moves it to what's on the page now. A page without one is fitted
+                    to the PDF's paper.
+                </li>
+                <li>
+                    An <em>Off-page connector</em> says where a line goes on: pick the page in <em>To page</em>, and the
+                    part it arrives at in <em>At</em> (its connector there, say). It's written <code>TO</code> and the
+                    page's name until you write its words yourself. <em>Go to</em>, or a double-click on it, goes there;
+                    the part it arrives at lists it under <em>Comes from</em>, to go back.
+                </li>
+                <li>
+                    Once a diagram is saved with pages, a tab opened before Piper had them can't save it (it would keep
+                    only one page): it says to reload, which gets the new Piper.
                 </li>
             </ul>
         ),
@@ -97,8 +194,8 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     Drag a line's segment to move it: the line keeps its bends from then on, and follows its ends when
-                    they move. <em>Route automatically</em> (on the right) puts it back. Drag a selected line's end to
-                    another port.
+                    they move. <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
+                    <em>Route again</em> tidies one that's gone wrong. Drag a selected line's end to another port.
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>
                 <li>
@@ -147,9 +244,10 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    Select a part to say what it is: a valve's body, actuation, normal state, size, Cv, and rating; a
-                    tank's fluid, volume, and MEOP; an orifice's diameter and discharge coefficient; an instrument's
-                    range and DAQ channel. Write values with their units (<code>0.062 in</code>).
+                    Select a part to say what it is: a valve's body, actuation, normal state, size, Cv, and MAWP; a
+                    tank's fluid, volume, MEOP, and MAWP; an orifice's diameter and discharge coefficient; an
+                    instrument's range and DAQ channel. Every part that holds pressure, and every line, has its MAWP.
+                    Write values with their units (<code>0.062 in</code>).
                 </li>
                 <li>
                     The eye beside a property shows it under the part's tag on the drawing. <em>Add a field</em> gives a
@@ -164,18 +262,35 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    Each line carries a fluid, drawn in its color with its label: LOX in blue, RP-1 in red, nitrogen in
-                    green, helium in purple... A line drawn from a run takes its fluid. <em>Carry it along its run</em>{" "}
-                    sets the fluid on every line it reaches through valves, fittings, and instruments.
+                    Each line carries a fluid, drawn in its color: LOX in blue, RP-1 in red, nitrogen in green, helium
+                    in purple, combustion gas (HOT GAS) in rose... A line drawn from a run takes its fluid.{" "}
+                    <em>Carry it along its run</em> sets the fluid on every line it reaches through valves, fittings,
+                    and instruments.
+                </li>
+                <li>
+                    Lines don't write their fluid on themselves unless you say so: the eye beside a line's fluid shows
+                    its label, and with nothing selected, <em>Show on every line</em> or <em>Hide on every line</em>{" "}
+                    does it for all of them.
                 </li>
                 <li>
                     A tank holds a fluid too: a liquid fills its lower part, a gas all of it, with the label inside.
                 </li>
-                <li>Valves are drawn by their normal state: normally open (NO) green, normally closed (NC) red.</li>
                 <li>
-                    With nothing selected, the right side changes the diagram's fluids (their colors, labels, and
-                    names), adds its own, and sets its valves' colors. The legend (in the library's Notes) lists what
-                    its lines carry and its valves' states.
+                    Valves are drawn by their normal state: normally open (NO) green, normally closed (NC) red, and a
+                    double-acting valve that fails in place (FIP) slate blue. The color says it, so it isn't written
+                    beside them too; <em>Show on every valve</em> (with nothing selected) writes it, or the eye beside
+                    one valve's state.
+                </li>
+                <li>
+                    With nothing selected, the right side changes the diagram's fluids (their colors, labels, and names,
+                    and whether each is a gas), adds its own, sets its valves' colors, and makes its labels smaller or
+                    larger. The legend (in the library's Notes) lists what its lines carry and its valves' states.
+                </li>
+                <li>
+                    The team's color schemes are on <Link to="/piper/schemes">Schemes</Link>: each one's fluids and
+                    valve state colors, defined by the team. New diagrams start in the team's default (YJSP standard, an
+                    admin's to pick); <em>Colors from</em>, with nothing selected, gives a diagram another's. When the
+                    scheme changes, the diagram says so: <em>Take its colors again</em>.
                 </li>
             </ul>
         ),
@@ -186,8 +301,8 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     <em>Test data</em> reads the diagram against a test in <Link to="/yorg">Yorg</Link>: each instrument
-                    shows its channel's value beside it, and each valve its state: open green, closed red, anything else
-                    amber.
+                    shows its channel's value, and each valve its state (open green, closed red, anything else amber),
+                    in a badge on a line to it.
                 </li>
                 <li>
                     A part reads the channel named as its tag (<code>PT-101</code> reads PT-101), or the one in its{" "}
@@ -207,13 +322,95 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "Editing, one at a time",
+        body: (
+            <ul>
+                <li>
+                    One person edits a diagram at a time, so no one's changes go over anyone else's. <em>Edit</em> makes
+                    it yours: until you're done, no one else can change it, and the diagrams list and everyone who has
+                    it open see that you're editing it. <em>Done editing</em> saves what&apos;s left and lets anyone
+                    edit it.
+                </li>
+                <li>
+                    While someone else is editing it, it says who, and <em>Edit</em> waits until they're done. You can
+                    still look at it, move around it, select parts to read them, see a test on it, and export it; what
+                    they save shows within half a minute, and as soon as you come back to the tab.
+                </li>
+                <li>
+                    Closing the tab, or going to another page, lets it go at once. Left open with nothing done in it,
+                    it's let go about 25 minutes after the last click or key (back at it, you go on editing, if no one
+                    else has started); a laptop shut or a browser that crashed lets it go ten minutes later.
+                </li>
+                <li>
+                    An admin can <em>Take over</em> from whoever's editing it. Their changes are saved as they make
+                    them; a change of theirs after that isn't saved over yours. They're told, and can save theirs as a
+                    new diagram, or load yours.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Simulation",
+        body: (
+            <ul>
+                <li>
+                    <em>Simulation</em>, in the editor's bar (for admins, while it's tried out), makes the P&amp;ID a
+                    model of the system, simulated with <a href="https://github.com/saakethramoju/FullFlow">FullFlow</a>{" "}
+                    against a test from Yorg, to tune it until it matches what was measured. What it adds shows only
+                    while it's on: turn it off, and the editor is as it was.
+                </li>
+                <li>
+                    The P&amp;ID is the model, drawn as any diagram is. Tanks, bottles, the engine, and vents hold the
+                    pressures; valves, regulators, orifices, and venturis carry the flow between them; lines and tees
+                    join into one point. Whether a part carries liquid or gas comes from its lines' fluids, so give each
+                    run of lines its fluid (<em>Carry along its run</em> does the rest).
+                </li>
+                <li>
+                    Select a part to set it up in the model, in the inspector's <em>Simulation</em> box, while you're
+                    editing the diagram: what it is (a bottle as a supply, or a vessel that blows down), its CdA,
+                    opening time, a tank's volume and fill. Settings marked <em>tune</em> are knobs. A liquid line can
+                    be modeled as a line, with its friction and its liquid's inertia; a gas line's box sets the tubing
+                    it's part of.
+                </li>
+                <li>
+                    Its channels come from the P&amp;ID: a valve's command is its Test channel (or its tag); a pressure
+                    transducer reads the pressure where it taps (a tank's, the point between two valves); a thermocouple
+                    tapping a tank above its liquid reads its ullage; and a flow meter, the flow through what it's in
+                    line with. A tank's, a supply's, or the engine's transducer drives it; the others are compared.
+                    Uncheck a channel in its part's <em>Simulation</em> box to leave it out and set the conditions
+                    yourself: the part then does what its settings say (a valve stays where they have it, a tank holds
+                    the pressure set on it).
+                </li>
+                <li>
+                    In its panel, pick the test, the run's window (<em>◷</em> takes the time on the timeline), the time
+                    step, and the solver, then <em>Run</em>. Each compared channel is plotted with the model, with how
+                    far apart they are. At the time on the timeline, each instrument's badge on the drawing shows what
+                    the test measured, then the model's value in gold, in the diagram's units; a tank shows its
+                    pressure, and a valve or an orifice what flows through it, while anything does, in gold alone. The
+                    panel lists what keeps the model from running, each with <em>Go to</em>.
+                </li>
+                <li>
+                    <em>Tune…</em> fits the knobs you pick (running the model again and again), or anchors each to a
+                    sensor (one run, the knob moved at every time step to match it); <em>Apply to the P&amp;ID</em> puts
+                    what it found on the parts, once you're editing it. Runs, fits, and anchoring don't change the
+                    drawing, so you can run them while it's only looked at. <em>Script</em> shows the FullFlow code that
+                    runs, and <em>How it's modeled</em> how each part is built of FullFlow's components.
+                </li>
+                <li>
+                    <em>New diagram</em> has three P&amp;IDs to simulate: a cold flow, a pressurized flow, and Vespula's
+                    prop system, with its run's data as a test in Yorg.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Saving and history",
         body: (
             <ul>
                 <li>
-                    A diagram saves itself a second after each change. If someone else saved it while you had it open,
-                    it stops and asks: keep yours (saved over theirs, which stays in the history), save yours as a new
-                    diagram, or load theirs.
+                    A diagram saves itself a second after each change while you're editing it. If it was saved from
+                    another window of yours after you opened it here, it stops and asks: keep yours (saved over the
+                    other, which stays in the history), save yours as a new diagram, or load the other.
                 </li>
                 <li>
                     Beside its name, <em>Not saved</em> says why: out of reach or signed out, it tries again on its own
@@ -224,6 +421,17 @@ const TOPICS: Topic[] = [
                     <em>History</em> lists its revisions, each one person's changes (up to half an hour of them).
                     <em> Look</em> shows one; <em>Restore</em> makes it the drawing again, as a new revision.{" "}
                     <em>Name</em> one (<code>Rev B, for HF-3</code>) to keep it as it is.
+                </li>
+                <li>
+                    Release one for a design review or before a test: <em>Release…</em> on a revision, say what it's
+                    for, and pick its approvers (at least one besides you). Each approves it or rejects it, saying why;
+                    once they all approve, it's the diagram's next release, Rev A, then B..., and it never changes.
+                    Editing goes on in the revisions after it, and the diagram's name says <em>Draft after Rev A</em>.
+                </li>
+                <li>
+                    One release waits at a time, each of a revision after the last released, and whoever asked can
+                    withdraw it. A PDF on a drawing sheet lists the releases, with who approved each, and its title
+                    block says which revision it is (<code>A</code>, or <code>7 (after A)</code>).
                 </li>
                 <li>
                     Whoever made a diagram, or an admin, can delete it: it waits in{" "}
@@ -238,8 +446,9 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> (or a .vsdx dropped on them) makes a
-                    diagram of each of a Visio drawing's pages, in the folder you give.
+                    <em>Import Visio…</em> on the <Link to="/piper">diagrams</Link> asks for the drawing (or drop a
+                    .vsdx on them), then shows it, with <em>Choose another…</em> if it's the wrong one. <em>Import</em>{" "}
+                    makes a diagram of it, in the folder you're in, its pages as Visio has them.
                 </li>
                 <li>
                     Visio's P&ID shapes (its valves, vessels, pumps, instruments...) become Piper's parts, tagged with
@@ -264,20 +473,28 @@ const TOPICS: Topic[] = [
         body: (
             <ul>
                 <li>
-                    <em>Export, PDF</em> saves the drawing as a PDF on the paper you choose (Tabloid, Letter, ANSI D,
-                    A3, A4, or its own size), turned its way. On a drawing sheet, as a Visio P&ID is: a border with its
-                    zones (numbered across, lettered up), the diagram's named revisions, and a title block (its name,
-                    folder, revision, who drew it, and when), unless the drawing has a title block of its own. It's
+                    <em>Export, PDF</em> saves the drawing as a PDF, a page for each of its pages: on its printed sheet,
+                    if it has one, else on the paper you choose (Tabloid, Letter, ANSI D, A3, A4, or its own size),
+                    turned its way. On a drawing sheet, as a Visio P&ID is: a border with its zones (numbered across,
+                    lettered up), the diagram's named revisions, and a title block (its name, folder, revision, who drew
+                    it, when, and which sheet of how many it is), unless the page has a title block of its own. It's
                     vector: sharp at any size, its tags text you can search.
                 </li>
                 <li>
-                    <em>SVG</em> and <em>PNG</em> save it as an image; <em>Print</em> prints it. Exports are drawn in
-                    the light colors, as on paper.
+                    <em>SVG</em> and <em>PNG</em> save the page shown as an image; <em>Print</em> prints it. Exports are
+                    drawn in the light colors, as on paper. A PDF can be in black and white, for a printer without
+                    color: lines in ink, normally closed valves filled, normally open ones white.
                 </li>
                 <li>
                     <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and
-                    properties, and every line's tag, fluid, and ends. Filter it in a spreadsheet for a valve list or an
-                    instrument list.
+                    properties, and every line's tag, fluid, and ends, on all its pages (with each one's page, if
+                    there's more than one). Filter it in a spreadsheet for a valve list or an instrument list.
+                </li>
+                <li>
+                    <em>Parts</em>, in the toolbar, shows the same list under the drawing: a table for each kind of part
+                    (ball valves, pressure transducers, tanks...), with how many there are and the specs any of them has
+                    (MAWP, size, Cv, range, channel), then the lines, from all its pages. Click a tag to go to its part,
+                    on its page.
                 </li>
             </ul>
         ),
@@ -319,6 +536,12 @@ const TOPICS: Topic[] = [
                             <kbd>Ctrl</kbd>+<kbd>A</kbd>
                         </>,
                         "Select everything",
+                    ],
+                    [
+                        <>
+                            <kbd>Ctrl</kbd>+<kbd>F</kbd>
+                        </>,
+                        "Find a part on the drawing by its tag",
                     ],
                     ["Arrows (Shift: five steps)", "Nudge what's selected"],
                     ["Wheel; Ctrl or ⌘ + wheel", "Scroll; zoom"],

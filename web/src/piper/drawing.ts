@@ -1,6 +1,11 @@
-// A diagram's drawing: its parts, the lines between them, its fluids, and its style. Plain JSON: the server keeps it as
-// it's sent (server/src/yjsp_server/piper/schemas.py checks its shape), and readDrawing reads it back, filling in what
-// an older drawing didn't have, so a drawing never has to be upgraded on the server.
+// A diagram's drawing: its pages, each with its parts and the lines between them (and where its printed sheet sits),
+// and the fluids, style, and simulation's units they share. Plain JSON: the server keeps it as it's sent
+// (server/src/yjsp_server/piper/schemas.py checks its shape), and readDocument reads it back, filling in what an older
+// drawing didn't have (one from before pages is a page of its own), so a drawing never has to be upgraded on the
+// server. Its format says what a Piper must know to keep all of it: 2 pages, 3 parts' and lines' simulation settings.
+//
+// The editor works on a page at a time: a Drawing, its parts and lines with the fluids and style (pageOf), which is
+// what every change (edit.ts) and what's drawn (DiagramView) takes; withPage puts it back in its document.
 
 export interface Point {
     x: number;
@@ -22,9 +27,31 @@ export interface Part {
     shown: string[]; // the properties shown under its tag, by key
     label: Point | null; // where its tag sits, from its center; null: where its kind puts it
     text: string; // what a note, a region, or an off-page connector says
-    w: number; // a region's size (0 for everything else)
+    w: number; // a region's or a box's size, or a text block's set one (0 for everything else)
     h: number;
+    scale: number; // how big it's drawn, of its kind's size: one of PART_SCALES
+    labelSize: LabelSize | ""; // its tag's and properties' size; "": the diagram's
+    sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
 }
+
+/** Settings in the simulation, in SI units, by the keys of Yorg's system models' catalog (sim/api.ts). */
+export type SimValues = Record<string, number | string>;
+
+/**
+ * What a part is in the diagram's simulation (Simulation mode, sim/model.ts): its settings there, and, where its kind
+ * could be more than one thing in the model (a bottle: a gas supply, or a vessel that blows down), which. What's left
+ * out is as its kind and the P&ID make it, at the catalog's defaults.
+ */
+export interface PartSim {
+    as: string; // "": what its kind makes it; else one of sim/model.ts's ROLES
+    settings: SimValues;
+    // Its channel kept out of the simulation (a valve's command, an instrument's reading): what it would set is the
+    // settings' instead, your own conditions. Without it, its channel's in, where the test has it.
+    unlinked?: boolean;
+}
+
+/** The sizes a part can be drawn at, of its kind's own: half to double. */
+export const PART_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 /** Where a line ends: on a part's port, or at a point of its own. */
 export type End = { part: string; port: string } | Point;
@@ -55,6 +82,17 @@ export interface Line {
     arrow: Arrow;
     props: Record<string, string>; // size, wall, material, length...
     shown: string[]; // what its label shows: "tag", "fluid", and property keys
+    sim?: LineSim; // what it is in the diagram's simulation, if that's been set
+}
+
+/**
+ * A line in the diagram's simulation: a liquid line modeled as a line (its friction and its liquid's inertia), with its
+ * settings; and the settings of the gas node its lines make between gas parts (tubing, with its volume and what it
+ * holds at the start), which each of them keeps a copy of.
+ */
+export interface LineSim {
+    line: SimValues | null; // null: not modeled as a line, so its two ends are one point in the model
+    node: SimValues;
 }
 
 /** A fluid lines carry: a standard one (fluids.ts), changed by the diagram, or one of its own. */
@@ -63,24 +101,131 @@ export interface Fluid {
     name: string; // "Liquid oxygen"
     label: string; // what's written on its lines: "LOX"
     color: string; // #rrggbb
+    gas?: boolean; // a tank of it is full of it; left out, a standard fluid's own (fluids.ts), else a liquid
 }
+
+/** How big what's written beside parts and on lines is (labels.ts). */
+export type LabelSize = "small" | "normal" | "large";
 
 export interface Style {
     no: string; // normally open valves' color: "" for the standard one
     nc: string; // normally closed valves'
+    fip: string; // fail-in-place (double-acting) valves'
+    labels: LabelSize;
+    // The team's color scheme its colors were taken from (fluids.ts applyScheme), by id, and when that scheme had
+    // last changed then, to see it's changed since. "": none.
+    scheme: string;
+    schemeAt: string;
 }
 
+/**
+ * The diagram's simulation, shared by its pages: the units its settings are shown in, with pressures above the
+ * atmosphere (gauge) or not; and so how a test's channels without units, or in psi, are read.
+ */
+export interface SimUnits {
+    units: "us" | "si";
+    gauge: boolean;
+    ambient: number; // Pa: the atmosphere, for gauge pressures
+}
+
+export const STANDARD_SIM_UNITS: SimUnits = { units: "us", gauge: true, ambient: 101325 };
+
+/** A page as it'd be printed: on a paper, turned its way, its top left at a point of the page, so many points to a
+ * unit. The canvas shows its outline; a PDF prints the page there, as it shows. */
+export interface PageSheet {
+    paper: string; // a paper's id (pdf.ts PAPERS): "tabloid", "letter", "ansi-d", "a3", "a4"
+    landscape: boolean;
+    x: number; // the paper's top left, in the page's units
+    y: number;
+    scale: number; // points of paper to a unit of the page
+}
+
+export interface Page {
+    id: string;
+    name: string; // "P&ID", "GSE", "Sheet 2"
+    parts: Part[];
+    lines: Line[];
+    sheet: PageSheet | null; // where it's printed, if it's been set: else a PDF fits it to its paper
+}
+
+/** A diagram's drawing as it's saved: its pages, and the fluids, style, and simulation's units all of them share. */
+export interface Document {
+    format: 3;
+    pages: Page[];
+    fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
+    style: Style;
+    sim?: SimUnits; // left out: STANDARD_SIM_UNITS
+}
+
+/** A page of a drawing, as the editor works on it: its parts and lines, with the fluids and style it shares. */
 export interface Drawing {
     format: 1;
     parts: Part[];
     lines: Line[];
     fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
     style: Style;
+    sheet?: PageSheet | null; // its page's printed sheet, if it's in a document
+    sim?: SimUnits; // its document's simulation's units, if they've been set
+    // The tags on the diagram's other pages, not saved with it: a part placed here is numbered after them, and a tag
+    // taken there is said to be (pageOf fills it in).
+    elsewhere?: string[];
 }
 
-export const emptyDrawing = (): Drawing => ({ format: 1, parts: [], lines: [], fluids: [], style: { no: "", nc: "" } });
+export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" };
+
+export const emptyDrawing = (): Drawing => ({
+    format: 1,
+    parts: [],
+    lines: [],
+    fluids: [],
+    style: { ...STANDARD_STYLE },
+});
 
 export const isPortEnd = (end: End): end is { part: string; port: string } => "part" in end;
+
+/** A document of one page, from a page's drawing: a new diagram's, or one from before pages. */
+export function documentOf(drawing: Drawing, name = "Page 1"): Document {
+    return {
+        format: 3,
+        pages: [{ id: newId("g"), name, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null }],
+        fluids: drawing.fluids,
+        style: drawing.style,
+        ...(drawing.sim ? { sim: drawing.sim } : {}),
+    };
+}
+
+export const emptyDocument = (): Document => documentOf(emptyDrawing());
+
+/** A page of a document, as a drawing to work on (the last, if there's no such page). */
+export function pageOf(document: Document, index: number): Drawing {
+    const page = document.pages[Math.min(Math.max(0, index), document.pages.length - 1)]!;
+    return {
+        format: 1,
+        parts: page.parts,
+        lines: page.lines,
+        fluids: document.fluids,
+        style: document.style,
+        sheet: page.sheet,
+        ...(document.sim ? { sim: document.sim } : {}),
+        elsewhere: document.pages
+            .filter((other) => other !== page)
+            .flatMap((other) => other.parts.map((part) => part.tag).filter(Boolean)),
+    };
+}
+
+/** A document with a page's drawing put back: its parts, lines, and sheet, and the fluids, style, and simulation's
+ * units all share. */
+export function withPage(document: Document, index: number, drawing: Drawing): Document {
+    return {
+        format: document.format,
+        pages: document.pages.map((page, at) =>
+            at === index ? { ...page, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null } : page,
+        ),
+        fluids: drawing.fluids,
+        style: drawing.style,
+        ...(drawing.sim ? { sim: drawing.sim } : {}),
+    };
+}
 
 let counter = 0;
 
@@ -105,6 +250,8 @@ export function newPart(kind: string, at: Point, fields: Partial<Part> = {}): Pa
         text: "",
         w: 0,
         h: 0,
+        scale: 1,
+        labelSize: "",
         ...fields,
     };
 }
@@ -121,7 +268,7 @@ export function newLine(from: End, to: End, fields: Partial<Line> = {}): Line {
         kind: "pipe",
         arrow: "none",
         props: {},
-        shown: ["fluid"],
+        shown: [], // a fluid's color says what it is: its label, on every line, crowds a P&ID
         ...fields,
     };
 }
@@ -164,11 +311,67 @@ function end(value: unknown): End | null {
 
 const ROTATIONS: Rotation[] = [0, 90, 180, 270];
 
+/** Settings in the simulation: numbers (finite) and choices, by key. */
+function simValues(value: unknown): SimValues {
+    const found: SimValues = {};
+    if (isObject(value)) {
+        for (const [key, entry] of Object.entries(value)) {
+            if (typeof entry === "string" || (typeof entry === "number" && Number.isFinite(entry))) {
+                found[key] = entry;
+            }
+        }
+    }
+    return found;
+}
+
+const partSim = (value: unknown): { sim?: PartSim } =>
+    isObject(value)
+        ? {
+              sim: {
+                  as: str(value.as),
+                  settings: simValues(value.settings),
+                  ...(value.unlinked === true ? { unlinked: true } : {}),
+              },
+          }
+        : {};
+
+const lineSim = (value: unknown): { sim?: LineSim } =>
+    isObject(value)
+        ? { sim: { line: isObject(value.line) ? simValues(value.line) : null, node: simValues(value.node) } }
+        : {};
+
+function simUnits(value: unknown): { sim?: SimUnits } {
+    if (!isObject(value)) {
+        return {};
+    }
+    const ambient = num(value.ambient, STANDARD_SIM_UNITS.ambient);
+    return {
+        sim: {
+            units: value.units === "si" ? "si" : "us",
+            gauge: value.gauge !== false,
+            ambient: ambient > 0 && ambient < 2e5 ? ambient : STANDARD_SIM_UNITS.ambient,
+        },
+    };
+}
+
+/**
+ * Properties and what's shown of them, with a pressure rating read as the MAWP it is: drawings before MAWP called it
+ * "rating" (a filter's rating is its microns, and stays).
+ */
+function withMawp(props: Record<string, string>, shown: string[], filter: boolean) {
+    if (filter || props.rating === undefined || props.mawp !== undefined) {
+        return { props, shown };
+    }
+    const { rating, ...rest } = props;
+    return { props: { ...rest, mawp: rating }, shown: shown.map((key) => (key === "rating" ? "mawp" : key)) };
+}
+
 function part(value: unknown): Part | null {
     if (!isObject(value) || typeof value.id !== "string" || typeof value.kind !== "string") {
         return null;
     }
     const rotation = num(value.rotation);
+    const { props, shown } = withMawp(texts(value.props), strings(value.shown), value.kind === "filter");
     return {
         id: value.id,
         kind: value.kind,
@@ -177,12 +380,18 @@ function part(value: unknown): Part | null {
         rotation: ROTATIONS.includes(rotation as Rotation) ? (rotation as Rotation) : 0,
         flip: value.flip === true,
         tag: str(value.tag),
-        props: texts(value.props),
-        shown: strings(value.shown),
+        props,
+        shown,
         label: point(value.label),
         text: str(value.text),
         w: Math.max(0, num(value.w)),
         h: Math.max(0, num(value.h)),
+        scale: (PART_SCALES as readonly number[]).includes(num(value.scale, 1)) ? num(value.scale, 1) : 1,
+        labelSize:
+            value.labelSize === "small" || value.labelSize === "normal" || value.labelSize === "large"
+                ? value.labelSize
+                : "",
+        ...partSim(value.sim),
     };
 }
 
@@ -202,6 +411,7 @@ function line(value: unknown, parts: Set<string>): Line | null {
     }
     const kind = LINE_KINDS.find((entry) => entry.value === value.kind)?.value ?? "pipe";
     const arrow = value.arrow === "forward" || value.arrow === "backward" ? value.arrow : "none";
+    const { props, shown } = withMawp(texts(value.props), strings(value.shown), false);
     return {
         id: value.id,
         from,
@@ -214,8 +424,9 @@ function line(value: unknown, parts: Set<string>): Line | null {
         fluid: str(value.fluid),
         kind,
         arrow,
-        props: texts(value.props),
-        shown: Array.isArray(value.shown) ? strings(value.shown) : ["fluid"],
+        props,
+        shown,
+        ...lineSim(value.sim),
     };
 }
 
@@ -229,26 +440,88 @@ function fluid(value: unknown): Fluid | null {
         name: str(value.name, value.id),
         label: str(value.label),
         color: /^#[0-9a-f]{6}$/i.test(color) ? color : "#7f8c9a",
+        ...(typeof value.gas === "boolean" ? { gas: value.gas } : {}),
     };
 }
 
-/** A drawing as the server sent it, whatever its age: what it lacks is filled in, and what can't be read left out. */
-export function readDrawing(value: unknown): Drawing {
-    const found = isObject(value) ? value : {};
-    const parts = list(found.parts)
+function sheetOf(value: unknown): PageSheet | null {
+    if (!isObject(value) || typeof value.paper !== "string") {
+        return null;
+    }
+    const scale = num(value.scale, 1);
+    return {
+        paper: value.paper,
+        landscape: value.landscape !== false,
+        x: num(value.x),
+        y: num(value.y),
+        scale: scale > 0 ? scale : 1,
+    };
+}
+
+/** A page's parts and lines as they were sent: a line to a part that isn't on the page left out. */
+function pageParts(value: Raw): { parts: Part[]; lines: Line[] } {
+    const parts = list(value.parts)
         .map(part)
         .filter((entry) => entry !== null);
     const ids = new Set(parts.map((entry) => entry.id));
+    return {
+        parts,
+        lines: list(value.lines)
+            .map((entry) => line(entry, ids))
+            .filter((entry) => entry !== null),
+    };
+}
+
+/**
+ * A diagram's drawing as the server sent it, whatever its age: its pages (a drawing from before pages is one), with
+ * what they lack filled in and what can't be read left out.
+ */
+export function readDocument(value: unknown): Document {
+    const found = isObject(value) ? value : {};
+    const pages = list(found.pages).filter(isObject);
+    if (pages.length === 0) {
+        return documentOf(readDrawing(found));
+    }
+    const shared = readDrawing({ fluids: found.fluids, style: found.style, sim: found.sim });
+    return {
+        format: 3,
+        pages: pages.map((page, index) => ({
+            id: str(page.id) || newId("g"),
+            name: str(page.name) || `Page ${index + 1}`,
+            ...pageParts(page),
+            sheet: sheetOf(page.sheet),
+        })),
+        fluids: shared.fluids,
+        style: shared.style,
+        ...(shared.sim ? { sim: shared.sim } : {}),
+    };
+}
+
+/** A page's drawing as the server sent it (or a drawing from before pages), whatever its age: what it lacks is filled
+ * in, and what can't be read left out. A document's first page, if it's one with pages. */
+export function readDrawing(value: unknown): Drawing {
+    const found = isObject(value) ? value : {};
+    if (Array.isArray(found.pages)) {
+        return pageOf(readDocument(found), 0);
+    }
+    const { parts, lines } = pageParts(found);
     const style = isObject(found.style) ? found.style : {};
+    const labels = style.labels === "small" || style.labels === "large" ? style.labels : "normal";
     return {
         format: 1,
         parts,
-        lines: list(found.lines)
-            .map((entry) => line(entry, ids))
-            .filter((entry) => entry !== null),
+        lines,
         fluids: list(found.fluids)
             .map(fluid)
             .filter((entry) => entry !== null),
-        style: { no: str(style.no), nc: str(style.nc) },
+        style: {
+            no: str(style.no),
+            nc: str(style.nc),
+            fip: str(style.fip),
+            labels,
+            scheme: str(style.scheme),
+            schemeAt: str(style.schemeAt),
+        },
+        ...simUnits(found.sim),
     };
 }

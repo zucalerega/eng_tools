@@ -34,7 +34,8 @@ Web app (React): the frame, Vault's, Yorg's, and Piper's pages ─────�
                                                                        ▼
                                YJSP server (Python, FastAPI): sign-in, accounts, the web app
                                ├── vault/: folders, files, versions, check-outs, permissions
-                               ├── yorg/: datasets, views, calculated channels, scripts, models
+                               ├── yorg/: datasets, views, calculated channels, scripts, and
+                               │   system models' runs (FullFlow), which Piper's simulations use
                                ├── piper/: diagrams (P&IDs) and their revisions
                                ├── database: SQLite or Postgres, one for all of it
                                ├── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
@@ -66,9 +67,11 @@ under `/yorg`, and Piper's under `/piper`, with the site's own page at `/`, whic
 any of them. No app imports another, and the site's own code imports none, except where it
 puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
 in the web app) and where accounts change (`people.py`, below). What more than one app needs
-is the site's: on the server, the folder paths Yorg's views and scripts and Piper's diagrams
-are kept in (`FolderPath`, `api/schemas.py`); in the web app, their tree (`pathTree.ts`),
-reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
+is the site's: on the server, the folder paths Yorg's views and scripts are kept in, and Piper's
+diagrams can be named by (`FolderPath`, `api/schemas.py`); in the web app, their tree
+(`pathTree.ts`), the box a folder is picked in (`FolderPicker.tsx`), and for folders of their own
+(Yorg's datasets', Piper's diagrams'), the way down to one (`folders.ts`) and the dialogs that
+name one and move what's chosen to one (`FolderDialogs.tsx`), reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
 a link (`packed.ts`: Yorg's links to plots, which Piper makes too).
 
 Piper's one tie to Yorg is Yorg's API, which it uses as any client would: it reads a test's
@@ -89,11 +92,11 @@ site's only one.
 |---|---|---|
 | The database: accounts, Vault's tables, Yorg's, Piper's (its diagrams, and every revision of each), and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
-| Yorg's files: uploads and their arrays (`datasets/`), saved scripts and models | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
+| Yorg's files: uploads and their arrays (`datasets/`), saved scripts (and the system models saved before Piper kept them) | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
 
 Vault's blobs never change once written, so a backup of them only ever adds files. Yorg's
-scripts and models are JSON files changed in place, and deleting one deletes its file, so a
+scripts are JSON files changed in place, and deleting one deletes its file, so a
 copy of them needs to keep old versions too. The off-site backup does both: restic, run by
 root each night to an R2 bucket, encrypted, keeping two weeks of nights, two months of
 weeks, and two years of months, and checked by a restore each week (deploy/yjsp-offsite,

@@ -1,11 +1,12 @@
 import { expect, test } from "vitest";
+import { emptyDrawing, newPart } from "../src/piper/drawing";
 import { example } from "../src/piper/example";
 import { pageFor, pathOperators, pdfOf } from "../src/piper/pdf";
 
 // The PDF export: a whole file (its objects where its cross-reference table says, the page the paper chosen, turned
 // the drawing's way), the drawing in PDF's own operators, and its words as text.
 
-const META = { name: "Feed system", revision: 3, savedAt: "2026-10-23T12:00:00Z", by: "Chief" };
+const META = { name: "Feed system", revision: "12 (after B)", savedAt: "2026-10-23T12:00:00Z", by: "Chief" };
 
 const latin1 = (bytes: Uint8Array) => Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
 
@@ -48,6 +49,7 @@ test("the drawing's in PDF's own operators, its words as text", async () => {
     const end = text.indexOf("\nendstream");
     const content = await inflate(Uint8Array.from(text.slice(start, end), (char) => char.charCodeAt(0)));
     expect(content).toContain("(PT) Tj"); // an instrument's letters, in its bubble
+    expect(content).toContain("(PT-1) Tj"); // and its tag, beside it
     expect(content).toContain("(BV-1) Tj"); // a tag
     expect(content).toContain("(Feed system) Tj"); // the title block's title
     expect(content).toMatch(/ c\n/); // curves: arcs and circles as Béziers
@@ -56,12 +58,12 @@ test("the drawing's in PDF's own operators, its words as text", async () => {
     expect(lines.filter((line) => line === "BT").length).toBe(lines.filter((line) => line === "ET").length);
 });
 
-test("on a drawing sheet: a border with its zones, the named revisions, and a title block", async () => {
+test("on a drawing sheet: a border with its zones, the releases, and a title block", async () => {
     const drawing = example();
     const sheet = {
         project: "Vespula/Prop",
         diagram: 2,
-        revisions: [{ number: 12, note: "Rev B: vent valve for HF-3", date: "2026-10-20", by: "Chief" }],
+        revisions: [{ rev: "B", note: "Vent valve for HF-3", date: "2026-10-20", by: "Bob, Cy" }],
         titleBlock: true,
     };
     const text = latin1(new Uint8Array(await (await pdfOf(drawing, META, "tabloid", sheet)).arrayBuffer()));
@@ -71,7 +73,9 @@ test("on a drawing sheet: a border with its zones, the named revisions, and a ti
     );
     for (const words of [
         "(YELLOW JACKET SPACE PROGRAM) Tj",
-        "(Rev B: vent valve for HF-3) Tj",
+        "(Vent valve for HF-3) Tj",
+        "(Bob, Cy) Tj", // who approved it
+        "(12 \\(after B\\)) Tj", // the revision printed, after Rev B
         "(Vespula/Prop) Tj",
         "(No. 2) Tj",
     ]) {
@@ -103,4 +107,23 @@ test("a drawing goes on its paper turned its way, as big as fits in the margins"
     expect(pageFor(400, 800, "letter")).toMatchObject({ width: 612, height: 792, scale: 0.9 });
     expect(pageFor(500, 550, "letter")).toMatchObject({ width: 792, height: 612 }); // a little taller: still landscape
     expect(pageFor(300, 200, "fit")).toEqual({ width: 372, height: 272, scale: 1, x: 36, y: 36 });
+});
+
+test("a text block prints in its font: Times, Courier, bold, italic, as PDF's standard fonts", async () => {
+    const block = (font: string, weight: string, slant: string, words: string) =>
+        newPart("text", { x: 0, y: 0 }, { text: words, w: 160, h: 40, props: { font, weight, slant } });
+    const drawing = {
+        ...emptyDrawing(),
+        parts: [block("serif", "bold", "italic", "Times words"), block("mono", "", "", "Courier words")],
+    };
+    const text = latin1(new Uint8Array(await (await pdfOf(drawing, META, "fit")).arrayBuffer()));
+    for (const name of ["Helvetica", "Times-BoldItalic", "Courier"]) {
+        expect(text).toContain(`/BaseFont /${name} `);
+    }
+    const start = text.indexOf("stream\n") + "stream\n".length;
+    const content = await inflate(
+        Uint8Array.from(text.slice(start, text.indexOf("\nendstream")), (char) => char.charCodeAt(0)),
+    );
+    expect(content).toMatch(/\/F8 [\d.]+ Tf[\s\S]*?\(Times words\) Tj/); // Times-BoldItalic
+    expect(content).toMatch(/\/F9 [\d.]+ Tf[\s\S]*?\(Courier words\) Tj/); // Courier
 });

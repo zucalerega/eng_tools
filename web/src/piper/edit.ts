@@ -26,7 +26,7 @@ import {
 import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
-import { linesOn, partsById, placeEnd, portOf, type PlacedEnd } from "./ports";
+import { linesOn, partsById, placeEnd, portOf, portsOf, type PlacedEnd } from "./ports";
 import { route, STUB } from "./route";
 
 // The changes the editor makes to a drawing, each a pure function from one drawing to the next: placing parts,
@@ -113,11 +113,11 @@ function follow(before: Point[], from: PlacedEnd, to: PlacedEnd, boxes: Box[]): 
 }
 
 /**
- * The drawing's lines brought up to date with its parts, after some of them moved (moved: their ids): a line between
- * two parts that moved together moves with them; one with an end on a part that moved is routed again, or follows its
- * end if it was routed by hand. before: the drawing as it was, for where lines' ends were.
+ * The drawing's lines brought up to date with its parts, after some of them turned, flipped, changed, or were lined
+ * up (moved: their ids): a line with an end on one of them is routed again, or follows its end if it was routed by
+ * hand. before: the drawing as it was, for where lines' ends were. (Moving by an offset is moveItems'.)
  */
-export function followParts(before: Drawing, after: Drawing, moved: Set<string>, by: Point | null = null): Drawing {
+export function followParts(before: Drawing, after: Drawing, moved: Set<string>): Drawing {
     const wasParts = partsById(before);
     const parts = partsById(after);
     const boxes = obstacles(after);
@@ -127,10 +127,6 @@ export function followParts(before: Drawing, after: Drawing, moved: Set<string>,
         const to = touches(line.to);
         if (!from && !to) {
             return line;
-        }
-        const bothFree = (!isPortEnd(line.from) || from) && (!isPortEnd(line.to) || to);
-        if (by && bothFree) {
-            return { ...line, points: line.points.map((point) => ({ x: point.x + by.x, y: point.y + by.y })) };
         }
         if (line.auto) {
             return { ...line, points: routeOf(after, line, parts, boxes) };
@@ -167,7 +163,7 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
     }
     const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`, "i");
     let highest = 0;
-    for (const tag of [...drawing.parts.map((part) => part.tag), ...taken]) {
+    for (const tag of [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? []), ...taken]) {
         const match = pattern.exec(tag);
         if (match) {
             highest = Math.max(highest, Number(match[1]));
@@ -179,9 +175,9 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
 /** A tag's prefix: what's before its number ("PT" of PT-12, "MOV-OX" of MOV-OX). */
 export const prefixOf = (tag: string): string => /^(.*?)-?\d+$/.exec(tag)?.[1] ?? tag;
 
-/** The tags two or more parts share. */
+/** The tags two or more parts share: on this page, or on it and another of the diagram's. */
 export function sharedTags(drawing: Drawing): Set<string> {
-    const seen = new Set<string>();
+    const seen = new Set((drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
     const shared = new Set<string>();
     for (const part of drawing.parts) {
         const tag = part.tag.trim().toUpperCase();
@@ -198,9 +194,9 @@ export function sharedTags(drawing: Drawing): Set<string> {
 
 // --- placing and connecting ----------------------------------------------------------------------------------------
 
-/** A part from the library, at a point (on the grid), tagged with the next number free. */
-export function addPart(drawing: Drawing, preset: Preset, at: Point): { drawing: Drawing; id: string } {
-    const part = newPart(preset.kind, snapPoint(at), {
+/** A part from the library, at a point (on the grid, unless free), tagged with the next number free. */
+export function addPart(drawing: Drawing, preset: Preset, at: Point, free = false): { drawing: Drawing; id: string } {
+    const part = newPart(preset.kind, free ? at : snapPoint(at), {
         tag: nextTag(drawing, preset.prefix),
         props: { ...preset.props },
         shown: [...(preset.shown ?? [])],
@@ -231,11 +227,20 @@ function fluidAt(drawing: Drawing, end: End): string {
     }
     const holds = part?.props.fluid ?? "";
     // A tank's top is its ullage: what's drawn from there is its pressurant, not its liquid.
-    if (!holds || kind?.through || (end.port === "top" && !isGas(holds))) {
+    if (!holds || kind?.through || (end.port === "top" && !isGas(drawing, holds))) {
         return "";
     }
     return holds;
 }
+
+/** What the second half of a split line shows: not its tag or fluid again, which the first half says. */
+const once = (shown: string[]): string[] => shown.filter((key) => key !== "tag" && key !== "fluid");
+
+/**
+ * What the rest of a line split in two keeps of its simulation: the settings of the gas node it's in, but not its model
+ * as a line, which the line up to the split keeps whole, so the model doesn't have its length twice.
+ */
+const restOf = (line: Line): Pick<Line, "sim"> => (line.sim ? { sim: { line: null, node: line.sim.node } } : {});
 
 /**
  * A line split in two where a point is on it, at a new junction there (on the grid, along its segment): the line up
@@ -261,7 +266,15 @@ export function splitLine(drawing: Drawing, lineId: string, at: Point): { drawin
     const withJunction = new Map(parts).set(junction.id, junction);
     const tidy = (entry: Line): Line => ({ ...entry, points: simplify(runOf(withJunction, entry) ?? []).slice(1, -1) });
     const first = tidy({ ...line, to: end, points: run.slice(1, nearest.segment + 1) });
-    const second = tidy({ ...line, id: newId("l"), tag: "", from: end, points: run.slice(nearest.segment + 1, -1) });
+    const second = tidy({
+        ...line,
+        id: newId("l"),
+        tag: "",
+        from: end,
+        points: run.slice(nearest.segment + 1, -1),
+        shown: once(line.shown),
+        ...restOf(line),
+    });
     const lines = drawing.lines.flatMap((entry) => (entry.id === lineId ? [first, second] : [entry]));
     return { drawing: { ...drawing, parts: [...drawing.parts, junction], lines }, junction: junction.id };
 }
@@ -329,7 +342,9 @@ export function insertIntoLine(drawing: Drawing, partId: string, lineId: string,
     }
     const [inPort, outPort] = kind.inline;
     const local = kind.ports(part);
-    const half = Math.max(...[inPort, outPort].map((id) => Math.abs(local.find((port) => port.id === id)?.x ?? 20)));
+    const half =
+        Math.max(...[inPort, outPort].map((id) => Math.abs(local.find((port) => port.id === id)?.x ?? 20))) *
+        part.scale;
     const level = way === "left" || way === "right";
     const [lo, hi] = level ? [Math.min(a.x, b.x), Math.max(a.x, b.x)] : [Math.min(a.y, b.y), Math.max(a.y, b.y)];
     const fits = hi - lo >= 2 * half;
@@ -349,6 +364,8 @@ export function insertIntoLine(drawing: Drawing, partId: string, lineId: string,
         ...line,
         id: newId("l"),
         tag: "",
+        shown: once(line.shown),
+        ...restOf(line),
         from: { part: partId, port: outPort },
         points: simplify([leaving, ...run.slice(nearest.segment + 1, -1), run[run.length - 1]!]).slice(1, -1),
     };
@@ -455,42 +472,83 @@ export function moveSegment(drawing: Drawing, lineId: string, index: number, by:
 
 // --- moving and changing -------------------------------------------------------------------------------------------
 
-/** Parts and lines moved by an offset: lines between moved parts move with them; others follow their ends. */
+/**
+ * Parts and lines moved by an offset. A line whose ends both move (on parts that moved, or free ends of a line that's
+ * selected) moves with them, once, as it was; one with an end that stays is routed again, or follows its end if it was
+ * routed by hand. A junction comes along when every line through it goes to what's moving, so a tee picked up with
+ * what's around it stays a tee.
+ */
 export function moveItems(drawing: Drawing, ids: Set<string>, by: Point): Drawing {
     if (by.x === 0 && by.y === 0) {
         return drawing;
     }
     const shift = (point: Point) => ({ x: point.x + by.x, y: point.y + by.y });
-    const moved: Drawing = {
-        ...drawing,
-        parts: drawing.parts.map((part) => (ids.has(part.id) ? { ...part, ...shift(part) } : part)),
-        lines: drawing.lines.map((line) => {
-            if (!ids.has(line.id)) {
-                return line;
-            }
-            // A line moved on its own takes its free ends with it; its ends on parts stay put.
-            return {
-                ...line,
-                from: isPortEnd(line.from) ? line.from : shift(line.from),
-                to: isPortEnd(line.to) ? line.to : shift(line.to),
-                points: line.points.map(shift),
-            };
-        }),
-    };
-    const partsMoved = new Set(drawing.parts.filter((part) => ids.has(part.id)).map((part) => part.id));
-    const followed = followParts(drawing, moved, partsMoved, by);
-    // A selected line whose ends are on parts that stayed is routed to them again.
-    const stranded = new Set(
-        drawing.lines
-            .filter(
-                (line) =>
-                    ids.has(line.id) &&
-                    ((isPortEnd(line.from) && !partsMoved.has(line.from.part)) ||
-                        (isPortEnd(line.to) && !partsMoved.has(line.to.part))),
-            )
-            .map((line) => line.id),
+    const moving = new Set(drawing.parts.filter((part) => ids.has(part.id)).map((part) => part.id));
+    // A free end moves with its line, and only if the line's moving too.
+    const endMoves = (line: Line, end: End) => (isPortEnd(end) ? moving.has(end.part) : ids.has(line.id));
+    const farEnd = (line: Line, part: string): End =>
+        isPortEnd(line.from) && line.from.part === part ? line.to : line.from;
+    // Junctions whose every line goes to something moving, or to another such junction (a run of tees comes along
+    // whole): every junction to begin with, then none that has a line to something staying, until none's left to drop.
+    const junctions = new Map(
+        drawing.parts
+            .filter((part) => part.kind === "junction" && !moving.has(part.id))
+            .map((part) => [part.id, linesOn(drawing, part.id).map(({ line }) => line)]),
     );
-    return stranded.size > 0 ? rerouteLines(followed, stranded) : followed;
+    const through = (part: string) => junctions.get(part) ?? [];
+    const coming = new Set([...junctions].filter(([, lines]) => lines.length > 0).map(([id]) => id));
+    const goes = (line: Line, end: End) =>
+        isPortEnd(end) ? moving.has(end.part) || coming.has(end.part) : ids.has(line.id);
+    for (let dropped = true; dropped;) {
+        dropped = false;
+        for (const id of coming) {
+            if (!through(id).every((line) => goes(line, farEnd(line, id)))) {
+                coming.delete(id);
+                dropped = true;
+            }
+        }
+    }
+    // Of those, the ones joined to what's moving for itself: two tees on nothing but each other stay where they are.
+    for (let joined = true; joined;) {
+        joined = false;
+        for (const id of coming) {
+            if (through(id).some((line) => endMoves(line, farEnd(line, id)))) {
+                coming.delete(id);
+                moving.add(id);
+                joined = true;
+            }
+        }
+    }
+    const after: Drawing = {
+        ...drawing,
+        parts: drawing.parts.map((part) => (moving.has(part.id) ? { ...part, ...shift(part) } : part)),
+    };
+    const wasParts = partsById(drawing);
+    const parts = partsById(after);
+    const boxes = obstacles(after);
+    const lines = drawing.lines.map((line) => {
+        const fromMoves = endMoves(line, line.from);
+        const toMoves = endMoves(line, line.to);
+        if (!fromMoves && !toMoves) {
+            return line;
+        }
+        const ends = {
+            from: isPortEnd(line.from) || !fromMoves ? line.from : shift(line.from),
+            to: isPortEnd(line.to) || !toMoves ? line.to : shift(line.to),
+        };
+        if (fromMoves && toMoves) {
+            return { ...line, ...ends, points: line.points.map(shift) };
+        }
+        const moved: Line = { ...line, ...ends };
+        if (line.auto) {
+            return { ...moved, points: routeOf(after, moved, parts, boxes) };
+        }
+        const was = runOf(wasParts, line);
+        const fromNow = placeEnd(parts, moved.from);
+        const toNow = placeEnd(parts, moved.to);
+        return was && fromNow && toNow ? { ...moved, points: follow(was, fromNow, toNow, boxes) } : moved;
+    });
+    return { ...after, lines };
 }
 
 /** Kinds that keep upright: regions, legends, and title blocks don't turn or flip. */
@@ -526,6 +584,27 @@ export function flipParts(drawing: Drawing, ids: Set<string>): Drawing {
     return followParts(drawing, flipped, ids);
 }
 
+/**
+ * A picture part showing a picture added to Piper: as wide as it was (or, if it had no picture yet, as its pixels, up
+ * to 240), as tall as the picture's shape makes that.
+ */
+export function withPicture(part: Part, image: { sha256: string; width: number; height: number }): Part {
+    const wide = part.props.image ? part.w : Math.min(240, Math.max(40, image.width));
+    const w = Math.max(20, Math.round(wide / 5) * 5);
+    const h = Math.max(5, Math.round((w * image.height) / image.width));
+    return {
+        ...part,
+        w,
+        h,
+        props: {
+            ...part.props,
+            image: image.sha256,
+            imageWidth: String(image.width),
+            imageHeight: String(image.height),
+        },
+    };
+}
+
 export function updatePart(drawing: Drawing, id: string, change: (part: Part) => Part): Drawing {
     const before = drawing.parts.find((part) => part.id === id);
     if (!before) {
@@ -533,9 +612,13 @@ export function updatePart(drawing: Drawing, id: string, change: (part: Part) =>
     }
     const after = change(before);
     const next = { ...drawing, parts: drawing.parts.map((part) => (part.id === id ? after : part)) };
-    // What it is or how big may have moved its ports (a valve's body is the same size whatever it is, but a region's
-    // isn't): its lines follow.
-    const moved = after.kind !== before.kind || after.w !== before.w || after.h !== before.h;
+    // What it is, how big, or how many it is may have moved its ports (a valve's body is the same size whatever it is,
+    // but a region's isn't, nor a duplicated transducer's): its lines follow.
+    const at = (part: Part) =>
+        portsOf(part)
+            .map((port) => `${port.id}:${port.at.x},${port.at.y}`)
+            .join(" ");
+    const moved = after.kind !== before.kind || at(after) !== at(before);
     return moved ? followParts(drawing, next, new Set([id])) : next;
 }
 
@@ -732,7 +815,11 @@ export function clipBox(clip: Clip, drawing: Drawing): Box | null {
 export function pasteClip(drawing: Drawing, clip: Clip, by: Point): { drawing: Drawing; ids: string[] } {
     const offset = snapPoint(by);
     const ids = new Map<string, string>();
-    const taken = new Set(drawing.parts.map((part) => part.tag.toUpperCase()).filter(Boolean));
+    const taken = new Set(
+        [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? [])]
+            .map((tag) => tag.toUpperCase())
+            .filter(Boolean),
+    );
     const fresh = new Set<string>();
     const parts = clip.parts.map((part) => {
         const id = newId("p");
@@ -827,12 +914,13 @@ export function alignParts(drawing: Drawing, ids: Set<string>, how: Alignment): 
     return followParts(drawing, moved, new Set(offsets.keys()));
 }
 
-/** The box around everything drawn, a little room around it. */
-export function drawingBox(drawing: Drawing): Box | null {
+/** The box around everything drawn (or just these parts and lines), a little room around it. */
+export function drawingBox(drawing: Drawing, only: Set<string> | null = null): Box | null {
     const parts = partsById(drawing);
-    const points = drawing.lines.flatMap((line) => runOf(parts, line) ?? []);
+    const lines = only ? drawing.lines.filter((line) => only.has(line.id)) : drawing.lines;
+    const points = lines.flatMap((line) => runOf(parts, line) ?? []);
     const box = union([
-        ...drawing.parts.map((part) => boxOf(part, drawing)),
+        ...drawing.parts.filter((part) => !only || only.has(part.id)).map((part) => boxOf(part, drawing)),
         ...points.map((point) => ({ x0: point.x, y0: point.y, x1: point.x, y1: point.y })),
     ]);
     return box ? grow(box, 40) : null;

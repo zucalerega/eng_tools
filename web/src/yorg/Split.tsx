@@ -6,7 +6,7 @@ import { maskRuns, useLoaded } from "./data";
 import { folderUrl } from "./Datasets";
 import { shiftOf, type Layout } from "./layout";
 import { cutAt, edgeOf, readTimes, testsOf, type Finding, type Piece } from "./masks";
-import { formatDuration } from "./scale";
+import { formatDuration } from "../scale";
 
 // Splitting a file of several tests into a dataset for each: where a mask holds (each time a valve opens, say), cut
 // at times you choose, or both. Each test's samples are copied out, into a folder; the file stays as it was.

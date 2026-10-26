@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from "react";
-import { emptyDrawing, type Drawing, type Point } from "./drawing";
+import { emptyDocument, pageOf, withPage, type Document, type Drawing, type Point } from "./drawing";
 import type { Box } from "./geometry";
 import type { Guide } from "./snap";
 
-// The editor's state: the drawing, what's selected, the view, and, while something's dragged, what the drawing would
-// be if it were dropped now (shown), with the guides it snapped to and where a line would go. A change is committed
-// once (a drag, when it's dropped), which is what undo goes back through and what's saved.
+// The editor's state: the diagram's drawing (its document, all its pages), the page being worked on (as a drawing),
+// what's selected, the view, and, while something's dragged, what the page would be if it were dropped now (shown),
+// with the guides it snapped to and where a line would go. A change is committed once (a drag, when it's dropped),
+// which is what undo goes back through (pages added, renamed, or deleted too) and what's saved. Only someone editing the
+// diagram changes it: while it's only looked at, the store takes no change, whatever asks for one (readOnly).
 
 export type Tool = { mode: "select" } | { mode: "place"; preset: string } | { mode: "line" };
 
@@ -27,7 +29,9 @@ export type Aim =
     | { kind: "point"; at: Point };
 
 export interface EditorState {
-    drawing: Drawing; // as it is
+    document: Document; // the drawing as it's saved: all its pages
+    page: number; // which of them is being worked on
+    drawing: Drawing; // that page, as it is
     shown: Drawing; // what's drawn: the drawing, or what a drag would make of it
     selection: string[]; // parts' and lines' ids
     view: View;
@@ -41,17 +45,21 @@ export interface EditorState {
     canUndo: boolean;
     canRedo: boolean;
     changes: number; // counts committed changes: what saving watches
+    readOnly: boolean; // looked at, not edited: it takes no change
 }
 
 export class EditorStore {
     private state: EditorState;
     private readonly listeners = new Set<() => void>();
-    private readonly undos: Drawing[] = [];
-    private readonly redos: Drawing[] = [];
+    private readonly undos: Step[] = [];
+    private readonly redos: Step[] = [];
     private merging: { key: string; at: number } | null = null;
 
-    constructor(drawing: Drawing = emptyDrawing()) {
+    constructor(document: Document = emptyDocument()) {
+        const drawing = pageOf(document, 0);
         this.state = {
+            document,
+            page: 0,
             drawing,
             shown: drawing,
             selection: [],
@@ -66,6 +74,7 @@ export class EditorStore {
             canUndo: false,
             canRedo: false,
             changes: 0,
+            readOnly: false,
         };
     }
 
@@ -76,12 +85,17 @@ export class EditorStore {
 
     getState = (): EditorState => this.state;
 
-    /** A drawing to start from, with nothing to undo: the diagram as it was opened, or another loaded in its place. */
-    load(drawing: Drawing): void {
+    /** A drawing to start from, with nothing to undo: the diagram as it was opened, or another loaded in its place,
+     * at the page it was at (or its last, if it has fewer now). */
+    load(document: Document): void {
         this.undos.length = 0;
         this.redos.length = 0;
+        const page = Math.min(this.state.page, document.pages.length - 1);
+        const drawing = pageOf(document, page);
         const ids = new Set([...drawing.parts.map((part) => part.id), ...drawing.lines.map((line) => line.id)]);
         this.set({
+            document,
+            page,
             drawing,
             shown: drawing,
             selection: this.state.selection.filter((id) => ids.has(id)),
@@ -91,11 +105,62 @@ export class EditorStore {
         });
     }
 
+    /** Another page to work on: nothing selected on it yet. */
+    setPage(page: number): void {
+        const index = Math.min(Math.max(0, page), this.state.document.pages.length - 1);
+        if (index === this.state.page) {
+            return;
+        }
+        const drawing = pageOf(this.state.document, index);
+        this.set({ page: index, drawing, shown: drawing, selection: [], ...CLEAR });
+    }
+
+    /** Looked at only (no change is taken, and only the select tool's left), or edited. */
+    setReadOnly(readOnly: boolean): void {
+        if (readOnly !== this.state.readOnly) {
+            this.set({ readOnly, tool: { mode: "select" }, shown: this.state.drawing, ...CLEAR });
+        }
+    }
+
+    /** A change to the pages themselves (added, renamed, moved, deleted), undone as any change is: at `page` after. */
+    commitDocument(document: Document, page = this.state.page): void {
+        if (this.state.readOnly) {
+            return;
+        }
+        this.remember();
+        const index = Math.min(Math.max(0, page), document.pages.length - 1);
+        const drawing = pageOf(document, index);
+        this.set({
+            document,
+            page: index,
+            drawing,
+            shown: drawing,
+            selection: index === this.state.page ? this.state.selection : [],
+            canUndo: true,
+            canRedo: false,
+            changes: this.state.changes + 1,
+            ...CLEAR,
+        });
+    }
+
+    private remember() {
+        this.merging = null;
+        this.undos.push({ document: this.state.document, page: this.state.page });
+        if (this.undos.length > HISTORY) {
+            this.undos.shift();
+        }
+        this.redos.length = 0;
+    }
+
     /**
      * A change made: what undo goes back to, and what's saved. selection: what to select after it. merge: changes with
      * the same key (typing in one field), each within a couple of seconds of the last, undo as one.
      */
     commit(drawing: Drawing, selection?: string[], merge?: string): void {
+        if (drawing !== this.state.drawing && this.state.readOnly) {
+            this.set({ shown: this.state.drawing, ...CLEAR }); // a change, not taken: as it was, selection and all
+            return;
+        }
         if (drawing === this.state.drawing) {
             this.set({ shown: drawing, ...CLEAR, ...(selection ? { selection } : {}) });
             return;
@@ -104,13 +169,14 @@ export class EditorStore {
         const merging = merge !== undefined && this.merging?.key === merge && now - this.merging.at < 2000;
         this.merging = merge === undefined ? null : { key: merge, at: now };
         if (!merging) {
-            this.undos.push(this.state.drawing);
+            this.undos.push({ document: this.state.document, page: this.state.page });
             if (this.undos.length > HISTORY) {
                 this.undos.shift();
             }
         }
         this.redos.length = 0;
         this.set({
+            document: withPage(this.state.document, this.state.page, drawing),
             drawing,
             shown: drawing,
             selection: selection ?? this.state.selection,
@@ -123,6 +189,9 @@ export class EditorStore {
 
     /** What a drag would make of the drawing, shown until it's dropped (commit) or let go of (cancel). */
     preview(shown: Drawing, extras: Partial<Pick<EditorState, "guides" | "aim" | "sketch" | "into" | "marquee">> = {}) {
+        if (this.state.readOnly && (shown !== this.state.drawing || extras.sketch)) {
+            return; // only what's selected, looked at
+        }
         this.set({ shown, ...CLEAR, ...extras });
     }
 
@@ -133,26 +202,29 @@ export class EditorStore {
 
     undo(): void {
         this.merging = null;
-        const before = this.undos.pop();
+        const before = this.state.readOnly ? undefined : this.undos.pop();
         if (!before) {
             return;
         }
-        this.redos.push(this.state.drawing);
+        this.redos.push({ document: this.state.document, page: this.state.page });
         this.travel(before);
     }
 
     redo(): void {
-        const after = this.redos.pop();
+        const after = this.state.readOnly ? undefined : this.redos.pop();
         if (!after) {
             return;
         }
-        this.undos.push(this.state.drawing);
+        this.undos.push({ document: this.state.document, page: this.state.page });
         this.travel(after);
     }
 
-    private travel(drawing: Drawing) {
+    private travel({ document, page }: Step) {
+        const drawing = pageOf(document, page);
         const ids = new Set([...drawing.parts.map((part) => part.id), ...drawing.lines.map((line) => line.id)]);
         this.set({
+            document,
+            page,
             drawing,
             shown: drawing,
             selection: this.state.selection.filter((id) => ids.has(id)),
@@ -184,6 +256,9 @@ export class EditorStore {
     }
 
     setTool(tool: Tool): void {
+        if (this.state.readOnly && tool.mode !== "select") {
+            return;
+        }
         this.set({ tool, ...CLEAR, shown: this.state.drawing });
     }
 
@@ -194,6 +269,12 @@ export class EditorStore {
 }
 
 const CLEAR = { guides: [], aim: null, sketch: null, into: null, marquee: null } satisfies Partial<EditorState>;
+
+/** What undo goes back to: the document as it was, and the page it was at. */
+interface Step {
+    document: Document;
+    page: number;
+}
 
 export function useEditor<T>(store: EditorStore, pick: (state: EditorState) => T): T {
     return useSyncExternalStore(store.subscribe, () => pick(store.getState()));

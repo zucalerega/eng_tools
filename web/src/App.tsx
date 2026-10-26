@@ -3,7 +3,6 @@ import { api } from "./api";
 import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
-import { inPreview, PREVIEW, sitePath } from "./preview";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow } from "./piper";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
@@ -11,7 +10,7 @@ import { setTheme, useTheme, type Theme } from "./theme";
 import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, wholeWindow, withFolderTree } from "./vault";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
-import { inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
+import { fromPreview, inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
 
 const SITE = "YJSP";
 // The site's own icon, as on the sign-in pages (the server's signin.py): the gold orbit both marks take from the
@@ -45,17 +44,16 @@ export function App() {
         }
     }, [me, chat]);
     // Three apps share the site and its sign-in: Vault (the CAD files, under /vault), Yorg (test data, under /yorg), and
-    // Piper (P&IDs, under /piper). The site's own page, at / (Home), goes to any of them. Yorg's preview (/yorg/dev,
-    // admins) is Yorg as it will be, with what's new in its top bar too.
+    // Piper (P&IDs, under /piper). The site's own page, at / (Home), goes to any of them.
     const yorg = inYorg(pathname);
     const vaultApp = inVault(pathname);
     const piperApp = inPiper(pathname);
-    const preview = inPreview(pathname) && me?.is_admin === true;
-    // A link from before Vault moved under /vault goes on to the same page there, with its query.
-    const moved = movedToVault(pathname);
+    // A link from before Vault moved under /vault goes on to the same page there, with its query; one to Yorg's preview,
+    // to the page it previewed.
+    const moved = movedToVault(pathname) ?? fromPreview(pathname);
     useEffect(() => {
         if (moved !== null) {
-            navigate(moved + window.location.search + window.location.hash, { replace: true, exact: true });
+            navigate(moved + window.location.search + window.location.hash, { replace: true });
         }
     }, [moved]);
     // Vault's index loads when a page of the vault first shows, and keeps current only while one does: elsewhere,
@@ -116,18 +114,8 @@ export function App() {
                         <>
                             {nav("/yorg", "data", "Datasets")}
                             {nav("/yorg/views", "views", "Views")}
-                            {preview && nav("/yorg/models", "models", "Models")}
                             {nav("/yorg/scripts", "scripts", "Scripts")}
                             {nav("/yorg/help", "help", "Help")}
-                            {me?.is_admin && !preview && (
-                                <Link
-                                    to={PREVIEW}
-                                    className="preview-link"
-                                    title="Yorg as it will be with what's new: only admins see it"
-                                >
-                                    Preview
-                                </Link>
-                            )}
                         </>
                     ) : vaultApp ? (
                         <>
@@ -141,6 +129,7 @@ export function App() {
                         piperApp && (
                             <>
                                 {nav("/piper", "diagrams", "Diagrams")}
+                                {nav("/piper/schemes", "schemes", "Schemes")}
                                 {nav("/piper/help", "help", "Help")}
                             </>
                         )
@@ -151,14 +140,6 @@ export function App() {
                     <AccountMenu vault={vault} />
                 </div>
             </header>
-            {preview && (
-                <div className="preview-banner" role="status">
-                    Preview: Yorg as it will be, with system models. Only admins see it.
-                    <Link to={sitePath(pathname)} exact className="button button-small">
-                        Leave the preview
-                    </Link>
-                </div>
-            )}
             {adminMode && vaultApp && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.

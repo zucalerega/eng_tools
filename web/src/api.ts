@@ -262,6 +262,13 @@ export async function request<T>(method: string, path: string, body?: unknown): 
     return response.status === 204 || method === "HEAD" ? (undefined as T) : ((await response.json()) as T);
 }
 
+/** A request sent as the page closes: the browser sends it after the page is gone, so no one's there for its answer. */
+export function requestAsLeaving(method: string, path: string): void {
+    fetch(apiUrl(path), { method, headers: baseHeaders(), credentials: "same-origin", keepalive: true }).catch(
+        () => {},
+    );
+}
+
 /** A binary answer, like an array of samples. */
 export async function requestBytes(path: string): Promise<ArrayBuffer> {
     const response = await fetch(apiUrl(path), { headers: baseHeaders(), credentials: "same-origin" });

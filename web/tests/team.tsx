@@ -8,8 +8,9 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
-import type { Diagram, DiagramDetail, Revision } from "../src/piper/api";
-import { readDrawing, type Drawing } from "../src/piper/drawing";
+import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
+import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
+import type { Catalog } from "../src/piper/sim/api";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
@@ -278,20 +279,37 @@ export class Team {
         });
     }
 
+    /** A Piper folder (named to be unique to this test), in another or at the top. */
+    async piperFolder(who: Member, name: string, parent: number | null = null): Promise<DiagramFolder> {
+        return call<DiagramFolder>("POST", "/api/piper/folders", who.token, {
+            name: this.named(name),
+            parent_id: parent,
+        });
+    }
+
     /** A Piper diagram's name, as diagram() made it. */
     named(name: string): string {
         return `${name} ${this.folder}`;
     }
 
-    /** A Piper diagram as the server keeps it, its drawing read. */
-    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing }> {
+    /** A Piper diagram as the server keeps it, its drawing read: its first page, and all of them. */
+    async piperDiagram(who: Member, id: number): Promise<DiagramDetail & { read: Drawing; document: Document }> {
         const found = await call<DiagramDetail>("GET", `/api/piper/diagrams/${id}`, who.token);
-        return { ...found, read: readDrawing(found.drawing) };
+        return { ...found, read: readDrawing(found.drawing), document: readDocument(found.drawing) };
     }
 
     /** A drawing saved, as the editor saves one: from the version it was changed from. */
     async saveDrawing(who: Member, id: number, drawing: Drawing, version: number): Promise<Diagram> {
         return call<Diagram>("PUT", `/api/piper/diagrams/${id}/drawing`, who.token, { drawing, version });
+    }
+
+    /** Start editing a diagram (force: an admin taking it over), as another window would. */
+    async editDiagram(who: Member, id: number, force = false): Promise<Diagram> {
+        return call<Diagram>("POST", `/api/piper/diagrams/${id}/lock`, who.token, { force });
+    }
+
+    async doneEditing(who: Member, id: number): Promise<Diagram> {
+        return call<Diagram>("DELETE", `/api/piper/diagrams/${id}/lock`, who.token);
     }
 
     async revisions(who: Member, id: number): Promise<Revision[]> {
@@ -300,6 +318,22 @@ export class Team {
 
     async deleteDiagram(who: Member, id: number): Promise<Diagram> {
         return call<Diagram>("DELETE", `/api/piper/diagrams/${id}`, who.token);
+    }
+
+    /** The parts a simulation's model can have, as Yorg's system models have them (admins': the chief's). */
+    async simCatalog(): Promise<Catalog> {
+        return call<Catalog>("GET", "/api/yorg/models/catalog", this.chief.token);
+    }
+
+    /** A Piper color scheme of this test's own (named to be unique to it): not the team's default, which every
+     * test's new diagrams start with. */
+    async scheme(who: Member, name: string, fluids: Scheme["fluids"]): Promise<Scheme> {
+        const states = { no: "#2e9e4f", nc: "#d64541", fip: "#5b7a99", other: "#e0a500" };
+        return call<Scheme>("POST", "/api/piper/schemes", who.token, { name: this.named(name), fluids, states });
+    }
+
+    async changeScheme(who: Member, id: number, change: Partial<Pick<Scheme, "name" | "fluids">>): Promise<Scheme> {
+        return call<Scheme>("PATCH", `/api/piper/schemes/${id}`, who.token, change);
     }
 }
 

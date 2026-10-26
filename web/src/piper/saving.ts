@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
-import { piper, type ChangedDetails, type Diagram, type DiagramDetail } from "./api";
-import { readDrawing } from "./drawing";
+import { piper, type ChangedDetails, type Diagram, type DiagramDetail, type Editing, type LockedDetails } from "./api";
+import { readDocument } from "./drawing";
 import type { EditorStore } from "./store";
 
 // Saving as you go: a second after the last change, the drawing goes to the server with the version it was changed
 // from. If someone saved the diagram since, the server says who, and saving stops until you choose: keep yours (saved
-// over theirs, which stays in the history), save yours as a new diagram, or load theirs.
+// over theirs, which stays in the history), save yours as a new diagram, or load theirs. If someone else is editing it
+// now (an admin took it over, or it was let go while you were away and someone took it), the server says who, and
+// saving stops: save yours as a new diagram, or load theirs.
 
-export type SaveStatus = "saved" | "saving" | "unsaved" | "offline" | "changed" | "deleted";
+export type SaveStatus = "saved" | "saving" | "unsaved" | "offline" | "changed" | "locked" | "deleted";
 
 const SOON_MS = 1000;
 const RETRY_MS = 5000;
@@ -18,8 +20,10 @@ const REFUSED = new Set([400, 413, 422]);
 export interface Saving {
     status: SaveStatus;
     changed: ChangedDetails | null; // who saved it after it was opened here
+    locked: Editing | null; // who's editing it instead, when that's why it isn't saved
     problem: string | null;
-    saveNow: () => Promise<void>;
+    /** Whatever isn't saved yet, saved now: whether everything is, after. */
+    saveNow: () => Promise<boolean>;
     keepMine: () => Promise<void>;
     loadTheirs: () => Promise<void>;
     /** After the server changed the drawing itself (a revision restored): this is its version now. */
@@ -31,10 +35,12 @@ export interface Saving {
 export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: (diagram: Diagram) => void): Saving {
     const [status, setStatus] = useState<SaveStatus>("saved");
     const [changed, setChanged] = useState<ChangedDetails | null>(null);
+    const [locked, setLocked] = useState<Editing | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
     const version = useRef(0);
     const saved = useRef(0); // the store's changes count when it was last saved
     const busy = useRef(false);
+    const flight = useRef<Promise<void>>(Promise.resolve()); // the save under way, done when it is
     const halted = useRef(false); // stopped until a choice is made
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const id = diagram?.id ?? null;
@@ -49,25 +55,28 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
             halted.current = false;
             setStatus("saved");
             setChanged(null);
+            setLocked(null);
         }
         // Only when another diagram's opened: a save gives the same one a new version, which save() keeps.
     }, [id]);
 
     const save = useCallback(
-        async (fresh = false) => {
+        async (fresh = false): Promise<boolean> => {
             clearTimeout(timer.current);
             if (id === null || busy.current || halted.current) {
-                return;
+                return id !== null && !halted.current && store.getState().changes === saved.current;
             }
-            const { drawing, changes } = store.getState();
+            const { document, changes } = store.getState();
             if (changes === saved.current && !fresh) {
                 setStatus("saved");
-                return;
+                return true;
             }
             busy.current = true;
+            let landed = () => {};
+            flight.current = new Promise((resolve) => (landed = resolve));
             setStatus("saving");
             try {
-                const result = await piper.save(id, drawing, version.current, fresh);
+                const result = await piper.save(id, document, version.current, fresh);
                 version.current = result.version;
                 saved.current = changes;
                 setProblem(null);
@@ -75,14 +84,19 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
                 if (store.getState().changes !== changes) {
                     setStatus("unsaved");
                     timer.current = setTimeout(() => void save(), SOON_MS / 2);
-                } else {
-                    setStatus("saved");
+                    return false;
                 }
+                setStatus("saved");
+                return true;
             } catch (error) {
                 if (error instanceof ApiError && error.code === "changed") {
                     halted.current = true;
                     setChanged(error.details as unknown as ChangedDetails);
                     setStatus("changed");
+                } else if (error instanceof ApiError && error.code === "locked") {
+                    halted.current = true;
+                    setLocked((error.details as unknown as LockedDetails).editing);
+                    setStatus("locked");
                 } else if (error instanceof ApiError && error.code === "deleted") {
                     // Deleted since it was opened: the page shows it as it is now, deleted, to restore if you can.
                     halted.current = true;
@@ -99,8 +113,10 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
                     setStatus("offline");
                     timer.current = setTimeout(() => void save(), RETRY_MS);
                 }
+                return false;
             } finally {
                 busy.current = false;
+                landed();
             }
         },
         [id, store],
@@ -140,8 +156,12 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
     return {
         status,
         changed,
+        locked,
         problem,
-        saveNow: () => save(),
+        saveNow: async () => {
+            await flight.current; // after the save under way, if one is
+            return save();
+        },
         keepMine: async () => {
             if (!changed) {
                 return;
@@ -156,21 +176,23 @@ export function useSaving(store: EditorStore, diagram: Diagram | null, onSaved: 
                 return;
             }
             const latest = await piper.diagram(id);
-            store.load(readDrawing(latest.drawing));
+            store.load(readDocument(latest.drawing));
             version.current = latest.version;
             saved.current = store.getState().changes;
             halted.current = false;
             setChanged(null);
+            setLocked(null);
             setStatus("saved");
             saved_.current(latest);
         },
         adopt: (detail: DiagramDetail) => {
             clearTimeout(timer.current);
-            store.load(readDrawing(detail.drawing));
+            store.load(readDocument(detail.drawing));
             version.current = detail.version;
             saved.current = store.getState().changes;
             halted.current = false;
             setChanged(null);
+            setLocked(null);
             setStatus("saved");
             saved_.current(detail);
         },

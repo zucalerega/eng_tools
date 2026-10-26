@@ -12,7 +12,6 @@ import { isTicking, PythonStatus, useTicking } from "./Output";
 import { python, usePython, useRuns } from "./python";
 import { Reference } from "./Reference";
 import { keepNotebook, keptNotebook, openInScripts } from "./stored";
-import "../models/models.css";
 import "./scripts.css";
 
 // A dataset's or view's page's own Python, docked beside its plots: a notebook of the page's (kept in the tab), on the

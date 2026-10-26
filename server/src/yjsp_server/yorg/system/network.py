@@ -2,8 +2,7 @@
 and each part's outputs back.
 
 Runs in the runner's process only: the script imports FullFlow, ThermoProp, NumPy, and SciPy. The script is written
-from the model alone, every value in it a literal, so the server runs only code it wrote: a script changed on the
-Models page runs in the browser, never here.
+from the model alone, every value in it a literal, so the server runs only code it wrote.
 """
 
 import sys

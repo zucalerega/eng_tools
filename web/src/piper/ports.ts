@@ -1,5 +1,5 @@
 import { isPortEnd, type Drawing, type End, type Line, type Part, type Point } from "./drawing";
-import { orthogonal, toWorld, turnDir, VECTORS, type Dir } from "./geometry";
+import { orthogonal, snapPoint, toWorld, turnDir, VECTORS, type Dir } from "./geometry";
 import { kindOf } from "./library/index";
 
 // Where lines meet parts: each part's ports in the drawing, and the points a line runs through, from end to end.
@@ -15,18 +15,23 @@ export interface PlacedPort {
 }
 
 export function portsOf(part: Part): PlacedPort[] {
+    const scale = part.scale ?? 1;
     return kindOf(part.kind)
         .ports(part)
         .map((port) => {
-            const at = toWorld(part, { x: port.x, y: port.y });
+            const exact = toWorld(part, { x: port.x, y: port.y });
+            // A part drawn bigger or smaller has its ports where they'd fall, put back on the grid, so lines between
+            // parts lined up stay straight; a line's still drawn to its outline, in line with its port.
+            const at = scale === 1 ? exact : snapPoint(exact);
             const dir = port.dir ? turnDir(part, port.dir) : null;
             const back = dir ? VECTORS[dir] : { x: 0, y: 0 };
+            const outline = { x: exact.x - back.x * port.inset * scale, y: exact.y - back.y * port.inset * scale };
             return {
                 part: part.id,
                 id: port.id,
                 at,
                 dir,
-                edge: { x: at.x - back.x * port.inset, y: at.y - back.y * port.inset },
+                edge: back.x !== 0 ? { x: outline.x, y: at.y } : back.y !== 0 ? { x: at.x, y: outline.y } : at,
                 many: port.many === true,
             };
         });

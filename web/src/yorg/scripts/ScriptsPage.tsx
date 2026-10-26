@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type SetStateActi
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
-import { FolderPicker } from "../FolderPicker";
+import { FolderPicker } from "../../FolderPicker";
 import { foldersOf } from "../../pathTree";
 import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
@@ -17,7 +17,6 @@ import { python, usePython } from "./python";
 import { Reference } from "./Reference";
 import { keepScript, keptScript, type OpenScript } from "./stored";
 import { folderTree, nameOfFile, tidyFolder, type Folder } from "./tree";
-import "../models/models.css";
 import "./scripts.css";
 
 // Yorg's Python window (Scripts): scripts that pull tests' channels and work them over, with NumPy, SciPy, pandas,

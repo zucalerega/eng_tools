@@ -14,7 +14,8 @@ import {
     type Alignment,
     type Clip,
 } from "./edit";
-import { GRID } from "./geometry";
+import { GRID, type Box } from "./geometry";
+import { sheetOutline } from "./pdf";
 import { MAX_ZOOM, MIN_ZOOM, type EditorStore } from "./store";
 
 // What the editor's buttons and keys do to its drawing: each a commit to the store, so it's one step to undo.
@@ -45,6 +46,20 @@ export function commandsOf(store: EditorStore) {
         }
         const pasted = pasteClip(drawing, clip, by);
         store.commit(pasted.drawing, pasted.ids);
+    };
+
+    /** A box in the middle of the view, at no more than `most` times its size (and no less than the least zoom). */
+    const frame = (box: Box, most: number) => {
+        const { size } = state();
+        const zoom = Math.min(
+            most,
+            Math.max(MIN_ZOOM, Math.min(size.width / (box.x1 - box.x0), size.height / (box.y1 - box.y0))),
+        );
+        store.setView({
+            x: (box.x0 + box.x1) / 2 - size.width / zoom / 2,
+            y: (box.y0 + box.y1) / 2 - size.height / zoom / 2,
+            zoom,
+        });
     };
 
     const zoomTo = (zoom: number, around?: Point) => {
@@ -112,22 +127,49 @@ export function commandsOf(store: EditorStore) {
             zoomTo(state().view.zoom * factor, around);
         },
         zoomTo,
-        /** The whole drawing in view, at no more than 1.5 times its size. */
+        /** The whole drawing in view, and its page's printed sheet if it has one, at no more than 1.5 times its
+         * size. */
         fit() {
-            const { drawing, size } = state();
+            const { drawing } = state();
             const box = drawingBox(drawing) ?? { x0: -200, y0: -150, x1: 200, y1: 150 };
-            const zoom = Math.min(
+            const paper = drawing.sheet ? sheetOutline(drawing.sheet).paper : null;
+            frame(
+                paper
+                    ? {
+                          x0: Math.min(box.x0, paper.x0),
+                          y0: Math.min(box.y0, paper.y0 - 20), // and the paper's name, over it
+                          x1: Math.max(box.x1, paper.x1),
+                          y1: Math.max(box.y1, paper.y1),
+                      }
+                    : box,
                 1.5,
-                Math.max(MIN_ZOOM, Math.min(size.width / (box.x1 - box.x0), size.height / (box.y1 - box.y0))),
             );
-            store.setView({
-                x: (box.x0 + box.x1) / 2 - size.width / zoom / 2,
-                y: (box.y0 + box.y1) / 2 - size.height / zoom / 2,
-                zoom,
-            });
+        },
+        /** Parts and lines found (or picked in a list) shown, selected, in the middle of the view, with what's around
+         * them: room enough to see where they are. */
+        show(ids: string[]) {
+            const box = drawingBox(state().drawing, new Set(ids));
+            if (box) {
+                frame({ x0: box.x0 - 120, y0: box.y0 - 80, x1: box.x1 + 120, y1: box.y1 + 80 }, 2);
+                store.select(ids);
+            }
+        },
+        /** Another of the diagram's pages: at what's on it that's wanted (as show), or all of it. */
+        goTo(page: number, ids: string[] = []) {
+            const moved = page !== state().page;
+            store.setPage(page);
+            const found = ids.length > 0 && drawingBox(state().drawing, new Set(ids)) !== null;
+            if (found) {
+                this.show(ids);
+            } else if (moved) {
+                this.fit();
+            }
         },
     };
 }
+
+/** The id of the toolbar's find box, which Ctrl+F (⌘F) goes to. */
+export const FIND_BOX = "piper-find";
 
 /** Whether a key or clipboard event is for a field being typed in, not the drawing. */
 function typing(target: EventTarget | null): boolean {
@@ -137,7 +179,8 @@ function typing(target: EventTarget | null): boolean {
 
 /**
  * The editor's keys, while its page is open and nothing's being typed: Delete, undo and redo, select all, duplicate,
- * turn (R), flip (F), nudge (arrows, Shift for five steps), zoom (+, -, 0 to fit), and copy, cut, and paste.
+ * find (Ctrl+F), turn (R), flip (F), nudge (arrows, Shift for five steps), zoom (+, -, 0 to fit), and copy, cut, and
+ * paste.
  */
 export function useEditorKeys(store: EditorStore, commands: Commands, enabled: boolean): void {
     useEffect(() => {
@@ -164,6 +207,9 @@ export function useEditorKeys(store: EditorStore, commands: Commands, enabled: b
                     commands.selectAll();
                 } else if (mod && key === "d") {
                     commands.duplicate();
+                } else if (mod && key === "f") {
+                    // Find on the drawing, not the page: the browser's find can't move the drawing to what it finds.
+                    document.getElementById(FIND_BOX)?.focus();
                 } else if (mod) {
                     return false; // the browser's own (copy and paste come as their own events)
                 } else if (key === "delete" || key === "backspace") {

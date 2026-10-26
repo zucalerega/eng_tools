@@ -1,6 +1,5 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-import { inPreview } from "../preview";
-import { Link, usePathname } from "../router";
+import { Link } from "../router";
 
 // What Yorg does, and how: one page, from the top bar's Help. Its topics go down the page, and the contents beside
 // them keep to the one you're reading.
@@ -31,7 +30,6 @@ function Keys({ rows }: { rows: [ReactNode, string][] }) {
 }
 
 export function HelpPage() {
-    const preview = inPreview(usePathname()); // what's new, in the preview until it's released
     const topics: Topic[] = [
         {
             title: "Getting data in",
@@ -246,54 +244,6 @@ export function HelpPage() {
                 </>
             ),
         },
-        ...(preview
-            ? [
-                  {
-                      title: "System models",
-                      body: (
-                          <>
-                              <ul>
-                                  <li>
-                                      <em>Models</em>: draw a test stand's feed system (tanks, lines, valves, orifices,
-                                      venturis; and on the gas side, supplies, regulators, gas valves) and link it to a
-                                      test's channels: commands drive its valves, pressures it follows, sensors it's
-                                      compared with. Every part is built of FullFlow components, with ThermoProp's
-                                      properties (a gas is real unless you set it ideal). <em>Start from an example</em>{" "}
-                                      has Vespula's prop system, with its run's data: a run of it is Vespula's run
-                                      again.
-                                  </li>
-                                  <li>
-                                      <em>Run</em> simulates it with FullFlow over a window from T0; each sensor is
-                                      plotted with the model, and how far apart they are. <em>Tune</em> matches the
-                                      knobs (settings marked tune) to the test, one of two ways. <em>Fit</em> runs the
-                                      model again and again, turning the knobs you pick (CdAs, losses, a regulator's set
-                                      pressure) until it matches best.
-                                  </li>
-                                  <li>
-                                      <em>Anchor</em> pairs knobs with sensors instead: in one run, FullFlow moves each
-                                      knob in every time step until its sensor reads what was measured, and plots the
-                                      knob through the run. Give an anchor a span where its knob counts (a valve's CdA
-                                      while it's open). The <em>Steady</em> solver settles lines, junctions, and
-                                      regulators at once in each step, with tanks (and gas junctions with a pressure
-                                      transducer) at the pressure measured: much faster, without inertia. What anchoring
-                                      can't settle is fitted: knobs you pick to fit alongside, and any knob FullFlow
-                                      couldn't anchor.
-                                  </li>
-                                  <li>
-                                      <em>Script</em> shows the model as the FullFlow code that runs it. Change it, and{" "}
-                                      <em>Run in browser</em> runs your script in your browser (FullFlow installs there
-                                      the first time: a minute or two). <em>Reference</em> explains how FullFlow models
-                                      a system.
-                                  </li>
-                                  <li>
-                                      <em>Model</em> on a dataset&apos;s page runs a model on it.
-                                  </li>
-                              </ul>
-                          </>
-                      ),
-                  },
-              ]
-            : []),
         {
             title: "Scripts",
             body: (

@@ -1,5 +1,15 @@
 import { readZip, ZipError, type ZipEntry } from "../zip";
-import { emptyDrawing, type Drawing, type Fluid, type LineKind, type Point, type Rotation } from "./drawing";
+import {
+    emptyDrawing,
+    newId,
+    type Document as PiperDocument,
+    type Drawing,
+    type Fluid,
+    type LineKind,
+    type Page,
+    type Point,
+    type Rotation,
+} from "./drawing";
 import { addPart, connect, updateLine, updatePart, type Target } from "./edit";
 import { fluidsOf, newFluidId } from "./fluids";
 import { distance, GRID, snapPoint } from "./geometry";
@@ -26,7 +36,8 @@ export interface ImportReport {
 }
 
 export interface ImportedPage {
-    name: string; // the diagram's: the file's, and the page's if there are more
+    name: string; // a diagram's of the page alone: the file's, and the page's if there are more
+    page: string; // the page's, as Visio shows it
     drawing: Drawing;
     report: ImportReport;
 }
@@ -606,7 +617,7 @@ function pageDrawing(
             fluid: fluid || line.fluid,
             tag: tag ?? "",
             arrow: shape.arrows.end ? "forward" : shape.arrows.begin ? "backward" : "none",
-            shown: [...(tag ? ["tag"] : []), "fluid", ...(size ? ["size"] : [])],
+            shown: [...(tag ? ["tag"] : []), ...(size ? ["size"] : [])],
             props: { ...line.props, ...(size ? { size } : {}), ...(rest ? { notes: rest } : {}) },
         }));
         lineOf.set(shape.id, made.id);
@@ -617,7 +628,7 @@ function pageDrawing(
 
 // --- the file ------------------------------------------------------------------------------------------------------
 
-/** What's in a Visio drawing: a diagram for each of its pages (but its backgrounds). */
+/** What's in a Visio drawing: each of its pages (but its backgrounds), as a drawing. */
 export async function readVisio(file: Blob, fileName: string): Promise<ImportedPage[]> {
     const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
     if (head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0) {
@@ -646,7 +657,7 @@ export async function readVisio(file: Blob, fileName: string): Promise<ImportedP
     }
     const masters = await mastersOf(files);
     const rels = await relationships(files, "visio/pages/pages.xml");
-    const base = fileName.replace(/\.[^.]+$/, "") || "Visio drawing";
+    const base = visioName(fileName);
     const shown = [...pages.getElementsByTagNameNS("*", "Page")].filter(
         (page) => page.getAttribute("Background") !== "1",
     );
@@ -665,10 +676,48 @@ export async function readVisio(file: Blob, fileName: string): Promise<ImportedP
         const title =
             (page.getAttribute("Name") ?? page.getAttribute("NameU") ?? "").trim() || `Page ${imported.length + 1}`;
         const { drawing, report } = pageDrawing(root, size, masters, title);
-        imported.push({ name: shown.length > 1 ? `${base} - ${title}` : base, drawing, report });
+        imported.push({ name: shown.length > 1 ? `${base} - ${title}` : base, page: title, drawing, report });
     }
     if (imported.length === 0) {
         throw new VisioError(`${fileName} has no pages Piper could read.`);
     }
     return imported;
+}
+
+/** A diagram's name for a Visio drawing: its file's. */
+export const visioName = (fileName: string) => fileName.replace(/\.[^.]+$/, "") || "Visio drawing";
+
+/**
+ * A Visio drawing's pages as one diagram's pages, as they were in Visio. The fluids each page made for its colors are
+ * the diagram's: one for each, and a page's that's named as another page's but colored otherwise is its own.
+ */
+export function visioDocument(imported: ImportedPage[]): PiperDocument {
+    const fluids: Fluid[] = [];
+    const pages: Page[] = imported.map(({ page, drawing }) => {
+        const renamed = new Map<string, string>();
+        for (const fluid of drawing.fluids) {
+            const same = fluids.find((entry) => entry.id === fluid.id);
+            if (!same) {
+                fluids.push(fluid);
+            } else if (same.color !== fluid.color || same.name !== fluid.name) {
+                const like = fluids.find((entry) => entry.color === fluid.color && entry.name === fluid.name);
+                const id = like?.id ?? newFluidId({ ...emptyDrawing(), fluids }, fluid.name);
+                if (!like) {
+                    fluids.push({ ...fluid, id });
+                }
+                renamed.set(fluid.id, id);
+            }
+        }
+        const fluidOf = (id: string) => renamed.get(id) ?? id;
+        return {
+            id: newId("g"),
+            name: page,
+            parts: drawing.parts.map((part) =>
+                part.props.fluid ? { ...part, props: { ...part.props, fluid: fluidOf(part.props.fluid) } } : part,
+            ),
+            lines: drawing.lines.map((line) => ({ ...line, fluid: fluidOf(line.fluid) })),
+            sheet: null,
+        };
+    });
+    return { format: 3, pages, fluids, style: imported[0]?.drawing.style ?? emptyDrawing().style };
 }

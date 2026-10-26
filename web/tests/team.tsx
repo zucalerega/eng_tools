@@ -8,7 +8,7 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
-import type { Diagram, DiagramDetail, Revision, Scheme } from "../src/piper/api";
+import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
@@ -275,6 +275,14 @@ export class Team {
             name: this.named(name),
             folder,
             drawing,
+        });
+    }
+
+    /** A Piper folder (named to be unique to this test), in another or at the top. */
+    async piperFolder(who: Member, name: string, parent: number | null = null): Promise<DiagramFolder> {
+        return call<DiagramFolder>("POST", "/api/piper/folders", who.token, {
+            name: this.named(name),
+            parent_id: parent,
         });
     }
 

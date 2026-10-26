@@ -7,6 +7,7 @@ import "./piper.css";
 // between it, Vault, and Yorg. Its pages load when one's first opened: the rest of the site never needs the editor.
 
 const DiagramsPage = lazy(() => import("./Diagrams").then((module) => ({ default: module.DiagramsPage })));
+const DeletedPage = lazy(() => import("./Diagrams").then((module) => ({ default: module.DeletedPage })));
 const EditorPage = lazy(() => import("./Editor").then((module) => ({ default: module.EditorPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
 const SchemesPage = lazy(() => import("./Schemes").then((module) => ({ default: module.SchemesPage })));
@@ -64,11 +65,16 @@ function piperPage(path: string) {
     if (match) {
         return <EditorPage key={match[1]} id={Number(match[1])} />;
     }
+    // A folder's page is the diagrams' page, in it: it keeps what it's loaded as it goes from one folder to another.
+    const folder = /^\/piper\/folders\/(\d+)$/.exec(path);
+    if (folder) {
+        return <DiagramsPage key="diagrams" folder={Number(folder[1])} />;
+    }
     switch (path) {
         case "/piper":
-            return <DiagramsPage key="all" />;
+            return <DiagramsPage key="diagrams" folder={null} />;
         case "/piper/deleted":
-            return <DiagramsPage key="deleted" deleted />;
+            return <DeletedPage />;
         case "/piper/help":
             return <HelpPage />;
         case "/piper/schemes":

@@ -6,7 +6,8 @@ import type { SchemeColors } from "./fluids";
 export interface Diagram {
     id: number;
     name: string;
-    folder: string; // a path of folders, "Vespula/GSE"; "" at the top
+    folder: string; // its folder's path, "Vespula/GSE"; "" at the top
+    folder_id?: number | null; // its folder (left out by a server from before folders were their own)
     description: string;
     version: number; // each save of its drawing names the version it changed, and gets the next
     revision: number; // its latest revision's number
@@ -23,6 +24,16 @@ export interface Diagram {
     can_delete: boolean; // yours, or you're an admin
     released?: string | null; // its latest release's letter ("B"), if it's had one
     released_revision?: number | null; // and the revision that is
+}
+
+/** A folder of diagrams, in another folder or at the top (parent_id null). */
+export interface DiagramFolder {
+    id: number;
+    parent_id: number | null;
+    name: string;
+    path: string; // its folders' names from the top down to it: "Vespula/GSE"
+    created_at: string;
+    created_by: UserRef | null;
 }
 
 export interface DiagramDetail extends Diagram {
@@ -92,12 +103,29 @@ export const piper = {
             `/api/piper/diagrams?${query({ q: options.q || undefined, deleted: options.deleted || undefined })}`,
         ),
     diagram: (id: number) => request<DiagramDetail>("GET", diagram(id)),
-    create: (body: { name: string; folder?: string; description?: string; drawing?: unknown }) =>
-        request<DiagramDetail>("POST", "/api/piper/diagrams", body),
-    change: (id: number, change: { name?: string; folder?: string; description?: string }) =>
+    /** A new diagram, in a folder by its id, or by its path (its folders made where they aren't there). */
+    create: (body: {
+        name: string;
+        folder?: string;
+        folder_id?: number | null;
+        description?: string;
+        drawing?: unknown;
+    }) => request<DiagramDetail>("POST", "/api/piper/diagrams", body),
+    change: (id: number, change: { name?: string; folder?: string; folder_id?: number | null; description?: string }) =>
         request<Diagram>("PATCH", diagram(id), change),
     remove: (id: number) => request<Diagram>("DELETE", diagram(id)),
     restore: (id: number) => request<Diagram>("POST", `${diagram(id)}/restore`),
+    /** Diagrams put in a folder (null: the top), deleted, or restored together: all of them, or none. */
+    moveAll: (ids: number[], folder_id: number | null) =>
+        request<Diagram[]>("POST", "/api/piper/diagrams/move", { diagrams: ids, folder_id }),
+    removeAll: (ids: number[]) => request<Diagram[]>("POST", "/api/piper/diagrams/delete", { diagrams: ids }),
+    restoreAll: (ids: number[]) => request<Diagram[]>("POST", "/api/piper/diagrams/restore", { diagrams: ids }),
+    folders: () => request<DiagramFolder[]>("GET", "/api/piper/folders"),
+    addFolder: (name: string, parent_id: number | null) =>
+        request<DiagramFolder>("POST", "/api/piper/folders", { name, parent_id }),
+    changeFolder: (id: number, change: { name?: string; parent_id?: number | null }) =>
+        request<DiagramFolder>("PATCH", `/api/piper/folders/${id}`, change),
+    removeFolder: (id: number) => request<void>("DELETE", `/api/piper/folders/${id}`),
     /** Its drawing saved, if it's still at version; fresh: as a new revision, even if the latest is yours. */
     save: (id: number, drawing: unknown, version: number, fresh = false) =>
         request<Diagram>("PUT", `${diagram(id)}/drawing`, { drawing, version, fresh }),

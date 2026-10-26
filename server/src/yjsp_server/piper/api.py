@@ -1,5 +1,5 @@
-"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions and releases, color schemes, and the
-pictures drawings show."""
+"""Piper's API (/api/piper): diagrams and their folders, saving their drawings, their revisions and releases, color
+schemes, and the pictures drawings show."""
 
 from typing import Annotated
 
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..api.deps import DB, ActiveUser
 from ..errors import TooLarge
 from ..models import User
-from . import diagrams, images, releases, schemes
+from . import diagrams, folders, images, releases, schemes
 from .models import Diagram, Scheme
 from .schemas import (
     DecisionIn,
@@ -18,8 +18,13 @@ from .schemas import (
     DiagramDetailOut,
     DiagramIn,
     DiagramOut,
+    DiagramsIn,
     DrawingSaveIn,
+    FolderChangeIn,
+    FolderIn,
+    FolderOut,
     ImageOut,
+    MoveIn,
     ReleaseIn,
     ReleaseOut,
     RevisionDetailOut,
@@ -52,11 +57,43 @@ def get_diagrams(
     return [_out(diagram, user) for diagram in diagrams.diagrams(db, deleted=deleted, q=q)]
 
 
+def _folder_of(db: Session, user: User, body: DiagramIn | DiagramChangeIn) -> tuple[bool, int | None]:
+    """Whether a request puts a diagram somewhere, and where: its folder_id, or the folder at its path (made where it
+    isn't there yet), as clients from before folders were their own name it."""
+    if "folder_id" in body.model_fields_set:
+        return True, body.folder_id
+    if body.folder is not None:
+        return True, folders.folder_at(db, user, body.folder)
+    return False, None
+
+
 @router.post("/diagrams", status_code=201)
 def post_diagram(body: DiagramIn, user: ActiveUser, db: DB) -> DiagramDetailOut:
     """A new diagram, with its drawing (an empty one if there's none)."""
-    new = diagrams.add(db, user, name=body.name, folder=body.folder, description=body.description, drawing=body.drawing)
+    _, folder_id = _folder_of(db, user, body)
+    new = diagrams.add(
+        db, user, name=body.name, folder_id=folder_id, description=body.description, drawing=body.drawing
+    )
     return _detail(db, new, user)
+
+
+@router.post("/diagrams/move")
+def post_move(body: MoveIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Put diagrams in a folder (folder_id; null: the top), as anyone can: all of them, or none."""
+    return [_out(found, user) for found in diagrams.move_all(db, user, body.diagrams, body.folder_id)]
+
+
+@router.post("/diagrams/delete")
+def post_delete(body: DiagramsIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Delete diagrams, each restorable: all of them, or none (403 `not_yours`) if any isn't yours or you're no
+    admin."""
+    return [_out(found, user) for found in diagrams.remove_all(db, user, body.diagrams)]
+
+
+@router.post("/diagrams/restore")
+def post_restore_all(body: DiagramsIn, user: ActiveUser, db: DB) -> list[DiagramOut]:
+    """Restore deleted diagrams, each in its folder: all of them, or none if any isn't yours to restore."""
+    return [_out(found, user) for found in diagrams.restore_all(db, user, body.diagrams)]
 
 
 @router.get("/diagrams/{diagram_id}")
@@ -68,7 +105,10 @@ def get_diagram(diagram_id: int, user: ActiveUser, db: DB) -> DiagramDetailOut:
 @router.patch("/diagrams/{diagram_id}")
 def patch_diagram(diagram_id: int, body: DiagramChangeIn, user: ActiveUser, db: DB) -> DiagramOut:
     """Rename, move, or describe a diagram: what's left out stays as it is."""
-    changed = diagrams.change(db, user, diagram_id, name=body.name, folder=body.folder, description=body.description)
+    move, folder_id = _folder_of(db, user, body)
+    changed = diagrams.change(
+        db, user, diagram_id, name=body.name, folder_id=folder_id, move=move, description=body.description
+    )
     return _out(changed, user)
 
 
@@ -204,6 +244,37 @@ def delete_scheme(scheme_id: int, user: ActiveUser, db: DB) -> None:
 def post_default_scheme(scheme_id: int, user: ActiveUser, db: DB) -> SchemeOut:
     """Make a scheme the team's default, which new diagrams start with (admins: else 403 `admin_only`)."""
     return _scheme(schemes.make_default(db, user, scheme_id), user)
+
+
+# --- folders ------------------------------------------------------------------------------------------------------
+
+
+@router.get("/folders")
+def get_folders(user: ActiveUser, db: DB) -> list[FolderOut]:
+    """Every folder, by name: each says which it's in (parent_id), for building the tree."""
+    return [FolderOut.of(found) for found in folders.folders(db)]
+
+
+@router.post("/folders", status_code=201)
+def post_folder(body: FolderIn, user: ActiveUser, db: DB) -> FolderOut:
+    """A new folder, in another (parent_id) or at the top: 409 `name_taken` if one there has its name."""
+    return FolderOut.of(folders.add_folder(db, user, name=body.name, parent_id=body.parent_id))
+
+
+@router.patch("/folders/{folder_id}")
+def patch_folder(folder_id: int, body: FolderChangeIn, user: ActiveUser, db: DB) -> FolderOut:
+    """Rename a folder, or move it (parent_id; null: the top): 409 `name_taken`, or `cycle` into itself."""
+    changed = folders.change_folder(
+        db, user, folder_id, name=body.name, parent_id=body.parent_id, move="parent_id" in body.model_fields_set
+    )
+    return FolderOut.of(changed)
+
+
+@router.delete("/folders/{folder_id}", status_code=204)
+def delete_folder(folder_id: int, user: ActiveUser, db: DB) -> Response:
+    """Delete an empty folder (409 `not_empty` if it isn't)."""
+    folders.remove_folder(db, user, folder_id)
+    return Response(status_code=204)
 
 
 # --- pictures -----------------------------------------------------------------------------------------------------

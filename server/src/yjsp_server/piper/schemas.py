@@ -9,9 +9,14 @@ from pydantic_core import ErrorDetails
 from ..api.schemas import FolderPath, UserRef
 from ..errors import ApiError
 from ..models import User
-from .models import Approval, Diagram, Image, Release, Revision, Scheme
+from .models import Approval, Diagram, DiagramFolder, Image, Release, Revision, Scheme
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+# A folder's name: no slashes, as a diagram's folder could be named by its path ("Vespula/GSE").
+FolderName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200, pattern=r"^[^/\\]+$")
+]
+MAX_CHOSEN = 1000  # diagrams moved, deleted, or restored together
 MAX_PARTS = 5000  # in a drawing, on all its pages
 MAX_LINES = 10_000
 MAX_PAGES = 100
@@ -164,18 +169,66 @@ def _ref(user: User | None) -> UserRef | None:
 
 
 class DiagramIn(BaseModel):
+    """A new diagram: in a folder by its id (folder_id), or by its path (folder: "Vespula/GSE", its folders made where
+    they aren't there yet, as before folders were their own); at the top if neither."""
+
     name: Name
     folder: FolderPath = ""
+    folder_id: int | None = None
     description: str = Field("", max_length=5000)
     drawing: dict[str, Any] | None = None  # None: an empty one
 
 
 class DiagramChangeIn(BaseModel):
-    """A new name, folder, or description. Leave out what doesn't change."""
+    """A new name, folder (by its id, null for the top, or by its path), or description. Leave out what doesn't
+    change."""
 
     name: Name | None = None
     folder: FolderPath | None = None
+    folder_id: int | None = None
     description: str | None = Field(None, max_length=5000)
+
+
+class DiagramsIn(BaseModel):
+    """Diagrams, by their ids, to delete or restore together."""
+
+    diagrams: list[int] = Field(min_length=1, max_length=MAX_CHOSEN)
+
+
+class MoveIn(DiagramsIn):
+    folder_id: int | None = None  # None: the top
+
+
+class FolderIn(BaseModel):
+    name: FolderName
+    parent_id: int | None = None  # None: at the top
+
+
+class FolderChangeIn(BaseModel):
+    """A new name, or a new place (parent_id; null: the top). Leave out what doesn't change."""
+
+    name: FolderName | None = None
+    parent_id: int | None = None
+
+
+class FolderOut(BaseModel):
+    id: int
+    parent_id: int | None  # the folder it's in; None: the top
+    name: str
+    path: str  # its folders' names, from the top down to it: "Vespula/GSE"
+    created_at: datetime
+    created_by: UserRef | None
+
+    @classmethod
+    def of(cls, folder: DiagramFolder) -> "FolderOut":
+        return cls(
+            id=folder.id,
+            parent_id=folder.parent_id,
+            name=folder.name,
+            path=folder.path,
+            created_at=folder.created_at,
+            created_by=_ref(folder.creator),
+        )
 
 
 class DrawingSaveIn(BaseModel):
@@ -205,7 +258,8 @@ class DecisionIn(BaseModel):
 class DiagramOut(BaseModel):
     id: int
     name: str
-    folder: str  # "" at the top
+    folder: str  # its folder's path ("Vespula/GSE"), "" at the top
+    folder_id: int | None = None  # its folder; None: the top
     description: str
     version: int  # what a save of its drawing names as the version it was changed from
     revision: int  # its latest revision's number
@@ -228,7 +282,8 @@ class DiagramOut(BaseModel):
         return {
             "id": diagram.id,
             "name": diagram.name,
-            "folder": diagram.folder,
+            "folder": diagram.folder_path,
+            "folder_id": diagram.folder_id,
             "description": diagram.description,
             "version": diagram.version,
             "revision": diagram.revision,

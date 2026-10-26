@@ -17,8 +17,10 @@ import {
     turnParts,
     updatePart,
 } from "../src/piper/edit";
+import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
 import { runOf } from "../src/piper/edit";
+import { route } from "../src/piper/route";
 import { partsById, pathOf, portOf, portsOf } from "../src/piper/ports";
 import { boxOf } from "../src/piper/library/index";
 
@@ -301,7 +303,7 @@ test("a sensor made duplicated moves its side tap out, and its line follows", ()
     const tap = join([sensor, "right"], [valve, "a"]);
     drawing = updatePart(drawing, sensor, (entry) => ({ ...entry, props: { ...entry.props, count: "2" } }));
     const path = pathOf(partsById(drawing), line(tap));
-    expect(path[0]).toEqual({ x: 20, y: 0 }); // the side of the second box
+    expect(path[0]).toEqual({ x: 30, y: 0 }); // the side of the second bubble
     expect(orthogonalPath(tap)).toBe(true);
 });
 
@@ -322,6 +324,30 @@ test("a part drawn bigger or smaller keeps its ports on the grid, and its lines 
     // Its box, and what's drawn, scale with it.
     const box = boxOf(part(valve), drawing);
     expect([box.x0, box.x1]).toEqual([-40, 40]);
+});
+
+test("ports that face each other close by are joined straight across, never past each other and back", () => {
+    // 20 apart and 10 off level: a stub of 20 out of each would run past the other's, and the route come back.
+    expect(route({ at: { x: 80, y: -100 }, dir: "left" }, { at: { x: 60, y: -90 }, dir: "right" }, [])).toEqual([
+        { x: 80, y: -100 },
+        { x: 70, y: -100 },
+        { x: 70, y: -90 },
+        { x: 60, y: -90 },
+    ]);
+    // As a tank drawn bigger brings its side port up to the valve beside it (the example's TK-2 and SV-1).
+    drawing = example();
+    const tank = drawing.parts.find((entry) => entry.tag === "TK-2")!;
+    const valve = drawing.parts.find((entry) => entry.tag === "SV-1")!;
+    const ends = (entry: Line) => [entry.from, entry.to].map((end) => (isPortEnd(end) ? end.part : ""));
+    const vent = drawing.lines.find((entry) => ends(entry).includes(tank.id) && ends(entry).includes(valve.id))!;
+    drawing = updatePart(drawing, tank.id, (entry) => ({ ...entry, scale: 1.5 }));
+    const path = pathOf(partsById(drawing), line(vent.id));
+    const headings = path
+        .slice(1)
+        .map((point, index) => Math.sign(point.x - path[index]!.x))
+        .filter(Boolean);
+    expect(new Set(headings).size, JSON.stringify(path)).toBe(1); // across one way only
+    expect(orthogonalPath(vent.id)).toBe(true);
 });
 
 test("turning a part turns its ports, and its lines follow", () => {

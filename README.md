@@ -366,17 +366,18 @@ the keys.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
-  orifices and venturis, flow meters, filters, sensors, engines, pumps, vents, tees, a box for
-  anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG or a
-  JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…** on
-  the right; it keeps its shape as it's sized, and the exports have it). A sensor is a small
-  box with the letter of what it measures (P, T, W...), its tag at its side; a duplicated or
-  triplicated transducer is two or three boxes on one tap, reading PT-101A, PT-101B (and C).
-  Each part is tagged with the next number free (PT-3); **R** turns it, **F** flips it. Drag
-  the round handle at a selected part's corner (or pick its **Size**) to draw it from half its
-  size to double, and give it a **Label size** of its own. A **Text** note dragged by its
-  square handle becomes a block of that size, its words wrapped, in bold, italic, a serif or
-  monospace font, aligned, and boxed as you choose.
+  orifices and venturis, flow meters, filters, instruments, engines, pumps, vents, tees, a box
+  for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG or
+  a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…** on
+  the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
+  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
+  instrument is a bubble with its tag's letters in it (PT, TC...), its whole tag at its side;
+  a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
+  PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
+  flips it. Drag the round handle at a selected part's corner (or pick its **Size**) to draw it
+  from half its size to double, and give it a **Label size** of its own. A **Text** note dragged
+  by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif
+  or monospace font, aligned, and boxed as you choose.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts

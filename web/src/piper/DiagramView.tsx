@@ -333,7 +333,7 @@ function PartLabel({
         return null;
     }
     const sizes = textSizes(drawing, part);
-    const { at, anchor } = labelPlace(part, boxOf(part, drawing), sizes.tag);
+    const { at, anchor } = labelPlace(part, boxOf(part, drawing), sizes.tag, drawing);
     return (
         <text
             x={at.x}

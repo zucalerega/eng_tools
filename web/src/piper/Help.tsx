@@ -83,17 +83,18 @@ const TOPICS: Topic[] = [
                     beside it, where you drag it. Double-click a part to type its tag.
                 </li>
                 <li>
-                    A sensor is a small box with the letter of what it measures (<code>P</code> pressure, <code>T</code>{" "}
-                    temperature, <code>W</code> force, <code>L</code> level, <code>Z</code> position), its tag at its
-                    side. A duplicated or triplicated transducer (two or three on one tap) is two or three boxes, A, B,
-                    and C: set <em>Transducers</em>, or place one from the library. Each reads its own test channel:
-                    those its <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it
-                    (<code>PT-101A</code>, <code>PT-101B</code>).
+                    An instrument is a bubble with its tag's letters in it (<code>PT</code>, <code>TC</code>,{" "}
+                    <code>LC</code>), its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated
+                    transducer (two or three on one tap) is two or three bubbles side by side, A, B, and C: set{" "}
+                    <em>Transducers</em>, or place one from the library. Each reads its own test channel: those its{" "}
+                    <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it (
+                    <code>PT-101A</code>, <code>PT-101B</code>).
                 </li>
                 <li>
-                    Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it (a handle, a
-                    solenoid, a diaphragm, a motor) on a short stem. A regulator's line from its diaphragm goes to the
-                    pressure it holds; an orifice plate sits in its pipe; a vent's open end turns down.
+                    Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
+                    stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
+                    <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
+                    orifice plate sits in its pipe; a vent's open end turns down.
                 </li>
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select

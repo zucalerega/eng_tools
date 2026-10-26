@@ -310,18 +310,25 @@ files or account, and it does nothing but answer.
 - **What it may spend**: the server counts what each answer cost, from the tokens Anthropic says
   it used (read in full, kept, read from what was kept, and written, thinking included), at each
   model's prices (`assistant.PRICES`), in `assistant_requests`, which keeps only who asked, when,
-  the tokens, and the cost. It stops answering everyone once its answers have cost
-  `YJSP_ASSISTANT_BUDGET` (the credits it may use), and anyone whose questions in the last 24
-  hours have cost `YJSP_ASSISTANT_DAILY_LIMIT`. Each person asks one question at a time, so no
-  one goes past their daily limit by more than one answer's cost (an answer writes at most
-  16,000 tokens), and the budget goes over by at most one answer for each person asking as it
-  runs out. An answer stopped partway, or cut off, counts as if it had written all it could, as
-  Anthropic may have gone on writing; one that Anthropic's own error ended counts what it
-  wrote; and a question Anthropic never began counts nothing. The
+  the tokens, and the cost. It stops answering everyone once this calendar month's answers
+  have cost `YJSP_ASSISTANT_MONTHLY_BUDGET` (the month starting at 00:00 UTC on the 1st, as
+  Anthropic's monthly spend limits do: for the API credits a Claude Max plan includes each
+  month), or all its answers have cost `YJSP_ASSISTANT_BUDGET` (credits it has once), and
+  anyone whose questions in the last 24 hours have cost `YJSP_ASSISTANT_DAILY_LIMIT`. It needs
+  one of the budgets, and keeps to both when both are set; 0 is none. Each person asks one
+  question at a time, so no one goes past their daily limit by more than one answer's cost (an
+  answer writes at most 16,000 tokens), and a budget goes over by at most one answer for each
+  person asking as it runs out. An answer stopped partway, or cut off, counts as if it had
+  written all it could, as Anthropic may have gone on writing; one that Anthropic's own error
+  ended counts what it wrote; and a question Anthropic never began counts nothing. The
   workspace the key belongs to has a spend limit of its own, at Anthropic (deploying.md,
-  "Claude"). Admin > People's *Claude* card shows the spending, and on whose questions.
+  "Claude"), and when Anthropic refuses a question at it, or at the organization's monthly
+  cap, Help says so. Admin > People's *Claude* card shows the spending, this month and in all,
+  and on whose questions.
 - **When it can't answer**, it says why, with a code of its own: not set up (`assistant_off`),
-  the budget spent (`assistant_spent`), out of credits at Anthropic (`assistant_no_credits`),
+  the budget in all spent (`assistant_spent`), this month's spent, saying when it answers again
+  (`assistant_month_spent`), out of credits at Anthropic (`assistant_no_credits`), stopped by
+  a monthly spend limit at Anthropic, saying when it answers again (`assistant_spend_limit`),
   your daily limit reached (`assistant_daily_limit`), still answering your last question
   (`assistant_busy`), or Anthropic's API failing (`assistant_failed`).
 
@@ -382,9 +389,9 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 | `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
-| `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` and what it has `spent`, in US dollars |
+| `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` in all and what it has `spent`, and its `monthly_budget` and what it has spent this month (`month_spent`, since 00:00 UTC on the 1st), in US dollars (a budget of 0 is none) |
 | `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
-| `GET /api/assistant/spending` | what Claude's answers have cost, in all and in the last 24 hours; its budget, limit, model, and effort; and each person's questions and what they cost (admins) |
+| `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; and each person's questions and what they cost (admins) |
 
 ## Names from before YJSP
 

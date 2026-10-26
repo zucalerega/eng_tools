@@ -300,8 +300,10 @@ class AssistantOut(BaseModel):
     reason: str | None  # why not, when they can't
     model: str
     day_used: float  # how much of their daily limit their questions in the last 24 hours took, from 0 to 1
-    budget: float | None  # US dollars it may spend in all; for admins only
+    budget: float | None  # US dollars it may spend in all (0: no budget in all); for admins only
     spent: float | None  # what it has spent; for admins only
+    monthly_budget: float | None  # US dollars it may spend each calendar month (0: no monthly budget); for admins only
+    month_spent: float | None  # what it has spent this month, since the 1st at 00:00 UTC; for admins only
 
 
 class AssistantSpenderOut(BaseModel):
@@ -316,8 +318,10 @@ class AssistantSpendingOut(BaseModel):
 
     available: bool  # whether people can ask now
     reason: str | None  # why not, when they can't
-    budget: float  # US dollars it may spend in all
+    budget: float  # US dollars it may spend in all (0: no budget in all)
     spent: float
+    monthly_budget: float  # US dollars it may spend each calendar month (0: no monthly budget)
+    month_spent: float  # this month, since the 1st at 00:00 UTC
     today: float  # in the last 24 hours, everyone's together
     daily_limit: float  # what one person's questions may cost in 24 hours
     model: str

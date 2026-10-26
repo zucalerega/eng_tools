@@ -67,9 +67,9 @@ YJSP_YORG_DIR=/srv/yjsp/data/yorg
 YJSP_DOWNLOADS_DIR=/srv/yjsp/downloads
 YJSP_WEB_DIR=/opt/yjsp/app/web/dist
 YJSP_HELP_DIR=/opt/yjsp/app/help
-# Claude, in Help ("Claude", below): what it may spend in all, the credits it has, and on one
-# person's questions in any 24 hours, in US dollars, as YJSP_ASSISTANT_BUDGET and
-# YJSP_ASSISTANT_DAILY_LIMIT.
+# Claude, in Help ("Claude", below): what it may spend each month, of the API credits the
+# owner's Claude Max plan includes, and on one person's questions in any 24 hours, in US
+# dollars, as YJSP_ASSISTANT_MONTHLY_BUDGET and YJSP_ASSISTANT_DAILY_LIMIT.
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
@@ -255,26 +255,61 @@ takes it off.
 ### Claude
 
 Help, in the web app's top bar, asks Claude (Anthropic's API) about the site, from the help
-(`assistant.py`). It needs an API key and a budget in `.env`, and it stops answering at
-either of two limits it keeps itself, counting what every answer cost: the budget, in all
-(`YJSP_ASSISTANT_BUDGET`, the credits it may use), and each person's questions in any 24
-hours (`YJSP_ASSISTANT_DAILY_LIMIT`). Admin > People's *Claude* card shows what it has spent,
-and on whose questions; the server keeps no one's questions, only their cost. To set it up:
+(`assistant.py`). It needs an API key and a budget in `.env`, and it stops answering at each
+of the limits it keeps itself, counting what every answer cost: its budget for each month
+(`YJSP_ASSISTANT_MONTHLY_BUDGET`, from 00:00 UTC on the 1st), its budget in all
+(`YJSP_ASSISTANT_BUDGET`), and each person's questions in any 24 hours
+(`YJSP_ASSISTANT_DAILY_LIMIT`). It needs one of the budgets, and keeps to both when both are
+set; unset, or 0, a budget doesn't apply. Admin > People's *Claude* card shows what it has
+spent, this month and in all, and on whose questions; the server keeps no one's questions,
+only their cost.
 
-1. In the Claude Console, on the account with the credits, make a workspace for the site,
-   `YJSP`, and give it a spend limit of the credits you mean it to have: Anthropic's own cap,
-   under the server's, in case the server's count is ever off.
-2. Make an API key in that workspace. Put it on the server's `.env` as
-   `YJSP_ANTHROPIC_API_KEY`, with `YJSP_ASSISTANT_BUDGET` at most the workspace's limit, and
-   restart the service. Never put the key anywhere else.
-3. Ask Help something in the web app, and see the cost on Admin > People.
+It's paid for with the API credits the owner's Claude Max plan includes: $100 a month on Max
+5x, $200 on Max 20x
+([Anthropic's page on them](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)).
+They come to a Claude Console organization linked to the plan, each billing cycle, and what
+isn't used by the end of the cycle expires. They pay for the API, which is all the site
+uses, and not for Claude Code. To set it up:
+
+1. **Link a Console organization to the plan.** On claude.ai, in Settings > Billing, under API
+   credits, pick the Console organization the credits go to (or make one there), and link it,
+   which accepts Anthropic's terms for them. Only the plan's subscriber can, as an owner,
+   admin, or billing member of the organization, once the plan is 7 days old. Each plan
+   links to one organization, and the link can't be changed without asking Anthropic's
+   support, so link the one the site will use. The credits then show under Promotional
+   credits on the Console's Billing page, with when they expire.
+2. **Keep it to the credits.** Buy no credits in that organization, and leave auto-reload
+   off: then once a month's credits are used, the API refuses questions until the next ones
+   come, and nothing is charged (usage is never charged to the plan).
+3. **Make a workspace for the site,** `YJSP`, on the Console's Workspaces page, and give it a
+   spend limit (select it, then Spend limits) of the most the site may spend in a month, at
+   most the plan's credits: Anthropic's own cap, in case the server's count is ever off. If
+   Anthropic stops the site at it, Help says Claude has reached its monthly spending limit at
+   Anthropic (`assistant_spend_limit`), and answers again on the 1st.
+4. **Make an API key in that workspace,** so the site's questions count against its limit.
+   Put it in the server's `.env` as `YJSP_ANTHROPIC_API_KEY`, and never anywhere else.
+5. **Set the server's budget:** `YJSP_ASSISTANT_MONTHLY_BUDGET` in `.env`, a few dollars under
+   the workspace's limit (say, `95` with a $100 limit), as the budget can go over by an
+   answer for each person asking as it runs out. Leave `YJSP_ASSISTANT_BUDGET` out (take it
+   out, if it's there), as the credits come back each month: set, it still stops Claude once
+   its answers have cost that much in all. Restart the service.
+6. Ask Help something in the web app, and see the cost on Admin > People.
+
+The server's month, like Anthropic's monthly spend limits, starts at 00:00 UTC on the 1st,
+but the credits come when the plan renews, which can be any day of the month. So in a busy
+month the credits can run out before the server's budget does, and Help says Claude is out
+of API credits (`assistant_no_credits`) until the plan renews; in a quiet month, some
+expire unused.
 
 It uses Claude Sonnet 5.5 at high effort (`YJSP_ASSISTANT_MODEL`, `YJSP_ASSISTANT_EFFORT`;
 `server/.env.example` lists the others). Every question reads all of the help, about 50,000
 tokens, and Anthropic keeps it an hour for the questions after: the first question in an hour
 costs about 25 cents, and each after it a few cents. To give it more, raise
-`YJSP_ASSISTANT_BUDGET` (and the workspace's limit) and restart; to stop it, unset the key.
-When the credits run out, Help says so, and the rest of the site carries on.
+`YJSP_ASSISTANT_MONTHLY_BUDGET` and the workspace's limit, up to the plan's credits, and
+restart; to stop it, unset the key. When the month's budget is spent, or the credits run
+out, Help says so, and the rest of the site carries on. Credits bought in the Console,
+rather than a plan's, don't come each month: for those, `YJSP_ASSISTANT_BUDGET` holds the
+site to what was bought, in all.
 
 ### Signing key
 

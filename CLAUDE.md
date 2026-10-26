@@ -26,7 +26,7 @@ API, as a client would (docs/piper.md).
 
 | Path | What |
 |---|---|
-| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budget, limits, and prompt), `api/` sign-in, people, downloads, the help's pages, Claude's routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`; `yorg/system/` runs system models with FullFlow, for Piper's Simulation mode). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, who's editing, deleting; `releases.py` releasing a revision to its approvers; `schemes.py` the team's color schemes; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
+| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budgets, limits, and prompt), `api/` sign-in, people, downloads, the help's pages, Claude's routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`; `yorg/system/` runs system models with FullFlow, for Piper's Simulation mode). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, who's editing, deleting; `releases.py` releasing a revision to its approvers; `schemes.py` the team's color schemes; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
 | `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2026 add-in, which runs in 2025 too (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
 | `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `visio.ts` importing Visio, `pdf.ts` the PDF export, `sim/` Simulation mode: `model.ts` the P&ID as a FullFlow model, `SimPanel.tsx` its runs). Tests run against the real server. |
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md` | The site's design, and each app's: design, API, roadmap, open questions. |
@@ -89,6 +89,14 @@ cd web && npm ci && npm run check && npm test && npm run build
   guide; a new way for something to go wrong goes in docs/troubleshooting.md. A feature
   the help doesn't mention isn't done. Claude, in Help, knows only the docs `help.PARTS`
   lists, so what they don't say, it can't answer.
+- **A PR that changes what people see shows it: screenshots in its description.** Take
+  them from the PR's own branch, running on a scratch server with data made for them, and
+  add one from `main` beside each when the change is to something already there (before
+  and after). They go on the repository's `screenshots` branch, which has nothing else and
+  is never merged, as `pr-<number>/<name>.png`, and the description links each as
+  `https://github.com/zucalerega/eng_tools/blob/screenshots/pr-<number>/<name>.png?raw=true`
+  (the repository is private, so a link anywhere else wouldn't show). Images never go into
+  `main`. A PR whose change can't be seen (the server, the CLI) needs none.
 - **Report what actually happened.** Say which checks you ran and what they showed.
   Never claim tests pass without running them. If a check couldn't run, say so.
 - **Clean up after yourself.** Once a PR merges, delete its branch, on GitHub and
@@ -97,9 +105,9 @@ cd web && npm ci && npm run check && npm test && npm run build
   and `git merge-base --is-ancestor origin/<branch> origin/main` agrees), and use `-d`,
   not `-D`, so git refuses a branch that isn't. A closed, unmerged PR's branch goes only
   once its work is abandoned or done elsewhere; ask before deleting a branch someone is
-  still working on. When you're done, also stop the servers and background processes
-  you started, and delete their scratch copies and databases: never leave a test or a
-  server running.
+  still working on. The `screenshots` branch stays. When you're done, also stop the
+  servers and background processes you started, and delete their scratch copies and
+  databases: never leave a test or a server running.
 
 ## Code standards
 

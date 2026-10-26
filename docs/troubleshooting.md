@@ -730,11 +730,20 @@ a number. A few codes come up in more than one place.
 - **Claude isn't set up on this server**, or **Claude has nothing to read on this server**
   (`assistant_off`): the site isn't set up to ask Claude, or has no help for it to read. An admin
   can ask whoever runs the server; meanwhile, search this help.
+- **Claude has spent this month's budget for questions: it answers again on ...**
+  (`assistant_month_spent`): its answers this month have cost what the site sets aside for them
+  each month. It answers again on the day it says, the 1st of next month (from 00:00 UTC, which
+  is the evening before in the US); meanwhile, search this help.
 - **Claude has spent its budget for questions** (`assistant_spent`): its answers have cost what the
-  site set aside for them, so it stops until that's raised. An admin can ask whoever runs the
-  server to raise it.
+  site set aside for them in all, so it stops until that's raised. An admin can ask whoever runs
+  the server to raise it.
 - **Claude is out of API credits** (`assistant_no_credits`): the site's credits for Claude have run
-  out. An admin can ask whoever runs the server.
+  out. Credits that come each month come back with the next month's; otherwise, an admin can ask
+  whoever runs the server.
+- **Claude has reached its monthly spending limit at Anthropic: it answers again on ...**
+  (`assistant_spend_limit`): Anthropic stopped the site's questions at a monthly limit on its
+  account there, which starts again on the 1st (at 00:00 UTC, the evening before in the US). An
+  admin can ask whoever runs the server to raise it sooner; meanwhile, search this help.
 - **You've asked Claude as much as one person can in a day** (`assistant_daily_limit`): each
   person's questions can cost so much in 24 hours. As your questions from 24 hours ago fall out of
   that, you can ask again.

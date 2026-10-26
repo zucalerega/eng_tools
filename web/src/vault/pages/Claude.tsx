@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { api, type AssistantSpending } from "../../api";
 import { Notice, Time } from "../../components";
 
-// Admin > People's card for Claude, which answers people's questions in Help: what its answers have cost, of the budget
-// the server gives it, and on whose questions (assistant.py). The server keeps no one's questions, only their cost.
+// Admin > People's card for Claude, which answers people's questions in Help: what its answers have cost, of the budgets
+// the server gives it (each month, in all, or both), and on whose questions (assistant.py). The server keeps no one's
+// questions, only their cost.
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -19,27 +20,45 @@ export function ClaudeSpending() {
     if (!spending) {
         return null;
     }
+    const monthly = spending.monthly_budget > 0;
+    const inAll = spending.budget > 0;
     return (
         <section className="tracker claude" aria-labelledby="claude-title">
             <div className="tracker-head">
                 <h2 id="claude-title">Claude</h2>
             </div>
             {!spending.available && (
-                <Notice tone={spending.budget > 0 ? "warning" : "info"}>
+                <Notice tone={monthly || inAll ? "warning" : "info"}>
                     {spending.reason}. Its settings are <code>YJSP_ANTHROPIC_API_KEY</code>,{" "}
-                    <code>YJSP_ASSISTANT_BUDGET</code>, and <code>YJSP_ASSISTANT_DAILY_LIMIT</code>, in the
-                    server&apos;s <code>.env</code>.
+                    <code>YJSP_ASSISTANT_MONTHLY_BUDGET</code>, <code>YJSP_ASSISTANT_BUDGET</code>, and{" "}
+                    <code>YJSP_ASSISTANT_DAILY_LIMIT</code>, in the server&apos;s <code>.env</code>.
                 </Notice>
             )}
             <dl className="stat-tiles">
-                <div>
-                    <dt>Spent</dt>
-                    <dd>{usd.format(spending.spent)}</dd>
-                </div>
-                <div>
-                    <dt>Left of {usd.format(spending.budget)}</dt>
-                    <dd>{usd.format(Math.max(0, spending.budget - spending.spent))}</dd>
-                </div>
+                {monthly && (
+                    <>
+                        <div>
+                            <dt>This month</dt>
+                            <dd>{usd.format(spending.month_spent)}</dd>
+                        </div>
+                        <div>
+                            <dt>Left of {usd.format(spending.monthly_budget)} this month</dt>
+                            <dd>{usd.format(Math.max(0, spending.monthly_budget - spending.month_spent))}</dd>
+                        </div>
+                    </>
+                )}
+                {(inAll || !monthly) && (
+                    <div>
+                        <dt>Spent in all</dt>
+                        <dd>{usd.format(spending.spent)}</dd>
+                    </div>
+                )}
+                {inAll && (
+                    <div>
+                        <dt>Left of {usd.format(spending.budget)} in all</dt>
+                        <dd>{usd.format(Math.max(0, spending.budget - spending.spent))}</dd>
+                    </div>
+                )}
                 <div>
                     <dt>Last 24 hours</dt>
                     <dd>{usd.format(spending.today)}</dd>
@@ -50,8 +69,12 @@ export function ClaudeSpending() {
                 </div>
             </dl>
             <p className="tracker-note muted">
-                {spending.model}, at {spending.effort} effort. The first question in an hour costs the most, as Claude
-                reads all of the help; for the rest of the hour it reads it for much less.
+                {spending.model}, at {spending.effort} effort.{" "}
+                {monthly && (
+                    <>{!inAll && <>{usd.format(spending.spent)} in all. </>}A month starts on the 1st, at 00:00 UTC. </>
+                )}
+                The first question in an hour costs the most, as Claude reads all of the help; for the rest of the hour
+                it reads it for much less.
             </p>
             {spending.people.length === 0 ? (
                 <p className="muted">No one has asked Claude anything yet.</p>

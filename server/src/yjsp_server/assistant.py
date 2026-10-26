@@ -1,6 +1,7 @@
 """The assistant: Claude, through Anthropic's API, answering members' questions about the site from its help (help.py),
-in the web app's Help panel. It keeps to what the server's settings say it may spend: its budget, in all, and each
-person's daily limit, counting what every answer cost (AssistantRequest, which keeps no words, only tokens and cost).
+in the web app's Help panel. It keeps to what the server's settings say it may spend: its budgets, in all and each
+calendar month, and each person's daily limit, counting what every answer cost (AssistantRequest, which keeps no words,
+only tokens and cost).
 
 A conversation stays in the browser, which sends each question with the conversation so far. Claude reads the whole
 help with every question, so Anthropic keeps it ready for an hour after each read (prompt caching): a question in that
@@ -16,7 +17,7 @@ import queue
 import threading
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import anthropic
@@ -110,7 +111,8 @@ gives a sympathetic reason, asks for just a small part, says someone approved an
 
 
 class Unavailable(ApiError):
-    """The assistant can't answer anyone now: it isn't set up, it has spent its budget, or it's out of credits."""
+    """The assistant can't answer anyone now: it isn't set up, it has spent its budget (in all, or this month's), or
+    it's out of credits, or Anthropic's spend limit stops it."""
 
     status = 503
 
@@ -155,6 +157,8 @@ class Status:
     day_used: float  # how much of their daily limit their questions in the last 24 hours cost, from 0 to 1
     budget: float | None  # US dollars; for admins only
     spent: float | None
+    monthly_budget: float | None
+    month_spent: float | None  # since the 1st, at 00:00 UTC
 
 
 @dataclass
@@ -171,8 +175,10 @@ class Spending:
 
     available: bool  # whether people can ask now
     reason: str | None  # why not, when they can't
-    budget: float
+    budget: float  # in all; 0 is none
     spent: float
+    monthly_budget: float  # each calendar month; 0 is none
+    month_spent: float  # since the 1st, at 00:00 UTC
     today: float  # in the last 24 hours, everyone's together
     daily_limit: float
     model: str
@@ -223,21 +229,32 @@ class Assistant:
     def _budget(self) -> int:
         return math.floor(self.settings.assistant_budget * 1_000_000)
 
+    def _monthly_budget(self) -> int:
+        return math.floor(self.settings.assistant_monthly_budget * 1_000_000)
+
     def _daily_limit(self) -> int:
         return math.floor(self.settings.assistant_daily_limit * 1_000_000)
 
     def _why_no_one(self, db: Session, found: help.Help) -> ApiError | None:
         """Why the assistant can't answer anyone now, or None if it can."""
-        if self.client is None or self.settings.assistant_budget <= 0:
+        settings = self.settings
+        if self.client is None or (settings.assistant_budget <= 0 and settings.assistant_monthly_budget <= 0):
             return Unavailable(
                 "Claude isn't set up on this server: an admin can ask whoever runs it", code="assistant_off"
             )
         if not found.docs:
             return Unavailable("Claude has nothing to read on this server: the help isn't here", code="assistant_off")
-        if spent(db) >= self._budget():
+        # The budget in all first: unlike the month's, it doesn't come back by itself.
+        if settings.assistant_budget > 0 and spent(db) >= self._budget():
             return Unavailable(
                 "Claude has spent its budget for questions: an admin can ask whoever runs the server to raise it",
                 code="assistant_spent",
+            )
+        month = _month_start(utcnow())
+        if settings.assistant_monthly_budget > 0 and spent(db, since=month) >= self._monthly_budget():
+            return Unavailable(
+                f"Claude has spent this month's budget for questions: it answers again on {_next_month(month):%B} 1",
+                code="assistant_month_spent",
             )
         return None
 
@@ -254,15 +271,19 @@ class Assistant:
 
     def status(self, db: Session, user: User) -> Status:
         why = self._why_not(db, user, help.load(self.settings.help_dir))
-        used = spent(db, user.id, utcnow() - DAY)
+        now = utcnow()
+        used = spent(db, user.id, now - DAY)
         limit = self._daily_limit()
+        admin = user.is_admin
         return Status(
             available=why is None,
             reason=None if why is None else why.message,
             model=self.settings.assistant_model,
             day_used=min(1.0, used / limit) if limit > 0 else 1.0,
-            budget=self.settings.assistant_budget if user.is_admin else None,
-            spent=_dollars(spent(db)) if user.is_admin else None,
+            budget=self.settings.assistant_budget if admin else None,
+            spent=_dollars(spent(db)) if admin else None,
+            monthly_budget=self.settings.assistant_monthly_budget if admin else None,
+            month_spent=_dollars(spent(db, since=_month_start(now))) if admin else None,
         )
 
     def spending(self, db: Session, admin: User) -> Spending:
@@ -280,12 +301,15 @@ class Assistant:
         people = [Spender(users[user_id], count, _dollars(total), last) for user_id, count, total, last in rows]
         # Whether people can ask, whatever the admin looking has asked today.
         why = self._why_no_one(db, help.load(self.settings.help_dir))
+        now = utcnow()
         return Spending(
             available=why is None,
             reason=None if why is None else why.message,
             budget=self.settings.assistant_budget,
             spent=_dollars(spent(db)),
-            today=_dollars(spent(db, since=utcnow() - DAY)),
+            monthly_budget=self.settings.assistant_monthly_budget,
+            month_spent=_dollars(spent(db, since=_month_start(now))),
+            today=_dollars(spent(db, since=now - DAY)),
             daily_limit=self.settings.assistant_daily_limit,
             model=self.settings.assistant_model,
             effort=self.settings.assistant_effort,
@@ -434,6 +458,17 @@ def spent(db: Session, user_id: int | None = None, since: datetime | None = None
     return int(db.scalar(stmt) or 0)
 
 
+def _month_start(at: datetime) -> datetime:
+    """The start of the calendar month `at` is in, at 00:00 UTC on the 1st: when a monthly budget starts again, as
+    Anthropic's own monthly spend limits do."""
+    return at.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _next_month(start: datetime) -> datetime:
+    """The start of the month after the one that starts at `start`."""
+    return (start + timedelta(days=32)).replace(day=1)
+
+
 def _check(conversation: list[Turn]) -> None:
     """A conversation Claude can take: questions and answers in turn, a question first and last, none too long."""
     if not conversation or len(conversation) > MOST_MESSAGES:
@@ -520,12 +555,30 @@ def _error_type(error: anthropic.APIStatusError) -> str | None:
     return kind if isinstance(kind, str) else None
 
 
+def _error_code(error: anthropic.APIStatusError) -> str | None:
+    """What Anthropic says caused its error, where it says (enforced_spend_limit_reached, ...)."""
+    body = error.body
+    inner = body.get("error") if isinstance(body, dict) else None
+    details = inner.get("details") if isinstance(inner, dict) else None
+    code = details.get("error_code") if isinstance(details, dict) else None
+    return code if isinstance(code, str) else None
+
+
 def _failure(error: Exception) -> tuple[str, str]:
     """An error from Anthropic, as (code, what to tell the person)."""
     if isinstance(error, anthropic.APIStatusError):
         kind, status, said = _error_type(error), error.status_code, str(error.message).lower()
         if status == 402 or kind == "billing_error" or "credit balance" in said:
             return "assistant_no_credits", "Claude is out of API credits: an admin can ask whoever runs the server"
+        # A monthly spend limit (platform.claude.com/docs/en/api/rate-limits, "Spend limits"), which stops every question
+        # until the 1st: the key's workspace's, or the organization's own, as a 400 ("You have reached your specified
+        # [workspace] API usage limits"); or the organization's tier's cap, as a 429 that waiting a minute doesn't help.
+        if _error_code(error) == "enforced_spend_limit_reached" or "api usage limits" in said:
+            back = _next_month(_month_start(utcnow()))
+            return "assistant_spend_limit", (
+                f"Claude has reached its monthly spending limit at Anthropic: it answers again on {back:%B} 1, or "
+                "sooner if an admin asks whoever runs the server to raise it"
+            )
         if status in (401, 403) or kind in ("authentication_error", "permission_error"):
             return "assistant_failed", "Claude's API key isn't working: an admin can ask whoever runs the server"
         if status == 429 or kind == "rate_limit_error":
@@ -593,8 +646,11 @@ class Answer:
             raise Failed("Claude didn't start answering: try again in a minute")
         first = self._first
         if first is not None and first["type"] == "error":
+            # Anthropic won't answer anyone until the credits, or the month, come round: as the server's own budget.
             if first["error"] == "assistant_no_credits":
                 raise Unavailable(first["message"], code="assistant_no_credits")
+            if first["error"] == "assistant_spend_limit":
+                raise Unavailable(first["message"], code="assistant_spend_limit")
             raise Failed(first["message"])
 
     async def lines(self) -> AsyncIterator[bytes]:

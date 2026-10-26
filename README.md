@@ -57,8 +57,8 @@ something or what an error means. An error on the page is offered as a question,
 Claude has read all of the help, and answers with links to it, but it can be wrong: all it knows
 is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
 never paste a password or a key. The tab keeps the conversation until you start a new one. Each
-person can ask so much a day, and the server sets what Claude may spend in all; admins see what
-it has spent, and on whose questions, on Admin > People.
+person can ask so much a day, and the server sets what Claude may spend each month, or in all;
+admins see what it has spent, and on whose questions, on Admin > People.
 
 ## Vault: CAD files
 

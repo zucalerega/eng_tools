@@ -274,7 +274,7 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
                     <input
                         type="search"
                         className="search"
-                        placeholder="Find diagrams in every folder, or a part's tag"
+                        placeholder="Find diagrams, in every folder"
                         aria-label="Find diagrams"
                         value={filter}
                         onChange={(event) => setFilter(event.target.value)}

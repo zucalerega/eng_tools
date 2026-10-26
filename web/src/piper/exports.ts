@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { imageHref, piper } from "./api";
 import { LIGHT, withStates } from "./colors";
 import { DiagramView } from "./DiagramView";
 import { isPortEnd, LINE_KINDS, pageOf, type Document, type Drawing } from "./drawing";
@@ -7,6 +8,7 @@ import { fluidOf } from "./fluids";
 import { LINE_FIELDS } from "./labels";
 import { kindOf, titleOf } from "./library/index";
 import type { DiagramMeta, Field } from "./library/kinds";
+import { dataUri, type PictureSource } from "./pictures";
 
 // A diagram taken out of Piper: drawn as SVG or PNG, printed (or saved as a PDF from the print dialog), and its parts
 // list as a CSV. Drawn in the light colors, as on paper, whatever the site's theme.
@@ -15,6 +17,7 @@ import type { DiagramMeta, Field } from "./library/kinds";
 export async function svgOf(
     drawing: Drawing,
     meta: DiagramMeta,
+    pictures: PictureSource = piper.imageBytes,
 ): Promise<{ svg: string; width: number; height: number }> {
     // React's server renderer only loads when something's exported: it's no use otherwise.
     const { renderToStaticMarkup } = await import("react-dom/server");
@@ -35,7 +38,17 @@ export async function svgOf(
             createElement(DiagramView, { drawing, palette, meta }),
         ),
     );
-    return { svg: `<?xml version="1.0" encoding="UTF-8"?>\n${markup}`, width, height };
+    // Its pictures in it, so it shows them wherever it's opened, and drawn as an image (which fetches nothing).
+    let svg = markup;
+    const shown = drawing.parts.filter((part) => part.kind === "picture" && part.props.image);
+    for (const sha of new Set(shown.map((part) => part.props.image!))) {
+        try {
+            svg = svg.split(imageHref(sha)).join(dataUri(new Uint8Array(await pictures(sha))));
+        } catch {
+            // out of reach: it stays a link, which a PNG or a PDF of the drawing leaves out
+        }
+    }
+    return { svg: `<?xml version="1.0" encoding="UTF-8"?>\n${svg}`, width, height };
 }
 
 /** The drawing as a PNG, at twice its size (sharp on a high-density screen, and printed). */
@@ -124,7 +137,7 @@ export interface PartRow {
  */
 export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
     const parts = drawing.parts.filter(
-        (part) => !["junction", "text", "region", "offpage", "legend", "titleblock"].includes(part.kind),
+        (part) => !["junction", "text", "region", "offpage", "legend", "titleblock", "picture"].includes(part.kind),
     );
     const skip = new Set(["normal", "fluid", "channel", "notes"]);
     const keys: string[] = [];

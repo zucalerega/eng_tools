@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, expect, onTestFinished, test, vi } from "vitest";
 import { emptyDrawing, type Drawing } from "../src/piper/drawing";
@@ -7,6 +7,7 @@ import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
 import { dataTransfer, drag } from "./drag";
 import { renderApp, Team } from "./team";
+import { jpegHeader, rgbaPng } from "./pngs";
 import { FEED, GLUE, vsdx } from "./visio";
 
 // Piper, through the app: its diagrams, the editor (placing parts, drawing lines, a valve into a line, the inspector),
@@ -491,6 +492,60 @@ test("a diagram's pages: added and renamed from their tabs, saved, and an off-pa
             page: saved.pages[1]!.id,
             part: saved.pages[1]!.parts[0]!.id,
         });
+    });
+});
+
+test("a picture dropped on the drawing is added there, in its shape; the inspector replaces it", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "Pictures");
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    svg.getBoundingClientRect = () => new DOMRect(0, 0, 1, 1); // the drawing's a pixel wide in jsdom, as at() says
+
+    // A file that isn't a picture says so, and isn't put on the drawing.
+    // jsdom's drop is a plain event: where it's let go is put on it, as a browser's drag event has it.
+    const drop = (file: File) => {
+        const event = createEvent.drop(svg, { dataTransfer: { types: ["Files"], files: [file], dropEffect: "copy" } });
+        const { clientX, clientY } = at(100, 50);
+        Object.defineProperties(event, { clientX: { value: clientX }, clientY: { value: clientY } });
+        fireEvent(svg, event);
+    };
+    drop(new File(["just words"], "notes.txt", { type: "text/plain" }));
+    expect(await screen.findByText(/notes\.txt isn't on the drawing: That isn't a PNG or a JPEG picture/)).toBeTruthy();
+
+    const png = await rgbaPng([
+        [
+            [255, 0, 0, 255],
+            [0, 0, 255, 128],
+        ],
+    ]);
+    drop(new File([png], "injector.png", { type: "image/png" }));
+    expect(await within(svg).findByRole("button", { name: "Picture" })).toBeTruthy();
+    expect(await screen.findByText("2 × 1 pixels")).toBeTruthy(); // selected: the inspector says what it shows
+    const sha = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", png)), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+    ).join("");
+    await waitFor(async () => {
+        const part = (await team.piperDiagram(team.chief, made.id)).read.parts[0]!;
+        expect([part.kind, part.props.image, part.w, part.h, part.x, part.y]).toEqual([
+            "picture",
+            sha,
+            40,
+            20,
+            100,
+            50,
+        ]);
+    });
+
+    // Replaced, it keeps its width and takes the new one's shape.
+    await userEvent.upload(
+        screen.getByLabelText("Picture to show"),
+        new File([jpegHeader(400, 400)], "tca.jpg", { type: "image/jpeg" }),
+    );
+    expect(await screen.findByText("400 × 400 pixels")).toBeTruthy();
+    await waitFor(async () => {
+        const part = (await team.piperDiagram(team.chief, made.id)).read.parts[0]!;
+        expect([part.w, part.h, part.props.imageWidth]).toEqual([40, 40, "400"]);
     });
 });
 

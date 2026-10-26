@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { LINE_STYLES, scalable } from "./DiagramView";
@@ -12,7 +12,16 @@ import {
     type Page,
     type Part,
 } from "./drawing";
-import { carryFluid, drawingBox, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
+import {
+    carryFluid,
+    drawingBox,
+    rerouteLines,
+    sharedTags,
+    updateLine,
+    updatePart,
+    withPicture,
+    type Alignment,
+} from "./edit";
 import { fitSheet, PAPERS } from "./pdf";
 import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
 import {
@@ -26,11 +35,12 @@ import {
     STANDARD_FLUIDS,
     withFluid,
 } from "./fluids";
-import type { Scheme } from "./api";
+import { piper, type Scheme } from "./api";
 import { Link } from "../router";
 import { PartIcon } from "./icons";
 import { LABEL_SIZES, LINE_FIELDS } from "./labels";
 import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
+import { pictureAspect } from "./library/notes";
 import type { Field } from "./library/kinds";
 import { channelName, findChannel, formatValue, outline, valueAt, type Samples } from "./testdata";
 import { useEditor, type EditorStore } from "./store";
@@ -229,9 +239,9 @@ function PartPanel({
             ...now,
             shown: now.shown.includes(key) ? now.shown.filter((entry) => entry !== key) : [...now.shown, key],
         }));
-    // Its own properties, beside its kind's: not where an off-page connector goes, which it shows as its own.
+    // Its own properties, beside its kind's: not those its kind shows its own way (where a connector goes).
     const custom = Object.keys(part.props).filter(
-        (key) => !kind.fields.some((field) => field.key === key) && !(part.kind === "offpage" && JUMP.has(key)),
+        (key) => !kind.fields.some((field) => field.key === key) && !OWN_PROPS[part.kind]?.has(key),
     );
     const category = CATEGORIES.find(
         (entry) => entry.id === PRESETS.find((preset) => preset.kind === part.kind)?.category,
@@ -332,6 +342,7 @@ function PartPanel({
                 </Row>
             )}
             {part.kind === "offpage" && <JumpSettings store={store} commands={commands} part={part} />}
+            {part.kind === "picture" && <PictureSettings store={store} part={part} />}
             <ComesFrom store={store} commands={commands} part={part} />
             {kind.fields.map((field) =>
                 field.key === "normal" ? (
@@ -858,8 +869,12 @@ function ManyPanel({
     );
 }
 
-/** What an off-page connector keeps of where it goes: the page's id, and a part's on it. */
-const JUMP = new Set(["page", "part"]);
+/** What a kind keeps in its properties that it shows its own way: where an off-page connector goes (the page's id, and
+ * a part's on it), and which picture a picture shows. */
+const OWN_PROPS: Record<string, ReadonlySet<string>> = {
+    offpage: new Set(["page", "part"]),
+    picture: new Set(["image", "imageWidth", "imageHeight"]),
+};
 
 /**
  * Where an off-page connector goes: to another of the diagram's pages, and at a part on it (its own connector back,
@@ -931,6 +946,65 @@ function JumpSettings({ store, commands, part }: { store: EditorStore; commands:
                     Go to {there.name}
                 </button>
             )}
+        </>
+    );
+}
+
+/** Which picture a picture part shows: chosen from this computer, a PNG or a JPEG, and added to Piper. */
+function PictureSettings({ store, part }: { store: EditorStore; part: Part }) {
+    const picker = useRef<HTMLInputElement>(null);
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function choose(file: File) {
+        setBusy(true);
+        setProblem(null);
+        try {
+            const image = await piper.addImage(file);
+            store.commit(updatePart(store.getState().drawing, part.id, (now) => withPicture(now, image)));
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusy(false);
+        }
+    }
+    const pixels = pictureAspect(part) && `${part.props.imageWidth} × ${part.props.imageHeight} pixels`;
+    return (
+        <>
+            <Row label="Picture">
+                {(id) => (
+                    <div className="piper-picture-pick">
+                        <button
+                            id={id}
+                            type="button"
+                            className="button-small"
+                            disabled={busy}
+                            onClick={() => picker.current?.click()}
+                        >
+                            {busy ? "Adding…" : part.props.image ? "Replace…" : "Choose a picture…"}
+                        </button>
+                        <input
+                            ref={picker}
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            hidden
+                            aria-label="Picture to show"
+                            onChange={(event) => {
+                                const chosen = event.target.files?.[0];
+                                event.target.value = "";
+                                if (chosen) {
+                                    void choose(chosen);
+                                }
+                            }}
+                        />
+                        {pixels && <span className="muted piper-small">{pixels}</span>}
+                    </div>
+                )}
+            </Row>
+            {problem && <p className="piper-warning">{problem}</p>}
+            <p className="muted piper-small">
+                A PNG or a JPEG, up to 5 MB. Drag its square corner to size it: it keeps its shape. Or drop a picture on
+                the drawing.
+            </p>
         </>
     );
 }

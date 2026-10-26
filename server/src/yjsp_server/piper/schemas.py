@@ -9,7 +9,7 @@ from pydantic_core import ErrorDetails
 from ..api.schemas import FolderPath, UserRef
 from ..errors import ApiError
 from ..models import User
-from .models import Approval, Diagram, Release, Revision, Scheme
+from .models import Approval, Diagram, Image, Release, Revision, Scheme
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 MAX_PARTS = 5000  # in a drawing, on all its pages
@@ -405,4 +405,28 @@ class SchemeOut(BaseModel):
             updated_at=scheme.updated_at,
             updated_by=_ref(scheme.editor),
             can_delete=can_delete and not scheme.is_default,
+        )
+
+
+class ImageOut(BaseModel):
+    """A picture: what a drawing's picture part names it by (its SHA-256), and what it is."""
+
+    sha256: str
+    content_type: str
+    width: int  # in pixels
+    height: int
+    size: int  # in bytes
+    uploaded_at: datetime
+    uploaded_by: UserRef | None
+
+    @classmethod
+    def of(cls, image: Image) -> "ImageOut":
+        return cls(
+            sha256=image.sha256,
+            content_type=image.content_type,
+            width=image.width,
+            height=image.height,
+            size=image.size,
+            uploaded_at=image.uploaded_at,
+            uploaded_by=_ref(image.uploader),
         )

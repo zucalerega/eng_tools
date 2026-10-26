@@ -367,8 +367,10 @@ the keys.
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
   orifices and venturis, flow meters, filters, instruments, engines, pumps, vents, tees, a box
-  for anything else, notes, regions, a legend, and a title block. What works a valve is on a
-  stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
+  for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG or
+  a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…** on
+  the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
+  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
   instrument is a bubble with its tag's letters in it (PT, TC...), its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**

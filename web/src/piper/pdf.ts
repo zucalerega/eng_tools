@@ -2,6 +2,7 @@ import type { Drawing, PageSheet } from "./drawing";
 import { svgOf } from "./exports";
 import type { DiagramMeta } from "./library/kinds";
 import type { Box } from "./geometry";
+import { bytesOf, deflate, pdfPicture, type PdfPicture, type PictureSource } from "./pictures";
 
 // A diagram as a PDF file: the drawing as the exports draw it (exports.ts' SVG), turned into PDF's own drawing
 // operators, so it's vector, crisp printed at any size, its tags text that can be searched and copied. Only what the
@@ -479,6 +480,18 @@ function transformOperators(transform: string): string[] {
 class Writer {
     lines: string[] = [];
     readonly opacities = new Map<string, string>(); // fill and stroke opacity: the graphics state's name
+    readonly pictures = new Map<string, { name: string; picture: PdfPicture }>(); // by its href: the image's name
+
+    /** The pictures an SVG's images show, read once each, to be drawn by name. */
+    async readPictures(root: Element): Promise<void> {
+        for (const image of root.querySelectorAll("image")) {
+            const href = image.getAttribute("href") ?? image.getAttribute("xlink:href") ?? "";
+            const bytes = this.pictures.has(href) ? null : bytesOf(href);
+            if (bytes) {
+                this.pictures.set(href, { name: `Im${this.pictures.size + 1}`, picture: await pdfPicture(bytes) });
+            }
+        }
+    }
 
     /** The graphics state for an opacity, made once. */
     opacity(fill: number, stroke: number): string {
@@ -648,6 +661,33 @@ class Writer {
             case "text":
                 this.text(element, inherited);
                 break;
+            case "image": {
+                // As preserveAspectRatio's xMidYMid meet draws it: as big as fits in its box, in its middle. An image
+                // is drawn on a square a unit each way, its top at 1: so flipped, as the page is.
+                const found = this.pictures.get(
+                    element.getAttribute("href") ?? element.getAttribute("xlink:href") ?? "",
+                );
+                if (found) {
+                    const { width, height } = found.picture;
+                    const [x, y, w, h] = [
+                        num(element, "x"),
+                        num(element, "y"),
+                        num(element, "width"),
+                        num(element, "height"),
+                    ];
+                    const scale = Math.min(w / width, h / height);
+                    const [drawnWidth, drawnHeight] = [width * scale, height * scale];
+                    const left = x + (w - drawnWidth) / 2;
+                    const top = y + (h - drawnHeight) / 2;
+                    this.lines.push(
+                        "q",
+                        `${n(drawnWidth)} 0 0 ${n(-drawnHeight)} ${n(left)} ${n(top + drawnHeight)} cm`,
+                        `/${found.name} Do`,
+                        "Q",
+                    );
+                }
+                break;
+            }
         }
         if (moves.length > 0) {
             this.lines.push("Q");
@@ -656,30 +696,6 @@ class Writer {
 }
 
 // --- the file ------------------------------------------------------------------------------------------------------
-
-/** Bytes compressed as PDF's FlateDecode reads them: zlib's deflate (CompressionStream's "deflate"). */
-async function deflate(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
-    const input = new ReadableStream<Uint8Array<ArrayBuffer>>({
-        start(controller) {
-            controller.enqueue(bytes);
-            controller.close();
-        },
-    });
-    const reader = input.pipeThrough(new CompressionStream("deflate")).getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for (let read = await reader.read(); !read.done; read = await reader.read()) {
-        chunks.push(read.value);
-        size += read.value.byteLength;
-    }
-    const all = new Uint8Array(size);
-    let at = 0;
-    for (const chunk of chunks) {
-        all.set(chunk, at);
-        at += chunk.byteLength;
-    }
-    return all;
-}
 
 /** Text as bytes, one a character: PDF's own words are all ASCII. */
 const ascii = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(text, (char) => char.charCodeAt(0) & 0xff);
@@ -935,8 +951,9 @@ export async function pdfOf(
     meta: DiagramMeta,
     paperId = "tabloid",
     sheet: Sheet | null = null,
+    pictures?: PictureSource,
 ): Promise<Blob> {
-    return pdfOfPages([{ drawing, meta, sheet }], paperId);
+    return pdfOfPages([{ drawing, meta, sheet }], paperId, pictures);
 }
 
 /** A paper's size in points, turned its way: landscape is the wider way across. */
@@ -997,12 +1014,14 @@ export function fitSheet(box: Box, paperId: string, landscape: boolean): PageShe
 export async function pdfOfPages(
     drawn: { drawing: Drawing; meta: DiagramMeta; sheet: Sheet | null }[],
     paperId = "tabloid",
+    pictures?: PictureSource,
 ): Promise<Blob> {
     const writer = new Writer();
     const contents: { content: Uint8Array<ArrayBuffer>; width: number; height: number }[] = [];
     for (const { drawing, meta, sheet: framed } of drawn) {
-        const { svg } = await svgOf(drawing, meta);
+        const { svg } = await svgOf(drawing, meta, pictures);
         const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+        await writer.readPictures(root);
         const [vx, vy, vw, vh] = (root.getAttribute("viewBox") ?? "0 0 100 100").split(/\s+/).map(Number) as [
             number,
             number,
@@ -1057,7 +1076,30 @@ export async function pdfOfPages(
     const fonts = FAMILIES.flatMap((family) => FONT_NAMES[family]).map((name) =>
         add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`),
     );
-    const resources = `<< /Font << ${fonts.map((id, index) => `/F${index + 1} ${id} 0 R`).join(" ")} >> /ExtGState << ${states.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >> >>`;
+    // The pictures, each an image of its own, with its transparency as a soft mask (another image) if it has one.
+    const images = [...writer.pictures.values()].map(({ name, picture }) => {
+        const { width, height, colorSpace, filter, data, alpha, decode } = picture;
+        const size = `/Type /XObject /Subtype /Image /Width ${width} /Height ${height} /BitsPerComponent 8`;
+        const mask = alpha
+            ? add(
+                  `<< ${size} /ColorSpace /DeviceGray /Filter /FlateDecode /Length ${alpha.length} >>\nstream\n`,
+                  alpha,
+                  "\nendstream",
+              )
+            : null;
+        const extra = `${mask ? ` /SMask ${mask} 0 R` : ""}${decode ? ` /Decode ${decode}` : ""}`;
+        return [
+            name,
+            add(
+                `<< ${size} /ColorSpace /${colorSpace} /Filter /${filter}${extra} /Length ${data.length} >>\nstream\n`,
+                data,
+                "\nendstream",
+            ),
+        ] as const;
+    });
+    const xobjects =
+        images.length > 0 ? ` /XObject << ${images.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >>` : "";
+    const resources = `<< /Font << ${fonts.map((id, index) => `/F${index + 1} ${id} 0 R`).join(" ")} >> /ExtGState << ${states.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >>${xobjects} >>`;
     const pages = add(""); // the pages' object: written once its pages are
     const kids = contents.map(({ content, width, height }) => {
         const stream = add(`<< /Length ${content.length} /Filter /FlateDecode >>\nstream\n`, content, "\nendstream");

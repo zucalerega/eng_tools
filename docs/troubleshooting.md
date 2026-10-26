@@ -693,6 +693,10 @@ a number. A few codes come up in more than one place.
   default color scheme can't be deleted. An admin makes another the default on Schemes, then
   this one can go.
 - **Only an admin can pick the team's default color scheme** (`admin_only`): ask an admin.
+- **That isn't a PNG or a JPEG picture** (`not_an_image`): a picture on a drawing is a PNG or a
+  JPEG. Save it as one (File > Export in most programs; a screenshot is a PNG), then add it.
+- **A picture can be up to 5 MB**, or **That picture is ... by ... pixels** (`too_large`): save
+  it smaller (fewer pixels, or a JPEG instead of a PNG for a photo), then add it.
 
 ### Asking Claude
 

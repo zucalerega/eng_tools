@@ -89,7 +89,9 @@ export interface Kind {
     inline?: readonly [string, string]; // two ports facing apart: it can be dropped into a line
     through?: boolean; // what flows in flows out: a line's fluid carries on through it
     resizable?: boolean; // a region or a box: dragged to a size
-    resize?: { step: number; least: readonly [number, number] }; // the steps it's sized in, and its least size
+    // The steps it's sized in, and its least size; and the shape it keeps, if it has one (a picture's): width over
+    // height.
+    resize?: { step: number; least: readonly [number, number]; aspect?: (part: Part) => number | null };
     behind?: boolean; // drawn under everything else
     text?: string; // what its words are called, if it has them (a note's Text, a region's Title)
 }

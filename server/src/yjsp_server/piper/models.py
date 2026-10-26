@@ -1,5 +1,5 @@
 """Piper's tables: diagrams, their revisions, each with a drawing as the web app sent it, and their releases, each a
-revision put to the approvers named for it."""
+revision put to the approvers named for it; the team's color schemes; and the pictures drawings show."""
 
 from datetime import datetime
 from typing import Any
@@ -126,3 +126,23 @@ class Scheme(Base):
 
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
     editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
+
+
+class Image(Base):
+    """A picture on a drawing (an injector, a TCA), as it was uploaded: a PNG or a JPEG, named by its SHA-256, and never
+    changed. In the database, so the nightly and off-site backups keep it with the drawings that show it (images.py)."""
+
+    __tablename__ = "piper_images"
+    __table_args__ = (UniqueConstraint("sha256", name="uq_piper_images_sha256"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    content_type: Mapped[str] = mapped_column(String(32))  # image/png, image/jpeg
+    width: Mapped[int]  # in pixels
+    height: Mapped[int]
+    size: Mapped[int]  # in bytes
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)  # loaded only when it's sent
+    uploaded_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    uploader: Mapped[User | None] = relationship(lazy="selectin")

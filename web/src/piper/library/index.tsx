@@ -495,6 +495,16 @@ export const PRESETS: Preset[] = [
     },
     { id: "legend", kind: "legend", name: "Legend", category: "notes", prefix: "", keywords: "key colors" },
     {
+        id: "picture",
+        kind: "picture",
+        name: "Picture",
+        category: "notes",
+        prefix: "",
+        keywords: "image photo png jpeg injector tca engine cad render",
+        w: 160,
+        h: 120,
+    },
+    {
         id: "title-block",
         kind: "titleblock",
         name: "Title block",

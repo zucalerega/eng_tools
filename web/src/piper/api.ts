@@ -1,6 +1,6 @@
 // Piper's part of the server's API (server/src/yjsp_server/piper/schemas.py, or /docs on a running server).
 
-import { query, request, type UserRef } from "../api";
+import { apiUrl, Bytes, query, request, requestBytes, type UserRef } from "../api";
 import type { SchemeColors } from "./fluids";
 
 export interface Diagram {
@@ -122,4 +122,22 @@ export const piper = {
         request<Scheme>("PATCH", `/api/piper/schemes/${id}`, change),
     removeScheme: (id: number) => request<void>("DELETE", `/api/piper/schemes/${id}`),
     makeDefault: (id: number) => request<Scheme>("POST", `/api/piper/schemes/${id}/default`),
+    /** A picture added (a PNG or a JPEG): the one kept, or the same one added before. */
+    addImage: async (file: Blob) =>
+        request<ImageInfo>("POST", "/api/piper/images", new Bytes(new Uint8Array(await file.arrayBuffer()))),
+    imageBytes: (sha256: string) => requestBytes(`/api/piper/images/${sha256}`),
 };
+
+/** A picture a drawing shows, named by its SHA-256. */
+export interface ImageInfo {
+    sha256: string;
+    content_type: string; // image/png, image/jpeg
+    width: number; // in pixels
+    height: number;
+    size: number; // in bytes
+    uploaded_at: string;
+    uploaded_by: UserRef | null;
+}
+
+/** Where a picture is, for the drawing to show it. */
+export const imageHref = (sha256: string) => apiUrl(`/api/piper/images/${sha256}`);

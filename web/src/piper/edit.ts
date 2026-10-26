@@ -576,6 +576,27 @@ export function flipParts(drawing: Drawing, ids: Set<string>): Drawing {
     return followParts(drawing, flipped, ids);
 }
 
+/**
+ * A picture part showing a picture added to Piper: as wide as it was (or, if it had no picture yet, as its pixels, up
+ * to 240), as tall as the picture's shape makes that.
+ */
+export function withPicture(part: Part, image: { sha256: string; width: number; height: number }): Part {
+    const wide = part.props.image ? part.w : Math.min(240, Math.max(40, image.width));
+    const w = Math.max(20, Math.round(wide / 5) * 5);
+    const h = Math.max(5, Math.round((w * image.height) / image.width));
+    return {
+        ...part,
+        w,
+        h,
+        props: {
+            ...part.props,
+            image: image.sha256,
+            imageWidth: String(image.width),
+            imageHeight: String(image.height),
+        },
+    };
+}
+
 export function updatePart(drawing: Drawing, id: string, change: (part: Part) => Part): Drawing {
     const before = drawing.parts.find((part) => part.id === id);
     if (!before) {

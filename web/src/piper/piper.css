@@ -1324,3 +1324,46 @@
     background: none;
     text-decoration: underline;
 }
+
+/* The team's color schemes (Schemes): a card for each, with its colors at a glance, opened in place to change them. */
+.piper-scheme-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+.piper-scheme {
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.piper-scheme-editing {
+    grid-column: 1 / -1;
+    max-width: 44rem;
+}
+
+.piper-scheme-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.piper-scheme-head h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.piper-scheme-preview {
+    margin: 0.6rem 0;
+    padding: 0.4rem;
+    border-radius: var(--radius);
+    background: #ffffff; /* as on paper, where a scheme's colors end up */
+    color: #1b2433;
+}
+
+.piper-scheme p {
+    margin: 0.3rem 0;
+}

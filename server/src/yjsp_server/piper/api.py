@@ -1,4 +1,4 @@
-"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions, and their releases."""
+"""Piper's API (/api/piper): diagrams, saving their drawings, their revisions and releases, and color schemes."""
 
 from typing import Annotated
 
@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from ..api.deps import DB, ActiveUser
 from ..models import User
-from . import diagrams, releases
-from .models import Diagram
+from . import diagrams, releases, schemes
+from .models import Diagram, Scheme
 from .schemas import (
     DecisionIn,
     DiagramChangeIn,
@@ -22,6 +22,9 @@ from .schemas import (
     RevisionNoteIn,
     RevisionOut,
     RevisionRestoreIn,
+    SchemeChangeIn,
+    SchemeIn,
+    SchemeOut,
 )
 
 router = APIRouter(prefix="/api/piper", tags=["piper"])
@@ -153,3 +156,47 @@ def post_reject(diagram_id: int, release_id: int, body: DecisionIn, user: Active
 def post_withdraw(diagram_id: int, release_id: int, user: ActiveUser, db: DB) -> ReleaseOut:
     """Withdraw a release that's waiting: whoever asked for it, or an admin (else 403 `not_yours`)."""
     return ReleaseOut.of(releases.withdraw(db, user, diagram_id, release_id), user)
+
+
+def _scheme(found: Scheme, user: User) -> SchemeOut:
+    return SchemeOut.of(found, can_delete=schemes.can_delete(user, found))
+
+
+@router.get("/schemes")
+def get_schemes(user: ActiveUser, db: DB) -> list[SchemeOut]:
+    """The team's color schemes: its default first, then the rest by name."""
+    return [_scheme(found, user) for found in schemes.schemes(db)]
+
+
+@router.post("/schemes", status_code=201)
+def post_scheme(body: SchemeIn, user: ActiveUser, db: DB) -> SchemeOut:
+    """A new color scheme: its fluids, and the colors of valves' states."""
+    fluids = [fluid.model_dump() for fluid in body.fluids]
+    return _scheme(schemes.add(db, user, name=body.name, fluids=fluids, states=body.states.model_dump()), user)
+
+
+@router.patch("/schemes/{scheme_id}")
+def patch_scheme(scheme_id: int, body: SchemeChangeIn, user: ActiveUser, db: DB) -> SchemeOut:
+    """Rename a scheme, or change its fluids or states: what's left out stays as it is."""
+    changed = schemes.change(
+        db,
+        user,
+        scheme_id,
+        name=body.name,
+        fluids=None if body.fluids is None else [fluid.model_dump() for fluid in body.fluids],
+        states=None if body.states is None else body.states.model_dump(),
+    )
+    return _scheme(changed, user)
+
+
+@router.delete("/schemes/{scheme_id}", status_code=204)
+def delete_scheme(scheme_id: int, user: ActiveUser, db: DB) -> None:
+    """Delete a scheme (whoever made it, or an admin; not the default, 409 `scheme_default`). Diagrams keep the colors
+    they took from it."""
+    schemes.remove(db, user, scheme_id)
+
+
+@router.post("/schemes/{scheme_id}/default")
+def post_default_scheme(scheme_id: int, user: ActiveUser, db: DB) -> SchemeOut:
+    """Make a scheme the team's default, which new diagrams start with (admins: else 403 `admin_only`)."""
+    return _scheme(schemes.make_default(db, user, scheme_id), user)

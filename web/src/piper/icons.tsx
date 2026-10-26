@@ -31,7 +31,7 @@ export function PartIcon({ part, palette, size = 40 }: { part: Part; palette: Pa
                 fill,
                 fluid: holds?.color ?? null,
                 fluidLabel: holds?.label ?? "",
-                gas: holds ? isGas(holds.id) : false,
+                gas: holds ? isGas(drawing, holds.id) : false,
                 pipe: null,
                 lines: 0,
                 states: { no: palette.no, nc: palette.nc, fip: palette.fip },

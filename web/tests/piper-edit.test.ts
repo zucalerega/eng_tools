@@ -395,7 +395,7 @@ test("a drawing reads back whatever its age: what's missing filled in, what can'
     expect(read.fluids[0]!.color).toBe("#7f8c9a"); // not a color it can draw
     expect(readDrawing(null)).toEqual(emptyDrawing());
     // From before labels were sized and FIP had a color: the standard ones.
-    expect(read.style).toEqual({ no: "", nc: "", fip: "", labels: "normal" });
+    expect(read.style).toEqual({ no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" });
     expect(readDrawing({ style: { fip: "#123456", labels: "small" } }).style).toMatchObject({
         fip: "#123456",
         labels: "small",

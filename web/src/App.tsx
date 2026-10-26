@@ -141,6 +141,7 @@ export function App() {
                         piperApp && (
                             <>
                                 {nav("/piper", "diagrams", "Diagrams")}
+                                {nav("/piper/schemes", "schemes", "Schemes")}
                                 {nav("/piper/help", "help", "Help")}
                             </>
                         )

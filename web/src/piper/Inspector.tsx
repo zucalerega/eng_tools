@@ -5,7 +5,19 @@ import { LINE_STYLES } from "./DiagramView";
 import { LINE_KINDS, type Drawing, type Fluid, type LabelSize, type Line, type Part } from "./drawing";
 import { carryFluid, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
 import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
-import { fluidOf, fluidsOf, fluidsUsed, newFluidId, STANDARD_FLUIDS, withFluid } from "./fluids";
+import {
+    applyScheme,
+    fluidOf,
+    fluidsOf,
+    fluidsUsed,
+    isGas,
+    newFluidId,
+    schemeChanged,
+    STANDARD_FLUIDS,
+    withFluid,
+} from "./fluids";
+import type { Scheme } from "./api";
+import { Link } from "../router";
 import { PartIcon } from "./icons";
 import { LABEL_SIZES, LINE_FIELDS } from "./labels";
 import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
@@ -23,15 +35,16 @@ interface Props {
     palette: Palette;
     test: TestReading | null;
     onPlot: (channels: string[]) => void;
+    schemes: Scheme[] | null; // the team's color schemes, for the diagram to take one's colors
 }
 
-export function Inspector({ store, commands, palette, test, onPlot }: Props) {
+export function Inspector({ store, commands, palette, test, onPlot, schemes }: Props) {
     const { drawing, selection } = useEditor(store, (state) => state);
     const parts = drawing.parts.filter((part) => selection.includes(part.id));
     const lines = drawing.lines.filter((line) => selection.includes(line.id));
     let body;
     if (parts.length === 0 && lines.length === 0) {
-        body = <DiagramPanel store={store} drawing={drawing} palette={palette} />;
+        body = <DiagramPanel store={store} drawing={drawing} palette={palette} schemes={schemes} />;
     } else if (parts.length === 1 && lines.length === 0) {
         body = (
             <PartPanel
@@ -771,8 +784,19 @@ function ManyPanel({
     );
 }
 
-function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing: Drawing; palette: Palette }) {
+function DiagramPanel({
+    store,
+    drawing,
+    palette,
+    schemes,
+}: {
+    store: EditorStore;
+    drawing: Drawing;
+    palette: Palette;
+    schemes: Scheme[] | null;
+}) {
     const [editing, setEditing] = useState(false);
+    const taken = schemes?.find((scheme) => String(scheme.id) === drawing.style.scheme) ?? null;
     const used = fluidsUsed(drawing);
     const valves = drawing.parts.filter((part) => kindOf(part.kind).state).length;
     const setFluid = (fluid: Fluid, key: string) =>
@@ -818,6 +842,49 @@ function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing
                     </p>
                 </div>
             </header>
+            <h3 className="piper-subhead">Color scheme</h3>
+            <Row label="Colors from">
+                {(id) => (
+                    <select
+                        id={id}
+                        value={taken ? String(taken.id) : ""}
+                        onChange={(event) => {
+                            const picked = schemes?.find((scheme) => String(scheme.id) === event.target.value);
+                            store.commit(
+                                picked
+                                    ? applyScheme(drawing, picked)
+                                    : { ...drawing, style: { ...drawing.style, scheme: "", schemeAt: "" } },
+                            );
+                        }}
+                    >
+                        <option value="">
+                            {drawing.style.scheme && !taken ? "A scheme since deleted" : "No scheme"}
+                        </option>
+                        {schemes?.map((scheme) => (
+                            <option key={scheme.id} value={scheme.id}>
+                                {scheme.name}
+                                {scheme.is_default ? " (the team's default)" : ""}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </Row>
+            {taken && schemeChanged(drawing, taken) && (
+                <p className="piper-small">
+                    {taken.name} has changed since this diagram took its colors.{" "}
+                    <button
+                        type="button"
+                        className="button-small"
+                        onClick={() => store.commit(applyScheme(drawing, taken))}
+                    >
+                        Take its colors again
+                    </button>
+                </p>
+            )}
+            <p className="muted piper-small">
+                The team's schemes are on <Link to="/piper/schemes">Schemes</Link>. Changing a fluid here changes it for
+                this diagram alone.
+            </p>
             <h3 className="piper-subhead">Fluids</h3>
             {used.length === 0 ? (
                 <p className="muted piper-small">Lines show their fluids here once they carry some.</p>
@@ -857,6 +924,17 @@ function DiagramPanel({ store, drawing, palette }: { store: EditorStore; drawing
                                 maxLength={60}
                                 onChange={(event) => setFluid({ ...fluid, name: event.target.value }, "name")}
                             />
+                            <label
+                                className="check piper-small"
+                                title="A tank of it is full of it, not filled to a level"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={isGas(drawing, fluid.id)}
+                                    onChange={(event) => setFluid({ ...fluid, gas: event.target.checked }, "gas")}
+                                />
+                                Gas
+                            </label>
                             {!standard.has(fluid.id) && !used.some((entry) => entry.id === fluid.id) && (
                                 <button
                                     type="button"

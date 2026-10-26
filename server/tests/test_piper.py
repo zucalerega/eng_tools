@@ -619,3 +619,72 @@ def test_release_letters_run_on_past_z():
         "ZZ",
         "AAA",
     ]
+
+
+# --- color schemes ------------------------------------------------------------------------------------------------
+
+SCHEMES = "/api/piper/schemes"
+STATES = {"no": "#2e9e4f", "nc": "#d64541", "fip": "#5b7a99", "other": "#e0a500"}
+
+
+def test_the_team_starts_with_yjsp_standard_as_its_default_scheme(team):
+    alice = team.member("alice@x.test")
+    listed = team.client.get(SCHEMES, headers=alice).json()
+    assert [(s["name"], s["is_default"], s["can_delete"]) for s in listed] == [("YJSP standard", True, False)]
+    fluids = {fluid["id"]: fluid for fluid in listed[0]["fluids"]}
+    assert fluids["lox"] == {"id": "lox", "name": "Liquid oxygen", "label": "LOX", "color": "#2f6fd6", "gas": False}
+    assert fluids["combustion"]["gas"] is True
+    assert listed[0]["states"] == STATES
+
+
+def test_anyone_makes_and_changes_a_scheme_and_an_admin_picks_the_default(team):
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    admin = team.member("boss@x.test", admin=True)
+    body = {
+        "name": "Test stand",
+        "fluids": [{"id": "lox", "name": "LOX", "label": "LOX", "color": "#0000ff"}],
+        "states": STATES,
+    }
+    made = team.client.post(SCHEMES, json=body, headers=alice)
+    assert made.status_code == 201, made.text
+    scheme = made.json()
+    assert (scheme["is_default"], scheme["can_delete"], scheme["fluids"][0]["gas"]) == (False, True, False)
+
+    changed = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Stand 2"}, headers=bob)
+    assert (changed.status_code, changed.json()["name"], changed.json()["updated_by"]["email"]) == (
+        200,
+        "Stand 2",
+        "bob@x.test",
+    )
+    assert changed.json()["fluids"] == scheme["fluids"]  # left out, left as it was
+    assert changed.json()["updated_at"] > scheme["updated_at"]
+    same = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Stand 2"}, headers=alice).json()
+    assert (same["updated_at"], same["updated_by"]["email"]) == (changed.json()["updated_at"], "bob@x.test")
+
+    refused = team.client.post(f"{SCHEMES}/{scheme['id']}/default", headers=alice)
+    assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")
+    picked = team.client.post(f"{SCHEMES}/{scheme['id']}/default", headers=admin)
+    assert picked.json()["is_default"] is True
+    listed = team.client.get(SCHEMES, headers=alice).json()
+    assert [(s["name"], s["is_default"]) for s in listed] == [("Stand 2", True), ("YJSP standard", False)]
+
+    # The default can't go; another, only its maker's or an admin's to delete.
+    gone = team.client.delete(f"{SCHEMES}/{scheme['id']}", headers=admin)
+    assert (gone.status_code, gone.json()["error"]) == (409, "scheme_default")
+    standard = listed[1]["id"]
+    assert team.client.delete(f"{SCHEMES}/{standard}", headers=alice).json()["error"] == "not_yours"
+    assert team.client.delete(f"{SCHEMES}/{standard}", headers=admin).status_code == 204
+    assert [s["name"] for s in team.client.get(SCHEMES, headers=alice).json()] == ["Stand 2"]
+
+
+def test_a_scheme_is_checked_before_it_is_kept(team):
+    alice = team.member("alice@x.test")
+    for fluids, states in (
+        ([{"id": "lox", "name": "LOX", "label": "LOX", "color": "blue"}], STATES),
+        ([{"id": "Has spaces", "name": "X", "label": "X", "color": "#000000"}], STATES),
+        ([], {**STATES, "fip": "#12345"}),
+    ):
+        refused = team.client.post(SCHEMES, json={"name": "Bad", "fluids": fluids, "states": states}, headers=alice)
+        assert refused.status_code == 422, (fluids, states)
+    assert team.client.patch(f"{SCHEMES}/999", json={"name": "X"}, headers=alice).status_code == 404

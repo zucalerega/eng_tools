@@ -8,7 +8,7 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
-import type { Diagram, DiagramDetail, Revision } from "../src/piper/api";
+import type { Diagram, DiagramDetail, Revision, Scheme } from "../src/piper/api";
 import { readDrawing, type Drawing } from "../src/piper/drawing";
 import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
@@ -300,6 +300,17 @@ export class Team {
 
     async deleteDiagram(who: Member, id: number): Promise<Diagram> {
         return call<Diagram>("DELETE", `/api/piper/diagrams/${id}`, who.token);
+    }
+
+    /** A Piper color scheme of this test's own (named to be unique to it): not the team's default, which every
+     * test's new diagrams start with. */
+    async scheme(who: Member, name: string, fluids: Scheme["fluids"]): Promise<Scheme> {
+        const states = { no: "#2e9e4f", nc: "#d64541", fip: "#5b7a99", other: "#e0a500" };
+        return call<Scheme>("POST", "/api/piper/schemes", who.token, { name: this.named(name), fluids, states });
+    }
+
+    async changeScheme(who: Member, id: number, change: Partial<Pick<Scheme, "name" | "fluids">>): Promise<Scheme> {
+        return call<Scheme>("PATCH", `/api/piper/schemes/${id}`, who.token, change);
     }
 }
 

@@ -685,6 +685,10 @@ a number. A few codes come up in more than one place.
   (`already_decided`): the release is over, or you've had your say. History shows where it stands.
 - **Only whoever asked for this release, or an admin, can withdraw it** (`not_yours`): ask them,
   or reject it if you're one of its approvers.
+- **... is the team's default: make another the default first** (`scheme_default`): the team's
+  default color scheme can't be deleted. An admin makes another the default on Schemes, then
+  this one can go.
+- **Only an admin can pick the team's default color scheme** (`admin_only`): ask an admin.
 
 ### Asking Claude
 

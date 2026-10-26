@@ -80,7 +80,7 @@ export function DiagramView({
             fill,
             fluid: holds?.color ?? null,
             fluidLabel: holds?.label ?? "",
-            gas: holds ? isGas(holds.id) : false,
+            gas: holds ? isGas(drawing, holds.id) : false,
             pipe: on.length > 0 ? (piped ?? palette.ink) : null,
             lines: on.length,
             states: { no: palette.no, nc: palette.nc, fip: palette.fip },

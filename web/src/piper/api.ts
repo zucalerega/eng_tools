@@ -90,6 +90,7 @@ export interface Scheme extends SchemeColors {
     created_by: UserRef | null;
     updated_by: UserRef | null;
     can_delete: boolean; // yours (or you're an admin), and not the default
+    can_edit: boolean; // yours, or you're an admin
 }
 
 export type SchemeBody = Pick<Scheme, "name" | "fluids" | "states">;

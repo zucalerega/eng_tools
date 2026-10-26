@@ -981,14 +981,18 @@ STATES = {"no": "#2e9e4f", "nc": "#d64541", "fip": "#5b7a99", "other": "#e0a500"
 def test_the_team_starts_with_yjsp_standard_as_its_default_scheme(team):
     alice = team.member("alice@x.test")
     listed = team.client.get(SCHEMES, headers=alice).json()
-    assert [(s["name"], s["is_default"], s["can_delete"]) for s in listed] == [("YJSP standard", True, False)]
+    assert [(s["name"], s["is_default"], s["can_delete"], s["can_edit"]) for s in listed] == [
+        ("YJSP standard", True, False, False)  # Piper made it: the admins'
+    ]
+    admin = team.member("boss@x.test", admin=True)
+    assert [s["can_edit"] for s in team.client.get(SCHEMES, headers=admin).json()] == [True]
     fluids = {fluid["id"]: fluid for fluid in listed[0]["fluids"]}
     assert fluids["lox"] == {"id": "lox", "name": "Liquid oxygen", "label": "LOX", "color": "#2f6fd6", "gas": False}
     assert fluids["combustion"]["gas"] is True
     assert listed[0]["states"] == STATES
 
 
-def test_anyone_makes_and_changes_a_scheme_and_an_admin_picks_the_default(team):
+def test_anyone_makes_a_scheme_its_maker_or_an_admin_changes_it_and_an_admin_picks_the_default(team):
     alice = team.member("alice@x.test")
     bob = team.member("bob@x.test")
     admin = team.member("boss@x.test", admin=True)
@@ -1000,18 +1004,30 @@ def test_anyone_makes_and_changes_a_scheme_and_an_admin_picks_the_default(team):
     made = team.client.post(SCHEMES, json=body, headers=alice)
     assert made.status_code == 201, made.text
     scheme = made.json()
-    assert (scheme["is_default"], scheme["can_delete"], scheme["fluids"][0]["gas"]) == (False, True, False)
+    assert (scheme["is_default"], scheme["can_delete"], scheme["can_edit"], scheme["fluids"][0]["gas"]) == (
+        False,
+        True,
+        True,
+        False,
+    )
 
-    changed = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Stand 2"}, headers=bob)
+    # Someone else's: Bob sees it, but can't change it, as every diagram that takes its colors again would.
+    theirs = next(s for s in team.client.get(SCHEMES, headers=bob).json() if s["id"] == scheme["id"])
+    assert (theirs["can_edit"], theirs["can_delete"]) == (False, False)
+    refused = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Bob's"}, headers=bob)
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert "Only whoever made Test stand, or an admin, can change it" in refused.json()["message"]
+
+    changed = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Stand 2"}, headers=admin)
     assert (changed.status_code, changed.json()["name"], changed.json()["updated_by"]["email"]) == (
         200,
         "Stand 2",
-        "bob@x.test",
+        "boss@x.test",
     )
     assert changed.json()["fluids"] == scheme["fluids"]  # left out, left as it was
     assert changed.json()["updated_at"] > scheme["updated_at"]
     same = team.client.patch(f"{SCHEMES}/{scheme['id']}", json={"name": "Stand 2"}, headers=alice).json()
-    assert (same["updated_at"], same["updated_by"]["email"]) == (changed.json()["updated_at"], "bob@x.test")
+    assert (same["updated_at"], same["updated_by"]["email"]) == (changed.json()["updated_at"], "boss@x.test")
 
     refused = team.client.post(f"{SCHEMES}/{scheme['id']}/default", headers=alice)
     assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")

@@ -228,7 +228,7 @@ def post_withdraw(diagram_id: int, release_id: int, user: ActiveUser, db: DB) ->
 
 
 def _scheme(found: Scheme, user: User) -> SchemeOut:
-    return SchemeOut.of(found, can_delete=schemes.can_delete(user, found))
+    return SchemeOut.of(found, can_change=schemes.can_change(user, found))
 
 
 @router.get("/schemes")
@@ -246,7 +246,8 @@ def post_scheme(body: SchemeIn, user: ActiveUser, db: DB) -> SchemeOut:
 
 @router.patch("/schemes/{scheme_id}")
 def patch_scheme(scheme_id: int, body: SchemeChangeIn, user: ActiveUser, db: DB) -> SchemeOut:
-    """Rename a scheme, or change its fluids or states: what's left out stays as it is."""
+    """Rename a scheme, or change its fluids or states: what's left out stays as it is (whoever made it, or an admin;
+    else 403 `not_yours`)."""
     changed = schemes.change(
         db,
         user,

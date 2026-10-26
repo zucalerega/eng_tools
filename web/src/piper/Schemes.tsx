@@ -58,7 +58,8 @@ export function SchemesPage() {
             <p className="muted piper-lead">
                 The colors the team draws its P&IDs in: each fluid's color and label, and the colors of valves' states.
                 New diagrams start with the team's default; a diagram takes another's colors from its panel (with
-                nothing selected), and says when the scheme it took them from has changed.
+                nothing selected), and says when the scheme it took them from has changed. Anyone can make a scheme;
+                only whoever made one, or an admin, can change or delete it.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
             {schemes === null && !problem && <p className="muted">Loading…</p>}
@@ -88,9 +89,15 @@ export function SchemesPage() {
                                 <Time at={scheme.updated_at} />
                             </p>
                             <div className="piper-revision-actions">
-                                <button type="button" className="button-small" onClick={() => setEditing(scheme.id)}>
-                                    Edit
-                                </button>
+                                {scheme.can_edit && (
+                                    <button
+                                        type="button"
+                                        className="button-small"
+                                        onClick={() => setEditing(scheme.id)}
+                                    >
+                                        Edit
+                                    </button>
+                                )}
                                 {me?.is_admin && !scheme.is_default && (
                                     <button
                                         type="button"

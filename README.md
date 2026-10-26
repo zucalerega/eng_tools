@@ -367,8 +367,9 @@ the keys.
   valve**). With nothing selected, change the diagram's fluids' colors and labels, add its own,
   or make its labels smaller or larger.
 - **Color schemes**: **Schemes**, in Piper's top bar, has the team's color schemes, each one's
-  fluids (color, label, name, gas or not) and valve state colors, for anyone to make and
-  change. New diagrams start in the team's default (YJSP standard; an admin picks it), and
+  fluids (color, label, name, gas or not) and valve state colors: anyone makes one, and only
+  whoever made it, or an admin, changes or deletes it. New diagrams start in the team's default
+  (YJSP standard; an admin picks it, and only admins change it), and
   **Colors from**, with nothing selected, gives a diagram another's; when that scheme changes,
   **Take its colors again**. A PDF can be in black and white, to print without color.
 - **Saving and history**: a diagram you're editing saves itself as you go; if a save fails,

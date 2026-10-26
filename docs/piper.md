@@ -285,7 +285,8 @@ what it is, `data-hit`).
   legend shows those its lines and vessels use, and its valves' states.
 - **Color schemes** (`piper_schemes`, `schemes.py`; the Schemes page, `Schemes.tsx`) are the
   team's own colors: each one's fluids (id, name, label, color, gas or not) and the colors of
-  valves' states, made and changed by anyone, deleted by whoever made one or an admin. One is the
+  valves' states, made by anyone, changed and deleted by whoever made one or an admin (`can_change`;
+  the seeded YJSP standard has no maker, so it's the admins'; the API says `can_edit`). One is the
   team's default, an admin's to pick ("YJSP standard", which 0025 seeds with Piper's colors as
   they were), and can't be deleted while it is (409 `scheme_default`). A diagram takes a
   scheme's colors into its drawing (`applyScheme`): its fluids become the diagram's own, over what
@@ -568,7 +569,7 @@ site's own endpoints, are in [design.md](design.md#api).
 | `POST /api/piper/diagrams/{id}/releases/{release}/approve`, `/reject` | an approver's say `{comment}`: released with the next letter once all have approved; 403 `not_an_approver`, 409 `already_decided` |
 | `POST /api/piper/diagrams/{id}/releases/{release}/withdraw` | take back a release that's waiting (whoever asked, or an admin, else 403 `not_yours`) |
 | `GET`/`POST /api/piper/schemes` | the team's color schemes, its default first; a new one `{name, fluids, states}` |
-| `PATCH`/`DELETE /api/piper/schemes/{id}` | change one (what's left out stays); delete one (whoever made it, or an admin, else 403 `not_yours`; not the default, 409 `scheme_default`) |
+| `PATCH`/`DELETE /api/piper/schemes/{id}` | change one (what's left out stays), or delete one: whoever made it, or an admin, else 403 `not_yours`; not the default, 409 `scheme_default`, to delete. Each scheme says `can_edit` and `can_delete` |
 | `POST /api/piper/schemes/{id}/default` | make one the team's default (admins, else 403 `admin_only`) |
 | `POST /api/piper/images` | add a picture, a PNG or a JPEG, as the raw request body (201: its `sha256`, `content_type`, `width`, `height`, `size`; the same bytes again, the same picture); 415 `not_an_image`, 413 `too_large` |
 | `GET /api/piper/images/{sha256}` | a picture's bytes, with its name as its ETag (304 to `If-None-Match`) |

@@ -791,6 +791,21 @@ test("Schemes lists the team's color schemes; one's changed there, its fluids an
     });
 });
 
+test("on Schemes, only whoever made a scheme, or an admin, can change or delete it", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const water = [{ id: "water", name: "Water", label: "H2O", color: "#22a6d6", gas: false }];
+    const chiefs = await team.scheme(team.chief, "The chief's", water);
+    const his = await team.scheme(bob, "Bob's", water);
+    renderApp(bob, "/piper/schemes");
+    const mine = within(await screen.findByRole("article", { name: his.name }));
+    expect(mine.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(mine.getByRole("button", { name: "Delete…" })).toBeTruthy();
+    const theirs = within(await screen.findByRole("article", { name: chiefs.name }));
+    expect(theirs.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(theirs.queryByRole("button", { name: "Delete…" })).toBeNull();
+});
+
 test("History lists the revisions; looking at one shows it, and restoring it makes it the drawing again", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

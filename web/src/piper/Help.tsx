@@ -289,9 +289,10 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     The team's color schemes are on <Link to="/piper/schemes">Schemes</Link>: each one's fluids and
-                    valve state colors, defined by the team. New diagrams start in the team's default (YJSP standard, an
-                    admin's to pick); <em>Colors from</em>, with nothing selected, gives a diagram another's. When the
-                    scheme changes, the diagram says so: <em>Take its colors again</em>.
+                    valve state colors, defined by the team. Anyone can make one; only whoever made it, or an admin, can
+                    change or delete it. New diagrams start in the team's default (YJSP standard, an admin's to pick and
+                    change); <em>Colors from</em>, with nothing selected, gives a diagram another's. When the scheme
+                    changes, the diagram says so: <em>Take its colors again</em>.
                 </li>
             </ul>
         ),

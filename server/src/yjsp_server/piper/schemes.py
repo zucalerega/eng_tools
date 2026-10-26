@@ -1,8 +1,9 @@
 """Piper's color schemes, defined by the team: each a set of fluids (name, label, color, gas or not) and the colors of
-valves' states. Anyone signed in makes and changes them, as anyone changes a diagram; whoever made one, or an admin,
-deletes it. An admin picks the team's default, which new diagrams start with and which can't be deleted while it's
-the default. A diagram takes a scheme's colors into its drawing (the web app does, web/src/piper/fluids.ts), noting
-which scheme and when, so its colors are its own until it takes the scheme's again.
+valves' states. Anyone signed in makes one; whoever made it, or an admin, changes or deletes it, since a change reaches
+every diagram that takes its colors again (the team's first, which Piper made, is the admins'). An admin picks the
+team's default, which new diagrams start with and which can't be deleted while it's the default. A diagram takes a
+scheme's colors into its drawing (the web app does, web/src/piper/fluids.ts), noting which scheme and when, so its
+colors are its own until it takes the scheme's again.
 """
 
 from collections.abc import Sequence
@@ -30,7 +31,8 @@ def scheme(db: Session, scheme_id: int) -> Scheme:
     return found
 
 
-def can_delete(user: User, found: Scheme) -> bool:
+def can_change(user: User, found: Scheme) -> bool:
+    """Whether someone may change or delete a scheme: whoever made it, or an admin."""
     return user.is_admin or user.id == found.created_by
 
 
@@ -51,8 +53,11 @@ def change(
     fluids: list[dict[str, Any]] | None = None,
     states: dict[str, str] | None = None,
 ) -> Scheme:
-    """Rename a scheme, or change its fluids or states (None: as they are). Diagrams that use it see it's changed."""
+    """Rename a scheme, or change its fluids or states (None: as they are): whoever made it, or an admin. Diagrams that
+    use it see it's changed."""
     found = scheme(db, scheme_id)
+    if not can_change(user, found):
+        raise Forbidden(f"Only whoever made {found.name}, or an admin, can change it", code="not_yours")
     wanted = {"name": name, "fluids": fluids, "states": states}
     changing = {key: value for key, value in wanted.items() if value is not None and value != getattr(found, key)}
     if changing:  # only a change is one a diagram that took its colors is told of
@@ -67,7 +72,7 @@ def change(
 def remove(db: Session, user: User, scheme_id: int) -> None:
     """Delete a scheme (whoever made it, or an admin): diagrams that took its colors keep them."""
     found = scheme(db, scheme_id)
-    if not can_delete(user, found):
+    if not can_change(user, found):
         raise Forbidden(f"Only whoever made {found.name}, or an admin, can delete it", code="not_yours")
     if found.is_default:
         raise Conflict(f"{found.name} is the team's default: make another the default first", code="scheme_default")

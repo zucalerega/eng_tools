@@ -464,9 +464,10 @@ class SchemeOut(BaseModel):
     updated_at: datetime  # a diagram that took its colors before this can take them again
     updated_by: UserRef | None
     can_delete: bool  # you made it (or you're an admin), and it isn't the default
+    can_edit: bool  # you made it, or you're an admin
 
     @classmethod
-    def of(cls, scheme: Scheme, *, can_delete: bool) -> "SchemeOut":
+    def of(cls, scheme: Scheme, *, can_change: bool) -> "SchemeOut":
         return cls(
             id=scheme.id,
             name=scheme.name,
@@ -476,7 +477,8 @@ class SchemeOut(BaseModel):
             created_by=_ref(scheme.creator),
             updated_at=scheme.updated_at,
             updated_by=_ref(scheme.editor),
-            can_delete=can_delete and not scheme.is_default,
+            can_delete=can_change and not scheme.is_default,
+            can_edit=can_change,
         )
 
 

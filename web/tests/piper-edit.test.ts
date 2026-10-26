@@ -293,6 +293,17 @@ test("a selected line to a part that stayed keeps its hand routing, following th
     ]);
 });
 
+test("a sensor made duplicated moves its side tap out, and its line follows", () => {
+    fresh();
+    const sensor = place("pressure-transducer", 0, 0);
+    const valve = place("ball-valve", 200, 0);
+    const tap = join([sensor, "right"], [valve, "a"]);
+    drawing = updatePart(drawing, sensor, (entry) => ({ ...entry, props: { ...entry.props, count: "2" } }));
+    const path = pathOf(partsById(drawing), line(tap));
+    expect(path[0]).toEqual({ x: 30, y: 0 }); // the side of the second bubble
+    expect(orthogonalPath(tap)).toBe(true);
+});
+
 test("turning a part turns its ports, and its lines follow", () => {
     fresh();
     const tank = place("tank", 0, 0);

@@ -358,9 +358,13 @@ the keys.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
-  orifices and venturis, flow meters, filters, instruments as ISA bubbles, engines, pumps,
-  vents, tees, a box for anything else, notes, regions, a legend, and a title block. Each is
-  tagged with the next number free (PT-3); **R** turns it, **F** flips it.
+  orifices and venturis, flow meters, filters, instruments, engines, pumps, vents, tees, a box
+  for anything else, notes, regions, a legend, and a title block. What works a valve is on a
+  stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
+  instrument is a bubble with its tag's letters in it (PT, TC...), its whole tag at its side;
+  a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
+  PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
+  flips it.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts

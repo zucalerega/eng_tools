@@ -17,10 +17,14 @@ import {
 } from "./kinds";
 
 // Valves, as ISA 5.1 draws them: a body of two triangles meeting at the middle (a bowtie), told apart by what's at
-// its middle, with what works it on a stem above. Ports are 20 out from the middle, the body's ends 15.
+// its middle, with what works it on a stem above. Ports are 20 out from the middle, as every inline part's are, and
+// the body's ends 11: small on its line, the line running on into it, as a P&ID draws a valve.
 
 /** The body's two triangles, point to point. */
-const BOWTIE = "M-15 -10 L15 10 L15 -10 L-15 10 Z";
+const BOWTIE = "M-11 -6.5 L11 6.5 L11 -6.5 L-11 6.5 Z";
+
+/** How far in from a port a line's drawn to, to meet the body's end. */
+const BODY_INSET = 9;
 
 export const BODY: Field = {
     key: "body",
@@ -40,20 +44,20 @@ export const BODY: Field = {
 function bodyMark(body: string, context: DrawContext) {
     switch (body) {
         case "ball":
-            return <circle r={5} fill={context.paper} {...ink(context)} />;
+            return <circle r={3.6} fill={context.paper} {...ink(context, 1.2)} />;
         case "globe":
-            return <circle r={4} fill={context.ink} />;
+            return <circle r={3} fill={context.ink} />;
         case "needle":
-            return <path d="M-6 -10 L6 -10 L0 -1 Z" fill={context.ink} {...ink(context, 1)} />;
+            return <path d="M-4.5 -6.5 L4.5 -6.5 L0 -0.8 Z" fill={context.ink} {...ink(context, 0.8)} />;
         case "butterfly":
             return (
                 <>
-                    <path d="M0 -10 V10" {...ink(context, 2)} />
-                    <circle r={2.5} fill={context.ink} />
+                    <path d="M0 -6.5 V6.5" {...ink(context, 1.6)} />
+                    <circle r={1.8} fill={context.ink} />
                 </>
             );
         case "plug":
-            return <rect x={-4} y={-3} width={8} height={6} fill={context.ink} />;
+            return <rect x={-3} y={-2} width={6} height={4} fill={context.ink} />;
         default:
             return null; // gate: the bowtie alone
     }
@@ -63,63 +67,55 @@ function bodyMark(body: string, context: DrawContext) {
 function actuatorTop(actuation: string | undefined): number {
     switch (actuation) {
         case "manual":
-            return 19;
+            return 16;
         case "solenoid":
-            return 35;
         case "pneumatic":
-            return 29;
         case "motor":
-            return 37;
+            return 26;
         default:
-            return 10;
+            return 8;
     }
 }
 
-/** What works a valve, on a stem up from its middle: a handle, a solenoid, a diaphragm, a motor. */
-function Actuator({ part, context }: { part: Part; context: DrawContext }) {
-    const actuation = part.props.actuation ?? "";
-    if (!actuation) {
-        return null;
-    }
-    const stem = <path d="M0 0 V-18" {...ink(context)} />;
+/** The letter in an actuator's box: S for a solenoid, P for pneumatic (worked by air), M for a motor. */
+function actuatorLetter(actuation: string): string | null {
     switch (actuation) {
-        case "manual":
-            return (
-                <>
-                    {stem}
-                    <path d="M-8 -18 H8" {...ink(context, 2.2)} />
-                </>
-            );
         case "solenoid":
-            return (
-                <>
-                    {stem}
-                    <rect x={-8} y={-34} width={16} height={16} fill={context.paper} {...ink(context)} />
-                    <Letters part={part} x={0} y={-26} size={10} fill={context.ink} bold>
-                        S
-                    </Letters>
-                </>
-            );
+            return "S";
         case "pneumatic":
-            return (
-                <>
-                    {stem}
-                    <path d="M-10 -18 A10 10 0 0 1 10 -18 Z" fill={context.paper} {...ink(context)} />
-                </>
-            );
+            return "P";
         case "motor":
-            return (
-                <>
-                    {stem}
-                    <circle cy={-27} r={9} fill={context.paper} {...ink(context)} />
-                    <Letters part={part} x={0} y={-27} size={10} fill={context.ink} bold>
-                        M
-                    </Letters>
-                </>
-            );
+            return "M";
         default:
             return null;
     }
+}
+
+/** What works a valve, on a stem up from its middle: a handle, or a box with a letter saying what drives it. */
+function Actuator({ part, context }: { part: Part; context: DrawContext }) {
+    const actuation = part.props.actuation ?? "";
+    const stem = <path d="M0 0 V-14" {...ink(context, 1.2)} />;
+    if (actuation === "manual") {
+        return (
+            <>
+                {stem}
+                <path d="M-6 -14 H6" {...ink(context, 1.8)} />
+            </>
+        );
+    }
+    const letter = actuatorLetter(actuation);
+    if (!letter) {
+        return null;
+    }
+    return (
+        <>
+            {stem}
+            <rect x={-6} y={-26} width={12} height={12} fill={context.paper} {...ink(context, 1.2)} />
+            <Letters part={part} x={0} y={-20} size={8} fill={context.ink} bold>
+                {letter}
+            </Letters>
+        </>
+    );
 }
 
 /** A valve's name: its body's, and how it's worked unless by hand ("Pneumatic ball valve"); a solenoid's is its own. */
@@ -140,8 +136,8 @@ function valveTitle(part: Part): string {
 export const valve: Kind = {
     id: "valve",
     name: "Valve",
-    box: (part) => [-20, -actuatorTop(part.props.actuation), 20, 10],
-    ports: () => inlinePorts(5),
+    box: (part) => [-20, -actuatorTop(part.props.actuation), 20, 8],
+    ports: () => inlinePorts(BODY_INSET),
     fields: [BODY, ACTUATION, NORMAL, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     title: valveTitle,
     state: true,
@@ -211,10 +207,10 @@ export const check: Kind = {
 export const relief: Kind = {
     id: "relief",
     name: "Relief valve",
-    box: () => [-10, -26, 20, 20],
+    box: () => [-10, -21, 20, 20],
     ports: () => [
-        { id: "in", x: 0, y: 20, dir: "down", inset: 5 },
-        { id: "out", x: 20, y: 0, dir: "right", inset: 5 },
+        { id: "in", x: 0, y: 20, dir: "down", inset: BODY_INSET },
+        { id: "out", x: 20, y: 0, dir: "right", inset: BODY_INSET },
     ],
     fields: [
         SET,
@@ -228,18 +224,26 @@ export const relief: Kind = {
     through: true,
     draw: (_part, context) => (
         <>
-            <path d="M-10 15 L10 15 L0 0 Z M15 -10 L15 10 L0 0 Z" fill={context.paper} {...ink(context)} />
-            <path d="M0 0 V-6 L-5 -9 L5 -13 L-5 -17 L5 -21 L0 -24 M-6 -24 H6" fill="none" {...ink(context)} />
+            <path d="M-6.5 11 L6.5 11 L0 0 Z M11 -6.5 L11 6.5 L0 0 Z" fill={context.paper} {...ink(context)} />
+            <path
+                d="M0 0 V-5 L-4 -7.5 L4 -10.5 L-4 -13.5 L4 -16.5 L0 -19 M-5 -19 H5"
+                fill="none"
+                {...ink(context, 1.2)}
+            />
         </>
     ),
 };
 
-/** A pressure regulator: a valve worked by a diaphragm against a spring, sensing the pressure after it. */
+/**
+ * A pressure regulator, as ISA 5.1 draws a self-contained one: a valve worked by a diaphragm, against a spring (or the
+ * gas loading its dome), with a line from the diaphragm to the pressure it holds: downstream for a reducing regulator,
+ * upstream for a back-pressure one.
+ */
 export const regulator: Kind = {
     id: "regulator",
     name: "Pressure regulator",
-    box: () => [-20, -37, 20, 10],
-    ports: () => inlinePorts(5),
+    box: () => [-20, -31, 20, 8],
+    ports: () => inlinePorts(BODY_INSET),
     fields: [
         SET,
         {
@@ -261,35 +265,42 @@ export const regulator: Kind = {
     tag: "beside",
     inline: ["a", "b"],
     through: true,
-    draw: (part, context) => (
-        <>
-            <path d="M10 -14 H18 V-4" fill="none" strokeDasharray="3 2" {...ink(context, 1.2)} />
-            <path d="M0 0 V-14" {...ink(context)} />
-            <path d="M-10 -14 A10 10 0 0 1 10 -14 Z" fill={context.paper} {...ink(context)} />
-            {part.props.type === "dome" ? (
-                <path d="M0 -24 V-34 M-5 -34 H5" fill="none" {...ink(context)} />
-            ) : (
-                <path d="M0 -24 L-4 -27 L4 -30 L-4 -33 L0 -36" fill="none" {...ink(context)} />
-            )}
-            <path d={BOWTIE} fill={context.paper} {...ink(context)} />
-        </>
-    ),
+    draw: (part, context) => {
+        const side = part.props.type === "back" ? -1 : 1; // which side it senses
+        return (
+            <>
+                <path d={`M${8 * side} -13 H${15.5 * side} V0`} fill="none" {...ink(context, 1)} />
+                <path d="M0 0 V-12" {...ink(context, 1.2)} />
+                <path d="M-8 -12 A8 8 0 0 1 8 -12 Z" fill={context.paper} {...ink(context, 1.2)} />
+                {part.props.type === "dome" ? (
+                    <path d="M0 -20 V-29 M-3.5 -26 L0 -29 L3.5 -26" fill="none" {...ink(context, 1.2)} />
+                ) : (
+                    <path
+                        d="M0 -20 L-3.5 -22.5 L3.5 -25 L-3.5 -27.5 L3.5 -30 L0 -31"
+                        fill="none"
+                        {...ink(context, 1.2)}
+                    />
+                )}
+                <path d={BOWTIE} fill={context.paper} {...ink(context)} />
+            </>
+        );
+    },
 };
 
 /** A burst disc: a dome between two flanges, bulging the way it bursts. */
 export const burst: Kind = {
     id: "burst",
     name: "Burst disc",
-    box: () => [-20, -11, 20, 11],
-    ports: () => inlinePorts(15),
+    box: () => [-20, -10, 20, 10],
+    ports: () => inlinePorts(16),
     fields: [{ key: "burst", label: "Burst pressure", type: "text", placeholder: "900 psi" }, SIZE, MAWP, MODEL, NOTES],
     tag: "beside",
     inline: ["a", "b"],
     through: true,
     draw: (_part, context) => (
         <>
-            <path d="M-5 -11 V11 M5 -11 V11" {...ink(context, 2)} />
-            <path d="M-5 -9 Q7 0 -5 9" fill="none" {...ink(context)} />
+            <path d="M-4 -9 V9 M4 -9 V9" {...ink(context, 1.8)} />
+            <path d="M-4 -7.5 Q6 0 -4 7.5" fill="none" {...ink(context, 1.2)} />
         </>
     ),
 };
@@ -299,7 +310,7 @@ export const valve3: Kind = {
     id: "valve3",
     name: "Three-way valve",
     box: (part) => [-20, -actuatorTop(part.props.actuation), 20, 20],
-    ports: () => [...inlinePorts(5), { id: "c", x: 0, y: 20, dir: "down", inset: 5 }],
+    ports: () => [...inlinePorts(BODY_INSET), { id: "c", x: 0, y: 20, dir: "down", inset: BODY_INSET }],
     fields: [ACTUATION, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     reads: "state",
     tag: "beside",
@@ -308,11 +319,11 @@ export const valve3: Kind = {
         <>
             <Actuator part={part} context={context} />
             <path
-                d="M-15 -10 L0 0 L-15 10 Z M15 -10 L0 0 L15 10 Z M-10 15 L0 0 L10 15 Z"
+                d="M-11 -6.5 L0 0 L-11 6.5 Z M11 -6.5 L0 0 L11 6.5 Z M-6.5 11 L0 0 L6.5 11 Z"
                 fill={context.fill ?? context.paper}
                 {...ink(context)}
             />
-            <circle r={4} fill={context.paper} {...ink(context)} />
+            <circle r={3} fill={context.paper} {...ink(context, 1.2)} />
         </>
     ),
 };
@@ -323,8 +334,8 @@ export const angle: Kind = {
     name: "Angle valve",
     box: (part) => [-20, -actuatorTop(part.props.actuation), 10, 20],
     ports: () => [
-        { id: "a", x: -20, y: 0, dir: "left", inset: 5 },
-        { id: "b", x: 0, y: 20, dir: "down", inset: 5 },
+        { id: "a", x: -20, y: 0, dir: "left", inset: BODY_INSET },
+        { id: "b", x: 0, y: 20, dir: "down", inset: BODY_INSET },
     ],
     fields: [ACTUATION, NORMAL, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     state: true,
@@ -335,7 +346,7 @@ export const angle: Kind = {
         <>
             <Actuator part={part} context={context} />
             <path
-                d="M-15 -10 L0 0 L-15 10 Z M-10 15 L0 0 L10 15 Z"
+                d="M-11 -6.5 L0 0 L-11 6.5 Z M-6.5 11 L0 0 L6.5 11 Z"
                 fill={context.fill ?? context.paper}
                 {...ink(context)}
             />
@@ -347,8 +358,8 @@ export const angle: Kind = {
 export const qd: Kind = {
     id: "qd",
     name: "Quick disconnect",
-    box: () => [-20, -9, 20, 9],
-    ports: () => inlinePorts(6),
+    box: () => [-20, -8, 20, 8],
+    ports: () => inlinePorts(BODY_INSET),
     fields: [
         {
             key: "connected",
@@ -372,13 +383,13 @@ export const qd: Kind = {
         return (
             <>
                 <path
-                    d={`M${-14 - apart} -8 L${-3 - apart} 0 L${-14 - apart} 8 Z M${14 + apart} -8 L${3 + apart} 0 L${
-                        14 + apart
-                    } 8 Z`}
+                    d={`M${-11 - apart} -6.5 L${-2 - apart} 0 L${-11 - apart} 6.5 Z M${11 + apart} -6.5 L${2 + apart} 0 L${
+                        11 + apart
+                    } 6.5 Z`}
                     fill={context.paper}
                     {...ink(context)}
                 />
-                <path d={`M${-3 - apart} -8 V8 M${3 + apart} -8 V8`} {...ink(context, 2)} />
+                <path d={`M${-2 - apart} -6.5 V6.5 M${2 + apart} -6.5 V6.5`} {...ink(context, 1.8)} />
             </>
         );
     },

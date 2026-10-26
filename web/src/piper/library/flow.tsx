@@ -8,8 +8,8 @@ const CD: Field = { key: "cd", label: "Discharge coefficient", type: "text", pla
 export const orifice: Kind = {
     id: "orifice",
     name: "Orifice",
-    box: () => [-20, -10, 20, 10],
-    ports: () => inlinePorts(17),
+    box: () => [-20, -9, 20, 9],
+    ports: () => inlinePorts(0), // the line runs on through it, as ISA draws an orifice plate in a pipe
     fields: [
         { key: "diameter", label: "Diameter", type: "text", placeholder: "0.062 in", prefix: "Ø " },
         CD,
@@ -20,7 +20,12 @@ export const orifice: Kind = {
     tag: "beside",
     inline: ["a", "b"],
     through: true,
-    draw: (_part, context) => <path d="M-3 -10 V10 M3 -10 V10" {...ink(context, 2)} />,
+    draw: (_part, context) => (
+        <>
+            <path d="M-20 0 H20" stroke={context.pipe ?? context.ink} strokeWidth={2.5} />
+            <path d="M-2.5 -8 V8 M2.5 -8 V8" {...ink(context, 1.6)} />
+        </>
+    ),
 };
 
 /** A venturi: converging, a throat, diverging; cavitating, it holds the flow whatever's downstream. */

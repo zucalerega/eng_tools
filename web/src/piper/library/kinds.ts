@@ -82,7 +82,9 @@ export interface Kind {
     title?: (part: Part) => string;
     state?: boolean; // it has a normal state, NO or NC, which colors it
     reads?: "value" | "state"; // a test's channel shows its value, or its state
-    tag: "beside" | "inside" | "none"; // where its tag's drawn: beside it, in it (an instrument's bubble), or not
+    // Where its tag's drawn: beside it (under it, or beside it in a line going down), at its side (an instrument's),
+    // in it, or not at all.
+    tag: "beside" | "side" | "inside" | "none";
     inline?: readonly [string, string]; // two ports facing apart: it can be dropped into a line
     through?: boolean; // what flows in flows out: a line's fluid carries on through it
     resizable?: boolean; // a region or a box: dragged to a size

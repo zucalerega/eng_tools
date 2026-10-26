@@ -26,7 +26,7 @@ import {
 import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
-import { linesOn, partsById, placeEnd, portOf, type PlacedEnd } from "./ports";
+import { linesOn, partsById, placeEnd, portOf, portsOf, type PlacedEnd } from "./ports";
 import { route, STUB } from "./route";
 
 // The changes the editor makes to a drawing, each a pure function from one drawing to the next: placing parts,
@@ -581,9 +581,13 @@ export function updatePart(drawing: Drawing, id: string, change: (part: Part) =>
     }
     const after = change(before);
     const next = { ...drawing, parts: drawing.parts.map((part) => (part.id === id ? after : part)) };
-    // What it is or how big may have moved its ports (a valve's body is the same size whatever it is, but a region's
-    // isn't): its lines follow.
-    const moved = after.kind !== before.kind || after.w !== before.w || after.h !== before.h;
+    // What it is, how big, or how many it is may have moved its ports (a valve's body is the same size whatever it is,
+    // but a region's isn't, nor a duplicated transducer's): its lines follow.
+    const at = (part: Part) =>
+        portsOf(part)
+            .map((port) => `${port.id}:${port.at.x},${port.at.y}`)
+            .join(" ");
+    const moved = after.kind !== before.kind || at(after) !== at(before);
     return moved ? followParts(drawing, next, new Set([id])) : next;
 }
 

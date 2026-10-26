@@ -69,61 +69,53 @@ function actuatorTop(actuation: string | undefined): number {
         case "manual":
             return 16;
         case "solenoid":
-            return 26;
         case "pneumatic":
-            return 22;
         case "motor":
-            return 28;
+            return 26;
         default:
             return 8;
     }
 }
 
-/** What works a valve, on a stem up from its middle: a handle, a solenoid, a diaphragm, a motor. */
-function Actuator({ part, context }: { part: Part; context: DrawContext }) {
-    const actuation = part.props.actuation ?? "";
-    if (!actuation) {
-        return null;
-    }
-    const stem = <path d="M0 0 V-14" {...ink(context, 1.2)} />;
+/** The letter in an actuator's box: S for a solenoid, P for pneumatic (worked by air), M for a motor. */
+function actuatorLetter(actuation: string): string | null {
     switch (actuation) {
-        case "manual":
-            return (
-                <>
-                    {stem}
-                    <path d="M-6 -14 H6" {...ink(context, 1.8)} />
-                </>
-            );
         case "solenoid":
-            return (
-                <>
-                    {stem}
-                    <rect x={-6} y={-26} width={12} height={12} fill={context.paper} {...ink(context, 1.2)} />
-                    <Letters part={part} x={0} y={-20} size={8} fill={context.ink} bold>
-                        S
-                    </Letters>
-                </>
-            );
+            return "S";
         case "pneumatic":
-            return (
-                <>
-                    {stem}
-                    <path d="M-8 -14 A8 8 0 0 1 8 -14 Z" fill={context.paper} {...ink(context, 1.2)} />
-                </>
-            );
+            return "P";
         case "motor":
-            return (
-                <>
-                    {stem}
-                    <circle cy={-21} r={7} fill={context.paper} {...ink(context, 1.2)} />
-                    <Letters part={part} x={0} y={-21} size={8} fill={context.ink} bold>
-                        M
-                    </Letters>
-                </>
-            );
+            return "M";
         default:
             return null;
     }
+}
+
+/** What works a valve, on a stem up from its middle: a handle, or a box with a letter saying what drives it. */
+function Actuator({ part, context }: { part: Part; context: DrawContext }) {
+    const actuation = part.props.actuation ?? "";
+    const stem = <path d="M0 0 V-14" {...ink(context, 1.2)} />;
+    if (actuation === "manual") {
+        return (
+            <>
+                {stem}
+                <path d="M-6 -14 H6" {...ink(context, 1.8)} />
+            </>
+        );
+    }
+    const letter = actuatorLetter(actuation);
+    if (!letter) {
+        return null;
+    }
+    return (
+        <>
+            {stem}
+            <rect x={-6} y={-26} width={12} height={12} fill={context.paper} {...ink(context, 1.2)} />
+            <Letters part={part} x={0} y={-20} size={8} fill={context.ink} bold>
+                {letter}
+            </Letters>
+        </>
+    );
 }
 
 /** A valve's name: its body's, and how it's worked unless by hand ("Pneumatic ball valve"); a solenoid's is its own. */

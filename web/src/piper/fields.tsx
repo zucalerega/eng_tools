@@ -1,10 +1,122 @@
-import { useId, type ReactNode } from "react";
+import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Palette } from "./colors";
 import type { Drawing } from "./drawing";
 import { fluidOf, fluidsOf } from "./fluids";
+import type { TestChannel } from "./testdata";
 
-// The inspector's fields: text with its units, choices, a valve's normal state, a fluid, and whether a property shows
-// on the drawing.
+// The inspector's fields: text with its units, choices, a valve's normal state, a fluid, a test's channel, and whether
+// a property shows on the drawing.
+
+/**
+ * A test channel's name: typed, or picked from the test's channels, which narrow to what's typed. Its list is the
+ * page's own, in its colors, as the find box's is: a datalist's is the browser's, white and plain on Windows, with each
+ * name in it twice. Without a test, it's a box to type in.
+ */
+export function ChannelInput({
+    id,
+    value,
+    channels,
+    placeholder,
+    onChange,
+}: {
+    id: string;
+    value: string;
+    channels: TestChannel[] | null; // the test the drawing's read against's, if there is one
+    placeholder: string;
+    onChange: (value: string) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [active, setActive] = useState(0);
+    const list = useId();
+    const typed = value.trim().toLowerCase();
+    const matches = useMemo(() => {
+        if (!channels) {
+            return [];
+        }
+        // A channel's whole name shows them all, to pick another; part of one, those it's in.
+        const whole = channels.some((channel) => channel.name.toLowerCase() === typed);
+        return typed && !whole ? channels.filter((channel) => channel.name.toLowerCase().includes(typed)) : channels;
+    }, [channels, typed]);
+    const showing = open && matches.length > 0;
+
+    function pick(channel: TestChannel | undefined) {
+        if (channel) {
+            onChange(channel.name);
+            setOpen(false);
+        }
+    }
+
+    function onKey(event: KeyboardEvent<HTMLInputElement>) {
+        if (!channels) {
+            return;
+        }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            if (!showing) {
+                setOpen(true);
+                setActive(0);
+                return;
+            }
+            const step = event.key === "ArrowDown" ? 1 : matches.length - 1;
+            setActive((now) => (now + step) % matches.length);
+        } else if (event.key === "Enter" && showing) {
+            event.preventDefault();
+            pick(matches[active]);
+        } else if (event.key === "Escape" && showing) {
+            event.stopPropagation(); // closes the list, not the inspector or the selection
+            setOpen(false);
+        }
+    }
+
+    return (
+        <div className="piper-combo">
+            <input
+                id={id}
+                role={channels ? "combobox" : undefined}
+                aria-autocomplete={channels ? "list" : undefined}
+                aria-expanded={channels ? showing : undefined}
+                aria-controls={channels ? list : undefined}
+                aria-activedescendant={showing ? `${list}-${active}` : undefined}
+                autoComplete="off"
+                value={value}
+                placeholder={placeholder}
+                onChange={(event) => {
+                    onChange(event.target.value);
+                    setActive(0);
+                    setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onBlur={() => setOpen(false)}
+                onKeyDown={onKey}
+            />
+            {showing && (
+                <ul
+                    id={list}
+                    role="listbox"
+                    aria-label="The test's channels"
+                    className="piper-find-pop piper-combo-pop"
+                >
+                    {matches.map((channel, index) => (
+                        <li
+                            key={channel.name}
+                            id={`${list}-${index}`}
+                            role="option"
+                            aria-selected={index === active}
+                            onMouseDown={(event) => {
+                                event.preventDefault(); // the box keeps its focus as it's picked
+                                pick(channel);
+                            }}
+                            onMouseEnter={() => setActive(index)}
+                        >
+                            <strong>{channel.name}</strong>
+                            <span className="muted">{channel.kind === "state" ? "state" : channel.unit}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
 
 /** Whether a property shows under its part's tag on the drawing. */
 export function ShowToggle({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {

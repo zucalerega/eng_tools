@@ -338,7 +338,8 @@ the keys.
   a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…** on
   the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
   on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
-  instrument is a bubble with its tag's letters in it (PT, TC...), its whole tag at its side;
+  instrument is a bubble with the letter of what it measures in it, whatever its tag says (P
+  for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
   flips it. Drag the round handle at a selected part's corner (or pick its **Size**) to draw it
@@ -385,7 +386,7 @@ the keys.
   valve whether it was open, in a badge on a line to it, at the time on the timeline: drag it or
   play the test. A part reads the channel named as its tag (or its **Test channel**). **Plot in
   Yorg** opens the test with those channels plotted, and the page's address keeps the test and
-  the time.
+  the time. The diagram opens to them again in the same browser until you close **Test data**.
 - **Simulation (admins, while it's tried out)**: **Simulation**, in the editor's bar, makes the
   P&ID a model of the system, simulated with FullFlow (Saaketh's network solver) and
   ThermoProp's properties against a test from Yorg, to tune it until it matches what was

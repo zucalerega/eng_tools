@@ -23,7 +23,7 @@ import {
     type Alignment,
 } from "./edit";
 import { fitSheet, PAPERS } from "./pdf";
-import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
+import { ChannelInput, FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
 import {
     applyScheme,
     fluidOf,
@@ -109,13 +109,6 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes, sim
     }
     return (
         <aside className="piper-inspector" aria-label="Inspector">
-            {test && (
-                <datalist id="piper-channels">
-                    {test.detail.channels.map((channel) => (
-                        <option key={channel.name} value={channel.name} />
-                    ))}
-                </datalist>
-            )}
             <fieldset className="piper-fieldset" disabled={readOnly}>
                 {body}
             </fieldset>
@@ -160,12 +153,12 @@ function FieldInput({
             return <textarea id={id} value={value} rows={3} onChange={(event) => onChange(event.target.value)} />;
         case "channel":
             return (
-                <input
+                <ChannelInput
                     id={id}
                     value={value}
-                    list={test ? "piper-channels" : undefined}
+                    channels={test?.detail.channels ?? null}
                     placeholder={part?.tag ? `${part.tag} (its tag)` : "A test's channel"}
-                    onChange={(event) => onChange(event.target.value)}
+                    onChange={onChange}
                 />
             );
         default:

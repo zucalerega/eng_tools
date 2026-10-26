@@ -62,16 +62,29 @@ function drawn(part: Part): Document {
 
 const words = (symbol: Document) => Array.from(symbol.querySelectorAll("text"), (text) => text.textContent);
 
-test("an instrument is a bubble with its tag's letters in it, and its tag at its side, off its lines", () => {
+test("an instrument is a bubble with the letter of what it measures in it, whatever its tag, its tag at its side", () => {
     const drawing = emptyDrawing();
     const sensor = (props: Record<string, string>, tag = "PT-101") =>
         newPart("instrument", { x: 0, y: 0 }, { tag, props });
     const one = drawn(sensor({ type: "pressure" }));
     expect(Array.from(one.querySelectorAll("circle"), (circle) => circle.getAttribute("r"))).toEqual(["15"]);
     expect(one.querySelector("rect")).toBeNull();
-    expect(words(one)).toEqual(["PT"]); // its letters: the rest of its tag is beside it
-    expect(words(drawn(sensor({ type: "temperature" }, "TC-OX-1")))).toEqual(["TC"]);
-    expect(words(drawn(sensor({ type: "pressure" }, "101")))).toEqual(["PT"]); // none in its tag: what it measures
+    expect(words(one)).toEqual(["P"]); // what it measures: its tag is beside it
+    // Whatever its tag says: a name, another sensor's letters, or none.
+    for (const [type, tag, letter] of [
+        ["pressure", "CHAMBER-1", "P"],
+        ["temperature", "PT-5", "T"],
+        ["temperature", "TC-OX-1", "T"],
+        ["rtd", "RTD-2", "T"],
+        ["force", "LC-1", "W"],
+        ["flow", "Fuel flow", "F"],
+        ["dp", "DPT-1", "PD"],
+        ["pressure", "101", "P"],
+        ["other", "XV-1", "X"], // no kind of its own: its tag's first letter
+        ["other", "101", "?"],
+    ] as const) {
+        expect(words(drawn(sensor({ type }, tag))), `${type} tagged ${tag}`).toEqual([letter]);
+    }
     // Its whole tag is its label, at its right, level with its middle.
     const part = sensor({ type: "pressure" });
     const box = boxOf(part, drawing);
@@ -88,7 +101,7 @@ test("an instrument is a bubble with its tag's letters in it, and its tag at its
     // Two or three on one tap: bubbles side by side, A, B, and C, their side taps still on the grid.
     const three = drawn(sensor({ type: "pressure", count: "3" }));
     expect(three.querySelectorAll("circle")).toHaveLength(3);
-    expect(words(three)).toEqual(["PT", "A", "PT", "B", "PT", "C"]);
+    expect(words(three)).toEqual(["P", "A", "P", "B", "P", "C"]);
     for (const [count, side] of [
         ["2", 40],
         ["3", 50],

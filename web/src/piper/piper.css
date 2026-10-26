@@ -136,6 +136,7 @@
 
 .piper-where {
     display: flex;
+    flex: 1 1 auto; /* the room the tools leave, which the save status takes */
     align-items: center;
     gap: 0.25rem;
     min-width: 0;
@@ -164,7 +165,11 @@
     background: none;
 }
 
+/* Saved, Not saved yet, and Saving… take turns at every change: the status is as wide as the room beside the name, never
+   as what it says, so a longer one never wraps the bar (and changes its height). */
 .piper-status {
+    flex: 1 1 0;
+    contain: inline-size;
     min-width: 0;
     margin-left: 0.5rem;
     overflow: hidden;
@@ -1278,6 +1283,40 @@
 
 .piper-find-pop li[aria-selected="true"] {
     background: var(--row-hover);
+}
+
+/* A test channel's box in the inspector, its list the find box's, under it and as wide as it. */
+.piper-combo {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.piper-combo input {
+    width: 100%;
+    height: 1.9rem; /* as a row's own inputs are */
+    font-size: 0.88rem;
+}
+
+.piper-combo-pop {
+    right: 0;
+    min-width: 0;
+    max-height: 14rem;
+    margin: 0;
+    list-style: none;
+}
+
+.piper-combo-pop li {
+    justify-content: space-between;
+}
+
+.piper-combo-pop li strong {
+    min-width: 0;
+    overflow-wrap: anywhere; /* a long name wraps, beside its unit */
+}
+
+.piper-combo-pop li span {
+    flex: none;
 }
 
 /* The parts table, under the drawing: a table for each kind of part, then the lines. */

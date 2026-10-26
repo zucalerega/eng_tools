@@ -3,10 +3,11 @@ import { transducers } from "../testdata";
 import { ink, Letters } from "./draw";
 import { CHANNEL, DAQ, MAWP, MODEL, NOTES, OUTPUT, RANGE, type Field, type Kind, type Port } from "./kinds";
 
-// Instruments, as ISA 5.1 draws them: a bubble with what it measures in its tag's letters (PT), its tag at its side,
-// connected to the line it measures by a tap from any side. Two or three transducers on one tap (a duplicated or
-// triplicated one, for a measurement that mustn't be lost) are two or three bubbles side by side, A, B, and C, each
-// reading its own channel (testdata.ts). A test's value shows beside it.
+// Instruments, as ISA 5.1 draws them: a bubble with the first letter of what it measures (P for pressure, T for
+// temperature), whatever its tag says, and its whole tag at its side, connected to the line it measures by a tap from any
+// side. Two or three transducers on one tap (a duplicated or triplicated one, for a measurement that mustn't be lost) are
+// two or three bubbles side by side, A, B, and C, each reading its own channel (testdata.ts). A test's value shows
+// beside it.
 
 /** An instrument tag's letters and the rest: "PT-101" is PT and 101, "TC-OX-1" TC and OX-1. */
 export function splitTag(tag: string): [string, string] {
@@ -32,20 +33,22 @@ export const MEASURES: Field = {
     ],
 };
 
-/** What a bubble says when its tag has no letters of its own: the letters the library tags it with. */
-const LETTERS = new Map([
-    ["pressure", "PT"],
-    ["temperature", "TC"],
-    ["rtd", "RTD"],
-    ["flow", "FT"],
-    ["force", "LC"],
-    ["level", "LT"],
-    ["position", "ZT"],
-    ["switch", "PS"],
-    ["dp", "DPT"],
-]);
+/** What a bubble says it measures: ISA 5.1's first letter for it (W for a weight or force, Z for a position, PD for a
+ * pressure difference: PDFs can't print a Δ). A sensor's tag is its name, and stays beside it. */
+const LETTER: Record<string, string> = {
+    pressure: "P",
+    temperature: "T",
+    rtd: "T",
+    flow: "F",
+    force: "W",
+    level: "L",
+    position: "Z",
+    switch: "P",
+    dp: "PD",
+};
 
-const lettersOf = (part: Part): string => splitTag(part.tag)[0] || (LETTERS.get(part.props.type ?? "") ?? "");
+/** A bubble's letters: what it measures, or for an instrument of no kind the library knows, its tag's first letter. */
+const lettersOf = (part: Part): string => LETTER[part.props.type ?? ""] ?? (splitTag(part.tag)[0].charAt(0) || "?");
 
 export const COUNT: Field = {
     key: "count",
@@ -95,7 +98,7 @@ export const instrument: Kind = {
     draw: (part, context) => {
         const count = transducers(part);
         const letters = lettersOf(part);
-        const size = letters.length > 3 ? 7.5 : 9;
+        const size = (count > 1 ? 9.5 : 11) - (letters.length > 1 ? 2 : 0);
         return (
             <>
                 {Array.from({ length: count }, (_, index) => {

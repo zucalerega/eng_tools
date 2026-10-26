@@ -128,7 +128,7 @@ export function Toolbar({
                     <span
                         className={`piper-status piper-status-${status}`}
                         role="status"
-                        title={status === "offline" ? (problem ?? undefined) : undefined}
+                        title={status === "offline" ? (problem ?? undefined) : STATUS[status]}
                     >
                         {STATUS[status]}
                         {status === "offline" && `: ${problem ?? "trying again…"}`}

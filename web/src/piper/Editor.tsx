@@ -38,7 +38,8 @@ import type { LiveValue } from "./DiagramView";
 
 // A diagram's page: the editor, the whole window under the top bar. The drawing's in the middle, the inspector on the
 // right, and under them, when they're open, the test the drawing's read against and its history. A test and the time on
-// its timeline are in the address (?test=5&t=12.5), so a link opens the same moment. Its pages are tabs under the
+// its timeline are in the address (?test=5&t=12.5), so a link opens the same moment, and this browser keeps them for the
+// diagram, so it opens to them again until the test's panel is closed. Its pages are tabs under the
 // drawing; the drawing is the page being worked on. It opens to be looked at: Edit makes it yours to change, with the
 // library on the left, until you're done (editing.ts). A diagram just made opens to edit (?edit=1). Simulation mode
 // (?sim=1, for admins while it's tried out) shows what the P&ID is as a model, run against the test: its settings on
@@ -169,6 +170,20 @@ export function EditorPage({ id }: { id: number }) {
             setPanel((now) => now ?? "test");
         }
     }, [testId]);
+
+    // Opened again without a test in its address (from the diagrams' list, say): the test it was last read against
+    // here, at the time it was at. One in its address, a link's, is kept for next time instead.
+    useEffect(() => {
+        if (testId !== null) {
+            keepTest(id, testId, time);
+        } else if (!new URLSearchParams(window.location.search).has("test")) {
+            const kept = keptTest(id);
+            if (kept) {
+                setTime(kept.at);
+                address(kept.test, kept.at);
+            }
+        }
+    }, [id, testId]);
     useEffect(() => {
         const detail = reading?.detail;
         if (detail && detail.t_min !== null && detail.t_max !== null && (time < detail.t_min || time > detail.t_max)) {
@@ -214,7 +229,9 @@ export function EditorPage({ id }: { id: number }) {
         navigate(`${pathname}${text ? `?${text}` : ""}`, { replace: true });
     }
 
+    /** The test and the time in the address, and kept by this browser for the next time it's opened (null: neither). */
     function address(test: number | null, at: number | null) {
+        keepTest(id, test, at === null ? null : Math.round(at * 1000) / 1000);
         const query = new URLSearchParams(window.location.search);
         if (test === null) {
             query.delete("test");
@@ -685,6 +702,29 @@ function remembered(key: string, fallback: string): string {
         return window.localStorage.getItem(key) ?? fallback;
     } catch {
         return fallback;
+    }
+}
+
+/** Where this browser keeps the test a diagram was last read against, and the time on its timeline: "5@12.5". */
+const keptTestKey = (id: number) => `piper.test.${id}`;
+
+function keptTest(id: number): { test: number; at: number } | null {
+    const [test, at] = remembered(keptTestKey(id), "").split("@").map(Number);
+    return test !== undefined && Number.isInteger(test) && test > 0
+        ? { test, at: at !== undefined && Number.isFinite(at) ? at : 0 }
+        : null;
+}
+
+/** Keeps a diagram's test and its time for the next time it's opened here, or forgets it (test null). */
+function keepTest(id: number, test: number | null, at: number | null) {
+    try {
+        if (test === null) {
+            window.localStorage.removeItem(keptTestKey(id));
+        } else {
+            window.localStorage.setItem(keptTestKey(id), `${test}@${at ?? 0}`);
+        }
+    } catch {
+        // storage blocked: the test is only in the address, as it was
     }
 }
 

@@ -92,8 +92,9 @@ const TOPICS: Topic[] = [
                     beside it, where you drag it. Double-click a part to type its tag.
                 </li>
                 <li>
-                    An instrument is a bubble with its tag's letters in it (<code>PT</code>, <code>TC</code>,{" "}
-                    <code>LC</code>), its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated
+                    An instrument is a bubble with the letter of what it measures in it, whatever its tag says (
+                    <code>P</code> for pressure, <code>T</code> for temperature, <code>F</code> for flow, <code>W</code>{" "}
+                    for a load cell), and its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated
                     transducer (two or three on one tap) is two or three bubbles side by side, A, B, and C: set{" "}
                     <em>Transducers</em>, or place one from the library. Each reads its own test channel: those its{" "}
                     <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it (
@@ -306,8 +307,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     A part reads the channel named as its tag (<code>PT-101</code> reads PT-101), or the one in its{" "}
-                    <em>Test channel</em>. Names match whatever their case, then ignoring spaces, dashes, and
-                    underscores. Parts with no channel in the test are listed.
+                    <em>Test channel</em>: type it, or pick it from the test's channels, which narrow to what you type.
+                    Names match whatever their case, then ignoring spaces, dashes, and underscores. Parts with no
+                    channel in the test are listed.
                 </li>
                 <li>
                     Drag the timeline, or play the test (at a tenth of its speed up to ten times it). The ticks on it
@@ -317,7 +319,10 @@ const TOPICS: Topic[] = [
                     Select an instrument to see its channel over the whole test. <em>Plot in Yorg</em> opens the test in
                     Yorg with those channels plotted.
                 </li>
-                <li>The page's address has the test and the time: copy it to send someone that moment.</li>
+                <li>
+                    The page's address has the test and the time: copy it to send someone that moment. The diagram opens
+                    to them again in this browser, until you close <em>Test data</em>.
+                </li>
             </ul>
         ),
     },

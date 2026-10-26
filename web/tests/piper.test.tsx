@@ -886,6 +886,70 @@ test("a test from Yorg on the drawing: each instrument's value and each valve's 
     expect(String(open.mock.calls[0]![0])).toMatch(new RegExp(`^/yorg/datasets/${data.id}\\?plots=`));
 });
 
+test("a diagram opens again to the test it was read against, at its time, until Test data is closed", async () => {
+    const team = await Team.create();
+    const csv = [
+        "Time (s),PT-1 (psi)",
+        ...Array.from({ length: 11 }, (_, i) => [i / 10, (300 + i * 10).toFixed(1)].join(",")),
+    ].join("\n");
+    const data = await team.data(team.chief, "Kept between openings", csv);
+    const drawing = { value: emptyDrawing() };
+    const sensor = place(drawing, "pressure-transducer", 0, 0);
+    const made = await team.diagram(team.chief, "Kept between openings", drawing.value);
+    const first = renderApp(team.chief, `/piper/diagrams/${made.id}?test=${data.id}&t=0.3`);
+    await waitFor(() => expect(badge(sensor)).toBe("330.0 psi"));
+    first.unmount();
+
+    // Opened again with nothing in its address, as from the diagrams' list: the same test, at the same time.
+    const again = renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await waitFor(() => expect(badge(sensor)).toBe("330.0 psi"));
+    expect(new URLSearchParams(window.location.search).get("test")).toBe(String(data.id));
+
+    // Closing Test data unlinks it: the next time, it opens without a test.
+    await userEvent.click(await screen.findByRole("button", { name: "Close test data" }));
+    again.unmount();
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    expect(screen.queryByRole("region", { name: "Test data" })).toBeNull();
+    expect(new URLSearchParams(window.location.search).has("test")).toBe(false);
+});
+
+test("a part's test channel is picked from the test's channels, in a list that narrows to what's typed", async () => {
+    const team = await Team.create();
+    const csv = ["Time (s),PT-1 (psi),PT-OX-INJ (psi),TC-1 (K)", "0,300,250,80", "0.1,310,260,81"].join("\n");
+    const data = await team.data(team.chief, "Channels to pick", csv);
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "pressure-transducer", 0, 0);
+    const made = await team.diagram(team.chief, "Channels to pick", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}?test=${data.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "PT-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    const box = await inspector.findByRole("combobox", { name: "Test channel" }); // a list once the test's here
+    const names = () =>
+        within(screen.getByRole("listbox", { name: "The test's channels" }))
+            .getAllByRole("option")
+            .map((option) => option.firstChild?.textContent);
+
+    await userEvent.click(box);
+    expect(names()).toEqual(["PT-1", "PT-OX-INJ", "TC-1"]); // all of them, each with its unit beside it
+    await userEvent.type(box, "ox");
+    expect(names()).toEqual(["PT-OX-INJ"]);
+    await userEvent.click(screen.getByRole("option", { name: /PT-OX-INJ/ }));
+    expect(box).toHaveProperty("value", "PT-OX-INJ");
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    // Or with the keyboard: the first that matches, with Enter.
+    await userEvent.clear(box);
+    await userEvent.type(box, "tc{Enter}");
+    expect(box).toHaveProperty("value", "TC-1");
+    await waitFor(async () =>
+        expect((await team.piperDiagram(team.chief, made.id)).read.parts[0]?.props.channel).toBe("TC-1"),
+    );
+});
+
 test("a duplicated transducer shows both its channels' values", async () => {
     const team = await Team.create();
     const csv = ["Time (s),PT-7A (psi),PT-7B (psi)", "0,100.0,101.5", "1,200.0,201.5"].join("\n");

@@ -169,8 +169,10 @@ what it is, `data-hit`).
   regulator, burst disc, quick disconnect); vessels (tanks, spheres, bottles and COPVs,
   dewars); flow elements (orifices, venturis, cavitating venturis, flow meters, filters);
   instruments (pressure transducers, gauges, and switches, thermocouples, RTDs, load cells,
-  flow, level, position, and differential pressure sensors, each an ISA bubble with its tag's
-  letters in it, PT, TC, LC, and the whole tag at its side; duplicated and triplicated
+  flow, level, position, and differential pressure sensors, each an ISA bubble with the first
+  letter of what it measures in it whatever its tag says (P, T, F, W, L, Z, and PD for a
+  pressure difference, as a PDF can't print a Δ; a generic instrument, its tag's first letter),
+  and the whole tag at its side; duplicated and triplicated
   transducers, two or three bubbles side by side on one tap, A, B, C, each reading its own
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
@@ -222,7 +224,7 @@ what it is, `data-hit`).
   near enough to place it).
 - **Tags** name parts and lines: a new part gets its kind's prefix and the next number free
   (BV-3, PT-7), and a tag two parts share is marked. An instrument's tag is at its side (its
-  left, if a line leaves it to the right), its letters in its bubble; anything
+  left, if a line leaves it to the right), and its bubble says what it measures; anything
   else's beside it: under a part in a line going across, beside one in a line going down, under
   or beside others, or where it's dragged.
   Labels are small beside the symbols (a tag 8 units high against a valve's 20), and a diagram
@@ -431,7 +433,11 @@ time on a timeline that plays the test (at a tenth of its speed to ten times it)
 events (a sequence's steps) marked, to go to. Selecting a part shows its channel over the whole
 test, and Plot in Yorg opens the test in Yorg with those channels plotted (in a tab of its
 own). The test and the time are in the page's address (`?test=5&t=12.5`), so a link opens the
-diagram at that moment of that test.
+diagram at that moment of that test, and the browser keeps them for the diagram (`piper.test.<id>`
+in its local storage, as `5@12.5`), so it opens to them again without them in its address (from
+the diagrams' list) until Test data is closed, which unlinks it. A Test channel is typed, or
+picked from the test's channels in a list of the page's own (`ChannelInput`): a datalist's is the
+browser's, plain and white on Windows.
 
 A part reads the channel named in its Test channel, or, without one, the channel named as its
 tag: PT-101 reads PT-101 (`testdata.ts`). Names match whatever their case, then ignoring spaces,

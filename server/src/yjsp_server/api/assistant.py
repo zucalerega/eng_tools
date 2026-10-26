@@ -40,7 +40,8 @@ def ask(body: AskIn, request: Request, user: ActiveUser, db: DB) -> StreamingRes
 
 @router.get("/spending")
 def get_spending(request: Request, user: ActiveUser, db: DB) -> AssistantSpendingOut:
-    """What the assistant has cost, in all, today, and on each person's questions; its budget and limits (admins)."""
+    """What the assistant has cost, in all, this month, today, and on each person's questions; its budgets and limits
+    (admins)."""
     found = _assistant(request).spending(db, user)
     people = [
         AssistantSpenderOut(
@@ -53,6 +54,8 @@ def get_spending(request: Request, user: ActiveUser, db: DB) -> AssistantSpendin
         reason=found.reason,
         budget=found.budget,
         spent=found.spent,
+        monthly_budget=found.monthly_budget,
+        month_spent=found.month_spent,
         today=found.today,
         daily_limit=found.daily_limit,
         model=found.model,

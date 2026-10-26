@@ -160,8 +160,10 @@ export interface Assistant {
     reason: string | null; // why not, when you can't
     model: string;
     day_used: number; // how much of your daily limit your questions in the last 24 hours took, from 0 to 1
-    budget: number | null; // US dollars it may spend in all: admins only
+    budget: number | null; // US dollars it may spend in all (0: no budget in all): admins only
     spent: number | null; // what it has spent: admins only
+    monthly_budget: number | null; // US dollars it may spend each calendar month (0: no monthly budget): admins only
+    month_spent: number | null; // what it has spent this month, since the 1st at 00:00 UTC: admins only
 }
 
 /** A message in a conversation with Claude: a question, with the page of the web app it was asked from, or an answer. */
@@ -182,8 +184,10 @@ export type AnswerEvent =
 export interface AssistantSpending {
     available: boolean; // whether people can ask now
     reason: string | null; // why not, when they can't
-    budget: number; // US dollars it may spend in all
+    budget: number; // US dollars it may spend in all (0: no budget in all)
     spent: number;
+    monthly_budget: number; // US dollars it may spend each calendar month (0: no monthly budget)
+    month_spent: number; // this month, since the 1st at 00:00 UTC
     today: number; // in the last 24 hours, everyone's together
     daily_limit: number; // what one person's questions may cost in 24 hours
     model: string;

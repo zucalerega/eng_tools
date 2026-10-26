@@ -4,7 +4,7 @@ import { api, ApiError, askClaude, type AnswerEvent, type Assistant, type ChatMe
 // Asking Claude, from Help in the top bar: the conversation in this tab, and Claude's answer as it's written. The tab
 // keeps the conversation (sessionStorage), so it's still there after a reload or a look at the help page, for whoever
 // had it: someone else signing in on the same tab, as on a lab computer, starts with none. The server keeps none of it,
-// only what each answer cost (the assistant's budget, and each person's daily limit).
+// only what each answer cost (the assistant's budgets, and each person's daily limit).
 
 /** How an answer is going: thinking before it writes, writing, and how it ended. */
 export type AnswerState = "thinking" | "writing" | "done" | "cut" | "declined" | "stopped" | "failed";

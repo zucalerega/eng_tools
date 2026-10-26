@@ -187,11 +187,16 @@ test("admins see what Claude's answers have cost, and on whose questions", async
 
     renderApp(team.chief, "/vault/admin");
     const card = within(await screen.findByRole("region", { name: "Claude" }));
-    expect(card.getAllByText("Spent")).toHaveLength(2); // a tile's, and the list's column
-    expect(card.getByRole("columnheader", { name: "Spent" })).toBeTruthy();
-    expect(card.getByText("Left of $5.00")).toBeTruthy();
+    // The test server's budgets: $3 a month, and $5 in all.
+    expect(card.getByText("This month")).toBeTruthy();
+    expect(card.getByText("Left of $3.00 this month")).toBeTruthy();
+    expect(card.getByText("Spent in all")).toBeTruthy();
+    expect(card.getByText("Left of $5.00 in all")).toBeTruthy();
     expect(card.getByText("A person's daily limit")).toBeTruthy();
-    expect(card.getByText(/claude-sonnet-5-5, at high effort/)).toBeTruthy();
+    expect(card.getByRole("columnheader", { name: "Spent" })).toBeTruthy();
+    expect(
+        card.getByText(/claude-sonnet-5-5, at high effort\. A month starts on the 1st, at 00:00 UTC\./),
+    ).toBeTruthy();
     const row = card.getByRole("cell", { name: "Ana" }).closest("tr")!;
     expect(Number(within(row).getAllByRole("cell")[1]!.textContent)).toBeGreaterThanOrEqual(1);
 });

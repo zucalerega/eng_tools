@@ -55,11 +55,16 @@ class Settings(BaseSettings):
     # (help.py). The default is this repository; the live server keeps a copy of them beside the server.
     help_dir: Path = Path(__file__).resolve().parents[3]
     # The assistant: Claude, through Anthropic's API, answering members' questions from the help (assistant.py). It's off
-    # without a key and a budget. The key is a secret, like YJSP_SECRET_KEY: only in the server's .env.
+    # without a key and a budget (in all, monthly, or both). The key is a secret, like YJSP_SECRET_KEY: only in the
+    # server's .env.
     anthropic_api_key: str = ""
     # What the assistant may spend in all, in US dollars: the API credits it has. Once its answers have cost that much,
-    # it stops answering until this is raised (the database keeps what each one cost).
+    # it stops answering until this is raised (the database keeps what each one cost). 0: no budget in all.
     assistant_budget: float = 0
+    # What it may spend each calendar month, from 00:00 UTC on the 1st, in US dollars: the API credits a Claude Max plan
+    # includes each month, say. Once this month's answers have cost that much, it stops answering until the next month.
+    # 0: no monthly budget.
+    assistant_monthly_budget: float = 0
     # What one person's questions may cost in any 24 hours, in US dollars.
     assistant_daily_limit: float = 1.0
     # Only models whose prices assistant.PRICES knows, so that every answer is counted at what it cost.
@@ -100,9 +105,10 @@ class Settings(BaseSettings):
                 problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
-        if self.anthropic_api_key and self.assistant_budget <= 0:
+        if self.anthropic_api_key and self.assistant_budget <= 0 and self.assistant_monthly_budget <= 0:
             problems.append(
-                "set YJSP_ASSISTANT_BUDGET to what the assistant may spend, in US dollars, or unset YJSP_ANTHROPIC_API_KEY"
+                "set YJSP_ASSISTANT_MONTHLY_BUDGET (each month) or YJSP_ASSISTANT_BUDGET (in all) to what the assistant "
+                "may spend, in US dollars, or unset YJSP_ANTHROPIC_API_KEY"
             )
         if problems:
             raise RuntimeError("Can't start in production: " + "; ".join(problems))

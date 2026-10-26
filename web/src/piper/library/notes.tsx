@@ -190,22 +190,32 @@ export const region: Kind = {
     ),
 };
 
-/** Where a line goes on to another drawing: an arrow-shaped box saying where. */
+/**
+ * How wide an off-page connector's box is, to its point: 48, or wider for its words (a page's name, TO VEHICLE
+ * STAND), at about two thirds of their size a letter, as bold capitals are.
+ */
+const connectorWidth = (part: Part) => Math.max(48, Math.ceil((part.text || "TO").length * 0.68 * 9) + 8);
+
+/** Where a line goes on to another drawing: an arrow-shaped box saying where, as wide as its words. */
 export const offpage: Kind = {
     id: "offpage",
     name: "Off-page connector",
-    box: () => [-40, -12, 30, 12],
+    box: (part) => [-40, -12, -30 + connectorWidth(part) + 12, 12],
     ports: () => [{ id: "in", x: -40, y: 0, dir: "left", inset: 10 }],
     fields: [],
     tag: "none",
     text: "Goes to",
     draw: (part, context) => (
         <>
-            <path d="M-30 -12 H18 L30 0 L18 12 H-30 Z" fill={context.paper} {...ink(context)} />
+            <path
+                d={`M-30 -12 H${-30 + connectorWidth(part)} l12 12 l-12 12 H-30 Z`}
+                fill={context.paper}
+                {...ink(context)}
+            />
             <text
-                x={-6}
+                x={-30 + connectorWidth(part) / 2}
                 y={0}
-                fontSize={part.text.length > 9 ? 7.5 : 9}
+                fontSize={9}
                 fontFamily={FONT}
                 fontWeight={600}
                 textAnchor="middle"

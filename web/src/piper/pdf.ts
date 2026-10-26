@@ -87,6 +87,9 @@ const CP1252: Record<string, number> = {
     "−": 0x2d, // a minus sign, as a hyphen: Helvetica has no minus of its own here
 };
 
+/** How wide words are in Helvetica (bold or not), in its size: as a PDF prints them. */
+export const textWidth = (text: string, bold = false): number => widthOf(encode(text), bold);
+
 /** Text as WinAnsiEncoding's bytes: what it can't say, as "?". */
 function encode(text: string): number[] {
     return [...text].map((char) => {

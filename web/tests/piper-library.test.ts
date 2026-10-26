@@ -1,11 +1,13 @@
 import { expect, test } from "vitest";
 import { emptyDrawing, isPortEnd, newPart } from "../src/piper/drawing";
 import { example } from "../src/piper/example";
+import { svgOf } from "../src/piper/exports";
 import { fluidsOf, fluidsUsed, STANDARD_FLUIDS, withFluid } from "../src/piper/fluids";
 import { OPPOSITE } from "../src/piper/geometry";
 import { presetPart } from "../src/piper/icons";
 import { ALL_KINDS, kindOf, PRESETS, searchPresets, titleOf } from "../src/piper/library/index";
 import { BODY } from "../src/piper/library/valves";
+import { textWidth } from "../src/piper/pdf";
 import { partsById, pathOf, portsOf } from "../src/piper/ports";
 
 // The parts library, held to what the editor relies on: ports on the grid, at a part's edge, with ids of their own,
@@ -163,4 +165,17 @@ test("the example is a whole system: every line's ends on ports, every part tagg
     const tags = drawing.parts.map((part) => part.tag).filter(Boolean);
     expect(new Set(tags).size).toBe(tags.length);
     expect(fluidsUsed(drawing).map((fluid) => fluid.id)).toEqual(["gn2", "gox", "rp1", "lox"]);
+});
+
+test("an off-page connector's words fit inside it, however long the page's name it goes to", async () => {
+    const meta = { name: "Feed system", revision: "1", savedAt: null, by: "" };
+    for (const words of ["TO GSE", "TO PAGE 1", "TO GROUND", "TO VEHICLE STAND"]) {
+        const part = newPart("offpage", { x: 0, y: 0 }, { text: words });
+        const { svg } = await svgOf({ ...emptyDrawing(), parts: [part] }, meta);
+        const size = Number(new RegExp(`font-size="([\\d.]+)"[^>]*>${words}<`).exec(svg)![1]);
+        // Inside its box, to its point (12 across), clear of its ink; and as big as a short one's.
+        const [, , right] = kindOf("offpage").box(part, emptyDrawing());
+        expect(textWidth(words, true) * size, words).toBeLessThanOrEqual(right - 12 + 30 - 4);
+        expect(size, words).toBe(9);
+    }
 });

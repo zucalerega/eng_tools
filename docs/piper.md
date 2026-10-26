@@ -54,8 +54,9 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   it (`fitSheet`); the canvas outlines it (`sheetOutline`), and the PDF prints the page there,
   so the layout and scale stay put as the drawing changes. An **off-page connector** goes to a
   page, and a part on it (`props.page`, `props.part`, by id), and is written `TO` and the page's
-  name until its words are changed; going there switches the page and shows the part, and the
-  part it arrives at lists it. Deleting a page leaves its connectors going nowhere.
+  name (its box as wide as its words) until its words are changed; going there switches the
+  page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
+  connectors going nowhere.
   Find, Parts, and the parts list look through every page. Once a diagram is saved in format 2,
   the server refuses a save in format 1 over it (409 `drawing_newer`): a tab still running the
   Piper from before pages would save one page and lose the others. Restoring a revision from

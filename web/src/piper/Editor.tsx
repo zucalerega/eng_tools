@@ -11,7 +11,7 @@ import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
 import { commandsOf, useEditorKeys } from "./commands";
 import { DiagramView } from "./DiagramView";
-import { readDrawing, type Drawing } from "./drawing";
+import { pageOf, readDocument, type Document, type Drawing } from "./drawing";
 import { addPart, drawingBox } from "./edit";
 import { download, fileName, partsList, pngOf, printDrawing, svgOf } from "./exports";
 import { HistoryPanel } from "./History";
@@ -22,16 +22,18 @@ import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
 import { channelNames, findChannel, plotLink } from "./testdata";
-import { PAPERS, pdfOf, type Sheet } from "./pdf";
+import { PAPERS, pdfOfPages, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
 import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
-import { findOnDrawing } from "./find";
+import { findInDocument } from "./find";
+import { PageTabs } from "./PageTabs";
 import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
 
 // A diagram's page: the editor, the whole window under the top bar. The library's on the left, the drawing in the
 // middle, the inspector on the right, and under them, when they're open, the test the drawing's read against and its
 // history. A test and the time on its timeline are in the address (?test=5&t=12.5), so a link opens the same moment.
+// Its pages are tabs under the drawing; the drawing is the page being worked on.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -47,6 +49,11 @@ export function EditorPage({ id }: { id: number }) {
     const store = useMemo(() => new EditorStore(), []);
     const commands = useMemo(() => commandsOf(store), [store]);
     const drawing = useEditor(store, (state) => state.drawing);
+    const page = useEditor(store, (state) => state.page);
+    const pageCount = useEditor(store, (state) => state.document.pages.length);
+    // A revision looked at: all its pages, and which of them is shown.
+    const lookedAt = useMemo(() => (looking ? readDocument(looking.drawing) : null), [looking]);
+    const [lookPage, setLookPage] = useState(0);
     const palette = withStates(usePalette(), drawing);
     const saving = useSaving(store, diagram, setDiagram);
     const fitted = useRef(false);
@@ -63,7 +70,7 @@ export function EditorPage({ id }: { id: number }) {
         piper.diagram(id).then(
             (found) => {
                 if (current) {
-                    store.load(readDrawing(found.drawing));
+                    store.load(readDocument(found.drawing));
                     setDiagram(found);
                 }
             },
@@ -92,10 +99,10 @@ export function EditorPage({ id }: { id: number }) {
         if (diagram && !fitted.current) {
             fitted.current = true;
             commands.fit();
-            // Opened from a search (the diagrams' list): at what it found.
-            const first = finding ? findOnDrawing(store.getState().drawing, finding)[0] : undefined;
+            // Opened from a search (the diagrams' list): at what it found, on whichever page.
+            const first = finding ? findInDocument(store.getState().document, finding)[0] : undefined;
             if (first) {
-                commands.show([first.id]);
+                commands.goTo(first.page, [first.id]);
             }
         }
     }, [diagram, commands, store, finding]);
@@ -129,7 +136,11 @@ export function EditorPage({ id }: { id: number }) {
         revision: revisionLabel(diagram, diagram.revision, latestRelease(diagram)),
         savedAt: diagram.updated_at,
         by: diagram.created_by?.name ?? "",
+        sheet: sheetLabel(lookedAt ? lookPage : page, lookedAt?.pages.length ?? pageCount),
     };
+    // What's shown: the page worked on, or the revision's looked at.
+    const shownPage = lookedAt ? Math.min(lookPage, lookedAt.pages.length - 1) : page;
+    const whole = (): Document => lookedAt ?? store.getState().document;
 
     function address(test: number | null, at: number | null) {
         const query = new URLSearchParams(window.location.search);
@@ -156,22 +167,25 @@ export function EditorPage({ id }: { id: number }) {
     }
 
     async function exportAs(as: ExportKind) {
-        const shown = looking ? readDrawing(looking.drawing) : store.getState().drawing;
+        // A picture of the page shown (named for it, if there's more than one); the parts of all of them.
+        const document = whole();
+        const shown = pageOf(document, shownPage);
+        const named = document.pages.length > 1 ? `${diagram!.name} ${document.pages[shownPage]!.name}` : diagram!.name;
         try {
             if (as === "pdf") {
                 setPdfing(true); // which paper, first
             } else if (as === "svg") {
                 const { svg } = await svgOf(shown, meta);
-                download(fileName(diagram!.name, "svg"), new Blob([svg], { type: "image/svg+xml" }));
+                download(fileName(named, "svg"), new Blob([svg], { type: "image/svg+xml" }));
             } else if (as === "png") {
-                download(fileName(diagram!.name, "png"), await pngOf(shown, meta));
+                download(fileName(named, "png"), await pngOf(shown, meta));
             } else if (as === "print") {
                 await printDrawing(shown, meta);
             } else {
                 // A byte-order mark first, so Excel reads it as UTF-8 (µm, Ø).
                 download(
                     fileName(`${diagram!.name} parts`, "csv"),
-                    new Blob(["﻿", partsList(shown)], { type: "text/csv" }),
+                    new Blob(["﻿", partsList(document)], { type: "text/csv" }),
                 );
             }
         } catch (error) {
@@ -190,10 +204,16 @@ export function EditorPage({ id }: { id: number }) {
         }
     }
 
-    /** A part double-clicked: its tag (or its words) to type. */
+    /** A part double-clicked: its tag (or its words) to type; or, an off-page connector that goes somewhere, there. */
     function edit(partId: string) {
+        const { drawing: now, document: saved } = store.getState();
+        const part = now.parts.find((entry) => entry.id === partId);
+        const target = part?.kind === "offpage" ? saved.pages.findIndex((page) => page.id === part.props.page) : -1;
+        if (part && target >= 0) {
+            commands.goTo(target, part.props.part ? [part.props.part] : []);
+            return;
+        }
         store.select([partId]);
-        const part = store.getState().drawing.parts.find((entry) => entry.id === partId);
         const field = part && kindOf(part.kind).text ? "text" : "tag";
         setTimeout(() => {
             const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -262,7 +282,7 @@ export function EditorPage({ id }: { id: number }) {
                                     name: `${diagram.name} (my changes)`,
                                     folder: diagram.folder,
                                     description: diagram.description,
-                                    drawing: store.getState().drawing,
+                                    drawing: store.getState().document,
                                 });
                                 navigate(`/piper/diagrams/${copy.id}`);
                             } catch (error) {
@@ -327,7 +347,7 @@ export function EditorPage({ id }: { id: number }) {
                             onEdit={edit}
                         />
                     ) : (
-                        <StillDrawing drawing={looking ? readDrawing(looking.drawing) : drawing} meta={meta} />
+                        <StillDrawing drawing={lookedAt ? pageOf(lookedAt, shownPage) : drawing} meta={meta} />
                     )}
                     {looking && (
                         <div className="piper-banner piper-looking" role="status">
@@ -343,6 +363,14 @@ export function EditorPage({ id }: { id: number }) {
                         </div>
                     )}
                     {editing && drawing.parts.length === 0 && <EmptyHint />}
+                    {(pageCount > 1 || editing || (lookedAt?.pages.length ?? 0) > 1) && (
+                        <PageTabs
+                            store={store}
+                            commands={commands}
+                            editing={editing}
+                            looking={lookedAt && { pages: lookedAt.pages, at: shownPage, onGo: setLookPage }}
+                        />
+                    )}
                 </div>
                 {editing && (
                     <Inspector
@@ -358,7 +386,10 @@ export function EditorPage({ id }: { id: number }) {
                     <HistoryPanel
                         diagram={diagram}
                         looking={looking?.number ?? null}
-                        onLook={setLooking}
+                        onLook={(revision) => {
+                            setLooking(revision);
+                            setLookPage(store.getState().page); // at the page worked on, if it has it
+                        }}
                         onRestore={restoreRevision}
                         onReleased={(release) =>
                             setDiagram(
@@ -408,21 +439,29 @@ export function EditorPage({ id }: { id: number }) {
                 <PdfDialog
                     onCancel={() => setPdfing(false)}
                     onSave={async (paper, framed, mono) => {
-                        const drawn = looking ? readDrawing(looking.drawing) : store.getState().drawing;
-                        const shown = mono ? monochrome(drawn) : drawn;
+                        // Every page, a sheet each: which of how many it is in its title block.
+                        const document = whole();
                         const printed = looking
                             ? { ...meta, revision: revisionLabel(diagram, looking.number, looking.released) }
                             : meta;
-                        // On a sheet: its title block the sheet's, unless the drawing has its own.
-                        const sheet = framed
-                            ? {
-                                  project: diagram.folder,
-                                  diagram: diagram.id,
-                                  revisions: await sheetRevisions(diagram.id),
-                                  titleBlock: !shown.parts.some((part) => part.kind === "titleblock"),
-                              }
-                            : null;
-                        download(fileName(diagram.name, "pdf"), await pdfOf(shown, printed, paper, sheet));
+                        const revisions = framed ? await sheetRevisions(diagram.id) : [];
+                        const drawn = document.pages.map((_, index) => {
+                            const each = pageOf(document, index);
+                            return {
+                                drawing: mono ? monochrome(each) : each,
+                                meta: { ...printed, sheet: sheetLabel(index, document.pages.length) },
+                                // On a sheet: its title block the sheet's, unless the page has its own.
+                                sheet: framed
+                                    ? {
+                                          project: diagram.folder,
+                                          diagram: diagram.id,
+                                          revisions,
+                                          titleBlock: !each.parts.some((part) => part.kind === "titleblock"),
+                                      }
+                                    : null,
+                            };
+                        });
+                        download(fileName(diagram.name, "pdf"), await pdfOfPages(drawn, paper));
                         setPdfing(false);
                     }}
                 />
@@ -508,13 +547,18 @@ function PdfDialog({
                 open ones left white
             </label>
             <p className="muted piper-small">
-                The drawing's fitted on the page, turned its way, in the light colors as on paper. Its lines and words
-                stay sharp at any size, and its tags can be searched.
+                Each page of the diagram on a sheet of its own. A page whose printed sheet is set (in its panel, with
+                nothing selected) prints where its outline shows, on its own paper; the others are fitted on this paper,
+                turned their way. In the light colors, as on paper: its lines and words stay sharp at any size, and its
+                tags can be searched.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
 }
+
+/** Which sheet of how many a page is, as its title block says: "2 OF 3". */
+const sheetLabel = (index: number, count: number) => `${Math.min(index, count - 1) + 1} OF ${count}`;
 
 /** The diagram's latest revision's letter, if that's the one released. */
 const latestRelease = (diagram: Diagram): string | null =>

@@ -28,8 +28,8 @@ class Diagram(Base):
     # Its latest release, if it has one: the letter ("B"), and the revision that is (releases.py).
     released: Mapped[str | None] = mapped_column(String(8))
     released_revision: Mapped[int | None]
-    # What the list shows and searches, noted from the drawing as it's saved: {"parts": n, "lines": n, "tags": [...],
-    # "fluids": [...]} (diagrams.summarize).
+    # What the list shows and searches, noted from the drawing as it's saved: {"parts": n, "lines": n, "pages": n,
+    # "format": n, "tags": [...], "fluids": [...]} (diagrams.summarize). Older diagrams' lack pages and format: 1 each.
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))

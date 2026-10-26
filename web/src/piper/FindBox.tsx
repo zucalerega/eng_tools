@@ -1,23 +1,26 @@
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { FIND_BOX, type Commands } from "./commands";
-import { findOnDrawing, type Found } from "./find";
+import { findInDocument, type Found } from "./find";
 import { useEditor, type EditorStore } from "./store";
 
 // Finding a part on the drawing (Ctrl+F): type a tag (PUREG, PT-101) or what it is, and pick it from the list, or press
-// Enter for the first: the view goes to it, and it's selected.
+// Enter for the first: the view goes to it, and it's selected. It looks through all the diagram's pages, and goes to
+// the page what's picked is on.
 
 export function FindBox({ store, commands }: { store: EditorStore; commands: Commands }) {
-    const drawing = useEditor(store, (state) => state.drawing);
+    const document = useEditor(store, (state) => state.document);
+    const page = useEditor(store, (state) => state.page);
     const [text, setText] = useState("");
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
     const list = useId();
-    const found = useMemo(() => findOnDrawing(drawing, text), [drawing, text]);
+    const found = useMemo(() => findInDocument(document, text, page), [document, text, page]);
+    const pages = document.pages.length > 1;
     const showing = open && text.trim() !== "";
 
     function go(entry: Found | undefined) {
         if (entry) {
-            commands.show([entry.id]);
+            commands.goTo(entry.page, [entry.id]);
             setOpen(false);
         }
     }
@@ -64,7 +67,9 @@ export function FindBox({ store, commands }: { store: EditorStore; commands: Com
             {showing && (
                 <div className="piper-find-pop">
                     {found.length === 0 ? (
-                        <p className="muted piper-small">Nothing on this drawing has that.</p>
+                        <p className="muted piper-small">
+                            Nothing on {pages ? "any of its pages" : "this drawing"} has that.
+                        </p>
                     ) : (
                         <ul id={list} role="listbox" aria-label="Found on the drawing">
                             {found.map((entry, index) => (
@@ -80,7 +85,10 @@ export function FindBox({ store, commands }: { store: EditorStore; commands: Com
                                     onMouseEnter={() => setActive(index)}
                                 >
                                     <strong>{entry.tag || "Untagged"}</strong>
-                                    <span className="muted">{entry.what}</span>
+                                    <span className="muted">
+                                        {entry.what}
+                                        {pages && `, on ${document.pages[entry.page]?.name ?? "a page"}`}
+                                    </span>
                                 </li>
                             ))}
                         </ul>

@@ -19,7 +19,7 @@ from ..db import utcnow
 from ..errors import Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
 from .models import Diagram, Release, Revision
-from .schemas import InvalidDrawing, check_drawing
+from .schemas import InvalidDrawing, check_drawing, drawing_format, drawing_pages
 
 EMPTY_DRAWING: dict[str, Any] = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
 MAX_DRAWING_BYTES = 2 * 1024 * 1024  # of JSON: a big P&ID's is a few hundred KB
@@ -34,6 +34,13 @@ class Changed(Conflict):
     """Someone saved the diagram after the version a save was changed from."""
 
     code = "changed"
+
+
+class DrawingNewer(Conflict):
+    """A save in an older format than the diagram's drawing is in: from a tab still running an older Piper, which would
+    leave out what it doesn't know of (all but a page of it)."""
+
+    code = "drawing_newer"
 
 
 def can_delete(user: User, diagram: Diagram) -> bool:
@@ -93,12 +100,16 @@ def unpack(data: bytes) -> dict[str, Any]:
 
 
 def summarize(drawing: dict[str, Any]) -> dict[str, Any]:
-    """What the list shows and searches: how many parts and lines, their tags, and the lines' fluids, each once."""
-    parts = [part for part in drawing.get("parts") or [] if isinstance(part, dict)]
-    lines = [line for line in drawing.get("lines") or [] if isinstance(line, dict)]
+    """What the list shows and searches: how many parts and lines on all its pages, their tags, and the lines' fluids,
+    each once; and its format, which a save can't go back from."""
+    pages = drawing_pages(drawing)
+    parts = [part for page in pages for part in page.get("parts") or [] if isinstance(part, dict)]
+    lines = [line for page in pages for line in page.get("lines") or [] if isinstance(line, dict)]
     return {
         "parts": len(parts),
         "lines": len(lines),
+        "pages": len(pages),
+        "format": drawing_format(drawing),
         "tags": _once(item.get("tag") for item in [*parts, *lines]),
         "fluids": _once(line.get("fluid") for line in lines),
     }
@@ -205,6 +216,12 @@ def save(
     data, size = _pack(drawing)
     _next_version(db, user, diagram_id, version)
     found = diagram(db, diagram_id)
+    if drawing_format(drawing) < found.summary.get("format", 1):
+        name = found.name
+        db.rollback()  # it stays at its version
+        raise DrawingNewer(
+            f"{name} has pages, which this tab's Piper is too old to keep: reload the page, then make your change again"
+        )
     latest = _latest(db, diagram_id)
     now = utcnow()
     if (

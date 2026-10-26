@@ -416,6 +416,84 @@ test("Find goes to a part by its tag and selects it; a search on the diagrams' l
     expect(await screen.findByRole("heading", { name: "Pressure transducer" })).toBeTruthy();
 });
 
+test("a diagram's pages: added and renamed from their tabs, saved, and an off-page connector goes to another", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "offpage", 0, 0);
+    const made = await team.diagram(team.chief, "Pages", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    const tabs = screen.getByRole("tablist", { name: "Pages" });
+    expect(within(tabs).getByRole("tab", { name: "Page 1", selected: true })).toBeTruthy();
+
+    // A page added is the one worked on; a valve placed on it is on it alone.
+    await userEvent.click(within(tabs).getByRole("button", { name: "Add a page" }));
+    expect(within(tabs).getByRole("tab", { name: "Page 2", selected: true })).toBeTruthy();
+    expect(within(svg).queryByRole("button", { name: "Off-page connector" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Ball valve" }));
+    fireEvent.pointerDown(svg, at(300, 0));
+    fireEvent.pointerUp(svg, at(300, 0));
+    expect(await within(svg).findByRole("button", { name: "BV-1" })).toBeTruthy();
+    await userEvent.click(within(tabs).getByRole("button", { name: "Page 2's menu" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
+    const rename = within(await screen.findByRole("dialog", { name: "Rename the page" }));
+    await userEvent.clear(rename.getByRole("textbox", { name: "Name" }));
+    await userEvent.type(rename.getByRole("textbox", { name: "Name" }), "Ground");
+    await userEvent.click(rename.getByRole("button", { name: "Rename" }));
+    expect(within(tabs).getByRole("tab", { name: "Ground", selected: true })).toBeTruthy();
+    await waitFor(async () => {
+        const saved = await team.piperDiagram(team.chief, made.id);
+        expect(saved.document.pages.map((page) => [page.name, page.parts.map((part) => part.tag)])).toEqual([
+            ["Page 1", [""]],
+            ["Ground", ["BV-1"]],
+        ]);
+        expect(saved.pages).toBe(2);
+    });
+
+    // The connector on the first page goes to the valve on the other: its words say where, and Go goes there.
+    await userEvent.click(within(tabs).getByRole("tab", { name: "Page 1" }));
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "Off-page connector" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "To page" }), "Ground");
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Goes to" }).value).toBe("TO GROUND");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "At" }), "BV-1");
+    await userEvent.click(screen.getByRole("button", { name: "Go to Ground" }));
+    expect(within(tabs).getByRole("tab", { name: "Ground", selected: true })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Ball valve" })).toBeTruthy(); // it's selected
+    // What it arrives at says where it comes from, to go back.
+    await userEvent.click(screen.getByRole("button", { name: "TO GROUND, on Page 1" }));
+    expect(within(tabs).getByRole("tab", { name: "Page 1", selected: true })).toBeTruthy();
+
+    // Find looks through every page, and goes to the one what it found is on.
+    await userEvent.click(within(tabs).getByRole("tab", { name: "Page 1" }));
+    await userEvent.type(screen.getByRole("combobox", { name: "Find on the drawing" }), "bv-1");
+    const found = within(screen.getByRole("listbox", { name: "Found on the drawing" }));
+    expect(found.getByText(/on Ground/)).toBeTruthy();
+    await userEvent.keyboard("{Enter}");
+    expect(within(tabs).getByRole("tab", { name: "Ground", selected: true })).toBeTruthy();
+
+    // A page deleted takes what's on it; undo brings it back, and its connector's link.
+    await userEvent.click(within(tabs).getByRole("button", { name: "Ground's menu" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    await userEvent.click(
+        within(await screen.findByRole("dialog", { name: "Delete Ground?" })).getByRole("button", { name: "Delete" }),
+    );
+    expect(within(tabs).queryByRole("tab", { name: "Ground" })).toBeNull();
+    await waitFor(async () => {
+        const saved = await team.piperDiagram(team.chief, made.id);
+        expect([saved.pages, saved.document.pages[0]!.parts[0]!.props.page]).toEqual([1, ""]);
+    });
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+    expect(within(tabs).getByRole("tab", { name: "Ground", selected: true })).toBeTruthy();
+    await waitFor(async () => {
+        const { document: saved } = await team.piperDiagram(team.chief, made.id);
+        expect(saved.pages[0]!.parts[0]!.props).toMatchObject({
+            page: saved.pages[1]!.id,
+            part: saved.pages[1]!.parts[0]!.id,
+        });
+    });
+});
+
 test("Parts lists every part by what it is, with its specs, and a tag goes to its part", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };
@@ -698,6 +776,7 @@ test("Help says what Piper does, and how", async () => {
         "Into a line",
         "Fluids and states",
         "Test data from Yorg",
+        "Pages and sheets",
         "Importing from Visio",
         "Exports",
         "Keys",

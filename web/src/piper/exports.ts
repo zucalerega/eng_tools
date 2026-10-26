@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { LIGHT, withStates } from "./colors";
 import { DiagramView } from "./DiagramView";
-import { isPortEnd, LINE_KINDS, type Drawing } from "./drawing";
+import { isPortEnd, LINE_KINDS, pageOf, type Document, type Drawing } from "./drawing";
 import { drawingBox } from "./edit";
 import { fluidOf } from "./fluids";
 import { LINE_FIELDS } from "./labels";
@@ -113,6 +113,7 @@ const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g
 export interface PartRow {
     id: string;
     line: boolean;
+    page: number; // which of the diagram's pages it's on
     cells: string[];
 }
 
@@ -123,7 +124,7 @@ export interface PartRow {
  */
 export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
     const parts = drawing.parts.filter(
-        (part) => !["junction", "text", "region", "legend", "titleblock"].includes(part.kind),
+        (part) => !["junction", "text", "region", "offpage", "legend", "titleblock"].includes(part.kind),
     );
     const skip = new Set(["normal", "fluid", "channel", "notes"]);
     const keys: string[] = [];
@@ -171,11 +172,12 @@ export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] }
                 "",
                 "",
             ];
-            return { id: part.id, line: false, cells };
+            return { id: part.id, line: false, page: 0, cells };
         }),
         ...drawing.lines.map((line) => ({
             id: line.id,
             line: true,
+            page: 0,
             cells: [
                 "Line",
                 line.tag,
@@ -193,9 +195,36 @@ export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] }
     return { head, rows };
 }
 
-/** The parts list as a CSV file's text. */
-export function partsList(drawing: Drawing): string {
-    const { head, rows } = partTable(drawing);
+/**
+ * The parts list of all a diagram's pages: as a page's, of all of them together, and, if there's more than one, with
+ * the page each is on, last. (A part's id is unique in the diagram, not only on its page.)
+ */
+export function documentTable(document: Document): { head: string[]; rows: PartRow[] } {
+    const drawings = document.pages.map((_, index) => pageOf(document, index));
+    const on = new Map<string, number>();
+    drawings.forEach((drawing, index) => {
+        for (const item of [...drawing.parts, ...drawing.lines]) {
+            on.set(item.id, index);
+        }
+    });
+    const { head, rows } = partTable({
+        ...drawings[0]!,
+        parts: drawings.flatMap((drawing) => drawing.parts),
+        lines: drawings.flatMap((drawing) => drawing.lines),
+    });
+    const placed = rows.map((row) => ({ ...row, page: on.get(row.id) ?? 0 }));
+    if (document.pages.length < 2) {
+        return { head, rows: placed };
+    }
+    return {
+        head: [...head, "Page"],
+        rows: placed.map((row) => ({ ...row, cells: [...row.cells, document.pages[row.page]?.name ?? ""] })),
+    };
+}
+
+/** The parts list of a diagram's pages as a CSV file's text. */
+export function partsList(document: Document): string {
+    const { head, rows } = documentTable(document);
     return [head, ...rows.map((row) => row.cells)].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 

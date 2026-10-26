@@ -1,6 +1,10 @@
-// A diagram's drawing: its parts, the lines between them, its fluids, and its style. Plain JSON: the server keeps it as
-// it's sent (server/src/yjsp_server/piper/schemas.py checks its shape), and readDrawing reads it back, filling in what
-// an older drawing didn't have, so a drawing never has to be upgraded on the server.
+// A diagram's drawing: its pages, each with its parts and the lines between them (and where its printed sheet sits),
+// and the fluids and style they share. Plain JSON: the server keeps it as it's sent (server/src/yjsp_server/piper/
+// schemas.py checks its shape), and readDocument reads it back, filling in what an older drawing didn't have (one from
+// before pages is a page of its own), so a drawing never has to be upgraded on the server.
+//
+// The editor works on a page at a time: a Drawing, its parts and lines with the fluids and style (pageOf), which is
+// what every change (edit.ts) and what's drawn (DiagramView) takes; withPage puts it back in its document.
 
 export interface Point {
     x: number;
@@ -85,12 +89,43 @@ export interface Style {
     schemeAt: string;
 }
 
+/** A page as it'd be printed: on a paper, turned its way, its top left at a point of the page, so many points to a
+ * unit. The canvas shows its outline; a PDF prints the page there, as it shows. */
+export interface PageSheet {
+    paper: string; // a paper's id (pdf.ts PAPERS): "tabloid", "letter", "ansi-d", "a3", "a4"
+    landscape: boolean;
+    x: number; // the paper's top left, in the page's units
+    y: number;
+    scale: number; // points of paper to a unit of the page
+}
+
+export interface Page {
+    id: string;
+    name: string; // "P&ID", "GSE", "Sheet 2"
+    parts: Part[];
+    lines: Line[];
+    sheet: PageSheet | null; // where it's printed, if it's been set: else a PDF fits it to its paper
+}
+
+/** A diagram's drawing as it's saved: its pages, and the fluids and style all of them share. */
+export interface Document {
+    format: 2;
+    pages: Page[];
+    fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
+    style: Style;
+}
+
+/** A page of a drawing, as the editor works on it: its parts and lines, with the fluids and style it shares. */
 export interface Drawing {
     format: 1;
     parts: Part[];
     lines: Line[];
     fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
     style: Style;
+    sheet?: PageSheet | null; // its page's printed sheet, if it's in a document
+    // The tags on the diagram's other pages, not saved with it: a part placed here is numbered after them, and a tag
+    // taken there is said to be (pageOf fills it in).
+    elsewhere?: string[];
 }
 
 export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" };
@@ -104,6 +139,46 @@ export const emptyDrawing = (): Drawing => ({
 });
 
 export const isPortEnd = (end: End): end is { part: string; port: string } => "part" in end;
+
+/** A document of one page, from a page's drawing: a new diagram's, or one from before pages. */
+export function documentOf(drawing: Drawing, name = "Page 1"): Document {
+    return {
+        format: 2,
+        pages: [{ id: newId("g"), name, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null }],
+        fluids: drawing.fluids,
+        style: drawing.style,
+    };
+}
+
+export const emptyDocument = (): Document => documentOf(emptyDrawing());
+
+/** A page of a document, as a drawing to work on (the last, if there's no such page). */
+export function pageOf(document: Document, index: number): Drawing {
+    const page = document.pages[Math.min(Math.max(0, index), document.pages.length - 1)]!;
+    return {
+        format: 1,
+        parts: page.parts,
+        lines: page.lines,
+        fluids: document.fluids,
+        style: document.style,
+        sheet: page.sheet,
+        elsewhere: document.pages
+            .filter((other) => other !== page)
+            .flatMap((other) => other.parts.map((part) => part.tag).filter(Boolean)),
+    };
+}
+
+/** A document with a page's drawing put back: its parts, lines, and sheet, and the fluids and style all share. */
+export function withPage(document: Document, index: number, drawing: Drawing): Document {
+    return {
+        ...document,
+        pages: document.pages.map((page, at) =>
+            at === index ? { ...page, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null } : page,
+        ),
+        fluids: drawing.fluids,
+        style: drawing.style,
+    };
+}
 
 let counter = 0;
 
@@ -277,21 +352,72 @@ function fluid(value: unknown): Fluid | null {
     };
 }
 
-/** A drawing as the server sent it, whatever its age: what it lacks is filled in, and what can't be read left out. */
-export function readDrawing(value: unknown): Drawing {
-    const found = isObject(value) ? value : {};
-    const parts = list(found.parts)
+function sheetOf(value: unknown): PageSheet | null {
+    if (!isObject(value) || typeof value.paper !== "string") {
+        return null;
+    }
+    const scale = num(value.scale, 1);
+    return {
+        paper: value.paper,
+        landscape: value.landscape !== false,
+        x: num(value.x),
+        y: num(value.y),
+        scale: scale > 0 ? scale : 1,
+    };
+}
+
+/** A page's parts and lines as they were sent: a line to a part that isn't on the page left out. */
+function pageParts(value: Raw): { parts: Part[]; lines: Line[] } {
+    const parts = list(value.parts)
         .map(part)
         .filter((entry) => entry !== null);
     const ids = new Set(parts.map((entry) => entry.id));
+    return {
+        parts,
+        lines: list(value.lines)
+            .map((entry) => line(entry, ids))
+            .filter((entry) => entry !== null),
+    };
+}
+
+/**
+ * A diagram's drawing as the server sent it, whatever its age: its pages (a drawing from before pages is one), with
+ * what they lack filled in and what can't be read left out.
+ */
+export function readDocument(value: unknown): Document {
+    const found = isObject(value) ? value : {};
+    const pages = list(found.pages).filter(isObject);
+    if (pages.length === 0) {
+        return documentOf(readDrawing(found));
+    }
+    const shared = readDrawing({ fluids: found.fluids, style: found.style });
+    return {
+        format: 2,
+        pages: pages.map((page, index) => ({
+            id: str(page.id) || newId("g"),
+            name: str(page.name) || `Page ${index + 1}`,
+            ...pageParts(page),
+            sheet: sheetOf(page.sheet),
+        })),
+        fluids: shared.fluids,
+        style: shared.style,
+    };
+}
+
+/** A page's drawing as the server sent it (or a drawing from before pages), whatever its age: what it lacks is filled
+ * in, and what can't be read left out. A document's first page, if it's one with pages. */
+export function readDrawing(value: unknown): Drawing {
+    const found = isObject(value) ? value : {};
+    if (Array.isArray(found.pages)) {
+        return pageOf(readDocument(found), 0);
+    }
+    const { parts, lines } = pageParts(found);
     const style = isObject(found.style) ? found.style : {};
     const labels = style.labels === "small" || style.labels === "large" ? style.labels : "normal";
     return {
         format: 1,
         parts,
-        lines: list(found.lines)
-            .map((entry) => line(entry, ids))
-            .filter((entry) => entry !== null),
+        lines,
         fluids: list(found.fluids)
             .map(fluid)
             .filter((entry) => entry !== null),

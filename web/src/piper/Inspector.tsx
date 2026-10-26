@@ -1,9 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { LINE_STYLES, scalable } from "./DiagramView";
-import { LINE_KINDS, PART_SCALES, type Drawing, type Fluid, type LabelSize, type Line, type Part } from "./drawing";
-import { carryFluid, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
+import {
+    LINE_KINDS,
+    PART_SCALES,
+    type Drawing,
+    type Fluid,
+    type LabelSize,
+    type Line,
+    type Page,
+    type Part,
+} from "./drawing";
+import { carryFluid, drawingBox, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
+import { fitSheet, PAPERS } from "./pdf";
 import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
 import {
     applyScheme,
@@ -207,7 +217,9 @@ function PartPanel({
     onPlot: (channels: string[]) => void;
 }) {
     const kind = kindOf(part.kind);
-    const shared = sharedTags(drawing).has(part.tag.trim().toUpperCase());
+    const said = part.tag.trim().toUpperCase();
+    const shared = sharedTags(drawing).has(said);
+    const onAnother = (drawing.elsewhere ?? []).some((tag) => tag.trim().toUpperCase() === said);
     const change = (key: string, update: (part: Part) => Part) =>
         store.commit(updatePart(store.getState().drawing, part.id, update), undefined, `${part.id}:${key}`);
     const setProp = (key: string, value: string) =>
@@ -217,7 +229,10 @@ function PartPanel({
             ...now,
             shown: now.shown.includes(key) ? now.shown.filter((entry) => entry !== key) : [...now.shown, key],
         }));
-    const custom = Object.keys(part.props).filter((key) => !kind.fields.some((field) => field.key === key));
+    // Its own properties, beside its kind's: not where an off-page connector goes, which it shows as its own.
+    const custom = Object.keys(part.props).filter(
+        (key) => !kind.fields.some((field) => field.key === key) && !(part.kind === "offpage" && JUMP.has(key)),
+    );
     const category = CATEGORIES.find(
         (entry) => entry.id === PRESETS.find((preset) => preset.kind === part.kind)?.category,
     );
@@ -245,7 +260,11 @@ function PartPanel({
                     )}
                 </Row>
             )}
-            {shared && <p className="piper-warning">Another part is tagged {part.tag} too.</p>}
+            {shared && (
+                <p className="piper-warning">
+                    {onAnother ? "A part on another page" : "Another part"} is tagged {part.tag} too.
+                </p>
+            )}
             {(scalable(part) || kind.tag !== "none") && (
                 <div className="piper-sizes">
                     {scalable(part) && (
@@ -312,6 +331,8 @@ function PartPanel({
                     )}
                 </Row>
             )}
+            {part.kind === "offpage" && <JumpSettings store={store} commands={commands} part={part} />}
+            <ComesFrom store={store} commands={commands} part={part} />
             {kind.fields.map((field) =>
                 field.key === "normal" ? (
                     <Row
@@ -837,6 +858,176 @@ function ManyPanel({
     );
 }
 
+/** What an off-page connector keeps of where it goes: the page's id, and a part's on it. */
+const JUMP = new Set(["page", "part"]);
+
+/**
+ * Where an off-page connector goes: to another of the diagram's pages, and at a part on it (its own connector back,
+ * say). Go there goes, as double-clicking it does; what it arrives at lists it (ComesFrom), to go back. Picking a page
+ * writes TO and its name on the connector, unless its words have been changed.
+ */
+function JumpSettings({ store, commands, part }: { store: EditorStore; commands: Commands; part: Part }) {
+    const document = useEditor(store, (state) => state.document);
+    const page = useEditor(store, (state) => state.page);
+    const target = document.pages.findIndex((entry) => entry.id === part.props.page);
+    const there = target >= 0 ? document.pages[target]! : null;
+    const spots = (there?.parts ?? []).filter(
+        (entry) => entry.kind === "offpage" || (entry.tag.trim() !== "" && entry.kind !== "junction"),
+    );
+    function setJump(pageId: string, partId: string) {
+        const name = document.pages.find((entry) => entry.id === pageId)?.name ?? "";
+        const said = part.text.trim().toUpperCase();
+        // Its words follow where it goes, until they're written by hand.
+        const written = said !== "" && said !== "TO GSE" && (!there || said !== `TO ${there.name.toUpperCase()}`);
+        store.commit(
+            updatePart(store.getState().drawing, part.id, (now) => ({
+                ...now,
+                props: { ...now.props, page: pageId, part: partId },
+                text: written || !name ? now.text : `TO ${name.toUpperCase()}`,
+            })),
+        );
+    }
+    return (
+        <>
+            <Row label="To page">
+                {(id) => (
+                    <select id={id} value={there?.id ?? ""} onChange={(event) => setJump(event.target.value, "")}>
+                        <option value="">{part.props.page && !there ? "A page since deleted" : "Nowhere yet"}</option>
+                        {document.pages.map((entry, index) =>
+                            index === page ? null : (
+                                <option key={entry.id} value={entry.id}>
+                                    {entry.name}
+                                </option>
+                            ),
+                        )}
+                    </select>
+                )}
+            </Row>
+            {there && (
+                <Row label="At">
+                    {(id) => (
+                        <select
+                            id={id}
+                            value={spots.some((entry) => entry.id === part.props.part) ? part.props.part : ""}
+                            onChange={(event) => setJump(there.id, event.target.value)}
+                        >
+                            <option value="">The whole page</option>
+                            {spots.map((entry) => (
+                                <option key={entry.id} value={entry.id}>
+                                    {tagOf(entry)}
+                                    {entry.kind === "offpage" ? " (its connector)" : ""}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </Row>
+            )}
+            {there && (
+                <button
+                    type="button"
+                    className="button-small"
+                    onClick={() => commands.goTo(target, part.props.part ? [part.props.part] : [])}
+                >
+                    Go to {there.name}
+                </button>
+            )}
+        </>
+    );
+}
+
+const tagOf = (part: Part) => part.tag || part.text || titleOf(part);
+
+/** The off-page connectors on other pages that go to a part (a connector back, or a tank), to go back to. */
+function ComesFrom({ store, commands, part }: { store: EditorStore; commands: Commands; part: Part }) {
+    const document = useEditor(store, (state) => state.document);
+    const page = useEditor(store, (state) => state.page);
+    const here = document.pages[page]?.id;
+    const coming = document.pages.flatMap((entry, index) =>
+        entry.parts
+            .filter((other) => other.kind === "offpage" && other.props.page === here && other.props.part === part.id)
+            .map((other) => ({ index, page: entry, part: other })),
+    );
+    if (coming.length === 0) {
+        return null;
+    }
+    return (
+        <div className="piper-coming">
+            <span className="muted piper-small">Comes from</span>
+            {coming.map((entry) => (
+                <button
+                    key={entry.part.id}
+                    type="button"
+                    className="button-small"
+                    onClick={() => commands.goTo(entry.index, [entry.part.id])}
+                >
+                    {tagOf(entry.part)}, on {entry.page.name}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+/**
+ * Where the page prints: on which paper, turned which way, and where on it, as an outline on the canvas shows. Until
+ * it's set, a PDF fits the page to the paper it's saved on; once it is, the page prints as the outline shows, so a
+ * sheet's layout and scale stay put as the drawing changes. Fit moves it to what's on the page now.
+ */
+function SheetSettings({ store, drawing }: { store: EditorStore; drawing: Drawing }) {
+    const sheet = drawing.sheet ?? null;
+    const box = drawingBox(drawing) ?? { x0: -200, y0: -150, x1: 200, y1: 150 };
+    const wide = box.y1 - box.y0 <= (box.x1 - box.x0) * 1.2;
+    const set = (paper: string | null, landscape: boolean) =>
+        store.commit({ ...drawing, sheet: paper ? fitSheet(box, paper, landscape) : null });
+    return (
+        <>
+            <h3 className="piper-subhead">Printed sheet</h3>
+            <Row label="Paper">
+                {(id) => (
+                    <select
+                        id={id}
+                        value={sheet?.paper ?? ""}
+                        onChange={(event) => set(event.target.value || null, sheet?.landscape ?? wide)}
+                    >
+                        <option value="">Fitted to the PDF's paper</option>
+                        {PAPERS.filter((paper) => paper.width > 0).map((paper) => (
+                            <option key={paper.id} value={paper.id}>
+                                {paper.name}
+                            </option>
+                        ))}
+                    </select>
+                )}
+            </Row>
+            {sheet ? (
+                <>
+                    <label className="check">
+                        <input
+                            type="checkbox"
+                            checked={sheet.landscape}
+                            onChange={(event) => set(sheet.paper, event.target.checked)}
+                        />
+                        Landscape
+                    </label>
+                    <p className="muted piper-small">
+                        The outline shows where this page prints, at {Math.round(sheet.scale * 100)}% of its size: the
+                        sheet's border, and the corner its title block takes.{" "}
+                        <button
+                            type="button"
+                            className="button-small"
+                            onClick={() => set(sheet.paper, sheet.landscape)}
+                        >
+                            Fit the sheet to the page
+                        </button>
+                    </p>
+                </>
+            ) : (
+                <p className="muted piper-small">
+                    Pick a paper to see where this page prints, and keep it there as the drawing changes.
+                </p>
+            )}
+        </>
+    );
+}
+
 function DiagramPanel({
     store,
     drawing,
@@ -849,26 +1040,38 @@ function DiagramPanel({
     schemes: Scheme[] | null;
 }) {
     const [editing, setEditing] = useState(false);
+    const document = useEditor(store, (state) => state.document);
+    // All the diagram's pages together: the fluids any of them use, and the lines and valves on all of them.
+    const everywhere = useMemo(
+        () => ({
+            ...drawing,
+            parts: document.pages.flatMap((page) => page.parts),
+            lines: document.pages.flatMap((page) => page.lines),
+        }),
+        [document, drawing],
+    );
     const taken = schemes?.find((scheme) => String(scheme.id) === drawing.style.scheme) ?? null;
-    const used = fluidsUsed(drawing);
-    const valves = drawing.parts.filter((part) => kindOf(part.kind).state).length;
+    const used = fluidsUsed(everywhere);
+    const valves = everywhere.parts.filter((part) => kindOf(part.kind).state).length;
     const setFluid = (fluid: Fluid, key: string) =>
         store.commit({ ...drawing, fluids: withFluid(drawing, fluid) }, undefined, `fluid:${fluid.id}:${key}`);
     const setStyle = (key: "no" | "nc" | "fip", value: string) =>
         store.commit({ ...drawing, style: { ...drawing.style, [key]: value } }, undefined, `style:${key}`);
-    // What's written on every line, or every valve, at once: shown everywhere, or nowhere.
+    // What's written on every line, or every valve, at once, on every page: shown everywhere, or nowhere.
+    const eachPage = (change: (page: Page) => Page) =>
+        store.commitDocument({ ...document, pages: document.pages.map(change) });
     const showOnLines = (key: string, on: boolean) =>
-        store.commit({
-            ...drawing,
-            lines: drawing.lines.map((line) => ({
+        eachPage((page) => ({
+            ...page,
+            lines: page.lines.map((line) => ({
                 ...line,
                 shown: on ? [...new Set([...line.shown, key])] : line.shown.filter((entry) => entry !== key),
             })),
-        });
+        }));
     const showOnValves = (on: boolean) =>
-        store.commit({
-            ...drawing,
-            parts: drawing.parts.map((part) =>
+        eachPage((page) => ({
+            ...page,
+            parts: page.parts.map((part) =>
                 kindOf(part.kind).state
                     ? {
                           ...part,
@@ -878,9 +1081,9 @@ function DiagramPanel({
                       }
                     : part,
             ),
-        });
-    const labeledLines = drawing.lines.filter((line) => line.shown.includes("fluid")).length;
-    const labeledValves = drawing.parts.filter(
+        }));
+    const labeledLines = everywhere.lines.filter((line) => line.shown.includes("fluid")).length;
+    const labeledValves = everywhere.parts.filter(
         (part) => kindOf(part.kind).state && part.shown.includes("normal"),
     ).length;
     const standard = new Set(STANDARD_FLUIDS.map((fluid) => fluid.id));
@@ -890,11 +1093,13 @@ function DiagramPanel({
                 <div>
                     <h2>This diagram</h2>
                     <p className="muted">
-                        {drawing.parts.length} parts, {drawing.lines.length} lines. Select something to name it and say
-                        what it is.
+                        {drawing.parts.length} parts, {drawing.lines.length} lines
+                        {document.pages.length > 1 ? ` on this page, of its ${document.pages.length}` : ""}. Select
+                        something to name it and say what it is.
                     </p>
                 </div>
             </header>
+            <SheetSettings store={store} drawing={drawing} />
             <h3 className="piper-subhead">Color scheme</h3>
             <Row label="Colors from">
                 {(id) => (
@@ -1077,10 +1282,11 @@ function DiagramPanel({
                     </select>
                 )}
             </Row>
-            {drawing.lines.length > 0 && (
+            {everywhere.lines.length > 0 && (
                 <div className="piper-label-all">
                     <span className="muted piper-small">
-                        Fluids written on lines: {labeledLines} of {drawing.lines.length}
+                        Fluids written on lines: {labeledLines} of {everywhere.lines.length}
+                        {document.pages.length > 1 ? ", on all its pages" : ""}
                     </span>
                     <button type="button" className="button-small" onClick={() => showOnLines("fluid", true)}>
                         Show on every line
@@ -1094,6 +1300,7 @@ function DiagramPanel({
                 <div className="piper-label-all">
                     <span className="muted piper-small">
                         States written beside valves (NO, NC, FIP): {labeledValves} of {valves}
+                        {document.pages.length > 1 ? ", on all its pages" : ""}
                     </span>
                     <button type="button" className="button-small" onClick={() => showOnValves(true)}>
                         Show on every valve

@@ -380,7 +380,7 @@ export const titleblock: Kind = {
                 <Cell x={30} y={-8} label="DATE" value={value("date", date)} context={context} />
                 <Cell x={-150} y={16} label="DRAWN" value={value("drawn", meta.by)} context={context} />
                 <Cell x={-50} y={16} label="CHECKED" value={value("checked", "")} context={context} />
-                <Cell x={30} y={16} label="SHEET" value="1 OF 1" context={context} />
+                <Cell x={30} y={16} label="SHEET" value={meta.sheet ?? "1 OF 1"} context={context} />
             </>
         );
     },

@@ -68,6 +68,7 @@ export interface DiagramMeta {
     revision: string;
     savedAt: string | null; // ISO time of its last save
     by: string; // who made it
+    sheet?: string; // which page of how many it is, as a title block says it: "2 OF 3" (left out: "1 OF 1")
 }
 
 export interface Kind {

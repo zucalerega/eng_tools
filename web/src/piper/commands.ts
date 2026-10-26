@@ -15,6 +15,7 @@ import {
     type Clip,
 } from "./edit";
 import { GRID, type Box } from "./geometry";
+import { sheetOutline } from "./pdf";
 import { MAX_ZOOM, MIN_ZOOM, type EditorStore } from "./store";
 
 // What the editor's buttons and keys do to its drawing: each a commit to the store, so it's one step to undo.
@@ -126,9 +127,23 @@ export function commandsOf(store: EditorStore) {
             zoomTo(state().view.zoom * factor, around);
         },
         zoomTo,
-        /** The whole drawing in view, at no more than 1.5 times its size. */
+        /** The whole drawing in view, and its page's printed sheet if it has one, at no more than 1.5 times its
+         * size. */
         fit() {
-            frame(drawingBox(state().drawing) ?? { x0: -200, y0: -150, x1: 200, y1: 150 }, 1.5);
+            const { drawing } = state();
+            const box = drawingBox(drawing) ?? { x0: -200, y0: -150, x1: 200, y1: 150 };
+            const paper = drawing.sheet ? sheetOutline(drawing.sheet).paper : null;
+            frame(
+                paper
+                    ? {
+                          x0: Math.min(box.x0, paper.x0),
+                          y0: Math.min(box.y0, paper.y0 - 20), // and the paper's name, over it
+                          x1: Math.max(box.x1, paper.x1),
+                          y1: Math.max(box.y1, paper.y1),
+                      }
+                    : box,
+                1.5,
+            );
         },
         /** Parts and lines found (or picked in a list) shown, selected, in the middle of the view, with what's around
          * them: room enough to see where they are. */
@@ -137,6 +152,17 @@ export function commandsOf(store: EditorStore) {
             if (box) {
                 frame({ x0: box.x0 - 120, y0: box.y0 - 80, x1: box.x1 + 120, y1: box.y1 + 80 }, 2);
                 store.select(ids);
+            }
+        },
+        /** Another of the diagram's pages: at what's on it that's wanted (as show), or all of it. */
+        goTo(page: number, ids: string[] = []) {
+            const moved = page !== state().page;
+            store.setPage(page);
+            const found = ids.length > 0 && drawingBox(state().drawing, new Set(ids)) !== null;
+            if (found) {
+                this.show(ids);
+            } else if (moved) {
+                this.fit();
             }
         },
     };

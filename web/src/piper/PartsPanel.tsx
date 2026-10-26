@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import type { Commands } from "./commands";
-import { partTable, type PartRow } from "./exports";
+import { documentTable, type PartRow } from "./exports";
 import { CATEGORIES, PRESETS } from "./library/index";
 import { useEditor, type EditorStore } from "./store";
 
 // The parts table, under the drawing: every valve, sensor, tank, and the rest, by what they are, with how many of each
 // and their specs (MAWP, size, Cv, range, channel...), and the lines after them. A tag goes to its part on the drawing.
-// It's the parts list a CSV saves (exports.ts), in groups.
+// It's the parts list a CSV saves (exports.ts), in groups: of all the diagram's pages, each part's page beside it if
+// there's more than one.
 
 interface Group {
     name: string;
@@ -36,11 +37,11 @@ export function PartsPanel({
     onCsv: () => void;
     onClose: () => void;
 }) {
-    const drawing = useEditor(store, (state) => state.drawing);
+    const document = useEditor(store, (state) => state.document);
     const selection = useEditor(store, (state) => state.selection);
     const { head, groups, parts, lines } = useMemo(() => {
-        const { head, rows } = partTable(drawing);
-        const kinds = new Map(drawing.parts.map((part) => [part.id, part.kind]));
+        const { head, rows } = documentTable(document);
+        const kinds = new Map(document.pages.flatMap((page) => page.parts.map((part) => [part.id, part.kind])));
         const byName = new Map<string, PartRow[]>();
         for (const row of rows) {
             const name = row.line ? "Lines" : row.cells[2]!;
@@ -68,7 +69,7 @@ export function PartsPanel({
             parts: rows.filter((row) => !row.line).length,
             lines: rows.filter((row) => row.line).length,
         };
-    }, [drawing]);
+    }, [document]);
     const chosen = new Set(selection);
 
     return (
@@ -111,7 +112,7 @@ export function PartsPanel({
                                                         type="button"
                                                         className="piper-parts-tag"
                                                         title="Show it on the drawing"
-                                                        onClick={() => commands.show([row.id])}
+                                                        onClick={() => commands.goTo(row.page, [row.id])}
                                                     >
                                                         {row.cells[1] || "Untagged"}
                                                     </button>

@@ -1,6 +1,7 @@
-import type { Drawing } from "./drawing";
+import type { Drawing, PageSheet } from "./drawing";
 import { svgOf } from "./exports";
 import type { DiagramMeta } from "./library/kinds";
+import type { Box } from "./geometry";
 
 // A diagram as a PDF file: the drawing as the exports draw it (exports.ts' SVG), turned into PDF's own drawing
 // operators, so it's vector, crisp printed at any size, its tags text that can be searched and copied. Only what the
@@ -473,7 +474,7 @@ function transformOperators(transform: string): string[] {
 // --- the page --------------------------------------------------------------------------------------------------------
 
 class Writer {
-    readonly lines: string[] = [];
+    lines: string[] = [];
     readonly opacities = new Map<string, string>(); // fill and stroke opacity: the graphics state's name
 
     /** The graphics state for an opacity, made once. */
@@ -727,7 +728,13 @@ function cornerOf(sheet: Sheet): { width: number; height: number } | null {
  * drawing goes on it, as big as fits: inside the sheet's border, and clear of its corner (above it, or beside it,
  * whichever leaves the drawing bigger), if it's on a sheet.
  */
-export function pageFor(width: number, height: number, paperId: string, sheet: Sheet | null = null) {
+export function pageFor(
+    width: number,
+    height: number,
+    paperId: string,
+    sheet: Sheet | null = null,
+    landscape: boolean | null = null,
+) {
     const paper = PAPERS.find((entry) => entry.id === paperId) ?? PAPERS[0]!;
     const inset = sheet ? FRAME + ROOM : MARGIN;
     const corner = sheet ? cornerOf(sheet) : null;
@@ -742,8 +749,8 @@ export function pageFor(width: number, height: number, paperId: string, sheet: S
             y: inset,
         };
     }
-    // Landscape, as P&IDs mostly are, unless the drawing's plainly taller than it's wide.
-    const wide = height <= width * 1.2;
+    // Landscape, as P&IDs mostly are, unless the drawing's plainly taller than it's wide (or it's turned as asked).
+    const wide = landscape ?? height <= width * 1.2;
     const [pageWidth, pageHeight] = wide
         ? [Math.max(paper.width, paper.height), Math.min(paper.width, paper.height)]
         : [paper.width, paper.height];
@@ -898,7 +905,7 @@ function sheetSvg(page: { width: number; height: number }, sheet: Sheet, meta: D
             [
                 ["DRAWN", meta.by],
                 ["DATE", date],
-                ["SHEET", "1 OF 1"],
+                ["SHEET", meta.sheet ?? "1 OF 1"],
             ],
         ];
         lines.forEach((row, index) => {
@@ -926,35 +933,116 @@ export async function pdfOf(
     paperId = "tabloid",
     sheet: Sheet | null = null,
 ): Promise<Blob> {
-    const { svg } = await svgOf(drawing, meta);
-    const document = new DOMParser().parseFromString(svg, "image/svg+xml");
-    const root = document.documentElement;
-    const [vx, vy, vw, vh] = (root.getAttribute("viewBox") ?? "0 0 100 100").split(/\s+/).map(Number) as [
-        number,
-        number,
-        number,
-        number,
-    ];
-    const page = pageFor(vw, vh, paperId, sheet);
+    return pdfOfPages([{ drawing, meta, sheet }], paperId);
+}
+
+/** A paper's size in points, turned its way: landscape is the wider way across. */
+export function paperSize(paperId: string, landscape: boolean): { width: number; height: number } {
+    const paper = PAPERS.find((entry) => entry.id === paperId && entry.width > 0) ?? PAPERS[0]!;
+    const [long, short] = [Math.max(paper.width, paper.height), Math.min(paper.width, paper.height)];
+    return landscape ? { width: long, height: short } : { width: short, height: long };
+}
+
+/** As much of a sheet's corner as its title block and revisions can take: the drawing keeps clear of it. */
+const FULL_CORNER: Sheet = {
+    project: "",
+    diagram: null,
+    revisions: Array.from({ length: MOST_REVISIONS }, () => ({ rev: "", note: "", date: "", by: "" })),
+    titleBlock: true,
+};
+
+/**
+ * Where a page's printed sheet is, in its own units, as the canvas outlines it: the paper's edge, the sheet's border
+ * inside it, and the corner its title block and revisions can take, as a PDF on a drawing sheet prints them.
+ */
+export function sheetOutline(sheet: PageSheet): { paper: Box; frame: Box; corner: Box } {
+    const { width, height } = paperSize(sheet.paper, sheet.landscape);
+    const corner = cornerOf(FULL_CORNER)!;
+    const box = (x0: number, y0: number, x1: number, y1: number): Box => ({
+        x0: sheet.x + x0 / sheet.scale,
+        y0: sheet.y + y0 / sheet.scale,
+        x1: sheet.x + x1 / sheet.scale,
+        y1: sheet.y + y1 / sheet.scale,
+    });
+    return {
+        paper: box(0, 0, width, height),
+        frame: box(FRAME, FRAME, width - FRAME, height - FRAME),
+        corner: box(width - FRAME - corner.width, height - FRAME - corner.height, width - FRAME, height - FRAME),
+    };
+}
+
+/**
+ * A page's sheet set to fit what's on it (its box): on a paper, turned its way, as big as fits inside the sheet's
+ * border and clear of its corner, as a PDF fits a page that hasn't one.
+ */
+export function fitSheet(box: Box, paperId: string, landscape: boolean): PageSheet {
+    const fit = pageFor(box.x1 - box.x0, box.y1 - box.y0, paperId, FULL_CORNER, landscape);
+    return {
+        paper: paperId,
+        landscape,
+        scale: fit.scale,
+        x: box.x0 - fit.x / fit.scale,
+        y: box.y0 - fit.y / fit.scale,
+    };
+}
+
+/**
+ * The drawing's pages as a PDF, a page for each: each on its printed sheet's paper, where its outline shows, if it has
+ * one; else on the paper chosen, fitted to it (pageFor). On a drawing sheet, if it's given one: its border, the
+ * revisions, and its title block, which says which sheet of how many it is.
+ */
+export async function pdfOfPages(
+    drawn: { drawing: Drawing; meta: DiagramMeta; sheet: Sheet | null }[],
+    paperId = "tabloid",
+): Promise<Blob> {
     const writer = new Writer();
-    // The page's y runs up from its foot; the drawing's, and the sheet's, run down from the top: flipped.
-    writer.lines.push("q", `1 0 0 -1 0 ${n(page.height)} cm`);
-    if (sheet) {
-        const frame = new DOMParser().parseFromString(sheetSvg(page, sheet, meta), "image/svg+xml").documentElement;
-        for (const child of [...frame.children]) {
+    const contents: { content: Uint8Array<ArrayBuffer>; width: number; height: number }[] = [];
+    for (const { drawing, meta, sheet: framed } of drawn) {
+        const { svg } = await svgOf(drawing, meta);
+        const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+        const [vx, vy, vw, vh] = (root.getAttribute("viewBox") ?? "0 0 100 100").split(/\s+/).map(Number) as [
+            number,
+            number,
+            number,
+            number,
+        ];
+        // Where its sheet is, if it has one: the paper at its point, so many points to a unit. Else fitted on.
+        const fixed = drawing.sheet;
+        const page = fixed
+            ? {
+                  ...paperSize(fixed.paper, fixed.landscape),
+                  scale: fixed.scale,
+                  x: -fixed.x * fixed.scale,
+                  y: -fixed.y * fixed.scale,
+              }
+            : (() => {
+                  const fit = pageFor(vw, vh, paperId, framed);
+                  return { ...fit, x: fit.x - vx * fit.scale, y: fit.y - vy * fit.scale };
+              })();
+        writer.lines = [];
+        // The page's y runs up from its foot; the drawing's, and the sheet's, run down from the top: flipped.
+        writer.lines.push("q", `1 0 0 -1 0 ${n(page.height)} cm`);
+        if (framed) {
+            const frame = new DOMParser().parseFromString(
+                sheetSvg(page, framed, meta),
+                "image/svg+xml",
+            ).documentElement;
+            for (const child of [...frame.children]) {
+                writer.walk(child, DEFAULT);
+            }
+        }
+        // Then the drawing, where it goes.
+        writer.lines.push("q", `${n(page.scale)} 0 0 ${n(page.scale)} ${n(page.x)} ${n(page.y)} cm`);
+        for (const child of [...root.children]) {
             writer.walk(child, DEFAULT);
         }
+        writer.lines.push("Q", "Q");
+        contents.push({
+            content: await deflate(ascii(writer.lines.join("\n"))),
+            width: page.width,
+            height: page.height,
+        });
     }
-    // Then the drawing, fitted on.
-    writer.lines.push(
-        "q",
-        `${n(page.scale)} 0 0 ${n(page.scale)} ${n(page.x - vx * page.scale)} ${n(page.y - vy * page.scale)} cm`,
-    );
-    for (const child of [...root.children]) {
-        writer.walk(child, DEFAULT);
-    }
-    writer.lines.push("Q", "Q");
-    const content = await deflate(ascii(writer.lines.join("\n")));
 
     const objects: (string | Uint8Array<ArrayBuffer>)[][] = [];
     const add = (...parts: (string | Uint8Array<ArrayBuffer>)[]) => objects.push(parts) && objects.length;
@@ -966,14 +1054,19 @@ export async function pdfOf(
     const fonts = FAMILIES.flatMap((family) => FONT_NAMES[family]).map((name) =>
         add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`),
     );
-    const stream = add(`<< /Length ${content.length} /Filter /FlateDecode >>\nstream\n`, content, "\nendstream");
-    const pages = objects.length + 2; // the pages' object, after the page's
     const resources = `<< /Font << ${fonts.map((id, index) => `/F${index + 1} ${id} 0 R`).join(" ")} >> /ExtGState << ${states.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >> >>`;
-    const pageObject = add(
-        `<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${n(page.width)} ${n(page.height)}] /Resources ${resources} /Contents ${stream} 0 R >>`,
-    );
-    add(`<< /Type /Pages /Kids [${pageObject} 0 R] /Count 1 >>`);
+    const pages = add(""); // the pages' object: written once its pages are
+    const kids = contents.map(({ content, width, height }) => {
+        const stream = add(`<< /Length ${content.length} /Filter /FlateDecode >>\nstream\n`, content, "\nendstream");
+        return add(
+            `<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${n(width)} ${n(height)}] /Resources ${resources} /Contents ${stream} 0 R >>`,
+        );
+    });
+    objects[pages - 1] = [
+        `<< /Type /Pages /Kids [${kids.map((id) => `${id} 0 R`).join(" ")}] /Count ${kids.length} >>`,
+    ];
     const catalog = add(`<< /Type /Catalog /Pages ${pages} 0 R >>`);
+    const meta = drawn[0]?.meta ?? { name: "Diagram", revision: "", savedAt: null, by: "" };
     const now = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
     const info = add(`<< /Title ${textString(meta.name)} /Creator (YJSP Piper) /CreationDate (D:${now}Z) >>`);
 

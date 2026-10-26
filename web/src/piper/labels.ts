@@ -3,6 +3,7 @@ import { fluidOf } from "./fluids";
 import type { Box } from "./geometry";
 import { kindOf } from "./library/index";
 import { MAWP, type Field } from "./library/kinds";
+import { linesOn, portOf } from "./ports";
 
 // What's written beside parts and on lines: a part's tag and the properties it shows, a line's tag, fluid, and size.
 
@@ -74,17 +75,27 @@ export function partLabel(drawing: Drawing, part: Part): { text: string; tag: bo
 
 /**
  * Where a part's label goes, if it hasn't been dragged there: off the line a part in a line is in (under it, if the
- * line goes across; beside it, if it goes down), under other wide parts, and beside tall ones, at their top. size: its
- * tag's (textSizes), which it's set clear of the part by.
+ * line goes across; beside it, if it goes down), under other wide parts, and beside tall ones, at their top; an
+ * instrument's at its side, the side its lines don't leave it from (drawing: where they are). size: its tag's
+ * (textSizes), which it's set clear of the part by.
  */
-export function labelPlace(part: Part, box: Box, size = 8): { at: Point; anchor: "middle" | "start" } {
+export function labelPlace(
+    part: Part,
+    box: Box,
+    size = 8,
+    drawing?: Drawing,
+): { at: Point; anchor: "middle" | "start" | "end" } {
     if (part.label) {
         return { at: { x: part.x + part.label.x, y: part.y + part.label.y }, anchor: "middle" };
     }
     const kind = kindOf(part.kind);
     const below = box.y1 + size + 2;
     if (kind.tag === "side") {
-        return { at: { x: box.x1 + 5, y: part.y + size / 3 }, anchor: "start" };
+        const y = part.y + size / 3;
+        const sides = drawing ? tappedSides(drawing, part, box) : new Set<string>();
+        return sides.has("right") && !sides.has("left")
+            ? { at: { x: box.x0 - 5, y }, anchor: "end" }
+            : { at: { x: box.x1 + 5, y }, anchor: "start" };
     }
     if (kind.inline) {
         const across = part.rotation === 0 || part.rotation === 180;
@@ -96,6 +107,20 @@ export function labelPlace(part: Part, box: Box, size = 8): { at: Point; anchor:
     return wide
         ? { at: { x: (box.x0 + box.x1) / 2, y: below }, anchor: "middle" }
         : { at: { x: box.x1 + 6, y: box.y0 + size + 2 }, anchor: "start" };
+}
+
+/** The sides of a part a line leaves it from, as it's drawn, however it's turned: "left", "right", or both. */
+function tappedSides(drawing: Drawing, part: Part, box: Box): Set<string> {
+    const sides = new Set<string>();
+    for (const { port } of linesOn(drawing, part.id)) {
+        const at = portOf(part, port)?.at;
+        if (at && at.x >= box.x1) {
+            sides.add("right");
+        } else if (at && at.x <= box.x0) {
+            sides.add("left");
+        }
+    }
+    return sides;
 }
 
 /** What a line's label says: what it shows, of its tag, fluid, and properties. */

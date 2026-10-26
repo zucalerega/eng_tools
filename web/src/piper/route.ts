@@ -67,10 +67,42 @@ export function route(from: RouteEnd, to: RouteEnd, boxes: Box[], busy: Point[][
     ) {
         return [from.at, to.at];
     }
+    const across = facing(from, to, boxes);
+    if (across) {
+        return across;
+    }
     const start = stubOf(from);
     const end = stubOf(to);
     const found = search(start, from.dir, end, to.dir ? OPPOSITE[to.dir] : null, boxes, runsAlong(busy));
     return simplify([from.at, ...(found ?? elbow(start, end, from.dir)), to.at]);
+}
+
+/**
+ * Two ports that face each other, off line, closer than a stub out of each (a valve beside a tank drawn bigger): a stub
+ * from each would run past the other's, and the route come back. A Z instead, turning halfway across (on the grid, if
+ * that's between them), if nothing's in its way; else null, for the search.
+ */
+function facing(from: RouteEnd, to: RouteEnd, boxes: Box[]): Point[] | null {
+    if (!from.dir || !to.dir || OPPOSITE[from.dir] !== to.dir) {
+        return null;
+    }
+    const level = isLevel(from.dir);
+    const [a, b] = level ? [from.at.x, to.at.x] : [from.at.y, to.at.y];
+    const gap = (b - a) * (level ? VECTORS[from.dir].x : VECTORS[from.dir].y);
+    const off = level ? Math.abs(from.at.y - to.at.y) : Math.abs(from.at.x - to.at.x);
+    // In line, they'd be joined straight, unless something's between them: that's the search's to go around.
+    if (gap <= 0 || gap >= 2 * STUB || off < 1e-6) {
+        return null;
+    }
+    const half = snapToGrid(a + (b - a) / 2);
+    const middle = (half - a) * (b - half) > 0 ? half : a + (b - a) / 2;
+    const points = level
+        ? [from.at, { x: middle, y: from.at.y }, { x: middle, y: to.at.y }, to.at]
+        : [from.at, { x: from.at.x, y: middle }, { x: to.at.x, y: middle }, to.at];
+    // Its runs out of the ports are as stubs are, not looked at (a port of a part drawn bigger can sit just inside its
+    // outline); the run between them has to be clear.
+    const clear = !boxes.some((box) => crosses(points[1]!, points[2]!, box));
+    return clear ? simplify(points) : null;
 }
 
 /** Where other lines run: their level segments by the y they're at, and their upright ones by their x. */

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { DiagramView, type LiveValue } from "./DiagramView";
-import type { Drawing, Point } from "./drawing";
+import { PART_SCALES, type Drawing, type Point } from "./drawing";
 import {
     addPart,
     connect,
@@ -67,6 +67,7 @@ type Drag =
     | { kind: "end"; line: string; end: "from" | "to"; base: Drawing; moved: boolean; aim: Aim | null }
     | { kind: "label"; part: string; start: Point; offset: Point; base: Drawing; moved: boolean }
     | { kind: "resize"; part: string; start: Point; base: Drawing; moved: boolean }
+    | { kind: "scale"; part: string; middle: Point; reach: number; scale: number; base: Drawing; moved: boolean }
     | { kind: "marquee"; start: Point; before: string[]; moved: boolean };
 
 /** What's under the pointer: the data-hit of the nearest thing drawn there that says what it is ("part:p1"). */
@@ -374,7 +375,7 @@ export function Canvas({
                 store.select([id]);
                 const part = now.drawing.parts.find((entry) => entry.id === id);
                 if (part) {
-                    const place = labelPlace(part, boxOf(part, now.drawing), textSizes(now.drawing).tag).at;
+                    const place = labelPlace(part, boxOf(part, now.drawing), textSizes(now.drawing, part).tag).at;
                     const offset = part.label ?? { x: place.x - part.x, y: place.y - part.y };
                     drag.current = { kind: "label", part: id, start: at, offset, base: now.drawing, moved: false };
                 }
@@ -383,6 +384,24 @@ export function Canvas({
             case "resize":
                 drag.current = { kind: "resize", part: id, start: at, base: now.drawing, moved: false };
                 break;
+            case "scale": {
+                // Bigger or smaller as the pointer goes out from its middle, or back toward it.
+                const part = now.drawing.parts.find((entry) => entry.id === id);
+                if (part) {
+                    const middle = { x: part.x, y: part.y };
+                    const reach = Math.max(1, distance(at, middle));
+                    drag.current = {
+                        kind: "scale",
+                        part: id,
+                        middle,
+                        reach,
+                        scale: part.scale,
+                        base: now.drawing,
+                        moved: false,
+                    };
+                }
+                break;
+            }
             case "part": {
                 const wasOnly = now.selection.includes(id) && !additive;
                 if (choose(id)) {
@@ -496,15 +515,25 @@ export function Canvas({
                 store.preview(
                     updatePart(current.base, current.part, (part) => {
                         // From its top left, which stays put: in its kind's steps (a region's the grid's), and no
-                        // smaller than its least.
+                        // smaller than its least. (A text block sized to its words until now starts from its box.)
                         const { step, least } = kindOf(part.kind).resize ?? { step: 10, least: [60, 40] };
-                        const left = part.x - part.w / 2;
-                        const top = part.y - part.h / 2;
+                        const box = boxOf(part, current.base);
+                        const left = box.x0;
+                        const top = box.y0;
                         const w = Math.max(least[0], Math.round((at.x - left) / step) * step);
                         const h = Math.max(least[1], Math.round((at.y - top) / step) * step);
                         return { ...part, w, h, x: left + w / 2, y: top + h / 2 };
                     }),
                 );
+                break;
+            }
+            case "scale": {
+                current.moved = true;
+                const wanted = (current.scale * distance(at, current.middle)) / current.reach;
+                const scale = PART_SCALES.reduce((best, each) =>
+                    Math.abs(each - wanted) < Math.abs(best - wanted) ? each : best,
+                );
+                store.preview(updatePart(current.base, current.part, (part) => ({ ...part, scale })));
                 break;
             }
             case "marquee": {

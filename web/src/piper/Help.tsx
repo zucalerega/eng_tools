@@ -95,6 +95,17 @@ const TOPICS: Topic[] = [
                     them evenly.
                 </li>
                 <li>
+                    Drag the round handle at a selected part's corner to make it bigger or smaller, from half its size
+                    to double, or pick its <em>Size</em> on the right; its ports stay on the grid, so its lines stay
+                    straight. <em>Label size</em> makes its tag and properties smaller or larger than the diagram's.
+                </li>
+                <li>
+                    A <em>Text</em> note is sized to its words until you drag its square corner handle: then it's a
+                    block of that width and height, its words wrapped to it. Its weight (bold), slant (italic), font
+                    (sans serif, serif, or monospace, which print as Helvetica, Times, and Courier), alignment, and a
+                    box around it are on the right.
+                </li>
+                <li>
                     Dragged together, parts take the lines between them along as they were, and a tee comes too when
                     everything on its lines moves; lines to parts left behind follow their ends.
                 </li>

@@ -22,9 +22,14 @@ export interface Part {
     shown: string[]; // the properties shown under its tag, by key
     label: Point | null; // where its tag sits, from its center; null: where its kind puts it
     text: string; // what a note, a region, or an off-page connector says
-    w: number; // a region's size (0 for everything else)
+    w: number; // a region's or a box's size, or a text block's set one (0 for everything else)
     h: number;
+    scale: number; // how big it's drawn, of its kind's size: one of PART_SCALES
+    labelSize: LabelSize | ""; // its tag's and properties' size; "": the diagram's
 }
+
+/** The sizes a part can be drawn at, of its kind's own: half to double. */
+export const PART_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 /** Where a line ends: on a part's port, or at a point of its own. */
 export type End = { part: string; port: string } | Point;
@@ -123,6 +128,8 @@ export function newPart(kind: string, at: Point, fields: Partial<Part> = {}): Pa
         text: "",
         w: 0,
         h: 0,
+        scale: 1,
+        labelSize: "",
         ...fields,
     };
 }
@@ -214,6 +221,11 @@ function part(value: unknown): Part | null {
         text: str(value.text),
         w: Math.max(0, num(value.w)),
         h: Math.max(0, num(value.h)),
+        scale: (PART_SCALES as readonly number[]).includes(num(value.scale, 1)) ? num(value.scale, 1) : 1,
+        labelSize:
+            value.labelSize === "small" || value.labelSize === "normal" || value.labelSize === "large"
+                ? value.labelSize
+                : "",
     };
 }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { emptyDrawing, newPart } from "../src/piper/drawing";
 import { example } from "../src/piper/example";
 import { pageFor, pathOperators, pdfOf } from "../src/piper/pdf";
 
@@ -106,4 +107,23 @@ test("a drawing goes on its paper turned its way, as big as fits in the margins"
     expect(pageFor(400, 800, "letter")).toMatchObject({ width: 612, height: 792, scale: 0.9 });
     expect(pageFor(500, 550, "letter")).toMatchObject({ width: 792, height: 612 }); // a little taller: still landscape
     expect(pageFor(300, 200, "fit")).toEqual({ width: 372, height: 272, scale: 1, x: 36, y: 36 });
+});
+
+test("a text block prints in its font: Times, Courier, bold, italic, as PDF's standard fonts", async () => {
+    const block = (font: string, weight: string, slant: string, words: string) =>
+        newPart("text", { x: 0, y: 0 }, { text: words, w: 160, h: 40, props: { font, weight, slant } });
+    const drawing = {
+        ...emptyDrawing(),
+        parts: [block("serif", "bold", "italic", "Times words"), block("mono", "", "", "Courier words")],
+    };
+    const text = latin1(new Uint8Array(await (await pdfOf(drawing, META, "fit")).arrayBuffer()));
+    for (const name of ["Helvetica", "Times-BoldItalic", "Courier"]) {
+        expect(text).toContain(`/BaseFont /${name} `);
+    }
+    const start = text.indexOf("stream\n") + "stream\n".length;
+    const content = await inflate(
+        Uint8Array.from(text.slice(start, text.indexOf("\nendstream")), (char) => char.charCodeAt(0)),
+    );
+    expect(content).toMatch(/\/F8 [\d.]+ Tf[\s\S]*?\(Times words\) Tj/); // Times-BoldItalic
+    expect(content).toMatch(/\/F9 [\d.]+ Tf[\s\S]*?\(Courier words\) Tj/); // Courier
 });

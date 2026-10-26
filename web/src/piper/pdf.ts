@@ -5,8 +5,9 @@ import type { DiagramMeta } from "./library/kinds";
 // A diagram as a PDF file: the drawing as the exports draw it (exports.ts' SVG), turned into PDF's own drawing
 // operators, so it's vector, crisp printed at any size, its tags text that can be searched and copied. Only what the
 // drawing's SVG has is turned: groups and their transforms, paths (arcs and curves as Béziers), rectangles, circles,
-// lines, and text, in PDF's standard Helvetica (so nothing is embedded, and the file stays small). The page is the
-// paper chosen, turned to the drawing's way, the drawing fitted on it; or the drawing's own size.
+// lines, and text, in PDF's standard fonts (Helvetica, and Times and Courier for text blocks in them: nothing is
+// embedded, and the file stays small). The page is the paper chosen, turned to the drawing's way, the drawing fitted on
+// it; or the drawing's own size.
 
 export interface Paper {
     id: string;
@@ -96,12 +97,43 @@ function encode(text: string): number[] {
     });
 }
 
-const widthOf = (bytes: number[], bold: boolean): number =>
-    bytes.reduce(
-        (total, byte) =>
-            total + (byte >= 0x20 && byte <= 0x7e ? WIDTHS[bold ? 1 : 0]![byte - 0x20]! : (OTHER_WIDTHS[byte] ?? 556)),
-        0,
-    ) / 1000;
+/** The PDF's standard fonts a drawing's words are in: sans serif (Helvetica), serif (Times), and monospace (Courier),
+ * each upright or oblique, regular or bold. */
+type Family = "sans" | "serif" | "mono";
+
+const FAMILIES: Family[] = ["sans", "serif", "mono"];
+
+const FONT_NAMES: Record<Family, [string, string, string, string]> = {
+    sans: ["Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"],
+    serif: ["Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic"],
+    mono: ["Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"],
+};
+
+/** A style's font's name on the page: F1 is Helvetica, F2 Helvetica-Bold, then the obliques, Times, and Courier. */
+const fontKey = (style: { family: Family; bold: boolean; italic: boolean }): string =>
+    `F${FAMILIES.indexOf(style.family) * 4 + (style.bold ? 1 : 0) + (style.italic ? 2 : 0) + 1}`;
+
+/** A font from SVG's font-family: monospace, or serif, else sans serif. */
+const familyOf = (family: string): Family =>
+    /mono|courier/i.test(family) ? "mono" : /(^|[\s,'"])serif|times|georgia/i.test(family) ? "serif" : "sans";
+
+/**
+ * How wide words are, in the font's size: Helvetica's own widths; Courier's every letter 0.6; Times', near enough,
+ * nine tenths of Helvetica's (the PDF measures them only to center or end words where they're anchored).
+ */
+const widthOf = (bytes: number[], bold: boolean, family: Family = "sans"): number => {
+    if (family === "mono") {
+        return bytes.length * 0.6;
+    }
+    const helvetica =
+        bytes.reduce(
+            (total, byte) =>
+                total +
+                (byte >= 0x20 && byte <= 0x7e ? WIDTHS[bold ? 1 : 0]![byte - 0x20]! : (OTHER_WIDTHS[byte] ?? 556)),
+            0,
+        ) / 1000;
+    return family === "serif" ? helvetica * 0.9 : helvetica;
+};
 
 /** Bytes as a PDF string: ( and ) and \ escaped, and what isn't printable as an octal escape. */
 function pdfString(bytes: number[]): string {
@@ -150,6 +182,8 @@ interface Style {
     strokeOpacity: number;
     fontSize: number;
     bold: boolean;
+    italic: boolean;
+    family: Family;
     anchor: string;
     baseline: string;
     spacing: string;
@@ -167,6 +201,8 @@ const DEFAULT: Style = {
     strokeOpacity: 1,
     fontSize: 16,
     bold: false,
+    italic: false,
+    family: "sans",
     anchor: "start",
     baseline: "auto",
     spacing: "0",
@@ -188,6 +224,8 @@ function styleOf(element: Element, parent: Style): Style {
         strokeOpacity: get("stroke-opacity") !== null ? Number(get("stroke-opacity")) : parent.strokeOpacity,
         fontSize: get("font-size") !== null ? Number(get("font-size")) : parent.fontSize,
         bold: weight !== null ? weight === "bold" || Number(weight) >= 600 : parent.bold,
+        italic: get("font-style") !== null ? /italic|oblique/.test(get("font-style") ?? "") : parent.italic,
+        family: get("font-family") !== null ? familyOf(get("font-family") ?? "") : parent.family,
         anchor: get("text-anchor") ?? parent.anchor,
         baseline: get("dominant-baseline") ?? parent.baseline,
         spacing: get("letter-spacing") ?? parent.spacing,
@@ -512,7 +550,7 @@ class Writer {
             }
             const size = run.style.fontSize;
             const spacing = this.spacing(run.style);
-            const width = widthOf(bytes, run.style.bold) * size + spacing * bytes.length;
+            const width = widthOf(bytes, run.style.bold, run.style.family) * size + spacing * bytes.length;
             const left = run.x - (run.style.anchor === "middle" ? width / 2 : run.style.anchor === "end" ? width : 0);
             const base =
                 run.y + (run.style.baseline === "central" || run.style.baseline === "middle" ? 0.35 * size : 0);
@@ -521,7 +559,7 @@ class Writer {
             const show = (mode: number, color: [number, number, number]) => {
                 this.lines.push(
                     "BT",
-                    `/${run.style.bold ? "F2" : "F1"} ${n(size)} Tf`,
+                    `/${fontKey(run.style)} ${n(size)} Tf`,
                     `${n(spacing)} Tc`,
                     `${mode} Tr`,
                     mode === 1
@@ -553,7 +591,7 @@ class Writer {
 
     private width(text: string, style: Style): number {
         const bytes = encode(text.replace(/\s+/g, " "));
-        return widthOf(bytes, style.bold) * style.fontSize + this.spacing(style) * bytes.length;
+        return widthOf(bytes, style.bold, style.family) * style.fontSize + this.spacing(style) * bytes.length;
     }
 
     walk(element: Element, inherited: Style): void {
@@ -924,11 +962,13 @@ export async function pdfOf(
         const [fill, stroke] = key.split(" ");
         return [name, add(`<< /Type /ExtGState /ca ${fill} /CA ${stroke} >>`)] as const;
     });
-    const regular = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
-    const bold = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+    // Every standard font a drawing's words can be in, F1 to F12 as fontKey names them: none embedded.
+    const fonts = FAMILIES.flatMap((family) => FONT_NAMES[family]).map((name) =>
+        add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`),
+    );
     const stream = add(`<< /Length ${content.length} /Filter /FlateDecode >>\nstream\n`, content, "\nendstream");
     const pages = objects.length + 2; // the pages' object, after the page's
-    const resources = `<< /Font << /F1 ${regular} 0 R /F2 ${bold} 0 R >> /ExtGState << ${states.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >> >>`;
+    const resources = `<< /Font << ${fonts.map((id, index) => `/F${index + 1} ${id} 0 R`).join(" ")} >> /ExtGState << ${states.map(([name, id]) => `/${name} ${id} 0 R`).join(" ")} >> >>`;
     const pageObject = add(
         `<< /Type /Page /Parent ${pages} 0 R /MediaBox [0 0 ${n(page.width)} ${n(page.height)}] /Resources ${resources} /Contents ${stream} 0 R >>`,
     );

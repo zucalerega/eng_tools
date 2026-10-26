@@ -362,7 +362,11 @@ the keys.
   anything else, notes, regions, a legend, and a title block. A sensor is a small box with the
   letter of what it measures (P, T, W...), its tag at its side; a duplicated or triplicated
   transducer is two or three boxes on one tap, reading PT-101A, PT-101B (and C). Each part is
-  tagged with the next number free (PT-3); **R** turns it, **F** flips it.
+  tagged with the next number free (PT-3); **R** turns it, **F** flips it. Drag the round handle
+  at a selected part's corner (or pick its **Size**) to draw it from half its size to double,
+  and give it a **Label size** of its own. A **Text** note dragged by its square handle becomes
+  a block of that size, its words wrapped, in bold, italic, a serif or monospace font, aligned,
+  and boxed as you choose.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts

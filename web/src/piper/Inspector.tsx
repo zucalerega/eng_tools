@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
-import { LINE_STYLES } from "./DiagramView";
-import { LINE_KINDS, type Drawing, type Fluid, type LabelSize, type Line, type Part } from "./drawing";
+import { LINE_STYLES, scalable } from "./DiagramView";
+import { LINE_KINDS, PART_SCALES, type Drawing, type Fluid, type LabelSize, type Line, type Part } from "./drawing";
 import { carryFluid, rerouteLines, sharedTags, updateLine, updatePart, type Alignment } from "./edit";
 import { FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
 import {
@@ -246,6 +246,59 @@ function PartPanel({
                 </Row>
             )}
             {shared && <p className="piper-warning">Another part is tagged {part.tag} too.</p>}
+            {(scalable(part) || kind.tag !== "none") && (
+                <div className="piper-sizes">
+                    {scalable(part) && (
+                        <Row label="Size">
+                            {(id) => (
+                                <select
+                                    id={id}
+                                    value={part.scale}
+                                    onChange={(event) =>
+                                        store.commit(
+                                            updatePart(drawing, part.id, (now) => ({
+                                                ...now,
+                                                scale: Number(event.target.value),
+                                            })),
+                                        )
+                                    }
+                                >
+                                    {PART_SCALES.map((scale) => (
+                                        <option key={scale} value={scale}>
+                                            {scale === 1 ? "Its own" : `${Math.round(scale * 100)}%`}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </Row>
+                    )}
+                    {kind.tag !== "none" && (
+                        <Row label="Label size">
+                            {(id) => (
+                                <select
+                                    id={id}
+                                    value={part.labelSize}
+                                    onChange={(event) =>
+                                        store.commit(
+                                            updatePart(drawing, part.id, (now) => ({
+                                                ...now,
+                                                labelSize: event.target.value as Part["labelSize"],
+                                            })),
+                                        )
+                                    }
+                                >
+                                    <option value="">The diagram's</option>
+                                    {LABEL_SIZES.map((size) => (
+                                        <option key={size.value} value={size.value}>
+                                            {size.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </Row>
+                    )}
+                </div>
+            )}
             {kind.text && (
                 <Row label={kind.text}>
                     {(id) => (

@@ -310,6 +310,11 @@ const LineView = memo(function LineView({
     );
 });
 
+/** Whether a part can be drawn bigger or smaller: not what's sized by its width and height, nor a tee, nor what reads
+ * the drawing (a legend, a title block), whose size is their words'. */
+export const scalable = (part: Part): boolean =>
+    !kindOf(part.kind).resizable && !["junction", "legend", "titleblock", "text"].includes(part.kind);
+
 function PartLabel({
     drawing,
     part,
@@ -327,7 +332,7 @@ function PartLabel({
     if (rows.length === 0) {
         return null;
     }
-    const sizes = textSizes(drawing);
+    const sizes = textSizes(drawing, part);
     const { at, anchor } = labelPlace(part, boxOf(part, drawing), sizes.tag);
     return (
         <text
@@ -456,12 +461,14 @@ function Handles({
                 pointerEvents="none"
             />,
         );
+        const outline = boxOf(part, drawing);
         if (kindOf(part.kind).resizable && selection.size === 1) {
+            // A box, a region, a text block: dragged to a width and height.
             handles.push(
                 <rect
                     key={`resize-${part.id}`}
-                    x={part.x + part.w / 2 - size / 2}
-                    y={part.y + part.h / 2 - size / 2}
+                    x={outline.x1 - size / 2}
+                    y={outline.y1 - size / 2}
                     width={size}
                     height={size}
                     fill={palette.paper}
@@ -470,6 +477,23 @@ function Handles({
                     data-hit={`resize:${part.id}`}
                     className="piper-resize"
                 />,
+            );
+        } else if (scalable(part) && selection.size === 1) {
+            // Any other part: dragged bigger or smaller, from half its size to double.
+            handles.push(
+                <circle
+                    key={`scale-${part.id}`}
+                    cx={box.x1}
+                    cy={box.y1}
+                    r={size / 2}
+                    fill={palette.paper}
+                    stroke={palette.select}
+                    strokeWidth={1.5 / zoom}
+                    data-hit={`scale:${part.id}`}
+                    className="piper-resize"
+                >
+                    <title>Drag to make it bigger or smaller</title>
+                </circle>,
             );
         }
     }

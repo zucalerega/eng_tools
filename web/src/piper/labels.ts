@@ -1,9 +1,9 @@
 import type { Drawing, LabelSize, Line, Part, Point } from "./drawing";
 import { fluidOf } from "./fluids";
-import { inBox, segmentsOf, toWorld, type Box } from "./geometry";
+import { inBox, middleOfLongest, segmentsOf, toWorld, type Box } from "./geometry";
 import { boxOf, kindOf } from "./library/index";
 import { MAWP, type Field } from "./library/kinds";
-import { linesOn, portOf } from "./ports";
+import { linesOn, portOf, runLines } from "./ports";
 
 // What's written beside parts and on lines: a part's tag and the properties it shows, a line's tag, fluid, and size.
 
@@ -259,4 +259,52 @@ export function lineLabel(drawing: Drawing, line: Line): string {
         })
         .filter(Boolean)
         .join(" · ");
+}
+
+/** Where a line's label is written: beside the middle of its longest stretch, across it or down it. */
+export interface LineLabelPlace {
+    line: string;
+    fluid: string; // the line's, for the label's color
+    text: string;
+    at: Point;
+    level: boolean;
+}
+
+/**
+ * Where lines' labels go: each at the middle of its line's longest stretch, where there's room for it beside it. A
+ * label that's the same along a run (its fluid, or the tag a pipe's pieces share) is written once for the run, on its
+ * longest stretch with room: a run cut into pieces by the valves on it doesn't say it on every piece, and moving a part
+ * along it, which makes room on a piece, doesn't write it again.
+ */
+export function lineLabelPlaces(drawing: Drawing, paths: Map<string, Point[]>): LineLabelPlace[] {
+    const size = textSizes(drawing).line;
+    const lines = new Map(drawing.lines.map((line) => [line.id, line]));
+    const texts = new Map(drawing.lines.map((line) => [line.id, lineLabel(drawing, line)]));
+    const done = new Set<string>();
+    const places: LineLabelPlace[] = [];
+    for (const line of drawing.lines) {
+        const text = texts.get(line.id)!;
+        if (!text || done.has(line.id)) {
+            continue;
+        }
+        let best: LineLabelPlace | null = null;
+        let longest = 0;
+        for (const id of runLines(drawing, line.id)) {
+            if (texts.get(id) !== text) {
+                continue;
+            }
+            done.add(id);
+            const middle = middleOfLongest(paths.get(id) ?? []);
+            // Only where there's room for it beside the line: a short run between two parts goes without.
+            const room = middle && middle.length >= Math.max(50, text.length * size * 0.65 + 30);
+            if (middle && room && middle.length > longest) {
+                longest = middle.length;
+                best = { line: id, fluid: lines.get(id)?.fluid ?? "", text, at: middle.at, level: middle.level };
+            }
+        }
+        if (best) {
+            places.push(best);
+        }
+    }
+    return places;
 }

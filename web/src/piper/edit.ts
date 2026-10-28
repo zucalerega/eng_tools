@@ -27,7 +27,7 @@ import {
 import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
-import { linesOn, partsById, placeEnd, portOf, portsOf, type PlacedEnd } from "./ports";
+import { linesOn, partsById, placeEnd, portOf, portsOf, runLines, type PlacedEnd } from "./ports";
 import { route, STUB } from "./route";
 
 // The changes the editor makes to a drawing, each a pure function from one drawing to the next: placing parts,
@@ -646,33 +646,7 @@ export function updateLine(drawing: Drawing, id: string, change: (line: Line) =>
  * instruments' taps), up to what holds or uses it (tanks, engines).
  */
 export function carryFluid(drawing: Drawing, lineId: string, fluid: string): Drawing {
-    const reached = new Set<string>([lineId]);
-    const seen = new Set<string>();
-    const queue = [lineId];
-    const lines = new Map(drawing.lines.map((line) => [line.id, line]));
-    const parts = partsById(drawing);
-    while (queue.length > 0) {
-        const line = lines.get(queue.pop()!);
-        if (!line) {
-            continue;
-        }
-        for (const end of [line.from, line.to]) {
-            if (!isPortEnd(end) || seen.has(end.part)) {
-                continue;
-            }
-            seen.add(end.part);
-            const part = parts.get(end.part);
-            if (!part || !(kindOf(part.kind).through || kindOf(part.kind).reads === "value")) {
-                continue;
-            }
-            for (const { line: next } of linesOn(drawing, end.part)) {
-                if (!reached.has(next.id)) {
-                    reached.add(next.id);
-                    queue.push(next.id);
-                }
-            }
-        }
-    }
+    const reached = runLines(drawing, lineId);
     return { ...drawing, lines: drawing.lines.map((line) => (reached.has(line.id) ? { ...line, fluid } : line)) };
 }
 

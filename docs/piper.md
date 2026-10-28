@@ -306,7 +306,10 @@ what it is, `data-hit`).
   GN2...) only where it's shown (`shown`), where there's room beside its longest segment: new
   lines don't show it, as a color on every line says it already, and the diagram's panel shows
   or hides it on every line at once. Half of a line split by a tee or a part doesn't repeat
-  the other half's label. Carry along its run sets it on
+  the other half's label, and a label that's the same along a run (`runLines`: on through
+  valves, fittings, tees, and instruments' taps) is written once, on the run's longest stretch
+  with room (`lineLabelPlaces`), so moving a part along it, which makes room on a piece, doesn't
+  write it again. Carry along its run sets it on
   every line it reaches through valves, fittings, and instruments, up to tanks and engines. A
   line drawn from a run takes its fluid, and one from a tank what the tank holds (not from its
   top, which is its ullage, unless it holds a gas). A tank shows what it holds: a liquid in its

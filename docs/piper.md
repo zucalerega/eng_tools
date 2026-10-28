@@ -440,13 +440,20 @@ Visio draws them, on the page:
 valves as long as Piper's (40), or a hundred where it has none. Its shapes, in Visio's order:
 
 - **Symbols** become parts: by their masters' names (`NAMES`: Visio's P&ID stencils' and the
-  team's, "Powered valve", "Regulator", "3/2 valve", "Relief valves", "Pressure Transducer"...),
-  as the one symbol in a group of it and its labels, or, drawn by hand, by their tags' letters
-  (`presetForTag`: what P&IDs end a tag with, PRV a relief valve, PNREG a regulator, FCK a check
-  valve, PRQD a quick disconnect, FO-1 an orifice, FSWV or OVNT a valve; an instrument's, PT-101 or
-  FTPT, by ISA's first letters or the team's last). A valve's worked as its actuator's letter
-  says (S a solenoid, P air, M a motor), else its name (ISO 1219's 2/2, 3/2, and 5/2 valves are
-  solenoids), else its tag (SV-, PV-). A plain bowtie is Piper's gate valve. Its tag is its
+  team's, "Powered valve", "Regulator", "3/2 valve", "5/2 valve", "Grille diffuser", "Relief
+  valves", "Pressure Transducer"...), as the one symbol in a group of it and its labels, or, drawn
+  by hand, by their tags' letters (`presetForTag`: what P&IDs end a tag with, PRV a relief valve,
+  PNREG a regulator, FCK a check valve, PRQD a quick disconnect, FO-1 an orifice, ODIFF a
+  diffuser, FSWV or OVNT a valve; an instrument's, PT-101 or FTPT, by ISA's first letters or the
+  team's last). A valve's worked as its actuator's letter says (S a solenoid, P air, M a motor),
+  else its name (ISO 1219's 2/2 valves are solenoids), else its tag (SV-, PV-). ISO 1219's 3/2
+  and 5/2 valves are Piper's own: sized as their two boxes were drawn (`DRAWN`: a stencil's
+  draws them without their solenoid and spring), and, as a stencil puts the same ports in each
+  box, moved over by a box where the drawing's lines meet their left one, so the box they rest
+  in (their ports') is the one the lines met, each port the one it was. A manifold stays a figure,
+  with ports where its lines were glued: a stencil's is a box of any size, its lines anywhere
+  along it, which Piper's own (its outlets along its top) would move. A plain bowtie is Piper's
+  gate valve. Its tag is its
   label's (a tag, or a tag over a set pressure: "PNRV" over "S.P. 165 PSI"), which is its
   part's set pressure; a label beside a symbol rather than grouped with it is the nearest
   untagged one's, and a tag beside a shape drawn by hand says what it is (`attachLabels`). A

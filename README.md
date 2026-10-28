@@ -441,9 +441,10 @@ the keys.
   Vespula's prop system (Saaketh's FullFlow model) with its run's data, which it adds to Yorg
   the first time: a run of it is Saaketh's run again.
 - **Visio**: **Import Visio…** asks for a Visio drawing (or drop a .vsdx on the diagrams), shows
-  it, and makes a diagram of it in the folder you're in, with its pages. Its valves, regulators,
-  relief valves, orifices, quick disconnects, and sensors become parts (by their stencil, or by
-  their tags: PRV, FTPT, FO-1), tagged with their labels, with their set pressures, worked as
+  it, and makes a diagram of it in the folder you're in, with its pages. Its valves (3/2 and 5/2
+  ones too), regulators, relief valves, orifices, diffusers, quick disconnects, and sensors become
+  parts (by their stencil, or by their tags: PRV, FTPT, FO-1, ODIFF), tagged with their labels,
+  with their set pressures, worked as
   their actuators' letters say; everything else (the vehicle, its tanks, the key, the title
   block) is drawn as Visio drew it, as figures. Its connectors become lines along their routes,
   on the parts they were glued to, carrying what the drawing's key (or their words, or their

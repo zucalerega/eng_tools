@@ -224,6 +224,12 @@ test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the libr
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Outlets" }), "6");
     const bore = svg.querySelector('[data-kind="manifold"] path[stroke-dasharray]')!.getAttribute("d")!;
     expect(bore.match(/V-8/g)).toHaveLength(6);
+    // A 3/2 is normally closed or open, never failing in place: its spring returns it.
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "SV-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    const states = within(await screen.findByRole("group", { name: "Normal state" }));
+    expect(states.getAllByRole("button").map((button) => button.textContent)).toEqual(["NO", "NC", "—"]);
+    expect(states.getByRole("button", { name: "NC" }).getAttribute("aria-pressed")).toBe("true");
     await waitFor(async () => {
         const saved = (await team.piperDiagram(team.chief, made.id)).read;
         expect(

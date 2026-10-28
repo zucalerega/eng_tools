@@ -2217,41 +2217,62 @@ input[type="checkbox"] {
 .help-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 0.75rem 0.25rem 1rem;
+    gap: 0.25rem;
+    padding: 0.7rem 0.6rem 0.2rem 1rem;
 }
 
 .help-head h2 {
     flex: 1;
     margin: 0;
-    font-size: 1.15rem;
+    font-size: 1.05rem;
+}
+
+/* The header's own buttons, quieter than what's under them: no border until pointed at. */
+.help-action,
+.help-close {
+    height: 1.9rem;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+}
+
+.help-action {
+    padding: 0 0.6rem;
+    font-size: 0.82rem;
 }
 
 .help-close {
-    width: 2rem;
-    height: 2rem;
+    width: 1.9rem;
     padding: 0;
-    border: none;
-    background: transparent;
-    font-size: 1.4rem;
+    font-size: 1.35rem;
     line-height: 1;
+}
+
+.help-action:hover:not(:disabled),
+.help-close:hover:not(:disabled) {
+    background: var(--row-hover);
+    color: var(--text);
 }
 
 .help-links {
     margin: 0;
-    padding: 0 1rem 0.65rem;
+    padding: 0 1rem 0.7rem;
     border-bottom: 1px solid var(--border);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
 }
 
 .chat-log {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1rem;
 }
 
 .chat-welcome {
     color: var(--muted);
+}
+
+.chat-welcome p {
+    margin: 0 0 0.75rem;
 }
 
 .chat-suggestion {
@@ -2304,27 +2325,53 @@ input[type="checkbox"] {
     margin: 0 1rem 0.5rem;
 }
 
+/* The question: its text and its button in one box, which lights up as a field does while it's in use. The text grows
+   with what's typed (field-sizing), up to a point; a browser that can't do that shows two lines. */
 .chat-ask {
     display: flex;
     align-items: flex-end;
-    gap: 0.5rem;
-    padding: 0.65rem 1rem 0.4rem;
-    border-top: 1px solid var(--border);
+    gap: 0.25rem;
+    margin: 0.25rem 1rem 0.45rem;
+    padding: 0.3rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-large);
+    background: var(--surface-2);
+    transition:
+        border-color 0.12s,
+        box-shadow 0.12s;
+}
+
+.chat-ask:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--focus);
 }
 
 .chat-ask textarea {
     flex: 1;
-    min-height: 2.6rem;
-    max-height: 12rem;
-    resize: vertical;
-    font: inherit;
+    height: auto;
+    max-height: 11rem;
+    padding: 0.3rem 0.45rem;
+    border: none;
+    background: transparent;
+    line-height: 1.45;
+    resize: none;
+    field-sizing: content;
+}
+
+.chat-ask textarea:focus-visible {
+    box-shadow: none;
+}
+
+.chat-ask button {
+    margin-bottom: 0.15rem;
 }
 
 .chat-fine {
     margin: 0;
-    padding: 0 1rem 0.7rem;
+    padding: 0 1rem 0.75rem;
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
 }
 
 /* A folder that's a path of its own (FolderPicker: Yorg's views and scripts, Piper's diagrams): a box to type in, with

@@ -4,7 +4,7 @@ import { Notice } from "./components";
 import { Markdown } from "./markdown";
 import { Link, usePathname } from "./router";
 
-// Help, in the top bar of both apps: a panel beside the page with the help (the server's /help, for anyone) and
+// Help, in the top bar of every app: a panel beside the page with the help (the server's /help, for anyone) and
 // Claude, which has read all of it, to ask how to do something or what an error means (chat.ts; assistant.py on the
 // server). The page stays as it is beside it, error and all.
 
@@ -105,7 +105,7 @@ export function HelpPanel({
             <div className="help-head">
                 <h2 id="help-title">Help</h2>
                 {exchanges.length > 0 && (
-                    <button type="button" className="button-small" onClick={() => chat.clear()}>
+                    <button type="button" className="help-action" onClick={() => chat.clear()}>
                         New conversation
                     </button>
                 )}
@@ -128,8 +128,8 @@ export function HelpPanel({
                 {exchanges.length === 0 ? (
                     <div className="chat-welcome">
                         <p>
-                            <strong>Ask Claude</strong> how to do something in Vault or Yorg, or what an error means. It
-                            has read all of the help, and answers with links to it.
+                            <strong>Ask Claude</strong> how to do something in Vault, Yorg or Piper, or what an error
+                            means. It has read all of the help, and answers with links to it.
                         </p>
                         {shown && available && (
                             <button
@@ -152,6 +152,7 @@ export function HelpPanel({
             </div>
             {problem && <Notice tone="error">Couldn't ask the server about Claude: {problem}</Notice>}
             {assistant && !available && <Notice tone="info">{assistant.reason}.</Notice>}
+            {/* One box, the question and its button together; it grows with the question, up to a point. */}
             <form
                 className="chat-ask"
                 onSubmit={(event) => {
@@ -162,8 +163,8 @@ export function HelpPanel({
                 <textarea
                     ref={box}
                     aria-label="Ask Claude"
-                    placeholder="Ask about Vault or Yorg, or paste an error"
-                    rows={3}
+                    placeholder="Ask about Vault, Yorg or Piper, or paste an error"
+                    rows={2}
                     maxLength={20_000}
                     value={question}
                     disabled={!available}
@@ -171,11 +172,15 @@ export function HelpPanel({
                     onKeyDown={keys}
                 />
                 {answering ? (
-                    <button type="button" onClick={() => chat.stop()}>
+                    <button type="button" className="button-small" onClick={() => chat.stop()}>
                         Stop
                     </button>
                 ) : (
-                    <button type="submit" className="button-primary" disabled={!available || !question.trim()}>
+                    <button
+                        type="submit"
+                        className="button-primary button-small"
+                        disabled={!available || !question.trim()}
+                    >
                         Ask
                     </button>
                 )}

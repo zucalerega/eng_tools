@@ -10,6 +10,7 @@ import {
     moveItems,
     pasteClip,
     readClip,
+    reorderParts,
     turnParts,
     type Alignment,
     type Clip,
@@ -82,6 +83,13 @@ export function commandsOf(store: EditorStore) {
         },
         flip() {
             store.commit(flipParts(state().drawing, selected()));
+        },
+        /** What's selected drawn over everything else, or under it (overlaid on a picture, say). */
+        bringToFront() {
+            store.commit(reorderParts(state().drawing, selected(), "front"));
+        },
+        sendToBack() {
+            store.commit(reorderParts(state().drawing, selected(), "back"));
         },
         nudge(by: Point) {
             if (state().selection.length > 0) {
@@ -212,6 +220,10 @@ export function useEditorKeys(store: EditorStore, commands: Commands, enabled: b
                     document.getElementById(FIND_BOX)?.focus();
                 } else if (mod) {
                     return false; // the browser's own (copy and paste come as their own events)
+                } else if (event.code === "BracketRight") {
+                    commands.bringToFront(); // ] and [: Cmd+Shift with them is the browser's, a tab over
+                } else if (event.code === "BracketLeft") {
+                    commands.sendToBack();
                 } else if (key === "delete" || key === "backspace") {
                     commands.remove();
                 } else if (key === "r") {

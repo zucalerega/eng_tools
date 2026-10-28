@@ -210,6 +210,36 @@ test("3/2 and 5/2 solenoid valves are drawn as ISO 1219 draws them, their ports 
     expect([place.at.x, place.at.y > box.y1, place.anchor]).toEqual([80, true, "middle"]);
 });
 
+test("a part sent to the back is drawn under the lines, its tag still over everything", () => {
+    const valve = newPart("valve", { x: 0, y: 0 }, { tag: "BV-1" });
+    const tank = newPart("tank", { x: 200, y: 0 }, { tag: "TK-1" });
+    const pipe = newLine({ part: valve.id, port: "b" }, { part: tank.id, port: "left-upper" });
+    const order = (parts: Part[]) => {
+        const markup = renderToStaticMarkup(
+            createElement(
+                "svg",
+                null,
+                createElement(DiagramView, {
+                    drawing: { ...emptyDrawing(), parts, lines: [pipe] },
+                    palette: LIGHT,
+                    meta: META,
+                }),
+            ),
+        );
+        const drawn = new DOMParser().parseFromString(markup, "image/svg+xml");
+        // What's drawn, in its order: parts (each placed by its transform), lines (drawn where they are), and tags.
+        return Array.from(drawn.querySelectorAll("g.piper-drawing > *"), (element) =>
+            element.tagName === "text"
+                ? `tag ${element.textContent}`
+                : element.hasAttribute("transform")
+                  ? "part"
+                  : "line",
+        );
+    };
+    expect(order([valve, tank])).toEqual(["line", "part", "part", "tag BV-1", "tag TK-1"]);
+    expect(order([{ ...tank, back: true }, valve])).toEqual(["part", "line", "part", "tag TK-1", "tag BV-1"]);
+});
+
 test("a test's state tints the position it puts a directional valve in", () => {
     const valve = newPart("valve32", { x: 0, y: 0 }, { tag: "SV-1", props: { normal: "NC" } });
     const drawing = { ...emptyDrawing(), parts: [valve] };

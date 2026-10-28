@@ -32,6 +32,9 @@ export interface Part {
     h: number;
     scale: number; // how big it's drawn, of its kind's size: within PART_SCALE (1, its own)
     labelSize: number | null; // its tag's and properties' size, of the standard (LABEL_SCALE); null: the diagram's
+    // Sent to the back: drawn under the lines, with the regions, rather than over them. Left out, over them. (Parts are
+    // drawn in their order, so what's later is over what's earlier.)
+    back?: boolean;
     sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
     links?: PartLink[]; // pages about it, opened from it: left out, none
 }
@@ -473,6 +476,7 @@ function part(value: unknown): Part | null {
         h: Math.max(0, num(value.h)),
         scale: num(value.scale, 1) > 0 ? partScale(num(value.scale, 1)) : 1,
         labelSize: readLabelSize(value.labelSize),
+        ...(value.back === true ? { back: true } : {}),
         ...partSim(value.sim),
         ...partLinks(value.links),
     };

@@ -351,7 +351,8 @@ the keys.
   for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
-  flips it. Drag the round handle at a selected part's corner (or type its **Size**, in percent)
+  flips it, and where parts overlap, **Bring to front** (**]**) and **Send to back** (**[**,
+  under the lines too) choose which is on top. Drag the round handle at a selected part's corner (or type its **Size**, in percent)
   to draw it at any size from a quarter of its own to four times, and give it a **Label size**
   of its own, in percent too. A **Text** note dragged
   by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif

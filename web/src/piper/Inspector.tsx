@@ -467,6 +467,22 @@ function PartPanel({
                         Flip
                     </button>
                 )}
+                <button
+                    type="button"
+                    className="button-small"
+                    title="Draw it over everything else (])"
+                    onClick={() => commands.bringToFront()}
+                >
+                    Bring to front
+                </button>
+                <button
+                    type="button"
+                    className="button-small"
+                    title="Draw it under everything else, the lines too ([)"
+                    onClick={() => commands.sendToBack()}
+                >
+                    Send to back
+                </button>
                 <button type="button" className="button-small button-danger" onClick={() => commands.remove()}>
                     Delete
                 </button>
@@ -880,6 +896,22 @@ function ManyPanel({
                         </button>
                         <button type="button" className="button-small" onClick={() => commands.flip()}>
                             Flip
+                        </button>
+                        <button
+                            type="button"
+                            className="button-small"
+                            title="Draw it over everything else (])"
+                            onClick={() => commands.bringToFront()}
+                        >
+                            Bring to front
+                        </button>
+                        <button
+                            type="button"
+                            className="button-small"
+                            title="Draw it under everything else, the lines too ([)"
+                            onClick={() => commands.sendToBack()}
+                        >
+                            Send to back
                         </button>
                     </>
                 )}

@@ -4,13 +4,20 @@ import type { Commands } from "./commands";
 import { LINE_STYLES, scalable } from "./DiagramView";
 import {
     LINE_KINDS,
+    linkName,
+    linkUrl,
+    MAX_LINK_LABEL,
+    MAX_LINK_URL,
+    MAX_LINKS,
     PART_SCALES,
+    readLinks,
     type Drawing,
     type Fluid,
     type LabelSize,
     type Line,
     type Page,
     type Part,
+    type PartLink,
 } from "./drawing";
 import {
     carryFluid,
@@ -220,6 +227,109 @@ function AddField({ taken, onAdd }: { taken: string[]; onAdd: (name: string) => 
 
 const showable = (field: Field) => field.type !== "long" && field.type !== "channel";
 
+/**
+ * A part's links, to pages about it (its Notion page, its spec sheet, someone to email): each opens in a tab of its
+ * own, for anyone looking at the diagram. While it's yours to edit, links are added and removed; only http, https, and
+ * mailto ones are taken (linkUrl), as only those are the server's to keep.
+ */
+function PartLinks({
+    part,
+    editing,
+    onChange,
+}: {
+    part: Part;
+    editing: boolean;
+    onChange: (links: PartLink[]) => void;
+}) {
+    const links = readLinks(part.links); // only those that are links: never one that would run in the site
+    const [adding, setAdding] = useState(false);
+    const [label, setLabel] = useState("");
+    const [address, setAddress] = useState("");
+    if (links.length === 0 && !editing) {
+        return null;
+    }
+    const url = linkUrl(address);
+    return (
+        <section className="piper-links" aria-label="Links">
+            <h3>Links</h3>
+            {links.length > 0 && (
+                <ul>
+                    {links.map((link, index) => {
+                        const name = link.label || linkName(link.url);
+                        return (
+                            <li key={index}>
+                                <a href={link.url} target="_blank" rel="noopener noreferrer" title={link.url}>
+                                    {name}
+                                </a>
+                                {editing && (
+                                    <button
+                                        type="button"
+                                        className="piper-remove"
+                                        aria-label={`Remove the link ${name}`}
+                                        title="Remove this link"
+                                        onClick={() => onChange(links.filter((_, at) => at !== index))}
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+            {editing &&
+                links.length < MAX_LINKS &&
+                (adding ? (
+                    <form
+                        className="piper-link-form"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            if (url) {
+                                onChange([...links, { label: label.trim(), url }]);
+                                setLabel("");
+                                setAddress("");
+                                setAdding(false);
+                            }
+                        }}
+                    >
+                        <input
+                            autoFocus
+                            aria-label="Link's name"
+                            placeholder="Notion page, spec sheet…"
+                            value={label}
+                            maxLength={MAX_LINK_LABEL}
+                            onChange={(event) => setLabel(event.target.value)}
+                        />
+                        <input
+                            aria-label="Link's address"
+                            placeholder="https://…"
+                            value={address}
+                            maxLength={MAX_LINK_URL}
+                            onChange={(event) => setAddress(event.target.value)}
+                        />
+                        {address.trim() && !url && (
+                            <p className="piper-warning">
+                                A link starts with https://, http://, or mailto:, and has no spaces in it.
+                            </p>
+                        )}
+                        <div className="piper-link-buttons">
+                            <button type="submit" className="button-small" disabled={!url}>
+                                Add link
+                            </button>
+                            <button type="button" className="button-small" onClick={() => setAdding(false)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                ) : (
+                    <button type="button" className="button-small piper-add-field" onClick={() => setAdding(true)}>
+                        + Add a link
+                    </button>
+                ))}
+        </section>
+    );
+}
+
 function PartPanel({
     store,
     commands,
@@ -240,6 +350,7 @@ function PartPanel({
     sim: SimContext | null;
 }) {
     const kind = kindOf(part.kind);
+    const readOnly = useEditor(store, (state) => state.readOnly);
     const said = part.tag.trim().toUpperCase();
     const shared = sharedTags(drawing).has(said);
     const onAnother = (drawing.elsewhere ?? []).some((tag) => tag.trim().toUpperCase() === said);
@@ -288,6 +399,21 @@ function PartPanel({
                 <p className="piper-warning">
                     {onAnother ? "A part on another page" : "Another part"} is tagged {part.tag} too.
                 </p>
+            )}
+            {kind.tag !== "none" && (
+                <PartLinks
+                    part={part}
+                    editing={!readOnly}
+                    onChange={(links) =>
+                        change("links", (now) => {
+                            const changed: Part = { ...now, links };
+                            if (links.length === 0) {
+                                delete changed.links;
+                            }
+                            return changed;
+                        })
+                    }
+                />
             )}
             {(scalable(part) || kind.tag !== "none") && (
                 <div className="piper-sizes">

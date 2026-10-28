@@ -1949,5 +1949,5 @@ export function visioDocument(imported: ImportedPage[]): PiperDocument {
             sheet: null,
         };
     });
-    return { format: 3, pages, fluids, style: imported[0]?.drawing.style ?? emptyDrawing().style };
+    return { format: 4, pages, fluids, style: imported[0]?.drawing.style ?? emptyDrawing().style };
 }

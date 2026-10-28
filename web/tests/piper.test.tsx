@@ -203,6 +203,52 @@ test("a part dragged from the library goes where it's let go, and the drag doesn
     });
 });
 
+test("a part links to pages about it: added on the right, opened from it, only http, https, or mailto", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "pneumatic-valve", 0, 0);
+    const made = await team.diagram(team.chief, "Elytra", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    const select = () => {
+        fireEvent.pointerDown(within(svg).getByRole("button", { name: "PV-1" }), at(0, 0));
+        fireEvent.pointerUp(svg, at(0, 0));
+    };
+    select();
+    const links = within(await screen.findByRole("region", { name: "Links" }));
+    await userEvent.click(links.getByRole("button", { name: "+ Add a link" }));
+    await userEvent.type(links.getByRole("textbox", { name: "Link's name" }), "Notion");
+    // Nothing that would run in the site when it's opened: only http, https, and mailto.
+    const address = links.getByRole("textbox", { name: "Link's address" });
+    await userEvent.type(address, "javascript:alert(1)");
+    expect(links.getByRole("button", { name: "Add link" })).toHaveProperty("disabled", true);
+    expect(links.getByText(/A link starts with https:\/\/, http:\/\/, or mailto:/)).toBeTruthy();
+    await userEvent.clear(address);
+    await userEvent.type(address, "https://www.notion.so/yjsp/FMV-1234");
+    await userEvent.click(links.getByRole("button", { name: "Add link" }));
+    // It opens in a tab of its own, and the part's marked as having links.
+    const link = links.getByRole("link", { name: "Notion" });
+    expect(link.getAttribute("href")).toBe("https://www.notion.so/yjsp/FMV-1234");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(svg.querySelector("[data-links]")).not.toBeNull();
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.parts[0]!.links).toEqual([{ label: "Notion", url: "https://www.notion.so/yjsp/FMV-1234" }]);
+    });
+    // Looked at, not edited: it's still there to open, and nothing changes it.
+    await userEvent.click(screen.getByRole("button", { name: "Done editing" }));
+    await screen.findByRole("button", { name: "Edit" });
+    select();
+    const looked = within(await screen.findByRole("region", { name: "Links" }));
+    expect(looked.getByRole("link", { name: "Notion" }).getAttribute("href")).toBe(
+        "https://www.notion.so/yjsp/FMV-1234",
+    );
+    expect(looked.queryByRole("button", { name: "+ Add a link" })).toBeNull();
+    expect(looked.queryByRole("button", { name: /Remove the link/ })).toBeNull();
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

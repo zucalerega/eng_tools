@@ -2,7 +2,8 @@
 // and the fluids, style, and simulation's units they share. Plain JSON: the server keeps it as it's sent
 // (server/src/yjsp_server/piper/schemas.py checks its shape), and readDocument reads it back, filling in what an older
 // drawing didn't have (one from before pages is a page of its own), so a drawing never has to be upgraded on the
-// server. Its format says what a Piper must know to keep all of it: 2 pages, 3 parts' and lines' simulation settings.
+// server. Its format says what a Piper must know to keep all of it: 2 pages, 3 parts' and lines' simulation settings,
+// 4 parts' links.
 //
 // The editor works on a page at a time: a Drawing, its parts and lines with the fluids and style (pageOf), which is
 // what every change (edit.ts) and what's drawn (DiagramView) takes; withPage puts it back in its document.
@@ -32,6 +33,56 @@ export interface Part {
     scale: number; // how big it's drawn, of its kind's size: one of PART_SCALES
     labelSize: LabelSize | ""; // its tag's and properties' size; "": the diagram's
     sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
+    links?: PartLink[]; // pages about it, opened from it: left out, none
+}
+
+/** A link on a part, to a page about it: its Notion page, its spec sheet, someone to ask. */
+export interface PartLink {
+    label: string; // what it's called ("Notion", "Spec sheet"); "": its address says
+    url: string; // http, https, or mailto only (linkUrl), as the server checks it
+}
+
+/** The most links a part has, and how long a link's name and address can be, as the server checks them. */
+export const MAX_LINKS = 20;
+export const MAX_LINK_LABEL = 200;
+export const MAX_LINK_URL = 2000;
+
+/**
+ * A link's address, if a part can have it: http or https to a host, or mailto to someone, without spaces or control
+ * characters; else null. Never javascript: or data:, which would run in the site when someone opened it from the part.
+ * The server checks the same (piper/schemas.py), and reading a drawing leaves out what isn't.
+ */
+export function linkUrl(text: string): string | null {
+    const url = text.trim();
+    if (!url || url.length > MAX_LINK_URL || /[\s\u0000-\u001f\u007f-\u009f]/.test(url)) {
+        return null;
+    }
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1]?.toLowerCase();
+    if (scheme === "mailto") {
+        return url.length > "mailto:".length ? url : null;
+    }
+    // Its host after the two slashes, as the server reads it: a browser would read "https:host" as a host too.
+    if ((scheme !== "http" && scheme !== "https") || !/^https?:\/\/[^/?#]/i.test(url)) {
+        return null;
+    }
+    try {
+        return new URL(url).hostname ? url : null;
+    } catch {
+        return null;
+    }
+}
+
+/** What a link without a name of its own is called: its host and path ("notion.so/yjsp/FMV"), or its email address. */
+export function linkName(url: string): string {
+    if (/^mailto:/i.test(url)) {
+        return url.slice("mailto:".length);
+    }
+    try {
+        const parsed = new URL(url);
+        return `${parsed.hostname.replace(/^www\./, "")}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+    } catch {
+        return url;
+    }
 }
 
 /** Settings in the simulation, in SI units, by the keys of Yorg's system models' catalog (sim/api.ts). */
@@ -150,7 +201,7 @@ export interface Page {
 
 /** A diagram's drawing as it's saved: its pages, and the fluids, style, and simulation's units all of them share. */
 export interface Document {
-    format: 3;
+    format: 4;
     pages: Page[];
     fluids: Fluid[]; // the diagram's own fluids, and its changes to the standard ones (by id)
     style: Style;
@@ -186,7 +237,7 @@ export const isPortEnd = (end: End): end is { part: string; port: string } => "p
 /** A document of one page, from a page's drawing: a new diagram's, or one from before pages. */
 export function documentOf(drawing: Drawing, name = "Page 1"): Document {
     return {
-        format: 3,
+        format: 4,
         pages: [{ id: newId("g"), name, parts: drawing.parts, lines: drawing.lines, sheet: drawing.sheet ?? null }],
         fluids: drawing.fluids,
         style: drawing.style,
@@ -324,6 +375,22 @@ function simValues(value: unknown): SimValues {
     return found;
 }
 
+/** A part's links as they were sent or pasted, each to a page a part can link to (linkUrl): any other is left out,
+ * never shown or opened. */
+export function readLinks(value: unknown): PartLink[] {
+    return list(value)
+        .flatMap((entry) => {
+            const url = isObject(entry) ? linkUrl(str(entry.url)) : null;
+            return url ? [{ label: str((entry as Raw).label).slice(0, MAX_LINK_LABEL), url }] : [];
+        })
+        .slice(0, MAX_LINKS);
+}
+
+function partLinks(value: unknown): { links?: PartLink[] } {
+    const links = readLinks(value);
+    return links.length > 0 ? { links } : {};
+}
+
 const partSim = (value: unknown): { sim?: PartSim } =>
     isObject(value)
         ? {
@@ -392,6 +459,7 @@ function part(value: unknown): Part | null {
                 ? value.labelSize
                 : "",
         ...partSim(value.sim),
+        ...partLinks(value.links),
     };
 }
 
@@ -484,7 +552,7 @@ export function readDocument(value: unknown): Document {
     }
     const shared = readDrawing({ fluids: found.fluids, style: found.style, sim: found.sim });
     return {
-        format: 3,
+        format: 4,
         pages: pages.map((page, index) => ({
             id: str(page.id) || newId("g"),
             name: str(page.name) || `Page ${index + 1}`,

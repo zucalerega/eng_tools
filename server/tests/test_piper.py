@@ -824,6 +824,78 @@ def test_a_save_from_before_simulation_is_refused_over_a_drawing_saved_since(tea
     assert json.dumps(opened(team, alice, made)["drawing"]) == json.dumps(simulated)
 
 
+def test_a_parts_links_are_kept_if_theyre_http_https_or_mailto(team):
+    """A part can link to pages about it (its Notion page, its spec sheet, someone to ask): only http, https, and
+    mailto, as a link opened from a part in the web app mustn't run anything in the site."""
+    alice = team.member("alice@x.test")
+    links = [
+        {"label": "Notion", "url": "https://www.notion.so/yjsp/FMV-1234"},
+        {"label": "Spec sheet", "url": "HTTP://example.com/valve.pdf"},
+        {"label": "", "url": "mailto:prop@example.test"},
+    ]
+    made = make(team, alice, drawing=drawing(part("fmv", links=links)))
+    assert opened(team, alice, made)["drawing"]["parts"][0]["links"] == links
+
+    def refused(*sent, on_pages: bool = False) -> str:
+        drawn = drawing(part("v1"), part("fmv", links=list(sent)))
+        response = save(team, alice, made, pages(("a", drawn)) if on_pages else drawn, 1)
+        assert (response.status_code, response.json()["error"]) == (422, "invalid_drawing"), response.text
+        return response.json()["message"]
+
+    for url in [
+        "javascript:alert(1)",
+        "JavaScript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "file:///C:/secret.txt",
+        "https:nohost",
+        "https:///path",
+        "https:\\evil.example",
+        "https://",
+        "mailto:",
+        "notion.so/page",
+        "https://exa mple.com",
+        " https://example.com",
+        "https://example.com\n",
+        "https://example.com/\x00",
+    ]:
+        assert refused({"url": url}) == "Part 2's link 1 isn't an http, https, or mailto link", url
+    assert refused({"url": "https://ok.test"}, {"label": "Spec"}) == "Part 2's link 2 has no address"
+    assert refused({"url": 5}) == "Part 2's link 1's address isn't text"
+    assert (
+        refused({"url": "https://ok.test", "label": "L" * 201})
+        == "Part 2's link 1's name is longer than 200 characters"
+    )
+    assert refused("https://ok.test") == "Part 2's link 1 isn't an object"
+    assert refused(*({"url": f"https://ok.test/{n}"} for n in range(21))) == "Part 2 has more than 20 links"
+    on_a_page = refused({"url": "javascript:alert(1)"}, on_pages=True)
+    assert on_a_page == "Page 1's part 2's link 1 isn't an http, https, or mailto link"
+    # A new diagram's drawing is checked as a save's is.
+    bad = drawing(part("v1", links=[{"url": "javascript:alert(1)"}]))
+    response = team.client.post(API, json={"name": "Bad links", "drawing": bad}, headers=alice)
+    assert (response.status_code, response.json()["error"]) == (422, "invalid_drawing"), response.text
+    assert opened(team, alice, made)["version"] == 1
+
+
+def test_a_save_from_before_links_is_refused_over_a_drawing_saved_since(team):
+    """A tab opened before Piper's parts had links would save them without: it's told to reload, and nothing
+    changes."""
+    alice = team.member("alice@x.test")
+    made = make(team, alice, drawing=drawing(part("v1")))
+    linked = {
+        **pages(("a", drawing(part("v1", links=[{"label": "Notion", "url": "https://notion.so/x"}])))),
+        "format": 4,
+    }
+    after = saved(team, alice, made, linked, 1)
+    old = save(team, alice, made, {**pages(("a", drawing(part("v1")))), "format": 3}, after["version"])
+    assert (old.status_code, old.json()["error"]) == (409, "drawing_newer"), old.text
+    assert old.json()["message"] == (
+        "Feed system has links on its parts, which this tab's Piper is too old to keep: reload the page, then make "
+        "your change again"
+    )
+    assert json.dumps(opened(team, alice, made)["drawing"]) == json.dumps(linked)
+
+
 # --- releases -----------------------------------------------------------------------------------------------------
 
 

@@ -687,10 +687,15 @@ a number. A few codes come up in more than one place.
   as a new diagram keeps them, or Load theirs. An admin can Take over if it can't wait.
 - **... is deleted: restore it first** (`deleted`): restore the diagram from Piper's deleted
   diagrams, then change it.
-- **... has pages** (or **simulation settings**)**, which this tab's Piper is too old to keep: reload
-  the page, then make your change again** (`drawing_newer`): the tab was opened before Piper had
-  pages (or kept parts' settings in a simulation), and saving from it would leave them out. Reload
-  it, which gets the new Piper, and make your change again.
+- **... has pages** (or **simulation settings**, or **links on its parts**)**, which this tab's Piper
+  is too old to keep: reload the page, then make your change again** (`drawing_newer`): the tab was
+  opened before Piper had pages (or kept parts' settings in a simulation, or links on parts), and
+  saving from it would leave them out. Reload it, which gets the new Piper, and make your change
+  again.
+- **Part ...'s link ... isn't an http, https, or mailto link** (`invalid_drawing`): a link on a part
+  can only open a web page (`https://`, `http://`) or an email (`mailto:`), with no spaces in it, so
+  opening it from the part can't run anything. Piper's own Add a link won't take any other, so
+  this comes from a drawing sent another way (the API). Fix or remove that link, and save again.
 - **Two parts or lines share the id ...**, **The drawing has text that isn't valid Unicode**, and
   the like (`invalid_drawing`): the drawing as the web app sent it isn't one the server keeps.
   Reload the diagram; if it keeps happening, tell an admin, with what you did.

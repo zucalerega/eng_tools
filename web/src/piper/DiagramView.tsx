@@ -1,6 +1,6 @@
 import { memo, useMemo, type ReactNode } from "react";
 import { normalFill, type Palette } from "./colors";
-import type { Drawing, Line, Part, Point } from "./drawing";
+import { linkName, readLinks, type Drawing, type Line, type Part, type Point } from "./drawing";
 import { sharedTags } from "./edit";
 import { fluidOf, isGas } from "./fluids";
 import { grow, middleOfLongest, partTransform, segmentsOf } from "./geometry";
@@ -167,6 +167,7 @@ export function DiagramView({
                 />
             ))}
             {live && <LiveBadges drawing={drawing} live={live} place={place} palette={palette} />}
+            {interactive && <LinkMarks drawing={drawing} palette={palette} />}
             {interactive && (
                 <Handles
                     drawing={drawing}
@@ -518,6 +519,46 @@ function LiveBadges({
         );
     }
     return <>{badges}</>;
+}
+
+/** A link's mark: two links of a chain. */
+const CHAIN =
+    "M-0.6 1.6 L-2 3 A1.7 1.7 0 0 1 -4.4 0.6 L-3 -0.8 M0.6 -1.6 L2 -3 A1.7 1.7 0 0 1 4.4 -0.6 L3 0.8 M-1.3 1.3 L1.3 -1.3";
+
+/**
+ * A mark at the top right of each part with links (pages about it), its tooltip their names: a click there selects the
+ * part, whose links the inspector opens. Only on the canvas: not in an export, where it would open nothing.
+ */
+function LinkMarks({ drawing, palette }: { drawing: Drawing; palette: Palette }) {
+    return (
+        <>
+            {drawing.parts
+                .map((part) => ({ part, links: readLinks(part.links) }))
+                .filter(({ links }) => links.length > 0)
+                .map(({ part, links }) => {
+                    const box = boxOf(part, drawing);
+                    return (
+                        <g
+                            key={part.id}
+                            className="piper-link-mark"
+                            data-hit={`part:${part.id}`}
+                            data-links={part.id}
+                            transform={`translate(${box.x1 + 3} ${box.y0 - 3})`}
+                        >
+                            <title>{links.map((link) => link.label || linkName(link.url)).join("\n")}</title>
+                            <circle r={6.5} fill={palette.paper} stroke={palette.select} strokeWidth={1.2} />
+                            <path
+                                d={CHAIN}
+                                fill="none"
+                                stroke={palette.select}
+                                strokeWidth={1.3}
+                                strokeLinecap="round"
+                            />
+                        </g>
+                    );
+                })}
+        </>
+    );
 }
 
 /** What's needed to work on the drawing: outlines around what's selected, its handles, and ports to draw lines from. */

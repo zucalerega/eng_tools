@@ -81,13 +81,20 @@ const ROLES: Record<string, SimRole[]> = {
     venturi: ["venturi", "orifice", "through", "none"],
     flowmeter: ["meter", "orifice", "none"],
     filter: ["through", "orifice", "none"],
+    diffuser: ["through", "orifice", "none"],
     instrument: ["sensor"],
     engine: ["outlet"],
     vent: ["outlet"],
     valve3: ["none"],
+    valve32: ["none"],
+    valve52: ["none"],
     pump: ["none"],
     cap: ["none"],
 };
+
+/** Kinds that do what the model can't to their flow, so lines end at them: a pump adds pressure, and a three-way or
+ * directional valve switches it between lines. Said of each, unlike a note's or a cap's ends. */
+export const NOT_SIMULATED = new Set(["pump", "valve3", "valve32", "valve52"]);
 
 /** Kinds that hold a fluid: a tank of liquid, or of a gas, a supply or a vessel. */
 const VESSELS = new Set(["tank", "sphere", "dewar"]);
@@ -865,7 +872,7 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
         if (!placed.has(part.id)) {
             placed.set(part.id, { role: role(part.id), ids: [], phase: null, reads: null });
         }
-        if (part.kind === "pump" || part.kind === "valve3") {
+        if (NOT_SIMULATED.has(part.kind)) {
             note(`${nameOf(part)} isn't simulated: the lines at it end there.`, [part.id]);
         } else if (part.kind === "figure" && met.has(part.id)) {
             drawn.push(part);

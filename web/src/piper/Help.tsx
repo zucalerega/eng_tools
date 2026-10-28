@@ -76,10 +76,11 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     Find a part by any of its names: <em>MOV</em>, <em>PRV</em>, <em>COPV</em>, <em>cav</em>,{" "}
-                    <em>thermocouple</em>. Valves (ball, solenoid, pneumatic, motorized, needle, check, relief,
-                    regulators, burst discs, quick disconnects), tanks, bottles and COPVs, orifices and venturis, flow
-                    meters, filters, instruments (PT, TC, RTD, load cells...), engines, pumps, vents, tees, a box for
-                    anything else (a DAQ, a test stand), notes, regions, a legend, a title block, and pictures.
+                    <em>3x2</em>, <em>thermocouple</em>. Valves (ball, solenoid, pneumatic, motorized, needle, check,
+                    relief, regulators, burst discs, quick disconnects, and 3/2 and 5/2 solenoid valves), tanks, bottles
+                    and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments (PT, TC, RTD, load
+                    cells...), engines, pumps, vents, tees, manifolds, a box for anything else (a DAQ, a test stand),
+                    notes, regions, a legend, a title block, and pictures.
                 </li>
                 <li>
                     A <em>Picture</em> shows a PNG or a JPEG of your own (an injector, a TCA, a photo of the stand), up
@@ -104,7 +105,24 @@ const TOPICS: Topic[] = [
                     Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
                     stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
                     <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
-                    orifice plate sits in its pipe; a vent's open end turns down.
+                    orifice plate sits in its pipe; a vent is the spray of what it lets go, in its line's color; a pump
+                    stands on its base, its discharge leaving its top.
+                </li>
+                <li>
+                    The <em>3/2</em> and <em>5/2 solenoid valves</em> are drawn as pneumatic schematics draw them (ISO
+                    1219): a box for each of the valve's two positions, with its flow paths (arrows) and its shut ports
+                    (a T), the solenoid at its left end and the spring that returns it at its right. Its ports are on
+                    the box it rests in, numbered as ISO 5599 numbers them: a 3/2's supply (1) and exhaust (3) below,
+                    what it feeds (2) above; a 5/2's supply (1) below its middle, what it feeds (4 and 2) above, and its
+                    exhausts (5 and 3) below. The position its state puts it in is tinted in that state's color: at
+                    rest, its normal state's (a 3/2 is normally closed, its supply shut, or normally open; a 5/2 has no
+                    normal state); with a test, open or closed.
+                </li>
+                <li>
+                    A <em>Manifold</em> takes its supply at one end and gives it out along its top to its{" "}
+                    <em>Outlets</em> (2 to 8, on the right); its far end is a port too. Take an outlet away and a line
+                    on it stays, ending where the outlet was. A <em>Diffuser</em> goes into a line, as a tank's
+                    pressurant inlet has one, its arrows the way the flow leaves it.
                 </li>
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select

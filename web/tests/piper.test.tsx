@@ -203,6 +203,40 @@ test("a part dragged from the library goes where it's let go, and the drag doesn
     });
 });
 
+test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the library; a manifold's outlets are chosen", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "Pneumatics panel");
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    for (const [name, x] of [
+        ["3/2 solenoid valve", 0],
+        ["5/2 solenoid valve", 200],
+        ["Diffuser", 400],
+        ["Manifold", 600],
+    ] as const) {
+        await userEvent.click(screen.getByRole("button", { name }));
+        fireEvent.pointerDown(svg, at(x, 0));
+        fireEvent.pointerUp(svg, at(x, 0));
+    }
+    // The manifold, placed last, is selected: six outlets for it, on the right, drawn along its top.
+    expect(screen.getByRole("heading", { name: "Manifold" })).toBeTruthy();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Outlets" }), "6");
+    const bore = svg.querySelector('[data-kind="manifold"] path[stroke-dasharray]')!.getAttribute("d")!;
+    expect(bore.match(/V-8/g)).toHaveLength(6);
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(
+            saved.parts.map((part) => [part.kind, part.tag, part.props.normal ?? "", part.props.outlets ?? ""]),
+        ).toEqual([
+            ["valve32", "SV-1", "NC", ""], // normally closed, as a pilot valve usually is
+            ["valve52", "SV-2", "", ""],
+            ["diffuser", "DIFF-1", "", ""],
+            ["manifold", "MAN-1", "", "6"],
+        ]);
+    });
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

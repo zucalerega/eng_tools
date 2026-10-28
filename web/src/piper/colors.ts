@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { useTheme } from "../theme";
 import type { Drawing } from "./drawing";
+import type { ValveState } from "./testdata";
 
 // The colors a drawing's drawn in: ink on paper, light or dark as the site is (exports are always light, as on
 // paper), and its valves' states, its own if it chose them.
@@ -61,6 +62,11 @@ export const withStates = (palette: Palette, drawing: Drawing): Palette => ({
 /** The color a valve's normal state fills it with (NO, NC, FIP), or null if it has none set. */
 export function normalFill(palette: Palette, normal: string | undefined): string | null {
     return normal === "NO" ? palette.no : normal === "NC" ? palette.nc : normal === "FIP" ? palette.fip : null;
+}
+
+/** The state a valve's normal state leaves it in: open (NO), closed (NC), or neither (FIP), or null if it has none. */
+export function normalState(normal: string | undefined): ValveState | null {
+    return normal === "NO" ? "open" : normal === "NC" ? "closed" : normal === "FIP" ? "other" : null;
 }
 
 const dark =

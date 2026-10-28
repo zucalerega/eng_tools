@@ -114,4 +114,48 @@ export const filter: Kind = {
     ),
 };
 
-export const FLOW_KINDS: Kind[] = [orifice, venturi, flowmeter, filter];
+/** A diffuser's spread: arrows from along its perforated face, fanning out the way it lets the flow go. */
+const SPREAD = [-1, 0, 1].map((side) => {
+    const [cos, sin] = [Math.cos((side * 32 * Math.PI) / 180), Math.sin((side * 32 * Math.PI) / 180)];
+    const start = { x: 4, y: side * 4 };
+    const length = side === 0 ? 11 : 10;
+    const tip = { x: start.x + length * cos, y: start.y + length * sin };
+    const back = (by: number, across: number) =>
+        `${(tip.x - cos * by - sin * across).toFixed(2)} ${(tip.y - sin * by + cos * across).toFixed(2)}`;
+    return {
+        line: `M${start.x} ${start.y} L${back(3.5, 0)}`,
+        head: `M${tip.x.toFixed(2)} ${tip.y.toFixed(2)} L${back(4, 1.8)} L${back(4, -1.8)} Z`,
+    };
+});
+
+/**
+ * A diffuser, as a tank's pressurant comes in through one: its body on the line, a perforated face (dashed) the flow
+ * leaves by, and arrows spreading out from it, so the gas comes in gently rather than jetting into what's there.
+ */
+export const diffuser: Kind = {
+    id: "diffuser",
+    name: "Diffuser",
+    box: () => [-20, -11, 20, 11],
+    ports: () => [
+        { id: "a", x: -20, y: 0, dir: "left", inset: 11 },
+        { id: "b", x: 20, y: 0, dir: "right", inset: 5 },
+    ],
+    fields: [{ key: "holes", label: "Holes", type: "text", placeholder: "24 × 0.040 in" }, SIZE, MAWP, MODEL, NOTES],
+    tag: "beside",
+    inline: ["a", "b"],
+    through: true,
+    draw: (_part, context) => (
+        <>
+            <rect x={-9} y={-9} width={8} height={18} fill={context.paper} {...ink(context, 1.4)} />
+            <path d="M1.5 -9 V9" {...ink(context, 1.6)} strokeDasharray="3 2" strokeLinecap="butt" />
+            {SPREAD.map(({ line, head }, index) => (
+                <g key={index}>
+                    <path d={line} fill="none" {...ink(context, 1.2)} />
+                    <path d={head} fill={context.ink} {...ink(context, 0.8)} />
+                </g>
+            ))}
+        </>
+    ),
+};
+
+export const FLOW_KINDS: Kind[] = [orifice, venturi, flowmeter, filter, diffuser];

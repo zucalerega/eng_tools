@@ -178,6 +178,23 @@ export const PRESETS: Preset[] = [
         props: { actuation: "manual" },
     },
     {
+        id: "solenoid-valve-32",
+        kind: "valve32",
+        name: "3/2 solenoid valve",
+        category: "valves",
+        prefix: "SV",
+        keywords: "3x2 3-2 three way two position pilot pneumatic directional control dcv iso 1219 spring return",
+        props: { normal: "NC" },
+    },
+    {
+        id: "solenoid-valve-52",
+        kind: "valve52",
+        name: "5/2 solenoid valve",
+        category: "valves",
+        prefix: "SV",
+        keywords: "5x2 5-2 five way two position double acting actuator pneumatic directional control dcv iso 1219",
+    },
+    {
         id: "angle-valve",
         kind: "angle",
         name: "Angle valve",
@@ -283,6 +300,14 @@ export const PRESETS: Preset[] = [
         prefix: "FLT",
         keywords: "strainer micron",
         shown: ["rating"],
+    },
+    {
+        id: "diffuser",
+        kind: "diffuser",
+        name: "Diffuser",
+        category: "flow",
+        prefix: "DIFF",
+        keywords: "pressurant inlet sparger perforated grille spreader tank",
     },
     // Instruments
     {
@@ -454,6 +479,14 @@ export const PRESETS: Preset[] = [
         category: "fittings",
         prefix: "",
         keywords: "tee cross branch node",
+    },
+    {
+        id: "manifold",
+        kind: "manifold",
+        name: "Manifold",
+        category: "fittings",
+        prefix: "MAN",
+        keywords: "header distribution block press pneumatics panel outlets",
     },
     { id: "cap", kind: "cap", name: "Cap", category: "fittings", prefix: "", keywords: "plug end blind" },
     { id: "reducer", kind: "reducer", name: "Reducer", category: "fittings", prefix: "", keywords: "adapter expander" },

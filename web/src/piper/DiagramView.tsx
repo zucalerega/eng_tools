@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactNode } from "react";
-import { normalFill, type Palette } from "./colors";
+import { normalFill, normalState, type Palette } from "./colors";
 import type { Drawing, Line, Part, Point } from "./drawing";
 import { sharedTags } from "./edit";
 import { fluidOf, isGas } from "./fluids";
@@ -70,9 +70,9 @@ export function DiagramView({
 
     const contextOf = (part: Part): DrawContext => {
         const kind = kindOf(part.kind);
-        const state = live?.get(part.id)?.state ?? null;
-        const fill = state
-            ? { open: palette.no, closed: palette.nc, other: palette.other }[state]
+        const tested = live?.get(part.id)?.state ?? null;
+        const fill = tested
+            ? { open: palette.no, closed: palette.nc, other: palette.other }[tested]
             : kind.state
               ? normalFill(palette, part.props.normal)
               : null;
@@ -84,6 +84,7 @@ export function DiagramView({
             paper: palette.paper,
             muted: palette.muted,
             fill,
+            state: tested ?? (kind.state ? normalState(part.props.normal) : null),
             fluid: holds?.color ?? null,
             fluidLabel: holds?.label ?? "",
             gas: holds ? isGas(drawing, holds.id) : false,

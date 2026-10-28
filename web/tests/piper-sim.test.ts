@@ -308,6 +308,8 @@ test("what the model leaves out, or does differently than it might seem, it says
     const check = draw.place("check-valve", 0, 60, { tag: "CV-1", rotation: 90 });
     const valve = draw.place("ball-valve", 0, 160, { tag: "BV-1", rotation: 90 });
     const pump = draw.place("pump", 160, 0, { tag: "P-1" });
+    draw.place("solenoid-valve-32", 300, 0, { tag: "SV-1" });
+    draw.place("solenoid-valve-52", 300, 100, { tag: "SV-2" });
     draw.join([tank, "bottom"], [check, "a"], "water");
     draw.join([check, "b"], [valve, "a"], "water");
     draw.join([tank, "right-lower"], [pump, "in"], "water");
@@ -315,6 +317,8 @@ test("what the model leaves out, or does differently than it might seem, it says
         "CV-1 is a check valve in liquid lines, which the model has as a valve: it doesn't stop flow back.",
         "BV-1's outlet goes nowhere, so the model has it capped: draw its line on to where it goes (a vent, for the atmosphere).",
         "P-1 isn't simulated: the lines at it end there.",
+        "SV-1 isn't simulated: the lines at it end there.",
+        "SV-2 isn't simulated: the lines at it end there.",
     ]);
 });
 

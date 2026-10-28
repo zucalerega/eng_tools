@@ -12,7 +12,7 @@ import {
 } from "../src/piper/drawing";
 import { addPart, drawingBox, sharedTags, updatePart } from "../src/piper/edit";
 import { example } from "../src/piper/example";
-import { documentTable, partsList } from "../src/piper/exports";
+import { columnsOf, partsList, partsOf } from "../src/piper/parts";
 import { findInDocument } from "../src/piper/find";
 import { presetOf } from "../src/piper/library/index";
 import { fitSheet, paperSize, pdfOfPages, sheetOutline } from "../src/piper/pdf";
@@ -132,15 +132,21 @@ test("the parts list covers every page, with each part's page when there's more 
         0,
         addPart(pageOf(document, 0), presetOf("offpage")!, { x: 100, y: 0 }).drawing,
     );
-    const { head, rows } = documentTable(withConnector);
-    expect(head.at(-1)).toBe("Page");
-    expect(rows.map((row) => [row.cells[1], row.page, row.cells.at(-1)])).toEqual([
-        ["PUREG", 0, "Vehicle"],
+    const rows = partsOf(withConnector);
+    expect(
+        columnsOf(withConnector, rows, rows)
+            .map((column) => column.label)
+            .slice(0, 4),
+    ).toEqual(["Tag", "What", "Page", "Fluid"]);
+    // By what they are (a ball valve, a regulator), not by page; an off-page connector isn't a part to list.
+    expect(rows.map((row) => [row.cells.tag, row.page, row.cells.page])).toEqual([
         ["BV-201", 1, "GSE"],
-    ]); // an off-page connector isn't a part to list
-    expect(partsList(withConnector).split("\r\n")[0]).toMatch(/,Page$/);
+        ["PUREG", 0, "Vehicle"],
+    ]);
+    expect(partsList(withConnector).split("\r\n")[0]).toMatch(/^Tag,What,Page,Fluid/);
     // One page: no column for it.
-    expect(documentTable(documentOf(example())).head).not.toContain("Page");
+    const one = documentOf(example());
+    expect(columnsOf(one, partsOf(one), partsOf(one)).map((column) => column.key)).not.toContain("page");
 });
 
 test("a page's sheet fits what's on it inside the border, clear of the title block's corner", () => {

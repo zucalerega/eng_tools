@@ -3,7 +3,7 @@ import { api } from "./api";
 import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
-import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow } from "./piper";
+import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow, piperWide } from "./piper";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { setTheme, useTheme, type Theme } from "./theme";
@@ -159,7 +159,9 @@ export function App() {
                     <VaultPage pathname={pathname} />
                 </main>
             ) : piperApp ? (
-                <main className={piperWholeWindow(pathname) ? "main-full" : undefined}>
+                <main
+                    className={piperWholeWindow(pathname) ? "main-full" : piperWide(pathname) ? "main-wide" : undefined}
+                >
                     <PiperPage pathname={pathname} />
                 </main>
             ) : (

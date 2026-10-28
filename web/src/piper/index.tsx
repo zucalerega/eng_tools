@@ -10,6 +10,7 @@ const DiagramsPage = lazy(() => import("./Diagrams").then((module) => ({ default
 const DeletedPage = lazy(() => import("./Diagrams").then((module) => ({ default: module.DeletedPage })));
 const EditorPage = lazy(() => import("./Editor").then((module) => ({ default: module.EditorPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
+const PartsPage = lazy(() => import("./PartsPage").then((module) => ({ default: module.PartsPage })));
 const SchemesPage = lazy(() => import("./Schemes").then((module) => ({ default: module.SchemesPage })));
 
 export const PIPER = "Piper";
@@ -47,6 +48,9 @@ export const piperSection = (pathname: string): string =>
 /** Whether a page is the editor, which takes the whole window. */
 export const piperWholeWindow = (pathname: string): boolean => /^\/piper\/diagrams\/\d+\/?$/.test(pathname);
 
+/** Whether a page is a diagram's parts, whose table wants the room. */
+export const piperWide = (pathname: string): boolean => /^\/piper\/diagrams\/\d+\/parts\/?$/.test(pathname);
+
 export function PiperPage({ pathname }: { pathname: string }) {
     const page = piperPage(pathname.replace(/\/$/, "") || "/piper");
     if (!page) {
@@ -64,6 +68,10 @@ function piperPage(path: string) {
     const match = /^\/piper\/diagrams\/(\d+)$/.exec(path);
     if (match) {
         return <EditorPage key={match[1]} id={Number(match[1])} />;
+    }
+    const parts = /^\/piper\/diagrams\/(\d+)\/parts$/.exec(path);
+    if (parts) {
+        return <PartsPage key={parts[1]} id={Number(parts[1])} />;
     }
     // A folder's page is the diagrams' page, in it: it keeps what it's loaded as it goes from one folder to another.
     const folder = /^\/piper\/folders\/(\d+)$/.exec(path);

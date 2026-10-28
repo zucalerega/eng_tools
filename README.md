@@ -317,8 +317,10 @@ the keys.
   **Find diagrams** looks in every folder, in names, folders, and the tags on each drawing:
   PT-101 finds every diagram it's on, each says its folder, and each opens at it. In a diagram,
   **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what it is, on whichever
-  page, and **Parts** lists every part by what it is, with how many and their specs, under the
-  drawing.
+  page, and **Parts** opens every part of the diagram in a table on a page of its own (in a new
+  tab): click a column to sort by it, show only valves, instruments, tanks, one fluid, or one
+  page, find a tag or a model, and save what's shown as a CSV. A tag opens the drawing at its
+  part.
 - **Editing**: a diagram opens to be looked at. **Edit**, at the top, makes it yours to change:
   one person edits a diagram at a time, so no one's changes go over anyone else's, and the
   diagrams list and everyone with it open see who's editing it. **Done editing** saves what's
@@ -453,8 +455,8 @@ the keys.
 - **Export**: **PDF**, a page for each of the diagram's, on its printed sheet or else on
   Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs are (a border with its
   zones, the named revisions, and a title block that says which sheet of how many), vector and
-  searchable; SVG or PNG images of the page shown; printing; and the parts list of every page
-  as a CSV (a valve list, an instrument list). Each can have a legend (**With a legend**, in its
+  searchable; SVG or PNG images of the page shown; printing; and the parts of every page as a
+  CSV (a valve list, an instrument list). Each can have a legend (**With a legend**, in its
   dialog): every kind of part on the page with its symbol and name, by category, then its types
   of line, its fluids, and its valves' state colors, beside the drawing (a page whose printed
   sheet is set has its legend on a sheet of its own after it, in a PDF).

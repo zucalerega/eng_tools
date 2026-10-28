@@ -1399,51 +1399,65 @@
     flex: none;
 }
 
-/* The parts table, under the drawing: a table for each kind of part, then the lines. */
-.piper-parts-body {
+/* A diagram's parts, on a page of their own: what to show of them, then a table of them, sorted by any column. */
+.piper-parts-filters {
     display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
-    max-height: 36vh;
-    overflow: auto;
-    margin-top: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1.2rem;
+    margin: 0 0 1rem;
+}
+
+.piper-parts-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.piper-parts-kinds button {
+    height: 1.9rem;
+    padding: 0 0.75rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+}
+
+.piper-parts-kinds button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.piper-parts-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.piper-parts-filter select,
+.piper-parts-find {
+    height: 1.9rem;
+    font-size: 0.85rem;
+}
+
+.piper-parts-find {
+    flex: 1;
+    min-width: 12rem;
+    max-width: 20rem;
 }
 
 .piper-parts-table {
-    font-size: 0.8rem;
-}
-
-.piper-parts-table caption {
-    /* In from the edge the tables scroll under: a bold heading's first letter otherwise loses its stem there. */
-    padding: 0 0.2rem 0.25rem;
-    font-weight: 700;
-    text-align: left;
+    font-size: 0.85rem;
 }
 
 .piper-parts-table th,
 .piper-parts-table td {
-    padding: 0.25rem 0.6rem;
     white-space: nowrap;
 }
 
-.piper-parts-table tr[aria-selected="true"] td {
-    background: var(--accent-soft);
-}
-
 .piper-parts-tag {
-    height: auto;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--accent);
-    font: inherit;
     font-weight: 700;
-    cursor: pointer;
-}
-
-.piper-parts-tag:hover:not(:disabled) {
-    background: none;
-    text-decoration: underline;
 }
 
 /* The team's color schemes (Schemes): a card for each, with its colors at a glance, opened in place to change them. */

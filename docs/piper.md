@@ -352,10 +352,21 @@ what it is, `data-hit`).
   match), then by what it is or holds; a line by its tag or fluid. The tag that's it first,
   then tags that start with it. Picked, the view frames it, with room around it, and it's
   selected (`commands.show`).
-- **Parts** (`PartsPanel.tsx`), under the drawing: the parts list the CSV saves
-  (`documentTable`, every page's, with each one's page when there's more than one), a table for
-  each kind of part in the library's order (valves, instruments, vessels...), with how many and
-  the columns any of them has, then the lines. A tag goes to its part, on its page.
+- **Parts** (`PartsPage.tsx`, `/piper/diagrams/{id}/parts`, opened from the toolbar in a tab
+  of its own, so the drawing stays open, and yours if you were editing it): the parts list
+  (`parts.ts`, every page's) in one table. Parts only: not lines, and not what's only written or
+  drawn on a drawing (notes, regions, connectors, legends, title blocks, pictures, untagged
+  figures). Each part's tag, what it is, its page (with more than one), the fluids on it (what
+  it holds and what its lines carry), then each spec any part shown has (but not one that only
+  says again what each is: a ball valve's body, what a pressure transducer measures), in the
+  order the whole list first has them, plus the MAWP and model columns wherever a part shown
+  could have them, said or not; its test channel only where one's given that isn't its tag; and notes. It's in
+  the library's order (valves, tanks, flow elements, instruments...), then by what each is and
+  its tag; a column click sorts by it (numbers as numbers, what's empty last), again the other
+  way, again back. It narrows to one category (with how many of each, as the rest narrows), one
+  fluid, one page, or what has some words in any cell. Its CSV is what's shown, as sorted; the
+  editor's Export menu saves all of it. A tag opens the editor at its part (`?part=`, its id),
+  on its page. It's the drawing as last saved, read again on coming back to the tab.
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to
@@ -393,10 +404,9 @@ what it is, `data-hit`).
   - **Pictures in a PDF** are its own images: a JPEG as it is (DCTDecode), a PNG decoded
     (`decodePng`: any color type and depth, its rows unfiltered; an interlaced one through a
     canvas) into its pixels and its transparency, a soft mask, each deflated.
-  - **Parts list** (CSV): each part's tag, what it is, normal state, fluid, test channel, every
-    property, and notes, and each line's tag, type, fluid, properties, and the tags it joins, on
-    every page (and each one's page, last, when there's more than one): a valve list or an
-    instrument list, filtered in a spreadsheet.
+  - **Parts list** (CSV, `partsList`): the parts page's table, all of it: each part's tag, what
+    it is, its page (with more than one), fluids, every property any part has, and notes, on
+    every page: a valve list or an instrument list, filtered in a spreadsheet. Lines aren't in it.
 
 ## Importing from Visio
 

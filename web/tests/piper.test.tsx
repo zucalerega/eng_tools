@@ -834,32 +834,69 @@ test("a picture dropped on the drawing is added there, in its shape; the inspect
     });
 });
 
-test("Parts lists every part by what it is, with its specs, and a tag goes to its part", async () => {
+test("Parts opens a page of every part: sorted by any column, narrowed to a kind or a fluid, and a tag opens the drawing at it", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };
-    const first = place(drawing, "ball-valve", 0, 0);
-    place(drawing, "ball-valve", 200, 0);
-    place(drawing, "tank", 0, 200);
+    const first = place(drawing, "ball-valve", 200, 0);
+    place(drawing, "ball-valve", 400, 0);
+    const tank = place(drawing, "tank", 0, 0);
+    const sensor = place(drawing, "pressure-transducer", 200, 200);
     drawing.value = {
         ...drawing.value,
         parts: drawing.value.parts.map((part) =>
-            part.id === first ? { ...part, props: { ...part.props, mawp: "3000 psi" } } : part,
+            part.id === first ? { ...part, props: { ...part.props, mawp: "3000 psi", model: "SS-45S8" } } : part,
         ),
     };
+    const pipe = connect(drawing.value, { part: tank, port: "right-upper" }, { part: first, port: "a" })!;
+    drawing.value = {
+        ...pipe.drawing,
+        lines: pipe.drawing.lines.map((line) => ({ ...line, fluid: "lox", tag: "L-1" })),
+    };
     const made = await team.diagram(team.chief, "Listed", drawing.value);
-    renderApp(team.chief, `/piper/diagrams/${made.id}`);
-    await screen.findByRole("application", { name: "Drawing" });
-    await userEvent.click(screen.getByRole("button", { name: "Parts" }));
-    const panel = within(await screen.findByRole("region", { name: "Parts" }));
-    expect(panel.getByText("3 parts, 0 lines")).toBeTruthy();
-    const valves = within(panel.getByRole("table", { name: "Ball valve" }));
-    expect(valves.getAllByRole("row")).toHaveLength(3); // its head, and the two
-    expect(valves.getByRole("columnheader", { name: "MAWP" })).toBeTruthy(); // what any of them has
-    expect(valves.getByText("3000 psi")).toBeTruthy();
-    expect(panel.getByRole("table", { name: "Tank" })).toBeTruthy();
-    await userEvent.click(valves.getByRole("button", { name: "BV-1" }));
-    expect(await screen.findByRole("heading", { name: "Ball valve" })).toBeTruthy();
-    expect(valves.getByRole("button", { name: "BV-1" }).closest("tr")!.getAttribute("aria-selected")).toBe("true");
+
+    // From the drawing, in a tab of its own.
+    const editor = renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const link = (await screen.findByRole("link", { name: "Parts" })) as HTMLAnchorElement;
+    expect([link.getAttribute("href"), link.target]).toEqual([`/piper/diagrams/${made.id}/parts`, "_blank"]);
+    editor.unmount();
+
+    renderApp(team.chief, `/piper/diagrams/${made.id}/parts`);
+    expect(await screen.findByRole("heading", { name: "Parts" })).toBeTruthy();
+    const table = within(await screen.findByRole("table", { name: "Parts" }));
+    const tags = () =>
+        table
+            .getAllByRole("row")
+            .slice(1)
+            .map((row) => within(row).getAllByRole("cell")[0]!.textContent);
+    // Its parts, in the library's order (valves, tanks, instruments); not its line (L-1), which isn't a part.
+    expect(tags()).toEqual(["BV-1", "BV-2", "TK-1", "PT-1"]);
+    const heads = table.getAllByRole("columnheader").map((head) => head.textContent);
+    expect(heads.slice(0, 3)).toEqual(["Tag", "What", "Fluid"]);
+    expect(heads).toEqual(expect.arrayContaining(["MAWP", "Model"])); // what every part has, said or not
+    expect(within(table.getAllByRole("row")[1]!).getByText("3000 psi")).toBeTruthy();
+    expect(within(table.getAllByRole("row")[1]!).getByText("LOX")).toBeTruthy(); // the fluid on its line
+
+    // Sorted by a column, then the other way.
+    await userEvent.click(table.getByRole("button", { name: "Tag" }));
+    expect(table.getByRole("columnheader", { name: "Tag" }).getAttribute("aria-sort")).toBe("ascending");
+    await userEvent.click(table.getByRole("button", { name: "Tag" }));
+    expect(tags()).toEqual(["TK-1", "PT-1", "BV-2", "BV-1"]);
+
+    // Narrowed to valves, or to what's on LOX.
+    const kinds = within(screen.getByRole("group", { name: "Show" }));
+    await userEvent.click(kinds.getByRole("button", { name: /^Valves/ }));
+    expect(tags()).toEqual(["BV-2", "BV-1"]);
+    await userEvent.click(kinds.getByRole("button", { name: /^All/ }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fluid" }), "lox");
+    expect(tags().sort()).toEqual(["BV-1", "TK-1"]);
+    expect(kinds.getByRole("button", { name: /^Instruments/ }).textContent).toBe("Instruments 0");
+
+    // A tag opens the drawing at its part.
+    const bv1 = table.getByRole("link", { name: "BV-1" });
+    expect(bv1.getAttribute("href")).toBe(`/piper/diagrams/${made.id}?part=${first}`);
+    await userEvent.click(bv1);
+    expect(await screen.findByRole("heading", { name: "Ball valve" })).toBeTruthy(); // selected, in the inspector
+    expect(sensor).toBeTruthy();
 });
 
 test("a diagram takes a scheme's colors, and says when the scheme has changed since", async () => {

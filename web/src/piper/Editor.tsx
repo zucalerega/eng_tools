@@ -14,7 +14,8 @@ import { DiagramView } from "./DiagramView";
 import { useEditLock } from "./editing";
 import { pageOf, readDocument, type Document, type Drawing, type Point } from "./drawing";
 import { addPart, drawingBox, updatePart, withPicture } from "./edit";
-import { download, fileName, legendBeside, partsList, pngOf, printDrawing, svgOf } from "./exports";
+import { download, fileName, legendBeside, pngOf, printDrawing, svgOf } from "./exports";
+import { partsList } from "./parts";
 import { HistoryPanel } from "./History";
 import { Inspector } from "./Inspector";
 import { LibraryPanel } from "./LibraryPanel";
@@ -28,7 +29,6 @@ import { TestPanel } from "./TestPanel";
 import { Toolbar, type ExportKind, type Panel, type PictureKind } from "./Toolbar";
 import { findInDocument } from "./find";
 import { PageTabs } from "./PageTabs";
-import { PartsPanel } from "./PartsPanel";
 import { readers, useTest } from "./useTest";
 import { simApi, type Catalog } from "./sim/api";
 import { simLive } from "./sim/live";
@@ -81,6 +81,7 @@ export function EditorPage({ id }: { id: number }) {
     const testParam = Number(search.get("test"));
     const testId = Number.isInteger(testParam) && testParam > 0 ? testParam : null;
     const finding = search.get("find");
+    const showing = search.get("part"); // a part's id: opened from its tag on the parts page
     const toEdit = search.has("edit");
     const [time, setTime] = useState(() => Number(search.get("t")) || 0);
     const { reading, problem: testProblem } = useTest(drawing, testId, time);
@@ -137,13 +138,20 @@ export function EditorPage({ id }: { id: number }) {
         if (diagram && !fitted.current) {
             fitted.current = true;
             commands.fit();
-            // Opened from a search (the diagrams' list): at what it found, on whichever page.
-            const first = finding ? findInDocument(store.getState().document, finding)[0] : undefined;
-            if (first) {
+            // Opened from a search (the diagrams' list): at what it found, on whichever page. From the parts page: at
+            // the part whose tag was clicked.
+            const { document: opened } = store.getState();
+            const first = finding ? findInDocument(opened, finding)[0] : undefined;
+            const onPage = showing
+                ? opened.pages.findIndex((each) => each.parts.some((part) => part.id === showing))
+                : -1;
+            if (onPage >= 0) {
+                commands.goTo(onPage, [showing!]);
+            } else if (first) {
                 commands.goTo(first.page, [first.id]);
             }
         }
-    }, [diagram, commands, store, finding]);
+    }, [diagram, commands, store, finding, showing]);
 
     // Made just now (or a copy of yours): opened to edit, and the address left as a link to look at it.
     useEffect(() => {
@@ -577,14 +585,6 @@ export function EditorPage({ id }: { id: number }) {
                     />
                 )}
             </div>
-            {panel === "parts" && (
-                <PartsPanel
-                    store={store}
-                    commands={commands}
-                    onCsv={() => void exportAs("csv")}
-                    onClose={() => setPanel(null)}
-                />
-            )}
             {simulating && (
                 <SimPanel
                     store={store}

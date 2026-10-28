@@ -174,6 +174,10 @@ const TOPICS: Topic[] = [
                     A search on the <Link to="/piper">diagrams</Link> finds the diagrams a tag is on, and each opens at
                     it.
                 </li>
+                <li>
+                    <em>Parts</em>, in the toolbar, lists every part in a table to sort and narrow (all its valves, say,
+                    or what's on GN2), on a page of its own; a tag there opens the drawing at its part.
+                </li>
             </ul>
         ),
     },
@@ -550,15 +554,17 @@ const TOPICS: Topic[] = [
                     its scale. In black and white, it leaves out the fluids, whose lines are all ink.
                 </li>
                 <li>
-                    <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and
-                    properties, and every line's tag, fluid, and ends, on all its pages (with each one's page, if
-                    there's more than one). Filter it in a spreadsheet for a valve list or an instrument list.
+                    <em>Parts list (CSV)</em>: every part's tag, what it is, the fluids on it, and its properties, on
+                    all its pages (with each one's page, if there's more than one). Filter it in a spreadsheet for a
+                    valve list or an instrument list.
                 </li>
                 <li>
-                    <em>Parts</em>, in the toolbar, shows the same list under the drawing: a table for each kind of part
-                    (ball valves, pressure transducers, tanks...), with how many there are and the specs any of them has
-                    (MAWP, size, Cv, range, channel), then the lines, from all its pages. Click a tag to go to its part,
-                    on its page.
+                    <em>Parts</em>, in the toolbar, opens every part in a table on a page of its own, in a new tab (the
+                    drawing stays open as it was): what each is, its page, the fluids on it, and its specs (MAWP, model,
+                    size, Cv, range...). Click a column to sort by it, and again to turn it around; show only valves,
+                    instruments, tanks..., one fluid, or one page; or find a tag, a model, a size. <em>Save as CSV</em>{" "}
+                    there saves what's shown. Click a tag to open the drawing at its part. Lines aren't parts: they're
+                    not in it.
                 </li>
             </ul>
         ),

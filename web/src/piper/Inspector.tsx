@@ -375,6 +375,7 @@ function PartPanel({
                             <StatePicker
                                 value={part.props.normal ?? ""}
                                 palette={palette}
+                                options={field.options}
                                 onChange={(value) => setProp("normal", value)}
                             />
                         )}

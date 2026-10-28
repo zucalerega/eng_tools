@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Drawing, Part } from "../drawing";
 import type { Dir } from "../geometry";
+import type { ValveState } from "../testdata";
 
 // What a kind of part is: how it's drawn (in its own frame, centered, unturned), where lines connect to it, what's
 // known about it, and how it behaves on a line. Kinds are drawn as the ISA (5.1) and ISO (10628, 1219) standards draw
@@ -50,6 +51,9 @@ export interface DrawContext {
     paper: string; // behind: what fills a symbol so lines under it don't show through
     muted: string;
     fill: string | null; // its state's color (a valve's NO or NC, or what a test says it is), if it has one
+    // And that state: open (a test's, or normally open), closed (or normally closed), or other (a test's neither, or
+    // failing in place). An ISO valve shows it as the position it puts the valve in. Left out: none.
+    state?: ValveState | null;
     fluid: string | null; // the color of what it holds (a tank's fluid), if anything
     fluidLabel: string;
     gas: boolean; // what it holds is a gas: a tank's all of it, not its lower part
@@ -86,6 +90,9 @@ export interface Kind {
     // Where its tag's drawn: beside it (under it, or beside it in a line going down), at its side (an instrument's),
     // in it, or not at all.
     tag: "beside" | "side" | "inside" | "none";
+    // Its tag under it, however tall it is, at this point across its frame, while it isn't turned on its side: a
+    // pump's under its base, a directional valve's under its solenoid's end, clear of the lines from its ports.
+    tagX?: number;
     inline?: readonly [string, string]; // two ports facing apart: it can be dropped into a line
     through?: boolean; // what flows in flows out: a line's fluid carries on through it
     resizable?: boolean; // a region or a box: dragged to a size

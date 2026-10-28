@@ -35,10 +35,14 @@ export const engine: Kind = {
     ),
 };
 
+/**
+ * A pump, as P&IDs draw a centrifugal one: its casing on its base, the suction into its middle from the side, and the
+ * discharge leaving its top tangentially, with a solid triangle in it pointing the way it pumps.
+ */
 export const pump: Kind = {
     id: "pump",
     name: "Pump",
-    box: () => [-20, -20, 20, 20],
+    box: () => [-20, -20, 20, 27],
     ports: () => [
         { id: "in", x: -20, y: 0, dir: "left", inset: 0 },
         { id: "out", x: 20, y: -20, dir: "right", inset: 0 },
@@ -51,12 +55,14 @@ export const pump: Kind = {
         NOTES,
     ],
     tag: "beside",
+    tagX: 0,
     through: true,
     draw: (_part, context) => (
         <>
+            <path d="M-11.4 16.4 L-17 27 H17 L11.4 16.4" fill={context.paper} {...ink(context, 1.4)} />
             <circle r={20} fill={context.paper} {...ink(context)} />
             <path d="M0 -20 H20" {...ink(context)} />
-            <path d="M-8 -10 L12 0 L-8 10 Z" fill="none" {...ink(context, 1.2)} />
+            <path d="M-9 -10.5 L13 0 L-9 10.5 Z" fill={context.ink} {...ink(context, 1)} />
         </>
     ),
 };
@@ -101,24 +107,24 @@ export const exchanger: Kind = {
     ),
 };
 
-/** Where a line leaves to the air: its open end turned down (a gooseneck), as vents are drawn, and fitted. */
+/** A vent's spray: three dashed rays fanning out from where its line ends. */
+const SPRAY = [-32, 0, 32]
+    .map((degrees) => {
+        const [cos, sin] = [Math.cos((degrees * Math.PI) / 180), Math.sin((degrees * Math.PI) / 180)];
+        return `M${(3 * cos).toFixed(2)} ${(3 * sin).toFixed(2)} L${(16 * cos).toFixed(2)} ${(16 * sin).toFixed(2)}`;
+    })
+    .join(" ");
+
+/** Where a line leaves to the air: the spray of what it lets go, fanning out from the line's end, in its color. */
 export const vent: Kind = {
     id: "vent",
     name: "Vent",
-    box: () => [-20, -9, 10, 8],
-    ports: () => [{ id: "in", x: -20, y: 0, dir: "left", inset: 0 }],
+    box: () => [-20, -9, 16, 9],
+    ports: () => [{ id: "in", x: -20, y: 0, dir: "left", inset: 20 }], // its line's drawn on to where the spray starts
     fields: [{ key: "to", label: "To", type: "text", placeholder: "Atmosphere" }, NOTES],
     tag: "beside",
-    draw: (part, context) => (
-        <>
-            <path d="M-20 0 H-6 A6 6 0 0 1 6 0 V6" fill="none" stroke={context.pipe ?? context.ink} strokeWidth={2} />
-            <path d="M3 6 H9" {...ink(context, 1.2)} />
-            {!part.tag && (
-                <Letters part={part} x={0} y={-14} size={7} fill={context.muted}>
-                    VENT
-                </Letters>
-            )}
-        </>
+    draw: (_part, context) => (
+        <path d={SPRAY} fill="none" stroke={context.pipe ?? context.ink} strokeWidth={1.4} strokeDasharray="2.6 2.2" />
     ),
 };
 

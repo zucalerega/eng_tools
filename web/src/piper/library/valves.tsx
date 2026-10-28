@@ -14,6 +14,7 @@ import {
     type DrawContext,
     type Field,
     type Kind,
+    type Port,
 } from "./kinds";
 
 // Valves, as ISA 5.1 draws them: a body of two triangles meeting at the middle (a bowtie), told apart by what's at
@@ -395,4 +396,216 @@ export const qd: Kind = {
     },
 };
 
-export const VALVE_KINDS: Kind[] = [valve, check, relief, regulator, burst, valve3, angle, qd];
+// Directional control valves, as ISO 1219 draws them in pneumatic schematics: a box for each of the valve's two
+// positions, side by side, each with its flow paths (an arrow from port to port) and its shut ports (a T); a solenoid
+// works it from its left end, and a spring returns it from its right. Its ports are on the box of the position it rests
+// in, by the spring, numbered as ISO 5599 numbers them: 1 the supply, 2 and 4 what it feeds, 3 and 5 its exhausts. Each
+// box is 40 across and 30 high, its ports a quarter, a half, and three quarters of the way across, on the grid.
+
+/** A position's paths, in its box from x to x + 40: arrows [from, to], and shut ports, each as [x, top or bottom]. */
+interface Position {
+    arrows: [[number, number], [number, number]][];
+    shut: [number, number][];
+}
+
+const TOP = -15;
+const FOOT = 15;
+
+/** An arrow from a port to another across a box, its head on the box's edge. */
+function flowPath([x1, y1]: [number, number], [x2, y2]: [number, number]): { line: string; head: string } {
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    const [ux, uy] = [(x2 - x1) / length, (y2 - y1) / length];
+    const back = (by: number, side: number) =>
+        `${(x2 - ux * by - uy * side).toFixed(2)} ${(y2 - uy * by + ux * side).toFixed(2)}`;
+    return { line: `M${x1} ${y1} L${back(5, 0)}`, head: `M${x2} ${y2} L${back(5.5, 2.4)} L${back(5.5, -2.4)} Z` };
+}
+
+/**
+ * A directional control valve's two positions, worked by its solenoid (left) and returned by its spring (right). The one
+ * its state puts it in (a test's, or at rest its normal state's) is tinted in that state's color: open, the position
+ * that's open (that feeds what it feeds from its supply); closed, the other; a test's neither, both.
+ */
+function DirectionalValve({
+    worked,
+    rest,
+    open,
+    context,
+}: {
+    worked: Position;
+    rest: Position;
+    open: "worked" | "rest"; // which position is open
+    context: DrawContext;
+}) {
+    const shown = context.fill && context.state ? context.state : null;
+    const tinted = (which: "worked" | "rest") =>
+        shown === "other" || (shown === "open" && which === open) || (shown === "closed" && which !== open);
+    const box = (x: number, position: Position, which: "worked" | "rest") => (
+        <g key={which}>
+            <rect x={x} y={TOP} width={40} height={30} fill={context.paper} stroke="none" />
+            {tinted(which) && (
+                <rect x={x} y={TOP} width={40} height={30} fill={context.fill!} fillOpacity={0.35} stroke="none" />
+            )}
+            {position.arrows.map(([from, to], index) => {
+                const { line, head } = flowPath([x + from[0], from[1]], [x + to[0], to[1]]);
+                return (
+                    <g key={index}>
+                        <path d={line} fill="none" {...ink(context, 1.2)} />
+                        <path d={head} fill={context.ink} {...ink(context, 0.8)} />
+                    </g>
+                );
+            })}
+            {position.shut.map(([at, y], index) => {
+                const inward = y < 0 ? 6 : -6;
+                return (
+                    <path
+                        key={index}
+                        d={`M${x + at} ${y} V${y + inward} M${x + at - 4} ${y + inward} H${x + at + 4}`}
+                        fill="none"
+                        {...ink(context, 1.2)}
+                    />
+                );
+            })}
+        </g>
+    );
+    return (
+        <>
+            {box(-40, worked, "worked")}
+            {box(0, rest, "rest")}
+            <rect x={-40} y={TOP} width={80} height={30} fill="none" {...ink(context, 1.4)} />
+            <path d="M0 -15 V15" {...ink(context, 1.4)} />
+            {/* The solenoid: a coil's box, struck through. */}
+            <rect x={-50} y={-8} width={10} height={16} fill={context.paper} {...ink(context, 1.2)} />
+            <path d="M-50 8 L-40 -8" {...ink(context, 1)} />
+            {/* The spring that returns it. */}
+            <path d="M40 0 L42 -5 L45 5 L48 -5 L51 5 L53 0" fill="none" {...ink(context, 1.2)} />
+        </>
+    );
+}
+
+const PORT_INSET = 5; // from a port on the grid to its box's edge
+
+const dcvPort = (id: string, x: number, top: boolean): Port => ({
+    id,
+    x,
+    y: top ? -20 : 20,
+    dir: top ? "up" : "down",
+    inset: PORT_INSET,
+});
+
+/** A 3/2 valve's normal state: what its supply does at rest. */
+const NORMAL_32: Field = {
+    key: "normal",
+    label: "Normal state",
+    type: "select",
+    options: [
+        { value: "", label: "Not set" },
+        { value: "NC", label: "Normally closed: 1 shut, 2 to 3 at rest", short: "NC" },
+        { value: "NO", label: "Normally open: 1 to 2 at rest", short: "NO" },
+    ],
+};
+
+/** 1 to 2, the supply to what it feeds, with 3 shut; and 2 to 3, what it feeds exhausted, with 1 shut. */
+const FEEDS_32: Position = {
+    arrows: [
+        [
+            [10, FOOT],
+            [10, TOP],
+        ],
+    ],
+    shut: [[30, FOOT]],
+};
+const EXHAUSTS_32: Position = {
+    arrows: [
+        [
+            [10, TOP],
+            [30, FOOT],
+        ],
+    ],
+    shut: [[10, FOOT]],
+};
+
+/**
+ * A 3/2 solenoid valve: three ports, two positions. Normally closed, it rests with its supply (1) shut and what it
+ * feeds (2) exhausted (3), and feeds 2 from 1 while its solenoid's on; normally open, the other way round. A pilot for a
+ * pneumatic valve's actuator, as a pneumatics panel has them.
+ */
+export const valve32: Kind = {
+    id: "valve32",
+    name: "3/2 solenoid valve",
+    box: () => [-50, TOP, 53, FOOT],
+    ports: () => [dcvPort("1", 10, false), dcvPort("2", 10, true), dcvPort("3", 30, false)],
+    fields: [NORMAL_32, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
+    state: true,
+    reads: "state",
+    tag: "beside",
+    tagX: -20,
+    through: true,
+    draw: (part, context) => {
+        const normallyOpen = part.props.normal === "NO";
+        return (
+            <DirectionalValve
+                worked={normallyOpen ? EXHAUSTS_32 : FEEDS_32}
+                rest={normallyOpen ? FEEDS_32 : EXHAUSTS_32}
+                open={normallyOpen ? "rest" : "worked"}
+                context={context}
+            />
+        );
+    },
+};
+
+/**
+ * A 5/2 solenoid valve: five ports, two positions. At rest it feeds 2 from its supply (1) and exhausts 4 by 5; worked,
+ * it feeds 4 and exhausts 2 by 3: a double-acting actuator's two sides, one filled as the other's let out. It has no
+ * normal state; a test's open (its solenoid on) is the position it's worked to.
+ */
+export const valve52: Kind = {
+    id: "valve52",
+    name: "5/2 solenoid valve",
+    box: () => [-50, TOP, 53, FOOT],
+    ports: () => [
+        dcvPort("1", 20, false),
+        dcvPort("2", 30, true),
+        dcvPort("3", 30, false),
+        dcvPort("4", 10, true),
+        dcvPort("5", 10, false),
+    ],
+    fields: [SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
+    reads: "state",
+    tag: "beside",
+    tagX: -20,
+    through: true,
+    draw: (_part, context) => (
+        <DirectionalValve
+            worked={{
+                arrows: [
+                    [
+                        [20, FOOT],
+                        [10, TOP],
+                    ],
+                    [
+                        [30, TOP],
+                        [30, FOOT],
+                    ],
+                ],
+                shut: [[10, FOOT]],
+            }}
+            rest={{
+                arrows: [
+                    [
+                        [20, FOOT],
+                        [30, TOP],
+                    ],
+                    [
+                        [10, TOP],
+                        [10, FOOT],
+                    ],
+                ],
+                shut: [[30, FOOT]],
+            }}
+            open="worked"
+            context={context}
+        />
+    ),
+};
+
+export const VALVE_KINDS: Kind[] = [valve, check, relief, regulator, burst, valve3, angle, qd, valve32, valve52];

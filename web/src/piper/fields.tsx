@@ -2,6 +2,7 @@ import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "re
 import type { Palette } from "./colors";
 import type { Drawing } from "./drawing";
 import { fluidOf, fluidsOf } from "./fluids";
+import type { Option } from "./library/kinds";
 import type { TestChannel } from "./testdata";
 
 // The inspector's fields: text with its units, choices, a valve's normal state, a fluid, a test's channel, and whether
@@ -166,22 +167,35 @@ export function Row({
     );
 }
 
-/** A valve's normal state: open (NO), closed (NC), or not said, each in the color it's drawn in. */
+/**
+ * A valve's normal state: open (NO), closed (NC), failing in place (FIP), or not said, each in the color it's drawn in.
+ * Given its field's options, only those, as they say them (a spring-return valve can't fail in place).
+ */
 export function StatePicker({
     value,
     palette,
     onChange,
+    options,
 }: {
     value: string;
     palette: Palette;
     onChange: (value: string) => void;
+    options?: Option[];
 }) {
-    const choices: [string, string, string][] = [
-        ["NO", "Normally open", palette.no],
-        ["NC", "Normally closed", palette.nc],
-        ["FIP", "Fails in place (double-acting)", palette.fip],
-        ["", "Not set", palette.muted],
-    ];
+    const choices: [string, string, string][] = (
+        [
+            ["NO", "Normally open", palette.no],
+            ["NC", "Normally closed", palette.nc],
+            ["FIP", "Fails in place (double-acting)", palette.fip],
+            ["", "Not set", palette.muted],
+        ] as [string, string, string][]
+    )
+        .filter(([choice]) => !options || options.some((option) => option.value === choice))
+        .map(([choice, label, color]) => [
+            choice,
+            options?.find((option) => option.value === choice)?.label ?? label,
+            color,
+        ]);
     return (
         <div className="piper-states" role="group" aria-label="Normal state">
             {choices.map(([choice, label, color]) => (

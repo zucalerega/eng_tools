@@ -164,10 +164,27 @@ what it is, `data-hit`).
   14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
   a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
   or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
-  vent's end turns down (a gooseneck). Valves (ball, gate, globe,
+  vent is the spray of what it lets go, three dashed rays from its line's end in the line's
+  color; a pump stands on its base, its suction into its middle, its discharge leaving its top,
+  and a solid triangle in it pointing the way it pumps. The 3/2 and 5/2 solenoid valves are
+  ISO 1219's directional control valves, as pneumatic schematics draw them: a box 40 across
+  and 30 high for each of their two positions, with its flow paths (arrows) and shut ports (a
+  T), a solenoid at the left end and the spring that returns it at the right. Their ports are
+  on the box of the position they rest in, numbered as ISO 5599 numbers them (1 the supply, 2
+  and 4 what it feeds, 3 and 5 its exhausts), and the position a valve's state puts it in is
+  tinted in that state's color (`DrawContext.state`): at rest, its normal state's (a 3/2 is
+  normally closed, its supply shut and 2 exhausted, or normally open; a 5/2 has none); in a
+  test, open (the position that feeds 2 from 1, or a 5/2 worked) or closed. Their tags are
+  under their solenoids' ends, clear of their ports' lines (`tagX`, as a pump's is under its
+  base). A manifold is a block that takes its supply at one end, its far end a port too, and
+  gives it out to 2 to 8 outlets along its top (`outlets`), its bore drawn through it; a line
+  on an outlet that's taken away stays, ending where the outlet was (`updatePart`). A diffuser
+  goes into a line, as a tank's pressurant inlet has one: its body, a perforated face, and
+  arrows spreading out from it. Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
-  regulator, burst disc, quick disconnect); vessels (tanks, spheres, bottles and COPVs,
-  dewars); flow elements (orifices, venturis, cavitating venturis, flow meters, filters);
+  regulator, burst disc, quick disconnect, 3/2 and 5/2 solenoid); vessels (tanks, spheres,
+  bottles and COPVs, dewars); flow elements (orifices, venturis, cavitating venturis, flow
+  meters, filters, diffusers);
   instruments (pressure transducers, gauges, and switches, thermocouples, RTDs, load cells,
   flow, level, position, and differential pressure sensors, each an ISA bubble with the first
   letter of what it measures in it whatever its tag says (P, T, F, W, L, Z, and PD for a
@@ -176,7 +193,7 @@ what it is, `data-hit`).
   transducers, two or three bubbles side by side on one tap, A, B, C, each reading its own
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
-  fittings (tees, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
+  fittings (tees, manifolds, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
   legend, a title block, pictures). The library's search finds a part by any of its names (MOV, PRV,
   COPV, cav...). A part is dragged from it onto the drawing, clicked and then placed with a
   click (Shift-click to place more), or double-clicked into the middle of the view. The drag
@@ -483,7 +500,8 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
   (a valve gas flows through only the way it points; in liquid lines, a valve, which lets flow
   back), regulators, orifices, cavitating venturis, and liquid lines modeled as lines (Yorg's
   `line`: friction, and the liquid's inertia). What each kind is comes from `ROLES`, the first
-  of its choices unless its `sim.as` picks another; a pump, a three-way valve, or a figure
+  of its choices unless its `sim.as` picks another; a pump, a three-way valve, a 3/2 or 5/2
+  solenoid valve (`NOT_SIMULATED`), or a figure
   (only drawn: an imported drawing's tanks may be) isn't simulated, so the lines at it end
   there, as the model says (of a figure, where lines do). Lines that carry signals aren't in it.
 - **Liquid or gas**: what flows through a part is what its lines' fluids say (Piper's fluids say

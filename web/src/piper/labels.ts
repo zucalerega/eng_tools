@@ -1,6 +1,6 @@
 import type { Drawing, LabelSize, Line, Part, Point } from "./drawing";
 import { fluidOf } from "./fluids";
-import { inBox, segmentsOf, type Box } from "./geometry";
+import { inBox, segmentsOf, toWorld, type Box } from "./geometry";
 import { boxOf, kindOf } from "./library/index";
 import { MAWP, type Field } from "./library/kinds";
 import { linesOn, portOf } from "./ports";
@@ -102,6 +102,9 @@ export function labelPlace(
         return across
             ? { at: { x: part.x, y: below }, anchor: "middle" }
             : { at: { x: box.x1 + 6, y: part.y + size / 3 }, anchor: "start" };
+    }
+    if (kind.tagX !== undefined && (part.rotation === 0 || part.rotation === 180)) {
+        return { at: { x: toWorld(part, { x: kind.tagX, y: 0 }).x, y: below }, anchor: "middle" };
     }
     const wide = box.x1 - box.x0 >= box.y1 - box.y0 || kind.tag === "inside";
     return wide

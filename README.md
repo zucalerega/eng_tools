@@ -335,14 +335,18 @@ the keys.
   goes to another page, and a part on it (**To page**, **At**): **Go to**, or a double-click,
   goes there, and the part it arrives at lists it under **Comes from**. Once a diagram has
   pages, a tab opened before Piper had them is told to reload rather than save one page of it.
-- **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav...), or
+- **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav, 3x2...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
-  check, relief, regulators, burst discs, quick disconnects...), tanks, bottles and COPVs,
-  orifices and venturis, flow meters, filters, instruments, engines, pumps, vents, tees, a box
-  for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG or
-  a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…** on
-  the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
-  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). An
+  check, relief, regulators, burst discs, quick disconnects, 3/2 and 5/2 solenoid valves...),
+  tanks, bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
+  engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
+  box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
+  or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**
+  on the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
+  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). The 3/2
+  and 5/2 solenoid valves are drawn as pneumatic schematics draw them (ISO 1219): a box for each
+  position, the solenoid at one end and the return spring at the other, their ports numbered as
+  ISO 5599 numbers them, and the position they're in tinted in their state's color. An
   instrument is a bubble with the letter of what it measures in it, whatever its tag says (P
   for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,

@@ -2,7 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 import { LIGHT } from "../src/piper/colors";
+import { DiagramView } from "../src/piper/DiagramView";
 import { emptyDrawing, isPortEnd, newLine, newPart, type Part } from "../src/piper/drawing";
+import { updatePart } from "../src/piper/edit";
 import { example } from "../src/piper/example";
 import { svgOf } from "../src/piper/exports";
 import { fluidsOf, fluidsUsed, STANDARD_FLUIDS, withFluid } from "../src/piper/fluids";
@@ -13,6 +15,9 @@ import { ALL_KINDS, boxOf, kindOf, PRESETS, searchPresets, titleOf } from "../sr
 import { BODY } from "../src/piper/library/valves";
 import { textWidth } from "../src/piper/pdf";
 import { partsById, pathOf, portsOf } from "../src/piper/ports";
+import type { ValveState } from "../src/piper/testdata";
+
+const META = { name: "Feed system", revision: "1", savedAt: null, by: "" };
 
 // The parts library, held to what the editor relies on: ports on the grid, at a part's edge, with ids of their own,
 // inline parts' two ports facing apart, and every entry's kind known.
@@ -136,9 +141,141 @@ test("valves come without their state written beside them: their color says it",
     }
 });
 
+/** Where a symbol's flow arrows start: each arrow's line (not its head, which is filled), by its first point. */
+const arrowStarts = (symbol: Document) =>
+    Array.from(symbol.querySelectorAll('path[fill="none"]'), (path) => path.getAttribute("d") ?? "")
+        .filter((d) => /^M-?[\d.]+ -?15 L/.test(d))
+        .map((d) => d.split(" L")[0]);
+
+/** The positions tinted in a state's color: their boxes' left edges, and the color. */
+const tinted = (symbol: Document) =>
+    Array.from(symbol.querySelectorAll("rect[fill-opacity]"), (rect) => [
+        rect.getAttribute("x"),
+        rect.getAttribute("fill"),
+    ]);
+
+test("3/2 and 5/2 solenoid valves are drawn as ISO 1219 draws them, their ports on the position they rest in", () => {
+    const valve = (kind: string, props: Record<string, string> = {}) => newPart(kind, { x: 0, y: 0 }, { props });
+    // A 3/2: its supply (1) and exhaust (3) below the box by its spring, what it feeds (2) above.
+    const ports = (part: Part) =>
+        kindOf(part.kind)
+            .ports(part)
+            .map((port) => [port.id, port.x, port.y, port.dir]);
+    expect(ports(valve("valve32"))).toEqual([
+        ["1", 10, 20, "down"],
+        ["2", 10, -20, "up"],
+        ["3", 30, 20, "down"],
+    ]);
+    // Normally closed, it rests with 2 exhausted to 3 (1 shut), and its solenoid joins 1 to 2; normally open, the
+    // other way round. The position it rests in (0 to 40, by the spring) is in its normal state's color.
+    const closed = drawn(valve("valve32", { normal: "NC" }));
+    expect(arrowStarts(closed)).toEqual(["M-30 15", "M10 -15"]);
+    expect(tinted(closed)).toEqual([["0", LIGHT.nc]]);
+    const open = drawn(valve("valve32", { normal: "NO" }));
+    expect(arrowStarts(open)).toEqual(["M-30 -15", "M10 15"]);
+    expect(tinted(open)).toEqual([["0", LIGHT.no]]);
+    expect(tinted(drawn(valve("valve32")))).toEqual([]); // no normal state, no color
+    // A 5/2: 1 below the middle, 2 and 4 above, 3 and 5 below. At rest 1 feeds 2 and 4 exhausts by 5; worked, 1 feeds
+    // 4 and 2 exhausts by 3. It has no normal state.
+    expect(ports(valve("valve52"))).toEqual([
+        ["1", 20, 20, "down"],
+        ["2", 30, -20, "up"],
+        ["3", 30, 20, "down"],
+        ["4", 10, -20, "up"],
+        ["5", 10, 20, "down"],
+    ]);
+    expect(arrowStarts(drawn(valve("valve52")))).toEqual(["M-20 15", "M-10 -15", "M20 15", "M10 -15"]);
+    expect(kindOf("valve52").fields.map((field) => field.key)).not.toContain("normal");
+    // Their tags go under their solenoids' ends, clear of the lines from their ports.
+    const part = newPart("valve32", { x: 100, y: 50 }, { tag: "SV-1" });
+    const box = boxOf(part, emptyDrawing());
+    const place = labelPlace(part, box, 8);
+    expect([place.at.x, place.at.y > box.y1, place.anchor]).toEqual([80, true, "middle"]);
+});
+
+test("a test's state tints the position it puts a directional valve in", () => {
+    const valve = newPart("valve32", { x: 0, y: 0 }, { tag: "SV-1", props: { normal: "NC" } });
+    const drawing = { ...emptyDrawing(), parts: [valve] };
+    const shown = (state: ValveState) => {
+        const live = new Map([[valve.id, { text: state, state, missing: false }]]);
+        const markup = renderToStaticMarkup(
+            createElement("svg", null, createElement(DiagramView, { drawing, palette: LIGHT, meta: META, live })),
+        );
+        return tinted(new DOMParser().parseFromString(markup, "image/svg+xml"));
+    };
+    // Open, a normally closed one's solenoid has it feeding (the position by it, -40 to 0); closed, it's at rest.
+    expect(shown("open")).toEqual([["-40", LIGHT.no]]);
+    expect(shown("closed")).toEqual([["0", LIGHT.nc]]);
+    expect(shown("other")).toEqual([
+        ["-40", LIGHT.other],
+        ["0", LIGHT.other],
+    ]);
+});
+
+test("a manifold has as many outlets as it's set to, and a line on one taken away stays, ending where it was", () => {
+    const manifold = newPart("manifold", { x: 0, y: 0 }, { tag: "MAN-1", props: { outlets: "6" } });
+    const ids = (part: Part) =>
+        kindOf(part.kind)
+            .ports(part)
+            .map((port) => port.id);
+    expect(ids(newPart("manifold", { x: 0, y: 0 }))).toEqual(["in", "end", "1", "2", "3", "4"]); // 4 until it's set
+    expect(ids(manifold)).toEqual(["in", "end", "1", "2", "3", "4", "5", "6"]);
+    // Its outlets along its top, 20 apart, on the grid; its supply at one end and its far end at the other.
+    const outlets = portsOf(manifold).filter((port) => /^\d$/.test(port.id));
+    expect(outlets.map((port) => [port.at.x, port.at.y, port.dir])).toEqual(
+        [-50, -30, -10, 10, 30, 50].map((x) => [x, -10, "up"]),
+    );
+    expect(
+        portsOf(manifold)
+            .filter((port) => !/^\d$/.test(port.id))
+            .map((port) => port.at),
+    ).toEqual([
+        { x: -70, y: 0 },
+        { x: 70, y: 0 },
+    ]);
+    const first = newLine({ part: manifold.id, port: "1" }, { x: -50, y: -60 });
+    const last = newLine({ part: manifold.id, port: "6" }, { x: 50, y: -60 });
+    const drawing = { ...emptyDrawing(), parts: [manifold], lines: [first, last] };
+    const fewer = updatePart(drawing, manifold.id, (part) => ({ ...part, props: { ...part.props, outlets: "2" } }));
+    expect(fewer.lines.find((line) => line.id === first.id)!.from).toEqual({ part: manifold.id, port: "1" });
+    expect(fewer.lines.find((line) => line.id === last.id)!.from).toEqual({ x: 50, y: -10 });
+    // Its outlets are a choice of 2 to 8, 4 as it starts.
+    const field = kindOf("manifold").fields.find((entry) => entry.key === "outlets")!;
+    expect(field.options!.map((option) => option.label)).toEqual(["2", "3", "4", "5", "6", "7", "8"]);
+});
+
+test("a pump stands on its base with its tag under it, and a vent is the spray of what it lets go", () => {
+    const pump = newPart("pump", { x: 0, y: 0 }, { tag: "P-1" });
+    const box = boxOf(pump, emptyDrawing());
+    const place = labelPlace(pump, box, 8);
+    expect([place.at.x, place.at.y > box.y1]).toEqual([0, true]);
+    // Its ports where they were, so a pump on a drawing from before keeps its lines where they were.
+    expect(
+        kindOf("pump")
+            .ports(pump)
+            .map((port) => [port.id, port.x, port.y]),
+    ).toEqual([
+        ["in", -20, 0],
+        ["out", 20, -20],
+    ]);
+    // The vent: three dashed rays from where its line ends, and nothing else, whether it's tagged or not.
+    for (const tag of ["", "OVNT"]) {
+        const vent = newPart("vent", { x: 0, y: 0 }, { tag });
+        const symbol = drawn(vent);
+        const paths = Array.from(symbol.querySelectorAll("*"), (element) => element.tagName).filter(
+            (name) => name !== "svg",
+        );
+        expect(paths, tag).toEqual(["path"]);
+        expect(symbol.querySelector("path")!.getAttribute("d")!.match(/M/g), tag).toHaveLength(3);
+        expect(symbol.querySelector("path")!.getAttribute("stroke-dasharray"), tag).toBeTruthy();
+        expect(portsOf(vent)[0]!.edge, tag).toEqual({ x: 0, y: 0 }); // its line's drawn on to the spray
+    }
+});
+
 test("every part that holds pressure lists its MAWP, and a vessel its MEOP beside it", () => {
     const holds = ["valve", "angle", "valve3", "check", "relief", "regulator", "burst", "qd", "orifice", "venturi"];
     holds.push("flowmeter", "filter", "instrument", "gauge", "cap", "reducer", "hose", "engine", "pump", "exchanger");
+    holds.push("valve32", "valve52", "diffuser", "manifold");
     for (const id of [...holds, "tank", "sphere", "bottle", "dewar"]) {
         expect(
             kindOf(id).fields.map((field) => field.key),
@@ -184,6 +321,10 @@ test("the library finds parts by any of their names", () => {
     expect(names("cav")).toContain("Cavitating venturi");
     expect(names("thermo")).toEqual(["Thermocouple"]);
     expect(names("rupture disk")).toEqual(["Burst disc"]);
+    expect(names("3x2")).toEqual(["3/2 solenoid valve"]);
+    expect(names("5/2")).toEqual(["5/2 solenoid valve"]);
+    expect(names("diffuser")).toEqual(["Diffuser"]);
+    expect(names("manifold")).toEqual(["Manifold"]);
     expect(names("")).toHaveLength(PRESETS.length);
     expect(names("nothing by this name")).toEqual([]);
 });

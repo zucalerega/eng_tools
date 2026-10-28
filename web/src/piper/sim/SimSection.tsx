@@ -8,6 +8,7 @@ import type { Catalog, Link, ModelPart, Quantity, Role, Setting } from "./api";
 import {
     kindOfType,
     linkRole,
+    NOT_SIMULATED,
     readChoices,
     ROLE_NAMES,
     roleChoices,
@@ -358,7 +359,7 @@ export function PartSimSection({ store, sim, part }: { store: EditorStore; sim: 
     const hidden = new Set(
         model?.type === "gas_junction" ? ["wall"] : model?.type === "gas_valve" && role === "check" ? ["check"] : [],
     );
-    if (choices.length === 1 && choices[0] === "none" && part.kind !== "pump" && part.kind !== "valve3") {
+    if (choices.length === 1 && choices[0] === "none" && !NOT_SIMULATED.has(part.kind)) {
         return null; // a note, a picture: nothing of it's in a model
     }
     return (

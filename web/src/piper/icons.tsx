@@ -1,4 +1,4 @@
-import { normalFill, type Palette } from "./colors";
+import { normalFill, normalState, type Palette } from "./colors";
 import { emptyDrawing, newPart, type Part } from "./drawing";
 import { fluidOf, isGas } from "./fluids";
 import { kindOf } from "./library/index";
@@ -29,6 +29,7 @@ export function PartIcon({ part, palette, size = 40 }: { part: Part; palette: Pa
                 paper: palette.paper,
                 muted: palette.muted,
                 fill,
+                state: kind.state ? normalState(part.props.normal) : null,
                 fluid: holds?.color ?? null,
                 fluidLabel: holds?.label ?? "",
                 gas: holds ? isGas(drawing, holds.id) : false,

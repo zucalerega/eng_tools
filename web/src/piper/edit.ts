@@ -611,7 +611,21 @@ export function updatePart(drawing: Drawing, id: string, change: (part: Part) =>
         return drawing;
     }
     const after = change(before);
-    const next = { ...drawing, parts: drawing.parts.map((part) => (part.id === id ? after : part)) };
+    // A port it no longer has (a manifold with fewer outlets): a line on it ends where it was, to be drawn on to another.
+    const kept = new Set(portsOf(after).map((port) => port.id));
+    const was = new Map(portsOf(before).map((port) => [port.id, port.at]));
+    const loose = (end: End): End => {
+        if (!isPortEnd(end) || end.part !== id || kept.has(end.port)) {
+            return end;
+        }
+        const at = was.get(end.port) ?? before;
+        return { x: at.x, y: at.y };
+    };
+    const lines = drawing.lines.map((line) => {
+        const [from, to] = [loose(line.from), loose(line.to)];
+        return from === line.from && to === line.to ? line : { ...line, from, to };
+    });
+    const next = { ...drawing, parts: drawing.parts.map((part) => (part.id === id ? after : part)), lines };
     // What it is, how big, or how many it is may have moved its ports (a valve's body is the same size whatever it is,
     // but a region's isn't, nor a duplicated transducer's): its lines follow.
     const at = (part: Part) =>

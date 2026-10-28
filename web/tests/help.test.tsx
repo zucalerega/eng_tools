@@ -40,7 +40,7 @@ test("Help opens beside the page, with the help and the app's own", async () => 
     const help = await openHelp();
     expect(help.getByRole("link", { name: "The guide and troubleshooting" }).getAttribute("href")).toBe("/help");
     expect(help.getByRole("link", { name: "SolidWorks" }).getAttribute("href")).toBe("/vault/solidworks");
-    expect(help.getByText(/how to do something in Vault or Yorg, or what an error means/)).toBeTruthy();
+    expect(help.getByText(/how to do something in Vault, Yorg or Piper, or what an error means/)).toBeTruthy();
     // The page stays as it was, beside it.
     expect(await screen.findByRole("navigation", { name: "Folder tree" })).toBeTruthy();
 
@@ -100,7 +100,7 @@ test("the conversation stays with the tab, through a reload", async () => {
     // Someone else signing in on the same tab, as on a lab computer, doesn't get it.
     renderApp(await team.member("Ben"), "/vault");
     const theirs = await openHelp();
-    expect(await theirs.findByText(/how to do something in Vault or Yorg/)).toBeTruthy();
+    expect(await theirs.findByText(/how to do something in Vault, Yorg or Piper/)).toBeTruthy();
     expect(theirs.queryByText("Where's the trash?")).toBeNull();
 });
 

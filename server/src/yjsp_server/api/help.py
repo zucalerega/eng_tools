@@ -1,5 +1,5 @@
 """The help, as a page anyone can open (/help), and as Markdown for AI tools (/help.md, and /llms.txt, which points AI
-tools to it). help.py has what's in it; signed-in members see how Vault and Yorg work inside too."""
+tools to it). help.py has what's in it; signed-in members see how Vault, Yorg, and Piper work inside too."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
@@ -13,18 +13,22 @@ from .pages import FAVICON, GOLD, PALETTE, SITE, THEME, esc
 router = APIRouter(include_in_schema=False)
 
 _ORBIT = (
-    '<svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">'
+    '<svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true">'
     f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{GOLD}"/></svg>'
 )
+# The top bar as the web app's (web/src/styles.css, .topbar): the mark and the site's wordmark, then the page it's on,
+# as the web app shows its pages: small capitals, underlined in gold.
 _STYLE = f"""{PALETTE}
   body {{ margin: 0; background: var(--bg); color: var(--text); }}
   a {{ color: var(--accent); }}
   .bar {{ position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .75rem; height: 3.5rem;
     padding: 0 1.25rem; background: #08111f; color: #fff; border-bottom: 2px solid {GOLD}; }}
-  .brand {{ display: inline-flex; align-items: center; gap: .55rem; color: #fff; text-decoration: none;
-    font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: 1.1rem; font-weight: 700;
-    letter-spacing: .22em; }}
-  .where {{ color: #b9c4d6; font-size: .95rem; }}
+  .brand {{ display: inline-flex; align-items: center; gap: .6rem; color: #fff; text-decoration: none;
+    font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: 1.05rem; font-weight: 700;
+    letter-spacing: .24em; }}
+  .where {{ display: flex; align-items: center; align-self: stretch; margin: 0 0 -2px 1.25rem; padding: 0 .75rem;
+    border-bottom: 2px solid {GOLD}; color: #fff; font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI",
+    sans-serif; font-size: .78rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }}
   .grow {{ flex: 1; }}
   .bar a.action, .bar button {{ display: inline-flex; align-items: center; height: 2.1rem; padding: 0 .8rem;
     border: 1px solid rgb(255 255 255 / 28%); border-radius: 6px; background: transparent; color: #fff; font: inherit;
@@ -95,7 +99,7 @@ document.getElementById("copy").addEventListener("click", async (event) => {
 
 
 def _member(request: Request, db: Session) -> bool:
-    """Whether the browser is a signed-in member's, who sees how Vault and Yorg work inside too."""
+    """Whether the browser is a signed-in member's, who sees how Vault, Yorg, and Piper work inside too."""
     user = session_user(request, db)
     return user is not None and user.status == UserStatus.ACTIVE
 
@@ -113,7 +117,10 @@ def _contents(found: help.Help, members: bool) -> str:
     more = (
         ""
         if members
-        else '<p>Signed in, members also see how Vault and Yorg work inside: <a href="/?next=/help">sign in</a>.</p>'
+        else (
+            "<p>Signed in, members also see how Vault, Yorg, and Piper work inside: "
+            '<a href="/?next=/help">sign in</a>.</p>'
+        )
     )
     return f'<nav class="contents" aria-label="Contents"><ul>{"".join(items)}</ul>{more}</nav>'
 
@@ -139,17 +146,19 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>Help · {SITE}</title>
-<meta name="description" content="Help for YJSP, the Yellow Jacket Space Program's engineering tools: Vault and Yorg.">
+<meta name="description" content="Help for YJSP, the Yellow Jacket Space Program's tools: Vault, Yorg, and Piper.">
 <link rel="alternate" type="text/markdown" href="/help.md" title="The help, as Markdown">
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
-<body><header class="bar"><a class="brand" href="/">{_ORBIT}{SITE}</a><span class="where">Help</span>
+<body><header class="bar"><a class="brand" href="/">{_ORBIT}{SITE}</a>
+<span class="where" aria-current="page">Help</span>
 <span class="grow"></span><a class="action markdown" href="/help.md">Markdown</a>
 <button type="button" id="copy">Copy for an AI</button>{account}</header>
 <div class="layout">{_contents(found, members)}<main>
 <section class="intro"><h1>Help</h1>
 <p>YJSP is the Yellow Jacket Space Program's engineering tools: <strong>Vault</strong>, for the team's SolidWorks and
-STEP files, and <strong>Yorg</strong>, for its test data. Find your way with the contents, or search the page (Ctrl+F)
-for words from a message you saw: <a href="#troubleshooting">Troubleshooting</a> has what each error means.</p>
+STEP files; <strong>Yorg</strong>, for its test data; and <strong>Piper</strong>, for its P&amp;IDs. Find your way with
+the contents, or search the page (Ctrl+F) for words from a message you saw:
+<a href="#troubleshooting">Troubleshooting</a> has what each error means.</p>
 <p>Working it out with an AI assistant (ChatGPT, Claude, Gemini)? <strong>Copy for an AI</strong> puts all of this on
 your clipboard as Markdown, to paste into a chat with it, or give it this address: <code>{site}/help.md</code>.</p>
 {asking}</section>
@@ -167,9 +176,9 @@ def help_markdown(request: Request, db: DB, settings: Config) -> Response:
 
 > For an AI assistant helping someone with YJSP (version {__version__}): this is the site's own help, from {site}/help.
 > YJSP is the Yellow Jacket Space Program's engineering tools: Vault, version control for the team's SolidWorks and
-> STEP files, and Yorg, for its test data. Answer from this help, and say so when it doesn't cover something: then the
-> person should ask the team's admins. Each heading ends with its anchor on the page ({{#vault-api}} is
-> {site}/help#vault-api), for linking to it.
+> STEP files; Yorg, for its test data; and Piper, for its P&IDs. Answer from this help, and say so when it doesn't
+> cover something: then the person should ask the team's admins. Each heading ends with its anchor on the page
+> ({{#vault-api}} is {site}/help#vault-api), for linking to it.
 """
     text = preface + "\n" + found.markdown(members, f"{site}/help") + "\n"
     return Response(text, media_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-cache"})
@@ -182,8 +191,8 @@ def llms_txt(settings: Config) -> Response:
     text = f"""# {SITE}
 
 > The Yellow Jacket Space Program's engineering tools: Vault, version control for the team's SolidWorks and STEP files
-> (check-out and check-in, version history, folder permissions, a SolidWorks add-in), and Yorg, for its test data (CSV
-> files from hotfires and cold flows, plotted on one time axis).
+> (check-out and check-in, version history, folder permissions, a SolidWorks add-in); Yorg, for its test data (CSV
+> files from hotfires and cold flows, plotted on one time axis); and Piper, for its P&IDs (the fluid systems' diagrams).
 
 ## Docs
 

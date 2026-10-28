@@ -676,6 +676,70 @@
     font-weight: 600;
 }
 
+/* A part's links: pages about it, each opened in a tab of its own. */
+.piper-links {
+    margin: 0.55rem 0;
+}
+
+.piper-links h3 {
+    margin: 0 0 0.2rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.piper-links ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.piper-links li {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 1.8rem;
+}
+
+.piper-links li a {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.88rem;
+}
+
+.piper-links li a::after {
+    content: " ↗";
+    color: var(--muted);
+}
+
+.piper-link-form {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0.4rem 0;
+}
+
+.piper-link-form input {
+    min-width: 0;
+    height: 1.8rem;
+    font-size: 0.85rem;
+}
+
+.piper-link-form .piper-warning {
+    margin: 0;
+}
+
+.piper-link-buttons {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.piper-link-mark {
+    cursor: pointer;
+}
+
 .piper-carry {
     margin: -0.1rem 0 0.3rem;
 }

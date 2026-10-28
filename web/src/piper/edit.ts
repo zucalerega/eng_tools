@@ -3,6 +3,7 @@ import {
     newId,
     newLine,
     newPart,
+    readLinks,
     type Drawing,
     type End,
     type Line,
@@ -869,12 +870,18 @@ export function pasteClip(drawing: Drawing, clip: Clip, by: Point): { drawing: D
     };
 }
 
-/** A clip read back from the clipboard's text, if it's one. */
+/** A clip read back from the clipboard's text, if it's one: its parts' links only those a part can have (readLinks),
+ * as anything can be on a clipboard. */
 export function readClip(text: string): Clip | null {
     try {
         const value = JSON.parse(text) as Partial<Clip>;
         if (value.piper === 1 && Array.isArray(value.parts) && Array.isArray(value.lines)) {
-            return value as Clip;
+            const parts = value.parts.map((part) => {
+                const { links, ...rest } = part;
+                const kept = readLinks(links);
+                return kept.length > 0 ? { ...rest, links: kept } : rest;
+            });
+            return { ...(value as Clip), parts };
         }
     } catch {
         // not a clip: something else on the clipboard

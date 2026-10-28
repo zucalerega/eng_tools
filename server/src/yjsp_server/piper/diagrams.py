@@ -43,7 +43,7 @@ class Changed(Conflict):
 
 class DrawingNewer(Conflict):
     """A save in an older format than the diagram's drawing is in: from a tab still running an older Piper, which would
-    leave out what it doesn't know of (all but a page of it, or its simulation's settings)."""
+    leave out what it doesn't know of (all but a page of it, its simulation's settings, or its parts' links)."""
 
     code = "drawing_newer"
 
@@ -55,7 +55,7 @@ class Locked(Conflict):
 
 
 # What each format of drawing added, which a tab from before it would leave out: said when its save is refused.
-ADDED = {2: "pages", 3: "simulation settings"}
+ADDED = {2: "pages", 3: "simulation settings", 4: "links on its parts"}
 
 
 def can_delete(user: User, diagram: Diagram) -> bool:

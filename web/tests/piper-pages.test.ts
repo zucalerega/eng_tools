@@ -58,7 +58,7 @@ function twoPages(): { document: Document; regulator: string; valve: string } {
 test("a drawing from before pages is one page; a drawing of pages, each of them, with what they lack filled in", () => {
     const old = { format: 1, parts: [newPart("tank", { x: 0, y: 0 })], lines: [], fluids: [], style: {} };
     const one = readDocument(old);
-    expect([one.format, one.pages.length, one.pages[0]!.name, one.pages[0]!.parts.length]).toEqual([3, 1, "Page 1", 1]);
+    expect([one.format, one.pages.length, one.pages[0]!.name, one.pages[0]!.parts.length]).toEqual([4, 1, "Page 1", 1]);
     expect(one.pages[0]!.sheet).toBeNull();
 
     const sheet = { paper: "letter", landscape: false, x: -10, y: -20, scale: 0.5 };

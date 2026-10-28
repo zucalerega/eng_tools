@@ -9,6 +9,7 @@ import { badgePlacer, labelPlace, lineLabel, partLabel, textSizes, type BadgePla
 import { FONT } from "./library/draw";
 import { boxOf, kindOf } from "./library/index";
 import type { DiagramMeta, DrawContext } from "./library/kinds";
+import { LinkMarks } from "./links";
 import { linesOn, partsById, pathOf, portsOf } from "./ports";
 import type { ValveState } from "./testdata";
 
@@ -168,6 +169,7 @@ export function DiagramView({
                 />
             ))}
             {live && <LiveBadges drawing={drawing} live={live} place={place} palette={palette} />}
+            {interactive && <LinkMarks drawing={drawing} palette={palette} />}
             {interactive && (
                 <Handles
                     drawing={drawing}

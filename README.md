@@ -369,6 +369,11 @@ the keys.
   place), size, Cv, and MAWP; a tank's fluid, volume, MEOP, and MAWP; an orifice's diameter;
   a line's fluid, type, size, and MAWP; and any field of your own. Every part that holds
   pressure has a MAWP. The eye beside one shows it under the part's tag.
+- **Links**: a part can link to pages about it (an FMV to its Notion page, a COTS valve to its
+  spec sheet): **+ Add a link**, under its tag on the right while you're editing, takes a name
+  and an address. Anyone looking at the diagram selects the part and clicks a link to open it in
+  a tab of its own; a part with links has a small chain mark. Only web pages (https://,
+  http://) and email (mailto:) can be linked.
 - **Fluids**: each line carries one, in its color (LOX blue, RP-1 red, GN2 green, combustion
   gas rose...); a line drawn from a run takes its fluid, and **Carry along its run** sets it
   on the lines beyond. A line's fluid and a valve's state aren't written beside them unless you

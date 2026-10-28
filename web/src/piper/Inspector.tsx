@@ -39,6 +39,7 @@ import { piper, type Scheme } from "./api";
 import { Link } from "../router";
 import { PartIcon } from "./icons";
 import { LABEL_SIZES, LINE_FIELDS } from "./labels";
+import { PartLinks } from "./links";
 import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
 import { pictureAspect } from "./library/notes";
 import type { Field } from "./library/kinds";
@@ -240,6 +241,7 @@ function PartPanel({
     sim: SimContext | null;
 }) {
     const kind = kindOf(part.kind);
+    const readOnly = useEditor(store, (state) => state.readOnly);
     const said = part.tag.trim().toUpperCase();
     const shared = sharedTags(drawing).has(said);
     const onAnother = (drawing.elsewhere ?? []).some((tag) => tag.trim().toUpperCase() === said);
@@ -288,6 +290,21 @@ function PartPanel({
                 <p className="piper-warning">
                     {onAnother ? "A part on another page" : "Another part"} is tagged {part.tag} too.
                 </p>
+            )}
+            {kind.tag !== "none" && (
+                <PartLinks
+                    part={part}
+                    editing={!readOnly}
+                    onChange={(links) =>
+                        change("links", (now) => {
+                            const changed: Part = { ...now, links };
+                            if (links.length === 0) {
+                                delete changed.links;
+                            }
+                            return changed;
+                        })
+                    }
+                />
             )}
             {(scalable(part) || kind.tag !== "none") && (
                 <div className="piper-sizes">

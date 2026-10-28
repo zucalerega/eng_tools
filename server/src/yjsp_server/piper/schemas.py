@@ -1,10 +1,12 @@
 """The shape of a drawing, as far as the server checks it, and the request and response bodies of Piper's API."""
 
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
-from pydantic_core import ErrorDetails
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic_core import ErrorDetails, PydanticCustomError
 
 from ..api.schemas import FolderPath, UserRef
 from ..errors import ApiError
@@ -20,6 +22,7 @@ MAX_CHOSEN = 1000  # diagrams moved, deleted, or restored together
 MAX_PARTS = 5000  # in a drawing, on all its pages
 MAX_LINES = 10_000
 MAX_PAGES = 100
+MAX_LINKS = 20  # on a part
 
 
 class InvalidDrawing(ApiError):
@@ -29,8 +32,9 @@ class InvalidDrawing(ApiError):
 
 # --- a drawing ----------------------------------------------------------------------------------------------------
 # What a part and a line are (a ball valve, its ports, its properties) is the web app's (web/src/piper/drawing.ts). The
-# server checks only what it needs, the ids and what the list shows, and keeps the rest as it was sent. A drawing of
-# format 1 is one page, its parts and lines; of format 2, it has pages, each with its own.
+# server checks only what it needs, the ids and what the list shows, and the links on parts, which people open from
+# them; and keeps the rest as it was sent. A drawing of format 1 is one page, its parts and lines; of format 2, it has
+# pages, each with its own (3: its parts and lines can have simulation settings; 4: its parts can have links).
 
 Id = Annotated[str, Field(strict=True, min_length=1, max_length=64)]
 Tag = Annotated[str, Field(strict=True, max_length=100)]
@@ -43,12 +47,33 @@ class _Checked(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+def _web_link(url: str) -> str:
+    """A link a part can have: http or https to a host, or mailto to someone, with no spaces or control characters in
+    it. Never javascript: or data:, which would run in the site when someone opens it from the part: a drawing is
+    anyone's to send."""
+    scheme, _, rest = url.partition(":")
+    clean = not any(char.isspace() or unicodedata.category(char) == "Cc" for char in url)
+    if clean and scheme.lower() in ("http", "https") and urlsplit(url).hostname:
+        return url
+    if clean and scheme.lower() == "mailto" and rest:
+        return url
+    raise PydanticCustomError("web_link", "isn't an http, https, or mailto link")
+
+
+class LinkShape(_Checked):
+    """A link on a part, to a page about it: its Notion page, its spec sheet."""
+
+    url: Annotated[str, Field(strict=True, min_length=1, max_length=2000), AfterValidator(_web_link)]
+    label: Annotated[str, Field(strict=True, max_length=200)] = ""
+
+
 class PartShape(_Checked):
     id: Id
     kind: Annotated[str, Field(strict=True, min_length=1, max_length=64)]
     x: Coordinate
     y: Coordinate
     tag: Tag = ""
+    links: list[LinkShape] = Field(default=[], max_length=MAX_LINKS)
 
 
 class LineShape(_Checked):
@@ -126,6 +151,8 @@ _FIELDS = {
     "parts": "list of parts",
     "lines": "list of lines",
     "pages": "list of pages",
+    "url": "address",
+    "label": "name",
 }
 _SAID = {
     "missing": "{whose} has no {name}",
@@ -141,6 +168,7 @@ _SAID = {
     "too_short": "{whose} has no {field}",
     "dict_type": "{its} isn't an object",
     "model_type": "{its} isn't an object",
+    "web_link": "{whose} isn't an http, https, or mailto link",
 }
 
 
@@ -153,6 +181,8 @@ def _in_words(error: ErrorDetails) -> str:
     if len(loc) >= 2 and loc[0] in _ITEMS and isinstance(loc[1], int):  # a part or a line, or one of its fields
         item = f"{_ITEMS[str(loc[0])]} {loc[1] + 1}"
         whose, field = f"{page}'s {item.lower()}" if page else item, str(loc[2]) if len(loc) > 2 else ""
+        if field == "links" and len(loc) > 3 and isinstance(loc[3], int):  # one of a part's links, or its field
+            whose, field = f"{whose}'s link {loc[3] + 1}", str(loc[4]) if len(loc) > 4 else ""
     else:
         whose, field = page or "The drawing", str(loc[0]) if loc else ""
     name = _FIELDS.get(field, field)

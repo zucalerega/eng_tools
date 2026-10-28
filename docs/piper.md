@@ -45,14 +45,17 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   Duplicate copies one.
 - **The drawing** is plain JSON (`web/src/piper/drawing.ts`): its pages, each with its id,
   name, parts, lines, and printed sheet, and the fluids, style, and simulation's units they
-  share (format 3, whose parts and lines can have their settings in a simulation, `sim`; format
-  2 had pages without them, and a drawing from before pages, format 1, has its parts and lines
-  at the top, and is one page).
+  share (format 4, whose parts can have links to pages about them, `links`; format 3 had parts
+  and lines with their settings in a simulation, `sim`; format 2 had pages without them, and a
+  drawing from before pages, format 1, has its parts and lines at the top, and is one page).
   The server keeps it as the web app sends it, after checking only what it needs
   (`schemas.py`): an object with up to 100 pages, each with an id no other page has and lists
   of parts and lines, each part and line with an id no other in the whole drawing has (an
   off-page connector names a part on another page by it), a part with its kind and a finite
-  place, a line with its two ends; at most 5,000 parts and 10,000 lines on all its pages; no
+  place, and its links, if it has any (at most 20, each an http, https, or mailto address of up
+  to 2,000 characters with no spaces or control characters in it, and a name of up to 200: "Page
+  1's part 3's link 2 isn't an http, https, or mailto link"), a line with its two ends; at most
+  5,000 parts and 10,000 lines on all its pages; no
   NaN, no text that isn't Unicode, nothing nested more than 50 deep, and at most 2 MB of JSON
   (422 `invalid_drawing`, saying what's wrong in words, "Page 2's part 4 has no kind", or 413
   `too_large`). It notes what the list shows and searches (how many parts, lines, and pages,
@@ -75,8 +78,8 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   Find, Parts, and the parts list look through every page. The server refuses a save in an
   older format than the diagram's drawing is in (409 `drawing_newer`, saying what it would
   lose): a tab still running the Piper from before pages would save one page and lose the
-  others, and one from before simulations would lose its parts' settings. Restoring a revision
-  from before them is deliberate, and allowed.
+  others, one from before simulations would lose its parts' settings, and one from before links
+  its parts' links. Restoring a revision from before them is deliberate, and allowed.
 - **Editing** is one person at a time, so no one's save goes over anyone else's
   (`diagrams.take_lock`, `editing.ts`). A diagram opens to be looked at: the store takes no
   change (`readOnly`), the canvas only pans and selects, and the inspector's fields are only
@@ -256,6 +259,17 @@ what it is, `data-hit`).
   stays). Any part or line can have
   more, named as the team likes. Values are text, with their units ("0.062 in"), as people
   write them. Any of them can show under the part's tag (the eye beside it).
+- **Links**: a part can link to pages about it (`links`: each a name and an address), as the
+  Elytra P&ID's FMV to its Notion page, or a COTS valve to its spec sheet. The inspector lists
+  them under the tag, each opening in a tab of its own (`rel="noopener noreferrer"`) for anyone
+  looking at the diagram, and, while it's yours to edit, adds them (**+ Add a link**: a name, and
+  an address) and removes them; a link without a name is called by where it goes
+  ("notion.so/yjsp/FMV"). The canvas marks a part with links at its top right, the mark's
+  tooltip their names; clicking it selects the part. Exports leave the mark out. Only http,
+  https, and mailto addresses are taken (`linkUrl`): never `javascript:` or `data:`, which
+  would run in the site when one was opened. The server takes no other (`schemas.py`, 422
+  `invalid_drawing`), and `readDrawing` (and a paste, `readClip`) leaves out any that isn't one,
+  so a drawing sent another way, or a clipboard, can't put one in front of anyone.
 - **Lines** connect ports. Dragging from a port (the dots on a part under the pointer) draws
   one: to another port, onto a part (its nearest port), onto another line (a tee, joined at a
   junction's dot), or to a point. The line tool draws from anywhere, a line included. A line is

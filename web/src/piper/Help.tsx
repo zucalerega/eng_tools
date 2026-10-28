@@ -93,6 +93,14 @@ const TOPICS: Topic[] = [
                     beside it, where you drag it. Double-click a part to type its tag.
                 </li>
                 <li>
+                    A part can link to pages about it: an FMV to its Notion page, a COTS valve to its spec sheet. While
+                    you're editing, select it and click <em>+ Add a link</em> under its tag, on the right: a name (
+                    <em>Notion</em>), and its address. Anyone looking at the diagram selects the part and clicks a link
+                    to open it, in a tab of its own; a part with links has a small chain mark at its top right. Only web
+                    pages (<code>https://</code>, <code>http://</code>) and email (<code>mailto:</code>) can be linked.
+                    The <em>×</em> beside a link removes it.
+                </li>
+                <li>
                     An instrument is a bubble with the letter of what it measures in it, whatever its tag says (
                     <code>P</code> for pressure, <code>T</code> for temperature, <code>F</code> for flow, <code>W</code>{" "}
                     for a load cell), and its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated

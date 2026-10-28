@@ -319,8 +319,13 @@ const middleOf = (box: Box): Point => ({ x: (box.x0 + box.x1) / 2, y: (box.y0 + 
 
 /** Which library entry a master's name says it is: Visio's P&ID stencils' names, and the words people use. */
 const NAMES: [RegExp, string | null][] = [
+    // A manifold stays drawn as Visio drew it, with ports where its lines were glued: a stencil's is a box of any size,
+    // its lines anywhere along it, which Piper's (its outlets along its top) would move.
     [/manifold|title block|legend|\bzones?\b|border/, null],
-    [/three.?way|3.?way|four.?way|diverter|\b[35]\/2\b/, "three-way-valve"],
+    // ISO 1219's directional control valves, by their ports and positions.
+    [/\b3\/2\b/, "solenoid-valve-32"],
+    [/\b5\/2\b/, "solenoid-valve-52"],
+    [/three.?way|3.?way|four.?way|diverter/, "three-way-valve"],
     [/angle valve/, "angle-valve"],
     [/check|non.?return/, "check-valve"],
     [/relief|safety valve|\bpsv\b|\bprv\b/, "relief-valve"],
@@ -348,6 +353,7 @@ const NAMES: [RegExp, string | null][] = [
     [/venturi/, "venturi"],
     [/orifice|restrict/, "orifice"],
     [/flow ?meter|rotameter|turbine meter|coriolis/, "flow-meter"],
+    [/diffuser/, "diffuser"],
     [/filter|strainer/, "filter"],
     [/gauge|gage/, "pressure-gauge"],
     [/\bd\s?p\b|differential/, "dp-transducer"],
@@ -437,6 +443,9 @@ function presetForTag(tag: string): string | null {
     if (/(FLT|FILT)$/.test(letters)) {
         return "filter";
     }
+    if (/DIFF$/.test(letters)) {
+        return "diffuser";
+    }
     if (/BD$/.test(letters)) {
         return "burst-disc";
     }
@@ -467,8 +476,9 @@ function actuationOf(letters: string[], name: string, tag: string): string | nul
         }
     }
     const lower = name.toLowerCase();
-    // ISO 1219's 2/2, 3/2, and 5/2 valves are drawn worked by a solenoid, as a team's pneumatic manifolds are.
-    if (/solenoid|\b[235]\/2\b/.test(lower)) {
+    // ISO 1219's 2/2 valve is drawn worked by a solenoid, as a team's pneumatic manifolds' are (its 3/2 and 5/2 are
+    // Piper's own).
+    if (/solenoid|\b2\/2\b/.test(lower)) {
         return "solenoid";
     }
     if (/motor/.test(lower)) {
@@ -1231,6 +1241,16 @@ function orientation(shape: VisioShape): { rotation: Rotation; flip: boolean } {
     return { rotation, flip: dot(across, x) < 0 };
 }
 
+/**
+ * What of a kind a stencil's symbol draws, where it isn't all of the kind's box: an ISO valve's two boxes, which
+ * Visio's stencils draw without its solenoid and spring (shapes of their own, if they're drawn). A symbol's drawn size
+ * is matched to it, so its glued connectors meet the ports they were glued at.
+ */
+const DRAWN: Record<string, readonly [number, number, number, number]> = {
+    valve32: [-40, -15, 40, 15],
+    valve52: [-40, -15, 40, 15],
+};
+
 /** The scale nearest a ratio of the ones a part can be drawn at. */
 const nearestScale = (ratio: number): number =>
     PART_SCALES.reduce((best, scale) =>
@@ -1521,9 +1541,34 @@ function pageDrawing(page: VisioPage, title: string): { drawing: Drawing; report
                 center = across ? { x: middle, y: center.y } : { x: center.x, y: middle };
             }
         }
+        // An ISO valve's ports are on the box it rests in (its right one, by its spring), and a stencil's are on both, in
+        // the same places in each. Where the drawing's lines meet its left box, that's the box it rests in: it's moved
+        // over by a box, so its ports are where they met it, each the one it was.
+        const drawn = DRAWN[kind.id];
+        if (drawn) {
+            const scale = nearestScale((Math.max(box.x1 - box.x0, box.y1 - box.y0) * k) / (drawn[2] - drawn[0]));
+            const along = (dx: number, dy: number) => {
+                const turned = rotation === 0 ? dx : rotation === 90 ? dy : rotation === 180 ? -dx : -dy;
+                return flip ? -turned : turned;
+            };
+            const met = endsAt(symbol)
+                .map((point) => along(point.x - center.x, point.y - center.y))
+                .sort((a, b) => a - b);
+            const middle = met[Math.floor(met.length / 2)];
+            if (middle !== undefined && middle < 0) {
+                const over = (flip ? 1 : -1) * drawn[2] * scale; // a box's width, leftward in its frame
+                const [dx, dy] = [
+                    [over, 0],
+                    [0, over],
+                    [-over, 0],
+                    [0, -over],
+                ][rotation / 90]!;
+                center = { x: center.x + dx!, y: center.y + dy! };
+            }
+        }
         const added = addPart(drawing, preset, center, true);
         drawing = updatePart(added.drawing, added.id, (part) => {
-            const [x0, y0, x1, y1] = kind.box({ ...part, rotation: 0, scale: 1 }, drawing);
+            const [x0, y0, x1, y1] = DRAWN[kind.id] ?? kind.box({ ...part, rotation: 0, scale: 1 }, drawing);
             // As big as it was drawn (its outline, not its words), of its kind's own size.
             const drawnSize = Math.max(box.x1 - box.x0, box.y1 - box.y0) * k;
             const scale = kind.id === "junction" ? 1 : nearestScale(drawnSize / Math.max(1, x1 - x0, y1 - y0));

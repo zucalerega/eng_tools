@@ -16,6 +16,7 @@ import {
     GLUE,
     glued,
     RECTANGLE,
+    shape,
     shapeXml,
     vsdx,
     vsdxOf,
@@ -334,6 +335,136 @@ test("a stencil's group is one part, its members its master's, worked as its act
     expect(solenoid!.props).toMatchObject({ actuation: "solenoid", body: "gate", normal: "" });
     expect([vent!.tag, vent!.props.actuation, vent!.rotation]).toEqual(["OVNT", "pneumatic", 180]);
     expect(byKind(drawing, "text")).toEqual([]); // its tag is its, not words beside it
+});
+
+/**
+ * An ISO 1219 directional valve as Visio's stencils draw one: its two boxes (0.4 by 0.3 inches each, a hundred of
+ * Piper's units to the inch on a page with no bowtie valves), without its solenoid and spring, with the same ports in
+ * each box: bottom and top, each a quarter, a half, or three quarters of the way across it.
+ */
+const isoValve = (id: number, name: string, ports: { bottom: number[]; top: number[] }): MasterSpec => ({
+    id,
+    name,
+    shape: {
+        id: 1,
+        cells: { Width: 0.8, Height: 0.3 },
+        geometry: [
+            RECTANGLE,
+            {
+                rows: [
+                    ["MoveTo", { X: 0.4, Y: 0 }],
+                    ["LineTo", { X: 0.4, Y: 0.3 }],
+                ],
+            },
+        ],
+        connections: [0, 0.4].flatMap((box): [number, number][] => [
+            ...ports.bottom.map((x): [number, number] => [box + x, 0]),
+            ...ports.top.map((x): [number, number] => [box + x, 0.3]),
+        ]),
+    },
+});
+
+test("ISO 1219's 3/2 and 5/2 valves become Piper's, their lines on their ports; a diffuser goes into its line", async () => {
+    const masters: MasterSpec[] = [
+        FEED_MASTERS.find((master) => master.name === "Dynamic connector")!,
+        isoValve(8, "3/2 valve", { bottom: [0.1, 0.3], top: [0.1] }),
+        isoValve(9, "5/2 valve", { bottom: [0.1, 0.2, 0.3], top: [0.1, 0.3] }),
+        {
+            id: 10,
+            name: "Grille diffuser",
+            shape: {
+                id: 1,
+                cells: { Width: 0.14, Height: 0.2 },
+                geometry: [RECTANGLE],
+                connections: [
+                    [0, 0.1],
+                    [0.14, 0.1],
+                ],
+            },
+        },
+        { id: 11, name: "Manifold", shape: { id: 1, cells: { Width: 1.2, Height: 0.2 }, geometry: [RECTANGLE] } },
+    ];
+    const iso = (id: number, master: number, at: [number, number]) =>
+        shape(id, { master, cells: { PinX: at[0], PinY: at[1], Width: 0.8, Height: 0.3 } });
+    const pipe = (id: number, from: [number, number], to: [number, number]) => shapeXml(connector(id, from, to));
+    const shapes = [
+        // A 3/2 valve, its supply (1) and exhaust (3) glued below its right box, and what it feeds (2) above.
+        iso(1, 8, [2, 4]),
+        pipe(10, [2.1, 3], [2.1, 3.85]),
+        pipe(11, [2.1, 5], [2.1, 4.15]),
+        pipe(12, [2.3, 3], [2.3, 3.85]),
+        // Another, its lines glued to its left box: that's the box it rests in.
+        iso(2, 8, [5, 4]),
+        pipe(13, [4.7, 3], [4.7, 3.85]),
+        pipe(14, [4.7, 5], [4.7, 4.15]),
+        // A 5/2 valve: its supply (1) below its right box's middle, and what it feeds (4 and 2) above it.
+        iso(3, 9, [8, 4]),
+        pipe(15, [8.2, 3], [8.2, 3.85]),
+        pipe(16, [8.1, 5], [8.1, 4.15]),
+        pipe(17, [8.3, 5], [8.3, 4.15]),
+        // A grille diffuser on a line going down (its frame's x down the page, as the Hopper P&ID's is).
+        shape(4, { master: 10, cells: { PinX: 2, PinY: 6.5, Width: 0.14, Height: 0.2, Angle: -Math.PI / 2 } }),
+        pipe(18, [2, 7.5], [2, 6.57]),
+        pipe(19, [2, 6.43], [2, 5.5]),
+        // A manifold, with a line glued to it; and a diffuser drawn by hand, tagged.
+        shape(5, { master: 11, cells: { PinX: 8, PinY: 6.5, Width: 1.2, Height: 0.2 } }),
+        pipe(20, [8, 7.5], [8, 6.6]),
+        shapeXml({
+            id: 30,
+            cells: { PinX: 5, PinY: 6.5, Width: 0.6, Height: 0.3 },
+            members: [
+                { id: 31, cells: { PinX: 0.1, PinY: 0.15, Width: 0.14, Height: 0.2 }, geometry: [RECTANGLE] },
+                {
+                    id: 32,
+                    cells: { PinX: 0.45, PinY: 0.15, Width: 0.3, Height: 0.15, LinePattern: 0, FillPattern: 0 },
+                    geometry: [RECTANGLE],
+                    character: [{ Size: 0.1 }],
+                    text: '<cp IX="0"/>FDIFF',
+                },
+            ],
+        }),
+    ].join("");
+    const connects = [
+        glued(10, "End", 1),
+        glued(11, "End", 1),
+        glued(12, "End", 1),
+        glued(13, "End", 2),
+        glued(14, "End", 2),
+        glued(15, "End", 3),
+        glued(16, "End", 3),
+        glued(17, "End", 3),
+        glued(18, "End", 4),
+        glued(19, "Begin", 4),
+        glued(20, "End", 5),
+    ].join("");
+    const { drawing } = (await read(vsdxOf({ pages: [{ name: "P", shapes, connects }], masters })))[0]!;
+    const portsOn = (part: string) =>
+        drawing.lines
+            .flatMap((line) => [line.from, line.to])
+            .flatMap((end) => (isPortEnd(end) && end.part === part ? [end.port] : []))
+            .sort();
+    const [first, second] = byKind(drawing, "valve32");
+    expect([first!.x, first!.y, first!.rotation, first!.flip, first!.scale]).toEqual([200, 450, 0, false, 1]);
+    expect(portsOn(first!.id)).toEqual(["1", "2", "3"]);
+    expect(first!.props.normal).toBe(""); // only a key says what its fill means
+    // The other's moved over by a box, so the box it rests in (its ports') is the one its lines met.
+    expect([second!.x, second!.y, second!.flip]).toEqual([460, 450, false]);
+    expect(portsOn(second!.id)).toEqual(["1", "2"]);
+    const five = byKind(drawing, "valve52")[0]!;
+    expect([five.x, five.y]).toEqual([800, 450]);
+    expect(portsOn(five.id)).toEqual(["1", "2", "4"]);
+    // The diffuser's in its line, turned to it, flow coming in at its top and leaving at its foot, toward its arrows.
+    const [diffuser, drawnByHand] = byKind(drawing, "diffuser");
+    expect([diffuser!.x, diffuser!.y, diffuser!.rotation]).toEqual([200, 200, 90]);
+    const into = drawing.lines.find((line) => isPortEnd(line.to) && line.to.part === diffuser!.id)!;
+    expect(into.to).toEqual({ part: diffuser!.id, port: "a" });
+    const out = drawing.lines.find((line) => isPortEnd(line.from) && line.from.part === diffuser!.id)!;
+    expect(out.from).toEqual({ part: diffuser!.id, port: "b" });
+    expect(drawnByHand!.tag).toBe("FDIFF");
+    // A manifold stays drawn as Visio drew it, its line on a port of its own where it was glued.
+    expect(byKind(drawing, "manifold")).toEqual([]);
+    const manifold = byKind(drawing, "figure")[0]!;
+    expect(portsOn(manifold.id)).toEqual(["p1"]);
 });
 
 test("symbols drawn by hand are what their tags say, and tags written beside a symbol are its", async () => {

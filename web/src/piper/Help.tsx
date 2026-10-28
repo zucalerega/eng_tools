@@ -497,19 +497,25 @@ const TOPICS: Topic[] = [
                     makes a diagram of it, in the folder you're in, its pages as Visio has them.
                 </li>
                 <li>
-                    Its valves, regulators, relief valves, orifices, quick disconnects, and sensors become Piper's
-                    parts: by the stencil they're from (a <em>Powered valve</em>, a <em>3/2 valve</em>), or, drawn by
-                    hand, by what their tags say (<code>PRV</code> a relief valve, <code>FTPT</code> a pressure
-                    transducer, <code>FO-1</code> an orifice). Each is tagged with its label, beside it or grouped with
-                    it, given its set pressure (<code>S.P. 145 PSI</code>), and worked as its actuator's letter says (S
-                    a solenoid, P air).
+                    Its valves, regulators, relief valves, orifices, diffusers, quick disconnects, and sensors become
+                    Piper's parts: by the stencil they're from (a <em>Powered valve</em>, a <em>Grille diffuser</em>),
+                    or, drawn by hand, by what their tags say (<code>PRV</code> a relief valve, <code>FTPT</code> a
+                    pressure transducer, <code>FO-1</code> an orifice, <code>ODIFF</code> a diffuser). Each is tagged
+                    with its label, beside it or grouped with it, given its set pressure (<code>S.P. 145 PSI</code>),
+                    and worked as its actuator's letter says (S a solenoid, P air).
+                </li>
+                <li>
+                    A <em>3/2 valve</em> or <em>5/2 valve</em> becomes Piper's 3/2 or 5/2 solenoid valve, its lines on
+                    the ports they were glued at. Its ports are on the box it rests in: where the drawing's lines meet
+                    its left box, it's moved over by a box so they're there.
                 </li>
                 <li>
                     Everything else is drawn as Visio drew it, as a <em>figure</em>: the vehicle and its tanks, a
-                    manifold's box, the drawing's key and title block, its words in their colors and sizes. A figure is
-                    drawn under the lines; click its edge to select it. The import lists the symbols Piper has no part
-                    for, to replace with parts from the library or keep. A figure isn't simulated: put Piper's tanks in
-                    place of drawn ones to simulate them.
+                    manifold (any size, its lines anywhere along it, which Piper's own manifold would move), the
+                    drawing's key and title block, its words in their colors and sizes. A figure is drawn under the
+                    lines; click its edge to select it. The import lists the symbols Piper has no part for, to replace
+                    with parts from the library or keep. A figure isn't simulated: put Piper's tanks in place of drawn
+                    ones to simulate them.
                 </li>
                 <li>
                     Connectors become lines along the routes they had, on the parts' ports where they were glued, and

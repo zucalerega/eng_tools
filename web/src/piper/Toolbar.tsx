@@ -63,7 +63,7 @@ const STATUS: Record<SaveStatus, string> = {
 };
 
 /** The panels the editor opens beside or under the drawing. */
-export type Panel = "test" | "history" | "parts";
+export type Panel = "test" | "history";
 
 export function Toolbar({
     diagram,
@@ -238,14 +238,16 @@ export function Toolbar({
                 </button>
                 <span className="piper-separator" />
                 <FindBox store={store} commands={commands} />
-                <button
-                    type="button"
-                    aria-pressed={panel === "parts"}
-                    title="Every part, by what it is, with its specs"
-                    onClick={() => onPanel(panel === "parts" ? null : "parts")}
+                {/* A page of its own, in a tab of its own: the drawing stays open here, as it was (and yours, if it was). */}
+                <a
+                    href={`/piper/diagrams/${diagram.id}/parts`}
+                    target="_blank"
+                    rel="noopener"
+                    className="button"
+                    title="Every part in a table to sort and narrow, with its specs (in a new tab)"
                 >
                     Parts
-                </button>
+                </a>
                 {!simulating && (
                     <button
                         type="button"

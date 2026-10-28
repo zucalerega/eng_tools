@@ -135,12 +135,16 @@ const TOPICS: Topic[] = [
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select
                     everything in a box; Shift-click adds to what's selected. Select several to line them up or space
-                    them evenly.
+                    them evenly. Where parts overlap (a valve on a picture of the stand), <em>Bring to front</em> (
+                    <kbd>]</kbd>) draws what's selected over everything, and <em>Send to back</em> (<kbd>[</kbd>) under
+                    everything, the lines too.
                 </li>
                 <li>
-                    Drag the round handle at a selected part's corner to make it bigger or smaller, from half its size
-                    to double, or pick its <em>Size</em> on the right; its ports stay on the grid, so its lines stay
-                    straight. <em>Label size</em> makes its tag and properties smaller or larger than the diagram's.
+                    Drag the round handle at a selected part's corner to make it any size from a quarter of its own to
+                    four times, in steps of 5% (hold Alt for 1%), or type its <em>Size</em> on the right, in percent;
+                    its ports stay on the grid, so its lines stay straight (drawn very small, ports close together go
+                    just off it rather than meet). <em>Label size</em>, in percent too, makes its tag and properties any
+                    size of their own; left empty, they're the diagram's.
                 </li>
                 <li>
                     A <em>Text</em> note is sized to its words until you drag its square corner handle: then it's a
@@ -169,6 +173,10 @@ const TOPICS: Topic[] = [
                 <li>
                     A search on the <Link to="/piper">diagrams</Link> finds the diagrams a tag is on, and each opens at
                     it.
+                </li>
+                <li>
+                    <em>Parts</em>, in the toolbar, lists every part in a table to sort and narrow (all its valves, say,
+                    or what's on GN2), on a page of its own; a tag there opens the drawing at its part.
                 </li>
             </ul>
         ),
@@ -312,8 +320,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     With nothing selected, the right side changes the diagram's fluids (their colors, labels, and names,
-                    and whether each is a gas), adds its own, sets its valves' colors, and makes its labels smaller or
-                    larger. The legend (in the library's Notes) lists what its lines carry and its valves' states.
+                    and whether each is a gas), adds its own, sets its valves' colors, and sets its <em>Label size</em>,
+                    in percent of the standard (100), from half to three times. The legend (in the library's Notes)
+                    lists what its lines carry and its valves' states.
                 </li>
                 <li>
                     The team's color schemes are on <Link to="/piper/schemes">Schemes</Link>: each one's fluids and
@@ -551,15 +560,17 @@ const TOPICS: Topic[] = [
                     its scale. In black and white, it leaves out the fluids, whose lines are all ink.
                 </li>
                 <li>
-                    <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and
-                    properties, and every line's tag, fluid, and ends, on all its pages (with each one's page, if
-                    there's more than one). Filter it in a spreadsheet for a valve list or an instrument list.
+                    <em>Parts list (CSV)</em>: every part's tag, what it is, the fluids on it, and its properties, on
+                    all its pages (with each one's page, if there's more than one). Filter it in a spreadsheet for a
+                    valve list or an instrument list.
                 </li>
                 <li>
-                    <em>Parts</em>, in the toolbar, shows the same list under the drawing: a table for each kind of part
-                    (ball valves, pressure transducers, tanks...), with how many there are and the specs any of them has
-                    (MAWP, size, Cv, range, channel), then the lines, from all its pages. Click a tag to go to its part,
-                    on its page.
+                    <em>Parts</em>, in the toolbar, opens every part in a table on a page of its own, in a new tab (the
+                    drawing stays open as it was): what each is, its page, the fluids on it, and its specs (MAWP, model,
+                    size, Cv, range...). Click a column to sort by it, and again to turn it around; show only valves,
+                    instruments, tanks..., one fluid, or one page; or find a tag, a model, a size. <em>Save as CSV</em>{" "}
+                    there saves what's shown. Click a tag to open the drawing at its part. Lines aren't parts: they're
+                    not in it.
                 </li>
             </ul>
         ),
@@ -584,6 +595,12 @@ const TOPICS: Topic[] = [
                         "Turn a quarter, clockwise or back",
                     ],
                     [<kbd key="f">F</kbd>, "Flip"],
+                    [
+                        <>
+                            <kbd>]</kbd>, <kbd>[</kbd>
+                        </>,
+                        "Bring to front, send to back",
+                    ],
                     [
                         <>
                             <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>

@@ -4,10 +4,10 @@ import type { Commands } from "./commands";
 import { LINE_STYLES, scalable } from "./DiagramView";
 import {
     LINE_KINDS,
-    PART_SCALES,
+    LABEL_SCALE,
+    PART_SCALE,
     type Drawing,
     type Fluid,
-    type LabelSize,
     type Line,
     type Page,
     type Part,
@@ -23,7 +23,7 @@ import {
     type Alignment,
 } from "./edit";
 import { fitSheet, PAPERS } from "./pdf";
-import { ChannelInput, FluidSelect, Row, ShowToggle, StatePicker } from "./fields";
+import { ChannelInput, FluidSelect, PercentInput, Row, ShowToggle, StatePicker } from "./fields";
 import {
     applyScheme,
     fluidOf,
@@ -38,7 +38,7 @@ import {
 import { piper, type Scheme } from "./api";
 import { Link } from "../router";
 import { PartIcon } from "./icons";
-import { LABEL_SIZES, LINE_FIELDS } from "./labels";
+import { LINE_FIELDS } from "./labels";
 import { PartLinks } from "./links";
 import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
 import { pictureAspect } from "./library/notes";
@@ -311,49 +311,39 @@ function PartPanel({
                     {scalable(part) && (
                         <Row label="Size">
                             {(id) => (
-                                <select
+                                <PercentInput
                                     id={id}
                                     value={part.scale}
-                                    onChange={(event) =>
+                                    min={PART_SCALE.min}
+                                    max={PART_SCALE.max}
+                                    onChange={(size) =>
                                         store.commit(
-                                            updatePart(drawing, part.id, (now) => ({
-                                                ...now,
-                                                scale: Number(event.target.value),
-                                            })),
+                                            updatePart(drawing, part.id, (now) => ({ ...now, scale: size ?? 1 })),
+                                            undefined,
+                                            `scale-${part.id}`,
                                         )
                                     }
-                                >
-                                    {PART_SCALES.map((scale) => (
-                                        <option key={scale} value={scale}>
-                                            {scale === 1 ? "Its own" : `${Math.round(scale * 100)}%`}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
                             )}
                         </Row>
                     )}
                     {kind.tag !== "none" && (
                         <Row label="Label size">
                             {(id) => (
-                                <select
+                                <PercentInput
                                     id={id}
                                     value={part.labelSize}
-                                    onChange={(event) =>
+                                    min={LABEL_SCALE.min}
+                                    max={LABEL_SCALE.max}
+                                    placeholder={`${Math.round(drawing.style.labels * 100)}, the diagram's`}
+                                    onChange={(size) =>
                                         store.commit(
-                                            updatePart(drawing, part.id, (now) => ({
-                                                ...now,
-                                                labelSize: event.target.value as Part["labelSize"],
-                                            })),
+                                            updatePart(drawing, part.id, (now) => ({ ...now, labelSize: size })),
+                                            undefined,
+                                            `label-size-${part.id}`,
                                         )
                                     }
-                                >
-                                    <option value="">The diagram's</option>
-                                    {LABEL_SIZES.map((size) => (
-                                        <option key={size.value} value={size.value}>
-                                            {size.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                />
                             )}
                         </Row>
                     )}
@@ -477,6 +467,22 @@ function PartPanel({
                         Flip
                     </button>
                 )}
+                <button
+                    type="button"
+                    className="button-small"
+                    title="Draw it over everything else (])"
+                    onClick={() => commands.bringToFront()}
+                >
+                    Bring to front
+                </button>
+                <button
+                    type="button"
+                    className="button-small"
+                    title="Draw it under everything else, the lines too ([)"
+                    onClick={() => commands.sendToBack()}
+                >
+                    Send to back
+                </button>
                 <button type="button" className="button-small button-danger" onClick={() => commands.remove()}>
                     Delete
                 </button>
@@ -890,6 +896,22 @@ function ManyPanel({
                         </button>
                         <button type="button" className="button-small" onClick={() => commands.flip()}>
                             Flip
+                        </button>
+                        <button
+                            type="button"
+                            className="button-small"
+                            title="Draw it over everything else (])"
+                            onClick={() => commands.bringToFront()}
+                        >
+                            Bring to front
+                        </button>
+                        <button
+                            type="button"
+                            className="button-small"
+                            title="Draw it under everything else, the lines too ([)"
+                            onClick={() => commands.sendToBack()}
+                        >
+                            Send to back
                         </button>
                     </>
                 )}
@@ -1377,22 +1399,19 @@ function DiagramPanel({
             <h3 className="piper-subhead">Labels</h3>
             <Row label="Label size">
                 {(id) => (
-                    <select
+                    <PercentInput
                         id={id}
                         value={drawing.style.labels}
-                        onChange={(event) =>
-                            store.commit({
-                                ...drawing,
-                                style: { ...drawing.style, labels: event.target.value as LabelSize },
-                            })
+                        min={LABEL_SCALE.min}
+                        max={LABEL_SCALE.max}
+                        onChange={(size) =>
+                            store.commit(
+                                { ...drawing, style: { ...drawing.style, labels: size ?? 1 } },
+                                undefined,
+                                "label-size",
+                            )
                         }
-                    >
-                        {LABEL_SIZES.map((size) => (
-                            <option key={size.value} value={size.value}>
-                                {size.label}
-                            </option>
-                        ))}
-                    </select>
+                    />
                 )}
             </Row>
             {everywhere.lines.length > 0 && (

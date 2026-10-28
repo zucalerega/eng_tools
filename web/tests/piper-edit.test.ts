@@ -21,6 +21,7 @@ import {
     nextTag,
     pasteClip,
     reconnect,
+    reorderParts,
     sharedTags,
     turnParts,
     updatePart,
@@ -451,6 +452,23 @@ test("a label the same along a run is written once, however the parts on it move
     expect(written()).toEqual(["GOX", "GOX"]);
 });
 
+test("parts brought to the front go last, over everything; sent to the back, first, under the lines too", () => {
+    fresh();
+    const [a, b, c, d] = [0, 100, 200, 300].map((x) => place("ball-valve", x, 0));
+    const pipe = join([a!, "b"], [b!, "a"]);
+    const order = () => drawing.parts.map((each) => `${each.tag}${each.back ? " (back)" : ""}`);
+    drawing = reorderParts(drawing, new Set([a!, c!]), "front");
+    expect(order()).toEqual(["BV-2", "BV-4", "BV-1", "BV-3"]); // keeping their order among themselves
+    drawing = reorderParts(drawing, new Set([d!, c!]), "back");
+    expect(order()).toEqual(["BV-4 (back)", "BV-3 (back)", "BV-2", "BV-1"]);
+    drawing = reorderParts(drawing, new Set([d!]), "front");
+    expect(order()).toEqual(["BV-3 (back)", "BV-2", "BV-1", "BV-4"]);
+    expect(drawing.lines.map((each) => each.id)).toEqual([pipe]); // lines stay as they are
+    expect(reorderParts(drawing, new Set([pipe]), "back")).toBe(drawing); // no parts: no change
+    // Kept as saved; a part from before is where its kind draws it.
+    expect(readDrawing(drawing).parts.map((each) => each.back === true)).toEqual([true, false, false, false]);
+});
+
 test("a line's label goes where no part covers it: its longest stretch that's clear, else its longest", () => {
     fresh();
     const pipe = { ...newLine({ x: 35, y: -100 }, { x: 135, y: 100 }), fluid: "gox", shown: ["fluid"] };
@@ -527,22 +545,33 @@ test("a drawing reads back whatever its age: what's missing filled in, what can'
     expect(read.fluids[0]!.color).toBe("#7f8c9a"); // not a color it can draw
     expect(readDrawing(null)).toEqual(emptyDrawing());
     // From before labels were sized and FIP had a color: the standard ones.
-    expect(read.style).toEqual({ no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" });
+    expect(read.style).toEqual({ no: "", nc: "", fip: "", labels: 1, scheme: "", schemeAt: "" });
+    // Sizes are numbers, of the standard one; from before they were, small and large are what they were.
     expect(readDrawing({ style: { fip: "#123456", labels: "small" } }).style).toMatchObject({
         fip: "#123456",
-        labels: "small",
+        labels: 0.8,
     });
-    // A part from before sizes is its kind's own size; a size it can't be is too.
-    expect([read.parts[0]!.scale, read.parts[0]!.labelSize]).toEqual([1, ""]);
+    expect([1.25, "large", 9, -1, "huge"].map((labels) => readDrawing({ style: { labels } }).style.labels)).toEqual([
+        1.25, 1.3, 3, 1, 1,
+    ]);
+    // A part from before sizes is its kind's own size, with the diagram's label size; any other size within what a
+    // part can be is its own, and one past it is as far as a part goes.
+    expect([read.parts[0]!.scale, read.parts[0]!.labelSize]).toEqual([1, null]);
     const sized = readDrawing({
         parts: [
             { id: "a", kind: "valve", scale: 1.5, labelSize: "small" },
             { id: "b", kind: "valve", scale: 7 },
+            { id: "c", kind: "valve", scale: 0.3, labelSize: 1.65 },
+            { id: "d", kind: "valve", scale: 0.1, labelSize: 0 },
+            { id: "e", kind: "valve", scale: 0 },
         ],
     });
     expect(sized.parts.map((entry) => [entry.scale, entry.labelSize])).toEqual([
-        [1.5, "small"],
-        [1, ""],
+        [1.5, 0.8],
+        [4, null],
+        [0.3, 1.65],
+        [0.25, null],
+        [1, null],
     ]);
     // A line saved without saying what it shows shows nothing: a fluid's color says what it carries.
     expect(read.lines[0]!.shown).toEqual([]);

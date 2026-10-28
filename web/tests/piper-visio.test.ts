@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
-import { isPortEnd, newPart, type Drawing } from "../src/piper/drawing";
-import { partTable } from "../src/piper/exports";
+import { documentOf, isPortEnd, newPart, type Drawing } from "../src/piper/drawing";
+import { columnsOf, partsOf } from "../src/piper/parts";
 import { figureOf } from "../src/piper/library/figures";
 import { kindOf } from "../src/piper/library/index";
 import { LIGHT } from "../src/piper/colors";
@@ -86,15 +86,16 @@ test("an imported drawing's parts list has its parts, and what's drawn only wher
     const { drawing } = (await read(vsdx(FEED, GLUE)))[0]!;
     const drawn = JSON.stringify({ w: 10, h: 10, paths: [], texts: [], ports: [] });
     const diffuser = newPart("figure", { x: 0, y: 0 }, { tag: "ODIFF", w: 10, h: 10, props: { figure: drawn } });
-    const { head, rows } = partTable({ ...drawing, parts: [...drawing.parts, diffuser] });
-    // The tank, the valve, the sensor, and the diffuser Piper has no part for: not the box drawn around the DAQ.
-    expect(rows.filter((row) => !row.line).map((row) => [row.cells[1], row.cells[2]])).toEqual([
-        ["", "Tank"],
+    const listed = documentOf({ ...drawing, parts: [...drawing.parts, diffuser] });
+    const rows = partsOf(listed);
+    // The valve, the tank, the sensor, and the diffuser Piper has no part for: not the box drawn around the DAQ.
+    expect(rows.map((row) => [row.cells.tag, row.cells.what])).toEqual([
         ["V-1", "Gate valve"],
+        ["", "Tank"],
         ["PT-101", "Pressure transducer"],
         ["ODIFF", "Figure"],
     ]);
-    expect(head).not.toContain("figure"); // what it draws is no property of it
+    expect(columnsOf(listed, rows, rows).map((column) => column.key)).not.toContain("figure"); // what it draws isn't a property
 });
 
 test("connectors glued to a connector tee into it, each at its own junction, and keep their routes", async () => {

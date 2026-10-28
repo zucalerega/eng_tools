@@ -2,19 +2,16 @@ import { createElement } from "react";
 import { imageHref, piper } from "./api";
 import { LIGHT, withStates } from "./colors";
 import { DiagramView } from "./DiagramView";
-import { isPortEnd, LINE_KINDS, pageOf, type Document, type Drawing, type Point } from "./drawing";
+import type { Drawing, Point } from "./drawing";
 import { drawingBox } from "./edit";
-import { fluidOf } from "./fluids";
 import { grow, union, type Box } from "./geometry";
-import { LINE_FIELDS } from "./labels";
 import { layoutLegend, legendBox, LegendBlock, legendOf } from "./legend";
-import { kindOf, titleOf } from "./library/index";
-import type { DiagramMeta, Field } from "./library/kinds";
+import type { DiagramMeta } from "./library/kinds";
 import { dataUri, type PictureSource } from "./pictures";
 
-// A diagram taken out of Piper: drawn as SVG or PNG, printed (or saved as a PDF from the print dialog), and its parts
-// list as a CSV. Drawn in the light colors, as on paper, whatever the site's theme. Each picture of a page can have its
-// legend beside it (legend.tsx).
+// A diagram taken out of Piper: drawn as SVG or PNG, or printed (or saved as a PDF from the print dialog), in the light
+// colors, as on paper, whatever the site's theme. Each picture of a page can have its legend beside it (legend.tsx).
+// Its parts list's CSV is parts.ts's.
 
 /** A legend on an export: of a page, beside what's drawn (to its right, from its top), or at a point of its own. */
 export interface ExportLegend {
@@ -155,141 +152,6 @@ export async function printDrawing(drawing: Drawing, meta: DiagramMeta, legend =
 
 const escapeHtml = (text: string) =>
     text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] ?? char);
-
-/** A property as the parts list has it: as it was written, but a choice by its name and a fluid by its label. */
-function listed(drawing: Drawing, fields: Field[], key: string, value: string): string {
-    const field = fields.find((entry) => entry.key === key);
-    if (field?.type === "select") {
-        return field.options?.find((option) => option.value === value)?.label ?? value;
-    }
-    return field?.type === "fluid" ? (fluidOf(drawing, value)?.label ?? value) : value;
-}
-
-/** A cell of CSV: quoted where it has to be. */
-const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
-
-/** A row of the parts list: what it's of (a part's id, or a line's), and its cells, as the head names them. */
-export interface PartRow {
-    id: string;
-    line: boolean;
-    page: number; // which of the diagram's pages it's on
-    cells: string[];
-}
-
-/**
- * The parts list: a row for each part (its tag, what it is, its normal state, what it holds or reads, and every
- * property it has), then each line (its tag, fluid, type, and the tags of what it joins). The table beside the drawing
- * (PartsPanel) shows it, and partsList saves it as a CSV file: a valve list and an instrument list, in a spreadsheet.
- */
-export function partTable(drawing: Drawing): { head: string[]; rows: PartRow[] } {
-    // Its parts: not what's written or drawn on it, nor a figure (a shape drawn as Visio drew it) unless it's tagged, as
-    // a component Piper has no part for is.
-    const parts = drawing.parts.filter(
-        (part) =>
-            !["junction", "text", "region", "offpage", "legend", "titleblock", "picture"].includes(part.kind) &&
-            (part.kind !== "figure" || part.tag !== ""),
-    );
-    const skip = new Set(["normal", "fluid", "channel", "notes", "figure"]);
-    const keys: string[] = [];
-    const labels = new Map<string, string>();
-    for (const part of parts) {
-        for (const field of kindOf(part.kind).fields) {
-            labels.set(field.key, field.label);
-        }
-    }
-    for (const field of LINE_FIELDS) {
-        labels.set(field.key, field.label);
-    }
-    for (const item of [...parts, ...drawing.lines]) {
-        for (const key of Object.keys(item.props)) {
-            if (!skip.has(key) && !keys.includes(key) && item.props[key]) {
-                keys.push(key);
-            }
-        }
-    }
-    const tagOf = new Map(drawing.parts.map((part) => [part.id, part.tag || titleOf(part)]));
-    const head = [
-        "Item",
-        "Tag",
-        "What",
-        "Normal state",
-        "Fluid",
-        "Test channel",
-        ...keys.map((key) => labels.get(key) ?? key),
-        "Notes",
-        "From",
-        "To",
-    ];
-    const rows: PartRow[] = [
-        ...parts.map((part) => {
-            const kind = kindOf(part.kind);
-            const cells = [
-                "Part",
-                part.tag,
-                titleOf(part),
-                part.props.normal ?? "",
-                fluidOf(drawing, part.props.fluid ?? "")?.label ?? "",
-                kind.reads ? part.props.channel || part.tag : "",
-                ...keys.map((key) => listed(drawing, kind.fields, key, part.props[key] ?? "")),
-                part.props.notes ?? "",
-                "",
-                "",
-            ];
-            return { id: part.id, line: false, page: 0, cells };
-        }),
-        ...drawing.lines.map((line) => ({
-            id: line.id,
-            line: true,
-            page: 0,
-            cells: [
-                "Line",
-                line.tag,
-                LINE_KINDS.find((entry) => entry.value === line.kind)?.label ?? line.kind,
-                "",
-                fluidOf(drawing, line.fluid)?.label ?? "",
-                "",
-                ...keys.map((key) => line.props[key] ?? ""),
-                line.props.notes ?? "",
-                isPortEnd(line.from) ? (tagOf.get(line.from.part) ?? "") : "",
-                isPortEnd(line.to) ? (tagOf.get(line.to.part) ?? "") : "",
-            ],
-        })),
-    ];
-    return { head, rows };
-}
-
-/**
- * The parts list of all a diagram's pages: as a page's, of all of them together, and, if there's more than one, with
- * the page each is on, last. (A part's id is unique in the diagram, not only on its page.)
- */
-export function documentTable(document: Document): { head: string[]; rows: PartRow[] } {
-    const drawings = document.pages.map((_, index) => pageOf(document, index));
-    const on = new Map<string, number>();
-    drawings.forEach((drawing, index) => {
-        for (const item of [...drawing.parts, ...drawing.lines]) {
-            on.set(item.id, index);
-        }
-    });
-    const { head, rows } = partTable({
-        ...drawings[0]!,
-        parts: drawings.flatMap((drawing) => drawing.parts),
-        lines: drawings.flatMap((drawing) => drawing.lines),
-    });
-    const placed = rows.map((row) => ({ ...row, page: on.get(row.id) ?? 0 }));
-    if (document.pages.length < 2) {
-        return { head, rows: placed };
-    }
-    return {
-        head: [...head, "Page"],
-        rows: placed.map((row) => ({ ...row, cells: [...row.cells, document.pages[row.page]?.name ?? ""] })),
-    };
-}
-
-/** The parts list of a diagram's pages as a CSV file's text. */
-export function partsList(document: Document): string {
-    const { head, rows } = documentTable(document);
-    return [head, ...rows.map((row) => row.cells)].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
-}
 
 /** A file saved from the browser. */
 export function download(name: string, contents: Blob): void {

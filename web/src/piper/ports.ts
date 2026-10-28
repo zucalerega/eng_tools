@@ -1,5 +1,5 @@
 import { isPortEnd, type Drawing, type End, type Line, type Part, type Point } from "./drawing";
-import { orthogonal, snapPoint, toWorld, turnDir, VECTORS, type Dir } from "./geometry";
+import { GRID, orthogonal, snapPoint, toWorld, turnDir, VECTORS, type Dir } from "./geometry";
 import { kindOf } from "./library/index";
 
 // Where lines meet parts: each part's ports in the drawing, and the points a line runs through, from end to end.
@@ -16,25 +16,31 @@ export interface PlacedPort {
 
 export function portsOf(part: Part): PlacedPort[] {
     const scale = part.scale ?? 1;
-    return kindOf(part.kind)
-        .ports(part)
-        .map((port) => {
-            const exact = toWorld(part, { x: port.x, y: port.y });
-            // A part drawn bigger or smaller has its ports where they'd fall, put back on the grid, so lines between
-            // parts lined up stay straight; a line's still drawn to its outline, in line with its port.
-            const at = scale === 1 ? exact : snapPoint(exact);
-            const dir = port.dir ? turnDir(part, port.dir) : null;
-            const back = dir ? VECTORS[dir] : { x: 0, y: 0 };
-            const outline = { x: exact.x - back.x * port.inset * scale, y: exact.y - back.y * port.inset * scale };
-            return {
-                part: part.id,
-                id: port.id,
-                at,
-                dir,
-                edge: back.x !== 0 ? { x: outline.x, y: at.y } : back.y !== 0 ? { x: at.x, y: outline.y } : at,
-                many: port.many === true,
-            };
-        });
+    const ports = kindOf(part.kind).ports(part);
+    const exacts = ports.map((port) => toWorld(part, { x: port.x, y: port.y }));
+    // A part drawn bigger or smaller has its ports where they'd fall, put back on the grid, so lines between parts
+    // lined up stay straight; a line's still drawn to its outline, in line with its port. Drawn small, ports close
+    // together would meet on the grid: then they go on the half grid, or (smaller still) just where they fall.
+    const apart = (points: Point[]) => new Set(points.map((point) => `${point.x},${point.y}`)).size === points.length;
+    const placed =
+        scale === 1
+            ? exacts
+            : ([GRID, GRID / 2].map((grid) => exacts.map((exact) => snapPoint(exact, grid))).find(apart) ?? exacts);
+    return ports.map((port, index) => {
+        const exact = exacts[index]!;
+        const at = placed[index]!;
+        const dir = port.dir ? turnDir(part, port.dir) : null;
+        const back = dir ? VECTORS[dir] : { x: 0, y: 0 };
+        const outline = { x: exact.x - back.x * port.inset * scale, y: exact.y - back.y * port.inset * scale };
+        return {
+            part: part.id,
+            id: port.id,
+            at,
+            dir,
+            edge: back.x !== 0 ? { x: outline.x, y: at.y } : back.y !== 0 ? { x: at.x, y: outline.y } : at,
+            many: port.many === true,
+        };
+    });
 }
 
 export function portOf(part: Part, id: string): PlacedPort | null {

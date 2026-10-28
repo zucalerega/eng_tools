@@ -317,8 +317,10 @@ the keys.
   **Find diagrams** looks in every folder, in names, folders, and the tags on each drawing:
   PT-101 finds every diagram it's on, each says its folder, and each opens at it. In a diagram,
   **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what it is, on whichever
-  page, and **Parts** lists every part by what it is, with how many and their specs, under the
-  drawing.
+  page, and **Parts** opens every part of the diagram in a table on a page of its own (in a new
+  tab): click a column to sort by it, show only valves, instruments, tanks, one fluid, or one
+  page, find a tag or a model, and save what's shown as a CSV. A tag opens the drawing at its
+  part.
 - **Editing**: a diagram opens to be looked at. **Edit**, at the top, makes it yours to change:
   one person edits a diagram at a time, so no one's changes go over anyone else's, and the
   diagrams list and everyone with it open see who's editing it. **Done editing** saves what's
@@ -351,8 +353,10 @@ the keys.
   for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
-  flips it. Drag the round handle at a selected part's corner (or pick its **Size**) to draw it
-  from half its size to double, and give it a **Label size** of its own. A **Text** note dragged
+  flips it, and where parts overlap, **Bring to front** (**]**) and **Send to back** (**[**,
+  under the lines too) choose which is on top. Drag the round handle at a selected part's corner (or type its **Size**, in percent)
+  to draw it at any size from a quarter of its own to four times, and give it a **Label size**
+  of its own, in percent too. A **Text** note dragged
   by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif
   or monospace font, aligned, and boxed as you choose.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
@@ -380,7 +384,7 @@ the keys.
   show them (the eye, or with nothing selected, **Show on every line** and **Show on every
   valve**); a label that's the same along a run (its fluid, or a pipe's tag) is written once,
   on its longest stretch. With nothing selected, change the diagram's fluids' colors and labels, add its own,
-  or make its labels smaller or larger.
+  or set its labels' size, in percent.
 - **Color schemes**: **Schemes**, in Piper's top bar, has the team's color schemes, each one's
   fluids (color, label, name, gas or not) and valve state colors: anyone makes one, and only
   whoever made it, or an admin, changes or deletes it. New diagrams start in the team's default
@@ -452,8 +456,8 @@ the keys.
 - **Export**: **PDF**, a page for each of the diagram's, on its printed sheet or else on
   Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs are (a border with its
   zones, the named revisions, and a title block that says which sheet of how many), vector and
-  searchable; SVG or PNG images of the page shown; printing; and the parts list of every page
-  as a CSV (a valve list, an instrument list). Each can have a legend (**With a legend**, in its
+  searchable; SVG or PNG images of the page shown; printing; and the parts of every page as a
+  CSV (a valve list, an instrument list). Each can have a legend (**With a legend**, in its
   dialog): every kind of part on the page with its symbol and name, by category, then its types
   of line, its fluids, and its valves' state colors, beside the drawing (a page whose printed
   sheet is set has its legend on a sheet of its own after it, in a PDF).

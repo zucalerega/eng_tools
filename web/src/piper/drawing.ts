@@ -30,8 +30,11 @@ export interface Part {
     text: string; // what a note, a region, or an off-page connector says
     w: number; // a region's or a box's size, or a text block's set one (0 for everything else)
     h: number;
-    scale: number; // how big it's drawn, of its kind's size: one of PART_SCALES
-    labelSize: LabelSize | ""; // its tag's and properties' size; "": the diagram's
+    scale: number; // how big it's drawn, of its kind's size: within PART_SCALE (1, its own)
+    labelSize: number | null; // its tag's and properties' size, of the standard (LABEL_SCALE); null: the diagram's
+    // Sent to the back: drawn under the lines, with the regions, rather than over them. Left out, over them. (Parts are
+    // drawn in their order, so what's later is over what's earlier.)
+    back?: boolean;
     sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
     links?: PartLink[]; // pages about it, opened from it: left out, none
 }
@@ -101,8 +104,29 @@ export interface PartSim {
     unlinked?: boolean;
 }
 
-/** The sizes a part can be drawn at, of its kind's own: half to double. */
-export const PART_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+/** How big a part can be drawn, of its kind's own: a quarter (where its ports are still a grid apart) to four times. */
+export const PART_SCALE = { min: 0.25, max: 4 } as const;
+
+/** How big what's written beside parts and on lines can be, of its standard size (labels.ts): half to three times. */
+export const LABEL_SCALE = { min: 0.5, max: 3 } as const;
+
+const within = (value: number, { min, max }: { min: number; max: number }): number =>
+    Math.round(Math.min(max, Math.max(min, value)) * 100) / 100;
+
+/** A size a part can be drawn at: within PART_SCALE, to the hundredth. */
+export const partScale = (value: number): number => within(value, PART_SCALE);
+
+/** A size labels can be: within LABEL_SCALE, to the hundredth. */
+export const labelScale = (value: number): number => within(value, LABEL_SCALE);
+
+/** The sizes labels could be before they were numbers, as numbers. */
+const NAMED_LABEL_SIZES: Record<string, number> = { small: 0.8, normal: 1, large: 1.3 };
+
+/** A label size as it was saved: a number, or a name from before numbers; null if it's neither. */
+function readLabelSize(value: unknown): number | null {
+    const size = typeof value === "string" ? NAMED_LABEL_SIZES[value] : value;
+    return typeof size === "number" && Number.isFinite(size) && size > 0 ? labelScale(size) : null;
+}
 
 /** Where a line ends: on a part's port, or at a point of its own. */
 export type End = { part: string; port: string } | Point;
@@ -155,14 +179,11 @@ export interface Fluid {
     gas?: boolean; // a tank of it is full of it; left out, a standard fluid's own (fluids.ts), else a liquid
 }
 
-/** How big what's written beside parts and on lines is (labels.ts). */
-export type LabelSize = "small" | "normal" | "large";
-
 export interface Style {
     no: string; // normally open valves' color: "" for the standard one
     nc: string; // normally closed valves'
     fip: string; // fail-in-place (double-acting) valves'
-    labels: LabelSize;
+    labels: number; // how big what's written beside parts and on lines is, of its standard size (labels.ts)
     // The team's color scheme its colors were taken from (fluids.ts applyScheme), by id, and when that scheme had
     // last changed then, to see it's changed since. "": none.
     scheme: string;
@@ -222,7 +243,7 @@ export interface Drawing {
     elsewhere?: string[];
 }
 
-export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: "normal", scheme: "", schemeAt: "" };
+export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: 1, scheme: "", schemeAt: "" };
 
 export const emptyDrawing = (): Drawing => ({
     format: 1,
@@ -302,7 +323,7 @@ export function newPart(kind: string, at: Point, fields: Partial<Part> = {}): Pa
         w: 0,
         h: 0,
         scale: 1,
-        labelSize: "",
+        labelSize: null,
         ...fields,
     };
 }
@@ -453,11 +474,9 @@ function part(value: unknown): Part | null {
         text: str(value.text),
         w: Math.max(0, num(value.w)),
         h: Math.max(0, num(value.h)),
-        scale: (PART_SCALES as readonly number[]).includes(num(value.scale, 1)) ? num(value.scale, 1) : 1,
-        labelSize:
-            value.labelSize === "small" || value.labelSize === "normal" || value.labelSize === "large"
-                ? value.labelSize
-                : "",
+        scale: num(value.scale, 1) > 0 ? partScale(num(value.scale, 1)) : 1,
+        labelSize: readLabelSize(value.labelSize),
+        ...(value.back === true ? { back: true } : {}),
         ...partSim(value.sim),
         ...partLinks(value.links),
     };
@@ -574,7 +593,7 @@ export function readDrawing(value: unknown): Drawing {
     }
     const { parts, lines } = pageParts(found);
     const style = isObject(found.style) ? found.style : {};
-    const labels = style.labels === "small" || style.labels === "large" ? style.labels : "normal";
+    const labels = readLabelSize(style.labels) ?? 1;
     return {
         format: 1,
         parts,

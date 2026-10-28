@@ -4,7 +4,8 @@ import {
     newId,
     newLine,
     newPart,
-    PART_SCALES,
+    labelScale,
+    partScale,
     type Document as PiperDocument,
     type Drawing,
     type End,
@@ -1251,20 +1252,13 @@ const DRAWN: Record<string, readonly [number, number, number, number]> = {
     valve52: [-40, -15, 40, 15],
 };
 
-/** The scale nearest a ratio of the ones a part can be drawn at. */
-const nearestScale = (ratio: number): number =>
-    PART_SCALES.reduce((best, scale) =>
-        Math.abs(Math.log(scale / ratio)) < Math.abs(Math.log(best / ratio)) ? scale : best,
-    );
+/** A part's size as Visio drew it, of its kind's own: to the nearest 5%, within what a part can be. */
+const nearestScale = (ratio: number): number => partScale(Math.round(ratio * 20) / 20);
 
-/** The size of Piper's labels nearest a tag's as Visio wrote it (units): small, the diagram's own, or large. */
-function labelSizeOf(units: number): "small" | "" | "large" {
-    const sizes: [number, "small" | "" | "large"][] = [
-        [6.4, "small"],
-        [8, ""],
-        [10.4, "large"],
-    ];
-    return sizes.reduce((best, entry) => (Math.abs(entry[0] - units) < Math.abs(best[0] - units) ? entry : best))[1];
+/** The size of Piper's labels nearest a tag's as Visio wrote it (units), to the nearest 5%: null, the diagram's own. */
+function labelSizeOf(units: number): number | null {
+    const size = labelScale(Math.round((units / 8) * 20) / 20); // a tag's 8 units at the standard size
+    return Math.abs(size - 1) < 0.05 ? null : size;
 }
 
 /** Words Piper's own text can say as Visio set them: dark, not see-through, level or a quarter turned. */
@@ -1592,7 +1586,7 @@ function pageDrawing(page: VisioPage, title: string): { drawing: Drawing; report
                 scale,
                 tag: symbol.tag,
                 props: { ...part.props, ...symbol.props, ...(kind.state ? { normal } : {}) },
-                labelSize: tagAt ? labelSizeOf(symbol.tagWords!.size * k) : "",
+                labelSize: tagAt ? labelSizeOf(symbol.tagWords!.size * k) : null,
                 shown: part.shown.filter((key) => (symbol.props[key] ?? part.props[key] ?? "") !== ""),
                 label: tagAt ? { x: round(tagAt.x - part.x), y: round(tagAt.y - part.y + 8 * 0.35) } : null,
             };

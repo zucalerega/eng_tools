@@ -66,8 +66,12 @@ export function DiagramView({
     const lineLabels = useMemo(() => lineLabelPlaces(drawing, paths), [drawing, paths]);
     const place = useMemo(() => badgePlacer(drawing, paths), [drawing, paths]); // where test values go, if shown
     const shared = useMemo(() => sharedTags(drawing), [drawing]);
-    const behind = drawing.parts.filter((part) => kindOf(part.kind).behind);
-    const front = drawing.parts.filter((part) => !kindOf(part.kind).behind);
+    // Under the lines: what's drawn behind everything (regions, figures) and parts sent to the back. Over them: the rest.
+    // Each in the drawing's order, so a part later is over one earlier.
+    const under = (part: Part) => kindOf(part.kind).behind || part.back === true;
+    const behind = drawing.parts.filter(under);
+    const front = drawing.parts.filter((part) => !under(part));
+    const labelled = drawing.parts.filter((part) => !kindOf(part.kind).behind); // tags over everything, to be read
     const reach = 12 / zoom; // how far from a line a click still lands on it
 
     const contextOf = (part: Part): DrawContext => {
@@ -150,7 +154,7 @@ export function DiagramView({
                     box={kindOf(part.kind).box(part, drawing)}
                 />
             ))}
-            {front.map((part) => (
+            {labelled.map((part) => (
                 <PartLabel
                     key={`label-${part.id}`}
                     drawing={drawing}

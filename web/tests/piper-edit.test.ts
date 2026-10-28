@@ -13,6 +13,7 @@ import {
     nextTag,
     pasteClip,
     reconnect,
+    reorderParts,
     sharedTags,
     turnParts,
     updatePart,
@@ -441,6 +442,23 @@ test("a label the same along a run is written once, however the parts on it move
     drawing = carryFluid(drawing, beyond, "gox");
     show([first, second, beyond], ["fluid"]);
     expect(written()).toEqual(["GOX", "GOX"]);
+});
+
+test("parts brought to the front go last, over everything; sent to the back, first, under the lines too", () => {
+    fresh();
+    const [a, b, c, d] = [0, 100, 200, 300].map((x) => place("ball-valve", x, 0));
+    const pipe = join([a!, "b"], [b!, "a"]);
+    const order = () => drawing.parts.map((each) => `${each.tag}${each.back ? " (back)" : ""}`);
+    drawing = reorderParts(drawing, new Set([a!, c!]), "front");
+    expect(order()).toEqual(["BV-2", "BV-4", "BV-1", "BV-3"]); // keeping their order among themselves
+    drawing = reorderParts(drawing, new Set([d!, c!]), "back");
+    expect(order()).toEqual(["BV-4 (back)", "BV-3 (back)", "BV-2", "BV-1"]);
+    drawing = reorderParts(drawing, new Set([d!]), "front");
+    expect(order()).toEqual(["BV-3 (back)", "BV-2", "BV-1", "BV-4"]);
+    expect(drawing.lines.map((each) => each.id)).toEqual([pipe]); // lines stay as they are
+    expect(reorderParts(drawing, new Set([pipe]), "back")).toBe(drawing); // no parts: no change
+    // Kept as saved; a part from before is where its kind draws it.
+    expect(readDrawing(drawing).parts.map((each) => each.back === true)).toEqual([true, false, false, false]);
 });
 
 test("copied parts paste with their lines between them, and taken tags renumbered", () => {

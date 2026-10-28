@@ -467,6 +467,33 @@ test("a part's drawn bigger or smaller, its label too, and a text block's set in
     });
 });
 
+test("a part's sent to the back, under what overlaps it and the lines, or brought to the front, from the inspector or ] and [", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "picture", 0, 0);
+    place(drawing, "ball-valve", 0, 0); // over the picture
+    const made = await team.diagram(team.chief, "Overlaid", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    const order = async () =>
+        (await team.piperDiagram(team.chief, made.id)).read.parts.map(
+            (part) => `${part.kind}${part.back ? " (back)" : ""}`,
+        );
+
+    // The valve to the back, under the picture: from the inspector.
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    await userEvent.click(inspector.getByRole("button", { name: "Send to back" }));
+    await waitFor(async () => expect(await order()).toEqual(["valve (back)", "picture"]));
+    // And to the front again, with ].
+    fireEvent.keyDown(document, { key: "]", code: "BracketRight" });
+    await waitFor(async () => expect(await order()).toEqual(["picture", "valve"]));
+    fireEvent.keyDown(document, { key: "[", code: "BracketLeft" });
+    await waitFor(async () => expect(await order()).toEqual(["valve (back)", "picture"]));
+});
+
 test("a save from another window is caught: Keep mine saves over it, and the other stays in the history", async () => {
     const team = await Team.create();
     const bob = await team.member("Bob");

@@ -229,6 +229,11 @@ what it is, `data-hit`).
   upright. A tagged one (a symbol Piper has no part for, tagged beside it in Visio) is in the
   parts list, as a Figure; one without a tag isn't. A web app from before figures shows one as
   an unknown part's dashed box, and keeps it as it is.
+- **Order**: parts are drawn in their order in the page's list, so a later one is over an
+  earlier one, and lines between the parts drawn behind everything (regions, figures) and the
+  rest. Bring to front moves what's selected to the end of the list; Send to back moves it to
+  the start, and marks it `back`, so it's drawn under the lines too (`reorderParts`). Tags are
+  written over everything either way, to be read.
 - **Sizes**: a part's drawn at its kind's size, or any size from a quarter of it to four times
   (`scale`, to the hundredth, within `PART_SCALE`; a quarter is as small as a valve's ports stay
   a grid apart), from the round handle at a selected part's corner (in steps of 5%, or 1% with

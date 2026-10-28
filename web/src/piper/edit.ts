@@ -552,6 +552,26 @@ export function moveItems(drawing: Drawing, ids: Set<string>, by: Point): Drawin
     return { ...after, lines };
 }
 
+/**
+ * Parts brought to the front, drawn over everything (last, and over the lines), or sent to the back, under everything
+ * (first, and under the lines with the regions). Those moved keep their order among themselves. Lines stay as they are.
+ */
+export function reorderParts(drawing: Drawing, ids: Set<string>, to: "front" | "back"): Drawing {
+    const moving = drawing.parts.filter((part) => ids.has(part.id));
+    if (moving.length === 0) {
+        return drawing;
+    }
+    const staying = drawing.parts.filter((part) => !ids.has(part.id));
+    const moved = moving.map((part) => {
+        const changed: Part = { ...part, back: true };
+        if (to === "front") {
+            delete changed.back;
+        }
+        return changed;
+    });
+    return { ...drawing, parts: to === "front" ? [...staying, ...moved] : [...moved, ...staying] };
+}
+
 /** Kinds that keep upright: regions, legends, and title blocks don't turn or flip. */
 const keepsUpright = (part: Part) => ["region", "legend", "titleblock"].includes(part.kind);
 

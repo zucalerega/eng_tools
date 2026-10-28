@@ -437,7 +437,10 @@ the keys.
   Tabloid, Letter, ANSI D, A3, or A4, on a drawing sheet as Visio's P&IDs are (a border with its
   zones, the named revisions, and a title block that says which sheet of how many), vector and
   searchable; SVG or PNG images of the page shown; printing; and the parts list of every page
-  as a CSV (a valve list, an instrument list).
+  as a CSV (a valve list, an instrument list). Each can have a legend (**With a legend**, in its
+  dialog): every kind of part on the page with its symbol and name, by category, then its types
+  of line, its fluids, and its valves' state colors, beside the drawing (a page whose printed
+  sheet is set has its legend on a sheet of its own after it, in a PDF).
 
 ## Layout
 

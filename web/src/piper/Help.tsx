@@ -508,6 +508,15 @@ const TOPICS: Topic[] = [
                     color: lines in ink, normally closed valves filled, normally open ones white.
                 </li>
                 <li>
+                    Any of them can have a legend (<em>With a legend</em>, in its dialog; it's asked the next time as
+                    you left it): every kind of part on the page, with its symbol and its name, under its category
+                    (valves, tanks and vessels, instruments...), then each type of line in its weight and dashes, each
+                    fluid in its color, and the colors of its valves' normal states. It's beside the drawing, to its
+                    right, in columns as tall as the drawing; in a PDF, beside each page, fitted on the paper with it. A
+                    page whose printed sheet is set keeps its layout: its legend is on a sheet of its own after it, at
+                    its scale. In black and white, it leaves out the fluids, whose lines are all ink.
+                </li>
+                <li>
                     <em>Parts list (CSV)</em>: every part's tag, what it is, its normal state, fluid, test channel, and
                     properties, and every line's tag, fluid, and ends, on all its pages (with each one's page, if
                     there's more than one). Filter it in a spreadsheet for a valve list or an instrument list.

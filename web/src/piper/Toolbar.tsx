@@ -49,6 +49,9 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
 
 export type ExportKind = "pdf" | "svg" | "png" | "print" | "csv";
 
+/** The exports that are a picture of the page shown: each asks first whether it has a legend beside it. */
+export type PictureKind = "svg" | "png" | "print";
+
 const STATUS: Record<SaveStatus, string> = {
     saved: "Saved",
     saving: "Saving…",
@@ -273,8 +276,8 @@ export function Toolbar({
                     label="Export"
                     items={[
                         { label: "PDF…", onSelect: () => onExport("pdf") },
-                        { label: "SVG image", onSelect: () => onExport("svg") },
-                        { label: "PNG image", onSelect: () => onExport("png") },
+                        { label: "SVG image…", onSelect: () => onExport("svg") },
+                        { label: "PNG image…", onSelect: () => onExport("png") },
                         { label: "Print…", onSelect: () => onExport("print") },
                         { label: "Parts list (CSV)", onSelect: () => onExport("csv") },
                     ]}

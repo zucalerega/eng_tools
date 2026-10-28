@@ -1,5 +1,5 @@
 import type { Drawing, PageSheet } from "./drawing";
-import { svgOf } from "./exports";
+import { svgOf, type ExportLegend } from "./exports";
 import type { DiagramMeta } from "./library/kinds";
 import type { Box } from "./geometry";
 import { bytesOf, deflate, pdfPicture, type PdfPicture, type PictureSource } from "./pictures";
@@ -1019,19 +1019,42 @@ export function fitSheet(box: Box, paperId: string, landscape: boolean): PageShe
 }
 
 /**
+ * A page's legend on a sheet of its own, for a page whose printed sheet is set: its layout is kept, so its legend
+ * can't go beside it. On the same paper, turned the same way, at the same scale, from the top left of the sheet's
+ * border, its columns as tall as fits above the title block's corner.
+ */
+export function legendSheet(
+    page: Drawing & { sheet: PageSheet },
+    fluids = true,
+): { drawing: Drawing; legend: ExportLegend } {
+    const { frame, corner } = sheetOutline(page.sheet);
+    const room = ROOM / page.sheet.scale;
+    return {
+        drawing: { ...page, parts: [], lines: [] },
+        legend: {
+            of: page,
+            fluids,
+            at: { x: frame.x0 + room, y: frame.y0 + room },
+            maxHeight: corner.y0 - frame.y0 - 2 * room,
+        },
+    };
+}
+
+/**
  * The drawing's pages as a PDF, a page for each: each on its printed sheet's paper, where its outline shows, if it has
- * one; else on the paper chosen, fitted to it (pageFor). On a drawing sheet, if it's given one: its border, the
- * revisions, and its title block, which says which sheet of how many it is.
+ * one; else on the paper chosen, fitted to it (pageFor), with its legend, if it has one, fitted on with it. On a
+ * drawing sheet, if it's given one: its border, the revisions, and its title block, which says which sheet of how many
+ * it is.
  */
 export async function pdfOfPages(
-    drawn: { drawing: Drawing; meta: DiagramMeta; sheet: Sheet | null }[],
+    drawn: { drawing: Drawing; meta: DiagramMeta; sheet: Sheet | null; legend?: ExportLegend | null }[],
     paperId = "tabloid",
     pictures?: PictureSource,
 ): Promise<Blob> {
     const writer = new Writer();
     const contents: { content: Uint8Array<ArrayBuffer>; width: number; height: number }[] = [];
-    for (const { drawing, meta, sheet: framed } of drawn) {
-        const { svg } = await svgOf(drawing, meta, pictures);
+    for (const { drawing, meta, sheet: framed, legend } of drawn) {
+        const { svg } = await svgOf(drawing, meta, pictures, legend ?? null);
         const root = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
         await writer.readPictures(root);
         const [vx, vy, vw, vh] = (root.getAttribute("viewBox") ?? "0 0 100 100").split(/\s+/).map(Number) as [

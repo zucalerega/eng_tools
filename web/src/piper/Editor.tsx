@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
 import { FolderPicker } from "../FolderPicker";
@@ -14,7 +14,7 @@ import { DiagramView } from "./DiagramView";
 import { useEditLock } from "./editing";
 import { pageOf, readDocument, type Document, type Drawing, type Point } from "./drawing";
 import { addPart, drawingBox, updatePart, withPicture } from "./edit";
-import { download, fileName, partsList, pngOf, printDrawing, svgOf } from "./exports";
+import { download, fileName, legendBeside, partsList, pngOf, printDrawing, svgOf } from "./exports";
 import { HistoryPanel } from "./History";
 import { Inspector } from "./Inspector";
 import { LibraryPanel } from "./LibraryPanel";
@@ -23,9 +23,9 @@ import type { DiagramMeta } from "./library/kinds";
 import { useSaving } from "./saving";
 import { EditorStore, useEditor } from "./store";
 import { channelNames, findChannel, plotLink, type Samples } from "./testdata";
-import { PAPERS, pdfOfPages, type Sheet } from "./pdf";
+import { legendSheet, PAPERS, pdfOfPages, type Sheet } from "./pdf";
 import { TestPanel } from "./TestPanel";
-import { Toolbar, type ExportKind, type Panel } from "./Toolbar";
+import { Toolbar, type ExportKind, type Panel, type PictureKind } from "./Toolbar";
 import { findInDocument } from "./find";
 import { PageTabs } from "./PageTabs";
 import { PartsPanel } from "./PartsPanel";
@@ -54,6 +54,7 @@ export function EditorPage({ id }: { id: number }) {
     const [looking, setLooking] = useState<RevisionDetail | null>(null);
     const [renaming, setRenaming] = useState(false);
     const [pdfing, setPdfing] = useState(false);
+    const [picturing, setPicturing] = useState<PictureKind | null>(null); // an image or a print: with a legend?
     const [notice, setNotice] = useState<string | null>(null);
     const [schemes, setSchemes] = useState<Scheme[] | null>(null);
     const [takingOver, setTakingOver] = useState(false);
@@ -256,29 +257,35 @@ export function EditorPage({ id }: { id: number }) {
     }
 
     async function exportAs(as: ExportKind) {
-        // A picture of the page shown (named for it, if there's more than one); the parts of all of them.
-        const document = whole();
-        const shown = pageOf(document, shownPage);
-        const named = document.pages.length > 1 ? `${diagram!.name} ${document.pages[shownPage]!.name}` : diagram!.name;
         try {
             if (as === "pdf") {
                 setPdfing(true); // which paper, first
-            } else if (as === "svg") {
-                const { svg } = await svgOf(shown, meta);
-                download(fileName(named, "svg"), new Blob([svg], { type: "image/svg+xml" }));
-            } else if (as === "png") {
-                download(fileName(named, "png"), await pngOf(shown, meta));
-            } else if (as === "print") {
-                await printDrawing(shown, meta);
+            } else if (as !== "csv") {
+                setPicturing(as); // with a legend or not, first
             } else {
-                // A byte-order mark first, so Excel reads it as UTF-8 (µm, Ø).
+                // The parts of all its pages. A byte-order mark first, so Excel reads it as UTF-8 (µm, Ø).
                 download(
                     fileName(`${diagram!.name} parts`, "csv"),
-                    new Blob(["﻿", partsList(document)], { type: "text/csv" }),
+                    new Blob(["﻿", partsList(whole())], { type: "text/csv" }),
                 );
             }
         } catch (error) {
             setNotice(`The export didn't work: ${message(error)}`);
+        }
+    }
+
+    /** A picture of the page shown (named for it, if there's more than one), with its legend beside it, or not. */
+    async function picture(as: PictureKind, legend: boolean) {
+        const document = whole();
+        const shown = pageOf(document, shownPage);
+        const named = document.pages.length > 1 ? `${diagram!.name} ${document.pages[shownPage]!.name}` : diagram!.name;
+        if (as === "svg") {
+            const { svg } = await svgOf(shown, meta, piper.imageBytes, legend ? legendBeside(shown) : null);
+            download(fileName(named, "svg"), new Blob([svg], { type: "image/svg+xml" }));
+        } else if (as === "png") {
+            download(fileName(named, "png"), await pngOf(shown, meta, legend));
+        } else {
+            await printDrawing(shown, meta, legend);
         }
     }
 
@@ -628,32 +635,51 @@ export function EditorPage({ id }: { id: number }) {
                     }}
                 />
             )}
+            {picturing && (
+                <PictureDialog
+                    as={picturing}
+                    onCancel={() => setPicturing(null)}
+                    onSave={async (legend) => {
+                        await picture(picturing, legend);
+                        setPicturing(null);
+                    }}
+                />
+            )}
             {pdfing && (
                 <PdfDialog
                     onCancel={() => setPdfing(false)}
-                    onSave={async (paper, framed, mono) => {
-                        // Every page, a sheet each: which of how many it is in its title block.
+                    onSave={async (paper, framed, mono, legend) => {
+                        // Every page, a sheet each: which of how many it is in its title block. With a legend, each
+                        // page's beside it; or, where its printed sheet is set (its layout kept), on a sheet after it.
                         const document = whole();
                         const printed = looking
                             ? { ...meta, revision: revisionLabel(diagram, looking.number, looking.released) }
                             : meta;
                         const revisions = framed ? await sheetRevisions(diagram.id) : [];
-                        const drawn = document.pages.map((_, index) => {
+                        const pages = document.pages.flatMap((_, index) => {
                             const each = pageOf(document, index);
-                            return {
-                                drawing: mono ? monochrome(each) : each,
-                                meta: { ...printed, sheet: sheetLabel(index, document.pages.length) },
-                                // On a sheet: its title block the sheet's, unless the page has its own.
-                                sheet: framed
-                                    ? {
-                                          project: diagram.folder,
-                                          diagram: diagram.id,
-                                          revisions,
-                                          titleBlock: !each.parts.some((part) => part.kind === "titleblock"),
-                                      }
-                                    : null,
-                            };
+                            const drawing = mono ? monochrome(each) : each;
+                            if (!legend) {
+                                return [{ drawing, legend: null }];
+                            }
+                            return drawing.sheet
+                                ? [{ drawing, legend: null }, legendSheet({ ...drawing, sheet: drawing.sheet }, !mono)]
+                                : [{ drawing, legend: { of: drawing, fluids: !mono } }];
                         });
+                        const drawn = pages.map(({ drawing, legend: listed }, index) => ({
+                            drawing,
+                            legend: listed,
+                            meta: { ...printed, sheet: sheetLabel(index, pages.length) },
+                            // On a sheet: its title block the sheet's, unless the page has its own.
+                            sheet: framed
+                                ? {
+                                      project: diagram.folder,
+                                      diagram: diagram.id,
+                                      revisions,
+                                      titleBlock: !drawing.parts.some((part) => part.kind === "titleblock"),
+                                  }
+                                : null,
+                        }));
                         download(fileName(diagram.name, "pdf"), await pdfOfPages(drawn, paper));
                         setPdfing(false);
                     }}
@@ -696,6 +722,7 @@ const NO_SAMPLES: ReadonlyMap<string, Samples> = new Map<string, Samples>();
 const PAPER = "piper.paper"; // the paper last chosen for a PDF, in this browser
 const SHEET = "piper.sheet"; // and whether it was on a sheet ("no": it wasn't)
 const MONO = "piper.mono"; // and whether it was in black and white ("yes": it was)
+const LEGEND = "piper.legend"; // and whether an export last had a legend ("yes": it did)
 
 function remembered(key: string, fallback: string): string {
     try {
@@ -736,12 +763,13 @@ function PdfDialog({
     onSave,
     onCancel,
 }: {
-    onSave: (paper: string, sheet: boolean, mono: boolean) => Promise<void>;
+    onSave: (paper: string, sheet: boolean, mono: boolean, legend: boolean) => Promise<void>;
     onCancel: () => void;
 }) {
     const [paper, setPaper] = useState(() => remembered(PAPER, "tabloid"));
     const [sheet, setSheet] = useState(() => remembered(SHEET, "yes") !== "no");
     const [mono, setMono] = useState(() => remembered(MONO, "no") === "yes");
+    const [legend, setLegend] = useState(() => remembered(LEGEND, "no") === "yes");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     async function save() {
@@ -750,11 +778,12 @@ function PdfDialog({
             window.localStorage.setItem(PAPER, paper);
             window.localStorage.setItem(SHEET, sheet ? "yes" : "no");
             window.localStorage.setItem(MONO, mono ? "yes" : "no");
+            window.localStorage.setItem(LEGEND, legend ? "yes" : "no");
         } catch {
             // storage blocked: the choices last this once
         }
         try {
-            await onSave(paper, sheet, mono);
+            await onSave(paper, sheet, mono, legend);
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -781,12 +810,96 @@ function PdfDialog({
                 In black and white, for a printer without color: lines in ink, normally closed valves filled, normally
                 open ones left white
             </label>
+            <LegendCheck checked={legend} onChange={setLegend}>
+                With a legend beside each page: every kind of part on it with its symbol, its types of line, its fluids,
+                and its valves' colors (a page whose printed sheet is set has its legend on a sheet after it)
+            </LegendCheck>
             <p className="muted piper-small">
                 Each page of the diagram on a sheet of its own. A page whose printed sheet is set (in its panel, with
                 nothing selected) prints where its outline shows, on its own paper; the others are fitted on this paper,
                 turned their way. In the light colors, as on paper: its lines and words stay sharp at any size, and its
                 tags can be searched.
             </p>
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
+function LegendCheck({
+    checked,
+    onChange,
+    children,
+}: {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    children: ReactNode;
+}) {
+    return (
+        <label className="check">
+            <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+            {children}
+        </label>
+    );
+}
+
+const PICTURES: Record<PictureKind, { title: string; confirm: string; what: string }> = {
+    svg: {
+        title: "Save as SVG",
+        confirm: "Save SVG",
+        what: "The page shown, as an SVG image: in the light colors, as on paper, sharp at any size.",
+    },
+    png: {
+        title: "Save as PNG",
+        confirm: "Save PNG",
+        what: "The page shown, as a PNG image at twice its size, in the light colors, as on paper.",
+    },
+    print: {
+        title: "Print",
+        confirm: "Print…",
+        what: "The page shown, fitted to the paper, in the light colors. Your browser's print dialog comes next.",
+    },
+};
+
+/** An image of the page shown, or a print of it: with its legend beside it, or not. */
+function PictureDialog({
+    as,
+    onSave,
+    onCancel,
+}: {
+    as: PictureKind;
+    onSave: (legend: boolean) => Promise<void>;
+    onCancel: () => void;
+}) {
+    const [legend, setLegend] = useState(() => remembered(LEGEND, "no") === "yes");
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function save() {
+        setBusy(true);
+        try {
+            window.localStorage.setItem(LEGEND, legend ? "yes" : "no");
+        } catch {
+            // storage blocked: the choice lasts this once
+        }
+        try {
+            await onSave(legend);
+        } catch (error) {
+            setProblem(message(error));
+            setBusy(false);
+        }
+    }
+    return (
+        <Dialog
+            title={PICTURES[as].title}
+            confirm={PICTURES[as].confirm}
+            busy={busy}
+            onConfirm={() => void save()}
+            onCancel={onCancel}
+        >
+            <LegendCheck checked={legend} onChange={setLegend}>
+                With a legend beside the drawing: every kind of part on it with its symbol, its types of line, its
+                fluids, and its valves' colors
+            </LegendCheck>
+            <p className="muted piper-small">{PICTURES[as].what}</p>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );

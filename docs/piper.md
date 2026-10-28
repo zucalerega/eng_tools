@@ -350,6 +350,18 @@ what it is, `data-hit`).
     says) and by MuPDF rendering it.
   - **SVG** and **PNG** (at twice its size): the page shown, alone, its pictures in it as data
     (`pictures.ts`; an SVG drawn as an image fetches nothing). **Print** prints its SVG.
+  - **A legend** (`legend.tsx`), if its dialog's asked for one (the choice kept by the browser,
+    `piper.legend`): every kind of part on the page, each once, by what it's called (`titleOf`),
+    with its symbol drawn as the library draws it (no state's color, nothing in it) at up to four
+    fifths of its size, under its category, in the library's order; then the types of line on
+    it, each in its weight and dashes; its fluids (`fluidsUsed`), in their colors; and its
+    valves' normal states. In columns, a heading never at a column's foot, in the drawing's
+    units and at its labels' size, so it's drawn and printed as the drawing is. An image's is
+    beside the drawing, to its right, from its top, its columns as tall as the drawing; a PDF's,
+    beside each page, fitted on the paper with it. A page whose printed sheet is set keeps its
+    layout, so its legend is a sheet of its own after it (`legendSheet`), on its paper and at its
+    scale, from the top left of the border, above the title block's corner, and the sheets are
+    numbered with it. In black and white, the fluids are left out: their lines are all ink.
   - **Pictures in a PDF** are its own images: a JPEG as it is (DCTDecode), a PNG decoded
     (`decodePng`: any color type and depth, its rows unfiltered; an interlaced one through a
     canvas) into its pixels and its transparency, a soft mask, each deflated.

@@ -1122,6 +1122,46 @@ test("Export, PDF: the drawing on a drawing sheet, as a PDF file", async () => {
     expect(click).toHaveBeenCalled();
 });
 
+test("Export, an image or a print: with a legend beside the drawing if it's asked for, and asked again next time", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "Legend", example());
+    const saved: Blob[] = [];
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = (blob: Blob) => (saved.push(blob), "blob:piper");
+    URL.revokeObjectURL = () => {};
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    onTestFinished(() => {
+        URL.createObjectURL = createObjectURL;
+        URL.revokeObjectURL = revokeObjectURL;
+        click.mockRestore();
+    });
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    const svgWith = async (legend: boolean) => {
+        await userEvent.click(screen.getByRole("button", { name: "Export" }));
+        await userEvent.click(screen.getByRole("menuitem", { name: "SVG image…" }));
+        const dialog = within(await screen.findByRole("dialog", { name: "Save as SVG" }));
+        const check = dialog.getByRole("checkbox", { name: /With a legend/ });
+        expect(check).toHaveProperty("checked", !legend); // as it was last time: none, the first
+        await userEvent.click(check);
+        await userEvent.click(dialog.getByRole("button", { name: "Save SVG" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Save as SVG" })).toBeNull());
+        return saved[saved.length - 1]!.text();
+    };
+    // (The example has a legend part of its own, of its fluids and states: the export's is the one beside it.)
+    const withLegend = await svgWith(true);
+    expect(withLegend).toContain('class="piper-legend"');
+    expect(withLegend).toContain('data-legend="Pressure transducer"');
+    expect(withLegend).toContain('data-legend="Normally closed"');
+    expect(await svgWith(false)).not.toContain('class="piper-legend"');
+    // The PDF's dialog asks too, as the last export was.
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "PDF…" }));
+    const pdf = within(await screen.findByRole("dialog", { name: "Save as PDF" }));
+    expect(pdf.getByRole("checkbox", { name: /With a legend/ })).toHaveProperty("checked", false);
+});
+
 test("Help says what Piper does, and how", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/piper/help");

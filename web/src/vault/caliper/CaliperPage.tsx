@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Notice, usePopover } from "../../components";
 import { Link, navigate, useSearch } from "../../router";
-import { vaultApi, type CaliperModel, type FileDetail } from "../api";
+import { vaultApi, type CaliperConfigurations, type CaliperModel, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
 import { caliperUrl, fileFormat, fileUrl, kindOf, sheetFormat } from "../paths";
 import { ComponentTree } from "./ComponentTree";
@@ -15,8 +15,9 @@ import "./caliper.css";
 
 // Caliper: a part or assembly in 3D, in the browser, to look at and measure, not to change. SolidWorks parts and
 // assemblies show their versions' 3D models: the ones Vault for SolidWorks makes, or else the server reads one from the
-// 3D view SolidWorks saved in the file. STEP, IGES, and STL files are read as they are. At /vault/caliper/<file id>, with
-// ?version= and ?configuration= for which. Drawings and DXF files are flat: DrawingPage shows them.
+// 3D view SolidWorks saved in the file, or another configuration's from the solid SolidWorks kept of it. STEP, IGES, and
+// STL files are read as they are. At /vault/caliper/<file id>, with ?version= and ?configuration= for which. Drawings
+// and DXF files are flat: DrawingPage shows them.
 
 // The vault's routes send drawings and DXF files to their own page, without this one or three.js; here it's only for a
 // file the vault's index doesn't have (one in the trash, say).
@@ -26,14 +27,17 @@ export function CaliperPage({ id }: { id: number }) {
     const search = useSearch();
     const params = new URLSearchParams(search);
     const askedVersion = Number(params.get("version")) || null;
-    const askedConfiguration = params.get("configuration");
+    const askedConfiguration = params.get("configuration") || null;
     const [detail, setDetail] = useState<FileDetail | null>(null);
     const [models, setModels] = useState<CaliperModel[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
-    // Versions the server couldn't read a model from ("<file id>:<version>"), with why; and the ones asked for, once
-    // each.
+    // Versions the server couldn't read a model from ("<file id>:<version>", and with ":<configuration>" in one asked
+    // for), with why; and the ones asked for, once each.
     const [unreadable, setUnreadable] = useState<ReadonlyMap<string, string>>(new Map());
     const asked = useRef(new Set<string>());
+    // The configurations of the version shown ("<file id>:<version>"), as its file lists them; null where they couldn't
+    // be had, and those with models are offered.
+    const [listed, setListed] = useState<{ key: string; found: CaliperConfigurations | null } | null>(null);
     const page = useRef<HTMLDivElement>(null);
     useBelowTopBar(page);
 
@@ -53,33 +57,62 @@ export function CaliperPage({ id }: { id: number }) {
         };
     }, [id]);
 
-    // A SolidWorks version without a model: the server reads one from the file, once.
+    // A SolidWorks version without a model: the server reads one from the file, once. So does one without a model in
+    // the configuration asked for, where the file kept that configuration.
     const current = detail?.file.id === id ? detail : null;
     const kindHere = current ? kindOf(current.file.name) : null;
+    const solidWorks = kindHere === "part" || kindHere === "assembly";
     const wanted = current ? (askedVersion ?? current.file.version) : null;
-    const why = (version: number) => unreadable.get(`${id}:${version}`);
+    const why = (version: number, configuration: string | null = null) =>
+        unreadable.get(modelKey(id, version, configuration));
     const reading =
         models !== null &&
         wanted !== null &&
-        (kindHere === "part" || kindHere === "assembly") &&
-        !models.some((model) => model.version === wanted) &&
-        why(wanted) === undefined;
+        solidWorks &&
+        !models.some(
+            (model) =>
+                model.version === wanted && (askedConfiguration === null || model.configuration === askedConfiguration),
+        ) &&
+        why(wanted, askedConfiguration) === undefined;
     useEffect(() => {
-        const key = `${id}:${wanted}`;
-        if (!reading || wanted === null || asked.current.has(key)) {
+        const key = wanted === null ? null : modelKey(id, wanted, askedConfiguration);
+        if (!reading || wanted === null || key === null || asked.current.has(key)) {
             return;
         }
         asked.current.add(key);
-        vaultApi.makeCaliperModel(id, wanted).then(
+        vaultApi.makeCaliperModel(id, wanted, askedConfiguration ?? undefined).then(
             (model) =>
                 setModels((found) =>
-                    [...(found ?? []).filter((m) => m.version !== model.version), model].sort(
-                        (a, b) => b.version - a.version,
-                    ),
+                    [
+                        ...(found ?? []).filter(
+                            (m) => m.version !== model.version || m.configuration !== model.configuration,
+                        ),
+                        model,
+                    ].sort((a, b) => b.version - a.version),
                 ),
             (error: Error) => setUnreadable((found) => new Map([...found, [key, error.message]])),
         );
-    }, [reading, id, wanted]);
+    }, [reading, id, wanted, askedConfiguration]);
+
+    // The configurations of the version shown, to choose from (once it's known which that is).
+    const shown =
+        current && models && solidWorks && !(reading && askedConfiguration === null)
+            ? shownVersion(current.file.version, models, askedVersion, askedConfiguration, false).version
+            : null;
+    useEffect(() => {
+        if (shown === null) {
+            return;
+        }
+        let live = true;
+        const key = `${id}:${shown}`;
+        vaultApi.caliperConfigurations(id, shown).then(
+            (found) => live && setListed({ key, found }),
+            () => live && setListed({ key, found: null }), // those with models are offered
+        );
+        return () => {
+            live = false;
+        };
+    }, [id, shown]);
 
     if (problem) {
         return (
@@ -112,7 +145,7 @@ export function CaliperPage({ id }: { id: number }) {
         );
     }
 
-    if (reading) {
+    if (reading && askedConfiguration === null) {
         return (
             <p className="muted caliper-page-message">
                 Reading the 3D view SolidWorks saved in v{wanted} of {file.name}…
@@ -120,17 +153,31 @@ export function CaliperPage({ id }: { id: number }) {
         );
     }
 
-    // The version asked for, or the latest; with none asked for, and the latest unreadable, a SolidWorks file's newest
-    // version with a model.
-    let version = askedVersion ?? file.version;
-    const latestHasNone = !cad && !models.some((model) => model.version === version);
-    const fellBack = askedVersion === null && latestHasNone && models.length > 0;
-    if (fellBack) {
-        version = models[0]!.version;
-    }
+    const { version, fellBack } = shownVersion(file.version, models, askedVersion, askedConfiguration, cad);
     const here = models.filter((model) => model.version === version);
-    const chosen = here.find((model) => model.configuration === askedConfiguration) ?? here[0] ?? null;
+    const fromFile = listed?.key === `${id}:${version}` ? listed.found : null;
+    const savedIn = fromFile?.configurations.find((c) => c.active)?.name;
+    // The configuration asked for; or else the one SolidWorks saved the file in, or the first made (which it usually
+    // is).
+    const chosen =
+        askedConfiguration === null
+            ? (here.find((model) => model.configuration === savedIn) ?? here[0] ?? null)
+            : (here.find((model) => model.configuration === askedConfiguration) ?? null);
     const withModels = [...new Set(models.map((model) => model.version))];
+    // The configurations to choose from: the file's, then any others with models, and the one asked for. Those without
+    // a model the server can read say so: SolidWorks didn't keep them, or the server said why not.
+    const configurations = [
+        ...new Set([
+            ...(fromFile?.configurations.map((c) => c.name) ?? []),
+            ...here.map((model) => model.configuration),
+            ...(askedConfiguration === null ? [] : [askedConfiguration]),
+        ]),
+    ];
+    const without = (name: string) =>
+        !here.some((model) => model.configuration === name) &&
+        (why(version, name) !== undefined ||
+            fromFile?.configurations.some((c) => c.name === name && !c.saved && !c.model) === true);
+    const showing = chosen?.configuration ?? askedConfiguration ?? savedIn ?? "";
 
     return (
         <div className="caliper" ref={page}>
@@ -145,7 +192,9 @@ export function CaliperPage({ id }: { id: number }) {
                     Version
                     <select
                         value={version}
-                        onChange={(event) => navigate(caliperUrl(file.id, Number(event.target.value)))}
+                        onChange={(event) =>
+                            navigate(caliperUrl(file.id, Number(event.target.value), askedConfiguration ?? undefined))
+                        }
                     >
                         {detail.versions.map((v) => (
                             <option key={v.number} value={v.number}>
@@ -155,20 +204,23 @@ export function CaliperPage({ id }: { id: number }) {
                         ))}
                     </select>
                 </label>
-                {here.length > 1 && chosen && (
+                {!cad && configurations.length > 1 && (
                     <label className="caliper-choice">
                         Configuration
                         <select
-                            value={chosen.configuration}
+                            value={showing}
                             onChange={(event) => navigate(caliperUrl(file.id, version, event.target.value))}
                         >
-                            {here.map((model) => (
-                                <option key={model.configuration}>{model.configuration}</option>
+                            {configurations.map((name) => (
+                                <option key={name} value={name}>
+                                    {name}
+                                    {without(name) ? " (no 3D model)" : ""}
+                                </option>
                             ))}
                         </select>
                     </label>
                 )}
-                {here.length === 1 && chosen && <span className="muted">{chosen.configuration}</span>}
+                {!cad && configurations.length === 1 && <span className="muted">{configurations[0]}</span>}
                 <span className="caliper-head-actions">
                     <OpenInSolidWorks path={file.path} />
                     <a className="button" href={vaultApi.downloadUrl(file.id, version)} download>
@@ -184,13 +236,19 @@ export function CaliperPage({ id }: { id: number }) {
                     {why(file.version) && <p>{why(file.version)}</p>}
                 </Notice>
             )}
-            {!cad && !chosen ? (
+            {reading ? (
+                <p className="muted caliper-page-message">
+                    Reading the {askedConfiguration} configuration of v{version} of {file.name}…
+                </p>
+            ) : !cad && !chosen ? (
                 <NoModel
                     name={file.name}
                     path={file.path}
                     version={version}
-                    why={why(version) ?? null}
+                    configuration={askedConfiguration}
+                    why={why(version, askedConfiguration) ?? null}
                     withModels={withModels}
+                    configurationsWithModels={here.map((model) => model.configuration)}
                     id={file.id}
                 />
             ) : (
@@ -206,36 +264,85 @@ export function CaliperPage({ id }: { id: number }) {
     );
 }
 
+/** What a model is asked for by: a file's version, and the configuration asked for, if one was. */
+const modelKey = (id: number, version: number, configuration: string | null = null) =>
+    configuration === null ? `${id}:${version}` : `${id}:${version}:${configuration}`;
+
+/**
+ * The version to show: the one asked for, or the latest; with neither it nor a configuration asked for, and the latest
+ * without a model (the server couldn't read one), a SolidWorks file's newest version that has one (fellBack).
+ */
+function shownVersion(
+    latest: number,
+    models: CaliperModel[],
+    askedVersion: number | null,
+    askedConfiguration: string | null,
+    cad: boolean,
+): { version: number; fellBack: boolean } {
+    const version = askedVersion ?? latest;
+    const fellBack =
+        askedVersion === null &&
+        askedConfiguration === null &&
+        !cad &&
+        models.length > 0 &&
+        !models.some((model) => model.version === version);
+    return { version: fellBack ? models[0]!.version : version, fellBack };
+}
+
 function NoModel({
     id,
     name,
     path,
     version,
+    configuration,
     why,
     withModels,
+    configurationsWithModels,
 }: {
     id: number;
     name: string;
     path: string;
     version: number;
+    configuration: string | null; // the one asked for
     why: string | null; // what the server said when it couldn't read one from the file
     withModels: number[];
+    configurationsWithModels: string[]; // of this version
 }) {
     return (
         <div className="caliper-page-message">
             <Notice tone="info">
                 <p>
-                    v{version} of {name} has no 3D model.
+                    {configuration === null
+                        ? `v${version} of ${name} has no 3D model.`
+                        : `The ${configuration} configuration of v${version} of ${name} has no 3D model.`}
                 </p>
                 {why && <p>{why}</p>}
-                <p>
-                    Vault for SolidWorks makes models too: when it checks a part or assembly in, or when you open it in
-                    SolidWorks and click Make 3D view on the Vault tab.
-                </p>
+                {configuration === null ? (
+                    <p>
+                        Vault for SolidWorks makes models too: when it checks a part or assembly in, or when you open it
+                        in SolidWorks and click Make 3D view on the Vault tab.
+                    </p>
+                ) : (
+                    <p>
+                        Vault for SolidWorks makes models too, of the configuration SolidWorks shows when it checks a
+                        part or assembly in.
+                    </p>
+                )}
                 <p>
                     <OpenInSolidWorks path={path} />
                 </p>
-                {withModels.length > 0 && (
+                {configuration !== null && configurationsWithModels.length > 0 && (
+                    <p>
+                        These configurations of v{version} have one:{" "}
+                        {configurationsWithModels.map((other, i) => (
+                            <span key={other}>
+                                {i > 0 && ", "}
+                                <Link to={caliperUrl(id, version, other)}>{other}</Link>
+                            </span>
+                        ))}
+                    </p>
+                )}
+                {configuration === null && withModels.length > 0 && (
                     <p>
                         These versions have one:{" "}
                         {withModels.map((number, i) => (

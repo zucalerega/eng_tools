@@ -1,4 +1,4 @@
-import { requestBytes } from "../../api";
+import { ApiError, requestBytes } from "../../api";
 import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
 import { readMesh, type Mesh } from "./format";
 import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
@@ -108,12 +108,13 @@ export async function assemblyModel(
         return run;
     };
     const meshBodies = async (bytes: Promise<ArrayBuffer>) => bodiesOf(readMesh(await bytes));
-    // A part's model, made from its file where it has none yet: once for each version, however many use it.
+    // A part's model, made from its file where it has none yet, in the configuration it's used in (where the assembly
+    // says which): once for each version and configuration, however many use it.
     const made = new Map<string, Promise<CaliperModel>>();
-    const make = (id: number, version: number): Promise<CaliperModel> => {
-        const key = `${id}:${version}`;
+    const make = (id: number, version: number, configuration: string): Promise<CaliperModel> => {
+        const key = `${id}:${version}:${configuration}`;
         if (!made.has(key)) {
-            made.set(key, vaultApi.makeCaliperModel(id, version));
+            made.set(key, vaultApi.makeCaliperModel(id, version, configuration || undefined));
         }
         return made.get(key)!;
     };
@@ -133,18 +134,17 @@ export async function assemblyModel(
                 wanted.set(keyOf(c), async () => {
                     let shown = configuration;
                     if (!own) {
-                        const ready = await make(id, version).catch((error: unknown) => {
-                            throw new NoModel(error instanceof Error ? error.message : String(error), "unreadable");
+                        // The server reads it from the file: the configuration it was saved in, from its 3D view;
+                        // another, from the solid SolidWorks kept of it, which it doesn't of every one. An assembly
+                        // that doesn't say which configuration it uses shows the one it was saved in.
+                        const ready = await make(id, version, configuration).catch((error: unknown) => {
+                            const message = error instanceof Error ? error.message : String(error);
+                            const other =
+                                error instanceof ApiError &&
+                                ["configuration_not_saved", "no_configuration"].includes(error.code);
+                            throw new NoModel(message, other ? "configuration" : "unreadable");
                         });
-                        // A part's file has the 3D view of the configuration it was saved in: only that one is made,
-                        // which an assembly that doesn't say which it uses shows.
                         shown = ready.configuration;
-                        if (configuration && shown !== configuration) {
-                            throw new NoModel(
-                                `v${version} has a 3D view of its ${shown} configuration, not ${configuration}`,
-                                "configuration",
-                            );
-                        }
                     }
                     return meshBodies(vaultApi.caliperMesh(id, version, shown));
                 });

@@ -104,6 +104,63 @@ function repacked(data: Buffer, name: string, change: (old: Buffer) => Buffer): 
     throw new Error(`The file has no stream ${name}`);
 }
 
+const MARKER = Buffer.from([0x14, 0x00, 0x06, 0x00, 0x08, 0x00]); // what each of a file's streams starts with
+
+/** A stream of the file, unpacked: the copy whose CRC checks. */
+function streamOf(data: Buffer, name: string): Buffer {
+    for (let at = data.indexOf(MARKER); at >= 0; at = data.indexOf(MARKER, at + 1)) {
+        const head = at + MARKER.length;
+        const [crc, packed, size, length] = [4, 8, 12, 16].map((offset) => data.readUInt32LE(head + offset));
+        const start = head + 20 + length!;
+        if (!swapped(name).equals(data.subarray(head + 20, start))) {
+            continue;
+        }
+        try {
+            const found = inflateRawSync(data.subarray(start, start + packed!));
+            if (found.length === size && crc32(found) === crc) {
+                return found;
+            }
+        } catch {
+            // the blocks at a file's start that look like streams but don't unpack
+        }
+    }
+    throw new Error(`The file has no stream ${name}`);
+}
+
+/** The file with one more stream, at its end. */
+function keeping(data: Buffer, name: string, contents: Buffer): Buffer {
+    const body = deflateRawSync(contents);
+    const header = Buffer.alloc(20);
+    [0, crc32(contents), body.length, contents.length, name.length].forEach((value, i) =>
+        header.writeUInt32LE(value, 4 * i),
+    );
+    return Buffer.concat([data, MARKER, header, swapped(name), body]);
+}
+
+/**
+ * The servo's case as a part of three configurations, as server/tests/test_caliper_files.py's case_in_configurations
+ * has it: Default, the one SolidWorks saved it in, with its 3D view; Spline, up to date then, so SolidWorks kept its
+ * solid (the spline's, here); and Old, which needed a rebuild, so it kept nothing of it.
+ */
+async function caseInConfigurations(): Promise<Buffer> {
+    const spline = await servo("Embout.SLDPRT");
+    const more = ["Spline", "Old"]
+        .map(
+            (name, i) =>
+                `<swConfiguration id="${7 + i}" swName="${name}" swID="${1 + i}" swMostRecentConfiguration="NO" ` +
+                `swConfigurationNeedsUpdate="${name === "Old" ? "YES" : "NO"}" swModelRef="2"/>`,
+        )
+        .join("");
+    const listed = repacked(await servo("Servomoteur.SLDPRT"), "swXmlContents/Features", (xml) =>
+        Buffer.from(
+            xml.toString("latin1").replace("</swConfigurationList>", `${more}</swConfigurationList>`),
+            "latin1",
+        ),
+    );
+    const solid = keeping(listed, "Contents/Config-1-Partition", streamOf(spline, "Contents/Config-0-Partition"));
+    return keeping(solid, "Contents/Config-1", streamOf(spline, "Contents/Config-0"));
+}
+
 test("parts, assemblies, and STEP and STL files open in Caliper, beside Open in SolidWorks", async () => {
     const team = await Team.create();
     const [fin] = await team.checkin(team.chief, {
@@ -207,14 +264,15 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     );
     await userEvent.click(tree().getByRole("link", { name: "Open Motor-1 in Caliper" }));
     expect(await screen.findByRole("heading", { name: "Motor.SLDASM" })).toBeTruthy();
-    // Its model would be read from the file, which isn't a real SolidWorks assembly.
-    expect(await screen.findByText("v1 of Motor.SLDASM has no 3D model.")).toBeTruthy();
+    // Its model, in the configuration the rocket uses, would be read from the file, which isn't a real SolidWorks
+    // assembly.
+    expect(await screen.findByText("The Default configuration of v1 of Motor.SLDASM has no 3D model.")).toBeTruthy();
     expect(screen.getByText(/v1: It isn't a SolidWorks assembly that Caliper can read/)).toBeTruthy();
 });
 
 test("what an assembly doesn't show is summed up by why, with what to do about it", async () => {
     const team = await Team.create();
-    // A part with a model; SparkFun's spline, whose file has a 3D view of its Default configuration only; and a
+    // A part with a model; SparkFun's spline, in a configuration its file hasn't (it has Default only); and a
     // sub-assembly none of whose parts were found.
     const [fin, spline, tail] = await team.checkin(team.chief, {
         "Fins/Fin.SLDPRT": "fin",
@@ -246,7 +304,7 @@ test("what an assembly doesn't show is summed up by why, with what to do about i
             .getByRole("checkbox", { name: `Show ${name}` })
             .closest("li")!;
     expect(within(row("Embout-1")).getByText("Other configuration").getAttribute("title")).toBe(
-        "v1 has a 3D view of its Default configuration, not Long",
+        `${team.path("Servo/Embout.SLDPRT")} v1: It has no configuration named Long`,
     );
     expect(within(row("Tail-1")).getByText("Parts not in the vault")).toBeTruthy();
     expect(within(row("Fin-1")).queryByText(/No 3D model|Other configuration/)).toBeNull();
@@ -321,6 +379,75 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
         caliperUrl(spline!.id, 1, "Default"),
     );
     expect(screen.queryByText(/no 3D model/)).toBeNull();
+});
+
+test("a part's configurations: each its file kept opens, and one it didn't says what to do", async () => {
+    const team = await Team.create();
+    const [caseFile] = await team.checkin(team.chief, { "Servo/Servomoteur.SLDPRT": await caseInConfigurations() });
+
+    renderApp(team.chief, caliperUrl(caseFile!.id));
+    // The one SolidWorks saved it in shows first, from its 3D view; the others are offered.
+    expect(await screen.findByRole("checkbox", { name: "Show Boss-Extrude1" })).toBeTruthy();
+    const choice = () => screen.getByRole("combobox", { name: "Configuration" }) as HTMLSelectElement;
+    await waitFor(() =>
+        expect([...choice().options].map((option) => option.textContent)).toEqual([
+            "Default",
+            "Spline",
+            "Old (no 3D model)",
+        ]),
+    );
+    expect(choice().value).toBe("Default");
+
+    // Spline is read from the solid SolidWorks kept of it: the spline's two bodies, here.
+    await userEvent.selectOptions(choice(), "Spline");
+    expect(await screen.findByRole("checkbox", { name: "Show Body 2" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Show Body 1" })).toBeTruthy();
+    expect(choice().value).toBe("Spline");
+
+    // Old needed a rebuild when SolidWorks saved the file, so it kept nothing of it: the page says what to do.
+    await userEvent.selectOptions(choice(), "Old");
+    expect(await screen.findByText("The Old configuration of v1 of Servomoteur.SLDPRT has no 3D model.")).toBeTruthy();
+    expect(screen.getByText(/marked its Old configuration as needing a rebuild/)).toBeTruthy();
+    expect(screen.getByText(/click Add Rebuild\/Save Mark/)).toBeTruthy();
+    expect(choice().value).toBe("Old");
+    expect(screen.getByRole("link", { name: "Spline" }).getAttribute("href")).toBe(
+        caliperUrl(caseFile!.id, 1, "Spline"),
+    );
+});
+
+test("an assembly's part shows in the configuration it's used in, where its file kept that", async () => {
+    const team = await Team.create();
+    const [caseFile, fin] = await team.checkin(team.chief, {
+        "Servo/Servomoteur.SLDPRT": await caseInConfigurations(),
+        "Fins/Fin.SLDPRT": "fin",
+    });
+    const [assembly] = await team.checkin(
+        team.chief,
+        { "Rocket/Rocket.SLDASM": "rocket" },
+        { refs: { "Rocket/Rocket.SLDASM": ["Servo/Servomoteur.SLDPRT", "Fins/Fin.SLDPRT"] } },
+    );
+    await team.model(team.chief, fin!, { mesh: tetrahedra("Fin") });
+    await team.model(team.chief, assembly!, {
+        components: [
+            component("Case-1", caseFile!, { configuration: "Spline" }),
+            component("Case-2", caseFile!, { configuration: "Old" }),
+            component("Fin-1", fin!),
+        ],
+    });
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    expect(await screen.findByText("1 component isn't shown:")).toBeTruthy();
+    expect(screen.getByText("1 part is in a configuration its file has no 3D view of.")).toBeTruthy();
+    const row = (name: string) =>
+        tree()
+            .getByRole("checkbox", { name: `Show ${name}` })
+            .closest("li")!;
+    expect(within(row("Case-1")).queryByText(/No 3D model|Other configuration/)).toBeNull();
+    expect(within(row("Case-2")).getByText("Other configuration").getAttribute("title")).toMatch(
+        /marked its Old configuration as needing a rebuild/,
+    );
+    // The part's models were made on the way: first the one it was saved in, which shows when none is asked for.
+    expect((await team.caliperModels(caseFile!.id)).map((model) => model.configuration)).toEqual(["Default", "Spline"]);
 });
 
 test("an assembly's parts without models of their own have them made from their files", async () => {

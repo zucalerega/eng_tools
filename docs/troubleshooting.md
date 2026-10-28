@@ -613,6 +613,17 @@ a number. A few codes come up in more than one place.
   **... is over 256 MB, too big to read here**, or **Caliper found none of its parts in the vault**
   (`unreadable_file`): the server can't read a 3D view from that version of the file, and the
   message says why. Open the file in SolidWorks and click *Make 3D view* on the Vault tab.
+- **SolidWorks marked its ... configuration as needing a rebuild when it saved it**, or
+  **SolidWorks kept no solid of its ... configuration in it** (`configuration_not_saved`): SolidWorks
+  keeps a configuration's shape in the file only while it's up to date, and that version was saved
+  with that configuration not shown since the file last changed, so the file has nothing of it
+  Caliper can trust. Check the file out in SolidWorks, show that configuration (or right-click it in
+  the ConfigurationManager and click *Add Rebuild/Save Mark*, so every save keeps it), save, and
+  check it in: Caliper shows it in the new version. In an assembly, *Make 3D view* makes the models
+  of the parts it uses in such configurations.
+- **... has no configuration named ...** (`no_configuration`): that version of the file has no
+  configuration of that name (a link to another version can ask for one). Pick one from the
+  *Configuration* list.
 - **The server is reading other SolidWorks files: try again in a minute** (`busy`): it reads two at
   a time. Open it again in a minute.
 - **... has no 3D model in its ... configuration** (`no_model`): Caliper asked for a 3D view that

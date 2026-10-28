@@ -5,6 +5,7 @@ takes the acting user and checks permissions through Access. Every mutating
 function starts with begin_write(); read its docstring before adding one.
 """
 
+import contextlib
 import hashlib
 import re
 import threading
@@ -2063,6 +2064,23 @@ class ModelView:
 
 
 @dataclass
+class ConfigurationView:
+    """A configuration of a version, for Caliper to offer: as its file lists it, and whether it has a model."""
+
+    name: str
+    active: bool  # the one SolidWorks had open when it saved the file
+    saved: bool  # up to date then, so the file keeps its shape, and the server can read its model
+    model: bool  # it has one: Vault for SolidWorks', or one the server read
+
+
+@dataclass
+class ConfigurationsView:
+    version: int
+    configurations: list[ConfigurationView]
+    unreadable: str | None  # why the file's own list couldn't be read: then those with models are listed
+
+
+@dataclass
 class AssemblyModel:
     view: ModelView
     # The components the user can see, each with "model": whether its file has a model of its own, at its version and
@@ -2289,9 +2307,10 @@ _MAX_READ = 1 << 28  # bigger files aren't read for their 3D view here: Vault fo
 # SolidWorks files read at once for their 3D views: each can take a few hundred MB, on a server with 6 GB.
 _READING = threading.BoundedSemaphore(2)
 _READING_WAIT = 60.0  # seconds a look waits for its turn before it's told to try again
-# Why a file couldn't be read, by its contents' SHA-256: a version's bytes never change, so neither does that, and
-# reading it again on every look (up to _MAX_READ, a moment's work) would let a few clicks keep the server busy.
-_UNREADABLE: OrderedDict[str, str] = OrderedDict()
+# Why a file couldn't be read, by its contents' SHA-256 (and the configuration asked for): a version's bytes never
+# change, so neither does that, and reading it again on every look (up to _MAX_READ, a moment's work) would let a few
+# clicks keep the server busy. The refusal's kind and message, not the refusal itself, which holds what was read.
+_UNREADABLE: OrderedDict[str, tuple[type[ApiError], str]] = OrderedDict()
 _UNREADABLE_KEPT = 1000
 
 
@@ -2381,22 +2400,26 @@ def _refs_of(db: Session, version: Version) -> list[tuple[File, int]]:
 
 
 def _read_solidworks(
-    store: BlobStore, sha256: str, kind: str, name: str
+    store: BlobStore, sha256: str, kind: str, name: str, configuration: str | None = None
 ) -> solidworks.Part | list[solidworks.Assembly]:
-    """A SolidWorks file's 3D view (solidworks.py), read a couple at a time; one that can't be, refused (Unreadable)
-    at once from then on."""
-    if sha256 in _UNREADABLE:
-        raise solidworks.Unreadable(f"{name}: {_UNREADABLE[sha256]}")
+    """A SolidWorks file's 3D view (solidworks.py), read a couple at a time, in the configuration it was saved in or
+    the one asked for; one that can't be, refused (Unreadable, or NoConfiguration) at once from then on."""
+    key = sha256 if configuration is None else f"{sha256}/{configuration}"
+    if key in _UNREADABLE:
+        refusal, message = _UNREADABLE[key]
+        raise refusal(f"{name}: {message}")
     if not _READING.acquire(timeout=_READING_WAIT):
         raise Conflict("The server is reading other SolidWorks files: try again in a minute", code="busy")
     try:
         data = store.path(sha256).read_bytes()
-        return solidworks.read_part(data) if kind == "part" else solidworks.read_assembly(data)
-    except solidworks.Unreadable as e:
-        _UNREADABLE[sha256] = e.message
+        if kind == "part":
+            return solidworks.read_part(data, configuration)
+        return solidworks.read_assembly(data, configuration)
+    except (solidworks.Unreadable, solidworks.NoConfiguration) as e:
+        _UNREADABLE[key] = (type(e), e.message)
         while len(_UNREADABLE) > _UNREADABLE_KEPT:
             _UNREADABLE.popitem(last=False)
-        raise solidworks.Unreadable(f"{name}: {e.message}") from e
+        raise type(e)(f"{name}: {e.message}") from e
     finally:
         _READING.release()
 
@@ -2453,10 +2476,12 @@ _Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None]
 
 
 def _read_models(
-    db: Session, store: BlobStore, tree: Tree, target: Version, kind: str, name: str
+    db: Session, store: BlobStore, tree: Tree, target: Version, kind: str, name: str, configuration: str | None = None
 ) -> tuple[list[_Wanted], dict[str, int]]:
     """A version's models, read from its file (make_caliper_model), with the blobs made for them and their sizes. The
-    configuration SolidWorks had open comes first, as it's the one Caliper shows first. Unreadable says why not."""
+    configuration SolidWorks had open comes first, as it's the one Caliper shows first; or a part's in the
+    configuration asked for, alone. An assembly's are every configuration's, the one asked for among them. Unreadable
+    (or NoConfiguration) says why not."""
     if target.size > _MAX_READ:
         raise solidworks.Unreadable(
             f"{name} is over {_MAX_READ >> 20} MB, too big to read here: make its 3D view in SolidWorks "
@@ -2464,7 +2489,7 @@ def _read_models(
         )
 
     # Versions never change, so reading one, which takes a moment, comes before the write lock.
-    read = _read_solidworks(store, target.blob_sha256, kind, name)
+    read = _read_solidworks(store, target.blob_sha256, kind, name, configuration)
     kept: dict[str, int] = {}  # blobs made, with their sizes
     wanted: list[_Wanted] = []
     try:
@@ -2530,18 +2555,29 @@ def _read_models(
                     "Caliper found none of its parts in the vault. Make its 3D view in SolidWorks (Make 3D view, on the "
                     "Vault tab)"
                 )
+            if configuration is not None and all(want[0] != configuration for want in wanted):
+                raise solidworks.Unreadable(
+                    f"Caliper found none of the parts of its {configuration} configuration in the vault: they show "
+                    "once they're checked in"
+                )
     except solidworks.Unreadable as e:
         raise solidworks.Unreadable(f"{name}: {e.message}") from e
 
     return wanted, kept
 
 
-def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ModelView:
+def make_caliper_model(
+    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str | None = None
+) -> ModelView:
     """Make a version's 3D model from the 3D view SolidWorks saved in the file itself, or a part's from its solid where
     it saved none (vault/solidworks.py), in the configuration it was saved in: so Caliper shows SolidWorks files that
     Vault for SolidWorks made no model of. A version that has a model keeps it, and that one comes back; but one an
     older reader made (an older release of the server, solidworks.READER) is read again, as reading has improved since,
     and stands until it can be: while the file is unreadable now, or the server busy.
+
+    Or in a configuration asked for, if the version has no model in it: a part's from the solid SolidWorks kept of that
+    configuration, as it does of each that was up to date when it saved the file; an assembly's along with the rest of
+    its. One SolidWorks didn't keep is refused (NotSaved), as is one the file hasn't (NoConfiguration).
 
     Anyone who can see the file may, as the model comes from the file. An assembly's components are the files its
     version references, or else the vault's files with their names (_Finder), each with its shape as the assembly
@@ -2562,27 +2598,41 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
     def view(model: CaliperModel) -> ModelView:
         return ModelView(model, version, _users(db, {model.created_by})[model.created_by])
 
-    models = list(
-        db.scalars(select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id))
-    )
-    current = [model for model in models if not _outdated(store, model)]
-    if models and len(current) == len(models):
+    def made() -> tuple[list[CaliperModel], list[CaliperModel]]:
+        """The version's models, first made first, and those of them this reader's or Vault for SolidWorks'."""
+        found = select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id)
+        models = list(db.scalars(found))
+        return models, [model for model in models if not _outdated(store, model)]
+
+    models, current = made()
+    if configuration is None and models and len(current) == len(models):
         return view(models[0])
+    if configuration is not None and kind == "part" and not current:
+        # A version's first model is of the configuration SolidWorks saved it in, which Caliper shows when none is
+        # asked for (as an assembly's read has it first): so that one's made first, where it can be.
+        with contextlib.suppress(solidworks.Unreadable, Conflict):
+            make_caliper_model(db, store, user, file_id, version)
+        models, current = made()
+    if configuration is not None and (mine := [m for m in current if m.configuration == configuration]):
+        return view(mine[0])
     try:
-        wanted, kept = _read_models(db, store, tree, target, kind, f"{path} v{version}")
+        wanted, kept = _read_models(db, store, tree, target, kind, f"{path} v{version}", configuration)
     except (solidworks.Unreadable, Conflict):
-        if not models:
+        standing = [model for model in models if configuration in (None, model.configuration)]
+        if not standing:
             raise
-        return view((current or models)[0])
+        return view(([model for model in current if model in standing] or standing)[0])
 
     begin_write(db)
     tree, access = _context(db, user)
     _resolve(db, tree, access, file_id, deleted_ok=True)  # still theirs to see
     # Any made meanwhile, by this reader or Vault for SolidWorks, stay. An older reader's give way to this one's, and
-    # go where it makes no model of their configuration.
+    # go where it makes no model of their configuration: of any configuration where it read them all (an assembly's,
+    # or a part's in the one it was saved in), else of the one it read.
+    every = configuration is None or kind == "assembly"
     have: dict[str, CaliperModel] = {}
     for model in db.scalars(select(CaliperModel).where(CaliperModel.version_id == target.id)):
-        if _outdated(store, model):
+        if _outdated(store, model) and (every or model.configuration == configuration):
             db.delete(model)
         else:
             have[model.configuration] = model
@@ -2590,11 +2640,11 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
     for sha, size in kept.items():
         if db.get(Blob, sha) is None:
             db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
-    for configuration, units, mesh, components in wanted:
-        if configuration not in have:
-            have[configuration] = CaliperModel(
+    for name, units, mesh, components in wanted:
+        if name not in have:
+            have[name] = CaliperModel(
                 version_id=target.id,
-                configuration=configuration,
+                configuration=name,
                 units=units,
                 mesh_sha256=mesh,
                 components=components,
@@ -2602,10 +2652,76 @@ def make_caliper_model(db: Session, store: BlobStore, user: User, file_id: int, 
                 created_by=user.id,
                 reader=solidworks.READER,
             )
-            db.add(have[configuration])
+            db.add(have[name])
             db.flush()  # in order, so the one SolidWorks had open comes first
     db.commit()
-    return view(have[wanted[0][0]])
+    return view(have[wanted[0][0] if configuration is None else configuration])
+
+
+# Versions' configurations (solidworks.read_configurations), by their contents' SHA-256 and kind, or why they couldn't
+# be read: a version's bytes never change, and Caliper asks each time it shows one.
+_CONFIGURATIONS: OrderedDict[str, list[solidworks.Configuration] | str] = OrderedDict()
+_CONFIGURATIONS_KEPT = 1000
+_CONFIGURATIONS_LOCK = threading.Lock()
+
+
+def _configurations_of(
+    store: BlobStore, version: Version, kind: Literal["part", "assembly"]
+) -> list[solidworks.Configuration]:
+    """A version's configurations, as its file lists them, read as its 3D views are, a couple of files at a time;
+    Unreadable says why not."""
+    key = f"{version.blob_sha256}/{kind}"
+    with _CONFIGURATIONS_LOCK:
+        known = _CONFIGURATIONS.get(key)
+        if known is not None:
+            _CONFIGURATIONS.move_to_end(key)
+    if known is None:
+        if version.size > _MAX_READ:
+            known = f"It's over {_MAX_READ >> 20} MB, too big to read here"
+        elif not _READING.acquire(timeout=_READING_WAIT):
+            raise Conflict("The server is reading other SolidWorks files: try again in a minute", code="busy")
+        else:
+            try:
+                known = solidworks.read_configurations(store.path(version.blob_sha256).read_bytes(), kind)
+            except solidworks.Unreadable as e:
+                known = e.message
+            finally:
+                _READING.release()
+        with _CONFIGURATIONS_LOCK:
+            _CONFIGURATIONS[key] = known
+            while len(_CONFIGURATIONS) > _CONFIGURATIONS_KEPT:
+                _CONFIGURATIONS.popitem(last=False)
+    if isinstance(known, str):
+        raise solidworks.Unreadable(known)
+    return known
+
+
+def caliper_configurations(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> ConfigurationsView:
+    """A version's configurations, for Caliper to offer, for anyone who can see the file: each one its file lists, in
+    its order, with whether SolidWorks had it open when it saved the file, whether it was up to date then (so the
+    server can read its model from the file: make_caliper_model), and whether it has a model; then any other with a
+    model. Where the file's list can't be read, only those with models, and why not."""
+    tree, access = _context(db, user)
+    file = _resolve(db, tree, access, file_id, deleted_ok=True)
+    path = tree.file_path(file)
+    kind = _caliper_kind(file.name)
+    if kind is None:
+        raise ApiError(f"Caliper's models are of SolidWorks parts and assemblies: {path} isn't one", code="bad_model")
+    target = db.scalar(select(Version).where(Version.file_id == file.id, Version.number == version))
+    if target is None:
+        raise NotFound(f"{path} has no version {version}")
+    models = select(CaliperModel).where(CaliperModel.version_id == target.id).order_by(CaliperModel.id)
+    with_models = list(dict.fromkeys(m.configuration for m in db.scalars(models) if not _outdated(store, m)))
+    listed: list[solidworks.Configuration] = []
+    unreadable = None
+    try:
+        listed = _configurations_of(store, target, kind)
+    except solidworks.Unreadable as e:
+        unreadable = f"{path} v{version}: {e.message}"
+    names = {c.name for c in listed}
+    configurations = [ConfigurationView(c.name, c.active, c.saved, c.name in with_models) for c in listed]
+    configurations += [ConfigurationView(name, False, False, True) for name in with_models if name not in names]
+    return ConfigurationsView(version, configurations, unreadable)
 
 
 def caliper_assembly(

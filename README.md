@@ -125,7 +125,12 @@ replaces Kenesto.
   part on its own. Nothing in it changes a file. STEP, IGES, and STL files open as they are.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
   version it checks in; for any other version, the server reads the 3D view SolidWorks
-  saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. An
+  saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. Pick
+  another configuration from the Configuration list: the server reads it from the solid
+  SolidWorks keeps of it in the file, which SolidWorks does for each configuration that was up
+  to date when it saved (one shown since the file last changed, or one with a Rebuild/Save
+  Mark: right-click it in SolidWorks' ConfigurationManager). One it didn't keep says so; to see
+  it, check the file out, show that configuration (or add the mark), save, and check it in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
   configurations; Caliper lists the parts it couldn't show, and why. A part saved without

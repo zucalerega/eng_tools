@@ -229,24 +229,6 @@ export function segmentsOf(points: Point[]): Segment[] {
 export const lengthOf = (points: Point[]): number =>
     segmentsOf(points).reduce((total, segment) => total + distance(segment.a, segment.b), 0);
 
-/** The middle of a polyline's longest segment, whether it goes across, and how long it is: where a line's label goes. */
-export function middleOfLongest(points: Point[]): { at: Point; level: boolean; length: number } | null {
-    let best: Segment | null = null;
-    for (const segment of segmentsOf(points)) {
-        if (!best || distance(segment.a, segment.b) > distance(best.a, best.b) + 1e-6) {
-            best = segment;
-        }
-    }
-    if (!best) {
-        return null;
-    }
-    return {
-        at: { x: (best.a.x + best.b.x) / 2, y: (best.a.y + best.b.y) / 2 },
-        level: Math.abs(best.a.y - best.b.y) < 1e-6,
-        length: distance(best.a, best.b),
-    };
-}
-
 /** The nearest point to p on a polyline, its distance, and the segment it's on. */
 export function nearestOnPolyline(p: Point, points: Point[]): { at: Point; distance: number; segment: number } | null {
     let best: { at: Point; distance: number; segment: number } | null = null;

@@ -145,6 +145,63 @@ export function ShowToggle({ label, on, onToggle }: { label: string; on: boolean
     );
 }
 
+/**
+ * A size, as a percentage of the standard one (100: a part's own size, or labels' standard size), typed. A number in
+ * range is taken as it's typed; one that isn't goes back to the size it is once the field's left. With a placeholder,
+ * it can be left empty, for no size of its own (null): the placeholder says what it is then.
+ */
+export function PercentInput({
+    id,
+    value,
+    min,
+    max,
+    placeholder,
+    onChange,
+}: {
+    id: string;
+    value: number | null; // as a fraction: 1 is 100%
+    min: number; // fractions too
+    max: number;
+    placeholder?: string;
+    onChange: (value: number | null) => void;
+}) {
+    const shown = value === null ? "" : String(Math.round(value * 100));
+    const [typed, setTyped] = useState<string | null>(null); // while it's being typed in; else it shows the size
+    return (
+        <span className="piper-percent">
+            <input
+                id={id}
+                type="number"
+                inputMode="numeric"
+                min={Math.round(min * 100)}
+                max={Math.round(max * 100)}
+                step={5}
+                value={typed ?? shown}
+                placeholder={placeholder}
+                onFocus={() => setTyped(shown)}
+                onBlur={() => setTyped(null)}
+                onChange={(event) => {
+                    const text = event.target.value;
+                    setTyped(text);
+                    if (text.trim() === "") {
+                        if (placeholder !== undefined) {
+                            onChange(null);
+                        }
+                        return;
+                    }
+                    const size = Number(text) / 100;
+                    if (Number.isFinite(size) && size >= min && size <= max) {
+                        onChange(size);
+                    }
+                }}
+            />
+            <span className="muted" aria-hidden="true">
+                %
+            </span>
+        </span>
+    );
+}
+
 /** A labeled row: its label over its input, with what goes beside the input (a show toggle, a remove button). */
 export function Row({
     label,

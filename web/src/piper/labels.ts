@@ -1,4 +1,4 @@
-import type { Drawing, LabelSize, Line, Part, Point } from "./drawing";
+import type { Drawing, Line, Part, Point } from "./drawing";
 import { fluidOf } from "./fluids";
 import { inBox, middleOfLongest, segmentsOf, toWorld, type Box } from "./geometry";
 import { boxOf, kindOf } from "./library/index";
@@ -16,20 +16,12 @@ export const LINE_FIELDS: Field[] = [
     { key: "notes", label: "Notes", type: "long" },
 ];
 
-export const LABEL_SIZES: { value: LabelSize; label: string }[] = [
-    { value: "small", label: "Small" },
-    { value: "normal", label: "Normal" },
-    { value: "large", label: "Large" },
-];
-
-const SCALE: Record<LabelSize, number> = { small: 0.8, normal: 1, large: 1.3 };
-
 /**
  * The sizes of what's written beside parts and on lines, in the drawing's units, at its label size: well under the
  * parts' own (a valve's body is 20 high), so the symbols read first.
  */
 export function textSizes(drawing: Drawing, part?: Part): { tag: number; row: number; line: number; gap: number } {
-    const scale = SCALE[part?.labelSize || drawing.style.labels] ?? 1;
+    const scale = part?.labelSize ?? drawing.style.labels;
     return { tag: 8 * scale, row: 7 * scale, line: 7 * scale, gap: 9 * scale };
 }
 

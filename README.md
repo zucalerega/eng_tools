@@ -351,8 +351,9 @@ the keys.
   for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
-  flips it. Drag the round handle at a selected part's corner (or pick its **Size**) to draw it
-  from half its size to double, and give it a **Label size** of its own. A **Text** note dragged
+  flips it. Drag the round handle at a selected part's corner (or type its **Size**, in percent)
+  to draw it at any size from a quarter of its own to four times, and give it a **Label size**
+  of its own, in percent too. A **Text** note dragged
   by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif
   or monospace font, aligned, and boxed as you choose.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
@@ -380,7 +381,7 @@ the keys.
   show them (the eye, or with nothing selected, **Show on every line** and **Show on every
   valve**); a label that's the same along a run (its fluid, or a pipe's tag) is written once,
   on its longest stretch. With nothing selected, change the diagram's fluids' colors and labels, add its own,
-  or make its labels smaller or larger.
+  or set its labels' size, in percent.
 - **Color schemes**: **Schemes**, in Piper's top bar, has the team's color schemes, each one's
   fluids (color, label, name, gas or not) and valve state colors: anyone makes one, and only
   whoever made it, or an admin, changes or deletes it. New diagrams start in the team's default

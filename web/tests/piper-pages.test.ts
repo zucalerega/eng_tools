@@ -75,10 +75,10 @@ test("a drawing from before pages is one page; a drawing of pages, each of them,
     expect(read.pages[1]!.id).not.toBe(""); // made up, as a page's id has to be
     expect(read.pages[0]!.sheet).toEqual(sheet);
     expect(read.pages[1]!.sheet).toBeNull(); // a sheet that can't be read: none
-    expect([read.fluids[0]!.id, read.style.labels]).toEqual(["mix", "large"]);
+    expect([read.fluids[0]!.id, read.style.labels]).toEqual(["mix", 1.3]);
     // A page to work on has the fluids and style all of them share, and its own sheet.
     const page = pageOf(read, 0);
-    expect([page.parts.length, page.fluids[0]!.id, page.style.labels, page.sheet]).toEqual([1, "mix", "large", sheet]);
+    expect([page.parts.length, page.fluids[0]!.id, page.style.labels, page.sheet]).toEqual([1, "mix", 1.3, sheet]);
     // A reader from before pages reads the first.
     expect(readDrawing({ format: 2, pages: read.pages }).parts.length).toBe(1);
 });

@@ -138,9 +138,11 @@ const TOPICS: Topic[] = [
                     them evenly.
                 </li>
                 <li>
-                    Drag the round handle at a selected part's corner to make it bigger or smaller, from half its size
-                    to double, or pick its <em>Size</em> on the right; its ports stay on the grid, so its lines stay
-                    straight. <em>Label size</em> makes its tag and properties smaller or larger than the diagram's.
+                    Drag the round handle at a selected part's corner to make it any size from a quarter of its own to
+                    four times, in steps of 5% (hold Alt for 1%), or type its <em>Size</em> on the right, in percent;
+                    its ports stay on the grid, so its lines stay straight (drawn very small, ports close together go
+                    just off it rather than meet). <em>Label size</em>, in percent too, makes its tag and properties any
+                    size of their own; left empty, they're the diagram's.
                 </li>
                 <li>
                     A <em>Text</em> note is sized to its words until you drag its square corner handle: then it's a
@@ -312,8 +314,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     With nothing selected, the right side changes the diagram's fluids (their colors, labels, and names,
-                    and whether each is a gas), adds its own, sets its valves' colors, and makes its labels smaller or
-                    larger. The legend (in the library's Notes) lists what its lines carry and its valves' states.
+                    and whether each is a gas), adds its own, sets its valves' colors, and sets its <em>Label size</em>,
+                    in percent of the standard (100), from half to three times. The legend (in the library's Notes)
+                    lists what its lines carry and its valves' states.
                 </li>
                 <li>
                     The team's color schemes are on <Link to="/piper/schemes">Schemes</Link>: each one's fluids and

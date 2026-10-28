@@ -229,13 +229,19 @@ what it is, `data-hit`).
   upright. A tagged one (a symbol Piper has no part for, tagged beside it in Visio) is in the
   parts list, as a Figure; one without a tag isn't. A web app from before figures shows one as
   an unknown part's dashed box, and keeps it as it is.
-- **Sizes**: a part's drawn at its kind's size, or from half of it to double (`scale`: 0.5,
-  0.75, 1, 1.25, 1.5, 2), from the round handle at a selected part's corner or the inspector.
+- **Sizes**: a part's drawn at its kind's size, or any size from a quarter of it to four times
+  (`scale`, to the hundredth, within `PART_SCALE`; a quarter is as small as a valve's ports stay
+  a grid apart), from the round handle at a selected part's corner (in steps of 5%, or 1% with
+  Alt) or typed in percent in the inspector.
   Its frame's scaled (`toWorld`, `partTransform`), so its box, what's drawn, and where it's hit
   all are; its ports are put back on the grid (`portsOf`), and a line's drawn to its outline in
-  line with its port, so lines between parts lined up stay straight. Not for what's sized by its
+  line with its port, so lines between parts lined up stay straight. Drawn small, ports close
+  together would meet on the grid, so then they go on the half grid, or, smaller still, just
+  where they fall: a part's ports never meet. Not for what's sized by its
   width and height (boxes, regions, text blocks), tees, legends, or title blocks. Each part's
-  label can be small, normal, or large of its own (`labelSize`; "" the diagram's).
+  label can have a size of its own, in percent of the standard (`labelSize`, a number within
+  `LABEL_SCALE`, half to three times; null, the diagram's). Before sizes were numbers they were
+  small, normal, and large, which `readDrawing` reads as 0.8, 1, and 1.3.
 - **Text** notes are sized to their words, or, once their corner handle's dragged, blocks of
   that width and height (`w`, `h`), their words wrapped to it at the spaces, from its top. A
   note's weight, slant, font (sans serif, serif, monospace), alignment, and border are its
@@ -248,7 +254,7 @@ what it is, `data-hit`).
   else's beside it: under a part in a line going across, beside one in a line going down, under
   or beside others, or where it's dragged.
   Labels are small beside the symbols (a tag 8 units high against a valve's 20), and a diagram
-  makes them all smaller or larger (`style.labels`, `textSizes`). Double-clicking a part goes to
+  sets their size, in percent of that (`style.labels`, a number; `textSizes`). Double-clicking a part goes to
   its tag (or its words, for a note).
 - **Properties**: each kind has its own (a valve's body, actuation, normal state, size, Cv,
   MAWP, and model; a tank's fluid, volume, MEOP, MAWP, and material; an orifice's diameter and

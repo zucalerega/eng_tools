@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import type { Palette } from "./colors";
 import type { Commands } from "./commands";
 import { DiagramView, type LiveValue } from "./DiagramView";
-import { PART_SCALES, type Drawing, type PageSheet, type Point } from "./drawing";
+import { partScale, type Drawing, type PageSheet, type Point } from "./drawing";
 import {
     addPart,
     connect,
@@ -575,10 +575,10 @@ export function Canvas({
             }
             case "scale": {
                 current.moved = true;
+                // Any size as the pointer goes, in steps of 5% (Alt: of 1%), from a quarter of its own to four times.
                 const wanted = (current.scale * distance(at, current.middle)) / current.reach;
-                const scale = PART_SCALES.reduce((best, each) =>
-                    Math.abs(each - wanted) < Math.abs(best - wanted) ? each : best,
-                );
+                const step = event.altKey ? 100 : 20;
+                const scale = partScale(Math.round(wanted * step) / step);
                 store.preview(updatePart(current.base, current.part, (part) => ({ ...part, scale })));
                 break;
             }

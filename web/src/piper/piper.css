@@ -564,6 +564,22 @@
     font-size: 0.88rem;
 }
 
+/* A size in percent: the number, then %. */
+.piper-percent {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.piper-percent > input {
+    flex: 1;
+    min-width: 0;
+    height: 1.9rem;
+    font-size: 0.88rem;
+}
+
 .piper-row-input > textarea {
     height: auto;
     padding: 0.35rem 0.6rem;

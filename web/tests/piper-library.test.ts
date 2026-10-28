@@ -59,6 +59,23 @@ test("ports sit on the grid, at their part's edge, each with an id of its own", 
     }
 });
 
+test("a part drawn at any size keeps its ports apart: on the grid where they can be, off it only to stay apart", () => {
+    for (const scale of [0.25, 0.3, 0.45, 0.5, 0.75, 1.5, 2.35, 4]) {
+        for (const part of variants()) {
+            const placed = portsOf({ ...part, scale });
+            const name = `${part.kind} ${JSON.stringify(part.props)} at ${scale}`;
+            expect(new Set(placed.map((port) => `${port.at.x},${port.at.y}`)).size, name).toBe(placed.length);
+            // Drawn bigger, its ports are never close enough to meet on the grid: every one is on it.
+            if (scale >= 1.5) {
+                expect(
+                    placed.every((port) => port.at.x % 10 === 0 && port.at.y % 10 === 0),
+                    name,
+                ).toBe(true);
+            }
+        }
+    }
+});
+
 /** A part as the library draws it: its symbol's markup. */
 function drawn(part: Part): Document {
     const markup = renderToStaticMarkup(createElement(PartIcon, { part, palette: LIGHT }));

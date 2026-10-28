@@ -402,12 +402,14 @@ test("the diagram's labels: their size, and fluids and valve states written ever
     expect(inspector.getByText("Fluids written on lines: 1 of 1")).toBeTruthy();
     await userEvent.click(inspector.getByRole("button", { name: "Hide on every line" }));
     await userEvent.click(inspector.getByRole("button", { name: "Show on every valve" }));
-    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Label size" }), "small");
+    const labelSize = inspector.getByRole("spinbutton", { name: "Label size" });
+    await userEvent.clear(labelSize);
+    await userEvent.type(labelSize, "85"); // any size: 8 isn't one (it's under half), so it waits for the 5
     await waitFor(async () => {
         const saved = (await team.piperDiagram(team.chief, diagram.id)).read;
         expect(saved.lines[0]!.shown).toEqual([]);
         expect(saved.parts.map((part) => part.shown.includes("normal"))).toEqual([true, true]);
-        expect(saved.style.labels).toBe("small");
+        expect(saved.style.labels).toBe(0.85);
     });
     expect(within(svg).getByText("NC")).toBeTruthy(); // the solenoid valve's state, written beside it now
     // A double-acting valve fails in place: FIP, in a color of its own.
@@ -435,9 +437,20 @@ test("a part's drawn bigger or smaller, its label too, and a text block's set in
     fireEvent.pointerDown(within(svg).getByRole("button", { name: "BV-1" }), at(0, 0));
     fireEvent.pointerUp(svg, at(0, 0));
     const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
-    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Size" }), "1.5");
-    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Label size" }), "large");
-    expect(svg.querySelector("[data-hit='scale:" + valve + "']")).toBeTruthy(); // a handle to drag it to a size
+    // Its handle drags it to any size, in steps of 5%: here under a third of its own, smaller than sizes once went.
+    const handle = svg.querySelector(`[data-hit='scale:${valve}']`)!;
+    const [hx, hy] = ["cx", "cy"].map((name) => Number(handle.getAttribute(name)));
+    fireEvent.pointerDown(handle, at(hx!, hy!));
+    fireEvent.pointerMove(svg, at(hx! * 0.3, hy! * 0.3));
+    fireEvent.pointerUp(svg, at(hx! * 0.3, hy! * 0.3));
+    const size = inspector.getByRole("spinbutton", { name: "Size" }) as HTMLInputElement;
+    await waitFor(() => expect(size.value).toBe("30"));
+    // Or typed: a size, and a label size of its own (left empty, it's the diagram's).
+    await userEvent.clear(size);
+    await userEvent.type(size, "35");
+    const label = inspector.getByRole("spinbutton", { name: "Label size" }) as HTMLInputElement;
+    expect(label.placeholder).toBe("100, the diagram's");
+    await userEvent.type(label, "140");
 
     fireEvent.pointerDown(svg, at(400, 400)); // nothing: then the note
     fireEvent.pointerUp(svg, at(400, 400));
@@ -449,7 +462,7 @@ test("a part's drawn bigger or smaller, its label too, and a text block's set in
     await waitFor(async () => {
         const saved = (await team.piperDiagram(team.chief, made.id)).read;
         const [one, two] = [valve, note].map((id) => saved.parts.find((part) => part.id === id)!);
-        expect([one!.scale, one!.labelSize]).toEqual([1.5, "large"]);
+        expect([one!.scale, one!.labelSize]).toEqual([0.35, 1.4]);
         expect(two!.props).toMatchObject({ font: "serif", weight: "bold" });
     });
 });

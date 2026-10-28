@@ -18,6 +18,7 @@ from ..errors import ApiError, Forbidden, TooLarge
 from . import vault
 from .schemas import (
     CaliperAssemblyOut,
+    CaliperConfigurationsOut,
     CaliperMakeIn,
     CaliperMissingIn,
     CaliperMissingOut,
@@ -130,9 +131,21 @@ def put_caliper(file_id: int, body: CaliperModelIn, user: ChangingUser, db: DB, 
 
 @router.post("/files/{file_id}/caliper/make")
 def post_caliper_make(file_id: int, body: CaliperMakeIn, user: ActiveUser, db: DB, store: Store) -> CaliperModelOut:
-    """Make a version's 3D model from the 3D view SolidWorks saved in the file, in the configuration it was saved in,
-    for anyone who can see the file; or the model the version has already. 422 unreadable_file says why not."""
-    return CaliperModelOut.of(vault.make_caliper_model(db, store, user, file_id, body.version))
+    """Make a version's 3D model from the 3D view SolidWorks saved in the file, in the configuration it was saved in (or
+    the one asked for, from the solid SolidWorks kept of it), for anyone who can see the file; or the model the version
+    has already. 422 unreadable_file or configuration_not_saved says why not; 404 no_configuration, that it has none of
+    that name."""
+    view = vault.make_caliper_model(db, store, user, file_id, body.version, body.configuration)
+    return CaliperModelOut.of(view)
+
+
+@router.get("/files/{file_id}/caliper/configurations")
+def get_caliper_configurations(
+    file_id: int, user: ActiveUser, db: DB, store: Store, version: int
+) -> CaliperConfigurationsOut:
+    """A version's configurations, as its file lists them: which SolidWorks saved it in, which it kept up to date (so
+    the server can make their models), and which have models."""
+    return CaliperConfigurationsOut.of(vault.caliper_configurations(db, store, user, file_id, version))
 
 
 @router.post("/caliper/missing")

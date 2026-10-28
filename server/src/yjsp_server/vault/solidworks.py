@@ -71,6 +71,16 @@ the part's, which SolidWorks shows over the colors Parasolid keeps of faces, oft
 part's steel). Faces of a color other than most of their body's keep theirs (an O-ring's black). Where the
 configuration keeps more appearances (its faces' too), the solid's colors stand.
 
+Configurations. The XML lists a file's configurations (swConfiguration): each one's name, its swID (the N of its
+streams), whether SolidWorks had it open when it saved the file (swMostRecentConfiguration), and whether it marked it as
+needing a rebuild then (swConfigurationNeedsUpdate). The display list is of the one it had open, and only of that one.
+But SolidWorks keeps the solid of every configuration that was up to date when it saved the file: one shown since the
+part last changed, or one with a Rebuild/Save Mark, which SolidWorks rebuilds at every save. In the 311 parts with more
+than one configuration that SolidWorks installs as samples, every one of the 447 configurations up to date kept its
+solid, and no display list had more than one configuration's triangles. So another configuration of a part is read
+from its solid (read_part). One marked as needing a rebuild is refused (NotSaved): any solid it has is from before the
+part last changed (8 of those samples' were). An assembly's XML has each configuration's components.
+
 Some programs that write SolidWorks files leave every stream's CRC field the same, uncomputed. There the solid's own
 checks stand in: it must unpack to exactly the size it says, and its transmit files end exactly where their nodes do.
 
@@ -138,9 +148,31 @@ class Unreadable(ApiError):
     code = "unreadable_file"
 
 
+class NotSaved(Unreadable):
+    """A configuration SolidWorks kept no shape of that's up to date when it saved the file: it needed a rebuild then."""
+
+    code = "configuration_not_saved"
+
+
+class NoConfiguration(ApiError):
+    status = 404
+    code = "no_configuration"
+
+
+@dataclass
+class Configuration:
+    """A configuration, as the file lists it."""
+
+    name: str
+    active: bool  # the one SolidWorks had open when it saved the file: its 3D view's
+    # Up to date when SolidWorks saved the file (not marked as needing a rebuild), so the file keeps its shape: a part's
+    # solid, an assembly's components where they are.
+    saved: bool
+
+
 @dataclass
 class Part:
-    configuration: str  # the one SolidWorks had open when it saved the file, which is the one saved
+    configuration: str  # the one asked for; else the one SolidWorks had open when it saved the file
     units: str
     bodies: list[MeshBody]
 
@@ -838,6 +870,73 @@ def _mesh(data: bytes, shape: _Shape, end: int, first_face: int | None) -> list[
 # --- parts ---------------------------------------------------------------------------------------
 
 
+def _configurations(xml: ElementTree.Element | None) -> list[ElementTree.Element]:
+    return list(xml.iter(f"{_NS}swConfiguration")) if xml is not None else []
+
+
+def _active(configurations: list[ElementTree.Element]) -> ElementTree.Element | None:
+    """The configuration SolidWorks had open when it saved the file, or else the first."""
+    return next(
+        (c for c in configurations if c.get("swMostRecentConfiguration") == "YES"),
+        configurations[0] if configurations else None,
+    )
+
+
+def _not_saved(name: str, kind: Literal["part", "assembly"], marked: bool = True) -> NotSaved:
+    """Why a configuration has no shape here to read, and how to have SolidWorks keep it: marked as needing a rebuild,
+    or else with no solid at all."""
+    if not marked:
+        why = f"SolidWorks kept no solid of its {name} configuration in it"
+    elif kind == "part":
+        why = (
+            f"SolidWorks marked its {name} configuration as needing a rebuild when it saved it, as it does one not "
+            "shown since the part last changed, so it kept no shape of it that's up to date"
+        )
+    else:
+        why = (
+            f"SolidWorks marked its {name} configuration as needing a rebuild when it saved it, as it does one not "
+            "shown since the assembly last changed, so where its components are may be old"
+        )
+    return NotSaved(
+        f"{why}. To see it here, check the {kind} out in SolidWorks, show {name} (or right-click it in the "
+        "ConfigurationManager and click Add Rebuild/Save Mark, so every save keeps it), save, and check it in"
+    )
+
+
+def _asked(
+    configurations: list[ElementTree.Element], name: str, kind: Literal["part", "assembly"]
+) -> ElementTree.Element:
+    """The configuration of that name, if the file keeps its shape: one that was up to date when it was saved, or the
+    one SolidWorks had open. Refused otherwise: NotSaved, or NoConfiguration."""
+    chosen = next((c for c in configurations if c.get("swName") == name), None)
+    if chosen is None:
+        raise NoConfiguration(f"It has no configuration named {name}")
+    if chosen is not _active(configurations) and chosen.get("swConfigurationNeedsUpdate") == "YES":
+        raise _not_saved(name, kind)
+    return chosen
+
+
+def read_configurations(data: bytes, kind: Literal["part", "assembly"]) -> list[Configuration]:
+    """A part's or assembly's configurations, as its XML lists them: which SolidWorks had open when it saved the file,
+    and which were up to date then, so the file keeps their shapes. Unreadable where it lists none."""
+    return _strict(lambda d: _read_configurations(d, kind), data)
+
+
+def _read_configurations(data: bytes, kind: Literal["part", "assembly"]) -> list[Configuration]:
+    stream = _FEATURES if kind == "part" else _TREE
+    listed = _configurations(_xml(_found(data, {stream}).get(stream)))
+    if not listed:
+        raise Unreadable(f"It isn't a SolidWorks {kind} whose configurations Caliper can read")
+    active = _active(listed)
+    out: list[Configuration] = []
+    for c in listed:
+        name = c.get("swName") or ""
+        if name and all(name != other.name for other in out):
+            saved = c is active or c.get("swConfigurationNeedsUpdate") != "YES"
+            out.append(Configuration(name=name[:255], active=c is active, saved=saved))
+    return out
+
+
 def _part_configuration(features: ElementTree.Element | None, tail: list[str]) -> str:
     """The configuration a part's display list is of: named after its bodies (SolidWorks 2018 on), else the one
     SolidWorks had open last."""
@@ -861,29 +960,47 @@ def _strict[T](read: Callable[[bytes], T], data: bytes) -> T:
         raise Unreadable(_ODD) from e
 
 
-def read_part(data: bytes) -> Part:
-    """A part's 3D view, as SolidWorks saved it: its bodies, in its own coordinates."""
-    return _strict(_read_part, data)
+def read_part(data: bytes, configuration: str | None = None) -> Part:
+    """A part's 3D view, as SolidWorks saved it: its bodies, in its own coordinates, in the configuration SolidWorks had
+    open when it saved the file. Or in another configuration, read from the solid SolidWorks kept of it, as it does of
+    each one up to date then: one that wasn't is refused (NotSaved), as is a name the file has none of
+    (NoConfiguration)."""
+    return _strict(lambda d: _read_part(d, configuration), data)
 
 
-def read_assembly(data: bytes) -> list[Assembly]:
+def read_assembly(data: bytes, configuration: str | None = None) -> list[Assembly]:
     """An assembly's 3D views, as SolidWorks saved them: in each configuration, its components, with each part's shape
     as the assembly shows it. Components SolidWorks suppressed are left out. The configuration SolidWorks had open
-    comes first; then each other one whose places are up to date (one SolidWorks says needs rebuilding isn't)."""
-    return _strict(_read_assembly, data)
+    comes first; then each other one whose places are up to date (one SolidWorks says needs rebuilding isn't). A
+    configuration asked for is among them, or it's refused: NotSaved, or NoConfiguration."""
+    return _strict(lambda d: _read_assembly(d, configuration), data)
 
 
-def _read_part(data: bytes) -> Part:
+def _read_part(data: bytes, configuration: str | None) -> Part:
     found = _open(data, "part")
+    chosen = None
+    if configuration is not None:
+        listed = _configurations(_xml(found.get(_FEATURES)))
+        if listed:
+            chosen = _asked(listed, configuration, "part")
+            if chosen is not _active(listed):
+                return _solid(data, found, None, chosen)
     display = found.get(_DISPLAY)
     if display is None:
-        return _solid(data, found, None)
-    try:
-        return _viewed(found, display)
-    except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error) as e:
-        # A 3D view Caliper can't follow: the solid, if it can follow that. Else the 3D view's reason stands.
-        refused = e if isinstance(e, Unreadable) else Unreadable(_ODD)
-        return _solid(data, found, refused)
+        part = _solid(data, found, None)
+    else:
+        try:
+            part = _viewed(found, display)
+        except (Unreadable, struct.error, IndexError, ValueError, OverflowError, zlib.error) as e:
+            # A 3D view Caliper can't follow: the solid, if it can follow that. Else the 3D view's reason stands.
+            refused = e if isinstance(e, Unreadable) else Unreadable(_ODD)
+            part = _solid(data, found, refused)
+    if configuration is not None and part.configuration != configuration:
+        # The display list names another configuration than the one SolidWorks says it had open: that one's solid.
+        if chosen is None:
+            raise NoConfiguration(f"It has no configuration named {configuration}")
+        return _solid(data, found, None, chosen)
+    return part
 
 
 def _viewed(found: dict[str, bytes], display: bytes) -> Part:
@@ -954,33 +1071,48 @@ def _bodies(stream: bytes | None) -> list[brep.Solid]:
     return out
 
 
-def _solid(data: bytes, found: dict[str, bytes], refused: Unreadable | None) -> Part:
-    """A part read from its solid (when its display list is missing, or refused). Where that can't be read either,
-    the display list's reason for refusing it stands; or why the solid can't be read; or that there's no 3D view."""
-    features = _xml(found.get(_FEATURES))
-    active = None
-    if features is not None:
-        configurations = list(features.iter(f"{_NS}swConfiguration"))
-        active = next((c for c in configurations if c.get("swMostRecentConfiguration") == "YES"), None)
+def _solid(
+    data: bytes, found: dict[str, bytes], refused: Unreadable | None, chosen: ElementTree.Element | None = None
+) -> Part:
+    """A part read from its solid: in the configuration SolidWorks had open, when its display list is missing, or
+    refused; or in another one (chosen), which has none. Where that can't be read either, the display list's reason
+    for refusing it stands; or why the solid can't be read; or that there's no 3D view."""
+    active = chosen
+    if chosen is None:
+        active = next(
+            (c for c in _configurations(_xml(found.get(_FEATURES))) if c.get("swMostRecentConfiguration") == "YES"),
+            None,
+        )
     number = active.get("swID") if active is not None else None
+    if chosen is not None and not (number and number.isdigit()):
+        raise Unreadable(_ODD)  # where its solid is kept isn't known
     number = number if number and number.isdigit() else "0"
+    configuration = (active.get("swName") if active is not None else None) or "Default"
     names = (_PARTITION.format(number), _LOCAL.format(number), _RESOLVED.format(number), _CONFIGURATION.format(number))
     streams = _found(data, set(names))
     if not found and not streams:
         raise refused or Unreadable("It isn't a SolidWorks part that Caliper can read")
+    if chosen is not None and names[0] not in streams and names[1] not in streams:
+        raise _not_saved(configuration, "part", marked=False)
     try:
         solids = _bodies(streams.get(names[0]))
         if not any(s.faces for s in solids) and _only_imported(streams.get(names[2])):
             solids = _bodies(streams.get(names[1]))
     except parasolid.XtError as e:
+        if chosen is not None:
+            raise Unreadable(
+                f"Caliper can't follow the solid SolidWorks kept of its {configuration} configuration ({e}). Make its "
+                f"3D view in SolidWorks instead: check it out, show {configuration}, save, and check it in"
+            ) from e
         raise refused or Unreadable(
             f"SolidWorks saved no 3D view in it, and Caliper can't follow its solid ({e}). Make its 3D view in "
             "SolidWorks instead (Make 3D view, on the Vault tab)"
         ) from e
     solids = [s for s in solids if s.faces]
     if not solids:
+        if chosen is not None:
+            raise Unreadable(f"SolidWorks kept no bodies of its {configuration} configuration: it may be empty")
         raise refused or Unreadable(_NO_VIEW)
-    configuration = (active.get("swName") if active is not None else None) or "Default"
     bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
     return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
 
@@ -1137,17 +1269,19 @@ def _kept_part(data: bytes) -> list[MeshBody] | None:
         return None
 
 
-def _read_assembly(data: bytes) -> list[Assembly]:
+def _read_assembly(data: bytes, configuration: str | None) -> list[Assembly]:
     found = _open(data, "assembly")
     tree = _xml(found.get(_TREE))
     if tree is None:
         raise Unreadable(_ODD)
     files = {f.get("id"): f for f in tree.iter(f"{_NS}swFile")}
     models = {m.get("id"): m for m in tree.iter(f"{_NS}swModel")}
-    configurations = list(tree.iter(f"{_NS}swConfiguration"))
-    if not configurations:
+    configurations = _configurations(tree)
+    active = _active(configurations)
+    if active is None:
         raise Unreadable(_ODD)
-    active = next((c for c in configurations if c.get("swMostRecentConfiguration") == "YES"), configurations[0])
+    if configuration is not None:
+        _asked(configurations, configuration, "assembly")  # before the work of reading the rest
     top = models.get(active.get("swModelRef"))
     if top is None:
         raise Unreadable(_ODD)
@@ -1256,6 +1390,8 @@ def _read_assembly(data: bytes) -> list[Assembly]:
             continue
         if name not in (assembly.configuration for assembly in made):
             made.append(Assembly(configuration=name, units=units, components=components(model, None, 1, data)))
+    if configuration is not None and all(assembly.configuration != configuration for assembly in made):
+        raise Unreadable(_ODD)  # listed, and up to date, but with no components of its own in the XML
     return made
 
 

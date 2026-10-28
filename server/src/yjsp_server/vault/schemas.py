@@ -488,6 +488,33 @@ class CaliperModelsOut(BaseModel):
 
 class CaliperMakeIn(BaseModel):
     version: int = Field(ge=1)
+    # The configuration to make it in, which the file keeps the shape of. None: the one SolidWorks saved it in (and an
+    # assembly's every other one up to date).
+    configuration: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CaliperConfigurationOut(BaseModel):
+    name: str
+    active: bool  # the one SolidWorks had open when it saved the file
+    saved: bool  # up to date then, so the file keeps its shape: the server can read its model (caliper/make)
+    model: bool  # it has a 3D model
+
+
+class CaliperConfigurationsOut(BaseModel):
+    version: int
+    configurations: list[CaliperConfigurationOut]  # as the file lists them, then any others that have models
+    unreadable: str | None  # why the file's own list couldn't be read: then those with models are listed
+
+    @classmethod
+    def of(cls, view: vault.ConfigurationsView) -> "CaliperConfigurationsOut":
+        return cls(
+            version=view.version,
+            configurations=[
+                CaliperConfigurationOut(name=c.name, active=c.active, saved=c.saved, model=c.model)
+                for c in view.configurations
+            ],
+            unreadable=view.unreadable,
+        )
 
 
 class CaliperComponentIn(BaseModel):

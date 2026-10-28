@@ -563,7 +563,11 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   coordinates, in the configuration it uses) and where each component is (`Transform2`,
   relative to the top assembly; a sub-assembly's own model has them relative to it). A part
   with unsaved changes, or loaded lightweight (its bodies aren't), gets no model, and the
-  tab says so; making models never undoes the check-in before it.
+  tab says so; making models never undoes the check-in before it. It makes them in the
+  configurations SolidWorks shows, not in every one: SolidWorks gives bodies only of the
+  configuration showing, so another's would mean showing it, which rebuilds it (minutes, in a
+  big assembly), changes what's on screen, and leaves the document changed. The server reads
+  the others SolidWorks kept from the file instead (see "Caliper").
 - **Drawings' PDFs for Caliper.** After a check-in, the add-in saves each drawing it checked
   in as a PDF of all its sheets, as File > Save As > PDF does (`SolidWorksHost.DrawingPdf`:
   `ExportPdfData`, every sheet, silently, without opening the PDF after), and uploads it as
@@ -685,8 +689,12 @@ their own that loads without three.js (see "Drawings and DXF files", below).
   feet; the document's own units first.
 - **An assembly's components**, as a tree beside the view: show or hide each (hidden as
   SolidWorks had them, to start with), isolate one (show only it), or open one in its own
-  Caliper page, at the version the assembly uses. A STEP file's products are its tree, and
-  open where they are.
+  Caliper page, at the version and in the configuration the assembly uses. A STEP file's
+  products are its tree, and open where they are.
+- **Configurations:** a part or assembly shows the configuration SolidWorks saved it in, and
+  the Configuration list offers every other its file lists (`GET .../caliper/configurations`),
+  each read from the file when it's picked (below). One the file kept no shape of says so,
+  and why, and how to see it; so does a component used in one.
 
 Where the 3D comes from:
 
@@ -701,10 +709,24 @@ Where the 3D comes from:
     with part document, on by default).
     - **A part:** its bodies' triangles, names, and colors (and faces' own colors, where the
       file says which), and its units, in the configuration SolidWorks had open when it saved
-      the file. That's the only configuration it keeps triangles of, and nearly always the
-      only one it keeps a solid of (in the team's assemblies, every part used in another
-      configuration had none), so a part used in another configuration shows once Make 3D
-      view makes it.
+      the file. That's the only configuration it keeps triangles of.
+    - **A part's other configurations** are read from their solids, as a part without a 3D
+      view is (below), and only when asked for (`configuration` in `caliper/make`), as reading
+      a solid takes a while: seconds, up to a minute for one of many curved faces. SolidWorks
+      keeps the solid of every configuration that was up to date when it saved the file: one
+      shown since the part last changed, or one with a Rebuild/Save Mark (right-click it in the
+      ConfigurationManager), which SolidWorks rebuilds and keeps at every save. Of the 311
+      parts with more than one configuration that SolidWorks installs as samples, each of the
+      447 configurations up to date kept its solid, and the server read all 136 of them that
+      weren't the one saved. The XML says which aren't up to date (`swConfigurationNeedsUpdate`):
+      those it doesn't read (`configuration_not_saved`), as any solid they keep is from before
+      the part last changed (8 of the samples' were). In the team's files they nearly always
+      are: in its assemblies, every part used in another configuration had no solid of it, and
+      on the owner's laptop none of the 6 parts with more than one kept another. So such a part
+      shows once Make 3D view makes it from an assembly that uses it, or once it's checked in
+      with that configuration kept. A version's first model is of the configuration it was
+      saved in, which Caliper shows when none is asked for: asked for another first, the server
+      reads that one too.
     - **A part without a 3D view** (SolidWorks set not to save one, as vendors' parts often
       are), or with one the server can't follow, is read from its solid instead: SolidWorks
       keeps each configuration's bodies as Parasolid's, the geometry kernel it's built on,
@@ -729,7 +751,8 @@ Where the 3D comes from:
       component's file, configuration, and place, and whether SolidWorks hid or suppressed
       it. A flexible sub-assembly's instance has its own layout there, as flexed. Each
       configuration SolidWorks keeps up to date gets a model, the one it had open first; one
-      it says needs rebuilding doesn't, as its places may be old. Its display list sometimes
+      it says needs rebuilding doesn't, as its places may be old (`configuration_not_saved`,
+      asked for). Its display list sometimes
       has each part's triangles as the assembly shows them, which the model then carries.
       From SolidWorks 2024 on it never does, and many older ones don't either, nor has every
       assembly a display list: each part then shows its own model, which Caliper has the
@@ -897,7 +920,8 @@ are in [design.md](design.md#api).
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
 | `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration |
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
-| `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); `unreadable_file` says why not |
+| `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); with `configuration`, in that one, which a part's is read from the solid SolidWorks kept of it; `unreadable_file`, `configuration_not_saved`, or `no_configuration` says why not |
+| `GET /api/files/{id}/caliper/configurations?version=` | a version's configurations, as its file lists them: whether SolidWorks had each open when it saved the file (`active`) and kept it up to date then (`saved`: the server can read it), and whether it has a model; then any others with models (`unreadable` says why the file's list couldn't be read) |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |

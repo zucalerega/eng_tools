@@ -565,6 +565,138 @@ def test_each_configuration_of_an_assembly_is_shown(team, client):
     # The parts are in their configurations as before, so the display list's shapes serve both.
     assert spline("Spline out")["mesh"] == spline("Default")["mesh"] is not None
 
+    # Caliper offers them all, and says which SolidWorks kept up to date. One that wasn't has no model, and says why.
+    listed = client.get(f"/api/files/{servo['id']}/caliper/configurations", params={"version": 1}, headers=chief)
+    assert [(c["name"], c["active"], c["saved"], c["model"]) for c in listed.json()["configurations"]] == [
+        ("Default", True, True, True),
+        ("Spline out", False, True, True),
+        ("Old", False, False, False),
+    ]
+    old = make_in(client, chief, servo, "Old")
+    assert (old.status_code, old.json()["error"]) == (422, "configuration_not_saved")
+    assert old.json()["message"].startswith(
+        "Servo/9347.SLDASM v1: SolidWorks marked its Old configuration as needing a rebuild when it saved it"
+    )
+    assert make_in(client, chief, servo, "Spline out").json()["configuration"] == "Spline out"
+
+
+def make_in(client, who, file: dict, configuration: str, version: int = 1):
+    body = {"version": version, "configuration": configuration}
+    return client.post(f"/api/files/{file['id']}/caliper/make", json=body, headers=who)
+
+
+def stream_of(data: bytes, name: str) -> bytes:
+    """A stream of a SolidWorks file, unpacked: the copy whose CRC checks."""
+    marker = b"\x14\x00\x06\x00\x08\x00"
+    at = data.find(marker)
+    while at >= 0:
+        head = at + len(marker)
+        _tag, crc, packed, size, length = struct.unpack_from("<5I", data, head)
+        start = head + 20 + length
+        if data[head + 20 : start] == swapped(name.encode()):
+            try:
+                found = zlib.decompressobj(-15).decompress(data[start : start + packed])
+            except zlib.error:
+                found = b""
+            if len(found) == size and zlib.crc32(found) == crc:
+                return found
+        at = data.find(marker, at + 1)
+    raise KeyError(name)
+
+
+def case_in_configurations() -> bytes:
+    """The servo's case as a part of three configurations: Default, the one SolidWorks saved it in, with its 3D view;
+    Spline, up to date when it was saved, so SolidWorks kept its solid (the spline's, here, with its appearance); and
+    Old, marked as needing a rebuild, whose solid is from before the part last changed."""
+    spline = contents("Embout.SLDPRT")
+    more = (
+        b'<swConfiguration id="7" swName="Spline" swID="1" swMostRecentConfiguration="NO" '
+        b'swConfigurationNeedsUpdate="NO" swModelRef="2"/>'
+        b'<swConfiguration id="8" swName="Old" swID="2" swMostRecentConfiguration="NO" '
+        b'swConfigurationNeedsUpdate="YES" swModelRef="2"/>'
+    )
+    case = repacked(
+        contents("Servomoteur.SLDPRT"),
+        "swXmlContents/Features",
+        lambda xml: xml.replace(b"</swConfigurationList>", more + b"</swConfigurationList>"),
+    )
+    solid = stream_of(spline, "Contents/Config-0-Partition")
+    case = keeping(case, "Contents/Config-1-Partition", solid)
+    case = keeping(case, "Contents/Config-1", stream_of(spline, "Contents/Config-0"))
+    return keeping(case, "Contents/Config-2-Partition", solid)
+
+
+def test_each_configuration_a_part_keeps_is_shown(team, client):
+    """A part's file lists its configurations, and keeps the shape of each that was up to date when SolidWorks saved it:
+    of the one it had open, its 3D view; of another, its solid (vault/solidworks.py). Caliper offers them all, and the
+    server reads each one asked for that the file keeps. One marked as needing a rebuild isn't read, though it has a
+    solid: that's from before the part last changed."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/Servomoteur.SLDPRT": case_in_configurations(),
+                "Bare/Embout.SLDPRT": without_3d_view(contents("Embout.SLDPRT")),
+            },
+        )
+    )
+    case = checked["Servomoteur.SLDPRT"]
+
+    def configurations() -> list[tuple[str, bool, bool, bool]]:
+        listed = client.get(f"/api/files/{case['id']}/caliper/configurations", params={"version": 1}, headers=chief)
+        assert listed.status_code == 200, listed.text
+        assert (listed.json()["version"], listed.json()["unreadable"]) == (1, None)
+        return [(c["name"], c["active"], c["saved"], c["model"]) for c in listed.json()["configurations"]]
+
+    assert configurations() == [
+        ("Default", True, True, False),
+        ("Spline", False, True, False),
+        ("Old", False, False, False),
+    ]
+    spline = make_in(client, chief, case, "Spline")
+    assert spline.status_code == 200, spline.text
+    assert (spline.json()["configuration"], spline.json()["kind"], spline.json()["units"]) == ("Spline", "part", "mm")
+    # The one it was saved in is read too, first, as it's the one shown when none is asked for.
+    models = client.get(f"/api/files/{case['id']}/caliper", headers=chief).json()["models"]
+    assert [model["configuration"] for model in models] == ["Default", "Spline"]
+    assert make(client, chief, case).json()["configuration"] == "Default"
+    assert configurations() == [
+        ("Default", True, True, True),
+        ("Spline", False, True, True),
+        ("Old", False, False, False),
+    ]
+
+    def mesh_of(file: dict, configuration: str):
+        params = {"version": 1, "configuration": configuration}
+        shape = client.get(f"/api/files/{file['id']}/caliper/mesh", params=params, headers=chief)
+        assert shape.status_code == 200, shape.text
+        return shape
+
+    # Spline's is the spline's solid, as the spline's own file reads without its 3D view: the very same mesh.
+    assert make(client, chief, checked["Embout.SLDPRT"]).status_code == 200
+    ours, theirs = mesh_of(case, "Spline"), mesh_of(checked["Embout.SLDPRT"], "Default")
+    assert ours.headers["etag"] == theirs.headers["etag"]
+    assert [(b["name"], len(b["faces"])) for b in unpack(ours.content)[0]["bodies"]] == [("Body 1", 3), ("Body 2", 78)]
+    assert [b["name"] for b in unpack(mesh_of(case, "Default").content)[0]["bodies"]] == ["Boss-Extrude1"]
+    # Asked for by name, the one it was saved in is the one it has.
+    assert make_in(client, chief, case, "Default").json()["configuration"] == "Default"
+
+    old = make_in(client, chief, case, "Old")
+    assert (old.status_code, old.json()["error"]) == (422, "configuration_not_saved")
+    message = old.json()["message"]
+    assert message.startswith(
+        "Servo/Servomoteur.SLDPRT v1: SolidWorks marked its Old configuration as needing a rebuild"
+    )
+    assert "show Old (or right-click it in the ConfigurationManager and click Add Rebuild/Save Mark" in message
+    missing = make_in(client, chief, case, "Long")
+    assert (missing.status_code, missing.json()["error"]) == (404, "no_configuration")
+    assert missing.json()["message"] == "Servo/Servomoteur.SLDPRT v1: It has no configuration named Long"
+    # What was refused stays refused, and nothing was made of it.
+    assert make_in(client, chief, case, "Old").json()["error"] == "configuration_not_saved"
+    models = client.get(f"/api/files/{case['id']}/caliper", headers=chief).json()["models"]
+    assert [model["configuration"] for model in models] == ["Default", "Spline"]
+
 
 def test_a_step_file_placed_in_an_assembly_says_its_format(team, client):
     """A STEP or IGES file placed with SolidWorks' 3D Interconnect is a component with no SolidWorks kind: the web app
@@ -1445,9 +1577,15 @@ def test_who_may_read_and_see_a_files_model(team, client):
     )["9347.SLDASM"]
     team.grant(chief, "Servo", "bob@x.test", "viewer")
 
-    # Someone who can only view may: the model comes from the file. Who can't see the file can't.
+    # Someone who can only view may: the model comes from the file. Who can't see the file can't, nor see what
+    # configurations it has.
     assert make(client, eve, servo).status_code == 404
+    listing = f"/api/files/{servo['id']}/caliper/configurations"
+    assert client.get(listing, params={"version": 1}, headers=eve).status_code == 404
     assert make(client, bob, servo).status_code == 200
+    assert client.get(listing, params={"version": 1}, headers=bob).json()["configurations"] == [
+        {"name": "Default", "active": True, "saved": True, "model": True}
+    ]
     params = {"version": 1, "configuration": "Default"}
     seen = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=bob).json()
     assert ([c["name"] for c in seen["components"]], seen["left_out"]) == (["Embout-1"], 1)
@@ -1496,6 +1634,14 @@ def test_a_version_with_a_model_keeps_it(team, client):
     made = make(client, chief, tab)
     assert made.status_code == 200, made.text
     assert (made.json()["configuration"], made.json()["created_by"]["email"]) == ("Long", "chief@x.test")
+    assert make_in(client, chief, tab, "Long").json() == made.json()
+    # Its file lists no configurations the server can read: the one it has a model of is offered, and others can't be
+    # made.
+    listed = client.get(f"/api/files/{tab['id']}/caliper/configurations", params={"version": 1}, headers=chief).json()
+    assert listed["configurations"] == [{"name": "Long", "active": False, "saved": False, "model": True}]
+    assert listed["unreadable"].startswith("Tab.SLDPRT v1: It isn't a SolidWorks part whose configurations")
+    short = make_in(client, chief, tab, "Short")
+    assert (short.status_code, short.json()["error"]) == (422, "unreadable_file")
 
 
 def repacked(data: bytes, name: str, change) -> bytes:

@@ -163,6 +163,20 @@ export interface CaliperModel {
     created_by: UserRef;
 }
 
+/** A configuration of a version, as its file lists it, for Caliper to offer. */
+export interface CaliperConfiguration {
+    name: string;
+    active: boolean; // the one SolidWorks had open when it saved the file
+    saved: boolean; // up to date then, so the file keeps its shape: the server can read its model
+    model: boolean; // it has a 3D model
+}
+
+export interface CaliperConfigurations {
+    version: number;
+    configurations: CaliperConfiguration[]; // as the file lists them, then any others that have models
+    unreadable: string | null; // why the file's own list couldn't be read: then those with models are listed
+}
+
 /** A component of an assembly's model: a part or sub-assembly, where the assembly has it. */
 export interface CaliperComponent {
     name: string;
@@ -274,9 +288,15 @@ export const vaultApi = {
         request<{ files: { status: string; file: VaultFile }[] }>("POST", "/api/checkin", body),
     /** A file's 3D models for Caliper: each version's, newest first, in each configuration. */
     caliperModels: (fileId: number) => request<{ models: CaliperModel[] }>("GET", `/api/files/${fileId}/caliper`),
-    /** Make a version's 3D model from the 3D view SolidWorks saved in the file; or the model it has already. */
-    makeCaliperModel: (fileId: number, version: number) =>
-        request<CaliperModel>("POST", `/api/files/${fileId}/caliper/make`, { version }),
+    /**
+     * Make a version's 3D model from the 3D view SolidWorks saved in the file; or the model it has already. In a
+     * configuration, from the solid SolidWorks kept of it, where it kept one.
+     */
+    makeCaliperModel: (fileId: number, version: number, configuration?: string) =>
+        request<CaliperModel>("POST", `/api/files/${fileId}/caliper/make`, { version, configuration }),
+    /** A version's configurations: which SolidWorks saved it in, which it kept, and which have models. */
+    caliperConfigurations: (fileId: number, version: number) =>
+        request<CaliperConfigurations>("GET", `/api/files/${fileId}/caliper/configurations?` + query({ version })),
     caliperAssembly: (fileId: number, version: number, configuration: string) =>
         request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */

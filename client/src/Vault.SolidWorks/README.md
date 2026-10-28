@@ -149,10 +149,12 @@ While you work:
 - **3D views for Caliper**, the web app's 3D viewer: checking in a part or an assembly makes
   its 3D view (what SolidWorks shows of it, and for an assembly, where each part is), and
   those of the parts and sub-assemblies it uses that have none yet, from what SolidWorks has
-  open. **Make 3D view**, on the tab, does the same for the active document: for files
-  brought from Kenesto, or checked in from the web. A part changed and not checked in, or
-  with changes not saved, gets none until it is; one loaded lightweight needs the assembly
-  set to resolved first. The tab says what it made, and why anything wasn't.
+  open, in the configurations it shows (Caliper reads a file's other configurations from the
+  file, where SolidWorks kept them). **Make 3D view**, on the tab, does the same for the
+  active document: for files brought from Kenesto, or checked in from the web. A part
+  changed and not checked in, or with changes not saved, gets none until it is; one loaded
+  lightweight needs the assembly set to resolved first. The tab says what it made, and why
+  anything wasn't.
 - **PDFs of drawings for Caliper**: checking in a drawing saves it as a PDF of all its
   sheets, as File > Save As > PDF does, which Caliper shows in the web app. **Make PDF**, on
   the tab, does the same for the active drawing, where its version has none: for drawings

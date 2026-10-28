@@ -81,7 +81,10 @@ export interface Kind {
     /** Around everything it draws, in its frame: left, top, right, bottom. */
     box: (part: Part, drawing: Drawing) => readonly [number, number, number, number];
     ports: (part: Part) => Port[];
-    fields: Field[];
+    fields: Field[]; // every field a part of it can have
+    // The fields a part of it has, if not all of them: an instrument's, by what it measures (a thermocouple's type and
+    // probe, a pressure transducer's output and MAWP). Left out, all of them.
+    fieldsOf?: (part: Part) => Field[];
     draw: (part: Part, context: DrawContext) => ReactNode;
     /** What it's called on the drawing's lists, if more than its kind (a valve's body and actuation). */
     title?: (part: Part) => string;

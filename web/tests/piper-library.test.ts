@@ -11,7 +11,7 @@ import { fluidsOf, fluidsUsed, STANDARD_FLUIDS, withFluid } from "../src/piper/f
 import { OPPOSITE } from "../src/piper/geometry";
 import { PartIcon, presetPart } from "../src/piper/icons";
 import { labelPlace, partLabel } from "../src/piper/labels";
-import { ALL_KINDS, boxOf, kindOf, PRESETS, searchPresets, titleOf } from "../src/piper/library/index";
+import { ALL_KINDS, boxOf, fieldsOf, kindOf, PRESETS, searchPresets, titleOf } from "../src/piper/library/index";
 import { BODY } from "../src/piper/library/valves";
 import { textWidth } from "../src/piper/pdf";
 import { partsById, pathOf, portsOf } from "../src/piper/ports";
@@ -74,6 +74,37 @@ test("a part drawn at any size keeps its ports apart: on the grid where they can
             }
         }
     }
+});
+
+test("each sensor has the fields that fit what it measures: its model, its range, and its MAWP or its own", () => {
+    const fields = (type: string) =>
+        fieldsOf(newPart("instrument", { x: 0, y: 0 }, { props: { type } })).map((field) => field.key);
+    const every = new Set(kindOf("instrument").fields.map((field) => field.key));
+    for (const option of kindOf("instrument").fields.find((field) => field.key === "type")!.options!) {
+        const keys = fields(option.value);
+        expect(new Set(keys).size, option.value).toBe(keys.length);
+        expect(
+            keys.every((key) => every.has(key)),
+            option.value,
+        ).toBe(true); // what's said of one is read by any
+        expect(keys, option.value).toEqual(expect.arrayContaining(["type", "model", "daq", "channel", "notes"]));
+    }
+    expect(fields("pressure")).toEqual(expect.arrayContaining(["range", "output", "mawp"]));
+    // A thermocouple's own: its type, junction, probe, and sheath; no 0.5-4.5 V output.
+    expect(fields("temperature")).toEqual(
+        expect.arrayContaining(["tc", "junction", "probe", "sheath", "range", "mawp"]),
+    );
+    expect(fields("temperature")).not.toContain("output");
+    expect(fields("rtd")).toEqual(expect.arrayContaining(["element", "wires", "probe"]));
+    // Off the line, no MAWP: a load cell, a position sensor.
+    expect(fields("force")).not.toContain("mawp");
+    expect(fields("position")).not.toContain("mawp");
+    expect(fields("switch")).toEqual(expect.arrayContaining(["set", "mawp"]));
+    // Each with an example in its own units.
+    const range = (type: string) =>
+        fieldsOf(newPart("instrument", { x: 0, y: 0 }, { props: { type } })).find((field) => field.key === "range")
+            ?.placeholder;
+    expect([range("pressure"), range("temperature"), range("force")]).toEqual(["0-1000 psi", "0-1000 °F", "0-500 lbf"]);
 });
 
 /** A part as the library draws it: its symbol's markup. */

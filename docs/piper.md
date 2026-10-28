@@ -263,8 +263,14 @@ what it is, `data-hit`).
   its tag (or its words, for a note).
 - **Properties**: each kind has its own (a valve's body, actuation, normal state, size, Cv,
   MAWP, and model; a tank's fluid, volume, MEOP, MAWP, and material; an orifice's diameter and
-  discharge coefficient; an instrument's range, output, DAQ channel, and test channel; a
-  line's fluid, type, size, wall, material, length, and MAWP). Every kind that holds pressure
+  discharge coefficient; an instrument's, by what it measures (`fieldsOf`: a pressure
+  transducer's range, output, MAWP, and model; a thermocouple's type, junction, probe, sheath,
+  range, MAWP, and model; an RTD's element and wires; a load cell's range and output, and no
+  MAWP, as it isn't on a line), each with an example in its units, then its DAQ and test
+  channels; a line's fluid, type, size, wall, material, length, and MAWP). A kind's `fields`
+  are every field any part of it can have, which reading what's said of one uses; a field a
+  part no longer has (a transducer's output, once it's a thermocouple) shows as a field of its
+  own, by its name, so nothing said is lost. Every kind that holds pressure
   has a MAWP (`mawp`); drawings from before it called a valve's or line's "Pressure rating"
   `rating`, which `readDrawing` reads as its MAWP (a filter's `rating` is its microns, and
   stays). Any part or line can have

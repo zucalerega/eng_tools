@@ -6,7 +6,7 @@ import { figure } from "./figures";
 import { FITTING_KINDS } from "./fittings";
 import { FLOW_KINDS } from "./flow";
 import { INSTRUMENT_KINDS } from "./instruments";
-import { CATEGORIES, NOTES, type Category, type Kind, type Preset } from "./kinds";
+import { CATEGORIES, NOTES, type Category, type Field, type Kind, type Preset } from "./kinds";
 import { NOTE_KINDS } from "./notes";
 import { VALVE_KINDS } from "./valves";
 import { VESSEL_KINDS } from "./vessels";
@@ -579,6 +579,9 @@ export function titleOf(part: Part): string {
     }
     return kind.name;
 }
+
+/** The fields a part has: its kind's, or those its kind gives a part like it (an instrument's, by what it measures). */
+export const fieldsOf = (part: Part): Field[] => kindOf(part.kind).fieldsOf?.(part) ?? kindOf(part.kind).fields;
 
 /** A part's box in the drawing. */
 export const boxOf = (part: Part, drawing: Drawing): Box => worldBox(part, kindOf(part.kind).box(part, drawing));

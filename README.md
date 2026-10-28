@@ -371,6 +371,8 @@ the keys.
 - **Properties**: select anything to name it and say what it is, on the right: a valve's body,
   actuation, normal state (NO green, NC red, FIP for a double-acting valve that fails in
   place), size, Cv, and MAWP; a tank's fluid, volume, MEOP, and MAWP; an orifice's diameter;
+  a sensor's range, model, and what fits what it measures (a pressure transducer's output and
+  MAWP; a thermocouple's type, junction, probe, and sheath; a load cell's range and mV/V output);
   a line's fluid, type, size, and MAWP; and any field of your own. Every part that holds
   pressure has a MAWP. The eye beside one shows it under the part's tag.
 - **Links**: a part can link to pages about it (an FMV to its Notion page, a COTS valve to its

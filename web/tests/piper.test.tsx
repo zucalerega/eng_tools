@@ -899,6 +899,50 @@ test("Parts opens a page of every part: sorted by any column, narrowed to a kind
     expect(sensor).toBeTruthy();
 });
 
+test("a sensor's fields fit what it measures: a thermocouple's type and probe, and what it said before stays its own", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const sensor = place(drawing, "pressure-transducer", 0, 0);
+    drawing.value = {
+        ...drawing.value,
+        parts: drawing.value.parts.map((part) =>
+            part.id === sensor ? { ...part, props: { ...part.props, output: "0.5-4.5 V" } } : part,
+        ),
+    };
+    const made = await team.diagram(team.chief, "Sensed", drawing.value);
+    const editor = renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "PT-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    expect(inspector.getByRole("textbox", { name: "Model" }).getAttribute("placeholder")).toBe("Omega PX309-1KG5V");
+    expect(inspector.getByRole("textbox", { name: "MAWP" })).toBeTruthy();
+    expect(inspector.queryByRole("combobox", { name: "Thermocouple type" })).toBeNull();
+    expect(inspector.getByRole("combobox", { name: "Sensors" })).toBeTruthy(); // how many on its tap, whatever they are
+
+    // A thermocouple now: its own fields, and its output, which it said as a transducer, kept as its own.
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Measures" }), "temperature");
+    expect(await inspector.findByRole("combobox", { name: "Thermocouple type" })).toBeTruthy();
+    expect(inspector.getByRole("textbox", { name: "Probe" })).toBeTruthy();
+    expect(inspector.getByRole("textbox", { name: "Range" }).getAttribute("placeholder")).toBe("0-1000 °F");
+    expect((inspector.getByRole("textbox", { name: "Output" }) as HTMLInputElement).value).toBe("0.5-4.5 V");
+    expect(inspector.getByRole("button", { name: "Remove Output" })).toBeTruthy();
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Thermocouple type" }), "K");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read.parts.find((part) => part.id === sensor)!;
+        expect(saved.props).toMatchObject({ type: "temperature", tc: "K", output: "0.5-4.5 V" });
+    });
+    editor.unmount();
+
+    // On the parts page, its type is a column of its own.
+    renderApp(team.chief, `/piper/diagrams/${made.id}/parts`);
+    const table = within(await screen.findByRole("table", { name: "Parts" }));
+    expect(table.getByRole("columnheader", { name: "Thermocouple type" })).toBeTruthy();
+    expect(table.getByText("Type K")).toBeTruthy();
+    expect(table.getByText("Thermocouple")).toBeTruthy();
+});
+
 test("a diagram takes a scheme's colors, and says when the scheme has changed since", async () => {
     const team = await Team.create();
     const blue = { id: "lox", name: "Liquid oxygen", label: "LOX", color: "#0000ff", gas: false };

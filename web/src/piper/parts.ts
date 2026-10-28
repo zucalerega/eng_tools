@@ -1,6 +1,6 @@
 import { pageOf, type Document, type Drawing, type Part } from "./drawing";
 import { fluidOf } from "./fluids";
-import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
+import { CATEGORIES, fieldsOf, kindOf, PRESETS, titleOf } from "./library/index";
 import type { Field } from "./library/kinds";
 import { linesOn } from "./ports";
 
@@ -43,7 +43,7 @@ export interface PartsRow {
     category: string;
     fluids: string[]; // the fluids on it, by id: what it holds, and what its lines carry
     cells: Record<string, string>;
-    fields: string[]; // the keys of the fields its kind has: columns it would fill, said or not
+    fields: string[]; // the keys of its fields (an instrument's, for what it measures): columns it'd fill, said or not
 }
 
 /** How the list is sorted: by a column, either way; null, as the library has them (valves first), then by tag. */
@@ -86,7 +86,9 @@ function rowOf(document: Document, drawing: Drawing, part: Part, page: number): 
         category: CATEGORY.get(part.kind) ?? "other",
         fluids: [...new Set(fluids.filter(Boolean))],
         cells,
-        fields: kind.fields.filter((field) => !OWN_COLUMNS.has(field.key)).map((field) => field.key),
+        fields: fieldsOf(part)
+            .filter((field) => !OWN_COLUMNS.has(field.key))
+            .map((field) => field.key),
     };
     row.cells.fluids = row.fluids.map((id) => fluidOf(drawing, id)?.label ?? id).join(", ");
     return row;

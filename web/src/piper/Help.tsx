@@ -104,9 +104,9 @@ const TOPICS: Topic[] = [
                     An instrument is a bubble with the letter of what it measures in it, whatever its tag says (
                     <code>P</code> for pressure, <code>T</code> for temperature, <code>F</code> for flow, <code>W</code>{" "}
                     for a load cell), and its whole tag (<code>PT-101</code>) at its side. A duplicated or triplicated
-                    transducer (two or three on one tap) is two or three bubbles side by side, A, B, and C: set{" "}
-                    <em>Transducers</em>, or place one from the library. Each reads its own test channel: those its{" "}
-                    <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it (
+                    sensor (two or three on one tap) is two or three bubbles side by side, A, B, and C: set{" "}
+                    <em>Sensors</em> to how many, or place one from the library. Each reads its own test channel: those
+                    its <em>Test channel</em> names (separated by commas), or its tag's with A, B, and C after it (
                     <code>PT-101A</code>, <code>PT-101B</code>).
                 </li>
                 <li>
@@ -280,9 +280,12 @@ const TOPICS: Topic[] = [
             <ul>
                 <li>
                     Select a part to say what it is: a valve's body, actuation, normal state, size, Cv, and MAWP; a
-                    tank's fluid, volume, MEOP, and MAWP; an orifice's diameter and discharge coefficient; an
-                    instrument's range and DAQ channel. Every part that holds pressure, and every line, has its MAWP.
-                    Write values with their units (<code>0.062 in</code>).
+                    tank's fluid, volume, MEOP, and MAWP; an orifice's diameter and discharge coefficient. A sensor has
+                    what fits what it measures, with its model and DAQ channel: a pressure transducer its range, output,
+                    and MAWP; a thermocouple its type (K, T...), junction, probe, sheath, range, and MAWP; an RTD its
+                    element and wires; a load cell its range and output (mV/V). Change what it measures, and what it
+                    said before stays, as a field of its own, to keep or remove. Every part that holds pressure, and
+                    every line, has its MAWP. Write values with their units (<code>0.062 in</code>).
                 </li>
                 <li>
                     The eye beside a property shows it under the part's tag on the drawing. <em>Add a field</em> gives a

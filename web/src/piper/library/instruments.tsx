@@ -1,7 +1,7 @@
 import type { Part } from "../drawing";
 import { transducers } from "../testdata";
 import { ink, Letters } from "./draw";
-import { CHANNEL, DAQ, MAWP, MODEL, NOTES, OUTPUT, RANGE, type Field, type Kind, type Port } from "./kinds";
+import { CHANNEL, DAQ, MAWP, MODEL, NOTES, OUTPUT, RANGE, SET, type Field, type Kind, type Port } from "./kinds";
 
 // Instruments, as ISA 5.1 draws them: a bubble with the first letter of what it measures (P for pressure, T for
 // temperature), whatever its tag says, and its whole tag at its side, connected to the line it measures by a tap from any
@@ -50,9 +50,10 @@ const LETTER: Record<string, string> = {
 /** A bubble's letters: what it measures, or for an instrument of no kind the library knows, its tag's first letter. */
 const lettersOf = (part: Part): string => LETTER[part.props.type ?? ""] ?? (splitTag(part.tag)[0].charAt(0) || "?");
 
+/** How many sensors are on one tap: a pressure transducer's, a thermocouple's, whatever it measures. */
 export const COUNT: Field = {
     key: "count",
-    label: "Transducers",
+    label: "Sensors",
     type: "select",
     options: [
         { value: "", label: "One" },
@@ -60,6 +61,117 @@ export const COUNT: Field = {
         { value: "3", label: "Three on one tap (triplicated)", short: "×3" },
     ],
 };
+
+// What's known of a sensor, by what it measures: its range and output, and the pressure it holds (its MAWP: it's on the
+// line, so it's in the system's pressure boundary), and its model, each with an example in the units it's written in;
+// and a thermocouple's or an RTD's own (its type, its probe). A load cell and a position sensor aren't on a line: no MAWP.
+
+export const TC_TYPE: Field = {
+    key: "tc",
+    label: "Thermocouple type",
+    type: "select",
+    options: [
+        { value: "", label: "Not set" },
+        { value: "K", label: "K (chromel-alumel)", short: "Type K" },
+        { value: "T", label: "T (copper-constantan)", short: "Type T" },
+        { value: "J", label: "J (iron-constantan)", short: "Type J" },
+        { value: "E", label: "E (chromel-constantan)", short: "Type E" },
+        { value: "N", label: "N (nicrosil-nisil)", short: "Type N" },
+        { value: "R", label: "R (platinum-rhodium)", short: "Type R" },
+        { value: "S", label: "S (platinum-rhodium)", short: "Type S" },
+        { value: "B", label: "B (platinum-rhodium)", short: "Type B" },
+    ],
+};
+
+export const JUNCTION: Field = {
+    key: "junction",
+    label: "Junction",
+    type: "select",
+    options: [
+        { value: "", label: "Not set" },
+        { value: "grounded", label: "Grounded" },
+        { value: "ungrounded", label: "Ungrounded" },
+        { value: "exposed", label: "Exposed" },
+    ],
+};
+
+export const PROBE: Field = { key: "probe", label: "Probe", type: "text", placeholder: "1/8 in × 6 in" };
+export const SHEATH: Field = { key: "sheath", label: "Sheath", type: "text", placeholder: "316 SS" };
+
+export const ELEMENT: Field = {
+    key: "element",
+    label: "Element",
+    type: "select",
+    options: [
+        { value: "", label: "Not set" },
+        { value: "pt100", label: "Pt100", short: "Pt100" },
+        { value: "pt1000", label: "Pt1000", short: "Pt1000" },
+    ],
+};
+
+export const WIRES: Field = {
+    key: "wires",
+    label: "Wires",
+    type: "select",
+    options: [
+        { value: "", label: "Not set" },
+        { value: "2", label: "2-wire" },
+        { value: "3", label: "3-wire" },
+        { value: "4", label: "4-wire" },
+    ],
+};
+
+/** A field with an example of its own: a range in its sensor's units. */
+const withExample = (field: Field, placeholder: string): Field => ({ ...field, placeholder });
+
+const SPECS: Record<string, Field[]> = {
+    pressure: [
+        withExample(RANGE, "0-1000 psi"),
+        withExample(OUTPUT, "0.5-4.5 V"),
+        MAWP,
+        withExample(MODEL, "Omega PX309-1KG5V"),
+    ],
+    temperature: [
+        TC_TYPE,
+        JUNCTION,
+        PROBE,
+        SHEATH,
+        withExample(RANGE, "0-1000 °F"),
+        MAWP,
+        withExample(MODEL, "Omega KMQSS-125U-6"),
+    ],
+    rtd: [
+        ELEMENT,
+        WIRES,
+        PROBE,
+        SHEATH,
+        withExample(RANGE, "0-500 °F"),
+        MAWP,
+        withExample(MODEL, "Omega PR-21-2-100-1/8-6"),
+    ],
+    flow: [
+        withExample(RANGE, "0-5 gpm"),
+        withExample(OUTPUT, "4-20 mA"),
+        MAWP,
+        withExample(MODEL, "Flow Technology FT4-8"),
+    ],
+    force: [withExample(RANGE, "0-500 lbf"), withExample(OUTPUT, "2 mV/V"), withExample(MODEL, "Interface 1210")],
+    level: [withExample(RANGE, "0-24 in"), withExample(OUTPUT, "4-20 mA"), MAWP, MODEL],
+    position: [withExample(RANGE, "0-2 in"), withExample(OUTPUT, "0-10 V"), MODEL],
+    switch: [withExample(SET, "500 psi"), MAWP, MODEL],
+    dp: [withExample(RANGE, "0-50 psid"), withExample(OUTPUT, "0.5-4.5 V"), MAWP, MODEL],
+    other: [RANGE, OUTPUT, MAWP, MODEL],
+};
+
+/** A sensor's fields: what it measures, how many, its own specs for that, then its channels and notes. */
+const sensorFields = (type: string): Field[] => [
+    MEASURES,
+    COUNT,
+    ...(SPECS[type] ?? SPECS.other!),
+    DAQ,
+    CHANNEL,
+    NOTES,
+];
 
 const RADIUS = 15; // a bubble's
 
@@ -87,7 +199,13 @@ export const instrument: Kind = {
     name: "Instrument",
     box: (part) => [-sideOf(part), -20, sideOf(part), 20],
     ports: bubblePorts,
-    fields: [MEASURES, COUNT, RANGE, OUTPUT, MAWP, MODEL, DAQ, CHANNEL, NOTES],
+    // Every sensor's, for what's said of any one (a thermocouple's type, under its tag), whatever it measures now.
+    fields: [
+        ...new Map(
+            Object.keys(SPECS).flatMap((type) => sensorFields(type).map((field) => [field.key, field])),
+        ).values(),
+    ],
+    fieldsOf: (part) => sensorFields(part.props.type ?? ""),
     title: (part) => {
         const what = MEASURES.options?.find((option) => option.value === part.props.type)?.label ?? "Instrument";
         const count = transducers(part);

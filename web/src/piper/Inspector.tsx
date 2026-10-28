@@ -40,7 +40,7 @@ import { Link } from "../router";
 import { PartIcon } from "./icons";
 import { LINE_FIELDS } from "./labels";
 import { PartLinks } from "./links";
-import { CATEGORIES, kindOf, PRESETS, titleOf } from "./library/index";
+import { CATEGORIES, fieldsOf, kindOf, PRESETS, titleOf } from "./library/index";
 import { pictureAspect } from "./library/notes";
 import type { Field } from "./library/kinds";
 import { channelName, findChannel, formatValue, outline, valueAt, type Samples } from "./testdata";
@@ -254,10 +254,14 @@ function PartPanel({
             ...now,
             shown: now.shown.includes(key) ? now.shown.filter((entry) => entry !== key) : [...now.shown, key],
         }));
-    // Its own properties, beside its kind's: not those its kind shows its own way (where a connector goes).
+    // Its fields (an instrument's, for what it measures), and its own properties beside them: not those its kind shows
+    // its own way (where a connector goes). What's said of a field it no longer has (a pressure transducer's output, of
+    // one that's a thermocouple now) is its own property, by that field's name, to keep or remove.
+    const fields = fieldsOf(part);
     const custom = Object.keys(part.props).filter(
-        (key) => !kind.fields.some((field) => field.key === key) && !OWN_PROPS[part.kind]?.has(key),
+        (key) => !fields.some((field) => field.key === key) && !OWN_PROPS[part.kind]?.has(key),
     );
+    const nameOf = (key: string) => kind.fields.find((field) => field.key === key)?.label ?? key;
     const category = CATEGORIES.find(
         (entry) => entry.id === PRESETS.find((preset) => preset.kind === part.kind)?.category,
     );
@@ -365,7 +369,7 @@ function PartPanel({
             {part.kind === "offpage" && <JumpSettings store={store} commands={commands} part={part} />}
             {part.kind === "picture" && <PictureSettings store={store} part={part} />}
             <ComesFrom store={store} commands={commands} part={part} />
-            {kind.fields.map((field) =>
+            {fields.map((field) =>
                 field.key === "normal" ? (
                     <Row
                         key={field.key}
@@ -418,15 +422,19 @@ function PartPanel({
             {custom.map((key) => (
                 <Row
                     key={key}
-                    label={key}
+                    label={nameOf(key)}
                     after={
                         <>
-                            <ShowToggle label={key} on={part.shown.includes(key)} onToggle={() => toggleShown(key)} />
+                            <ShowToggle
+                                label={nameOf(key)}
+                                on={part.shown.includes(key)}
+                                onToggle={() => toggleShown(key)}
+                            />
                             <button
                                 type="button"
                                 className="piper-remove"
-                                aria-label={`Remove ${key}`}
-                                title={`Remove ${key}`}
+                                aria-label={`Remove ${nameOf(key)}`}
+                                title={`Remove ${nameOf(key)}`}
                                 onClick={() =>
                                     change(key, (now) => {
                                         const props = { ...now.props };

@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { emptyDrawing, isPortEnd, readDrawing, type Drawing, type Line, type Part } from "../src/piper/drawing";
+import {
+    emptyDrawing,
+    isPortEnd,
+    newLine,
+    readDrawing,
+    type Drawing,
+    type Line,
+    type Part,
+} from "../src/piper/drawing";
 import {
     addPart,
     alignParts,
@@ -21,6 +29,7 @@ import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
 import { runOf } from "../src/piper/edit";
 import { route } from "../src/piper/route";
+import { lineLabelPlaces } from "../src/piper/labels";
 import { partsById, pathOf, portOf, portsOf } from "../src/piper/ports";
 import { boxOf } from "../src/piper/library/index";
 
@@ -397,6 +406,72 @@ test("a fluid carried along a run goes through valves and fittings, but not past
     const beyond = join([other, "right-lower"], [tank, "left-lower"]);
     drawing = carryFluid(drawing, second, "ipa");
     expect([first, second, third, beyond].map((id) => line(id).fluid)).toEqual(["ipa", "ipa", "ipa", ""]);
+});
+
+test("a label the same along a run is written once, however the parts on it move", () => {
+    fresh();
+    const tank = place("tank", 0, 0);
+    const valve = place("ball-valve", 300, -30);
+    const other = place("tank", 600, 0);
+    const first = join([tank, "right-upper"], [valve, "a"]);
+    const second = join([valve, "b"], [other, "left-upper"]);
+    drawing = carryFluid(drawing, first, "gox");
+    const show = (ids: string[], shown: string[], tag = "") => {
+        drawing = {
+            ...drawing,
+            lines: drawing.lines.map((each) => (ids.includes(each.id) ? { ...each, shown, tag } : each)),
+        };
+    };
+    const written = () => {
+        const parts = partsById(drawing);
+        const paths = new Map(drawing.lines.map((each) => [each.id, pathOf(parts, each)]));
+        return lineLabelPlaces(drawing, paths).map((place) => place.text);
+    };
+    show([first, second], ["fluid"]);
+    expect(written()).toEqual(["GOX"]);
+    // Moving the valve along makes room on both sides of it: still once.
+    for (const by of [-150, 300, -100]) {
+        drawing = moveItems(drawing, new Set([valve]), { x: by, y: 0 });
+        expect(written()).toEqual(["GOX"]);
+    }
+
+    // A pipe's tag, on each of the pieces a valve cuts it into: once too. Two lines' own tags are each written.
+    show([first, second], ["tag"], "L-101");
+    expect(written()).toEqual(["L-101"]);
+    drawing = {
+        ...drawing,
+        lines: drawing.lines.map((each) => (each.id === second ? { ...each, tag: "L-102" } : each)),
+    };
+    expect(written().sort()).toEqual(["L-101", "L-102"]);
+
+    // Past a tank, it's another run: its own.
+    const beyond = join([other, "right-upper"], [place("ball-valve", 900, -30), "a"]);
+    drawing = carryFluid(drawing, beyond, "gox");
+    show([first, second, beyond], ["fluid"]);
+    expect(written()).toEqual(["GOX", "GOX"]);
+});
+
+test("a line's label goes where no part covers it: its longest stretch that's clear, else its longest", () => {
+    fresh();
+    const pipe = { ...newLine({ x: 35, y: -100 }, { x: 135, y: 100 }), fluid: "gox", shown: ["fluid"] };
+    drawing = { ...drawing, lines: [pipe] };
+    // Down 200 beside where a valve will be, then across 100.
+    const paths = new Map([
+        [
+            pipe.id,
+            [
+                { x: 35, y: -100 },
+                { x: 35, y: 100 },
+                { x: 135, y: 100 },
+            ],
+        ],
+    ]);
+    const where = () => lineLabelPlaces(drawing, paths).map((place) => [place.at, place.level]);
+    expect(where()).toEqual([[{ x: 35, y: 0 }, false]]); // the longest, down beside it
+    place("ball-valve", 60, 0); // over where that's written
+    expect(where()).toEqual([[{ x: 85, y: 100 }, true]]); // across, where nothing covers it
+    place("ball-valve", 85, 90); // and over that too: its longest again, as nothing's clear
+    expect(where()).toEqual([[{ x: 35, y: 0 }, false]]);
 });
 
 test("copied parts paste with their lines between them, and taken tags renumbered", () => {

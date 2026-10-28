@@ -3,7 +3,7 @@ import { fluidOf } from "./fluids";
 import { inBox, segmentsOf, toWorld, type Box } from "./geometry";
 import { boxOf, kindOf } from "./library/index";
 import { MAWP, type Field } from "./library/kinds";
-import { linesOn, portOf } from "./ports";
+import { linesOn, portOf, runLines } from "./ports";
 
 // What's written beside parts and on lines: a part's tag and the properties it shows, a line's tag, fluid, and size.
 
@@ -259,4 +259,65 @@ export function lineLabel(drawing: Drawing, line: Line): string {
         })
         .filter(Boolean)
         .join(" · ");
+}
+
+/** Where a line's label is written: beside the middle of its longest stretch, across it or down it. */
+export interface LineLabelPlace {
+    line: string;
+    fluid: string; // the line's, for the label's color
+    text: string;
+    at: Point;
+    level: boolean;
+}
+
+/**
+ * Where lines' labels go: each beside the middle of its line's longest stretch with room for it, and nothing over it
+ * (a part's drawn over lines, so its label would be hidden), or if every stretch with room is covered, the longest. A
+ * label that's the same along a run (its fluid, or the tag a pipe's pieces share) is written once for the run, on its
+ * best stretch: a run cut into pieces by the valves on it doesn't say it on every piece, and moving a part along it,
+ * which makes room on a piece, doesn't write it again.
+ */
+export function lineLabelPlaces(drawing: Drawing, paths: Map<string, Point[]>): LineLabelPlace[] {
+    const size = textSizes(drawing).line;
+    const lines = new Map(drawing.lines.map((line) => [line.id, line]));
+    const texts = new Map(drawing.lines.map((line) => [line.id, lineLabel(drawing, line)]));
+    const over = drawing.parts.filter((part) => !kindOf(part.kind).behind).map((part) => boxOf(part, drawing));
+    const done = new Set<string>();
+    const places: LineLabelPlace[] = [];
+    for (const line of drawing.lines) {
+        const text = texts.get(line.id)!;
+        if (!text || done.has(line.id)) {
+            continue;
+        }
+        const width = text.length * size * 0.65;
+        let best: { place: LineLabelPlace; clear: boolean; length: number } | null = null;
+        for (const id of runLines(drawing, line.id)) {
+            if (texts.get(id) !== text) {
+                continue;
+            }
+            done.add(id);
+            for (const { a, b } of segmentsOf(paths.get(id) ?? [])) {
+                const length = Math.hypot(b.x - a.x, b.y - a.y);
+                // Only where there's room for it beside the line: a short run between two parts goes without.
+                if (length < Math.max(50, width + 30)) {
+                    continue;
+                }
+                const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+                const level = Math.abs(a.y - b.y) < 1e-6;
+                // Where its words are: above a line across, to the right of one down (as DiagramView writes them).
+                const words: Box = level
+                    ? { x0: at.x - width / 2, y0: at.y - 5 - size, x1: at.x + width / 2, y1: at.y - 5 }
+                    : { x0: at.x + 5, y0: at.y - size / 2, x1: at.x + 5 + width, y1: at.y + size / 2 };
+                const clear = !over.some((box) => overlaps(words, box));
+                const better = !best || (clear && !best.clear) || (clear === best.clear && length > best.length + 1e-6);
+                if (better) {
+                    best = { place: { line: id, fluid: lines.get(id)?.fluid ?? "", text, at, level }, clear, length };
+                }
+            }
+        }
+        if (best) {
+            places.push(best.place);
+        }
+    }
+    return places;
 }

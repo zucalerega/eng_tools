@@ -1,15 +1,6 @@
 import { expect, test } from "vitest";
 import { newPart, type Point, type Rotation } from "../src/piper/drawing";
-import {
-    middleOfLongest,
-    nearestOnPolyline,
-    orthogonal,
-    simplify,
-    toLocal,
-    toWorld,
-    turnDir,
-    worldBox,
-} from "../src/piper/geometry";
+import { nearestOnPolyline, orthogonal, simplify, toLocal, toWorld, turnDir, worldBox } from "../src/piper/geometry";
 import { pathsWithHops } from "../src/piper/hops";
 import { route } from "../src/piper/route";
 
@@ -86,7 +77,7 @@ test("polylines are kept to their corners, and made orthogonal the way they head
     ]);
 });
 
-test("a polyline's nearest point, and the middle of its longest segment", () => {
+test("a polyline's nearest point", () => {
     const run = [
         { x: 0, y: 0 },
         { x: 100, y: 0 },
@@ -94,7 +85,6 @@ test("a polyline's nearest point, and the middle of its longest segment", () => 
     ];
     expect(nearestOnPolyline({ x: 30, y: 6 }, run)).toEqual({ at: { x: 30, y: 0 }, distance: 6, segment: 0 });
     expect(nearestOnPolyline({ x: 108, y: 30 }, run)?.segment).toBe(1);
-    expect(middleOfLongest(run)).toEqual({ at: { x: 50, y: 0 }, level: true, length: 100 });
 });
 
 test("a route between ports facing each other on a line is that line", () => {

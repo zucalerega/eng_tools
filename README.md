@@ -378,7 +378,8 @@ the keys.
   gas rose...); a line drawn from a run takes its fluid, and **Carry along its run** sets it
   on the lines beyond. A line's fluid and a valve's state aren't written beside them unless you
   show them (the eye, or with nothing selected, **Show on every line** and **Show on every
-  valve**). With nothing selected, change the diagram's fluids' colors and labels, add its own,
+  valve**); a label that's the same along a run (its fluid, or a pipe's tag) is written once,
+  on its longest stretch. With nothing selected, change the diagram's fluids' colors and labels, add its own,
   or make its labels smaller or larger.
 - **Color schemes**: **Schemes**, in Piper's top bar, has the team's color schemes, each one's
   fluids (color, label, name, gas or not) and valve state colors: anyone makes one, and only

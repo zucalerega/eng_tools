@@ -3,9 +3,9 @@ import { normalFill, normalState, type Palette } from "./colors";
 import type { Drawing, Line, Part, Point } from "./drawing";
 import { sharedTags } from "./edit";
 import { fluidOf, isGas } from "./fluids";
-import { grow, middleOfLongest, partTransform, segmentsOf } from "./geometry";
+import { grow, partTransform, segmentsOf } from "./geometry";
 import { pathsWithHops } from "./hops";
-import { badgePlacer, labelPlace, lineLabel, partLabel, textSizes, type BadgePlace } from "./labels";
+import { badgePlacer, labelPlace, lineLabelPlaces, partLabel, textSizes, type BadgePlace } from "./labels";
 import { FONT } from "./library/draw";
 import { boxOf, kindOf } from "./library/index";
 import type { DiagramMeta, DrawContext } from "./library/kinds";
@@ -63,6 +63,7 @@ export function DiagramView({
     const parts = useMemo(() => partsById(drawing), [drawing]);
     const paths = useMemo(() => new Map(drawing.lines.map((line) => [line.id, pathOf(parts, line)])), [drawing, parts]);
     const hopped = useMemo(() => pathsWithHops(paths), [paths]);
+    const lineLabels = useMemo(() => lineLabelPlaces(drawing, paths), [drawing, paths]);
     const place = useMemo(() => badgePlacer(drawing, paths), [drawing, paths]); // where test values go, if shown
     const shared = useMemo(() => sharedTags(drawing), [drawing]);
     const behind = drawing.parts.filter((part) => kindOf(part.kind).behind);
@@ -120,34 +121,25 @@ export function DiagramView({
                     reach={reach}
                 />
             ))}
-            {drawing.lines.map((line) => {
-                const text = lineLabel(drawing, line);
-                const middle = text ? middleOfLongest(paths.get(line.id) ?? []) : null;
-                const size = textSizes(drawing).line;
-                // Only where there's room for it beside the line: a short run between two parts goes without.
-                if (!middle || middle.length < Math.max(50, text.length * size * 0.65 + 30)) {
-                    return null;
-                }
-                return (
-                    <text
-                        key={`label-${line.id}`}
-                        x={middle.level ? middle.at.x : middle.at.x + 5}
-                        y={middle.level ? middle.at.y - 5 : middle.at.y}
-                        textAnchor={middle.level ? "middle" : "start"}
-                        dominantBaseline={middle.level ? "auto" : "central"}
-                        fontSize={size}
-                        fontFamily={FONT}
-                        fontWeight={700}
-                        fill={fluidOf(drawing, line.fluid)?.color ?? palette.ink}
-                        stroke={palette.paper}
-                        strokeWidth={2.5}
-                        paintOrder="stroke"
-                        pointerEvents="none"
-                    >
-                        {text}
-                    </text>
-                );
-            })}
+            {lineLabels.map((place) => (
+                <text
+                    key={`label-${place.line}`}
+                    x={place.level ? place.at.x : place.at.x + 5}
+                    y={place.level ? place.at.y - 5 : place.at.y}
+                    textAnchor={place.level ? "middle" : "start"}
+                    dominantBaseline={place.level ? "auto" : "central"}
+                    fontSize={textSizes(drawing).line}
+                    fontFamily={FONT}
+                    fontWeight={700}
+                    fill={fluidOf(drawing, place.fluid)?.color ?? palette.ink}
+                    stroke={palette.paper}
+                    strokeWidth={2.5}
+                    paintOrder="stroke"
+                    pointerEvents="none"
+                >
+                    {place.text}
+                </text>
+            ))}
             {live && <LiveLeaders drawing={drawing} live={live} place={place} palette={palette} />}
             {front.map((part) => (
                 <PartView

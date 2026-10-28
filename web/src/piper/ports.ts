@@ -110,3 +110,38 @@ export function linesOn(drawing: Drawing, partId: string): { line: Line; end: "f
     }
     return found;
 }
+
+/**
+ * The lines a line's run reaches, itself among them: on through what a fluid flows through (valves, fittings, tees,
+ * instruments' taps), up to what holds or uses it (tanks, engines).
+ */
+export function runLines(drawing: Drawing, lineId: string): Set<string> {
+    const reached = new Set<string>([lineId]);
+    const seen = new Set<string>();
+    const queue = [lineId];
+    const lines = new Map(drawing.lines.map((line) => [line.id, line]));
+    const parts = partsById(drawing);
+    while (queue.length > 0) {
+        const line = lines.get(queue.pop()!);
+        if (!line) {
+            continue;
+        }
+        for (const end of [line.from, line.to]) {
+            if (!isPortEnd(end) || seen.has(end.part)) {
+                continue;
+            }
+            seen.add(end.part);
+            const part = parts.get(end.part);
+            if (!part || !(kindOf(part.kind).through || kindOf(part.kind).reads === "value")) {
+                continue;
+            }
+            for (const { line: next } of linesOn(drawing, end.part)) {
+                if (!reached.has(next.id)) {
+                    reached.add(next.id);
+                    queue.push(next.id);
+                }
+            }
+        }
+    }
+    return reached;
+}

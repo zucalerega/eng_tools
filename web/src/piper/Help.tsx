@@ -302,8 +302,8 @@ const TOPICS: Topic[] = [
                     Lines don't write their fluid on themselves unless you say so: the eye beside a line's fluid shows
                     its label, and with nothing selected, <em>Show on every line</em> or <em>Hide on every line</em>{" "}
                     does it for all of them. A label that's the same along a run (its fluid, or a pipe's tag) is written
-                    once, on the run's longest stretch, not on every piece its valves cut it into: moving a part along
-                    it moves the label, rather than adding another.
+                    once, on the run's longest stretch that no part covers, not on every piece its valves cut it into:
+                    moving a part along it moves the label, rather than adding another.
                 </li>
                 <li>
                     A tank holds a fluid too: a liquid fills its lower part, a gas all of it, with the label inside.

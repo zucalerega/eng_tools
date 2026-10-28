@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { emptyDrawing, isPortEnd, readDrawing, type Drawing, type Line, type Part } from "../src/piper/drawing";
+import {
+    emptyDrawing,
+    isPortEnd,
+    newLine,
+    readDrawing,
+    type Drawing,
+    type Line,
+    type Part,
+} from "../src/piper/drawing";
 import {
     addPart,
     alignParts,
@@ -459,6 +467,29 @@ test("parts brought to the front go last, over everything; sent to the back, fir
     expect(reorderParts(drawing, new Set([pipe]), "back")).toBe(drawing); // no parts: no change
     // Kept as saved; a part from before is where its kind draws it.
     expect(readDrawing(drawing).parts.map((each) => each.back === true)).toEqual([true, false, false, false]);
+});
+
+test("a line's label goes where no part covers it: its longest stretch that's clear, else its longest", () => {
+    fresh();
+    const pipe = { ...newLine({ x: 35, y: -100 }, { x: 135, y: 100 }), fluid: "gox", shown: ["fluid"] };
+    drawing = { ...drawing, lines: [pipe] };
+    // Down 200 beside where a valve will be, then across 100.
+    const paths = new Map([
+        [
+            pipe.id,
+            [
+                { x: 35, y: -100 },
+                { x: 35, y: 100 },
+                { x: 135, y: 100 },
+            ],
+        ],
+    ]);
+    const where = () => lineLabelPlaces(drawing, paths).map((place) => [place.at, place.level]);
+    expect(where()).toEqual([[{ x: 35, y: 0 }, false]]); // the longest, down beside it
+    place("ball-valve", 60, 0); // over where that's written
+    expect(where()).toEqual([[{ x: 85, y: 100 }, true]]); // across, where nothing covers it
+    place("ball-valve", 85, 90); // and over that too: its longest again, as nothing's clear
+    expect(where()).toEqual([[{ x: 35, y: 0 }, false]]);
 });
 
 test("copied parts paste with their lines between them, and taken tags renumbered", () => {

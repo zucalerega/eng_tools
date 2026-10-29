@@ -23,6 +23,23 @@ test("the site's address shows its apps, and each goes to its own pages", async 
     expect(document.title).toBe("Vault");
 });
 
+test("the home page shows everyone how full the server's disk is, and how much of it each app takes", async () => {
+    const team = await Team.create();
+    const member = await team.member("Storage");
+    renderApp(member, "/");
+    const storage = within(await screen.findByRole("region", { name: "Storage" }));
+    expect(storage.getByRole("heading", { name: "Storage" })).toBeTruthy();
+    expect(storage.getByText(/^[\d.]+ (KB|MB|GB) of [\d.]+ GB used \(\d+%\)$/)).toBeTruthy();
+    expect(storage.getAllByRole("listitem").map((part) => part.textContent)).toEqual([
+        expect.stringMatching(/^Vault [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Yorg [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Piper [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Other [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Free [\d.]+ (bytes|KB|MB|GB)$/),
+    ]);
+    expect(storage.queryByText(/copied off the server/)).toBeNull(); // the backups are the admins' to see
+});
+
 test("the mark at the top left goes to the site's front page, from any app", async () => {
     const team = await Team.create();
     for (const app of ["/vault", "/yorg", "/piper"]) {

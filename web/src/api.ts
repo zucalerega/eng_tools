@@ -97,12 +97,17 @@ export interface Download {
     sha256: string;
 }
 
-/** How full the server's disk is, in bytes, and how much of it Vault's files, Yorg's, and the database take. */
-export interface Storage {
+/** How full the server's disk is, in bytes, and how much of it each app takes: anyone signed in sees it (the home page). */
+export interface StorageSummary {
     total: number;
     free: number; // what the server can still write
     vault: number;
     yorg: number;
+    piper: number; // its drawings and pictures, in the database
+}
+
+/** The same for admins (Admin > People): what the whole database takes too, and the off-site backup. */
+export interface Storage extends StorageSummary {
     database: number;
     backup?: Backup | null; // null: no off-site backup on this server
 }
@@ -385,6 +390,8 @@ export const api = {
     downloadsUrl: (name: string) => apiUrl(`/api/downloads/${encodeURIComponent(name)}`),
     /** For admins: how full the server's disk is. */
     storage: () => request<Storage>("GET", "/api/storage"),
+    /** For everyone: how full the server's disk is, and what each app takes (the home page). */
+    storageSummary: () => request<StorageSummary>("GET", "/api/storage/summary"),
     /** For admins: how hard the server has worked the last hours (a week at most). */
     load: (hours: number) => request<Load>("GET", `/api/load?hours=${hours}`),
     /** For admins: how many people used the site each of the last days, and for how long, in a time zone's days. */

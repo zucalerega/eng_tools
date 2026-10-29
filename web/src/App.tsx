@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, type StorageSummary } from "./api";
 import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow, piperWide } from "./piper";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
+import { StorageBar } from "./storage";
 import { setTheme, useTheme, type Theme } from "./theme";
 import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, wholeWindow, withFolderTree } from "./vault";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
@@ -215,6 +216,23 @@ function Home({ pathname }: { pathname: string }) {
                     <span className="home-app-name">{PIPER}</span>
                 </Link>
             </div>
+            <HomeStorage />
+        </section>
+    );
+}
+
+/** How full the server's disk is, under the apps, and how much of it each takes: quiet if it can't be measured. */
+function HomeStorage() {
+    const [storage, setStorage] = useState<StorageSummary | null>(null);
+    useEffect(() => {
+        api.storageSummary().then(setStorage, () => setStorage(null));
+    }, []);
+    if (!storage) {
+        return null;
+    }
+    return (
+        <section className="storage home-storage" aria-label="Storage">
+            <StorageBar storage={storage} />
         </section>
     );
 }

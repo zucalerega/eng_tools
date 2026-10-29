@@ -206,7 +206,19 @@ class StorageOut(BaseModel):
     vault: int
     yorg: int
     database: int
+    piper: int = 0  # its drawings and pictures: a part of the database
     backup: BackupOut | None = None  # null: no off-site backup on this server
+
+
+class StorageSummaryOut(BaseModel):
+    """How full the server's disk is, and how much of it each app takes, in bytes, for the home page (people.storage):
+    anyone signed in sees it. The rest of what's used is the system, the rest of the database, and its backups."""
+
+    total: int
+    free: int  # what the server can still write
+    vault: int
+    yorg: int
+    piper: int
 
 
 class SiteSettingsPatch(BaseModel):

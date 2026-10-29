@@ -18,6 +18,7 @@ from .db import make_engine, migrate
 from .errors import ApiError
 from .limits import BodyLimit
 from .piper import api as piper_api
+from .piper.diagrams import stored as piper_stored
 from .security import SecurityHeaders, hide_sign_in_codes
 from .vault import api as vault_api
 from .vault.storage import BlobStore
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
     app.state.yorg_runs = Runs(settings.yorg_dir)
+    app.state.piper_stored = piper_stored  # what Piper keeps in the database, for the storage the site shows (disk.py)
     app.state.oauth = signin.make_oauth(settings)
     app.state.assistant = Assistant(settings, sessions)  # Claude, answering from the help (Help in the web app)
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.

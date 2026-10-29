@@ -27,9 +27,11 @@
     --good: #1a7f37;
     --admin: #bc4c00;
     --admin-soft: #fff1e5;
-    /* Admin > People's storage bar: Vault in blue and Yorg in gold, as their marks are, and the rest in grays. */
+    /* The storage bar (the home page, Admin > People): Vault in blue and Yorg in gold, as their marks are, Piper in
+       teal, and the rest in grays. */
     --storage-vault: #2a5fb0;
     --storage-yorg: #e0a500;
+    --storage-piper: #13968a;
     --storage-other: #8e99ab;
     --storage-free: #e1e6ee;
     /* Admin > People's charts: the site's blue, a step darker where the pointer is. */
@@ -83,6 +85,7 @@
         --admin-soft: #3a2413;
         --storage-vault: #5b8fe0;
         --storage-yorg: #b8860b;
+        --storage-piper: #2bb5a6;
         --storage-other: #5d6a80;
         --storage-free: #2a3650;
         --chart-bar: #5b8fe0;
@@ -122,6 +125,7 @@
     --admin-soft: #3a2413;
     --storage-vault: #5b8fe0;
     --storage-yorg: #b8860b;
+    --storage-piper: #2bb5a6;
     --storage-other: #5d6a80;
     --storage-free: #2a3650;
     --chart-bar: #5b8fe0;
@@ -473,7 +477,7 @@ main {
     font-weight: 600;
 }
 
-/* --- home: the site's own page (/), with its two apps ----------------------------------------- */
+/* --- home: the site's own page (/), with its apps, and under them how full the server's disk is -------- */
 
 .home {
     max-width: 46rem;
@@ -489,6 +493,20 @@ main {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
     gap: 1rem;
+}
+
+/* The storage bar, in a card as the apps are. */
+.home-storage {
+    margin-top: 1rem;
+    padding: 1.1rem 1.5rem 1.2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow);
+}
+
+.home-storage h2 {
+    font-size: 1rem;
 }
 
 .home-app {
@@ -1233,7 +1251,8 @@ path.lines-memory {
     vertical-align: middle;
 }
 
-/* How full the server's disk is (Admin > People): one bar, its parts kept apart by the surface, and a legend. */
+/* How full the server's disk is (the home page, Admin > People): one bar, its parts kept apart by the surface, and a
+   legend. */
 
 .storage-head {
     display: flex;
@@ -1307,6 +1326,10 @@ path.lines-memory {
 
 .storage-yorg {
     background: var(--storage-yorg);
+}
+
+.storage-piper {
+    background: var(--storage-piper);
 }
 
 .storage-other {

@@ -166,10 +166,18 @@ def server_load(db: Session, admin: User, *, hours: int) -> load.Load:
     return load.recent(db, hours)
 
 
-def disk_usage(db: Session, admin: User, settings: Settings) -> disk.DiskUsage:
-    """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take (admins)."""
+def disk_usage(db: Session, admin: User, settings: Settings, piper: disk.Stored | None = None) -> disk.DiskUsage:
+    """How full the server's disk is, and how much of it Vault's files, Yorg's, Piper's, and the database take, measured
+    now (admins: Admin > People)."""
     _require_admin(admin)
-    return disk.measure(db, settings)
+    return disk.measure(db, settings, piper)
+
+
+def storage(db: Session, settings: Settings, piper: disk.Stored | None = None) -> disk.DiskUsage:
+    """How full the server's disk is, and how much of it each app takes, for the site's home page: anyone signed in sees
+    it (their route's ActiveUser), at most a minute old. What the database itself takes, and the backups, stay
+    admins'."""
+    return disk.recent(db, settings, piper)
 
 
 def update_site_settings(

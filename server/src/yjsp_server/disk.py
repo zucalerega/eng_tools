@@ -1,12 +1,17 @@
-"""How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take: for admins, at the
-top of Admin > People in the web app; and whether an upload leaves the server room to work (make_room).
+"""How full the server's disk is, and how much of it Vault's files, Yorg's, Piper's, and the database take: for admins,
+at the top of Admin > People in the web app, and for everyone on the site's home page (recent); and whether an upload
+leaves the server room to work (make_room).
 
 It reads the folders the settings name, so it needs none of the apps: the live server keeps all three on one disk
-(docs/deploying.md), and the disk measured is the one Vault's files are on.
+(docs/deploying.md), and the disk measured is the one Vault's files are on. Piper keeps everything in the database,
+so what it takes is Piper's to say (piper/diagrams.stored), which app.py hands to the routes that ask.
 """
 
 import os
 import shutil
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,9 +48,14 @@ class DiskUsage:
     vault: int  # Vault's files (YJSP_VAULT_DIR): every version of every file
     yorg: int  # Yorg's (YJSP_YORG_DIR): datasets' uploads and arrays, scripts, and models
     database: int  # accounts and the apps' tables: all of Piper's diagrams are in it
+    piper: int  # Piper's drawings and pictures, a part of the database
 
 
-def measure(db: Session, settings: Settings) -> DiskUsage:
+# What an app keeps in the database, in bytes: Piper's, from app.py.
+Stored = Callable[[Session], int]
+
+
+def measure(db: Session, settings: Settings, piper: Stored | None = None) -> DiskUsage:
     disk = shutil.disk_usage(_nearest_folder(settings.vault_dir))
     return DiskUsage(
         total=disk.total,
@@ -53,7 +63,24 @@ def measure(db: Session, settings: Settings) -> DiskUsage:
         vault=_folder_size(settings.vault_dir),
         yorg=_folder_size(settings.yorg_dir),
         database=_database_size(db),
+        piper=piper(db) if piper else 0,
     )
+
+
+RECENT = 60.0  # seconds: how old the home page's measurement may be
+_recent: dict[tuple[str, ...], tuple[float, DiskUsage]] = {}  # by what's measured: a test's server is its own
+_recent_lock = threading.Lock()
+
+
+def recent(db: Session, settings: Settings, piper: Stored | None = None) -> DiskUsage:
+    """measure's, at most a minute old: the home page asks on every visit, and measuring walks every file Vault has."""
+    key = (str(settings.vault_dir), str(settings.yorg_dir), str(db.get_bind().url))
+    with _recent_lock:
+        found = _recent.get(key)
+        if found is None or time.monotonic() - found[0] > RECENT:
+            found = (time.monotonic(), measure(db, settings, piper))
+            _recent[key] = found
+        return found[1]
 
 
 def _nearest_folder(path: Path) -> Path:

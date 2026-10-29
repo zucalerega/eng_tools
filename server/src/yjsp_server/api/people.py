@@ -1,10 +1,10 @@
 """People API: your account, everyone's (for admins), the whitelist and its emails, how full the server's disk is (for
-admins), and your sign-in tokens."""
+admins, and in short for everyone), and your sign-in tokens."""
 
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from .. import auth, backups, clients, people
 from ..models import UserStatus
@@ -19,6 +19,7 @@ from .schemas import (
     SiteSettingsOut,
     SiteSettingsPatch,
     StorageOut,
+    StorageSummaryOut,
     TokenOut,
     UsageOut,
     UserOut,
@@ -134,12 +135,20 @@ def get_add_in(user: ActiveUser, db: DB, settings: Config) -> AddInOut:
 
 
 @router.get("/storage")
-def get_storage(user: ActiveUser, db: DB, settings: Config) -> StorageOut:
-    """How full the server's disk is, and how much of it Vault's files, Yorg's, and the database take; and whether the
-    data is copied off the server (admins)."""
-    usage = people.disk_usage(db, user, settings)
+def get_storage(request: Request, user: ActiveUser, db: DB, settings: Config) -> StorageOut:
+    """How full the server's disk is, and how much of it Vault's files, Yorg's, Piper's, and the database take; and
+    whether the data is copied off the server (admins)."""
+    usage = people.disk_usage(db, user, settings, request.app.state.piper_stored)
     backup = backups.status(settings.backup_status)
     return StorageOut(**asdict(usage), backup=BackupOut(**asdict(backup)) if backup else None)
+
+
+@router.get("/storage/summary")
+def get_storage_summary(request: Request, user: ActiveUser, db: DB, settings: Config) -> StorageSummaryOut:
+    """How full the server's disk is, and how much of it Vault, Yorg, and Piper take, at most a minute old: for the
+    site's home page (anyone signed in)."""
+    usage = people.storage(db, settings, request.app.state.piper_stored)
+    return StorageSummaryOut(total=usage.total, free=usage.free, vault=usage.vault, yorg=usage.yorg, piper=usage.piper)
 
 
 @router.get("/tokens")

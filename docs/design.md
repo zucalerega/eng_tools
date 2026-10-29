@@ -64,7 +64,7 @@ prefix, from before Yorg; Yorg's are `yorg_*`, Piper's `piper_*`), its own folde
 (Piper has none: its diagrams are all in the database), its own API, and its own pages:
 Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`, `/vault/locks`, ...), Yorg's
 under `/yorg`, and Piper's under `/piper`, with the site's own page at `/`, which goes to
-any of them. No app imports another, and the site's own code imports none, except where it
+any of them, and shows how full the server's disk is. No app imports another, and the site's own code imports none, except where it
 puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
 in the web app) and where accounts change (`people.py`, below). What more than one app needs
 is the site's: on the server, the folder paths Yorg's views and scripts are kept in, and Piper's
@@ -104,9 +104,14 @@ weeks, and two years of months, and checked by a restore each week (deploy/yjsp-
 (`YJSP_BACKUP_STATUS`, `backups.py`), for the Storage card.
 
 Admin > People starts with how full the server's disk is, and how much of it Vault's files,
-Yorg's, and the database take (`GET /api/storage`, `disk.py`): the folders above, measured
+Yorg's, Piper's, and the database take (`GET /api/storage`, `disk.py`): the folders above, measured
 when the page opens, on the disk Vault's files are on, which on the live server holds all
-three. The rest of the disk is the system, logs, and the database's backups.
+three. Piper's is what it keeps in the database, its revisions' drawings and its pictures
+(`piper/diagrams.stored`, which `app.py` hands over, as the site imports no app). The rest of
+the disk is the system, logs, the rest of the database, and its backups. The site's own page
+shows everyone the same bar without the database's own size or the backups
+(`GET /api/storage/summary`), measured at most once a minute (`disk.recent`), since it's asked
+on every visit and measuring walks every file Vault has.
 
 ## Sign-in and accounts
 
@@ -388,7 +393,8 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 | `GET /api/usage?days=30&tz=America/New_York` | how many people used the site each day, today last, and how long the web app was open and people worked in SolidWorks, with the time zone the days are in, who was on in all, since when each is counted, and everyone's time on the web app and in SolidWorks in all (admins) |
 | `GET /api/add-in` | who has the SolidWorks add-in: each person's computers (as the add-in named them), its version on each, when they last used it, and when they downloaded the installer; how many have it, used it this week, and downloaded it; the installer's version, which add-ins are older, and how many who have it are on it (admins) |
 | `GET /api/load?hours=24` | how busy the server's CPUs were and how full its memory, a point a minute (each 10 minutes over a day), each its stretch's busiest, up to a week (admins) |
-| `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, and the database take, in bytes (admins) |
+| `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, Piper's, and the database take, in bytes (admins) |
+| `GET /api/storage/summary` | the same for the site's own page, at most a minute old: `total`, `free`, `vault`, `yorg`, `piper` (anyone signed in) |
 | `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` in all and what it has `spent`, and its `monthly_budget` and what it has spent this month (`month_spent`, since 00:00 UTC on the 1st), in US dollars (a budget of 0 is none) |
 | `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
 | `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; and each person's questions and what they cost (admins) |

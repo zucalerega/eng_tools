@@ -172,16 +172,19 @@ test("the activity feed says when admins change the oldest version that can make
     expect(newest!.compareDocumentPosition(before!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-test("admins see how full the server's disk is, and how much of it Vault and Yorg take", async () => {
+test("admins see how full the server's disk is, and how much of it Vault, Yorg, and Piper take", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin");
-    const legend = (await screen.findByText("Everything else")).closest("ul")!;
+    const legend = (await screen.findByText("Other")).closest("ul")!;
     expect([...legend.querySelectorAll("li")].map((part) => part.textContent)).toEqual([
         expect.stringMatching(/^Vault [\d.]+ (bytes|KB|MB|GB)$/),
         expect.stringMatching(/^Yorg [\d.]+ (bytes|KB|MB|GB)$/),
-        expect.stringMatching(/^Everything else [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Piper [\d.]+ (bytes|KB|MB|GB)$/),
+        expect.stringMatching(/^Other [\d.]+ (bytes|KB|MB|GB)$/),
         expect.stringMatching(/^Free [\d.]+ (bytes|KB|MB|GB)$/),
     ]);
+    // What the rest of the database takes is the admins' to see, on Other.
+    expect(within(legend).getByText("Other").closest("li")!.title).toMatch(/^The system, the rest of the database \(/);
     expect(screen.getByText(/^[\d.]+ (KB|MB|GB) of [\d.]+ GB used \(\d+%\)$/)).toBeTruthy();
     // The test server has no off-site backup, and says so.
     expect(screen.getByText(/^Not copied off the server/)).toBeTruthy();

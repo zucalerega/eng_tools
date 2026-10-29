@@ -12,7 +12,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..api.schemas import UserRef
@@ -20,7 +20,7 @@ from ..db import utcnow
 from ..errors import Conflict, Forbidden, NotFound, TooLarge
 from ..models import User
 from . import folders
-from .models import Diagram, Release, Revision
+from .models import Diagram, Image, Release, Revision
 from .schemas import EditingOut, InvalidDrawing, check_drawing, drawing_format, drawing_pages
 
 EMPTY_DRAWING: dict[str, Any] = {"format": 1, "parts": [], "lines": [], "fluids": [], "style": {}}
@@ -56,6 +56,14 @@ class Locked(Conflict):
 
 # What each format of drawing added, which a tab from before it would leave out: said when its save is refused.
 ADDED = {2: "pages", 3: "simulation settings", 4: "links on its parts"}
+
+
+def stored(db: Session) -> int:
+    """What Piper keeps, in bytes, all of it in the database: its revisions' drawings as they're stored (compressed), and
+    its pictures. The rest of its rows (diagrams, folders, releases, schemes) are a few hundred bytes each, left out."""
+    drawings = db.scalar(select(func.coalesce(func.sum(func.length(Revision.drawing)), 0)))
+    pictures = db.scalar(select(func.coalesce(func.sum(Image.size), 0)))
+    return int(drawings or 0) + int(pictures or 0)
 
 
 def can_delete(user: User, diagram: Diagram) -> bool:

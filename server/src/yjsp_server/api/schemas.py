@@ -338,4 +338,6 @@ class AssistantSpendingOut(BaseModel):
     daily_limit: float  # what one person's questions may cost in 24 hours
     model: str
     effort: str
+    keep_warm: bool = False  # whether it keeps the help ready between questions (YJSP_ASSISTANT_KEEP_WARM)
+    keep_warm_spent: float = 0  # what that cost this month, in month_spent too
     people: list[AssistantSpenderOut]  # the most spent first

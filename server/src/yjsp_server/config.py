@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     assistant_model: Literal["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"] = "claude-sonnet-5-5"
     # How hard Claude thinks before it answers: higher is slower and costs more, and reasons better.
     assistant_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+    # Keep the help ready between questions: Anthropic keeps what Claude read for an hour, so when nothing has read it
+    # for 50 minutes the server reads it again, and a question hours after the last doesn't pay to have the whole help
+    # read in full and kept. Each read costs a fraction of a cent (with Claude Sonnet 5.5 and the help as it is, about
+    # $6 a month, around the clock) and counts against the budgets.
+    assistant_keep_warm: bool = False
     # Another address for Anthropic's API: a gateway, or the tests' stand-in. Empty: Anthropic's own.
     anthropic_base_url: str = ""
 

@@ -5,10 +5,12 @@ import { createServer } from "node:http";
 // questions the conversation has had, in pieces as Anthropic streams them, with a link into the help. A question with
 // [decline] in it is declined, one with [fail] is turned away as if Anthropic were overloaded, one with [slow] is
 // answered a piece every fifth of a second, for a few seconds, and one with [long] at length (about 30,000 characters).
+// A request that doesn't stream, as the server's to keep the help ready, gets the whole of an empty answer.
 
 interface Asked {
     model: string;
     messages: { role: string; content: string }[];
+    stream?: boolean;
 }
 
 function answerTo(question: string, number: number): string {
@@ -21,6 +23,27 @@ export function fakeClaude(): Promise<{ url: string; close: () => void }> {
         request.on("data", (chunk: Buffer) => (body += chunk.toString()));
         request.on("end", () => {
             const asked = JSON.parse(body) as Asked;
+            if (!asked.stream) {
+                response.writeHead(200, { "content-type": "application/json" });
+                response.end(
+                    JSON.stringify({
+                        id: "msg_test",
+                        type: "message",
+                        role: "assistant",
+                        model: asked.model,
+                        content: [],
+                        stop_reason: "max_tokens",
+                        stop_sequence: null,
+                        usage: {
+                            input_tokens: 10,
+                            cache_creation_input_tokens: 0,
+                            cache_read_input_tokens: 1000,
+                            output_tokens: 0,
+                        },
+                    }),
+                );
+                return;
+            }
             const questions = asked.messages.filter((message) => message.role === "user");
             const question = questions.at(-1)!.content.replace(/^\[Asked from [^\]]*\]\n\n/, "");
             if (question.includes("[fail]")) {

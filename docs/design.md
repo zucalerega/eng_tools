@@ -337,6 +337,16 @@ files or account, and it does nothing but answer.
   "Claude"), and when Anthropic refuses a question at it, or at the organization's monthly
   cap, Help says so. Admin > People's *Claude* card shows the spending, this month and in all,
   and on whose questions.
+- **Keeping the help ready** (`YJSP_ASSISTANT_KEEP_WARM`, off unless set): questions are mostly
+  hours apart, past the hour Anthropic keeps the help, so each would pay to have the whole of it
+  read in full and kept (about 30 cents with Claude Sonnet 5.5). With it on, a thread in the
+  server (`Assistant.keep_warm`, a look a minute) reads the help again whenever nothing has for
+  50 minutes, or it's changed since (a deploy): a request with `max_tokens: 0` and the same
+  instructions, help, model, thinking, and effort as a question, which Anthropic answers with
+  nothing, billing a read of what it kept (under a cent) and keeping it another hour. Each read
+  is in `assistant_requests` with no one as the asker: it counts against the budgets, not
+  anyone's daily limit, and there's none while no one can ask (a budget spent). If Anthropic
+  doesn't take one, it tries again in 5 minutes.
 - **When it can't answer**, it says why, with a code of its own: not set up (`assistant_off`),
   the budget in all spent (`assistant_spent`), this month's spent, saying when it answers again
   (`assistant_month_spent`), out of credits at Anthropic (`assistant_no_credits`), stopped by
@@ -404,7 +414,7 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 | `GET /api/storage/summary` | the same for the site's own page, at most a minute old: `total`, `free`, `vault`, `yorg`, `piper` (anyone signed in) |
 | `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` in all and what it has `spent`, and its `monthly_budget` and what it has spent this month (`month_spent`, since 00:00 UTC on the 1st), in US dollars (a budget of 0 is none) |
 | `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
-| `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; and each person's questions and what they cost (admins) |
+| `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; whether it keeps the help ready between questions (`keep_warm`) and what that cost this month (`keep_warm_spent`); and each person's questions and what they cost (admins) |
 
 ## Names from before YJSP
 

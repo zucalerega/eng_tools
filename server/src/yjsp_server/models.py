@@ -101,12 +101,13 @@ class ServerLoad(Base):
 
 class AssistantRequest(Base):
     """A question to the assistant, and what Claude's answer cost: its budget and each person's daily limit add these
-    up (assistant.py). What was asked, and the answer, aren't kept."""
+    up (assistant.py). What was asked, and the answer, aren't kept. A read of the help to keep it ready between
+    questions (YJSP_ASSISTANT_KEEP_WARM) is no one's question: it counts against the budgets, and no one's limit."""
 
     __tablename__ = "assistant_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)  # null: keeping the help ready
     at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
     model: Mapped[str] = mapped_column(String(64))  # the model that answered
     input_tokens: Mapped[int] = mapped_column(default=0)  # read in full

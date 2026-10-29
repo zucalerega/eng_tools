@@ -311,6 +311,36 @@ def test_upgrades_keep_time_on_the_site(tmp_path):
         )
 
 
+def test_upgrades_keep_what_claudes_answers_cost(tmp_path):
+    """Reads that keep the help ready are no one's question: the table is copied to allow them, and what each person's
+    questions cost comes through as it was."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0028")
+    when = "'2026-10-28 14:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds, solidworks_seconds) "
+            f"VALUES (1, 'alice@x.test', 'Alice', 'active', 0, {when}, 0, 0)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO assistant_requests (id, user_id, at, model, input_tokens, cache_write_tokens, "
+            f"cache_read_tokens, output_tokens, cost) VALUES (1, 1, {when}, 'claude-sonnet-5-5', 1000, 50000, 0, 500, "
+            "207000)"
+        )
+
+    migrate(engine)
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO assistant_requests (id, user_id, at, model, input_tokens, cache_write_tokens, "
+            f"cache_read_tokens, output_tokens, cost) VALUES (2, NULL, {when}, 'claude-sonnet-5-5', 10, 0, 75000, 0, "
+            "7520)"
+        )
+    with engine.connect() as db:
+        assert db.exec_driver_sql(
+            "SELECT u.email, r.cost FROM assistant_requests r LEFT JOIN users u ON u.id = r.user_id ORDER BY r.id"
+        ).all() == [("alice@x.test", 207000), (None, 7520)]
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

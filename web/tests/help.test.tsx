@@ -197,6 +197,10 @@ test("admins see what Claude's answers have cost, and on whose questions", async
     expect(
         card.getByText(/claude-sonnet-5-5, at high effort\. A month starts on the 1st, at 00:00 UTC\./),
     ).toBeTruthy();
+    // The test server keeps the help ready between questions.
+    expect(
+        card.getByText(/The server keeps the help ready between questions, .*: that cost \$[\d.]+ this month\./),
+    ).toBeTruthy();
     const row = card.getByRole("cell", { name: "Ana" }).closest("tr")!;
     expect(Number(within(row).getAllByRole("cell")[1]!.textContent)).toBeGreaterThanOrEqual(1);
 });

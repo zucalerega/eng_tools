@@ -82,6 +82,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_ANTHROPIC_BASE_URL: claude.url,
             YJSP_ASSISTANT_BUDGET: "5",
             YJSP_ASSISTANT_MONTHLY_BUDGET: "3",
+            YJSP_ASSISTANT_KEEP_WARM: "1",
         },
     });
     let output = "";

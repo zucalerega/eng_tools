@@ -46,7 +46,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             init_vault(db)
             recover_yorg(db)
         app.state.server_load.start()
+        app.state.assistant.start()
         yield
+        app.state.assistant.stop()
         app.state.server_load.stop()
         app.state.yorg_runs.close()
         engine.dispose()

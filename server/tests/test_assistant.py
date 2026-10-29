@@ -4,7 +4,7 @@ month) and each person's daily limit. Anthropic's API is a stand-in on a port of
 import json
 import threading
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -251,6 +251,93 @@ def test_a_budget_in_all_still_holds_with_a_monthly_one(client, team, claude, se
     response, _ = ask(client, member, QUESTION)
     assert (response.status_code, response.json()["error"]) == (503, "assistant_spent")
     assert len(claude.requests) == 2
+
+
+KEEP = Reply(input_tokens=10, write_1h=75_000, output_tokens=0, stop_reason="max_tokens")  # the help kept: $0.30002
+KEPT = Reply(input_tokens=10, read=75_000, output_tokens=0, stop_reason="max_tokens")  # read from what's kept: $0.00752
+
+
+def test_the_help_is_kept_ready_between_questions(app, client, team, claude, settings, clock):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    member = team.member("ana@rocketry.test")
+    assistant = app.state.assistant
+    assert assistant.keep_warm() is False  # only when the settings say
+    assert claude.requests == []
+    settings.assistant_keep_warm = True
+    start = clock.now
+    claude.replies.append(KEEP)
+    assert assistant.keep_warm() is True
+    ask(client, member, QUESTION)
+    kept, question = claude.requests
+    # The help as questions read it, with the same thinking, as Anthropic keeps it for those; and nothing written.
+    assert kept["system"] == question["system"][:1]
+    assert (kept["model"], kept["thinking"], kept["output_config"]) == (
+        question["model"],
+        question["thinking"],
+        question["output_config"],
+    )
+    assert kept["max_tokens"] == 0 and not kept.get("stream")
+
+    # Anthropic keeps it an hour from the last read: the question was one, so it's read again 50 minutes after that.
+    clock.now = start + timedelta(minutes=49)
+    assert assistant.keep_warm() is False
+    claude.replies.append(KEPT)
+    clock.now = start + timedelta(minutes=50)
+    assert assistant.keep_warm() is True
+    clock.now = start + timedelta(minutes=90)
+    ask(client, member, QUESTION)
+    clock.now = start + timedelta(minutes=139)
+    assert assistant.keep_warm() is False
+    claude.replies.append(KEPT)
+    clock.now = start + timedelta(minutes=140)
+    assert assistant.keep_warm() is True
+    assert len(claude.requests) == 5
+
+    # It counts against the budgets, as no one's question.
+    found = spending(client, admin)
+    assert found["keep_warm"] is True
+    assert found["keep_warm_spent"] == pytest.approx(0.30002 + 2 * 0.00752)
+    assert found["month_spent"] == pytest.approx(found["keep_warm_spent"] + 2 * 0.0007)
+    [person] = found["people"]
+    assert (person["user"]["email"], person["questions"]) == ("ana@rocketry.test", 2)
+    assert client.get("/api/assistant", headers=member).json()["day_used"] == pytest.approx(0.0014)
+
+
+def test_the_help_is_kept_again_at_once_when_it_changes(app, team, claude, settings, clock, tmp_path):
+    settings.assistant_keep_warm = True
+    settings.help_dir = tmp_path / "help"
+    settings.help_dir.mkdir()
+    (settings.help_dir / "README.md").write_text("# YJSP\n\nCheck files out before you change them.\n")
+    claude.replies += [KEEP, KEEP]
+    assert app.state.assistant.keep_warm() is True
+    assert app.state.assistant.keep_warm() is False
+    # As after a deploy that changed the docs: what was kept is no use to the next question.
+    (settings.help_dir / "README.md").write_text("# YJSP\n\nCheck files out, then in again, when you're done.\n")
+    assert app.state.assistant.keep_warm() is True
+    assert "then in again" in claude.requests[-1]["system"][0]["text"]
+
+
+def test_the_help_isnt_kept_when_no_one_can_ask(app, client, team, claude, settings, clock):
+    settings.assistant_keep_warm = True
+    settings.assistant_budget = 0
+    settings.assistant_monthly_budget = 0.10
+    claude.replies.append(Reply(input_tokens=1000, write_1h=50_000, output_tokens=500))  # $0.207
+    ask(client, team.member("ana@rocketry.test"), QUESTION)
+    clock.now += timedelta(hours=2)
+    assert app.state.assistant.keep_warm() is False  # the month's budget is spent: nothing more to spend on it
+    assert len(claude.requests) == 1
+
+
+def test_when_anthropic_wont_keep_the_help_it_tries_again_soon(app, team, claude, settings, clock):
+    settings.assistant_keep_warm = True
+    claude.replies.append(Reply(status=529, error="Overloaded"))
+    assert app.state.assistant.keep_warm() is False
+    clock.now += timedelta(minutes=4)
+    assert app.state.assistant.keep_warm() is False
+    assert len(claude.requests) == 1  # not every minute
+    claude.replies.append(KEEP)
+    clock.now += timedelta(minutes=1)
+    assert app.state.assistant.keep_warm() is True
 
 
 def test_each_person_has_a_daily_limit(client, team, claude, settings):

@@ -56,6 +56,8 @@ class FakeClaude:
                     reply.hold.wait(30)
                 if reply.status != 200:
                     self._error(reply)
+                elif not body.get("stream"):
+                    self._message(reply, reply.model or body["model"])
                 else:
                     self._stream(reply, reply.model or body["model"])
 
@@ -69,6 +71,27 @@ class FakeClaude:
                 self.send_header("content-type", "application/json")
                 self.send_header("content-length", str(len(data)))
                 self.send_header("x-should-retry", "false")  # the SDK would otherwise try again, after a wait
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _message(self, reply: Reply, model: str) -> None:
+                """The answer whole, as JSON: to a request that doesn't stream, as one that keeps the help ready."""
+                usage = {
+                    "input_tokens": reply.input_tokens,
+                    "cache_creation_input_tokens": reply.write_5m + reply.write_1h,
+                    "cache_read_input_tokens": reply.read,
+                    "cache_creation": {
+                        "ephemeral_5m_input_tokens": reply.write_5m,
+                        "ephemeral_1h_input_tokens": reply.write_1h,
+                    },
+                    "output_tokens": reply.output_tokens,
+                }
+                message = {"id": "msg_test", "type": "message", "role": "assistant", "model": model, "content": []}
+                ending = {"stop_reason": reply.stop_reason, "stop_sequence": None, "usage": usage}
+                data = json.dumps({**message, **ending}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
 

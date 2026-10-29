@@ -73,8 +73,17 @@ export function ClaudeSpending() {
                 {monthly && (
                     <>{!inAll && <>{usd.format(spending.spent)} in all. </>}A month starts on the 1st, at 00:00 UTC. </>
                 )}
-                The first question in an hour costs the most, as Claude reads all of the help; for the rest of the hour
-                it reads it for much less.
+                {spending.keep_warm ? (
+                    <>
+                        The server keeps the help ready between questions, so each reads it for much less: that cost{" "}
+                        {usd.format(spending.keep_warm_spent)} this month.
+                    </>
+                ) : (
+                    <>
+                        The first question in an hour costs the most, as Claude reads all of the help; for the rest of
+                        the hour it reads it for much less.
+                    </>
+                )}
             </p>
             {spending.people.length === 0 ? (
                 <p className="muted">No one has asked Claude anything yet.</p>

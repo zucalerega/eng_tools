@@ -60,5 +60,7 @@ def get_spending(request: Request, user: ActiveUser, db: DB) -> AssistantSpendin
         daily_limit=found.daily_limit,
         model=found.model,
         effort=found.effort,
+        keep_warm=found.keep_warm,
+        keep_warm_spent=found.keep_warm_spent,
         people=people,
     )

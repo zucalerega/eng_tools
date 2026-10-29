@@ -69,7 +69,8 @@ YJSP_WEB_DIR=/opt/yjsp/app/web/dist
 YJSP_HELP_DIR=/opt/yjsp/app/help
 # Claude, in Help ("Claude", below): what it may spend each month, of the API credits the
 # owner's Claude Max plan includes, and on one person's questions in any 24 hours, in US
-# dollars, as YJSP_ASSISTANT_MONTHLY_BUDGET and YJSP_ASSISTANT_DAILY_LIMIT.
+# dollars, as YJSP_ASSISTANT_MONTHLY_BUDGET and YJSP_ASSISTANT_DAILY_LIMIT; and
+# YJSP_ASSISTANT_KEEP_WARM=1, to keep the help ready between questions.
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
@@ -292,8 +293,10 @@ uses, and not for Claude Code. To set it up:
    the workspace's limit (say, `95` with a $100 limit), as the budget can go over by an
    answer for each person asking as it runs out. Leave `YJSP_ASSISTANT_BUDGET` out (take it
    out, if it's there), as the credits come back each month: set, it still stops Claude once
-   its answers have cost that much in all. Restart the service.
-6. Ask Help something in the web app, and see the cost on Admin > People.
+   its answers have cost that much in all.
+6. **Keep the help ready between questions:** `YJSP_ASSISTANT_KEEP_WARM=1` in `.env` (see
+   below). Restart the service.
+7. Ask Help something in the web app, and see the cost on Admin > People.
 
 The server's month, like Anthropic's monthly spend limits, starts at 00:00 UTC on the 1st,
 but the credits come when the plan renews, which can be any day of the month. So in a busy
@@ -302,9 +305,16 @@ of API credits (`assistant_no_credits`) until the plan renews; in a quiet month,
 expire unused.
 
 It uses Claude Sonnet 5.5 at high effort (`YJSP_ASSISTANT_MODEL`, `YJSP_ASSISTANT_EFFORT`;
-`server/.env.example` lists the others). Every question reads all of the help, about 50,000
-tokens, and Anthropic keeps it an hour for the questions after: the first question in an hour
-costs about 25 cents, and each after it a few cents. To give it more, raise
+`server/.env.example` lists the others). Every question reads all of the help, about 75,000
+tokens, and Anthropic keeps it an hour from each read: a question that finds it kept pays
+under a cent for it, and one that doesn't pays about 30 cents to have it read in full and
+kept, on top of the answer itself (up to 16 cents, for the longest). Questions are mostly
+hours apart, so with `YJSP_ASSISTANT_KEEP_WARM=1` the server reads the help again itself
+whenever nothing has for 50 minutes, or the help has changed (after a deploy), writing
+nothing: under a cent each time, about $6 a month around the clock, counted against the
+budgets and shown on the *Claude* card. If Anthropic doesn't take one of those reads, the log
+says "Keeping the help ready for Claude failed", and it tries again in 5 minutes. To give it
+more, raise
 `YJSP_ASSISTANT_MONTHLY_BUDGET` and the workspace's limit, up to the plan's credits, and
 restart; to stop it, unset the key. When the month's budget is spent, or the credits run
 out, Help says so, and the rest of the site carries on. Credits bought in the Console,

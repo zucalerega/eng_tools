@@ -26,8 +26,8 @@ invite. Someone without a GT account (a mentor, say) joins by an invite to the a
 use with Google (Admin > People). Admin > People also shows how many people used the site
 each day this past month and how long they spent on it (on the web app, and working in
 SolidWorks with the add-in), who has the SolidWorks add-in (on
-how many computers and which versions, and how many people in all), what Claude's answers in Help
-have cost, and on whose questions, how hard the server is working
+how many computers and which versions, and how many people in all), what Claude in Help has
+cost, and on whose questions, how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
 when each joined and was last on. Change the name everyone sees you by
 from your account menu.

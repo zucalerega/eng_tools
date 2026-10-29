@@ -197,6 +197,8 @@ export interface AssistantSpending {
     daily_limit: number; // what one person's questions may cost in 24 hours
     model: string;
     effort: string;
+    keep_warm: boolean; // whether it keeps the help ready between questions
+    keep_warm_spent: number; // what that cost this month, in month_spent too
     people: { user: UserRef; questions: number; spent: number; last_asked_at: string }[]; // the most spent first
 }
 

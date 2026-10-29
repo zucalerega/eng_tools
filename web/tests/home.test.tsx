@@ -8,7 +8,7 @@ test("the site's address shows its apps, and each goes to its own pages", async 
     renderApp(team.chief, "/");
 
     const home = within(await screen.findByRole("main"));
-    expect(home.getByRole("heading", { name: "YJSP Engineering Tools Repository" })).toBeTruthy();
+    expect(home.getByRole("heading", { name: "YJSP Engineering Tools" })).toBeTruthy();
     const vault = home.getByRole("link", { name: /^Vault/ });
     expect(vault.getAttribute("href")).toBe("/vault");
     expect(home.getByRole("link", { name: /^Yorg/ }).getAttribute("href")).toBe("/yorg");
@@ -47,7 +47,7 @@ test("the mark at the top left goes to the site's front page, from any app", asy
         const home = await screen.findByRole("link", { name: "YJSP home" });
         expect(home.getAttribute("href")).toBe("/");
         await userEvent.click(home);
-        expect(await screen.findByRole("heading", { name: "YJSP Engineering Tools Repository" })).toBeTruthy();
+        expect(await screen.findByRole("heading", { name: "YJSP Engineering Tools" })).toBeTruthy();
         expect(window.location.pathname).toBe("/");
         cleanup();
     }

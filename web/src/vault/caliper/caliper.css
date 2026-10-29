@@ -361,7 +361,7 @@
     top: 0;
     padding: 0.15rem 0.45rem;
     border-radius: 4px;
-    background: var(--topbar);
+    background: #08111f; /* navy in either theme: white words on the model, whatever's behind them */
     color: #fff;
     font: 600 0.78rem var(--font-mono);
     white-space: nowrap;

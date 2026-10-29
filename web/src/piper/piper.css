@@ -3,16 +3,12 @@
  * and the test's timeline under them), and Help.
  */
 
-/* The mark's ball, in the vault's gold, ringed in the top bar's navy (or the page's own, on the site's home). */
+/* The mark's ball, in the vault's gold, ringed in its card's color on the site's own page. */
 .piper-ball {
     fill: var(--gold);
-    stroke: var(--topbar);
+    stroke: var(--surface);
     stroke-width: 2.5;
     paint-order: stroke;
-}
-
-.home-app .piper-ball {
-    stroke: var(--surface);
 }
 
 .piper-small {

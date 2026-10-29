@@ -10,8 +10,8 @@ const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", mo
 
 /**
  * Vault's mark: a vault door (an octagon with a wheel) crossed by a gold orbit, after the Yellow Jacket
- * Space Program's logo. The door takes the text color; the favicon in index.html and the server's
- * sign-in page draw the same shapes.
+ * Space Program's logo. The door takes the text color; the favicon in index.html draws the same
+ * shapes.
  */
 export function VaultMark({ size = 30 }: { size?: number }) {
     return (

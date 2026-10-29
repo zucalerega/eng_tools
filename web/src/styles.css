@@ -18,7 +18,16 @@
     --primary: #1c4b8f; /* buttons: dark blue, with white text */
     --primary-hover: #163d75;
     --heading: #0b1b33;
-    --topbar: #08111f;
+    /* The top bar: the page's own white in the light theme, navy type on it; near-black in the dark, white type. */
+    --topbar: #ffffff;
+    --topbar-text: #0b1b33;
+    --topbar-quiet: rgb(11 27 51 / 75%);
+    --topbar-soft: rgb(11 27 51 / 64%);
+    --topbar-dim: rgb(11 27 51 / 42%);
+    --topbar-hover: rgb(11 27 51 / 6%);
+    --topbar-press: rgb(11 27 51 / 10%);
+    /* The team's logo, its letters navy here and white in the dark (the server serves it: api/web.py). */
+    --site-logo: url("/brand/logo-on-light.png");
     --gold: #e0a500;
     --danger: #c9252d;
     --danger-soft: #fdecec;
@@ -76,6 +85,13 @@
         --primary-hover: #3469bd;
         --heading: #e0a500;
         --topbar: #03060c;
+        --topbar-text: #ffffff;
+        --topbar-quiet: rgb(255 255 255 / 82%);
+        --topbar-soft: rgb(255 255 255 / 68%);
+        --topbar-dim: rgb(255 255 255 / 45%);
+        --topbar-hover: rgb(255 255 255 / 8%);
+        --topbar-press: rgb(255 255 255 / 12%);
+        --site-logo: url("/brand/logo-on-dark.png");
         --danger: #f47067;
         --danger-soft: #3a1618;
         --warning: #d8a33a;
@@ -116,6 +132,13 @@
     --primary-hover: #3469bd;
     --heading: #e0a500;
     --topbar: #03060c;
+    --topbar-text: #ffffff;
+    --topbar-quiet: rgb(255 255 255 / 82%);
+    --topbar-soft: rgb(255 255 255 / 68%);
+    --topbar-dim: rgb(255 255 255 / 45%);
+    --topbar-hover: rgb(255 255 255 / 8%);
+    --topbar-press: rgb(255 255 255 / 12%);
+    --site-logo: url("/brand/logo-on-dark.png");
     --danger: #f47067;
     --danger-soft: #3a1618;
     --warning: #d8a33a;
@@ -190,7 +213,7 @@ main {
 
 /* --- top bar --------------------------------------------------------------------------------- */
 
-/* Always dark, like the team's site: white type, the current page underlined in gold. */
+/* White in the light theme, near-black in the dark, as the page is: the current page underlined in gold either way. */
 .topbar {
     position: sticky;
     top: 0;
@@ -201,7 +224,7 @@ main {
     padding: 0 1.25rem;
     height: 3.5rem;
     background: var(--topbar);
-    color: #fff;
+    color: var(--topbar-text);
     border-bottom: 2px solid var(--gold);
 }
 
@@ -209,27 +232,36 @@ main {
     border-bottom-color: var(--admin);
 }
 
+/* The team's logo and "Tools", home to the site's own page. */
 .brand {
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
-    color: #fff;
+    color: var(--topbar-text);
 }
 
 .brand:hover {
     text-decoration: none;
 }
 
-.vault-mark {
+.site-logo {
+    display: inline-block;
     flex: none;
-    color: #fff;
+    aspect-ratio: 245 / 173;
+    background: var(--site-logo) center / contain no-repeat;
 }
 
-.vault-orbit {
-    fill: var(--gold);
-    stroke: var(--topbar);
-    stroke-width: 2.5;
-    paint-order: stroke;
+.brand .site-logo {
+    height: 1.65rem;
+}
+
+.brand-name {
+    font-family: var(--font-brand);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--topbar-quiet);
 }
 
 .wordmark {
@@ -240,27 +272,27 @@ main {
     text-transform: uppercase;
 }
 
-/* The site's two apps, the vault and Yorg (test data): the one you're in bright, the other a click away. */
+/* The site's apps, Vault, Yorg, and Piper: the one you're in bright, the others a click away. */
 .apps {
     display: flex;
     align-items: center;
     gap: 0.9rem;
-    margin-left: -1.35rem;
+    margin-left: -0.85rem;
 }
 
 .apps .wordmark {
-    color: rgb(255 255 255 / 45%);
+    color: var(--topbar-dim);
     font-size: 1.05rem;
     transition: color 0.12s;
 }
 
 .apps .wordmark:hover {
-    color: rgb(255 255 255 / 85%);
+    color: var(--topbar-quiet);
     text-decoration: none;
 }
 
 .apps .wordmark[aria-current="page"] {
-    color: #fff;
+    color: var(--topbar-text);
 }
 
 .nav {
@@ -276,7 +308,7 @@ main {
     padding: 0 0.75rem;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
-    color: rgb(255 255 255 / 68%);
+    color: var(--topbar-soft);
     font-family: var(--font-brand);
     font-size: 0.78rem;
     font-weight: 600;
@@ -286,12 +318,12 @@ main {
 }
 
 .nav a:hover {
-    color: #fff;
+    color: var(--topbar-text);
     text-decoration: none;
 }
 
 .nav a[aria-current="page"] {
-    color: #fff;
+    color: var(--topbar-text);
     border-bottom-color: var(--gold);
 }
 
@@ -352,11 +384,11 @@ main {
     padding: 0 0.5rem 0 0.3rem;
     background: transparent;
     border-color: transparent;
-    color: #fff;
+    color: var(--topbar-text);
 }
 
 .account-button:hover:not(:disabled) {
-    background: rgb(255 255 255 / 8%);
+    background: var(--topbar-hover);
 }
 
 .avatar {
@@ -374,7 +406,7 @@ main {
 }
 
 .me {
-    color: rgb(255 255 255 / 85%);
+    color: var(--topbar-quiet);
     font-size: 0.9rem;
 }
 
@@ -489,6 +521,38 @@ main {
     font-size: 1.3rem;
 }
 
+/* The team's logo beside the site's name, as the sign-in page has them (the server's pages.py). */
+.home-lockup {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+}
+
+.home-lockup .site-logo {
+    height: 3.6rem;
+}
+
+.home-lockup-rule {
+    align-self: stretch;
+    width: 1px;
+    margin: 0.4rem 0;
+    background: color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+.home-lockup-words {
+    font-family: var(--font-brand);
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    line-height: 1.25;
+    text-transform: uppercase;
+    color: var(--text);
+}
+
+.home-lockup-words > span {
+    display: block;
+}
+
 .home-apps {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -526,13 +590,17 @@ main {
     text-decoration: none;
 }
 
-/* The marks as the top bar draws them, on the page's own colors. */
-.home-app .vault-mark {
+/* The apps' marks, on their cards: the page's colors, the gold ringed in the card's own. */
+.vault-mark {
+    flex: none;
     color: var(--text);
 }
 
-.home-app .vault-orbit {
+.vault-orbit {
+    fill: var(--gold);
     stroke: var(--surface);
+    stroke-width: 2.5;
+    paint-order: stroke;
 }
 
 .home-app-name {
@@ -2214,13 +2282,13 @@ input[type="checkbox"] {
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: rgb(255 255 255 / 80%);
+    color: var(--topbar-quiet);
 }
 
 .help-button:hover:not(:disabled),
 .help-button[aria-expanded="true"] {
-    background: rgb(255 255 255 / 12%);
-    color: #fff;
+    background: var(--topbar-press);
+    color: var(--topbar-text);
 }
 
 .help-panel {

@@ -12,6 +12,7 @@ export default defineConfig({
             "/auth": "http://127.0.0.1:8000",
             "/help": "http://127.0.0.1:8000",
             "/llms.txt": "http://127.0.0.1:8000",
+            "/brand": "http://127.0.0.1:8000", // the team's logo (the server's api/web.py)
         },
     },
     test: {

@@ -17,7 +17,11 @@ from .deps import DB, Config, session_user
 
 router = APIRouter(include_in_schema=False)
 # First path segments the web app never owns: an unknown path under them is a 404, not an app page.
-_NOT_APP = {"api", "auth", "assets", "healthz", "help"}
+_NOT_APP = {"api", "auth", "assets", "brand", "healthz", "help"}
+# The team's logo, white letters for dark backgrounds and navy for light, with its gold swoosh: for the site's own pages
+# (pages.py) and the web app's top bar and home page alike.
+BRAND = Path(__file__).resolve().parent.parent / "brand"
+_LOGOS = {"logo-on-light.png", "logo-on-dark.png"}
 
 
 def app_index(settings: Settings) -> Path | None:
@@ -33,6 +37,14 @@ def index_response(index: Path) -> FileResponse:
 def mount_assets(app: FastAPI, settings: Settings) -> None:
     """Serve the build's scripts and styles; a build made while the server runs is picked up too."""
     app.mount("/assets", StaticFiles(directory=settings.web_dir / "assets", check_dir=False), name="assets")
+
+
+@router.get("/brand/{name}")
+def brand(name: str) -> FileResponse:
+    """The team's logo, for anyone: the sign-in page shows it before anyone's signed in."""
+    if name not in _LOGOS:
+        raise NotFound("Not found")
+    return FileResponse(BRAND / name, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/{path:path}")

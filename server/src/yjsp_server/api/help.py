@@ -12,29 +12,27 @@ from .pages import FAVICON, GOLD, PALETTE, SITE, THEME, esc
 
 router = APIRouter(include_in_schema=False)
 
-_ORBIT = (
-    '<svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true">'
-    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{GOLD}"/></svg>'
-)
-# The top bar as the web app's (web/src/styles.css, .topbar): the mark and the site's wordmark, then the page it's on,
-# as the web app shows its pages: small capitals, underlined in gold.
+# The top bar as the web app's (web/src/styles.css, .topbar): the team's logo and "Tools", then the page it's on, as the
+# web app shows its pages: small capitals, underlined in gold. White in the light theme, near-black in the dark.
 _STYLE = f"""{PALETTE}
   body {{ margin: 0; background: var(--bg); color: var(--text); }}
   a {{ color: var(--accent); }}
   .bar {{ position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .75rem; height: 3.5rem;
-    padding: 0 1.25rem; background: #08111f; color: #fff; border-bottom: 2px solid {GOLD}; }}
-  .brand {{ display: inline-flex; align-items: center; gap: .6rem; color: #fff; text-decoration: none;
-    font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: 1.05rem; font-weight: 700;
-    letter-spacing: .24em; }}
+    padding: 0 1.25rem; background: var(--bar); color: var(--bar-text); border-bottom: 2px solid {GOLD}; }}
+  .brand {{ display: inline-flex; align-items: center; gap: .6rem; color: var(--bar-quiet); text-decoration: none;
+    font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: .75rem; font-weight: 700;
+    letter-spacing: .3em; text-transform: uppercase; }}
+  .brand .logo {{ height: 1.6rem; }}
   .where {{ display: flex; align-items: center; align-self: stretch; margin: 0 0 -2px 1.25rem; padding: 0 .75rem;
-    border-bottom: 2px solid {GOLD}; color: #fff; font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI",
-    sans-serif; font-size: .78rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }}
+    border-bottom: 2px solid {GOLD}; color: var(--bar-text); font-family: Bahnschrift, "DIN Alternate", Rubik,
+    "Segoe UI", sans-serif; font-size: .78rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }}
   .grow {{ flex: 1; }}
   .bar a.action, .bar button {{ display: inline-flex; align-items: center; height: 2.1rem; padding: 0 .8rem;
-    border: 1px solid rgb(255 255 255 / 28%); border-radius: 6px; background: transparent; color: #fff; font: inherit;
-    font-size: .9rem; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }}
-  .bar a.action:hover, .bar button:hover {{ background: rgb(255 255 255 / 10%); }}
-  .bar a.primary {{ background: var(--primary); border-color: var(--primary); }}
+    border: 1px solid var(--bar-line); border-radius: 6px; background: transparent; color: var(--bar-text);
+    font: inherit; font-size: .9rem; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }}
+  .bar a.action:hover, .bar button:hover {{ background: var(--bar-hover); }}
+  .bar a.primary {{ background: var(--primary); border-color: var(--primary); color: #fff; }}
+  .bar a.primary:hover {{ background: var(--primary-hover); }}
   .layout {{ display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 2.5rem; max-width: 76rem;
     margin: 0 auto; padding: 1.5rem 1.25rem 5rem; }}
   .contents {{ position: sticky; top: 5rem; align-self: start; max-height: calc(100vh - 6rem); overflow: auto;
@@ -149,7 +147,7 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
 <meta name="description" content="Help for YJSP, the Yellow Jacket Space Program's tools: Vault, Yorg, and Piper.">
 <link rel="alternate" type="text/markdown" href="/help.md" title="The help, as Markdown">
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
-<body><header class="bar"><a class="brand" href="/">{_ORBIT}{SITE}</a>
+<body><header class="bar"><a class="brand" href="/" aria-label="{SITE} home"><span class="logo"></span>Tools</a>
 <span class="where" aria-current="page">Help</span>
 <span class="grow"></span><a class="action markdown" href="/help.md">Markdown</a>
 <button type="button" id="copy">Copy for an AI</button>{account}</header>

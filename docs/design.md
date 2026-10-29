@@ -225,8 +225,8 @@ on every visit and measuring walks every file Vault has.
   with its query (a link to Yorg's plots holds them there), and only paths on the site
   (`_safe_next`). The round trip to Microsoft or Google keeps that in the session cookie,
   which browsers cap at 4 KB, so one longer than 2,000 characters comes back to its page
-  without its query. The sign-in pages are the site's: the YJSP name, with the apps'
-  marks, and Georgia Tech's sign-in first.
+  without its query. The sign-in pages are the site's: the team's logo with the site's
+  name, and Georgia Tech's sign-in first.
 - **The CLI and add-in** sign in through the browser, like `gh auth login`:
   1. The client listens on `127.0.0.1:<port>` and opens `/auth/client` with a PKCE
      challenge.
@@ -250,12 +250,13 @@ the API doesn't own (`api/web.py`), to people who are signed in and approved; ev
 else signs in on the server's home page first. It uses the browser session cookie, and
 sends `X-YJSP-Request` on every request (`api.ts`).
 
-- **The frame** (`App.tsx`): the top bar, with the app switcher, each app's own pages in
-  it, and the account menu (your name, the theme, Admin and Vault's admin mode for those
-  who have them, and signing out). Each app's pages come from its own folder: Vault's
-  (`web/src/vault`, `VaultPage`, under `/vault`), Yorg's (`web/src/yorg`, `YorgPage`,
-  under `/yorg`), and Piper's (`web/src/piper`, `PiperPage`, under `/piper`). The site's
-  own page (`Home`, at `/`, where signing in lands) has all three on it.
+- **The frame** (`App.tsx`): the top bar, with the team's logo (back to the site's own
+  page), the app switcher, each app's own pages in it, and the account menu (your name,
+  the theme, Admin and Vault's admin mode for those who have them, and signing out). Each
+  app's pages come from its own folder: Vault's (`web/src/vault`, `VaultPage`, under
+  `/vault`), Yorg's (`web/src/yorg`, `YorgPage`, under `/yorg`), and Piper's
+  (`web/src/piper`, `PiperPage`, under `/piper`). The site's own page (`Home`, at `/`,
+  where signing in lands) has the team's logo with the site's name, and all three.
 - **Who you are** (`session.ts`) is the site's, for all the apps: loaded when the page opens
   and asked again every minute while it's visible. Vault's index (`vault/store.ts`, the
   sync feed) loads when a page of Vault first shows and keeps current only while one
@@ -271,7 +272,13 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
 - **Branding:** in the Yellow Jacket Space Program's colors: near-black, white, and dark
-  blue, with its gold. Each app has its mark, after the team's logo: Vault's a vault door
+  blue, with its gold. The top bar, the help's too, is white in the light theme and
+  near-black in the dark. The team's logo (`server/src/yjsp_server/brand`) heads the site:
+  with its name, Engineering Tools, on the site's own page and the sign-in pages, and with
+  "Tools" at the top bar's left. It comes in two, navy letters for light pages and white
+  for dark, which the page's theme picks (`--site-logo`, `--logo`); the server gives them to
+  anyone (`/brand/logo-on-light.png`, `/brand/logo-on-dark.png`), since the sign-in pages
+  show them. Each app has its mark, after the team's logo: Vault's a vault door
   crossed by a gold orbit (`VaultMark`), Yorg's a signal rising to its gold peak
   (`YorgMark`), Piper's a valve in a line, its ball gold (`PiperMark`). The tab's title and
   icon are the app's. The site's own icon, on the

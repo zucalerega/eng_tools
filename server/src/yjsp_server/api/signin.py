@@ -21,7 +21,7 @@ from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
 from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
-from .pages import FAVICON, GOLD, PALETTE, SITE, THEME, esc
+from .pages import FAVICON, NAME, PALETTE, SITE, THEME, esc
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -85,44 +85,18 @@ def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
     return None if oauth is None else oauth.create_client(name)
 
 
-# The site's apps, by their marks as the web app draws them: Vault's (VaultMark in web/src/vault/components.tsx), a
-# vault door crossed by a gold orbit with a sliver of the card around it; Yorg's (YorgMark in web/src/yorg), a signal
-# rising across a pair of axes to its gold peak; and Piper's (PiperMark in web/src/piper), a valve in a line, its ball
-# gold.
-_VAULT_MARK = (
-    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
-    '<g fill="none" stroke="currentColor"><polygon points="54.2,41.2 41.2,54.2 22.8,54.2 9.8,41.2 9.8,22.8 22.8,9.8 '
-    '41.2,9.8 54.2,22.8" stroke-width="5"/><circle cx="32" cy="32" r="12.5" stroke-width="3"/>'
-    '<path d="M32 32V14.5M32 32L16.8 40.8M32 32l15.2 8.8" stroke-width="3"/></g><g fill="currentColor">'
-    '<circle cx="32" cy="32" r="4.5"/><circle cx="32" cy="14.5" r="2.8"/><circle cx="16.8" cy="40.8" r="2.8"/>'
-    '<circle cx="47.2" cy="40.8" r="2.8"/></g>'
-    f'<path d="M4 57Q42 52 60 5Q36 45 4 57Z" fill="{GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
-    'paint-order="stroke"/></svg>'
-)
-_YORG_MARK = (
-    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
-    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M9 7v48h48" stroke-width="5"/><path d="M17 45l8-13 8 7 9-20 7 10 6-5" stroke-width="4"/></g>'
-    f'<circle cx="42" cy="19" r="5.5" fill="{GOLD}"/></svg>'
-)
-_PIPER_MARK = (
-    '<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">'
-    '<g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M5 40h11M48 40h11"/><path d="M16 28v24l32-24v24z"/><path d="M32 40V15M23 15h18"/></g>'
-    f'<circle cx="32" cy="40" r="6.5" fill="{GOLD}" style="stroke:var(--surface)" stroke-width="2.5" '
-    'paint-order="stroke"/></svg>'
+# The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS).
+_LOCKUP = (
+    f'<div class="lockup"><span class="logo" role="img" aria-label="{SITE}"></span><span class="rule"></span>'
+    f'<span class="words">{" ".join(f"<span>{esc(word)}</span>" for word in NAME.split())}</span></div>'
 )
 _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 2rem 1rem; background: var(--bg); color: var(--text);
     border-top: 3px solid #e0a500; }}
   .card {{ width: min(25rem, 100%); padding: 2.25rem 2rem 2rem; background: var(--surface);
     border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }}
-  .brand {{ display: flex; flex-direction: column; align-items: center; gap: .55rem; margin-bottom: 1.75rem; }}
-  .marks {{ display: flex; gap: .9rem; margin-bottom: .2rem; }}
-  .brand svg {{ color: var(--door); }}
-  .wordmark, h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
-  .wordmark {{ font-size: 1.8rem; font-weight: 700; letter-spacing: .28em; margin-right: -.28em;
-    text-transform: uppercase; line-height: 1.1; }}
+  .brand {{ display: flex; flex-direction: column; align-items: center; gap: .9rem; margin-bottom: 1.75rem; }}
+  h1 {{ font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; }}
   .org {{ margin: 0; font-size: .7rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
     color: var(--muted); }}
   h1 {{ font-size: 1.2rem; font-weight: 600; text-align: center; margin: 0 0 .75rem; }}
@@ -150,7 +124,7 @@ _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; fle
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    """A sign-in page: a card with the site's name and its apps' marks. The title "YJSP" is just the brand."""
+    """A sign-in page: a card with the team's logo and the site's name. The title "YJSP" is just the brand."""
     heading = "" if title == SITE else f"<h1>{esc(title)}</h1>"
     tab_title = title if title == SITE else f"{title} · {SITE}"
     return HTMLResponse(
@@ -158,8 +132,8 @@ def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{esc(tab_title)}</title>
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
-<body><main class="card"><div class="brand"><div class="marks">{_VAULT_MARK}{_YORG_MARK}{_PIPER_MARK}</div>
-<span class="wordmark">{SITE}</span><p class="org">Yellow Jacket Space Program</p></div>{heading}{body}</main>
+<body><main class="card"><div class="brand">{_LOCKUP}<p class="org">Yellow Jacket Space Program</p></div>
+{heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
     )

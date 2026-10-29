@@ -89,3 +89,16 @@ def test_without_a_build_the_home_page_says_so(client):
     sign_in(client, BOOTSTRAP_ADMIN)
     assert "web app isn't built on this server" in client.get("/").text
     assert client.get("/file/12").status_code == 404
+
+
+def test_the_teams_logo_is_for_anyone_and_the_sign_in_page_shows_it(client):
+    # Before anyone's signed in: the sign-in page has it, with the site's name beside it.
+    for name in ("logo-on-light.png", "logo-on-dark.png"):
+        logo = client.get(f"/brand/{name}")
+        assert (logo.status_code, logo.headers["content-type"]) == (200, "image/png"), name
+        assert logo.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert client.get("/brand/other.png").status_code == 404
+    page = html.unescape(client.get("/").text)
+    assert '<span class="logo" role="img" aria-label="YJSP">' in page
+    assert "<span>Engineering</span> <span>Tools</span>" in page
+    assert 'url("/brand/logo-on-light.png")' in page and 'url("/brand/logo-on-dark.png")' in page

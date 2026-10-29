@@ -3,8 +3,8 @@
 The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
 the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for its test
 data; and **[Piper](#piper-pids)** (`/piper`), for its P&IDs. The site's address on its own
-shows all three (the mark at the top left goes back to it), and how full the server's disk is,
-and how much of it each takes; the switcher beside the mark goes between them.
+shows all three (the team's logo at the top left goes back to it), and how full the server's disk is,
+and how much of it each takes; the switcher beside the logo goes between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks

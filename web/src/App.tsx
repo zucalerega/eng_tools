@@ -95,9 +95,12 @@ export function App() {
     return (
         <>
             <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
-                {/* The app's mark, but always home to the site's front page, where all the apps are. */}
+                {/* The team's logo and the site's name, home to the site's front page, where all the apps are. */}
                 <Link to="/" className="brand" aria-label={`${SITE} home`}>
-                    {yorg ? <YorgMark /> : vaultApp ? <VaultMark /> : piperApp ? <PiperMark /> : <SiteMark />}
+                    <span className="site-logo" aria-hidden="true" />
+                    <span className="brand-name" aria-hidden="true">
+                        Tools
+                    </span>
                 </Link>
                 <nav className="apps" aria-label="Apps">
                     <Link to={VAULT} className="wordmark" aria-current={vaultApp ? "page" : undefined}>
@@ -187,21 +190,19 @@ export function App() {
     );
 }
 
-/** The site's own mark: the gold orbit both apps' marks take from the team's logo. */
-function SiteMark({ size = 30 }: { size?: number }) {
-    return (
-        <svg className="vault-mark" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-            <path className="vault-orbit" d="M4 57Q42 52 60 5Q36 45 4 57Z" />
-        </svg>
-    );
-}
-
-/** The site's own page, at its address alone: its apps, to go to any of them. */
+/** The site's own page, at its address alone: the team's logo and the site's name, and its apps, to go to any. */
 function Home({ pathname }: { pathname: string }) {
     return (
         <section className="home">
             {pathname !== "/" && <Notice tone="error">There's no page here.</Notice>}
-            <h1>YJSP Engineering Tools Repository</h1>
+            <h1 className="home-lockup">
+                {/* The space keeps the heading's name "YJSP Engineering Tools": a flex box doesn't draw it. */}
+                <span className="site-logo" role="img" aria-label={SITE} />{" "}
+                <span className="home-lockup-rule" aria-hidden="true" />
+                <span className="home-lockup-words">
+                    <span>Engineering</span> <span>Tools</span>
+                </span>
+            </h1>
             <div className="home-apps">
                 <Link to={VAULT} className="home-app">
                     <VaultMark size={44} />

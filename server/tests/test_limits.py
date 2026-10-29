@@ -90,7 +90,7 @@ def test_a_file_caliper_cant_read_isnt_read_again(team, client, monkeypatch):
     chief = team.member("chief@x.test", admin=True)
     reads = []
     original = solidworks.read_part
-    monkeypatch.setattr(solidworks, "read_part", lambda data: reads.append(1) or original(data))
+    monkeypatch.setattr(solidworks, "read_part", lambda *given: reads.append(1) or original(*given))
     part = files(team.checkin(chief, {"Junk.SLDPRT": b"not a part " + os.urandom(16)}))["Junk.SLDPRT"]
 
     for _ in range(3):

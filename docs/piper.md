@@ -166,9 +166,11 @@ what it is, `data-hit`).
   as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
   14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
   a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
-  or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
-  vent is the spray of what it lets go, three dashed rays from its line's end in the line's
-  color; a pump stands on its base, its suction into its middle, its discharge leaving its top,
+  or before it for back pressure); an orifice's plate sits on a pipe that runs through it,
+  between ports 20 apart (half a valve's: a plate, not a fitting as long as a valve), the pipe
+  as wide as a line's however big the orifice is drawn; a vent is the spray of what it lets
+  go, three dashed rays from its line's end in the line's color; a pump stands on its base,
+  its suction into its middle, its discharge leaving its top,
   and a solid triangle in it pointing the way it pumps. The 3/2 and 5/2 solenoid valves are
   ISO 1219's directional control valves, as pneumatic schematics draw them: a box 40 across
   and 30 high for each of their two positions, with its flow paths (arrows) and shut ports (a

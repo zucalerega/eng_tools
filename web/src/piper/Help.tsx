@@ -113,8 +113,8 @@ const TOPICS: Topic[] = [
                     Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
                     stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
                     <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
-                    orifice plate sits in its pipe; a vent is the spray of what it lets go, in its line's color; a pump
-                    stands on its base, its discharge leaving its top.
+                    orifice is its plate on a short run of pipe, half a valve's length; a vent is the spray of what it
+                    lets go, in its line's color; a pump stands on its base, its discharge leaving its top.
                 </li>
                 <li>
                     The <em>3/2</em> and <em>5/2 solenoid valves</em> are drawn as pneumatic schematics draw them (ISO

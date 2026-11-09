@@ -107,7 +107,9 @@ While you work:
   into the same check-in. Each is recorded with the version it used, and SolidWorks
   is asked what the assembly references. One that uses a file deleted from the vault since
   you got it isn't checked in, and Vault says to restore that file or take it out of the
-  assembly. Before checking in, Vault offers to save your open files that changed: only
+  assembly. A part's link to a deleted file (the assembly it was edited in, or a part it's
+  made from) doesn't keep it out: the part goes in without that link, and the Vault tab
+  says so. Before checking in, Vault offers to save your open files that changed: only
   those you can save, checked out to you or new.
 - **Getting the latest version** of an open file updates it in place, along with the
   parts it uses; an open assembly that uses an updated part updates too. Files with

@@ -1172,9 +1172,10 @@ public sealed class Workspace : IDisposable
         {
             throw new WorkspaceException("Nothing to check in: no new files, and nothing checked out to you on this computer");
         }
+        var leftOut = new List<DeletedLink>();
         var references = referencesOf is null
             ? new Dictionary<string, List<CheckinReference>>()
-            : CollectReferences(items, referencesOf, withChangedReferences);
+            : CollectReferences(items, referencesOf, withChangedReferences, leftOut);
         foreach (var status in items.Where(s => s.State == FileState.New))
         {
             VaultPaths.Split(status.VaultPath); // the server's name rules, before uploading anything
@@ -1203,6 +1204,7 @@ public sealed class Workspace : IDisposable
         }
 
         var result = await Api.CheckinAsync(request, ct).ConfigureAwait(false);
+        result.LeftOut = leftOut;
         CheckServerPaths(result.Files.Select(f => f.File.Path));
         foreach (var checkedIn in result.Files)
         {
@@ -1318,7 +1320,7 @@ public sealed class Workspace : IDisposable
     /// was built against. Referenced files the vault can't have are all named in one exception.
     /// </summary>
     private Dictionary<string, List<CheckinReference>> CollectReferences(
-        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf, bool withChanged)
+        List<FileStatus> items, Func<string, IEnumerable<string>> referencesOf, bool withChanged, List<DeletedLink> leftOut)
     {
         var everything = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
         foreach (var status in Compute(new List<string> { "" }))
@@ -1356,7 +1358,15 @@ public sealed class Workspace : IDisposable
                 }
                 if (used.State == FileState.DeletedInVault)
                 {
-                    // Checked in, the vault would have a hole where it was: put it back, or take it out.
+                    if (item.VaultPath.EndsWith(".sldprt", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // A part links to the assembly it was edited in, or a part it's made from, and opens without
+                        // them (out of context): one deleted from the vault isn't recorded, rather than keeping the part,
+                        // and every assembly that goes in with it, out of the vault.
+                        leftOut.Add(new DeletedLink { File = item.VaultPath, Deleted = used.VaultPath });
+                        continue;
+                    }
+                    // Checked in, an assembly or drawing would have a hole where it was: put it back, or take it out.
                     throw new WorkspaceException(
                         $"{item.VaultPath} uses {vaultPath}, which was deleted from the vault since you got it. Restore it from its "
                         + $"folder's trash in the web app, or take it out of {Path.GetFileName(item.VaultPath)}, then check in again.");

@@ -390,6 +390,45 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task APartsLinkToAFileDeletedInTheVaultDoesntKeepItOut()
+    {
+        // A part edited in the context of an assembly links to it: SolidWorks names that assembly among the part's
+        // references. Once someone deletes the assembly, anyway, the part still goes in without the link, and so does
+        // every assembly that takes the part along; an assembly's own deleted component still keeps it out (above).
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        var old = Write(alice, "Old/Old Assembly.SLDASM", "old");
+        var bracket = Write(alice, "Bracket.SLDPRT", "bracket");
+        var aliceUses = new Dictionary<string, string[]> { [old] = [bracket], [bracket] = [old] };
+        await alice.CheckinAsync([old], "edited in context", referencesOf: path => aliceUses[path]);
+        await bob.GetLatestAsync([Folder(bob)]);
+        await alice.Api.DeleteAsync([$"{_folder}/Old/Old Assembly.SLDASM"], force: true); // the bracket uses it
+        var bobBracket = Local(bob, "Bracket.SLDPRT");
+        var bobUses = new Dictionary<string, string[]> { [bobBracket] = [Local(bob, "Old/Old Assembly.SLDASM")] };
+        IEnumerable<string> UsedByBob(string path) => bobUses.TryGetValue(path, out var used) ? used : [];
+
+        await bob.CheckoutAsync([bobBracket]);
+        File.WriteAllText(bobBracket, "bracket v2");
+        var result = await bob.CheckinAsync([bobBracket], "thicker", referencesOf: UsedByBob);
+        Assert.Equal(("updated", 2), (result.Files[0].Status, result.Files[0].File.Version));
+        var link = Assert.Single(result.LeftOut);
+        Assert.Equal(($"{_folder}/Bracket.SLDPRT", $"{_folder}/Old/Old Assembly.SLDASM"), (link.File, link.Deleted));
+        Assert.Empty((await bob.HistoryAsync(bobBracket)).Versions[0].References);
+
+        var mount = Write(bob, "Mount.SLDASM", "mount");
+        bobUses[mount] = [bobBracket];
+        await bob.CheckoutAsync([bobBracket]);
+        File.WriteAllText(bobBracket, "bracket v3");
+        result = await bob.CheckinAsync([mount], "mount", referencesOf: UsedByBob);
+        Assert.Equal(
+            new[] { ("Bracket.SLDPRT", "updated"), ("Mount.SLDASM", "created") },
+            result.Files.Select(f => (f.File.Name, f.Status)).OrderBy(f => f.Name, StringComparer.Ordinal).ToArray());
+        Assert.Single(result.LeftOut);
+        var pinned = Assert.Single((await bob.HistoryAsync(mount)).Versions[0].References);
+        Assert.Equal(($"{_folder}/Bracket.SLDPRT", 3), (pinned.Path, pinned.Version));
+    }
+
+    [Fact]
     public async Task IdenticalCopiesAreRecognized()
     {
         var alice = await WorkspaceAsync("alice");

@@ -999,6 +999,11 @@ internal sealed partial class VaultPane : UserControl
                 _sw.SetReadOnly(workspace.ToLocalPath(file.File.Path), true);
             }
             var checkedIn = $"Checked in {Count(result.Files.Count, "file")}.";
+            foreach (var link in result.LeftOut)
+            {
+                checkedIn += $" {Path.GetFileName(link.File)} links to {Path.GetFileName(link.Deleted)}, which was deleted from the vault: "
+                    + "it went in without that link.";
+            }
             // The 3D views and drawings' PDFs of what's checked in, for Caliper in the web app: SolidWorks has it all
             // open now.
             foreach (var path in paths)

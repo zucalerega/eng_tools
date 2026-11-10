@@ -412,9 +412,11 @@ on top of it.
   saying to move them in first, and so is a reference to a file deleted from the vault
   since it came here, saying to restore it from its folder's trash or take it out of the
   assembly: checked in, the assembly would have a hole where it was. Saving such a file
-  in SolidWorks says the same, and offers Save As. The CLI can't read SolidWorks files, so it doesn't send
-  references, and the server refuses drawings from it (a drawing must show a part or
-  assembly).
+  in SolidWorks says the same, and offers Save As. A part's references (the assembly it
+  was edited in, or a part it's made from) are links it opens without, so one deleted from
+  the vault is left out of what the part records, and the part goes in. The CLI can't read
+  SolidWorks files, so it doesn't send references, and the server refuses drawings from it
+  (a drawing must show a part or assembly).
 
 ## The SolidWorks add-in
 

@@ -152,7 +152,23 @@ function OldestVersion({ newest }: { newest: string | null }) {
         setTyped(site.min_client_version ?? "");
     };
     useEffect(() => {
-        api.settings().then(show, (error: Error) => setProblem(error.message));
+        // A current flag, as Load has: an answer after the page has gone shows nothing.
+        let current = true;
+        api.settings().then(
+            (site) => {
+                if (current) {
+                    show(site);
+                }
+            },
+            (error: Error) => {
+                if (current) {
+                    setProblem(error.message);
+                }
+            },
+        );
+        return () => {
+            current = false;
+        };
     }, []);
 
     async function save(version: string | null) {

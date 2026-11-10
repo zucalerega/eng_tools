@@ -204,6 +204,19 @@ public sealed class CheckinResult
 
     /// <summary>A dry run's: every problem it found.</summary>
     public List<CheckinProblem> Problems { get; set; } = new List<CheckinProblem>();
+
+    /// <summary>
+    /// Not the server's: the links parts going in have to files deleted from the vault (the assembly a part was edited
+    /// in, a part it's made from), which they're checked in without. A part opens without them.
+    /// </summary>
+    public List<DeletedLink> LeftOut { get; set; } = new List<DeletedLink>();
+}
+
+/// <summary>A part's link to a file deleted from the vault, which it's checked in without: both by vault path.</summary>
+public sealed class DeletedLink
+{
+    public string File { get; set; } = "";
+    public string Deleted { get; set; } = "";
 }
 
 /// <summary>What a move or rename moved, where it is now.</summary>

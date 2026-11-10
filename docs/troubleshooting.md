@@ -116,6 +116,12 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   taking out of the assembly. A file outside `C:\VLT`, like a Toolbox part in `C:\SOLIDWORKS Data`,
   needs moving into it first (Pack and Go can), and a file in a folder you can't see counts as
   missing.
+- **Check in says a part uses an assembly that was deleted.** The part was edited in the context
+  of that assembly, so SolidWorks links it there. The add-in checks such a part in without the
+  link, and the assemblies that use it too. An older add-in refuses them: restore the assembly from
+  its folder's trash, check them in, then delete it again; or break the part's link in SolidWorks
+  (right-click the part at the top of its tree, *External References*, *Break All*), save it, and
+  check it in.
 - **An assembly opens with parts missing.** Open it from the Browse list in the Vault tab, or with
   *Open in SolidWorks* in the web app: Vault gets everything it uses first, at every level, STEP
   files placed with 3D Interconnect included. Whatever the vault doesn't have, the Vault tab names:

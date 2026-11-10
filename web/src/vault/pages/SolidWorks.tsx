@@ -185,6 +185,13 @@ export function SolidWorks() {
                         out of the assembly in SolidWorks, then check the assembly in. Your changes to the file itself
                         can still be saved under another name (File &gt; Save As).
                     </p>
+                    <p>
+                        A part edited in the context of an assembly links to that assembly. If the assembly was deleted,
+                        the part, and the assemblies that use it, still check in: the part goes in without that link. An
+                        add-in older than that refuses them instead; there, restore the assembly from the Trash to check
+                        them in, or break the part&apos;s link in SolidWorks (right-click the part at the top of its
+                        tree, External References, Break All), save it, and check it in.
+                    </p>
                 </details>
                 <details>
                     <summary>Saving an assembly asks about many parts</summary>

@@ -106,27 +106,59 @@ def test_a_new_part_named_by_its_number_takes_it_with_its_title(team, client, ch
     assert (fin["name"], fin["title"]) == (f"{number}.SLDPRT", "Fin bracket")
     assert client.get("/api/numbers", headers=alice).json()["numbers"] == []  # used
 
-    # It's the file's for good: no other file takes it, and it can't be given back.
-    again = team.checkin(alice, {f"Fins/Copy/{number}.SLDPRT": b"copy"})
-    assert (again.status_code, again.json()["error"]) == (409, "part_number_taken")
+    # It's the file's for good: a copy named by it goes in by that name without taking it, and it can't be given back.
+    copy = files(team.checkin(alice, {f"Fins/Copy/{number}.SLDPRT": b"copy"}))[f"Fins/Copy/{number}.SLDPRT"]
+    assert copy["title"] == number  # its name, as any new file's title, not the number's
     kept = client.post("/api/numbers/release", json={"numbers": [number]}, headers=alice)
     assert kept.json()["error"] == "part_number_used"
 
 
-def test_a_number_fits_what_its_file_is(team, client, chief, alice):
+def test_only_a_number_handed_out_for_what_a_file_is_is_taken(team, client, chief, alice):
     turn_on(client, chief)
-    assembly = numbered(client, alice, "501")
-    for name, code in (
-        (f"{assembly}.SLDPRT", "bad_part_number"),  # an assembly's number on a part
-        ("00000099-001.SLDPRT", "unknown_part_number"),  # never handed out
-        (f"{assembly} left.SLDASM", "bad_part_number"),  # an assembly's name is its number alone
-    ):
-        refused = team.checkin(alice, {f"Fins/{name}": b"x"})
-        assert (refused.status_code, refused.json()["error"]) == (400, code), name
-    assert team.checkin(alice, {f"Fins/{assembly}.SLDASM": b"can"}).status_code == 200
+    assembly = numbered(client, alice, "501", title="Fin can")
+    # Named like a number otherwise, a file goes in by its name, without one: an assembly's number on a part, a number
+    # never handed out, an assembly's number with more after it.
+    for name in (f"{assembly}.SLDPRT", "00000099-001.SLDPRT", f"{assembly} left.SLDASM"):
+        checked = files(team.checkin(alice, {f"Fins/{name}": b"x"}))[f"Fins/{name}"]
+        assert checked["title"] == name.rsplit(".", 1)[0], name  # its name, not the number's title
+    assert [n["number"] for n in client.get("/api/numbers", headers=alice).json()["numbers"]] == [assembly]  # unused
+    can = files(team.checkin(alice, {f"Fins/{assembly}.SLDASM": b"can"}))[f"Fins/{assembly}.SLDASM"]
+    assert can["title"] == "Fin can"
+    assert client.get("/api/numbers", headers=alice).json()["numbers"] == []
 
 
-def test_drawings_pdfs_and_exports_are_named_after_a_number_a_file_has(team, client, chief, alice):
+def test_teams_that_number_their_own_parts_check_them_in_by_their_numbers(team, client, chief, alice):
+    # Ground Structures gives its parts numbers of its own (docs/vault.md, "Numbers from before"), which the vault
+    # didn't hand out, some with more after them: they go in by their names, with drawings named after them, and can
+    # be renamed as any name can, since they're no part numbers of the vault's.
+    turn_on(client, chief)
+    checked = files(
+        team.checkin(
+            alice,
+            {
+                "Fins/00000011-014.SLDPRT": b"plate",
+                "Fins/00000004-010-6.SLDPRT": b"rib",
+                "Fins/00000011-014.SLDDRW": b"drawing",
+                "Fins/00000011-014.PDF": b"pdf",
+            },
+            refs={"Fins/00000011-014.SLDDRW": ["Fins/00000011-014.SLDPRT"]},
+        )
+    )
+    assert sorted(checked) == [
+        "Fins/00000004-010-6.SLDPRT",
+        "Fins/00000011-014.PDF",
+        "Fins/00000011-014.SLDDRW",
+        "Fins/00000011-014.SLDPRT",
+    ]
+    renamed = client.post(
+        "/api/rename", json={"file": checked["Fins/00000004-010-6.SLDPRT"]["id"], "name": "Rib.SLDPRT"}, headers=alice
+    )
+    assert renamed.status_code == 200, renamed.text
+    # The vault's own numbers go on from where they were.
+    assert numbered(client, alice) == "00000001-001"
+
+
+def test_drawings_pdfs_and_exports_are_named_after_a_number(team, client, chief, alice):
     turn_on(client, chief)
     number = numbered(client, alice)
     # A part, its drawing, and a PDF and a STEP file of it, in one check-in: the part takes the number first.
@@ -146,9 +178,10 @@ def test_drawings_pdfs_and_exports_are_named_after_a_number_a_file_has(team, cli
         f"Fins/{number}.STEP",
         f"Fins/{number}.SLDPRT",
     ]  # in the order they came
+    # One named after a number no file has yet goes in as well, and leaves the number to its part.
     unheld = numbered(client, alice)
-    refused = team.checkin(alice, {f"Fins/{unheld}.PDF": b"pdf"})
-    assert (refused.status_code, refused.json()["error"]) == (400, "unknown_part_number")
+    assert files(team.checkin(alice, {f"Fins/{unheld}.PDF": b"pdf"}))
+    assert [n["number"] for n in client.get("/api/numbers", headers=alice).json()["numbers"]] == [unheld]
 
 
 def test_once_numbers_are_required_new_cad_files_need_one(team, client, chief, alice):
@@ -156,6 +189,8 @@ def test_once_numbers_are_required_new_cad_files_need_one(team, client, chief, a
     turn_on(client, chief, "require")
     refused = team.checkin(alice, {"Fins/Fin.SLDPRT": b"fin"})
     assert (refused.status_code, refused.json()["error"]) == (400, "part_number_needed")
+    # A team's own number does, as in Ground Structures.
+    assert team.checkin(alice, {"Fins/00000011-014.SLDPRT": b"plate"}).status_code == 200
     # A vendor's part keeps its vendor's name, as McMaster's numbers say, or as the one checking it in says; and
     # documents keep theirs.
     ok = team.checkin(alice, {"Fins/91251A463_Socket Head Screw.SLDPRT": b"screw", "Fins/Notes.PDF": b"notes"})

@@ -722,14 +722,17 @@ def _holder(db: Session, number: int, kind: str) -> PartNumber | None:
 
 
 def _part_number(db: Session, name: str, *, file: File | None, vendor: bool, new: bool) -> PartNumber | None:
-    """What a file's name (a new file's, or one a file is renamed to) says of its part number, held to the rules
-    (docs/vault.md, "Part numbers"): the number it takes, a part's, an assembly's, or a STEP or STL file's own, for
-    the caller to give it, or the one it has; None for a name after a number another file has (a drawing's, a PDF's,
-    an export's), or a name that's no number.
+    """What a file's name (a new file's, or one a file is renamed to) says of its part number (docs/vault.md, "Part
+    numbers"): the number it takes, a part's, an assembly's, or a STEP or STL file's own, for the caller to give it, or
+    the one it has; None for any other name.
 
-    Refused: a number not handed out, or someone else's, or of a kind for something else; a part or an assembly named
-    by more than its number; a vendor's part named like a number; and a new part, assembly, STEP or STL file without
-    one, once they need them (Numbering.REQUIRE).
+    A name takes a number only when it's exactly one handed out and not yet used, of a kind for what the file is. Any
+    other name that starts like a number is just a name, and the file goes in by it without a number: Ground
+    Structures numbers its own parts (00000011-014, 00000004-010-6), and a copy, a drawing, or an export may carry a
+    number another file has, or one no file has yet.
+
+    Refused: a vendor's part named like a number; and a new part, assembly, STEP or STL file named like no number,
+    once they need them (Numbering.REQUIRE).
     """
     numbered = numbers.parse(name)
     if numbered is None:
@@ -744,60 +747,23 @@ def _part_number(db: Session, name: str, *, file: File | None, vendor: bool, new
         return None
     if vendor:
         _check_vendor(name)
-    own = numbered.text
     if file is not None:
         mine = db.scalar(select(PartNumber).where(PartNumber.file_id == file.id))
         if mine is not None and (mine.number, mine.kind) == (numbered.number, numbered.kind):
             return mine
-    holder = _holder(db, numbered.number, numbered.kind)
-    if numbers.holds(name) and numbered.exact and holder is None:
-        # It takes the number: one handed out and not yet used, of a kind for what it is.
-        unused = db.scalar(
-            select(PartNumber).where(
-                PartNumber.number == numbered.number,
-                PartNumber.kind == numbered.kind,
-                PartNumber.legacy.is_(False),
-                PartNumber.file_id.is_(None),
-                PartNumber.released_at.is_(None),
-            )
+    if not (numbers.holds(name) and numbered.exact) or _holder(db, numbered.number, numbered.kind) is not None:
+        return None
+    unused = db.scalar(
+        select(PartNumber).where(
+            PartNumber.number == numbered.number,
+            PartNumber.kind == numbered.kind,
+            PartNumber.legacy.is_(False),
+            PartNumber.file_id.is_(None),
+            PartNumber.released_at.is_(None),
         )
-        if unused is None:
-            raise ApiError(
-                f"{own} wasn't handed out: get a part number with New, in the web app or in SolidWorks",
-                code="unknown_part_number",
-                name=name,
-            )
-        kind = db.get(PartKind, numbered.kind)
-        if kind is None or not numbers.fits(kind.applies, name):
-            what = "an assembly" if numbers.applies_to(name) == "assembly" else "a part"
-            raise ApiError(
-                f"{own} was handed out for {kind.label if kind else 'something else'}, so it can't be {what}'s",
-                code="bad_part_number",
-                name=name,
-            )
-        return unused
-    if numbers.holds(name) and not numbers.exports(name):
-        if not numbered.exact:
-            raise ApiError(
-                f"Call it {own}{name[len(paths.stem(name)) :]}: a part's or an assembly's name is its number, and "
-                "its title says what it is",
-                code="bad_part_number",
-                name=name,
-            )
-        # Another file has it (where the user may not see it: the number says no more than that).
-        raise Conflict(
-            f"{own} is another file's part number: a part or an assembly takes a number of its own",
-            code="part_number_taken",
-            name=name,
-        )
-    if holder is None:
-        raise ApiError(
-            f"No part or assembly has {own}: a drawing, a PDF, or an export is named after the number of what it's "
-            "of, once that's in the vault",
-            code="unknown_part_number",
-            name=name,
-        )
-    return None
+    )
+    kind = db.get(PartKind, numbered.kind) if unused is not None else None
+    return unused if kind is not None and numbers.fits(kind.applies, name) else None
 
 
 def _taking_order(name: str) -> int:

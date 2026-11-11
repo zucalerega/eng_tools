@@ -88,12 +88,13 @@ replaces Kenesto.
   isn't a new version and doesn't need it checked out. A renamed file lists the names it
   had ("Formerly …"), and search finds it by them too.
 - **Part numbers** (`00000123-001`: eight digits the vault hands out in order, then a
-  kind, from a list admins keep) name parts and assemblies, for good: a numbered file
-  can't be renamed, and a name that looks like a part number has to be one the vault
-  handed out. A drawing or PDF of a numbered part is named after its number
+  kind, from a list admins keep) name parts and assemblies, for good: a file that took one
+  can't be renamed. A file takes a number when it's named by exactly one the vault handed
+  out; any other name that looks like a number (your team's own, say) goes in as it is. A
+  drawing or PDF of a numbered part is named after its number
   (`00000123-001 - machining.SLDDRW`). Vendors' parts keep their vendors' names. Ground
-  Structures' numbers from before part numbers stay as they are; its new files take new
-  numbers. Once an admin turns them on, **New part** or **New assembly** in the web app asks
+  Structures' numbers stay as they are, and its new files can use the vault's numbers or
+  the team's own. Once an admin turns them on, **New part** or **New assembly** in the web app asks
   what kind it is and what it's called (its title), gets the next number (numbers you got and
   haven't used yet come first), and starts it in SolidWorks. When you upload vendors' parts,
   tick that they're vendors': they keep their names. Admins turn numbers on (offered, then

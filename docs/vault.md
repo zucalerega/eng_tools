@@ -168,18 +168,22 @@ or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says w
   until the vault's files are numbered (docs/renumbering.md), when only admins get numbers (the renumbering hands
   them out itself); `offer`, when editors get them too, up to 20 unused at a time
   (`too_many_numbers`), and the web app and the add-in number new parts and assemblies; and
-  `require`, when a new part, assembly, STEP or STL file needs a number or to be a vendor's
-  part (`part_number_needed`). Files there before go on as they are.
-- **Taking one:** a new part or assembly (or a STEP or STL file of our own) named by a
-  number handed out and not yet used takes it, for good, and with it the title it was handed
-  out with, unless it brings its own. A number not handed out (`unknown_part_number`), or
-  another file's (`part_number_taken`), or of a kind for something else, or a part's name
-  with more than its number in it (`bad_part_number`), is refused. Who it was handed out to
-  doesn't matter: whoever checks in a file named by it takes it.
+  `require`, when a new part, assembly, STEP or STL file needs a name that starts like a
+  number, or to be a vendor's part (`part_number_needed`). Files there before go on as they
+  are.
+- **Taking one:** a new part or assembly (or a STEP or STL file of our own) named by exactly
+  a number handed out and not yet used, of a kind for what it is, takes it, for good, and
+  with it the title it was handed out with, unless it brings its own. Who it was handed out
+  to doesn't matter: whoever checks in a file named by it takes it. Any other name that
+  starts like a number goes in as it is, without one: a number not handed out (a team's own,
+  as Ground Structures', below), another file's (a copy's), one handed out for another kind,
+  or one with more after it. Until November 2026 these were refused (`unknown_part_number`,
+  `part_number_taken`, `bad_part_number`), which kept Ground Structures from checking in its
+  parts.
 - **Named after one:** a drawing, a PDF, or an export (a STEP or STL file) of a numbered
-  part is named after its number, `00000123-001.SLDDRW` or `00000123-001 - machining.PDF`,
-  once a file has it (`unknown_part_number` otherwise). In a check-in, parts and assemblies
-  take their numbers before the files named after them, so they can go in together.
+  part is named after its number, `00000123-001.SLDDRW` or `00000123-001 - machining.PDF`.
+  In a check-in, parts and assemblies take their numbers before the files named after them,
+  so they can go in together.
 - **Never changing:** a file with a number can't be renamed to anything else
   (`part_number_fixed`), though it can move. A file without one can be renamed to a number
   handed out, and takes it. A drawing renamed stays named after what it shows
@@ -192,7 +196,10 @@ or an assembly's number is its name, `00000123-001.SLDPRT`, and its title says w
   assembly), and some have more after them (`00000004-010-6`). They keep their names
   (migration 0021 records them as `legacy` numbers, which several files may share), and
   the numbers handed out start after the largest any file's name had (00000022). New
-  Ground Structures files take new numbers.
+  Ground Structures files may take the vault's numbers, or go on with the team's own:
+  those go in by their names, as any name does, and aren't the vault's part numbers, so
+  they can be renamed. The vault hands out its numbers without looking at them, so one of
+  the team's may come to be a number the vault hands out for another file.
 - A check-in item's `base_version` says which version its changes start from: if the file
   is past it, the check-in is refused (`out_of_date`), so a change made to an old copy
   isn't checked in over newer ones.

@@ -546,18 +546,15 @@ a number. A few codes come up in more than one place.
   one, shorter if need be.
 - **... needs a part number** (`part_number_needed`): new parts and assemblies take part numbers
   now (Admin > Part numbers). Start them with *New part* or *New assembly*, in the web app or in
-  SolidWorks, which gives them one; for a vendor's part, say it's a vendor's.
-- **... wasn't handed out**, or **No part or assembly has ...** (`unknown_part_number`): a file is
-  named by a part number the vault never gave out, or a drawing, PDF, or export is named after the
-  number of a part that isn't in the vault yet. Get a number with *New*, or check the part in
-  first.
-- **... was handed out for ..., so it can't be ...'s**, **Call it ...**, **... is named by a part
-  number, so it isn't a vendor's part**, or **... isn't a part number, like 00000123-001**
-  (`bad_part_number`): the number doesn't fit the file: it's of another kind (a part's number on an
-  assembly, say), the name has more than the number, or it isn't a part number at all. Name the
-  file by its number alone (its title says what it is), or get a number of the right kind.
-- **... is another file's part number** (`part_number_taken`): each part or assembly has a number
-  of its own. Get one with *New*.
+  SolidWorks, which gives them one, or name them by your team's own numbers; for a vendor's part,
+  say it's a vendor's.
+- **... is named by a part number, so it isn't a vendor's part**, or **... isn't a part number,
+  like 00000123-001** (`bad_part_number`): a file named by a part number can't be marked a
+  vendor's, and a number you give back has to be written as one.
+- A name that looks like a part number the vault didn't hand out (your team's own), or one
+  another file has, or one with more after it, isn't refused: the file goes in by its name, without
+  taking a number. Until November 2026 the vault refused these (`unknown_part_number`,
+  `part_number_taken`, and `bad_part_number`'s **Call it ...**).
 - **... is named by its part number, ..., which never changes** (`part_number_fixed`): a numbered
   file keeps its name. To say what it is, change its title instead.
 - **... is a file's, for good** (`part_number_used`): a number a file has taken can't be given back.

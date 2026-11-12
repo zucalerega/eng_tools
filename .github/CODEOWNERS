@@ -1,0 +1,4 @@
+# Every change to main needs the owner's approval: with main's ruleset requiring a code owner's review, a pull request
+# can't merge until @zucalerega approves it. (The owner merges their own, and Claude's, through the ruleset's admin
+# bypass, since GitHub doesn't let a pull request's author approve it.)
+* @zucalerega

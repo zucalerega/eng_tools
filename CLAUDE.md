@@ -75,7 +75,8 @@ cd web && npm ci && npm run check && npm test && npm run build
 
 - **`main` is always releasable.** Work on a branch, open a PR, and merge only when
   CI is green. One logical change per PR. Never push to `main` directly or rewrite
-  its history.
+  its history. `.github/CODEOWNERS` names the owner as the code owner of everything, so
+  where `main`'s ruleset requires a code owner's review, a PR merges only once they approve it.
 - **Commits:** an imperative subject line of at most 72 characters ("Add undo for
   check-outs"), and a body that explains why. Every commit builds and passes tests.
 - **Done means** the code, its tests, and the docs it affects are in the same PR,

@@ -9,6 +9,22 @@
     gap: 16px;
 }
 
+.tempo-workspace-page button,
+.tempo-workspace-page input,
+.tempo-workspace-page select,
+.tempo-page button,
+.tempo-page input,
+.tempo-page select {
+    font-family: inherit;
+}
+
+.tempo-workspace-page code,
+.tempo-workspace-page pre,
+.tempo-page code,
+.tempo-page pre {
+    font-family: var(--font-mono);
+}
+
 .tempo-header,
 .tempo-page-head {
     display: flex;
@@ -288,7 +304,9 @@
 
 .tempo-env-title h3 {
     margin: 0;
+    font-family: var(--font-brand);
     font-size: 14px;
+    font-weight: 600;
 }
 
 .tempo-count-badge {
@@ -321,8 +339,24 @@
     flex-direction: column;
     gap: 3px;
     font-size: 12px;
+    font-weight: 500;
     color: var(--muted);
     flex: 1;
+}
+
+.tempo-field-caption {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    margin: 6px 0 4px;
+}
+
+.tempo-env-field input[type="number"],
+.tempo-truth-row input,
+.tempo-sample-row input[type="number"] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
 }
 
 .tempo-env-field input,
@@ -415,7 +449,9 @@
 }
 
 .tempo-truth-head {
+    font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.03em;
     color: var(--muted);
 }
 

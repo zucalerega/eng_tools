@@ -95,7 +95,7 @@ export interface SimulationResult {
     stdout: string;
     simulation?: {
         initial_valves: Record<string, string>;
-        sensors: SensorTrace[];
+        sensors: SensorTrace[] | Record<string, Omit<SensorTrace, "name"> & { name?: string }>;
         sensor_read_lines: Record<string, number[]>;
         abort_stages: AbortStageCoverage[];
         aborted: boolean;

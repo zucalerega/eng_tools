@@ -95,7 +95,16 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
     const events = result.events || [];
     const sim = result.simulation;
     const initialValves = sim?.initial_valves ?? {};
-    const sensors = sim?.sensors ?? [];
+    const sensors: SensorTrace[] = useMemo(() => {
+        const raw = sim?.sensors;
+        if (!raw) {
+            return [];
+        }
+        if (Array.isArray(raw)) {
+            return raw;
+        }
+        return Object.entries(raw).map(([name, trace]) => ({ ...trace, name }));
+    }, [sim?.sensors]);
     const abortStages: AbortStageCoverage[] = sim?.abort_stages ?? [];
 
     const valveNames = useMemo(() => {

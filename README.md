@@ -125,7 +125,8 @@ replaces Kenesto.
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
   part on its own. Nothing in it changes a file. STEP, IGES, and STL files open as they are.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in; for any other version, the server reads the 3D view SolidWorks
+  version it checks in, exactly what SolidWorks drew, which takes the place of any the server
+  read before; for any other version, the server reads the 3D view SolidWorks
   saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. Pick
   another configuration from the Configuration list: the server reads it from the solid
   SolidWorks keeps of it in the file, which SolidWorks does for each configuration that was up

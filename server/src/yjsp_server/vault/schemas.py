@@ -577,7 +577,8 @@ class CaliperMissingIn(BaseModel):
 
 
 class CaliperMissingOut(BaseModel):
-    missing: list[CaliperWantIn]  # those that have no model yet, of files you can see
+    # Those that have no model made in SolidWorks yet (one the server read counts as missing), of files you can see.
+    missing: list[CaliperWantIn]
 
 
 class DrawingPdfOut(BaseModel):

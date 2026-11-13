@@ -15,7 +15,7 @@ from sqlalchemy import select
 from yjsp_server.vault import parasolid, solidworks
 from yjsp_server.vault.models import CaliperModel, Version
 
-from .test_caliper import IDENTITY, mesh, put_model
+from .test_caliper import CORNERS, IDENTITY, mesh, put_model
 from .test_caliper import component as model_component
 
 FIXTURES = Path(__file__).parent / "fixtures" / "solidworks"
@@ -1378,6 +1378,39 @@ def test_models_from_before_the_server_noted_their_reader_are_told_apart(team, c
         {"Default": None},
         {"Default": None},
     ]
+
+
+def test_a_model_made_in_solidworks_takes_the_place_of_one_the_server_read(team, client):
+    """What SolidWorks drew is what a model should show: one the server read from the file counts as missing to Vault for
+    SolidWorks, which makes its own in its place, as anyone who may add a model may. One made in SolidWorks stays, and
+    only an editor of its folder makes it again."""
+    chief = team.member("chief@x.test", admin=True)
+    bob = team.member("bob@x.test")  # edits Structures, and sees Servo
+    case = files(team.checkin(chief, {"Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT")}))[
+        "Servomoteur.SLDPRT"
+    ]
+    team.checkin(chief, {"Structures/Fin.SLDPRT": b"fin"})
+    team.grant(chief, "", None, "viewer")
+    team.grant(chief, "Structures", "bob@x.test", "editor")
+
+    def missing(who: dict[str, str]) -> list[str]:
+        body = {"models": [{"file_id": case["id"], "version": 1, "configuration": c} for c in ("Default", "Long")]}
+        response = client.post("/api/caliper/missing", json=body, headers=who)
+        assert response.status_code == 200, response.text
+        return [m["configuration"] for m in response.json()["missing"]]
+
+    assert make(client, bob, case).status_code == 200
+    assert readers(team, case) == {"Default": solidworks.READER}
+    assert missing(bob) == ["Default", "Long"]
+
+    first, second = team.upload(bob, mesh()), team.upload(bob, mesh(list(reversed(CORNERS))))
+    assert put_model(team, bob, case, mesh=first).status_code == 200
+    assert readers(team, case) == {"Default": 0}
+    assert missing(bob) == ["Long"]
+    assert make(client, bob, case).json()["created_by"]["email"] == "bob@x.test"  # not read again
+    again = put_model(team, bob, case, mesh=second)
+    assert (again.status_code, again.json()["error"]) == (403, "forbidden")
+    assert put_model(team, chief, case, mesh=second).status_code == 200
 
 
 def test_an_older_readers_model_stands_while_its_file_cant_be_read(team, client):

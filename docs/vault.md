@@ -565,8 +565,11 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   check-in.
 - **3D views for Caliper.** After a check-in, the add-in makes the 3D models (see
   "Caliper") of each checked-in part or assembly that SolidWorks has open, and of the parts
-  and rigid sub-assemblies it uses that have none, each of the vault version that's here
-  (`CaliperModels` in Vault.Client: it asks the server which are missing, then saves those).
+  and rigid sub-assemblies it uses that have none made in SolidWorks, each of the vault version
+  that's here (`CaliperModels` in Vault.Client: it asks the server which are missing, then
+  saves those). A model the server read from the file counts as missing, so SolidWorks' own
+  takes its place: it's what SolidWorks drew, where the server's is its reading of what
+  SolidWorks saved.
   Make 3D view does it for the active document. SolidWorks gives what it draws (each face's
   display triangles, `IFace2.GetTessTriangles`; a component's bodies come in its part's
   coordinates, in the configuration it uses) and where each component is (`Transform2`,
@@ -894,8 +897,9 @@ Where the 3D comes from:
 A model shows what the vault lets you see: a component in a file you can't see is left
 out, with everything in it, and the page says how many were. Anyone who may upload (an
 editor anywhere) and can see a file can add a model its version doesn't have yet, as the
-add-in does for every part of an assembly it checks in; making one again, in place of the
-one there, takes editor rights to the file's folder. Anyone who can see a file can have the
+add-in does for every part of an assembly it checks in, or one in place of a model the server
+read from the file, as SolidWorks' own is the better; making one again, in place of one made
+in SolidWorks, takes editor rights to the file's folder. Anyone who can see a file can have the
 server read its model from the file, as that adds nothing the file doesn't say. A model is
 made from its version and describes it: making one changes nothing in the file's history.
 
@@ -931,7 +935,7 @@ are in [design.md](design.md#api).
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); with `configuration`, in that one, which a part's is read from the solid SolidWorks kept of it; `unreadable_file`, `configuration_not_saved`, or `no_configuration` says why not |
 | `GET /api/files/{id}/caliper/configurations?version=` | a version's configurations, as its file lists them: whether SolidWorks had each open when it saved the file (`active`) and kept it up to date then (`saved`: the server can read it), and whether it has a model; then any others with models (`unreadable` says why the file's list couldn't be read) |
-| `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
+| `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model made in SolidWorks yet (one the server read counts as missing), of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 | `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |

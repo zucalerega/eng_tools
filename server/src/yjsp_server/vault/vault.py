@@ -2149,20 +2149,28 @@ def caliper_models(db: Session, store: BlobStore, user: User, file_id: int) -> l
     return [ModelView(model, number, users[model.created_by]) for model, number in rows]
 
 
-def caliper_missing(db: Session, user: User, wanted: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
-    """Which of these (file id, version, configuration) have no 3D model yet, of files the user can see: what Vault for
-    SolidWorks asks before making models, so it makes only those."""
+def caliper_missing(
+    db: Session, store: BlobStore, user: User, wanted: list[tuple[int, int, str]]
+) -> list[tuple[int, int, str]]:
+    """Which of these (file id, version, configuration) have no 3D model from SolidWorks yet, of files the user can see:
+    what Vault for SolidWorks asks before making models, so it makes only those. One the server read from the file
+    counts as missing, so SolidWorks' own, which shows exactly what SolidWorks drew, takes its place
+    (put_caliper_model)."""
     _, access = _context(db, user)
     files = _files_by_id(db, {file_id for file_id, _, _ in wanted})
     have: set[tuple[int, int, str]] = set()
     ids = sorted(files)
     for start in range(0, len(ids), _BATCH):
         rows = db.execute(
-            select(Version.file_id, Version.number, CaliperModel.configuration)
+            select(Version.file_id, Version.number, CaliperModel)
             .join(Version, Version.id == CaliperModel.version_id)
             .where(Version.file_id.in_(ids[start : start + _BATCH]))
         )
-        have.update((file_id, number, configuration) for file_id, number, configuration in rows)
+        have.update(
+            (file_id, number, model.configuration)
+            for file_id, number, model in rows
+            if _reader(store, model) == _UPLOADED
+        )
 
     def needs(file_id: int, version: int, configuration: str) -> bool:
         file = files.get(file_id)
@@ -2215,7 +2223,8 @@ def put_caliper_model(
     PUT /api/blobs/{sha256}), or an assembly's components.
 
     Anyone who may upload contents and can see the file may add a model its version doesn't have yet, as Vault for
-    SolidWorks does for each part of an assembly it checks in. Making one again, in place of the one there, takes
+    SolidWorks does for each part of an assembly it checks in; or one in place of a model the server read from the file,
+    as SolidWorks' own shows exactly what SolidWorks drew. Making one again in place of another made in SolidWorks takes
     editor rights to the file's folder. An assembly's components are a tree. Each names its file, a part or a
     sub-assembly, at a version and in a configuration; or carries its shape (mesh: a virtual part's, which the
     assembly keeps); and says where it is (transform: the rows of a 3 x 4 matrix to the assembly's coordinates,
@@ -2261,7 +2270,7 @@ def put_caliper_model(
     if model is None:
         model = CaliperModel(version_id=target.id, configuration=configuration)
         db.add(model)
-    else:
+    elif _reader(store, model) == _UPLOADED:
         access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
     model.units, model.mesh_sha256, model.components, model.reader = units, mesh, components, _UPLOADED
     model.created_at, model.created_by = utcnow(), user.id

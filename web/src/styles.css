@@ -2503,7 +2503,12 @@ input[type="checkbox"] {
     margin: 0.65rem 0 0;
 }
 
-.feedback-form textarea {
+/* Text boxes as tall as their rows, not one line as the site's are. */
+.feedback-form textarea,
+.feedback-actions textarea {
+    height: auto;
+    padding: 0.4rem 0.65rem;
+    line-height: 1.45;
     resize: vertical;
 }
 

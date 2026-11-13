@@ -11,8 +11,8 @@ team to keep running.
 
 This page is the site as a whole: how it's put together, sign-in and accounts, the web
 app's frame, the help and Claude, the API's conventions, the names from before YJSP, and
-deploying. Each app has its own: [vault.md](vault.md), [yorg.md](yorg.md), and
-[piper.md](piper.md).
+deploying. Each app has its own: [vault.md](vault.md), [yorg.md](yorg.md),
+[piper.md](piper.md), and [tempo.md](tempo.md).
 
 ## Context
 

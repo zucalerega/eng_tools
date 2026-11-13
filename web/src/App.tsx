@@ -8,6 +8,7 @@ import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { StorageBar } from "./storage";
 import { setTheme, useTheme, type Theme } from "./theme";
+import { inTempo, TEMPO, TEMPO_ICON, TempoMark, TempoPage, tempoSection, tempoWide } from "./tempo";
 import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, wholeWindow, withFolderTree } from "./vault";
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
@@ -49,6 +50,7 @@ export function App() {
     const yorg = inYorg(pathname);
     const vaultApp = inVault(pathname);
     const piperApp = inPiper(pathname);
+    const tempoApp = inTempo(pathname);
     // A link from before Vault moved under /vault goes on to the same page there, with its query; one to Yorg's preview,
     // to the page it previewed.
     const moved = movedToVault(pathname) ?? fromPreview(pathname);
@@ -67,16 +69,24 @@ export function App() {
         }
     }, [vaultApp, store]);
     useEffect(() => {
-        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : SITE;
+        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : tempoApp ? TEMPO : SITE;
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
         if (icon) {
             vaultIcon ??= icon.getAttribute("href");
             icon.setAttribute(
                 "href",
-                yorg ? YORG_ICON : vaultApp ? (vaultIcon ?? "") : piperApp ? PIPER_ICON : SITE_ICON,
+                yorg
+                    ? YORG_ICON
+                    : vaultApp
+                      ? (vaultIcon ?? "")
+                      : piperApp
+                        ? PIPER_ICON
+                        : tempoApp
+                          ? TEMPO_ICON
+                          : SITE_ICON,
             );
         }
-    }, [yorg, vaultApp, piperApp]);
+    }, [yorg, vaultApp, piperApp, tempoApp]);
     if (moved !== null) {
         return null; // for the moment it takes to go on to the page's new address
     }
@@ -86,7 +96,9 @@ export function App() {
           ? vaultSection(pathname)
           : piperApp
             ? piperSection(pathname)
-            : "";
+            : tempoApp
+              ? tempoSection(pathname)
+              : "";
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -112,6 +124,9 @@ export function App() {
                     <Link to="/piper" className="wordmark" aria-current={piperApp ? "page" : undefined}>
                         {PIPER}
                     </Link>
+                    <Link to="/tempo" className="wordmark" aria-current={tempoApp ? "page" : undefined}>
+                        {TEMPO}
+                    </Link>
                 </nav>
                 <nav className="nav" aria-label="Main">
                     {yorg ? (
@@ -129,12 +144,19 @@ export function App() {
                             {nav(`${VAULT}/activity`, "activity", "Activity")}
                             {nav(`${VAULT}/solidworks`, "solidworks", "SolidWorks")}
                         </>
+                    ) : piperApp ? (
+                        <>
+                            {nav("/piper", "diagrams", "Diagrams")}
+                            {nav("/piper/schemes", "schemes", "Schemes")}
+                            {nav("/piper/help", "help", "Help")}
+                        </>
                     ) : (
-                        piperApp && (
+                        tempoApp && (
                             <>
-                                {nav("/piper", "diagrams", "Diagrams")}
-                                {nav("/piper/schemes", "schemes", "Schemes")}
-                                {nav("/piper/help", "help", "Help")}
+                                {nav("/tempo", "workspace", "Workspace")}
+                                {nav("/tempo/tests", "tests", "Saved tests")}
+                                {nav("/tempo/environments", "environments", "Environments")}
+                                {nav("/tempo/help", "help", "Help")}
                             </>
                         )
                     )}
@@ -168,6 +190,10 @@ export function App() {
                 >
                     <PiperPage pathname={pathname} />
                 </main>
+            ) : tempoApp ? (
+                <main className={tempoWide(pathname) ? "main-wide" : undefined}>
+                    <TempoPage pathname={pathname} />
+                </main>
             ) : (
                 <main>
                     <Home pathname={pathname} />
@@ -181,7 +207,9 @@ export function App() {
                             ? { to: "/yorg/help", label: "Yorg's help" }
                             : vaultApp
                               ? { to: `${VAULT}/solidworks`, label: "SolidWorks" }
-                              : undefined
+                              : tempoApp
+                                ? { to: "/tempo/help", label: "Tempo's help" }
+                                : undefined
                     }
                     onClose={() => setHelping(false)}
                 />
@@ -215,6 +243,10 @@ function Home({ pathname }: { pathname: string }) {
                 <Link to="/piper" className="home-app">
                     <PiperMark size={44} />
                     <span className="home-app-name">{PIPER}</span>
+                </Link>
+                <Link to="/tempo" className="home-app">
+                    <TempoMark size={44} />
+                    <span className="home-app-name">{TEMPO}</span>
                 </Link>
             </div>
             <HomeStorage />

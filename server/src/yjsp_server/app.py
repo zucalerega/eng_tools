@@ -20,6 +20,7 @@ from .limits import BodyLimit
 from .piper import api as piper_api
 from .piper.diagrams import stored as piper_stored
 from .security import SecurityHeaders, hide_sign_in_codes
+from .tempo import api as tempo_api
 from .vault import api as vault_api
 from .vault.storage import BlobStore
 from .vault.vault import init_vault
@@ -103,6 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(yorg_system_api.router)
     app.include_router(yorg_scripts.router)
     app.include_router(piper_api.router)
+    app.include_router(tempo_api.router)
     web.mount_assets(app, settings)
     app.include_router(web.router)  # last: it takes every path nothing else did
     return app

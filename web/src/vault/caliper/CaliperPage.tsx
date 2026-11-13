@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Notice, usePopover } from "../../components";
 import { Link, navigate, useSearch } from "../../router";
-import { vaultApi, type CaliperConfigurations, type CaliperModel, type FileDetail } from "../api";
+import { vaultApi, type CaliperConfigurations, type CaliperModel, type CaliperParts, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
 import { caliperUrl, fileFormat, fileUrl, kindOf, sheetFormat } from "../paths";
 import { ComponentTree } from "./ComponentTree";
@@ -10,7 +10,7 @@ import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
 import { ModelSource, ShapeSources } from "./Sources";
-import { initiallyHidden, shownNodes, type Model, type Units, type Why } from "./model";
+import { initiallyHidden, shownNodes, walk, type Model, type Units, type Why } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
 
@@ -29,6 +29,7 @@ export function CaliperPage({ id }: { id: number }) {
     const params = new URLSearchParams(search);
     const askedVersion = Number(params.get("version")) || null;
     const askedConfiguration = params.get("configuration") || null;
+    const askedParts = ((value) => (value === "latest" || value === "checked_in" ? value : null))(params.get("parts"));
     const [detail, setDetail] = useState<FileDetail | null>(null);
     const [models, setModels] = useState<CaliperModel[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
@@ -179,6 +180,10 @@ export function CaliperPage({ id }: { id: number }) {
         (why(version, name) !== undefined ||
             fromFile?.configurations.some((c) => c.name === name && !c.saved && !c.model) === true);
     const showing = chosen?.configuration ?? askedConfiguration ?? savedIn ?? "";
+    // An assembly's parts: each at its latest, as SolidWorks shows it with the latest files; or, for an older version
+    // asked for, as it was checked in. Either, where asked.
+    const parts: CaliperParts =
+        askedParts ?? (askedVersion !== null && askedVersion !== file.version ? "checked_in" : "latest");
 
     return (
         <div className="caliper" ref={page}>
@@ -194,7 +199,14 @@ export function CaliperPage({ id }: { id: number }) {
                     <select
                         value={version}
                         onChange={(event) =>
-                            navigate(caliperUrl(file.id, Number(event.target.value), askedConfiguration ?? undefined))
+                            navigate(
+                                caliperUrl(
+                                    file.id,
+                                    Number(event.target.value),
+                                    askedConfiguration ?? undefined,
+                                    askedParts ?? undefined,
+                                ),
+                            )
                         }
                     >
                         {detail.versions.map((v) => (
@@ -210,7 +222,9 @@ export function CaliperPage({ id }: { id: number }) {
                         Configuration
                         <select
                             value={showing}
-                            onChange={(event) => navigate(caliperUrl(file.id, version, event.target.value))}
+                            onChange={(event) =>
+                                navigate(caliperUrl(file.id, version, event.target.value, askedParts ?? undefined))
+                            }
                         >
                             {configurations.map((name) => (
                                 <option key={name} value={name}>
@@ -222,6 +236,30 @@ export function CaliperPage({ id }: { id: number }) {
                     </label>
                 )}
                 {!cad && configurations.length === 1 && <span className="muted">{configurations[0]}</span>}
+                {chosen?.kind === "assembly" && (
+                    <label
+                        className="caliper-choice"
+                        title="Each part at its latest version, or at the one this version of the assembly was checked in with"
+                    >
+                        Parts
+                        <select
+                            value={parts}
+                            onChange={(event) =>
+                                navigate(
+                                    caliperUrl(
+                                        file.id,
+                                        askedVersion ?? undefined,
+                                        askedConfiguration ?? undefined,
+                                        event.target.value as CaliperParts,
+                                    ),
+                                )
+                            }
+                        >
+                            <option value="latest">Latest versions</option>
+                            <option value="checked_in">As checked in</option>
+                        </select>
+                    </label>
+                )}
                 {!reading && (cad || chosen) && <ModelSource model={cad ? null : chosen} />}
                 <span className="caliper-head-actions">
                     <OpenInSolidWorks path={file.path} />
@@ -255,11 +293,17 @@ export function CaliperPage({ id }: { id: number }) {
                 />
             ) : (
                 <CaliperView
-                    key={`${version}|${chosen?.configuration ?? ""}`}
+                    key={`${version}|${chosen?.configuration ?? ""}|${parts}`}
                     fileId={file.id}
                     name={file.name}
                     version={version}
                     model={chosen}
+                    parts={parts}
+                    setParts={(changed) =>
+                        navigate(
+                            caliperUrl(file.id, askedVersion ?? undefined, askedConfiguration ?? undefined, changed),
+                        )
+                    }
                 />
             )}
         </div>
@@ -387,11 +431,15 @@ function CaliperView({
     name,
     version,
     model: info,
+    parts,
+    setParts,
 }: {
     fileId: number;
     name: string;
     version: number;
     model: CaliperModel | null; // null: a STEP or IGES file, read as it is
+    parts: CaliperParts; // an assembly's: as checked in, or each at its latest
+    setParts(parts: CaliperParts): void;
 }) {
     const container = useRef<HTMLDivElement>(null);
     const viewer = useRef<Viewer | null>(null);
@@ -423,7 +471,7 @@ function CaliperView({
                 ? cadModel(fileId, version, name).then((model) => ({ model, leftOut: 0 }))
                 : info.kind === "part"
                   ? partModel(fileId, info).then((model) => ({ model, leftOut: 0 }))
-                  : assemblyModel(fileId, info, (done, total) => current && setProgress([done, total]));
+                  : assemblyModel(fileId, info, parts, (done, total) => current && setProgress([done, total]));
         loading.then(
             (result) => {
                 if (!current) {
@@ -442,7 +490,7 @@ function CaliperView({
         return () => {
             current = false;
         };
-    }, [fileId, version, name, info]);
+    }, [fileId, version, name, info, parts]);
 
     // The view, once there's somewhere to draw it.
     useEffect(() => {
@@ -588,6 +636,9 @@ function CaliperView({
                         can't see, so they're left out.
                     </p>
                 )}
+                {loaded && info?.kind === "assembly" && (
+                    <PartVersions model={loaded.model} version={version} parts={parts} setParts={setParts} />
+                )}
                 {missing && <NotShown tally={missing} />}
                 {loaded && info?.kind === "assembly" && <ShapeSources model={loaded.model} />}
                 {loaded && (
@@ -678,6 +729,68 @@ function CaliperView({
                     />
                 )}
             </section>
+        </div>
+    );
+}
+
+/**
+ * Which versions of an assembly's parts show, where that matters: at their latest, those changed since the assembly was
+ * checked in, which are where it put the versions it was checked in with, and those whose latest has no 3D model, which
+ * show that version instead; as checked in, how many have newer versions, and the way to see them.
+ */
+function PartVersions({
+    model,
+    version,
+    parts,
+    setParts,
+}: {
+    model: Model;
+    version: number;
+    parts: CaliperParts;
+    setParts(parts: CaliperParts): void;
+}) {
+    const nodes = [...walk(model.nodes)].filter((node) => node.file);
+    const newer = nodes.filter((node) => node.checkedIn != null && node.checkedIn !== node.file!.version);
+    const older = nodes.filter((node) => node.older);
+    const behind = nodes.filter((node) => node.latest !== undefined && node.latest > node.file!.version);
+    const count = (n: number) => (n === 1 ? "1 part or sub-assembly" : `${n} parts and sub-assemblies`);
+    if (parts === "checked_in") {
+        return behind.length === 0 ? null : (
+            <div className="caliper-side-note caliper-versions">
+                <p>
+                    {count(behind.length)} {behind.length === 1 ? "has" : "have"} a newer version than v{version} of the
+                    assembly was checked in with.{" "}
+                    <button type="button" className="button-small" onClick={() => setParts("latest")}>
+                        Show the latest
+                    </button>
+                </p>
+            </div>
+        );
+    }
+    if (newer.length === 0 && older.length === 0) {
+        return null;
+    }
+    return (
+        <div className="caliper-side-note caliper-versions">
+            {newer.length > 0 && (
+                <p>
+                    {count(newer.length)} changed since v{version} of the assembly was checked in:{" "}
+                    {newer.length === 1 ? "it shows" : "they show"} at
+                    {newer.length === 1 ? " its" : " their"} latest, where the assembly put the version it was checked
+                    in with. A change that moved what a part's mates hold shows once the assembly is checked in again
+                    from SolidWorks.
+                </p>
+            )}
+            {older.length > 0 && (
+                <p>
+                    {older.length === 1 ? "1 part shows" : `${older.length} parts show`} the version the assembly was
+                    checked in with, as {older.length === 1 ? "its" : "their"} latest has no 3D model yet (beside{" "}
+                    {older.length === 1 ? "it" : "each"}, why).
+                </p>
+            )}
+            <button type="button" className="button-small" onClick={() => setParts("checked_in")}>
+                Show it as checked in
+            </button>
         </div>
     );
 }

@@ -45,13 +45,25 @@ export function folderFromUrl(route: string): string {
 export const fileUrl = (id: number): string => `${VAULT}/file/${id}`;
 
 /** A file in Caliper, the 3D viewer: its latest version (or the one given), in a configuration if one is given. */
-export function caliperUrl(id: number, version?: number, configuration?: string): string {
+/**
+ * A file's page in Caliper: at a version and in a configuration, if asked; and for an assembly, its parts as it was
+ * checked in or at their latest (otherwise the latest, for its latest version, or as checked in, for an older one).
+ */
+export function caliperUrl(
+    id: number,
+    version?: number,
+    configuration?: string,
+    parts?: "checked_in" | "latest",
+): string {
     const query = new URLSearchParams();
     if (version !== undefined) {
         query.set("version", String(version));
     }
     if (configuration) {
         query.set("configuration", configuration);
+    }
+    if (parts) {
+        query.set("parts", parts);
     }
     return `${VAULT}/caliper/${id}` + (query.size > 0 ? `?${query}` : "");
 }

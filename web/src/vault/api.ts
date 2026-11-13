@@ -185,11 +185,16 @@ export interface CaliperConfigurations {
     unreadable: string | null; // why the file's own list couldn't be read: then those with models are listed
 }
 
+/** Which versions of an assembly's parts Caliper shows: the ones it was checked in with, or each one's latest. */
+export type CaliperParts = "checked_in" | "latest";
+
 /** A component of an assembly's model: a part or sub-assembly, where the assembly has it. */
 export interface CaliperComponent {
     name: string;
     file_id: number | null; // null: a virtual part, which the assembly keeps (its mesh is the assembly's)
-    version: number | null;
+    version: number | null; // the one shown: as the assembly was checked in, or its latest
+    checked_in_version?: number | null; // the one the assembly was checked in with; null if it wasn't in it
+    latest_version?: number | null; // its file's latest
     configuration: string;
     transform: number[]; // rows of a 3 x 4 matrix to the assembly's coordinates (mm)
     hidden: boolean;
@@ -306,8 +311,11 @@ export const vaultApi = {
     /** A version's configurations: which SolidWorks saved it in, which it kept, and which have models. */
     caliperConfigurations: (fileId: number, version: number) =>
         request<CaliperConfigurations>("GET", `/api/files/${fileId}/caliper/configurations?` + query({ version })),
-    caliperAssembly: (fileId: number, version: number, configuration: string) =>
-        request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
+    caliperAssembly: (fileId: number, version: number, configuration: string, parts: CaliperParts = "checked_in") =>
+        request<CaliperAssembly>(
+            "GET",
+            `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration, parts }),
+        ),
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */
     caliperMesh: (fileId: number, version: number, configuration: string, mesh?: string) =>
         requestBytes(`/api/files/${fileId}/caliper/mesh?` + query({ version, configuration, mesh })),

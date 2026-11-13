@@ -548,6 +548,10 @@ class CaliperModelIn(BaseModel):
 
 
 class CaliperComponentOut(CaliperComponentIn):
+    # Its version is the one shown: the one the assembly was checked in with, or with parts=latest its file's latest
+    # (a rigid sub-assembly's, where that has a model: its components then are that version's).
+    checked_in_version: int | None = None  # the one the assembly was checked in with; None if it wasn't in it
+    latest_version: int | None = None  # its file's latest
     model: bool  # whether its file has a model of its own, at its version and in its configuration
     # Where its shape came from (CaliperModelOut.source): its file's own model's, or the one its mesh is; None where it
     # has neither yet.

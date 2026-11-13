@@ -107,7 +107,7 @@ from xml.etree import ElementTree
 
 from ..errors import ApiError
 from . import brep, parasolid
-from .caliper import MeshBody, MeshFace, Rgb
+from .caliper import MeshBody, MeshFace, Rgb, compose
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
 # This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
@@ -1218,16 +1218,6 @@ def _nodes(data: bytes) -> list[_Node]:
     return found
 
 
-def _compose(parent: list[float], child: list[float]) -> list[float]:
-    """Where a component of a sub-assembly is in the top assembly: the sub-assembly's place, then the component's."""
-    rows = []
-    for i in range(3):
-        for j in range(4):
-            value = sum(parent[4 * i + k] * child[4 * k + j] for k in range(3))
-            rows.append(value + (parent[4 * i + 3] if j == 3 else 0))
-    return rows
-
-
 def _xml_rows(text: str) -> list[float]:
     """swTransform: a 4 x 4 matrix in meters, by rows, that points multiply from the left."""
     try:
@@ -1347,7 +1337,7 @@ def _read_assembly(data: bytes, configuration: str | None) -> list[Assembly]:
         for ref, used, file, assembly, virtual in refs:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
-            rows = own if place is None else _compose(place, own)
+            rows = own if place is None else compose(place, own)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
             inside = next((f for n in _kept_names(ref, assembly) if (f := streams.get(n))), None) if virtual else None

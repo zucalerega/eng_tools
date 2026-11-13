@@ -160,10 +160,17 @@ def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB, store
 
 @router.get("/files/{file_id}/caliper/assembly")
 def get_caliper_assembly(
-    file_id: int, user: ActiveUser, db: DB, store: Store, version: int, configuration: str
+    file_id: int,
+    user: ActiveUser,
+    db: DB,
+    store: Store,
+    version: int,
+    configuration: str,
+    parts: vault.Parts = "checked_in",
 ) -> CaliperAssemblyOut:
-    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own."""
-    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration))
+    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own;
+    its parts at the versions it was checked in with, or with parts=latest, each at its latest."""
+    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration, parts))
 
 
 @router.get("/files/{file_id}/caliper/mesh", response_class=FileResponse)

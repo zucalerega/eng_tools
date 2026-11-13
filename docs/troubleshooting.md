@@ -215,6 +215,14 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   none of whose parts are in the vault. *Make 3D view* in SolidWorks makes the first three; the last
   need their parts in the vault. Parts in folders you can't see are left out, and the page says how
   many.
+- **Caliper shows a part that's out of date, or out of place, in an assembly.** An assembly's latest
+  version shows each part's latest version, marked *Changed since* where it was checked in after the
+  assembly; a part marked *Not the latest* has no 3D model of its latest version Caliper could make
+  (hover over the mark for why: a configuration its file kept no shape of, say), so it shows the
+  version the assembly was checked in with. Open the part in SolidWorks and click *Make 3D view* to
+  make it. A part changed since sits where the assembly had the older one, as Caliper can't solve
+  mates: check the assembly in again from SolidWorks and it's where SolidWorks puts it. *Parts: As
+  checked in* shows the assembly exactly as it was checked in.
 - **Caliper says a part is "Caliper's triangles of the solid" or "Read from the file".** No one has
   checked that version in from SolidWorks with Vault for SolidWorks since Caliper began making its
   models (from Kenesto, say, or uploaded in the web app), so the server read it from the file. It's

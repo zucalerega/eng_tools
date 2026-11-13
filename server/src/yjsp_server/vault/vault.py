@@ -2714,18 +2714,127 @@ def caliper_configurations(db: Session, store: BlobStore, user: User, file_id: i
     return ConfigurationsView(version, configurations, unreadable)
 
 
+# Which versions of its parts an assembly's model shows: the ones it was checked in with, or each one's latest.
+Parts = Literal["checked_in", "latest"]
+# How near a sub-assembly's parts must be to where its own model has them for it to count as rigid: a move in mm, and a
+# turn's every number (the same that SolidWorks' places, read from its file or given by SolidWorks, come to).
+_NEAR_MOVE, _NEAR_TURN = 0.01, 1e-4
+
+
+def _current_model(db: Session, store: BlobStore, file_id: int, number: int, configuration: str) -> CaliperModel | None:
+    """A version's model in a configuration (the first made where the configuration isn't known), unless an older
+    reader made it."""
+    found = (
+        select(CaliperModel)
+        .join(Version, Version.id == CaliperModel.version_id)
+        .where(Version.file_id == file_id, Version.number == number)
+        .order_by(CaliperModel.id)
+    )
+    if configuration:
+        found = found.where(CaliperModel.configuration == configuration)
+    model = db.scalars(found).first()
+    return None if model is None or _outdated(store, model) else model
+
+
+def _placed(place: list[float], components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A sub-assembly's own model's components, where it is: placed in the assembly it's in, at every level (each
+    level's places are relative to the sub-assembly, as an assembly's model has them). They weren't part of the
+    assembly's check-in, so none has a version it was checked in with."""
+    return [
+        {
+            **component,
+            "transform": caliper.compose(place, component["transform"]),
+            "checked_in_version": None,
+            "children": _placed(place, component.get("children") or []),
+        }
+        for component in components
+    ]
+
+
+def _rigid_in(place: list[float], own: list[dict[str, Any]], children: list[dict[str, Any]]) -> bool:
+    """Whether a sub-assembly's components are where its own model has them (own), as in a rigid one; a flexible one
+    has them where the assembly it's in moved them. Compared by their names; with none in common, it can't be told,
+    and it's taken as rigid, as sub-assemblies are unless made flexible."""
+    theirs = {component["name"]: component["transform"] for component in children}
+    pairs = [
+        (caliper.compose(place, component["transform"]), theirs[component["name"]])
+        for component in own
+        if component["name"] in theirs
+    ]
+    return all(
+        abs(a - b) <= (_NEAR_MOVE if i % 4 == 3 else _NEAR_TURN)
+        for mine, there in pairs
+        for i, (a, b) in enumerate(zip(mine, there, strict=True))
+    )
+
+
+def _latest_parts(
+    db: Session, store: BlobStore, components: list[dict[str, Any]], depth: int = 1
+) -> list[dict[str, Any]]:
+    """An assembly's components with each part at its file's latest version, as SolidWorks shows the assembly once its
+    files are the latest: placed where the assembly's model has the versions it was checked in with, which is where
+    they are unless the part's change moved what its mates hold. A part whose version changed shows its own model's
+    shape, not the one the assembly's 3D view kept of the older one. A sub-assembly with a newer version that has a
+    model shows that version's components, where they are in it (its parts added since, and moved), if it's rigid: a
+    flexible one's parts stay where the assembly moved them, each at its latest."""
+    files = _files_by_id(db, {c["file_id"] for c, _ in _walk(components) if c.get("file_id") is not None})
+    out = []
+    for component in components:
+        component = dict(component)
+        file = files.get(component["file_id"]) if component.get("file_id") is not None else None
+        children = component.get("children") or []
+        if file is None or component.get("version") is None or file.latest_version == component["version"]:
+            component["children"] = _latest_parts(db, store, children, depth + 1)
+        elif _caliper_kind(file.name) == "assembly" and depth < _MAX_DEPTH:
+            newer = _current_model(db, store, file.id, file.latest_version, component.get("configuration") or "")
+            older = _current_model(db, store, file.id, component["version"], component.get("configuration") or "")
+            rigid = older is None or not children or _rigid_in(component["transform"], older.components or [], children)
+            if newer is not None and newer.components is not None and rigid:
+                component["version"] = file.latest_version
+                children = _placed(component["transform"], newer.components)
+            component["children"] = _latest_parts(db, store, children, depth + 1)
+        else:
+            component["version"] = file.latest_version
+            if component.get("mesh") and not component.get("virtual"):
+                component["mesh"] = None  # the older version's, as the assembly's 3D view kept it
+        out.append(component)
+    return out
+
+
+def _as_checked_in(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """An assembly's model's components, each with the version of its file the assembly was checked in with."""
+    return [
+        {
+            **component,
+            "checked_in_version": component.get("version"),
+            "children": _as_checked_in(component.get("children") or []),
+        }
+        for component in components
+    ]
+
+
 def caliper_assembly(
-    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str
+    db: Session,
+    store: BlobStore,
+    user: User,
+    file_id: int,
+    version: int,
+    configuration: str,
+    parts: Parts = "checked_in",
 ) -> AssemblyModel:
     """An assembly's model, with the components the user can see: one of a file they can't see is left out, with
-    everything in it, as the rest of the vault leaves out such files. A component whose file's model an older reader
-    made has none of its own (model), so Caliper has the server make it again."""
+    everything in it, as the rest of the vault leaves out such files. Its parts at the versions the assembly was checked
+    in with, or each at its latest (_latest_parts); each says both. A component whose file's model an older reader made
+    has none of its own (model), so Caliper has the server make it again."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     model = _find_model(db, tree, file, version, configuration)
     if model.components is None:
         raise ApiError(f"{tree.file_path(file)} is a part: its model is a mesh", code="bad_model")
-    walked = [component for component, _ in _walk(model.components)]
+    resolved = _as_checked_in(model.components)
+    if parts == "latest":
+        resolved = _latest_parts(db, store, resolved)
+    walked = [component for component, _ in _walk(resolved)]
     files = _files_by_id(db, {c["file_id"] for c in walked if c.get("file_id") is not None})
     # (file id, version, configuration) with models of their own, and where each came from.
     have: dict[tuple[int, int, str], Source] = {}
@@ -2769,12 +2878,13 @@ def caliper_assembly(
                     "source": shown,
                     "kind": kind,
                     "format": cad,
+                    "latest_version": file.latest_version if file is not None else None,
                     "children": children,
                 }
             )
         return kept
 
-    components = visible(model.components)
+    components = visible(resolved)
     creator = _users(db, {model.created_by})[model.created_by]
     return AssemblyModel(ModelView(model, version, creator, source), components, left_out)
 
@@ -2783,12 +2893,14 @@ def caliper_mesh(
     db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str, mesh: str | None = None
 ) -> str:
     """The blob of a part's mesh; or, given mesh, of a shape an assembly's model carries (a virtual part's), if a
-    component the user can see has it."""
+    component the user can see has it: as the assembly was checked in, or with its parts at their latest, where a newer
+    sub-assembly's model carries it."""
     if mesh is not None:
-        assembly = caliper_assembly(db, store, user, file_id, version, configuration)
-        if not any(component.get("mesh") == mesh for component, _ in _walk(assembly.components)):
-            raise NotFound("No component of the assembly that you can see has that shape", code="no_model")
-        return mesh
+        for parts in get_args(Parts):
+            assembly = caliper_assembly(db, store, user, file_id, version, configuration, parts)
+            if any(component.get("mesh") == mesh for component, _ in _walk(assembly.components)):
+                return mesh
+        raise NotFound("No component of the assembly that you can see has that shape", code="no_model")
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     model = _find_model(db, tree, file, version, configuration)

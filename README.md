@@ -135,7 +135,15 @@ replaces Kenesto.
   it, check the file out, show that configuration (or add the mark), save, and check it in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
-  configurations; Caliper lists the parts it couldn't show, and why. A part saved without
+  configurations; Caliper lists the parts it couldn't show, and why. An assembly's latest
+  version shows each part's latest version, as SolidWorks does once you have the latest files,
+  so a part checked in since shows without the assembly being checked in again; it's marked
+  **Changed since**, and sits where the assembly had the version it was checked in with (a
+  change that moves what its mates hold shows once the assembly is checked in again). A
+  sub-assembly checked in since shows its parts as they are now. A part whose latest has no
+  3D model shows the version the assembly was checked in with, marked **Not the latest**. Pick
+  **Parts: As checked in** to see the parts the assembly was checked in with, as an older
+  version of it shows them. A part saved without
   its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
   in the colors SolidWorks shows, and so are routed tubes, which their assembly keeps inside
   its file. The server reads a version's model once and keeps it; when an update reads files

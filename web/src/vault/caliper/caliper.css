@@ -252,6 +252,22 @@
     margin: 0.3rem 0;
 }
 
+.caliper-since {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.caliper-versions p {
+    margin: 0 0 0.4rem;
+}
+
+.caliper-versions {
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+}
+
 .caliper-sources ul {
     margin: 0.25rem 0 0;
     padding: 0;

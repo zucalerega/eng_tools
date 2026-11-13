@@ -37,7 +37,13 @@ export interface Node {
     id: string; // where it is in the tree: "2/0/1"
     name: string;
     kind: "assembly" | "part" | "body";
-    file?: FileRef;
+    file?: FileRef; // at the version shown
+    // In an assembly: the version of its file the assembly was checked in with (null: it wasn't in that check-in, but
+    // is in a sub-assembly's version since); and its file's latest.
+    checkedIn?: number | null;
+    latest?: number;
+    // Shown at the version the assembly was checked in with, though its latest was asked for: why the latest isn't.
+    older?: string;
     matrix: number[]; // 4 x 4, by columns (as three.js keeps them): from its shape's coordinates to the model's
     shape?: Shape;
     hidden: boolean; // as SolidWorks had it

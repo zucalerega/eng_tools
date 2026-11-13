@@ -50,6 +50,9 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
     const latest = node.file ? vault.files.get(node.file.id) : undefined;
     const file = latest?.name;
     const titled = latest ? titleBeside(latest) : null; // what its file is called, where the name doesn't say
+    const newest = node.latest ?? latest?.version; // its file's latest version
+    // Shown at a newer version than the assembly was checked in with (its latest, asked for).
+    const since = node.file && node.checkedIn != null && node.checkedIn !== node.file.version ? node.checkedIn : null;
     return (
         <li
             role="treeitem"
@@ -95,7 +98,20 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                 {node.file && (
                     <span className="muted caliper-version">
                         v{node.file.version}
-                        {latest && latest.version !== node.file.version && ` (now v${latest.version})`}
+                        {newest !== undefined && newest > node.file.version && ` (now v${newest})`}
+                    </span>
+                )}
+                {since !== null && (
+                    <span
+                        className="tag caliper-since"
+                        title={`The assembly was checked in with v${since}. This is v${node.file!.version}, the latest, where the assembly put v${since}.`}
+                    >
+                        Changed since
+                    </span>
+                )}
+                {node.older && (
+                    <span className="tag tag-warning" title={node.older}>
+                        Not the latest
                     </span>
                 )}
                 {node.problem && (

@@ -253,7 +253,12 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     const finOne = await screen.findByRole("checkbox", { name: "Show Fin-1" });
     expect((finOne as HTMLInputElement).checked).toBe(true);
     expect((tree().getByRole("checkbox", { name: "Show Fin-2" }) as HTMLInputElement).checked).toBe(false);
+    // Fin's v2 isn't a real SolidWorks part, so it has no 3D model: the fin shows v1, as the rocket was checked in,
+    // and says why.
     await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1 (now v2)")).toBeTruthy());
+    expect(within(finOne.closest("li")!).getByText("Not the latest").getAttribute("title")).toMatch(
+        /^v2, its latest, has no 3D model: .*It isn't a SolidWorks part that Caliper can read/,
+    );
     // Grain's file isn't a real SolidWorks part, so it has no 3D view to read.
     expect(screen.getByText("1 component isn't shown:")).toBeTruthy();
     expect(screen.getByText("1 part's file has no 3D view Caliper can read.")).toBeTruthy();
@@ -331,6 +336,79 @@ test("components in folders you can't see are left out, with what's in them", as
     expect(await screen.findByText(/1 component is in folders you can't see/)).toBeTruthy();
     expect(tree().getByRole("checkbox", { name: "Show Fin-1" })).toBeTruthy();
     expect(tree().queryByRole("checkbox", { name: "Show Motor-1" })).toBeNull();
+});
+
+test("an assembly's parts show at their latest versions, or as it was checked in", async () => {
+    const team = await Team.create();
+    const { fin, rocket: assembly } = await rocket(team);
+    await team.checkout(team.chief, "Fins/Fin.SLDPRT", "CHIEF-PC");
+    const [fin2] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin v2" }, { host: "CHIEF-PC" });
+    await team.model(team.chief, fin2!, { mesh: tetrahedra("Fin", "Tab") });
+
+    // As SolidWorks shows it once it has the latest files: the fin's v2, where the rocket put its v1.
+    const page = renderApp(team.chief, caliperUrl(assembly.id));
+    const finRow = async () => (await screen.findByRole("checkbox", { name: "Show Fin-1" })).closest("li")!;
+    expect(within(await finRow()).getByText("v2")).toBeTruthy();
+    expect(
+        within(await finRow())
+            .getByText("Changed since")
+            .getAttribute("title"),
+    ).toBe("The assembly was checked in with v1. This is v2, the latest, where the assembly put v1.");
+    const choice = screen.getByRole("combobox", { name: "Parts" }) as HTMLSelectElement;
+    expect(choice.value).toBe("latest");
+    expect(screen.getByText(/2 parts and sub-assemblies changed since v1 of the assembly was checked in/)).toBeTruthy();
+    expect(tree().getByRole("link", { name: "Open Fin-1 in Caliper" }).getAttribute("href")).toBe(
+        caliperUrl(fin.id, 2, "Default"),
+    );
+
+    // As it was checked in: the fin's v1, which says there's a newer one.
+    await userEvent.selectOptions(choice, "checked_in");
+    await waitFor(() => expect(within(screen.getAllByRole("treeitem")[0]!).getByText("v1 (now v2)")).toBeTruthy());
+    expect(screen.queryByText("Changed since")).toBeNull();
+    expect(screen.getByText(/2 parts and sub-assemblies have a newer version than v1 of the assembly/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Show the latest" }));
+    expect(within(await finRow()).getByText("v2")).toBeTruthy();
+    page.unmount();
+
+    // An older version of the assembly, asked for, shows as it was checked in.
+    await team.checkout(team.chief, "Rocket/Rocket.SLDASM", "CHIEF-PC");
+    await team.checkin(team.chief, { "Rocket/Rocket.SLDASM": "rocket v2" }, { host: "CHIEF-PC" });
+    renderApp(team.chief, caliperUrl(assembly.id, 1));
+    expect(within(await finRow()).getByText("v1 (now v2)")).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "Parts" }) as HTMLSelectElement).value).toBe("checked_in");
+});
+
+test("a sub-assembly checked in since shows its newer parts, its model made from its file", async () => {
+    // A rocket whose servo bay was checked in again since, as SparkFun's servo (server/tests/fixtures/solidworks): its
+    // v2 has no model yet, so the server reads it from the file, and the rocket shows its parts.
+    const team = await Team.create();
+    const [spline, , bay] = await team.checkin(team.chief, {
+        "Servo/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+        "Servo/Servomoteur.SLDPRT": await servo("Servomoteur.SLDPRT"),
+        "Servo/9347.SLDASM": "an empty bay",
+    });
+    const [assembly] = await team.checkin(
+        team.chief,
+        { "Rocket/Rocket.SLDASM": "rocket" },
+        { refs: { "Rocket/Rocket.SLDASM": ["Servo/9347.SLDASM"] } },
+    );
+    await team.model(team.chief, assembly!, {
+        components: [component("Bay-1", bay!, { children: [component("Embout-1", spline!)] })],
+    });
+    await team.checkout(team.chief, "Servo/9347.SLDASM", "CHIEF-PC");
+    await team.checkin(
+        team.chief,
+        { "Servo/9347.SLDASM": await servo("9347.SLDASM") },
+        { host: "CHIEF-PC", refs: { "Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"] } },
+    );
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    // The bay is all there is, so it's open.
+    expect(await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).toBeTruthy();
+    const bayRow = tree().getByRole("checkbox", { name: "Show Bay-1" }).parentElement!;
+    expect(within(bayRow).getByText("v2")).toBeTruthy();
+    expect(within(bayRow).getByText("Changed since")).toBeTruthy();
+    expect((await team.caliperModels(bay!.id)).map((model) => model.version)).toEqual([2]);
 });
 
 test("a version with no model says why; with none asked for, the newest that has one shows", async () => {

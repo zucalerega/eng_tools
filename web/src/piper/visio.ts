@@ -15,7 +15,7 @@ import {
     type Point,
     type Rotation,
 } from "./drawing";
-import { addPart, follow, obstacles, splitLine, updatePart } from "./edit";
+import { addPart, splitLine, traced, updatePart } from "./edit";
 import { fluidsOf, isGas, newFluidId } from "./fluids";
 import { dirOf, distance, nearestOnPolyline, simplify, type Box, type Dir } from "./geometry";
 import { figureOf, type Figure, type FigurePath, type FigureText } from "./library/figures";
@@ -1882,7 +1882,9 @@ function pageDrawing(page: VisioPage, title: string): { drawing: Drawing; report
             figurePart([shape], false);
             continue;
         }
-        const points = follow(route, fromPlaced, toPlaced, obstacles(drawing));
+        // As Visio drew it, on Piper's ports; unless that would loop round to a port that faces away from Visio's
+        // last bend a hair from it, when it's Piper's to route.
+        const { points, auto } = traced(drawing, from, to, route);
         const name = shape.master.toLowerCase();
         const pen = shape.pen;
         const look = pen ? sizeOfLook(pen) : null;
@@ -1909,7 +1911,7 @@ function pageDrawing(page: VisioPage, title: string): { drawing: Drawing; report
         const rest = !tag && !said && text && !fluidNamed(text, fluids) ? text : "";
         const line = newLine(from, to, {
             points,
-            auto: false,
+            auto,
             kind,
             fluid,
             tag: tag ?? "",

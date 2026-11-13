@@ -8,8 +8,10 @@ const CD: Field = { key: "cd", label: "Discharge coefficient", type: "text", pla
 export const orifice: Kind = {
     id: "orifice",
     name: "Orifice",
-    box: () => [-20, -9, 20, 9],
-    ports: () => inlinePorts(0), // the line runs on through it, as ISA draws an orifice plate in a pipe
+    box: () => [-10, -9, 10, 9],
+    // The line runs on through it, as ISA draws an orifice plate in a pipe: a plate, with a short run of pipe either side
+    // (half a valve's length in all), not a fitting as long as a valve.
+    ports: () => inlinePorts(0, 10),
     fields: [
         { key: "diameter", label: "Diameter", type: "text", placeholder: "0.062 in", prefix: "Ø " },
         CD,
@@ -20,9 +22,11 @@ export const orifice: Kind = {
     tag: "beside",
     inline: ["a", "b"],
     through: true,
-    draw: (_part, context) => (
+    // Its run of pipe is the line's, as wide as a pipe however big the orifice is drawn: drawn smaller (as Visio's are),
+    // it isn't a thinner stub either side of its plate.
+    draw: (part, context) => (
         <>
-            <path d="M-20 0 H20" stroke={context.pipe ?? context.ink} strokeWidth={2.5} />
+            <path d="M-10 0 H10" stroke={context.pipe ?? context.ink} strokeWidth={2.5 / part.scale} />
             <path d="M-2.5 -8 V8 M2.5 -8 V8" {...ink(context, 1.6)} />
         </>
     ),

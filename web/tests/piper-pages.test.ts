@@ -10,9 +10,9 @@ import {
     type Document,
     type Drawing,
 } from "../src/piper/drawing";
-import { addPart, drawingBox, sharedTags, updatePart } from "../src/piper/edit";
+import { addPart, copyItems, drawingBox, listParts, pasteClip, sharedTags, updatePart } from "../src/piper/edit";
 import { example } from "../src/piper/example";
-import { columnsOf, partsList, partsOf } from "../src/piper/parts";
+import { columnsOf, leftOutOf, partsList, partsOf } from "../src/piper/parts";
 import { findInDocument } from "../src/piper/find";
 import { presetOf } from "../src/piper/library/index";
 import { fitSheet, paperSize, pdfOfPages, sheetOutline } from "../src/piper/pdf";
@@ -240,4 +240,62 @@ test("a part placed on a page is numbered after the tags on the others, and warn
     expect(sharedTags(clash).has("BV-201")).toBe(true);
     // What's on the other pages isn't saved with the page.
     expect(JSON.stringify(withPage(document, 0, clash))).not.toContain("elsewhere");
+});
+
+test("a part drawn again on a combined page is pasted as a copy: its tag kept, and listed once", () => {
+    const { document, regulator, valve } = twoPages();
+    // The two pages drawn again on a third, the combined schematic: what's copied from each pasted onto it.
+    let combined = withPage(
+        { ...document, pages: [...document.pages, { ...documentOf(emptyDrawing(), "Combined").pages[0]! }] },
+        2,
+        emptyDrawing(),
+    );
+    for (const [index, id] of [
+        [0, regulator],
+        [1, valve],
+    ] as const) {
+        const clip = copyItems(pageOf(combined, index), new Set([id]))!;
+        combined = withPage(combined, 2, pasteClip(pageOf(combined, 2), clip, { x: 0, y: 200 }).drawing);
+    }
+    const copies = combined.pages[2]!.parts;
+    expect(copies.map((part) => [part.tag, part.unlisted])).toEqual([
+        ["PUREG", true],
+        ["BV-201", true],
+    ]);
+    // Listed once each, from the pages they print on; the copies counted as left out, and not warned of.
+    expect(partsOf(combined).map((row) => [row.cells.tag, row.cells.page])).toEqual([
+        ["BV-201", "GSE"],
+        ["PUREG", "Vehicle"],
+    ]);
+    expect(leftOutOf(combined)).toBe(2);
+    expect(sharedTags(pageOf(combined, 2)).size).toBe(0);
+    expect(sharedTags(pageOf(combined, 0)).size).toBe(0);
+    expect(partsList(combined).split("\r\n").filter(Boolean)).toHaveLength(3);
+
+    // Kept as saved, and read back.
+    expect(readDocument(JSON.parse(JSON.stringify(combined))).pages[2]!.parts.every((part) => part.unlisted)).toBe(
+        true,
+    );
+
+    // Pasted again on the page that has it, it's a part of its own: numbered anew, and listed.
+    const page = pageOf(combined, 2);
+    const again = pasteClip(page, copyItems(page, new Set([copies[1]!.id]))!, { x: 0, y: 400 });
+    const pasted = again.drawing.parts.find((part) => part.id === again.ids[0])!;
+    expect([pasted.tag, pasted.unlisted]).toEqual(["BV-202", undefined]);
+
+    // Put back in the list, a copy is a part listed twice, and warned of; left out again, it's not.
+    const both = listParts(page, new Set([copies[1]!.id]), true);
+    expect(both.parts[1]!.unlisted).toBeUndefined();
+    expect(sharedTags(both).has("BV-201")).toBe(true);
+    expect(partsOf(withPage(combined, 2, both)).map((row) => row.cells.tag)).toEqual(["BV-201", "BV-201", "PUREG"]);
+    expect(listParts(both, new Set([copies[1]!.id]), false).parts[1]!.unlisted).toBe(true);
+});
+
+test("a part pasted onto another page whose tag that page has already is numbered anew, as before", () => {
+    const { document, valve } = twoPages();
+    const vehicle = tagged(pageOf(document, 0), "ball-valve", "BV-201", 300).drawing;
+    const clip = copyItems(pageOf(document, 1), new Set([valve]))!;
+    const pasted = pasteClip(vehicle, clip, { x: 0, y: 200 });
+    const part = pasted.drawing.parts.find((each) => each.id === pasted.ids[0])!;
+    expect([part.tag, part.unlisted]).toEqual(["BV-202", undefined]);
 });

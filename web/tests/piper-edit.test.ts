@@ -7,6 +7,7 @@ import {
     type Drawing,
     type Line,
     type Part,
+    type Point,
 } from "../src/piper/drawing";
 import {
     addPart,
@@ -23,15 +24,18 @@ import {
     reconnect,
     reorderParts,
     sharedTags,
+    traced,
     turnParts,
+    updateLine,
     updatePart,
 } from "../src/piper/edit";
 import { example } from "../src/piper/example";
 import { presetOf } from "../src/piper/library/index";
 import { runOf } from "../src/piper/edit";
+import { dirOf } from "../src/piper/geometry";
 import { route } from "../src/piper/route";
 import { lineLabelPlaces } from "../src/piper/labels";
-import { partsById, pathOf, portOf, portsOf } from "../src/piper/ports";
+import { partsById, pathOf, placeEnd, portOf, portsOf } from "../src/piper/ports";
 import { boxOf } from "../src/piper/library/index";
 
 // The editor's changes to a drawing: placing and tagging parts, connecting them, tees, putting a part into a line,
@@ -203,13 +207,14 @@ test("moving a part routes its lines again; lines routed by hand keep their bend
         { x: 100, y: 0 },
         { x: 100, y: 140 },
     ]); // its upright segment stays where it was put
-    // Moved past the line's bend, the valve's port would face away from it: that end's routed around to it.
+    // Moved past the line's bend, the valve's port faces away from it: routed round to it, the line would loop back
+    // past the valve to keep a bend that's no use now, so it's routed afresh.
     drawing = moveItems(drawing, new Set([b]), { x: -140, y: 0 });
     expect(orthogonalPath(pipe)).toBe(true);
     const path = pathOf(partsById(drawing), line(pipe));
     const [last, previous] = [path[path.length - 1]!, path[path.length - 2]!];
     expect(previous.x).toBeLessThan(last.x); // in from the left, as the port faces
-    expect(line(pipe).points[0]).toEqual({ x: 100, y: 0 }); // and the bends it can keep, kept
+    expect([flaws(pipe), line(pipe).auto]).toEqual([[], true]);
     // Both ends moving together: the line moves with them, as it was.
     const before = line(pipe).points;
     drawing = moveItems(drawing, new Set([a, b]), { x: 50, y: 50 });
@@ -304,6 +309,186 @@ test("a selected line to a part that stayed keeps its hand routing, following th
         { x: 100, y: 0 },
         { x: 100, y: 140 },
     ]);
+});
+
+/**
+ * What's wrong with how a line's drawn: a run on a slant, one back over the last, one through a part not its own, or an
+ * end that leaves or comes in to its port another way than it faces.
+ */
+function flaws(id: string): string[] {
+    const ends = [line(id).from, line(id).to].map((end) => (isPortEnd(end) ? end.part : ""));
+    const boxes = drawing.parts.filter((each) => !ends.includes(each.id)).map((each) => boxOf(each, drawing));
+    const own = drawing.parts.filter((each) => ends.includes(each.id)).map((each) => boxOf(each, drawing));
+    const parts = partsById(drawing);
+    const path = pathOf(parts, line(id));
+    const found: string[] = [];
+    // Out of its ports, and in to them, the way they face.
+    const [from, to] = [placeEnd(parts, line(id).from)!, placeEnd(parts, line(id).to)!];
+    if (from.dir && path.length > 1 && dirOf(path[0]!, path[1]!) !== from.dir) {
+        found.push(`out of its first port the wrong way`);
+    }
+    if (to.dir && path.length > 1 && dirOf(path.at(-1)!, path.at(-2)!) !== to.dir) {
+        found.push(`in to its last port the wrong way`);
+    }
+    for (let index = 0; index + 1 < path.length; index++) {
+        const [a, b] = [path[index]!, path[index + 1]!];
+        if (a.x !== b.x && a.y !== b.y) {
+            found.push(`slanted from ${a.x},${a.y}`);
+        }
+        const c = path[index + 2];
+        if (c && (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) < 0) {
+            found.push(`back over itself at ${b.x},${b.y}`);
+        }
+        const [x0, x1, y0, y1] = [Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.y, b.y), Math.max(a.y, b.y)];
+        // Its own parts too, but where it goes into them.
+        const inner = index > 0 && index + 2 < path.length;
+        for (const box of inner ? [...boxes, ...own] : boxes) {
+            if (x0 < box.x1 - 1 && x1 > box.x0 + 1 && y0 < box.y1 - 1 && y1 > box.y0 + 1) {
+                found.push(`through a part from ${a.x},${a.y}`);
+            }
+        }
+    }
+    return found;
+}
+
+/** A line made as if routed by hand, as Visio's come in: its bends, kept until its ends move. */
+function byHand(id: string, points: Point[]) {
+    drawing = updateLine(drawing, id, (each) => ({ ...each, auto: false, points }));
+}
+
+test("a straight line routed by hand, its end moved off its line, is routed again: square, not slanted", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 0);
+    const pipe = join([a, "b"], [b, "a"]);
+    byHand(pipe, []);
+    // Along its line, it stays as it is: straight, and the drawer's.
+    drawing = moveItems(drawing, new Set([b]), { x: 40, y: 0 });
+    expect([flaws(pipe), line(pipe).points, line(pipe).auto]).toEqual([[], [], false]);
+    // Off it, a slant would join its ends: it's Piper's to route instead.
+    drawing = moveItems(drawing, new Set([b]), { x: 0, y: 40 });
+    expect(flaws(pipe)).toEqual([]);
+    expect([line(pipe).auto, line(pipe).points.length]).toEqual([true, 2]);
+});
+
+test("a line routed by hand that following a moved end would draw back over itself is routed again", () => {
+    fresh();
+    const a = place("ball-valve", 0, -100);
+    const b = place("ball-valve", 100, 0); // its b, at 120, faces right: the line comes in from the right
+    const pipe = join([a, "b"], [b, "b"]);
+    byHand(pipe, [
+        { x: 140, y: -100 },
+        { x: 140, y: 0 },
+    ]);
+    expect(flaws(pipe)).toEqual([]);
+    // Moved right, its port's past the line's last bend: the line can't come in from the right as it was.
+    drawing = moveItems(drawing, new Set([b]), { x: 40, y: 0 });
+    expect(flaws(pipe)).toEqual([]);
+    expect(line(pipe).auto).toBe(true);
+});
+
+test("a line routed by hand from Visio, with points on points and steps of a tenth, follows a move square", () => {
+    fresh();
+    const a = place("ball-valve", 0, -100);
+    const b = place("ball-valve", 200, 40);
+    const pipe = join([a, "b"], [b, "a"]);
+    // As a Visio connector comes in: a point twice, and a step too small to see.
+    byHand(pipe, [
+        { x: 100, y: -100 },
+        { x: 100, y: -100 },
+        { x: 100, y: 40.1 },
+        { x: 100, y: 40 },
+    ]);
+    drawing = moveItems(drawing, new Set([b]), { x: 0, y: 60 });
+    expect(flaws(pipe)).toEqual([]);
+});
+
+test("a line routed by hand over a part it isn't joined to (as Visio sets a quick disconnect on one) still follows", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 300, 0);
+    const pipe = join([a, "b"], [b, "a"]);
+    byHand(pipe, []);
+    place("quick-disconnect", 150, 0); // on the line, not in it
+    // Moved along its line, it stays as drawn: straight on over it, not routed off round it.
+    drawing = moveItems(drawing, new Set([b]), { x: 40, y: 0 });
+    expect(line(pipe)).toMatchObject({ auto: false, points: [] });
+});
+
+test("a line routed by hand whose ends both moved round past its bend is routed afresh, not wound round each", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0, { rotation: 270 }); // its b faces up
+    const b = place("ball-valve", -100, -60); // its b faces right
+    const pipe = join([a, "b"], [b, "b"]);
+    const corner = { x: portOf(part(a), "b")!.at.x, y: portOf(part(b), "b")!.at.y };
+    byHand(pipe, [corner]); // an L: up, then left in to b
+    expect(flaws(pipe)).toEqual([]);
+    // Moved up and away to the left, past b: the L's corner is behind both ports now.
+    drawing = moveItems(drawing, new Set([a]), { x: -200, y: -100 });
+    expect(flaws(pipe)).toEqual([]);
+    expect(line(pipe).auto).toBe(true);
+    expect(line(pipe).points.length).toBeLessThanOrEqual(3);
+});
+
+test("a line routed by hand stays as it is when its part changes but not where its end is", () => {
+    fresh();
+    const box = place("box", 0, 0); // its top at (0, -20)
+    const valve = place("ball-valve", 100, -100); // its b at (120, -100) faces right
+    const pipe = join([box, "top"], [valve, "b"]);
+    byHand(pipe, [{ x: 0, y: -100 }]); // as Visio might have it: in to b the wrong way, over the valve
+    // Wider: the ports on its sides move, not its top.
+    drawing = updatePart(drawing, box, (part) => ({ ...part, w: 120 }));
+    expect(line(pipe)).toMatchObject({ auto: false, points: [{ x: 0, y: -100 }] });
+});
+
+test("a line from Visio is kept as Visio drew it on Piper's ports, unless following it would loop round to one", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0);
+    const b = place("ball-valve", 200, 100);
+    const drawn = [
+        { x: 20, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 180, y: 100 },
+    ];
+    expect(traced(drawing, { part: a, port: "b" }, { part: b, port: "a" }, drawn)).toEqual({
+        points: drawn.slice(1, -1),
+        auto: false,
+    });
+    // Two ports facing each other a little apart, a hair out of line, and Visio's line in to the second from the side
+    // (Visio knows no way a port faces): followed, it would loop round to come in as the port faces.
+    const up = place("ball-valve", 0, 300, { rotation: 270 }); // its b, at (0, 280), faces up
+    const down = place("ball-valve", 0, 250, { rotation: 90 });
+    drawing = updatePart(drawing, down, (part) => ({ ...part, x: 1.5 })); // its b, at (1.5, 270), faces down
+    const across = traced(drawing, { part: up, port: "b" }, { part: down, port: "b" }, [
+        { x: 0, y: 280 },
+        { x: 0, y: 270 },
+        { x: 1.5, y: 270 },
+    ]);
+    expect(across.auto).toBe(true);
+    expect(across.points.length).toBeLessThanOrEqual(2); // a step across between them, no more
+});
+
+test("a line from Visio in to a port from the side keeps its way, turning in to the port as it faces", () => {
+    fresh();
+    const a = place("ball-valve", 0, 0); // its b, at (20, 0), faces right
+    const c = place("ball-valve", 100, 60, { rotation: 270 }); // its b, at (100, 40), faces up
+    // In to it from the left, as Visio draws (knowing no way a port faces): it comes round to turn in from above, no
+    // longer than Piper's own way there, and keeps the rest as drawn.
+    const drawn = [
+        { x: 20, y: 0 },
+        { x: 60, y: 0 },
+        { x: 60, y: 40 },
+        { x: 100, y: 40 },
+    ];
+    expect(traced(drawing, { part: a, port: "b" }, { part: c, port: "b" }, drawn)).toEqual({
+        points: [
+            { x: 60, y: 0 },
+            { x: 60, y: 20 },
+            { x: 100, y: 20 },
+        ],
+        auto: false,
+    });
 });
 
 test("a sensor made duplicated moves its side tap out, and its line follows", () => {

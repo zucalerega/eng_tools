@@ -75,6 +75,15 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   name (its box as wide as its words) until its words are changed; going there switches the
   page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
   connectors going nowhere.
+  A part can be drawn on more than one page: the pressurant and propellant systems on sheets of
+  their own, to print, and a combined schematic of both, to look at online. A copy is left out
+  of the parts list (`part.unlisted`, set from the inspector's **In the parts list**, for a part
+  or a selection, by `listParts`), so the list has each part once (`leftOutOf` counts the
+  copies, which the parts page says). Pasting a part whose tag is taken only on another page
+  keeps its tag and makes it a copy; one whose tag the page has already is numbered anew, and
+  listed. `sharedTags` warns of a tag two listed parts have (`Drawing.listedElsewhere`), not
+  of a copy. Find and a test's readings still find a copy, by its tag, and the simulation
+  takes every page's parts, copies too.
   Find, Parts, and the parts list look through every page. The server refuses a save in an
   older format than the diagram's drawing is in (409 `drawing_newer`, saying what it would
   lose): a tab still running the Piper from before pages would save one page and lose the
@@ -166,9 +175,11 @@ what it is, `data-hit`).
   as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
   14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
   a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
-  or before it for back pressure); an orifice's plate sits on a pipe that runs through it; a
-  vent is the spray of what it lets go, three dashed rays from its line's end in the line's
-  color; a pump stands on its base, its suction into its middle, its discharge leaving its top,
+  or before it for back pressure); an orifice's plate sits on a pipe that runs through it,
+  between ports 20 apart (half a valve's: a plate, not a fitting as long as a valve), the pipe
+  as wide as a line's however big the orifice is drawn; a vent is the spray of what it lets
+  go, three dashed rays from its line's end in the line's color; a pump stands on its base,
+  its suction into its middle, its discharge leaving its top,
   and a solid triangle in it pointing the way it pumps. The 3/2 and 5/2 solenoid valves are
   ISO 1219's directional control valves, as pneumatic schematics draw them: a box 40 across
   and 30 high for each of their two positions, with its flow paths (arrows) and shut ports (a
@@ -299,14 +310,28 @@ what it is, `data-hit`).
   with them once, as it was; a free end moves only with its line; and a junction comes along
   when every line through it goes to what's moving, so a tee picked up with the parts around it
   stays a tee. A line with an end that stays is routed again, or follows its end if it was
-  routed by hand, selected or not. Dragging a line's segment moves it, on the grid, and
-  routes that line by hand from then on: moving its parts then moves only the bends next to
-  them, and an end that comes to face away from its line is routed back around to it, never
-  through its part (`mendEnds`). Route automatically puts a line back, and Route again routes
-  one that routes itself afresh. Dragging a selected
-  line's end moves it to another port. Where two lines cross without joining, the one across
-  hops over the one down (`hops.ts`). A line's type (pipe, tubing, flex hose, pneumatic,
-  electrical, data) is its weight and dashes; flow arrows say which way it flows.
+  routed by hand, selected or not (and stays as it is if its part changed but its ports didn't
+  move). Dragging a line's segment moves it, on the grid, and routes that line by hand from
+  then on: moving its parts then moves only the bends next to them, and an end that comes to
+  face away from its line is routed back around to it, never through its part (`mendEnds`), a
+  route that sets off back along the line cut short where it turns (`unfold`). It keeps its
+  bends only while that leaves it clean and much as it was drawn (`followed`): out of its
+  ports and into them the way they face, never back over itself nor back beside itself a hair
+  away, through no part it wasn't through before (a quick disconnect Visio set on a line, not
+  into it, it may stay over), and, routed round to an end that came to face away from it, no
+  longer than a route of its own by more than a stub out and back (`asDrawn`: longer, it loops
+  round only to keep a bend that's no use now). Otherwise it's routed for itself, and routes
+  itself from then on: a straight line whose end moved off its line, a bend an end moved past.
+  The router keeps such moves tidy too: a stub that would run into a part close in front of
+  its port stops halfway to it; a part over an end (dropped on a port, or on a free end)
+  doesn't block the way to it; a route never turns back through a step narrower than half a
+  grid (two ends a hair out of line, as Visio places them), and it has lanes a stub either side
+  of an end to turn round by where no part beside it gives any (a figure's drawn behind the
+  lines). Route automatically puts a line back, and Route again routes one that routes itself
+  afresh. Dragging a selected line's end moves it to another port. Where two lines cross
+  without joining, the one across hops over the one down (`hops.ts`). A line's type (pipe,
+  tubing, flex hose, pneumatic, electrical, data) is its weight and dashes; flow arrows say
+  which way it flows.
 - **Snapping**: parts' centers and ports, and lines' bends, are on a 10-unit grid, and every
   kind's ports are on it, so lines between parts lined up are straight. A part being dragged
   also lines its ports up with the ports its lines go to, and its center and ports with other
@@ -376,8 +401,8 @@ what it is, `data-hit`).
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to
-  another (a line to a part left behind ends where it was), and pasted tags that are taken get
-  the next free number. Several parts line up by their edges or centers, or space evenly.
+  another (a line to a part left behind ends where it was), and pasted tags taken on the page
+  get the next free number (taken only on another page, the part's a copy, above). Several parts line up by their edges or centers, or space evenly.
 - **Exports** are drawn in the light colors, as on paper:
   - **PDF** (`pdf.ts`): the drawing's SVG turned into PDF's own operators, so it's vector: its
     paths (arcs and curves as Béziers), shapes, and text in PDF's standard Helvetica (nothing
@@ -491,18 +516,21 @@ valves as long as Piper's (40), or a hundred where it has none. Its shapes, in V
   valve's normal state isn't set: a preset's own would be a guess the drawing didn't make.
 - **Connectors** become lines along the routes they had (`auto` false, their runs made exactly
   level or upright where they nearly were, hops left out), on the ports nearest where they were
-  glued (a free one before one taken, not the one its other end is on; glued to a figure, a port
-  of its own there, facing the way the line leaves it; glued to another connector, a tee), their
-  bends following their ends to Piper's ports (`follow`). A connector glued at an end, or one
-  joined to nothing that's level and upright and a connector's, colored, or ending on a part's
-  port, is a line; a slanted one glued only to drawings (a vehicle's outline, glued to its nose)
-  or joined to nothing, and a line that's drawing (a border's), are figures, as Piper's lines
-  are always level and upright. A line carries the fluid its words name, else what a tank it's
-  drawn from holds (not from its top, unless it holds a gas), else what the key says lines in
-  its color carry (a shade of a key's color, the same hue, is the key's: a standard fluid if it
-  names one no other color does, with the key's color, else one of the diagram's own, named as
-  the key names it), else, colored, one of the diagram's own named for its color ("Red lines"),
-  to rename. Its kind is its master's (pneumatic, electrical, data, tubing, hose), else a pipe:
+  glued (a free one before one taken, not the one its other end is on; glued to a figure, a
+  port of its own there, facing the way the line leaves it; glued to another connector, a tee),
+  their bends following their ends to Piper's ports (`traced`): as drawn, wrong way into a port
+  and all, unless following would loop round to a port Visio's line came into from the side a
+  hair from its last bend (routed round to it, longer than Piper's own route there by more than
+  a stub out and back), when it routes itself. A connector glued at an end, or one joined to
+  nothing that's level and upright and a connector's, colored, or ending on a part's port, is a
+  line; a slanted one glued only to drawings (a vehicle's outline, glued to its nose) or joined
+  to nothing, and a line that's drawing (a border's), are figures, as Piper's lines are always
+  level and upright. A line carries the fluid its words name, else what a tank it's drawn from
+  holds (not from its top, unless it holds a gas), else what the key says lines in its color
+  carry (a shade of a key's color, the same hue, is the key's: a standard fluid if it names one
+  no other color does, with the key's color, else one of the diagram's own, named as the key
+  names it), else, colored, one of the diagram's own named for its color ("Red lines"), to
+  rename. Its kind is its master's (pneumatic, electrical, data, tubing, hose), else a pipe:
   dashes alone say what a key says they do, its size; its arrows, tag, and size words are
   Visio's.
 

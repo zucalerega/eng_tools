@@ -32,7 +32,7 @@ const AROUND = 200; // how far beyond its ends a route looks for its way
 const HEADINGS: Dir[] = ["right", "left", "down", "up"];
 
 /** Whether an axis-aligned segment passes through a box's inside (along its edge is fine). */
-function crosses(a: Point, b: Point, box: Box): boolean {
+export function crosses(a: Point, b: Point, box: Box): boolean {
     if (Math.abs(a.y - b.y) < 1e-6) {
         const [x0, x1] = a.x < b.x ? [a.x, b.x] : [b.x, a.x];
         return a.y > box.y0 + 1e-6 && a.y < box.y1 - 1e-6 && x0 < box.x1 - 1e-6 && x1 > box.x0 + 1e-6;
@@ -44,8 +44,32 @@ function crosses(a: Point, b: Point, box: Box): boolean {
 const inside = (point: Point, box: Box): boolean =>
     point.x > box.x0 + 1e-6 && point.x < box.x1 - 1e-6 && point.y > box.y0 + 1e-6 && point.y < box.y1 - 1e-6;
 
-const stubOf = (end: RouteEnd): Point =>
-    end.dir ? { x: end.at.x + VECTORS[end.dir].x * STUB, y: end.at.y + VECTORS[end.dir].y * STUB } : end.at;
+/**
+ * Where a line out of an end may first turn: a stub out of a port, or a part in its way (one placed close in front of
+ * it) halfway to that part, so the line turns between them rather than in it. A part over the port itself is no help
+ * to stop short of: the line is in it either way.
+ */
+function stubOf(end: RouteEnd, boxes: Box[]): Point {
+    if (!end.dir) {
+        return end.at;
+    }
+    const { x: dx, y: dy } = VECTORS[end.dir];
+    const out = (length: number): Point => ({ x: end.at.x + dx * length, y: end.at.y + dy * length });
+    const length = boxes
+        .filter((box) => !inside(end.at, box) && crosses(end.at, out(STUB), box))
+        .reduce((least, box) => {
+            const gap =
+                dx > 0
+                    ? box.x0 - end.at.x
+                    : dx < 0
+                      ? end.at.x - box.x1
+                      : dy > 0
+                        ? box.y0 - end.at.y
+                        : end.at.y - box.y1;
+            return Math.min(least, Math.max(0, gap) / 2);
+        }, STUB);
+    return out(length);
+}
 
 /**
  * A route from one end to the other, around the boxes: its points, both ends included. busy: the other lines' routes,
@@ -71,10 +95,18 @@ export function route(from: RouteEnd, to: RouteEnd, boxes: Box[], busy: Point[][
     if (across) {
         return across;
     }
-    const start = stubOf(from);
-    const end = stubOf(to);
+    const start = stubOf(from, boxes);
+    const end = stubOf(to, boxes);
     const found = search(start, from.dir, end, to.dir ? OPPOSITE[to.dir] : null, boxes, runsAlong(busy));
-    return simplify([from.at, ...(found ?? elbow(start, end, from.dir)), to.at]);
+    // Its lanes are to a thousandth: on an end's own lane, it's on that end's exact coordinate, not a hair aside.
+    const xs = [from.at.x, to.at.x];
+    const ys = [from.at.y, to.at.y];
+    const exact = (value: number, ends: number[]) => ends.find((end) => Math.abs(value - end) < 0.01) ?? value;
+    const points = (found ?? elbow(start, end, from.dir)).map((point) => ({
+        x: exact(point.x, xs),
+        y: exact(point.y, ys),
+    }));
+    return simplify([from.at, ...points, to.at]);
 }
 
 /**
@@ -140,14 +172,18 @@ function overlap(a: Point, b: Point, runs: Runs): number {
     return along.reduce((total, [x0, x1]) => total + Math.max(0, Math.min(hi, x1) - Math.max(lo, x0)), 0);
 }
 
-/** The plainest way between two points: one bend, or two if both ends go the same way. */
+/**
+ * The plainest way between two points, where the search found none clear: one bend, its first leg on the way it's
+ * heading if that goes toward the end, else across it (not back down the stub it came out on).
+ */
 function elbow(start: Point, end: Point, heading: Dir | null): Point[] {
     if (Math.abs(start.x - end.x) < 1e-6 || Math.abs(start.y - end.y) < 1e-6) {
         return [start, end];
     }
-    return heading === null || isLevel(heading)
-        ? [start, { x: end.x, y: start.y }, end]
-        : [start, { x: start.x, y: end.y }, end];
+    const level = { x: end.x, y: start.y };
+    const upright = { x: start.x, y: end.y };
+    const [first, other] = heading === null || isLevel(heading) ? [level, upright] : [upright, level];
+    return [start, heading && dirOf(start, first) === OPPOSITE[heading] ? other : first, end];
 }
 
 interface Step {
@@ -155,6 +191,8 @@ interface Step {
     guess: number; // cost + what's left at the least
     node: number; // i + j * xs.length
     heading: number; // an index into HEADINGS, or 4 for none yet
+    prior: number; // the heading before this one, the same way (4 for none)
+    leg: number; // the node this heading began at
     from: Step | null;
     done: boolean; // it's at the end, its cost counting the bend to arrive the right way
 }
@@ -214,8 +252,31 @@ class Queue {
 /** A coordinate as a lane's: to a thousandth, so the same place is the same lane however it was worked out. */
 const lane = (value: number): number => Math.round(value * 1000) / 1000;
 
-/** The lines a route may run along (through its ends, between them, and just clear of each box's sides), in order. */
-const lanes = (values: number[]): number[] => [...new Set(values.map(lane))].sort((a, b) => a - b);
+/**
+ * The lines a route may run along (through its ends, between them, and just clear of each box's sides), in order. One
+ * within half a grid of an end's is that end's: a part off the grid (as Visio places them) would otherwise have its
+ * route step a hair aside to the grid and back, or turn around beside itself, through a lane a fraction of a unit away.
+ */
+function lanes(ends: number[], values: number[]): number[] {
+    const kept = values.map((value) => ends.find((end) => Math.abs(value - end) <= GRID / 2) ?? value);
+    return [...new Set([...ends, ...kept].map(lane))].sort((a, b) => a - b);
+}
+
+/**
+ * Lanes a stub's length either side of an end, across the way the line goes out of it (if it goes across: a free end
+ * goes both ways), where there's none within two: somewhere near to turn back by, where nothing beside it has sides to
+ * go round (a figure drawn behind the lines, or nothing).
+ */
+function beside(values: number[], ...ends: [at: number, across: boolean][]): number[] {
+    let found = values;
+    for (const [at] of ends.filter(([, across]) => across)) {
+        const here = lane(at);
+        const room = (sign: number) =>
+            !found.some((value) => sign * (value - here) > 0 && sign * (value - here) <= 2 * STUB);
+        found = [...found, ...[1, -1].filter(room).map((sign) => lane(snapToGrid(at + sign * STUB)))];
+    }
+    return [...new Set(found)].sort((a, b) => a - b);
+}
 
 /**
  * The cheapest way from start (going the way it's heading, if it is) to end (arriving the way it should), or null if
@@ -236,34 +297,49 @@ function search(
         y1: Math.max(start.y, end.y) + AROUND,
     };
     const near = boxes.filter((box) => box.x0 < area.x1 && box.x1 > area.x0 && box.y0 < area.y1 && box.y1 > area.y0);
-    const xs = lanes([
-        start.x,
-        end.x,
-        snapToGrid((start.x + end.x) / 2),
-        area.x0,
-        area.x1,
-        ...near.flatMap((box) => [snapToGrid(box.x0 - CLEAR, GRID), snapToGrid(box.x1 + CLEAR, GRID)]),
-    ]);
-    const ys = lanes([
-        start.y,
-        end.y,
-        snapToGrid((start.y + end.y) / 2),
-        area.y0,
-        area.y1,
-        ...near.flatMap((box) => [snapToGrid(box.y0 - CLEAR, GRID), snapToGrid(box.y1 + CLEAR, GRID)]),
-    ]);
+    // A part over an end (dropped on a port, or on a line's free end) can't be kept out of: the route goes into it, as
+    // the line does, rather than finding no way. Its sides are still lanes, to go round it by.
+    const blocking = near.filter((box) => !inside(start, box) && !inside(end, box));
+    // Beside an end its line goes out of up or down, lanes to its left and right; out across, above and below it.
+    const goes = (dir: Dir | null, level: boolean) => dir === null || isLevel(dir) === level;
+    const xs = beside(
+        lanes(
+            [start.x, end.x],
+            [
+                snapToGrid((start.x + end.x) / 2),
+                area.x0,
+                area.x1,
+                ...near.flatMap((box) => [snapToGrid(box.x0 - CLEAR, GRID), snapToGrid(box.x1 + CLEAR, GRID)]),
+            ],
+        ),
+        [start.x, goes(heading, false)],
+        [end.x, goes(arrive, false)],
+    );
+    const ys = beside(
+        lanes(
+            [start.y, end.y],
+            [
+                snapToGrid((start.y + end.y) / 2),
+                area.y0,
+                area.y1,
+                ...near.flatMap((box) => [snapToGrid(box.y0 - CLEAR, GRID), snapToGrid(box.y1 + CLEAR, GRID)]),
+            ],
+        ),
+        [start.y, goes(heading, true)],
+        [end.y, goes(arrive, true)],
+    );
     const width = xs.length;
     const point = (node: number): Point => ({ x: xs[node % width]!, y: ys[Math.floor(node / width)]! });
     const startNode = xs.indexOf(lane(start.x)) + ys.indexOf(lane(start.y)) * width;
     const endNode = xs.indexOf(lane(end.x)) + ys.indexOf(lane(end.y)) * width;
     const open = (node: number): boolean =>
-        node === startNode || node === endNode || !near.some((box) => inside(point(node), box));
+        node === startNode || node === endNode || !blocking.some((box) => inside(point(node), box));
     // Whether the way from a node to the next one across (or down) is clear, worked out once each.
     const across = new Int8Array(xs.length * ys.length).fill(-1);
     const down = new Int8Array(xs.length * ys.length).fill(-1);
     const clear = (memo: Int8Array, a: number, b: number): boolean => {
         if (memo[a] === -1) {
-            memo[a] = near.some((box) => crosses(point(a), point(b), box)) ? 0 : 1;
+            memo[a] = blocking.some((box) => crosses(point(a), point(b), box)) ? 0 : 1;
         }
         return memo[a] === 1;
     };
@@ -286,7 +362,26 @@ function search(
     const best = new Map<number, number>(); // node * 5 + heading: the least cost it's been reached at
     const queue = new Queue();
     const first = heading ? HEADINGS.indexOf(heading) : 4;
-    queue.push({ cost: 0, guess: 0, node: startNode, heading: first, from: null, done: false });
+    queue.push({
+        cost: 0,
+        guess: 0,
+        node: startNode,
+        heading: first,
+        prior: 4,
+        leg: startNode,
+        from: null,
+        done: false,
+    });
+    // Whether turning a step's way would take it back the way it came before its last bend, beside itself: two ends a
+    // hair out of line (as Visio places them) would otherwise turn round through the hair between them, which reads as
+    // running back over itself. Half a grid across is the least that reads as turning round.
+    const hairpin = (current: Step, dir: Dir): boolean => {
+        if (current.prior === 4 || dir !== OPPOSITE[HEADINGS[current.prior]!]) {
+            return false;
+        }
+        const [a, b] = [point(current.leg), point(current.node)];
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < GRID / 2;
+    };
     best.set(startNode * 5 + first, 0);
     while (queue.size > 0) {
         const current = queue.pop();
@@ -296,10 +391,14 @@ function search(
         if (current.cost > (best.get(current.node * 5 + current.heading) ?? Infinity)) {
             continue; // reached more cheaply since
         }
-        if (current.node === endNode) {
+        const last = current.heading === 4 ? null : HEADINGS[current.heading]!;
+        // Come to it head on from the wrong side (past the port, as a line from below a port that faces up does), or a
+        // hair aside of that, it can't go in from here: it would run back over itself, or beside itself. It goes on,
+        // around.
+        const backwards = arrive !== null && last !== null && (last === OPPOSITE[arrive] || hairpin(current, arrive));
+        if (current.node === endNode && !backwards) {
             // Arriving the wrong way costs the bend it takes to go in the right way: it's done once nothing in the
             // queue could arrive for less.
-            const last = current.heading === 4 ? null : HEADINGS[current.heading]!;
             const late = arrive !== null && last !== null && last !== arrive ? BEND : 0;
             if (late === 0) {
                 return trace(current, point);
@@ -312,20 +411,33 @@ function search(
             if (current.heading !== 4 && dir === OPPOSITE[HEADINGS[current.heading]!]) {
                 continue; // never straight back
             }
+            const turned = current.heading !== next;
+            if (turned && hairpin(current, dir)) {
+                continue;
+            }
             const node = step(current.node, dir);
             if (node === null || !open(node)) {
                 continue;
             }
             const from = point(current.node);
             const to = point(node);
-            const turn = current.heading !== 4 && current.heading !== next ? BEND : 0;
+            const turn = current.heading !== 4 && turned ? BEND : 0;
             const length = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
             const cost = current.cost + length + turn + ALONG * overlap(from, to, runs);
             const key = node * 5 + next;
             if (cost < (best.get(key) ?? Infinity)) {
                 best.set(key, cost);
                 const left = Math.abs(target.x - to.x) + Math.abs(target.y - to.y);
-                queue.push({ cost, guess: cost + left, node, heading: next, from: current, done: false });
+                queue.push({
+                    cost,
+                    guess: cost + left,
+                    node,
+                    heading: next,
+                    prior: turned ? current.heading : current.prior,
+                    leg: turned ? current.node : current.leg,
+                    from: current,
+                    done: false,
+                });
             }
         }
     }

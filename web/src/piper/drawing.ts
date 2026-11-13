@@ -35,6 +35,9 @@ export interface Part {
     // Sent to the back: drawn under the lines, with the regions, rather than over them. Left out, over them. (Parts are
     // drawn in their order, so what's later is over what's earlier.)
     back?: boolean;
+    // Left out of the parts list: a copy of a part drawn on another page too (a combined schematic's, say), so the list
+    // has it once. Left out, it's listed.
+    unlisted?: boolean;
     sim?: PartSim; // what it is in the diagram's simulation, if that's been set: left out, as its kind makes it
     links?: PartLink[]; // pages about it, opened from it: left out, none
 }
@@ -241,6 +244,8 @@ export interface Drawing {
     // The tags on the diagram's other pages, not saved with it: a part placed here is numbered after them, and a tag
     // taken there is said to be (pageOf fills it in).
     elsewhere?: string[];
+    // Of those, the tags of the parts in the parts list: a tag two of them have is one part listed twice.
+    listedElsewhere?: string[];
 }
 
 export const STANDARD_STYLE: Style = { no: "", nc: "", fip: "", labels: 1, scheme: "", schemeAt: "" };
@@ -282,6 +287,9 @@ export function pageOf(document: Document, index: number): Drawing {
         elsewhere: document.pages
             .filter((other) => other !== page)
             .flatMap((other) => other.parts.map((part) => part.tag).filter(Boolean)),
+        listedElsewhere: document.pages
+            .filter((other) => other !== page)
+            .flatMap((other) => other.parts.filter((part) => !part.unlisted && part.tag).map((part) => part.tag)),
     };
 }
 
@@ -477,6 +485,7 @@ function part(value: unknown): Part | null {
         scale: num(value.scale, 1) > 0 ? partScale(num(value.scale, 1)) : 1,
         labelSize: readLabelSize(value.labelSize),
         ...(value.back === true ? { back: true } : {}),
+        ...(value.unlisted === true ? { unlisted: true } : {}),
         ...partSim(value.sim),
         ...partLinks(value.links),
     };

@@ -379,6 +379,21 @@ test("parts that go into a line have two ports facing apart across their middle"
     }
 });
 
+test("an orifice is a plate on a short run of pipe, its ports half as far apart as a valve's", () => {
+    const ends = (kind: string) => portsOf(newPart(kind, { x: 0, y: 0 })).map((port) => [port.id, port.at.x, port.dir]);
+    expect(ends("orifice")).toEqual([
+        ["a", -10, "left"],
+        ["b", 10, "right"],
+    ]);
+    expect(ends("valve")).toEqual([
+        ["a", -20, "left"],
+        ["b", 20, "right"],
+    ]);
+    // Drawn at half its size (as a Visio import has them), its run of pipe is still a pipe's width, not a thin stub.
+    const half = drawn({ ...newPart("orifice", { x: 0, y: 0 }), scale: 0.5 });
+    expect(half.querySelector("path")!.getAttribute("stroke-width")).toBe("5");
+});
+
 test("each kind's fields have keys of their own", () => {
     for (const kind of ALL_KINDS) {
         expect(new Set(kind.fields.map((field) => field.key)).size, kind.id).toBe(kind.fields.length);

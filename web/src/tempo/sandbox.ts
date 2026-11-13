@@ -20,6 +20,7 @@ export interface TempoRunRequest {
     mapping: string;
     mode: "validate" | "simulate";
     options: {
+        clock_mode?: "deterministic" | "realtime";
         speed: number;
         max_duration: number;
     };
@@ -27,6 +28,7 @@ export interface TempoRunRequest {
 
 export interface TempoRunner {
     onStatus?: (message: string, ready: boolean) => void;
+    warm?: () => void;
     run(request: TempoRunRequest): Promise<SimulationResult>;
     stop(): void;
 }
@@ -51,12 +53,19 @@ export class TempoSandbox implements TempoRunner {
     private runId = 0;
     private pending: {
         id: number;
+        request: TempoRunRequest;
+        timeoutMs: number;
+        dispatched: boolean;
         resolve: (result: SimulationResult) => void;
         reject: (error: Error) => void;
-        timer: ReturnType<typeof setTimeout>;
+        timer: ReturnType<typeof setTimeout> | null;
     } | null = null;
     private startupTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly listener = (event: MessageEvent) => this.handleMessage(event);
+
+    warm(): void {
+        this.ensureFrame();
+    }
 
     private ensureFrame(): void {
         if (this.frame) {
@@ -121,6 +130,7 @@ parent.postMessage({ type: "frame" }, "*");
                 this.startupTimer = null;
             }
             this.onStatus?.("Python runtime ready", true);
+            this.dispatchPending();
             return;
         }
         if (msg.type === "startup-error") {
@@ -131,47 +141,69 @@ parent.postMessage({ type: "frame" }, "*");
         if (msg.type === "result" && this.pending && msg.id === this.pending.id) {
             const active = this.pending;
             this.pending = null;
-            clearTimeout(active.timer);
+            if (active.timer) {
+                clearTimeout(active.timer);
+            }
             active.resolve(msg.result);
             return;
         }
         if (msg.type === "failure" && this.pending && msg.id === this.pending.id) {
             const active = this.pending;
             this.pending = null;
-            clearTimeout(active.timer);
+            if (active.timer) {
+                clearTimeout(active.timer);
+            }
             active.reject(new Error(msg.message || "Simulation failed"));
         }
     }
 
+    private dispatchPending(): void {
+        const active = this.pending;
+        if (!active || active.dispatched || !this.ready || !this.frame?.contentWindow) {
+            return;
+        }
+        active.dispatched = true;
+        active.timer = setTimeout(() => {
+            if (this.pending && this.pending.id === active.id) {
+                this.stop("Simulation timed out and was terminated.");
+            }
+        }, active.timeoutMs);
+        this.frame.contentWindow.postMessage(
+            {
+                type: "run",
+                id: active.id,
+                source: active.request.source,
+                mapping: active.request.mapping,
+                mode: active.request.mode,
+                options: active.request.options,
+            },
+            "*",
+        );
+    }
+
     run(request: TempoRunRequest): Promise<SimulationResult> {
-        this.ensureFrame();
         if (this.pending) {
             this.stop("Replaced by a newer run.");
-            this.ensureFrame();
         }
+        this.ensureFrame();
         const id = ++this.runId;
         const speed = Math.max(1, request.options.speed || 1);
         const limit = Math.max(1, request.options.max_duration || 600);
         const timeoutMs = request.mode === "validate" ? 20000 : Math.max(20000, (limit / speed + 20) * 1000);
 
         return new Promise<SimulationResult>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                if (this.pending && this.pending.id === id) {
-                    this.stop("Simulation timed out and was terminated.");
-                }
-            }, timeoutMs);
-            this.pending = { id, resolve, reject, timer };
-            this.frame?.contentWindow?.postMessage(
-                {
-                    type: "run",
-                    id,
-                    source: request.source,
-                    mapping: request.mapping,
-                    mode: request.mode,
-                    options: request.options,
-                },
-                "*",
-            );
+            this.pending = {
+                id,
+                request,
+                timeoutMs,
+                dispatched: false,
+                resolve,
+                reject,
+                timer: null,
+            };
+            if (this.ready) {
+                this.dispatchPending();
+            }
         });
     }
 
@@ -183,7 +215,9 @@ parent.postMessage({ type: "frame" }, "*");
         if (this.pending) {
             const active = this.pending;
             this.pending = null;
-            clearTimeout(active.timer);
+            if (active.timer) {
+                clearTimeout(active.timer);
+            }
             active.reject(new Error(reason));
         }
         window.removeEventListener("message", this.listener);

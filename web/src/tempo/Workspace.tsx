@@ -258,6 +258,7 @@ export function Workspace({ createRunner }: WorkspaceProps) {
                 mapping: JSON.stringify(environment),
                 mode,
                 options: {
+                    clock_mode: "realtime",
                     speed,
                     max_duration: Math.max(1, Math.min(3600, maxDuration || 600)),
                 },
@@ -642,9 +643,13 @@ export function Workspace({ createRunner }: WorkspaceProps) {
                         <h2>Simulation output</h2>
                         {result?.timing && (
                             <p className="muted">
-                                {result.timing.simulated_seconds.toFixed(2)}s simulated in{" "}
-                                {result.timing.wall_seconds.toFixed(2)}s wall time ({result.timing.speed}×)
-                                {result.timing.capped ? " · limit reached" : ""}
+                                {result.virtual_time.toFixed(2)}s simulated in {result.timing.wall_seconds.toFixed(2)}s
+                                wall time
+                                {result.timing.actual_speed != null
+                                    ? ` (${result.timing.actual_speed.toFixed(2)}× actual · ${result.timing.requested_speed ?? speed}× target)`
+                                    : result.timing.requested_speed != null
+                                      ? ` (${result.timing.requested_speed}×)`
+                                      : ""}
                             </p>
                         )}
                     </div>

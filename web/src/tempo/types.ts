@@ -71,11 +71,13 @@ export interface AbortStageCoverage {
 }
 
 export interface SimulationTiming {
-    speed: number;
+    mode?: string;
+    requested_speed?: number | null;
     wall_seconds: number;
-    simulated_seconds: number;
-    capped: boolean;
-    limit_seconds: number;
+    actual_speed?: number | null;
+    wait_count?: number;
+    max_wait_overshoot_ms?: number;
+    simulated_limit_seconds?: number;
 }
 
 export interface SimulationResult {

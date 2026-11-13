@@ -21,7 +21,7 @@ test("Tempo appears on Home and in the app switcher and routes natively", async 
     const tempoLinks = screen.getAllByRole("link", { name: "Tempo" });
     expect(tempoLinks.length).toBe(2);
 
-    await userEvent.click(tempoLinks[1]);
+    await userEvent.click(tempoLinks[1]!);
     await waitFor(() => expect(document.title).toBe("Tempo"));
     expect(await screen.findByRole("heading", { name: "Tempo" })).toBeTruthy();
     expect(screen.getByText("Luna Sequence Simulator")).toBeTruthy();

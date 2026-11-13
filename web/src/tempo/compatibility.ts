@@ -106,10 +106,10 @@ export async function checkLunaCompatibility(): Promise<CompatibilityReport> {
     } catch {
         return {
             state: "warning",
-            label: "LUNA API STATUS OFFLINE",
+            label: "LUNA API PINNED (LIVE CHECK UNAVAILABLE)",
             detail:
                 `Pinned to Luna ${lunaShort} · Sequence Tester ${testerShort}; ` +
-                "cannot reach upstream live drift monitor from this browser.",
+                "live upstream drift monitor is unavailable (using pinned baseline).",
             lunaSha: BASELINE.luna_sha,
             testerSha: BASELINE.tester_sha,
         };

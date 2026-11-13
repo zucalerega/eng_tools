@@ -326,13 +326,16 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
 /** A tag's prefix: what's before its number ("PT" of PT-12, "MOV-OX" of MOV-OX). */
 export const prefixOf = (tag: string): string => /^(.*?)-?\d+$/.exec(tag)?.[1] ?? tag;
 
-/** The tags two or more parts share: on this page, or on it and another of the diagram's. */
+/**
+ * The tags two or more parts in the parts list share: on this page, or on it and another of the diagram's. A copy of a
+ * part left out of the list (drawn again on a combined schematic) shares its tag on purpose.
+ */
 export function sharedTags(drawing: Drawing): Set<string> {
-    const seen = new Set((drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
+    const seen = new Set((drawing.listedElsewhere ?? drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
     const shared = new Set<string>();
     for (const part of drawing.parts) {
         const tag = part.tag.trim().toUpperCase();
-        if (!tag) {
+        if (!tag || part.unlisted) {
             continue;
         }
         if (seen.has(tag)) {
@@ -720,6 +723,23 @@ export function reorderParts(drawing: Drawing, ids: Set<string>, to: "front" | "
     return { ...drawing, parts: to === "front" ? [...staying, ...moved] : [...moved, ...staying] };
 }
 
+/** Parts put in the parts list, or left out of it (copies of parts drawn on another page too). */
+export function listParts(drawing: Drawing, ids: Set<string>, listed: boolean): Drawing {
+    return {
+        ...drawing,
+        parts: drawing.parts.map((part) => {
+            if (!ids.has(part.id) || !part.unlisted === listed) {
+                return part;
+            }
+            const changed: Part = { ...part, unlisted: true };
+            if (listed) {
+                delete changed.unlisted;
+            }
+            return changed;
+        }),
+    };
+}
+
 /** Kinds that keep upright: regions, legends, and title blocks don't turn or flip. */
 const keepsUpright = (part: Part) => ["region", "legend", "titleblock"].includes(part.kind);
 
@@ -967,29 +987,37 @@ export function clipBox(clip: Clip, drawing: Drawing): Box | null {
 
 /**
  * A clip pasted: its things given new ids, moved by an offset (on the grid), and their tags kept where they're free,
- * else given the next number free. Their ids, to select.
+ * else given the next number free. A part whose tag is taken only on another of the diagram's pages is that part
+ * drawn again (on a combined schematic, say): it keeps its tag, and is left out of the parts list, so the list has it
+ * once. Their ids, to select.
  */
 export function pasteClip(drawing: Drawing, clip: Clip, by: Point): { drawing: Drawing; ids: string[] } {
     const offset = snapPoint(by);
     const ids = new Map<string, string>();
-    const taken = new Set(
-        [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? [])]
-            .map((tag) => tag.toUpperCase())
-            .filter(Boolean),
-    );
+    const taken = new Set(drawing.parts.map((part) => part.tag.toUpperCase()).filter(Boolean));
+    const elsewhere = new Set((drawing.elsewhere ?? []).map((tag) => tag.toUpperCase()));
     const fresh = new Set<string>();
     const parts = clip.parts.map((part) => {
         const id = newId("p");
         ids.set(part.id, id);
         let tag = part.tag;
+        let copy = false;
         if (tag && taken.has(tag.toUpperCase())) {
             tag = nextTag(drawing, prefixOf(tag), fresh);
+        } else if (tag && elsewhere.has(tag.toUpperCase())) {
+            copy = true;
         }
         if (tag) {
             taken.add(tag.toUpperCase());
             fresh.add(tag);
         }
-        return { ...part, id, tag, x: part.x + offset.x, y: part.y + offset.y };
+        const pasted: Part = { ...part, id, tag, x: part.x + offset.x, y: part.y + offset.y };
+        if (copy) {
+            pasted.unlisted = true;
+        } else if (tag !== part.tag) {
+            delete pasted.unlisted; // numbered anew, it is a part of its own, and listed
+        }
+        return pasted;
     });
     const shift = (point: Point) => ({ x: point.x + offset.x, y: point.y + offset.y });
     const end = (value: End): End =>

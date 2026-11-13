@@ -336,7 +336,11 @@ the keys.
   paper: its outline shows on the drawing, border and title block corner, and the page prints
   just there; **Fit the sheet to the page** moves it to what's on it. An **Off-page connector**
   goes to another page, and a part on it (**To page**, **At**): **Go to**, or a double-click,
-  goes there, and the part it arrives at lists it under **Comes from**. Once a diagram has
+  goes there, and the part it arrives at lists it under **Comes from**. A part can be drawn on
+  more than one page (the pressurant and propellant systems on sheets of their own, to print,
+  and a combined schematic, to look at online): parts pasted onto another page keep their tags
+  and are taken out of the parts list, so it has each part once; **In the parts list**, in a
+  part's panel, takes one out or puts it back. Once a diagram has
   pages, a tab opened before Piper had them is told to reload rather than save one page of it.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav, 3x2...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,

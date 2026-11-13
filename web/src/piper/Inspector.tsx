@@ -15,6 +15,7 @@ import {
 import {
     carryFluid,
     drawingBox,
+    listParts,
     rerouteLines,
     sharedTags,
     updateLine,
@@ -40,6 +41,7 @@ import { Link } from "../router";
 import { PartIcon } from "./icons";
 import { LINE_FIELDS } from "./labels";
 import { PartLinks } from "./links";
+import { isListable } from "./parts";
 import { CATEGORIES, fieldsOf, kindOf, PRESETS, titleOf } from "./library/index";
 import { pictureAspect } from "./library/notes";
 import type { Field } from "./library/kinds";
@@ -244,7 +246,10 @@ function PartPanel({
     const readOnly = useEditor(store, (state) => state.readOnly);
     const said = part.tag.trim().toUpperCase();
     const shared = sharedTags(drawing).has(said);
-    const onAnother = (drawing.elsewhere ?? []).some((tag) => tag.trim().toUpperCase() === said);
+    const onAnother = (drawing.listedElsewhere ?? drawing.elsewhere ?? []).some(
+        (tag) => tag.trim().toUpperCase() === said,
+    );
+    const drawnElsewhere = said !== "" && (drawing.elsewhere ?? []).some((tag) => tag.trim().toUpperCase() === said);
     const change = (key: string, update: (part: Part) => Part) =>
         store.commit(updatePart(store.getState().drawing, part.id, update), undefined, `${part.id}:${key}`);
     const setProp = (key: string, value: string) =>
@@ -293,7 +298,34 @@ function PartPanel({
             {shared && (
                 <p className="piper-warning">
                     {onAnother ? "A part on another page" : "Another part"} is tagged {part.tag} too.
+                    {isListable(part) && " If it's the same part drawn again, take this one out of the parts list."}
                 </p>
+            )}
+            {isListable(part) && (
+                <>
+                    <label
+                        className="check"
+                        title="Take a part out of the list when it's drawn on another page too, on a combined schematic, say"
+                    >
+                        <input
+                            type="checkbox"
+                            checked={!part.unlisted}
+                            onChange={(event) =>
+                                store.commit(
+                                    listParts(store.getState().drawing, new Set([part.id]), event.target.checked),
+                                )
+                            }
+                        />
+                        In the parts list
+                    </label>
+                    {part.unlisted && (
+                        <p className="muted piper-small">
+                            {drawnElsewhere
+                                ? `A copy of ${part.tag} on another page: the parts list has that one.`
+                                : "Left out of the parts list, as a copy of a part drawn on another page."}
+                        </p>
+                    )}
+                </>
             )}
             {kind.tag !== "none" && (
                 <PartLinks
@@ -807,6 +839,8 @@ function ManyPanel({
     const kinds = new Set(lines.map((line) => line.kind));
     const valves = parts.filter((part) => kindOf(part.kind).state);
     const states = new Set(valves.map((part) => part.props.normal ?? ""));
+    const listable = parts.filter(isListable);
+    const unlisted = listable.filter((part) => part.unlisted).length;
     const setLines = (update: (line: Line) => Line) =>
         store.commit({ ...drawing, lines: drawing.lines.map((line) => (ids.has(line.id) ? update(line) : line)) });
     const counted = [
@@ -876,6 +910,34 @@ function ManyPanel({
                         />
                     )}
                 </Row>
+            )}
+            {listable.length > 0 && (
+                <label
+                    className="check"
+                    title="Take parts out of the list when they're drawn on another page too, on a combined schematic, say"
+                >
+                    <input
+                        type="checkbox"
+                        checked={unlisted === 0}
+                        ref={(input) => {
+                            if (input) {
+                                input.indeterminate = unlisted > 0 && unlisted < listable.length;
+                            }
+                        }}
+                        onChange={(event) =>
+                            store.commit(
+                                listParts(drawing, new Set(listable.map((part) => part.id)), event.target.checked),
+                            )
+                        }
+                    />
+                    In the parts list
+                    {unlisted > 0 && unlisted < listable.length && (
+                        <span className="muted">
+                            {" "}
+                            ({listable.length - unlisted} of {listable.length})
+                        </span>
+                    )}
+                </label>
             )}
             {parts.length >= 2 && (
                 <div className="piper-align" role="group" aria-label="Line up">

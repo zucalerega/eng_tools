@@ -47,6 +47,7 @@ export interface SimulationEvent {
     target: string;
     detail: string;
     line: number;
+    origin?: string;
 }
 
 export interface SensorTrace {
@@ -65,9 +66,10 @@ export interface AbortStageCoverage {
     name: string;
     condition: string;
     defined_line: number;
-    activated: boolean;
+    activated: boolean | number[];
     triggered: number | null;
-    safing: Record<string, { state: string; delay_ms: number }>;
+    safing?: Record<string, { state: string; delay_ms: number }>;
+    safe_states?: { name: string; state: string; delay_ms: number }[];
 }
 
 export interface SimulationTiming {

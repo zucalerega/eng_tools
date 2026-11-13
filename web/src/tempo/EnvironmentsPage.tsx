@@ -3,7 +3,7 @@ import { Notice } from "../components";
 import { formatDate } from "../format";
 import { Link } from "../router";
 import { tempoApi } from "./api";
-import { DEFAULT_ENVIRONMENT, normalizeEnvironment } from "./examples";
+import { DEFAULT_ENVIRONMENT, parseEnvironmentImport } from "./examples";
 import { environmentFileName } from "./filename";
 import type { TempoEnvironmentRecord } from "./types";
 
@@ -63,7 +63,7 @@ export function EnvironmentsPage() {
         }
         void file.text().then(async (text) => {
             try {
-                const env = normalizeEnvironment(text, DEFAULT_ENVIRONMENT);
+                const env = parseEnvironmentImport(text);
                 const baseName = file.name.replace(/(-environment)?\.json$/i, "") || "Imported environment";
                 const created = await tempoApi.createEnvironment({
                     name: baseName,

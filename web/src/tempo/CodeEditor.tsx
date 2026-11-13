@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 const KEYWORDS = new Set(
     "and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".split(
@@ -163,6 +163,7 @@ export function CodeEditor({
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const gutterRef = useRef<HTMLPreElement | null>(null);
     const highlightRef = useRef<HTMLPreElement | null>(null);
+    const [scrollTop, setScrollTop] = useState(0);
 
     const tokens = useMemo(() => tokenizePython(value), [value]);
     const lineCount = useMemo(() => Math.max(1, value.split("\n").length), [value]);
@@ -187,6 +188,7 @@ export function CodeEditor({
         textarea.setSelectionRange(offset, offset + (lines[targetIndex]?.length ?? 0));
         const top = Math.max(0, targetIndex * lineHeight - textarea.clientHeight / 3);
         textarea.scrollTop = top;
+        setScrollTop(top);
         if (gutterRef.current) {
             gutterRef.current.scrollTop = top;
         }
@@ -200,6 +202,7 @@ export function CodeEditor({
         if (!textarea) {
             return;
         }
+        setScrollTop(textarea.scrollTop);
         if (gutterRef.current) {
             gutterRef.current.scrollTop = textarea.scrollTop;
         }
@@ -241,7 +244,7 @@ export function CodeEditor({
                     <div
                         className="tempo-line-focus"
                         aria-hidden="true"
-                        style={{ top: `${12 + (activeLine - 1) * 21}px` }}
+                        style={{ top: `${12 + (activeLine - 1) * 21 - scrollTop}px` }}
                     />
                 )}
                 <pre ref={highlightRef} className="tempo-highlight" aria-hidden="true">

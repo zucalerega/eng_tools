@@ -152,17 +152,62 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
 
     const abortStatus = hoveredTime !== null ? abortStatusAt(events, hoveredTime) : null;
 
-    // Valve timeline height
-    const valveRowH = 28;
-    const abortRowH =
-        abortStages.length > 0 || events.some((e) => e.kind === "abort" || e.kind === "abort_stage") ? 28 : 0;
-    const valveChartHeight = Math.max(60, 26 + valveNames.length * valveRowH + abortRowH + 28);
+    const sensorReadLines = sim?.sensor_read_lines ?? {};
+    const abortTriggers = useMemo(() => events.filter((e) => e.kind === "abort"), [events]);
+    const abortActivations = useMemo(
+        () => events.filter((e) => e.kind === "abort_stage").sort((a, b) => a.time - b.time),
+        [events],
+    );
+    const hasAbortSection = abortStages.length > 0 || abortTriggers.length > 0 || abortActivations.length > 0;
 
-    // Abort stage segments
-    const abortEvents = events.filter((e) => e.kind === "abort_stage" || e.kind === "abort");
+    // Valve timeline height
+    const valveRowH = 30;
+    const valveChartHeight = Math.max(76, 26 + valveNames.length * valveRowH + 28);
+
+    // Abort stages chart height
+    const abortStageRowH = 42;
+    const abortChartHeight = Math.max(88, 28 + Math.max(1, abortStages.length) * abortStageRowH + 26);
+
+    // Unified compact sensor chart height
+    const sensorRowH = 74;
+    const sensorChartHeight = Math.max(96, 24 + sensors.length * sensorRowH + 26);
+
+    function renderAbortMarkers(topY: number, bottomY: number) {
+        return abortTriggers.map((ev, idx) => {
+            const x = xAt(ev.time);
+            return (
+                <g key={`abort-${idx}`}>
+                    {x < RIGHT && (
+                        <rect
+                            x={x}
+                            y={topY}
+                            width={Math.max(0, RIGHT - x)}
+                            height={bottomY - topY}
+                            className="tempo-tl-aborted-region"
+                        />
+                    )}
+                    <line
+                        x1={x}
+                        x2={x}
+                        y1={topY}
+                        y2={bottomY}
+                        className="tempo-tl-abort-marker"
+                        onClick={(e) => {
+                            if (ev.line > 0) {
+                                e.stopPropagation();
+                                onJumpToSource(ev.line);
+                            }
+                        }}
+                    >
+                        <title>{`Abort triggered at T+${nice(ev.time)}s${ev.line ? ` · line ${ev.line}` : ""}`}</title>
+                    </line>
+                </g>
+            );
+        });
+    }
 
     const sortedPins = useMemo(() => [...pins].sort((a, b) => a.time - b.time), [pins]);
-    const showAbortCol = abortStages.length > 0 || events.some((e) => e.kind === "abort" || e.kind === "abort_stage");
+    const showAbortCol = hasAbortSection;
 
     return (
         <div className="tempo-timeline">
@@ -314,9 +359,12 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                 </div>
             )}
 
-            {(valveNames.length > 0 || abortRowH > 0) && (
+            {valveNames.length > 0 && (
                 <div className="tempo-chart-block">
-                    <div className="tempo-chart-title">Valves & Abort State</div>
+                    <div className="tempo-chart-title">
+                        <span>Valves</span>
+                        <span className="muted">Scripted commands vs abort safe-state transitions</span>
+                    </div>
                     <svg
                         viewBox={`0 0 ${WIDTH} ${valveChartHeight}`}
                         className="tempo-timeline-svg"
@@ -385,50 +433,35 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                                             />
                                         );
                                     })}
+                                    {valveEvents.map((ev, eIdx) => {
+                                        const cx = xAt(ev.time);
+                                        const cy = y + 11;
+                                        const isAbortSafe = ev.origin === "abort";
+                                        return (
+                                            <circle
+                                                key={eIdx}
+                                                cx={cx}
+                                                cy={cy}
+                                                r={isAbortSafe ? 4.5 : 3.5}
+                                                className={`tempo-tl-valve-dot ${isAbortSafe ? "abort-safe" : "command"}`}
+                                                onClick={(e) => {
+                                                    if (ev.line > 0) {
+                                                        e.stopPropagation();
+                                                        onJumpToSource(ev.line);
+                                                    }
+                                                }}
+                                            >
+                                                <title>
+                                                    {`${name}: ${ev.detail}${isAbortSafe ? " (abort safe state)" : ""} · T+${nice(ev.time)}s${ev.line ? ` · line ${ev.line}` : ""}`}
+                                                </title>
+                                            </circle>
+                                        );
+                                    })}
                                 </g>
                             );
                         })}
 
-                        {abortRowH > 0 && (
-                            <g>
-                                <text
-                                    x={LEFT - 10}
-                                    y={24 + valveNames.length * valveRowH + 14}
-                                    textAnchor="end"
-                                    className="tempo-tl-label"
-                                >
-                                    ABORT
-                                </text>
-                                {abortEvents.map((ev, idx) => {
-                                    const x = xAt(ev.time);
-                                    const y = 24 + valveNames.length * valveRowH + 11;
-                                    return (
-                                        <g
-                                            key={idx}
-                                            className="tempo-tl-marker"
-                                            onClick={(e) => {
-                                                if (ev.line > 0) {
-                                                    e.stopPropagation();
-                                                    onJumpToSource(ev.line);
-                                                }
-                                            }}
-                                        >
-                                            <circle
-                                                cx={x}
-                                                cy={y}
-                                                r={5}
-                                                fill={ev.kind === "abort" ? "var(--danger)" : "var(--gold)"}
-                                            />
-                                            <title>
-                                                {ev.kind === "abort"
-                                                    ? `ABORT at T+${nice(ev.time)}s: ${ev.detail}`
-                                                    : `Stage ${ev.target} at T+${nice(ev.time)}s`}
-                                            </title>
-                                        </g>
-                                    );
-                                })}
-                            </g>
-                        )}
+                        {renderAbortMarkers(18, valveChartHeight - 24)}
 
                         {pins.map((pin) => (
                             <line
@@ -454,76 +487,114 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                 </div>
             )}
 
-            {sensors.map((sensor, sIdx) => {
-                const { min, max } = sampleScale(sensor);
-                const color = SENSOR_COLORS[sIdx % SENSOR_COLORS.length];
-                const h = 148;
-                const top = 16;
-                const bottom = h - 26;
-                const yAt = (v: number) => bottom - ((v - min) / (max - min)) * (bottom - top);
-                const samples = sensor.samples || [];
-                const firstSample = samples[0];
-                let path = "";
-                if (firstSample) {
-                    path = `M${xAt(firstSample.at)} ${yAt(firstSample.value)}`;
-                    for (let i = 1; i < samples.length; i += 1) {
-                        const pt = samples[i];
-                        if (!pt) {
-                            continue;
-                        }
-                        path +=
-                            sensor.interpolation === "linear"
-                                ? ` L${xAt(pt.at)} ${yAt(pt.value)}`
-                                : ` H${xAt(pt.at)} V${yAt(pt.value)}`;
-                    }
-                    path += ` H${xAt(duration)}`;
-                }
-
-                return (
-                    <div key={sensor.name} className="tempo-chart-block">
-                        <div className="tempo-chart-title">
-                            <span>{sensor.name}</span>
-                            <span className="muted"> ({sensor.unit})</span>
-                        </div>
+            {hasAbortSection && (
+                <div className="tempo-chart-block tempo-abort-section">
+                    <div className="tempo-chart-title">
+                        <span>Abort stages</span>
+                        <span className="muted">Active stage segments, triggers &amp; safe states</span>
+                    </div>
+                    {abortStages.length > 0 && (
                         <svg
-                            viewBox={`0 0 ${WIDTH} ${h}`}
+                            viewBox={`0 0 ${WIDTH} ${abortChartHeight}`}
                             className="tempo-timeline-svg"
                             onMouseMove={(e) => setHoveredTime(timeFromPointer(e))}
                             onMouseLeave={() => setHoveredTime(null)}
                             onClick={handleChartClick}
                         >
-                            {[0, 1, 2, 3].map((i) => {
-                                const level = top + ((bottom - top) * i) / 3;
-                                const val = max - ((max - min) * i) / 3;
-                                return (
-                                    <g key={i}>
-                                        <line x1={LEFT} x2={RIGHT} y1={level} y2={level} className="tempo-tl-grid" />
-                                        <text x={LEFT - 10} y={level + 4} textAnchor="end" className="tempo-tl-axis">
-                                            {nice(val)}
-                                        </text>
-                                    </g>
-                                );
-                            })}
                             {[0, 1, 2, 3, 4, 5].map((i) => {
                                 const t = (duration * i) / 5;
                                 const x = xAt(t);
                                 return (
                                     <g key={i}>
-                                        <line x1={x} x2={x} y1={top} y2={bottom} className="tempo-tl-grid" />
-                                        <text x={x} y={h - 6} className="tempo-tl-axis" textAnchor="middle">
+                                        <line
+                                            x1={x}
+                                            x2={x}
+                                            y1={18}
+                                            y2={abortChartHeight - 24}
+                                            className="tempo-tl-grid"
+                                        />
+                                        <text
+                                            x={x}
+                                            y={abortChartHeight - 6}
+                                            className="tempo-tl-axis"
+                                            textAnchor="middle"
+                                        >
                                             {nice(t)}s
                                         </text>
                                     </g>
                                 );
                             })}
-                            {path && <path d={path} fill="none" stroke={color} strokeWidth={2.2} />}
+
+                            {abortStages.map((stage, idx) => {
+                                const y = 34 + idx * abortStageRowH;
+                                const stageActivations = abortActivations.filter((a) => a.target === stage.name);
+                                return (
+                                    <g key={stage.name}>
+                                        <text x={LEFT - 10} y={y + 4} textAnchor="end" className="tempo-tl-label">
+                                            {stage.name}
+                                        </text>
+                                        <line x1={LEFT} x2={RIGHT} y1={y} y2={y} className="tempo-tl-rail" />
+                                        {stageActivations.map((act, actIdx) => {
+                                            const globalIdx = abortActivations.indexOf(act);
+                                            const nextAct =
+                                                globalIdx >= 0 ? abortActivations[globalIdx + 1] : undefined;
+                                            const stop = nextAct ? nextAct.time : duration;
+                                            return (
+                                                <g key={`${stage.name}-${actIdx}`}>
+                                                    <line
+                                                        x1={xAt(act.time)}
+                                                        x2={xAt(stop)}
+                                                        y1={y}
+                                                        y2={y}
+                                                        className="tempo-tl-stage-active"
+                                                    />
+                                                    <circle
+                                                        cx={xAt(act.time)}
+                                                        cy={y}
+                                                        r={5}
+                                                        className="tempo-tl-stage-dot"
+                                                        onClick={(e) => {
+                                                            if (act.line > 0) {
+                                                                e.stopPropagation();
+                                                                onJumpToSource(act.line);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <title>{`Activated ${stage.name} at T+${nice(act.time)}s · line ${act.line}`}</title>
+                                                    </circle>
+                                                </g>
+                                            );
+                                        })}
+                                        {stage.triggered !== null && (
+                                            <g>
+                                                <circle
+                                                    cx={xAt(stage.triggered)}
+                                                    cy={y}
+                                                    r={7}
+                                                    className="tempo-tl-abort-dot"
+                                                />
+                                                <text
+                                                    x={Math.min(RIGHT - 50, xAt(stage.triggered) + 12)}
+                                                    y={y - 8}
+                                                    className="tempo-tl-abort-label"
+                                                >
+                                                    ABORT
+                                                </text>
+                                            </g>
+                                        )}
+                                    </g>
+                                );
+                            })}
+
+                            {renderAbortMarkers(18, abortChartHeight - 24)}
+
                             {pins.map((pin) => (
                                 <line
                                     key={pin.id}
                                     x1={xAt(pin.time)}
                                     x2={xAt(pin.time)}
-                                    y1={top}
-                                    y2={bottom}
+                                    y1={18}
+                                    y2={abortChartHeight - 24}
                                     stroke={pin.color}
                                     strokeWidth={2}
                                 />
@@ -532,15 +603,189 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                                 <line
                                     x1={xAt(hoveredTime)}
                                     x2={xAt(hoveredTime)}
-                                    y1={top}
-                                    y2={bottom}
+                                    y1={18}
+                                    y2={abortChartHeight - 24}
                                     className="tempo-tl-hover"
                                 />
                             )}
                         </svg>
+                    )}
+
+                    {abortStages.length > 0 && (
+                        <div className="tempo-abort-cards">
+                            {abortStages.map((stage) => {
+                                const wasActivated = Array.isArray(stage.activated)
+                                    ? stage.activated.length > 0
+                                    : Boolean(stage.activated);
+                                const safeStates =
+                                    stage.safe_states ??
+                                    Object.entries(stage.safing ?? {}).map(([vName, info]) => ({
+                                        name: vName,
+                                        state: info.state,
+                                        delay_ms: info.delay_ms,
+                                    }));
+                                const cardState =
+                                    stage.triggered !== null ? "triggered" : wasActivated ? "untested" : "inactive";
+                                return (
+                                    <button
+                                        key={stage.name}
+                                        type="button"
+                                        className={`tempo-abort-card ${cardState}`}
+                                        disabled={!stage.defined_line}
+                                        title={
+                                            stage.defined_line
+                                                ? `Show abort stage definition at line ${stage.defined_line}`
+                                                : undefined
+                                        }
+                                        onClick={() => {
+                                            if (stage.defined_line > 0) {
+                                                onJumpToSource(stage.defined_line);
+                                            }
+                                        }}
+                                    >
+                                        <div className="tempo-abort-card-header">
+                                            <strong>{stage.name}</strong>
+                                            <span className="tempo-abort-card-status">
+                                                {stage.triggered !== null
+                                                    ? `TRIGGERED · T+${nice(stage.triggered)}s`
+                                                    : wasActivated
+                                                      ? "CONDITION NEVER TRIGGERED"
+                                                      : "STAGE NEVER ACTIVATED"}
+                                            </span>
+                                        </div>
+                                        <code className="tempo-abort-condition">{stage.condition}</code>
+                                        {safeStates.length > 0 ? (
+                                            <div className="tempo-abort-safe-states">
+                                                {safeStates.map((ss, idx) => (
+                                                    <span
+                                                        key={`${ss.name}-${idx}`}
+                                                        className={`tempo-abort-safe-state ${ss.state === "OPEN" ? "open" : "closed"}`}
+                                                    >
+                                                        {ss.name} → {ss.state} · {ss.delay_ms}ms
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <small className="muted">No valves explicitly safed in this stage</small>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {sensors.length > 0 && (
+                <div className="tempo-chart-block">
+                    <div className="tempo-chart-title">
+                        <span>Sensors</span>
+                        <span className="muted">Readings over virtual time · click L# to jump to read site</span>
                     </div>
-                );
-            })}
+                    <svg
+                        viewBox={`0 0 ${WIDTH} ${sensorChartHeight}`}
+                        className="tempo-timeline-svg"
+                        onMouseMove={(e) => setHoveredTime(timeFromPointer(e))}
+                        onMouseLeave={() => setHoveredTime(null)}
+                        onClick={handleChartClick}
+                    >
+                        {[0, 1, 2, 3, 4, 5].map((i) => {
+                            const t = (duration * i) / 5;
+                            const x = xAt(t);
+                            return (
+                                <g key={i}>
+                                    <line x1={x} x2={x} y1={16} y2={sensorChartHeight - 24} className="tempo-tl-grid" />
+                                    <text x={x} y={sensorChartHeight - 6} className="tempo-tl-axis" textAnchor="middle">
+                                        {nice(t)}s
+                                    </text>
+                                </g>
+                            );
+                        })}
+
+                        {sensors.map((sensor, sIdx) => {
+                            const top = 22 + sIdx * sensorRowH;
+                            const bottom = top + 46;
+                            const { min, max } = sampleScale(sensor);
+                            const color = SENSOR_COLORS[sIdx % SENSOR_COLORS.length];
+                            const yAt = (v: number) => bottom - ((v - min) / (max - min)) * (bottom - top);
+                            const samples = sensor.samples || [];
+                            const firstSample = samples[0];
+                            let path = "";
+                            if (firstSample) {
+                                path = `M${xAt(firstSample.at)} ${yAt(firstSample.value)}`;
+                                for (let i = 1; i < samples.length; i += 1) {
+                                    const pt = samples[i];
+                                    if (!pt) continue;
+                                    path +=
+                                        sensor.interpolation === "linear"
+                                            ? ` L${xAt(pt.at)} ${yAt(pt.value)}`
+                                            : ` H${xAt(pt.at)} V${yAt(pt.value)}`;
+                                }
+                                path += ` H${xAt(duration)}`;
+                            }
+                            const readLine = sensorReadLines[sensor.name]?.[0];
+
+                            return (
+                                <g key={sensor.name}>
+                                    <text x={14} y={top + 16} className="tempo-tl-label">
+                                        {sensor.name}
+                                    </text>
+                                    <text x={14} y={top + 32} className="tempo-tl-unit">
+                                        {sensor.unit}
+                                    </text>
+                                    {readLine ? (
+                                        <text
+                                            x={90}
+                                            y={top + 32}
+                                            className="tempo-tl-source-link"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-label={`Show ${sensor.name} read at Python line ${readLine}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onJumpToSource(readLine);
+                                            }}
+                                        >
+                                            L{readLine} ↗
+                                        </text>
+                                    ) : null}
+                                    <line x1={LEFT} x2={RIGHT} y1={bottom} y2={bottom} className="tempo-tl-rail" />
+                                    <text x={LEFT - 10} y={top + 6} textAnchor="end" className="tempo-tl-axis">
+                                        {nice(max)}
+                                    </text>
+                                    <text x={LEFT - 10} y={bottom} textAnchor="end" className="tempo-tl-axis">
+                                        {nice(min)}
+                                    </text>
+                                    {path && <path d={path} fill="none" stroke={color} strokeWidth={2.2} />}
+                                </g>
+                            );
+                        })}
+
+                        {renderAbortMarkers(16, sensorChartHeight - 24)}
+
+                        {pins.map((pin) => (
+                            <line
+                                key={pin.id}
+                                x1={xAt(pin.time)}
+                                x2={xAt(pin.time)}
+                                y1={16}
+                                y2={sensorChartHeight - 24}
+                                stroke={pin.color}
+                                strokeWidth={2}
+                            />
+                        ))}
+                        {hoveredTime !== null && (
+                            <line
+                                x1={xAt(hoveredTime)}
+                                x2={xAt(hoveredTime)}
+                                y1={16}
+                                y2={sensorChartHeight - 24}
+                                className="tempo-tl-hover"
+                            />
+                        )}
+                    </svg>
+                </div>
+            )}
         </div>
     );
 }

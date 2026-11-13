@@ -117,6 +117,270 @@ export function normalizeEnvironment(raw: unknown, fallback: TestEnvironment = D
     return { valves, sensors };
 }
 
+export class EnvironmentImportError extends Error {
+    readonly diagnostics: string[];
+
+    constructor(diagnostics: string[]) {
+        super(diagnostics.join(" "));
+        this.name = "EnvironmentImportError";
+        this.diagnostics = diagnostics;
+    }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isFiniteNumberLike(value: unknown): boolean {
+    if (typeof value === "number") {
+        return Number.isFinite(value);
+    }
+    if (typeof value === "string" && value.trim() !== "") {
+        return Number.isFinite(Number(value));
+    }
+    return false;
+}
+
+function truthTableKeysForCount(count: number): string[] {
+    const total = 1 << count;
+    const keys: string[] = [];
+    for (let i = 0; i < total; i += 1) {
+        keys.push(i.toString(2).padStart(count, "0"));
+    }
+    return keys;
+}
+
+/**
+ * Strictly validate and parse an imported TestEnvironment JSON payload.
+ * Rejects malformed JSON, missing keys, invalid units, invalid profiles, and incomplete truth tables
+ * without substituting fallback defaults. Preserves legacy string-valve and scalar-value sensor formats.
+ */
+export function parseEnvironmentImport(raw: unknown): TestEnvironment {
+    let data: unknown = raw;
+    if (typeof raw === "string") {
+        const cleaned = raw.replace(/^\uFEFF/, "").trim();
+        if (!cleaned) {
+            throw new EnvironmentImportError(["Environment JSON is empty."]);
+        }
+        try {
+            data = JSON.parse(cleaned);
+        } catch (err: unknown) {
+            const detail = err instanceof Error ? err.message : "Invalid JSON syntax.";
+            throw new EnvironmentImportError([`Invalid JSON: ${detail}`]);
+        }
+    }
+
+    if (!isPlainObject(data)) {
+        throw new EnvironmentImportError(['Environment JSON must be an object with "valves" and "sensors" arrays.']);
+    }
+
+    if (!Array.isArray(data.valves) || !Array.isArray(data.sensors)) {
+        const missing: string[] = [];
+        if (!Array.isArray(data.valves)) missing.push('"valves"');
+        if (!Array.isArray(data.sensors)) missing.push('"sensors"');
+        throw new EnvironmentImportError([`Environment JSON is missing required array key(s): ${missing.join(", ")}.`]);
+    }
+
+    if (data.valves.length > 100 || data.sensors.length > 100) {
+        throw new EnvironmentImportError(["Environment has too many valves or sensors (100 maximum each)."]);
+    }
+
+    const errors: string[] = [];
+    const valves: ValveConfig[] = [];
+    const seenValves = new Set<string>();
+
+    for (let i = 0; i < data.valves.length; i += 1) {
+        const entry = data.valves[i];
+        if (typeof entry === "string") {
+            const name = entry.trim();
+            if (!name) {
+                errors.push(`Valve ${i + 1} has an empty name.`);
+                continue;
+            }
+            if (seenValves.has(name)) {
+                errors.push(`Duplicate valve name "${name}".`);
+                continue;
+            }
+            seenValves.add(name);
+            valves.push({ name, initial: "CLOSED" });
+            continue;
+        }
+        if (!isPlainObject(entry)) {
+            errors.push(`Valve ${i + 1} must be an object with "name" and "initial" ("OPEN" or "CLOSED").`);
+            continue;
+        }
+        if (typeof entry.name !== "string" || !entry.name.trim()) {
+            errors.push(`Valve ${i + 1} is missing a valid "name".`);
+            continue;
+        }
+        const name = entry.name.trim();
+        if (seenValves.has(name)) {
+            errors.push(`Duplicate valve name "${name}".`);
+            continue;
+        }
+        if (entry.initial !== undefined && entry.initial !== "OPEN" && entry.initial !== "CLOSED") {
+            errors.push(
+                `Valve "${name}" has invalid initial state "${String(entry.initial)}" (expected "OPEN" or "CLOSED").`,
+            );
+            continue;
+        }
+        seenValves.add(name);
+        valves.push({ name, initial: entry.initial === "OPEN" ? "OPEN" : "CLOSED" });
+    }
+
+    const sensors: SensorConfig[] = [];
+    const seenSensors = new Set<string>();
+
+    for (let i = 0; i < data.sensors.length; i += 1) {
+        const entry = data.sensors[i];
+        if (!isPlainObject(entry)) {
+            errors.push(`Sensor ${i + 1} must be an object.`);
+            continue;
+        }
+        if (typeof entry.name !== "string" || !entry.name.trim()) {
+            errors.push(`Sensor ${i + 1} is missing a valid "name".`);
+            continue;
+        }
+        const name = entry.name.trim();
+        if (seenSensors.has(name)) {
+            errors.push(`Duplicate sensor name "${name}".`);
+            continue;
+        }
+        seenSensors.add(name);
+
+        if (typeof entry.unit !== "string" || !VALID_UNITS.has(entry.unit as SensorUnit)) {
+            errors.push(
+                `Sensor "${name}" has missing or invalid unit ${JSON.stringify(entry.unit)} (expected one of: psi, V, A, lbf, K, unknown).`,
+            );
+            continue;
+        }
+        const unit = entry.unit as SensorUnit;
+
+        if (entry.mode !== undefined && entry.mode !== "time" && entry.mode !== "valve") {
+            errors.push(`Sensor "${name}" has invalid mode "${String(entry.mode)}" (expected "time" or "valve").`);
+            continue;
+        }
+        const mode: "time" | "valve" = entry.mode === "valve" ? "valve" : "time";
+
+        if (entry.interpolation !== undefined && entry.interpolation !== "step" && entry.interpolation !== "linear") {
+            errors.push(
+                `Sensor "${name}" has invalid interpolation "${String(entry.interpolation)}" (expected "step" or "linear").`,
+            );
+            continue;
+        }
+        const interpolation: "step" | "linear" = entry.interpolation === "linear" ? "linear" : "step";
+
+        if (entry.min !== undefined && entry.min !== null && !isFiniteNumberLike(entry.min)) {
+            errors.push(`Sensor "${name}" has non-numeric "min" bound.`);
+            continue;
+        }
+        if (entry.max !== undefined && entry.max !== null && !isFiniteNumberLike(entry.max)) {
+            errors.push(`Sensor "${name}" has non-numeric "max" bound.`);
+            continue;
+        }
+        const min = entry.min === undefined || entry.min === null ? null : Number(entry.min);
+        const max = entry.max === undefined || entry.max === null ? null : Number(entry.max);
+        if (min !== null && max !== null && min > max) {
+            errors.push(`Sensor "${name}" has min (${min}) greater than max (${max}).`);
+            continue;
+        }
+
+        if (mode === "valve") {
+            if (!isFiniteNumberLike(entry.initial)) {
+                errors.push(`Valve-driven sensor "${name}" is missing a finite numeric "initial" value.`);
+                continue;
+            }
+            if (!Array.isArray(entry.valves) || entry.valves.length === 0 || entry.valves.length > 4) {
+                errors.push(`Valve-driven sensor "${name}" must specify between 1 and 4 controlling valve names.`);
+                continue;
+            }
+            if (entry.valves.some((v) => typeof v !== "string" || !v.trim())) {
+                errors.push(`Valve-driven sensor "${name}" has an invalid valve reference.`);
+                continue;
+            }
+            if (!isPlainObject(entry.rates)) {
+                errors.push(`Valve-driven sensor "${name}" is missing its "rates" truth table object.`);
+                continue;
+            }
+            const requiredKeys = truthTableKeysForCount(entry.valves.length);
+            const missingKeys = requiredKeys.filter(
+                (k) => !isFiniteNumberLike((entry.rates as Record<string, unknown>)[k]),
+            );
+            if (missingKeys.length > 0) {
+                errors.push(
+                    `Valve-driven sensor "${name}" has an incomplete truth table (missing or invalid rate for state(s): ${missingKeys.join(", ")}).`,
+                );
+                continue;
+            }
+            const rates: Record<string, number> = {};
+            for (const k of requiredKeys) {
+                rates[k] = Number((entry.rates as Record<string, unknown>)[k]);
+            }
+            sensors.push({
+                name,
+                unit,
+                mode: "valve",
+                initial: Number(entry.initial),
+                min,
+                max,
+                valves: entry.valves.map((v) => v.trim()),
+                rates,
+                interpolation,
+                samples: [{ at: 0, value: Number(entry.initial) }],
+            });
+        } else {
+            // Time-profile sensor (also supports legacy scalar { value: number } without samples)
+            let samples: { at: number; value: number }[] = [];
+            if (Array.isArray(entry.samples)) {
+                if (entry.samples.length === 0 || entry.samples.length > 1000) {
+                    errors.push(`Sensor "${name}" must have between 1 and 1000 time-profile samples.`);
+                    continue;
+                }
+                let badSample = false;
+                for (let j = 0; j < entry.samples.length; j += 1) {
+                    const pt = entry.samples[j];
+                    if (!isPlainObject(pt) || !isFiniteNumberLike(pt.at) || !isFiniteNumberLike(pt.value)) {
+                        errors.push(`Sensor "${name}" sample ${j + 1} must have numeric "at" and "value" fields.`);
+                        badSample = true;
+                        break;
+                    }
+                    samples.push({ at: Number(pt.at), value: Number(pt.value) });
+                }
+                if (badSample) continue;
+            } else if (isFiniteNumberLike(entry.value)) {
+                // Legacy scalar sensor format
+                samples = [{ at: 0, value: Number(entry.value) }];
+            } else {
+                errors.push(`Sensor "${name}" is missing a valid "samples" array.`);
+                continue;
+            }
+
+            sensors.push({
+                name,
+                unit,
+                mode: "time",
+                initial: isFiniteNumberLike(entry.initial) ? Number(entry.initial) : samples[0]!.value,
+                min,
+                max,
+                valves: [],
+                rates: {},
+                interpolation,
+                samples,
+            });
+        }
+    }
+
+    if (errors.length > 0) {
+        throw new EnvironmentImportError(errors);
+    }
+
+    const result: TestEnvironment = { valves, sensors };
+    if (JSON.stringify(result).length > 100_000) {
+        throw new EnvironmentImportError(["Environment is too large (100 KB maximum configuration)."]);
+    }
+    return result;
+}
+
 export const EXAMPLES: ExampleSequence[] = [
     {
         id: "vespula",

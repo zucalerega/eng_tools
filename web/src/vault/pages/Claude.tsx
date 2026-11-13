@@ -3,10 +3,13 @@ import { api, type AssistantSpending } from "../../api";
 import { Notice, Time } from "../../components";
 
 // Admin > People's card for Claude, which answers people's questions in Help: what its answers have cost, of the budgets
-// the server gives it (each month, in all, or both), and on whose questions (assistant.py). The server keeps no one's
-// questions, only their cost.
+// the server gives it (each month, in all, or both), and on whose questions (assistant.py), and how long the server
+// keeps the help loaded for it. The server keeps no one's questions, only their cost.
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+// How long the help may be kept loaded after a question, in hours: 1 is just the hour Anthropic keeps it.
+const KEEP_HOURS = [1, 2, 3, 4, 6, 8, 12, 24];
 
 export function ClaudeSpending() {
     const [spending, setSpending] = useState<AssistantSpending | null>(null);
@@ -73,18 +76,19 @@ export function ClaudeSpending() {
                 {monthly && (
                     <>{!inAll && <>{usd.format(spending.spent)} in all. </>}A month starts on the 1st, at 00:00 UTC. </>
                 )}
-                {spending.keep_warm ? (
-                    <>
-                        The server keeps the help ready between questions, so each reads it for much less: that cost{" "}
-                        {usd.format(spending.keep_warm_spent)} this month.
-                    </>
-                ) : (
+                {!spending.keep_warm && (
                     <>
                         The first question in an hour costs the most, as Claude reads all of the help; for the rest of
                         the hour it reads it for much less.
                     </>
                 )}
             </p>
+            {spending.keep_warm && (
+                <KeepLoaded
+                    spending={spending}
+                    onChange={(keep_hours) => setSpending((now) => now && { ...now, keep_hours })}
+                />
+            )}
             {spending.people.length === 0 ? (
                 <p className="muted">No one has asked Claude anything yet.</p>
             ) : (
@@ -114,5 +118,64 @@ export function ClaudeSpending() {
                 </div>
             )}
         </section>
+    );
+}
+
+/** How long the server keeps the help loaded for Claude: around the clock, or for some hours after each question. */
+function KeepLoaded({ spending, onChange }: { spending: AssistantSpending; onChange: (hours: number | null) => void }) {
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    const hours = spending.keep_hours;
+    // With whatever the server has, as an admin may set any number of hours through the API.
+    const choices =
+        hours === null || KEEP_HOURS.includes(hours) ? KEEP_HOURS : [...KEEP_HOURS, hours].sort((a, b) => a - b);
+
+    async function keep(chosen: number | null) {
+        setBusy(true);
+        setProblem(null);
+        try {
+            onChange((await api.keepHelpLoaded(chosen)).keep_hours);
+        } catch (error) {
+            setProblem((error as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    }
+    return (
+        <div className="keep-loaded">
+            <label className="field">
+                Keep the help loaded
+                <select
+                    value={hours ?? "always"}
+                    disabled={busy}
+                    onChange={(event) => {
+                        const value = event.target.value;
+                        void keep(value === "always" ? null : Number(value));
+                    }}
+                >
+                    <option value="always">Always</option>
+                    {choices.map((each) => (
+                        <option key={each} value={each}>
+                            For {each === 1 ? "an hour" : `${each} hours`} after a question
+                        </option>
+                    ))}
+                </select>
+            </label>
+            {problem && <Notice tone="error">{problem}</Notice>}
+            <p className="muted tracker-note">
+                {hours === null
+                    ? "The server reads the help again whenever nothing has for 50 minutes, so every question reads it for much less."
+                    : hours === 1
+                      ? "Anthropic keeps the help loaded for an hour after each question: a question in that hour reads it for much less, and the first after it pays to have all of it read."
+                      : `The server keeps the help loaded for ${hours} hours after each question, reading it again meanwhile: a question then reads it for much less, and the first after that pays to have all of it read.`}{" "}
+                Keeping it loaded cost {usd.format(spending.keep_warm_spent)} this month
+                {spending.month_questions > 0 && (
+                    <>
+                        , and {spending.month_questions_loaded} of {spending.month_questions} questions found it loaded
+                    </>
+                )}
+                .
+            </p>
+        </div>
     );
 }

@@ -197,8 +197,11 @@ export interface AssistantSpending {
     daily_limit: number; // what one person's questions may cost in 24 hours
     model: string;
     effort: string;
-    keep_warm: boolean; // whether it keeps the help ready between questions
+    keep_warm: boolean; // whether the server may keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
+    keep_hours: number | null; // for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: number; // what that cost this month, in month_spent too
+    month_questions: number; // this month's questions
+    month_questions_loaded: number; // of those, the ones that found the help loaded, and read it for much less
     people: { user: UserRef; questions: number; spent: number; last_asked_at: string }[]; // the most spent first
 }
 
@@ -403,4 +406,7 @@ export const api = {
     assistant: () => request<Assistant>("GET", "/api/assistant"),
     /** For admins: what Claude's answers have cost, in all and on whose questions. */
     assistantSpending: () => request<AssistantSpending>("GET", "/api/assistant/spending"),
+    /** For admins: keep the help loaded for Claude around the clock (null), or for 1 to 24 hours after a question. */
+    keepHelpLoaded: (hours: number | null) =>
+        request<{ keep_hours: number | null }>("PUT", "/api/assistant/settings", { keep_hours: hours }),
 };

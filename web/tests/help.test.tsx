@@ -197,10 +197,24 @@ test("admins see what Claude's answers have cost, and on whose questions", async
     expect(
         card.getByText(/claude-sonnet-5-5, at high effort\. A month starts on the 1st, at 00:00 UTC\./),
     ).toBeTruthy();
-    // The test server keeps the help ready between questions.
+    // The test server keeps the help loaded, around the clock until an admin chooses otherwise.
+    const keep = card.getByRole("combobox", { name: "Keep the help loaded" }) as HTMLSelectElement;
+    expect(keep.value).toBe("always");
     expect(
-        card.getByText(/The server keeps the help ready between questions, .*: that cost \$[\d.]+ this month\./),
+        card.getByText(
+            /The server reads the help again whenever nothing has for 50 minutes, .* Keeping it loaded cost \$[\d.]+ this month, and \d+ of \d+ questions found it loaded\./,
+        ),
     ).toBeTruthy();
     const row = card.getByRole("cell", { name: "Ana" }).closest("tr")!;
     expect(Number(within(row).getAllByRole("cell")[1]!.textContent)).toBeGreaterThanOrEqual(1);
+
+    // Only for some hours after each question: as the server keeps it, after a reload too.
+    await userEvent.selectOptions(keep, "For 3 hours after a question");
+    expect(await card.findByText(/The server keeps the help loaded for 3 hours after each question/)).toBeTruthy();
+    cleanup();
+    renderApp(team.chief, "/vault/admin");
+    const again = within(await screen.findByRole("region", { name: "Claude" }));
+    expect((again.getByRole("combobox", { name: "Keep the help loaded" }) as HTMLSelectElement).value).toBe("3");
+    await userEvent.selectOptions(again.getByRole("combobox", { name: "Keep the help loaded" }), "Always");
+    expect(await again.findByText(/The server reads the help again whenever nothing has for 50 minutes/)).toBeTruthy();
 });

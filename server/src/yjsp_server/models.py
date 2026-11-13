@@ -101,7 +101,7 @@ class ServerLoad(Base):
 
 class AssistantRequest(Base):
     """A question to the assistant, and what Claude's answer cost: its budget and each person's daily limit add these
-    up (assistant.py). What was asked, and the answer, aren't kept. A read of the help to keep it ready between
+    up (assistant.py). What was asked, and the answer, aren't kept. A read of the help to keep it loaded between
     questions (YJSP_ASSISTANT_KEEP_WARM) is no one's question: it counts against the budgets, and no one's limit."""
 
     __tablename__ = "assistant_requests"
@@ -147,6 +147,10 @@ class SiteSettings(Base):
     # The oldest Vault client (the add-in, the CLI) that can change the vault, like "0.5.4": older ones can still read
     # it, and are told to update (clients.refuse_old). None, as it starts: any client can.
     min_client_version: Mapped[str | None] = mapped_column(String(32))
+    # How long Claude keeps the help loaded after a question, in hours (1 to 24), the server reading it again meanwhile
+    # (assistant.Assistant.keep_warm): 1 is only the hour Anthropic keeps it after each read. None, as it starts: always,
+    # around the clock.
+    assistant_keep_hours: Mapped[int | None] = mapped_column()
 
 
 class WhitelistEmail(Base):

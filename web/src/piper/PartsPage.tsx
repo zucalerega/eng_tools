@@ -6,7 +6,16 @@ import { piper, type DiagramDetail } from "./api";
 import { pageOf, readDocument } from "./drawing";
 import { download, fileName } from "./exports";
 import { fluidOf } from "./fluids";
-import { columnsOf, csvOf, PART_CATEGORIES, partsOf, sortRows, type PartsRow, type PartsSort } from "./parts";
+import {
+    columnsOf,
+    csvOf,
+    leftOutOf,
+    PART_CATEGORIES,
+    partsOf,
+    sortRows,
+    type PartsRow,
+    type PartsSort,
+} from "./parts";
 
 // A diagram's parts, on a page of their own (the editor's Parts opens it): every part on its pages in one table, sorted
 // by any column, and narrowed to one kind of part (valves, instruments...), one fluid, one page, or what has some words
@@ -63,6 +72,7 @@ export function PartsPage({ id }: { id: number }) {
 
     const drawn = useMemo(() => (diagram ? readDocument(diagram.drawing) : null), [diagram]);
     const all = useMemo(() => (drawn ? partsOf(drawn) : []), [drawn]);
+    const leftOut = useMemo(() => (drawn ? leftOutOf(drawn) : 0), [drawn]);
     const words = find.toLowerCase().split(/\s+/).filter(Boolean);
     // Each narrowing but the kind of part's: how many of each kind there are, as the others narrow them.
     const others = all.filter(
@@ -151,6 +161,7 @@ export function PartsPage({ id }: { id: number }) {
                 Every part on the diagram&apos;s pages, with what it is, the fluids on it, and its specs. Click a column
                 to sort by it (again to turn it around), or show only one kind of part, one fluid, or one page. A tag
                 opens the drawing at it. <em>Save as CSV</em> saves what&apos;s shown, as it&apos;s sorted.
+                {leftOut > 0 && ` ${leftOutSaid(leftOut)}`}
             </p>
             <div className="piper-parts-filters">
                 <div className="piper-parts-kinds" role="group" aria-label="Show">
@@ -243,3 +254,9 @@ export function PartsPage({ id }: { id: number }) {
         </section>
     );
 }
+
+/** What the parts page says of the parts left out of it: copies of parts drawn on another page too. */
+const leftOutSaid = (count: number): string =>
+    count === 1
+        ? "1 part is left out: a copy of one drawn on another page too, taken out of the list in the drawing."
+        : `${count} parts are left out: copies of ones drawn on another page too, taken out of the list in the drawing.`;

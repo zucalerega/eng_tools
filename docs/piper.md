@@ -75,6 +75,15 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   name (its box as wide as its words) until its words are changed; going there switches the
   page and shows the part, and the part it arrives at lists it. Deleting a page leaves its
   connectors going nowhere.
+  A part can be drawn on more than one page: the pressurant and propellant systems on sheets of
+  their own, to print, and a combined schematic of both, to look at online. A copy is left out
+  of the parts list (`part.unlisted`, set from the inspector's **In the parts list**, for a part
+  or a selection, by `listParts`), so the list has each part once (`leftOutOf` counts the
+  copies, which the parts page says). Pasting a part whose tag is taken only on another page
+  keeps its tag and makes it a copy; one whose tag the page has already is numbered anew, and
+  listed. `sharedTags` warns of a tag two listed parts have (`Drawing.listedElsewhere`), not
+  of a copy. Find and a test's readings still find a copy, by its tag, and the simulation
+  takes every page's parts, copies too.
   Find, Parts, and the parts list look through every page. The server refuses a save in an
   older format than the diagram's drawing is in (409 `drawing_newer`, saying what it would
   lose): a tab still running the Piper from before pages would save one page and lose the
@@ -376,8 +385,8 @@ what it is, `data-hit`).
 - **Undo and redo** go back through the drawing's changes in this tab (200 of them); a drag is
   one change, and typing in one field, a second or two at a time, is one. Copy and paste go
   through the clipboard, as JSON, so parts and the lines between them go from one diagram to
-  another (a line to a part left behind ends where it was), and pasted tags that are taken get
-  the next free number. Several parts line up by their edges or centers, or space evenly.
+  another (a line to a part left behind ends where it was), and pasted tags taken on the page
+  get the next free number (taken only on another page, the part's a copy, above). Several parts line up by their edges or centers, or space evenly.
 - **Exports** are drawn in the light colors, as on paper:
   - **PDF** (`pdf.ts`): the drawing's SVG turned into PDF's own operators, so it's vector: its
     paths (arcs and curves as Béziers), shapes, and text in PDF's standard Helvetica (nothing

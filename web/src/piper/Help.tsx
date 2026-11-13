@@ -205,6 +205,14 @@ const TOPICS: Topic[] = [
                     the part it arrives at lists it under <em>Comes from</em>, to go back.
                 </li>
                 <li>
+                    A part can be drawn on more than one page: the pressurant system and the propellant system on sheets
+                    of their own, to print, and a combined schematic of both, to look at online. Copy parts from one
+                    page and paste them on another and they keep their tags, as the same parts drawn again, and they're
+                    taken out of the parts list, so it has each one once. <em>In the parts list</em>, in a part's panel
+                    (or for everything selected), takes a part out of the list or puts it back. Two parts in the list
+                    with the same tag are warned of; a copy taken out of it isn't.
+                </li>
+                <li>
                     Once a diagram is saved with pages, a tab opened before Piper had them can't save it (it would keep
                     only one page): it says to reload, which gets the new Piper.
                 </li>
@@ -573,7 +581,7 @@ const TOPICS: Topic[] = [
                     size, Cv, range...). Click a column to sort by it, and again to turn it around; show only valves,
                     instruments, tanks..., one fluid, or one page; or find a tag, a model, a size. <em>Save as CSV</em>{" "}
                     there saves what's shown. Click a tag to open the drawing at its part. Lines aren't parts: they're
-                    not in it.
+                    not in it, nor is a part taken out of the list, a copy of one drawn on another page too.
                 </li>
             </ul>
         ),

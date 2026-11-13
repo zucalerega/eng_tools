@@ -42,6 +42,24 @@ function computeInputFingerprint(source: string, envJson: string): string {
     return `${source.length}:${source}\0${envJson}`;
 }
 
+function deduplicateDiagnostics(diagnostics: SimulationResult["diagnostics"]): SimulationResult["diagnostics"] {
+    const methodCalls = new Set(
+        diagnostics
+            .map((d) => {
+                const match = d.message.match(/^(\w+) does not expose \.(\w+)\(\) in Luna's Python API$/);
+                return match ? `${d.stage}:${d.line}:${match[1]}:${match[2]}` : null;
+            })
+            .filter((k): k is string => k !== null),
+    );
+    return diagnostics.filter((d) => {
+        const attrMatch = d.message.match(/^(\w+) does not expose attribute \.(\w+) in Luna's Python API$/);
+        if (!attrMatch) {
+            return true;
+        }
+        return !methodCalls.has(`${d.stage}:${d.line}:${attrMatch[1]}:${attrMatch[2]}`);
+    });
+}
+
 interface LocalDraft {
     name: string;
     source: string;
@@ -442,7 +460,10 @@ export function Workspace({ createRunner }: WorkspaceProps) {
             if (runSeqRef.current !== runId) {
                 return;
             }
-            setResult(res);
+            setResult({
+                ...res,
+                diagnostics: deduplicateDiagnostics(res.diagnostics),
+            });
             setResultFingerprint(runFingerprint);
         } catch (err: unknown) {
             if (runSeqRef.current !== runId) {

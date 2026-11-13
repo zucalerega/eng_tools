@@ -22,6 +22,8 @@ def settings(tmp_path) -> Settings:
         bootstrap_admins=BOOTSTRAP_ADMIN,
         web_dir=tmp_path / "web",  # empty: tests that need the web app build a stand-in
         yorg_dir=tmp_path / "yorg",
+        # The tests that keep the help loaded for Claude do it themselves, on their own clock, not in a thread.
+        assistant_keep_warm=False,
     )
 
 

@@ -457,9 +457,10 @@ a number. A few codes come up in more than one place.
 - **This sign-in has expired**, or **Sign-in verification failed** (`invalid_code`): the one-time
   code that finishes signing in from SolidWorks or the `vault` command was used already, was over 5
   minutes old, or didn't match. Sign in again from the client.
-- **Only admins can do that**, or **Only admins can see what the assistant has cost**
-  (`admin_only`): inviting, approving, and disabling people, the whitelist, and Admin > People's
-  figures are for admins. Ask an admin.
+- **Only admins can do that**, **Only admins can see what the assistant has cost**, or **Only
+  admins can change how long Claude keeps the help loaded** (`admin_only`): inviting, approving,
+  and disabling people, the whitelist, and Admin > People's figures and settings are for admins.
+  Ask an admin.
 - **... isn't an email address** (`bad_email`): an invite, or an email for the whitelist, that isn't
   an email address. Check what was typed.
 - **... already has an account** (`exists`): the person you're inviting has one already. One waiting

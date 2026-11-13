@@ -59,7 +59,10 @@ Claude has read all of the help, and answers with links to it, but it can be wro
 is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
 never paste a password or a key. The tab keeps the conversation until you start a new one. Each
 person can ask so much a day, and the server sets what Claude may spend each month, or in all;
-admins see what it has spent, and on whose questions, on Admin > People.
+admins see what it has spent, and on whose questions, on Admin > People. There, *Keep the help
+loaded* says whether the server keeps the help loaded for Claude around the clock, so every
+question costs a fraction of one that has to read all of it, or only for some hours after each
+question, for a team that asks rarely.
 
 ## Vault: CAD files
 

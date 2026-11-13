@@ -5,13 +5,19 @@ import { createServer } from "node:http";
 // questions the conversation has had, in pieces as Anthropic streams them, with a link into the help. A question with
 // [decline] in it is declined, one with [fail] is turned away as if Anthropic were overloaded, one with [slow] is
 // answered a piece every fifth of a second, for a few seconds, and one with [long] at length (about 30,000 characters).
-// A request that doesn't stream, as the server's to keep the help ready, gets the whole of an empty answer.
+// A request that doesn't stream gets its answer whole: an empty one to the server's reads that keep the help loaded,
+// and a recommendation to its look at a bug report or a feature request.
+//
+// It stands in for Claude Code's routines too: a fire starts a "session", unless what it's sent has [fail] in it.
 
 interface Asked {
     model: string;
+    max_tokens: number;
     messages: { role: string; content: string }[];
     stream?: boolean;
 }
+
+let fires = 0;
 
 function answerTo(question: string, number: number): string {
     return `You asked: "${question}" (question ${number} here). See [Conflicts](/help#solidworks-conflicts).`;
@@ -22,8 +28,27 @@ export function fakeClaude(): Promise<{ url: string; close: () => void }> {
         let body = "";
         request.on("data", (chunk: Buffer) => (body += chunk.toString()));
         request.on("end", () => {
+            if (request.url?.includes("/claude_code/routines/")) {
+                const sent = (JSON.parse(body) as { text: string }).text;
+                fires += 1;
+                const failed = sent.includes("[fail]");
+                response.writeHead(failed ? 503 : 200, { "content-type": "application/json" });
+                response.end(
+                    JSON.stringify(
+                        failed
+                            ? { type: "error", error: { type: "overloaded_error", message: "Overloaded" } }
+                            : {
+                                  type: "routine_fire",
+                                  claude_code_session_id: `session_test${fires}`,
+                                  claude_code_session_url: `https://claude.ai/code/session_test${fires}`,
+                              },
+                    ),
+                );
+                return;
+            }
             const asked = JSON.parse(body) as Asked;
             if (!asked.stream) {
+                const looking = asked.max_tokens > 0;
                 response.writeHead(200, { "content-type": "application/json" });
                 response.end(
                     JSON.stringify({
@@ -31,14 +56,16 @@ export function fakeClaude(): Promise<{ url: string; close: () => void }> {
                         type: "message",
                         role: "assistant",
                         model: asked.model,
-                        content: [],
-                        stop_reason: "max_tokens",
+                        content: looking
+                            ? [{ type: "text", text: "**Recommendation**: approve. It's small, and clear." }]
+                            : [],
+                        stop_reason: looking ? "end_turn" : "max_tokens",
                         stop_sequence: null,
                         usage: {
                             input_tokens: 10,
                             cache_creation_input_tokens: 0,
                             cache_read_input_tokens: 1000,
-                            output_tokens: 0,
+                            output_tokens: looking ? 300 : 0,
                         },
                     }),
                 );

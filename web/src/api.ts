@@ -200,9 +200,47 @@ export interface AssistantSpending {
     keep_warm: boolean; // whether the server may keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
     keep_hours: number | null; // for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: number; // what that cost this month, in month_spent too
+    feedback_spent: number; // what Claude's looks at bug reports and feature requests cost this month, in month_spent
     month_questions: number; // this month's questions
     month_questions_loaded: number; // of those, the ones that found the help loaded, and read it for much less
     people: { user: UserRef; questions: number; spent: number; last_asked_at: string }[]; // the most spent first
+}
+
+/** A bug report or a feature request someone sent from Help (feedback.py on the server). */
+export interface Feedback {
+    id: number;
+    kind: "bug" | "feature";
+    title: string;
+    body: string;
+    page: string | null; // where in the web app it was sent from
+    created_at: string;
+    status: "new" | "approved" | "declined" | "done"; // approved: Claude Code is building it
+    reply: string | null; // an admin's answer to whoever sent it
+    decided_at: string | null;
+    // For admins:
+    sender?: UserRef | null;
+    decided_by?: UserRef | null;
+    evaluation?: string | null; // Claude's look at it, in Markdown
+    evaluation_problem?: string | null; // why Claude couldn't look
+    looking?: boolean; // Claude is looking at it now
+    evaluation_cost?: number | null; // what Claude's looks at it cost, in US dollars
+    note?: string | null; // the owner's note for Claude Code
+    session_url?: string | null; // the Claude Code session building it
+}
+
+/** Every request, for admins, and whether the one looking can approve them (only the site's owner can). */
+export interface FeedbackList {
+    requests: Feedback[];
+    can_approve: boolean;
+    why_not_approve: string | null;
+}
+
+/** What someone sends: a bug report or a feature request, from a page of the web app. */
+export interface FeedbackSent {
+    kind: "bug" | "feature";
+    title: string;
+    body: string;
+    page: string | null;
 }
 
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
@@ -409,4 +447,19 @@ export const api = {
     /** For admins: keep the help loaded for Claude around the clock (null), or for 1 to 24 hours after a question. */
     keepHelpLoaded: (hours: number | null) =>
         request<{ keep_hours: number | null }>("PUT", "/api/assistant/settings", { keep_hours: hours }),
+    /** Send a bug report or a feature request: Claude looks at it for the site's owner. */
+    sendFeedback: (sent: FeedbackSent) => request<Feedback>("POST", "/api/feedback", sent),
+    /** The requests you've sent, the newest first. */
+    myFeedback: () => request<Feedback[]>("GET", "/api/feedback/mine"),
+    /** For admins: every request, with Claude's look at each. */
+    allFeedback: () => request<FeedbackList>("GET", "/api/feedback"),
+    /** For the site's owner: have Claude Code build it. */
+    approveFeedback: (id: number, note: string) =>
+        request<Feedback>("POST", `/api/feedback/${id}/approve`, { note: note.trim() || null }),
+    /** For admins: turn it down, saying why; or mark it done, with a reply if you like. */
+    declineFeedback: (id: number, reply: string) => request<Feedback>("POST", `/api/feedback/${id}/decline`, { reply }),
+    finishFeedback: (id: number, reply: string) =>
+        request<Feedback>("POST", `/api/feedback/${id}/done`, { reply: reply.trim() || null }),
+    /** For admins: have Claude look at it again. */
+    lookAgain: (id: number) => request<Feedback>("POST", `/api/feedback/${id}/look`),
 };

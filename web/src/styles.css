@@ -2478,6 +2478,163 @@ input[type="checkbox"] {
     line-height: 1.4;
 }
 
+/* Help's two tabs: asking Claude, and sending the owner a bug report or a feature request (feedback.tsx). */
+.help-tabs {
+    padding: 0.55rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.feedback-pane {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem 1rem;
+}
+
+.feedback-pane > p {
+    margin: 0 0 0.75rem;
+    font-size: 0.88rem;
+}
+
+.feedback-form .segmented {
+    padding: 0;
+}
+
+.feedback-form .field {
+    margin: 0.65rem 0 0;
+}
+
+.feedback-form textarea {
+    resize: vertical;
+}
+
+.feedback-send {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.65rem 0;
+    font-size: 0.76rem;
+}
+
+.feedback-pane .notice {
+    margin: 0.5rem 0;
+}
+
+.feedback-mine-title {
+    margin: 1.25rem 0 0.4rem;
+    font-size: 0.95rem;
+}
+
+.feedback-mine {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.feedback-mine li {
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
+.feedback-mine .badge {
+    margin-left: 0;
+}
+
+.feedback-mine .muted {
+    font-size: 0.8rem;
+}
+
+.feedback-reply {
+    margin: 0.3rem 0 0;
+    padding-left: 0.6rem;
+    border-left: 2px solid var(--border-strong);
+    white-space: pre-wrap;
+}
+
+/* Admin > Requests: each request, with Claude's look at it, and what an admin can do with it. */
+.feedback-shown {
+    max-width: 18rem;
+    padding: 0 0 0.75rem;
+}
+
+.feedback-item {
+    margin: 0 0 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    overflow-wrap: anywhere;
+}
+
+.feedback-item-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem 0.6rem;
+}
+
+.feedback-item-head .badge {
+    margin-left: 0;
+}
+
+.feedback-item-head h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 1rem;
+}
+
+.feedback-status {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.feedback-status.feedback-new {
+    color: var(--warning);
+}
+
+.feedback-status.feedback-approved {
+    color: var(--accent);
+}
+
+.feedback-from {
+    margin: 0.25rem 0 0.6rem;
+    font-size: 0.82rem;
+}
+
+.feedback-body {
+    margin: 0 0 0.75rem;
+    white-space: pre-wrap;
+}
+
+.feedback-look {
+    margin: 0 0 0.75rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    font-size: 0.9rem;
+}
+
+.feedback-look h4 {
+    margin: 0 0 0.35rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.feedback-look p:last-child {
+    margin-bottom: 0;
+}
+
+.feedback-actions .field {
+    margin: 0 0 0.5rem;
+}
+
+.feedback-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 /* A folder that's a path of its own (FolderPicker: Yorg's views and scripts, Piper's diagrams): a box to type in, with
    the folders there are to pick from under it. */
 .folder-picker {

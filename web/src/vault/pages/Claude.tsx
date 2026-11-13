@@ -76,6 +76,12 @@ export function ClaudeSpending() {
                 {monthly && (
                     <>{!inAll && <>{usd.format(spending.spent)} in all. </>}A month starts on the 1st, at 00:00 UTC. </>
                 )}
+                {spending.feedback_spent > 0 && (
+                    <>
+                        Its looks at bug reports and feature requests cost {usd.format(spending.feedback_spent)} this
+                        month.{" "}
+                    </>
+                )}
                 {!spending.keep_warm && (
                     <>
                         The first question in an hour costs the most, as Claude reads all of the help; for the rest of

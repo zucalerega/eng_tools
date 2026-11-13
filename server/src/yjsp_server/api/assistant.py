@@ -63,6 +63,7 @@ def get_spending(request: Request, user: ActiveUser, db: DB) -> AssistantSpendin
         keep_warm=found.keep_warm,
         keep_hours=found.keep_hours,
         keep_warm_spent=found.keep_warm_spent,
+        feedback_spent=found.feedback_spent,
         month_questions=found.month_questions,
         month_questions_loaded=found.month_questions_loaded,
         people=people,

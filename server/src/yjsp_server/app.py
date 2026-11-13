@@ -10,12 +10,14 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __version__, load, people
 from .api import assistant as assistant_api
 from .api import downloads, signin, web
+from .api import feedback as feedback_api
 from .api import help as help_api
 from .api import people as people_api
 from .assistant import Assistant
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
+from .feedback import Requests
 from .limits import BodyLimit
 from .piper import api as piper_api
 from .piper.diagrams import stored as piper_stored
@@ -66,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.piper_stored = piper_stored  # what Piper keeps in the database, for the storage the site shows (disk.py)
     app.state.oauth = signin.make_oauth(settings)
     app.state.assistant = Assistant(settings, sessions)  # Claude, answering from the help (Help in the web app)
+    # Bug reports and feature requests, which Claude looks at and the owner can have Claude Code build.
+    app.state.feedback = Requests(settings, sessions, app.state.assistant)
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
@@ -97,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(help_api.router)
     app.include_router(people_api.router)
     app.include_router(assistant_api.router)
+    app.include_router(feedback_api.router)
     app.include_router(downloads.router)
     app.include_router(vault_api.router)
     app.include_router(yorg_api.router)

@@ -1,6 +1,9 @@
 """A stand-in for Anthropic's Messages API, on a port of its own: it answers as Anthropic does, streaming, with the
 replies a test gives it (or a plain one), and keeps every request it got. The assistant reaches it through
-YJSP_ANTHROPIC_BASE_URL, so the real SDK talks to it over HTTP, as it would to Anthropic."""
+YJSP_ANTHROPIC_BASE_URL, so the real SDK talks to it over HTTP, as it would to Anthropic.
+
+It stands in for Claude Code's routines too (feedback.py): a POST to /v1/claude_code/routines/<id>/fire starts a
+"session", or fails as a test says, and is kept in `fires`."""
 
 import json
 import threading
@@ -32,11 +35,21 @@ class Reply:
 
 
 @dataclass
+class Fire:
+    """What a routine's fire gets back: a session, or Claude Code's error."""
+
+    status: int = 200
+    error: str = ""
+
+
+@dataclass
 class FakeClaude:
     replies: list[Reply] = field(default_factory=list)
     requests: list[dict[str, Any]] = field(default_factory=list)  # each request's body, and its headers in "headers"
     received: threading.Event = field(default_factory=threading.Event)  # set at each request
     holding: threading.Event = field(default_factory=threading.Event)  # set when an answer waits partway, hold_after
+    fires: list[dict[str, Any]] = field(default_factory=list)  # each routine fire: its path, body, and headers
+    fire_replies: list[Fire] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         fake = self
@@ -49,6 +62,8 @@ class FakeClaude:
 
             def do_POST(self) -> None:
                 body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                if "/claude_code/routines/" in self.path:
+                    return self._fire(body)
                 fake.requests.append({**body, "headers": {k.lower(): v for k, v in self.headers.items()}})
                 fake.received.set()
                 reply = fake.replies.pop(0) if fake.replies else Reply()
@@ -57,7 +72,7 @@ class FakeClaude:
                 if reply.status != 200:
                     self._error(reply)
                 elif not body.get("stream"):
-                    self._message(reply, reply.model or body["model"])
+                    self._message(reply, reply.model or body["model"], writes=body["max_tokens"] > 0)
                 else:
                     self._stream(reply, reply.model or body["model"])
 
@@ -74,8 +89,33 @@ class FakeClaude:
                 self.end_headers()
                 self.wfile.write(data)
 
-            def _message(self, reply: Reply, model: str) -> None:
-                """The answer whole, as JSON: to a request that doesn't stream, as one that keeps the help ready."""
+            def _fire(self, body: dict[str, Any]) -> None:
+                headers = {k.lower(): v for k, v in self.headers.items()}
+                fake.fires.append({"path": self.path, "body": body, "headers": headers})
+                reply = fake.fire_replies.pop(0) if fake.fire_replies else Fire()
+                if reply.status == 200:
+                    number = len(fake.fires)
+                    data = {
+                        "type": "routine_fire",
+                        "claude_code_session_id": f"session_test{number}",
+                        "claude_code_session_url": f"https://claude.ai/code/session_test{number}",
+                    }
+                else:
+                    kind = {401: "authentication_error", 404: "not_found_error", 429: "rate_limit_error"}
+                    data = {
+                        "type": "error",
+                        "error": {"type": kind.get(reply.status, "api_error"), "message": reply.error},
+                    }
+                encoded = json.dumps(data).encode()
+                self.send_response(reply.status)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def _message(self, reply: Reply, model: str, writes: bool) -> None:
+                """The answer whole, as JSON: to a request that doesn't stream, as one that keeps the help loaded
+                (which writes nothing), or a look at a request."""
                 usage = {
                     "input_tokens": reply.input_tokens,
                     "cache_creation_input_tokens": reply.write_5m + reply.write_1h,
@@ -86,7 +126,8 @@ class FakeClaude:
                     },
                     "output_tokens": reply.output_tokens,
                 }
-                message = {"id": "msg_test", "type": "message", "role": "assistant", "model": model, "content": []}
+                content = [{"type": "text", "text": reply.text}] if writes and reply.text else []
+                message = {"id": "msg_test", "type": "message", "role": "assistant", "model": model, "content": content}
                 ending = {"stop_reason": reply.stop_reason, "stop_sequence": None, "usage": usage}
                 data = json.dumps({**message, **ending}).encode()
                 self.send_response(200)

@@ -63,6 +63,15 @@ loaded* says whether the server keeps the help loaded for Claude around the cloc
 question costs a fraction of one that has to read all of it, or only for some hours after each
 question, for a team that asks rarely.
 
+**Report a bug or idea**, Help's other tab, sends the site's owner a bug report or a feature
+request, with the page you're on. Say what you did, what happened (an error's exact words, if
+there was one), and what you expected; or what you'd like, and what it's for. Claude looks at
+it first, from the help, and the owner decides whether Claude Code builds it: approved, it
+becomes a change the owner reviews like any other. *Your requests*, under the form, says what's
+become of each, with any reply. You can send 10 a day. Admins see every request on
+Admin > Requests, with Claude's look at it, and can decline one, saying why, or mark one done;
+only the owner can approve one, as Claude Code builds it on their Claude account.
+
 ## Vault: CAD files
 
 Version control for the team's SolidWorks and STEP files: check out, check in, version

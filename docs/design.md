@@ -361,6 +361,35 @@ files or account, and it does nothing but answer.
   your daily limit reached (`assistant_daily_limit`), still answering your last question
   (`assistant_busy`), or Anthropic's API failing (`assistant_failed`).
 
+**Requests** (`feedback.py`, the `feedback` table): Help's other tab, *Report a bug or idea*,
+sends the site's owner a bug report or a feature request, with the page it was sent from.
+Claude looks at each for them (`Assistant.look`): the instructions and the help as a question
+has them, read from what Anthropic keeps, then what to do instead (`assistant.LOOKING`), and
+the request as data, never instructions. It writes a short Markdown recommendation from the
+help alone: approve, ask for more, or decline; what it would change; what's unclear or at
+risk; and its size. The look runs in a thread of its own as the request is sent, counts
+against Claude's budgets as no one's question (`assistant_requests.purpose` says what each
+request to Claude was for: a question, a read to keep the help loaded, or a look), and isn't
+counted against anyone's daily limit; when it can't (a budget spent), the request keeps why,
+and an admin can have Claude look again. Each person sends at most 10 a day.
+
+- **Who sees what**: whoever sent one sees it, its status, and an admin's reply, under *Your
+  requests*; admins see every one on Admin > Requests, with who sent it, Claude's look, and
+  what it cost. Any admin can decline one, saying why, or mark one done.
+- **Approving** is the owner's alone (`YJSP_FEEDBACK_APPROVER`, an admin's email), because it
+  starts Claude Code on their Claude account: the server fires a Claude Code routine
+  (`YJSP_FEEDBACK_ROUTINE_URL`, `YJSP_FEEDBACK_ROUTINE_TOKEN`; `POST .../fire`, with the
+  request, the owner's note, and Claude's look as its `text`, without who sent it). The
+  routine is a saved cloud session with the repository, whose own prompt (deploying.md,
+  "Requests") says to build what it's sent as CLAUDE.md says, as a draft pull request for the
+  owner to review; Claude Code wraps what it's sent as untrusted data, so that prompt has to
+  say to act on it. The server keeps the link to the session it started, and never changes
+  code itself. A request is approved at most once: it's claimed (`new` to `approved`) before
+  the routine is fired, since a fire can't be taken back, and goes back to `new` if Claude
+  Code doesn't start it.
+- **Statuses**: `new` (waiting for the owner), `approved` (Claude Code is building it),
+  `declined`, and `done`. Nothing deletes a request.
+
 ## Server conventions
 
 - **Errors** are `ApiError`s (`errors.py`), sent as
@@ -421,8 +450,14 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 | `GET /api/storage/summary` | the same for the site's own page, at most a minute old: `total`, `free`, `vault`, `yorg`, `piper` (anyone signed in) |
 | `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` in all and what it has `spent`, and its `monthly_budget` and what it has spent this month (`month_spent`, since 00:00 UTC on the 1st), in US dollars (a budget of 0 is none) |
 | `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
-| `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; whether the server may keep the help loaded between questions (`keep_warm`, its setting), for how long after a question (`keep_hours`, 1 to 24, or null: always), and what that cost this month (`keep_warm_spent`); how many of this month's questions there were (`month_questions`) and found the help loaded (`month_questions_loaded`); and each person's questions and what they cost (admins) |
+| `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; whether the server may keep the help loaded between questions (`keep_warm`, its setting), for how long after a question (`keep_hours`, 1 to 24, or null: always), and what that cost this month (`keep_warm_spent`); how many of this month's questions there were (`month_questions`) and found the help loaded (`month_questions_loaded`); what its looks at requests cost this month (`feedback_spent`); and each person's questions and what they cost (admins) |
 | `PUT /api/assistant/settings` | keep the help loaded for Claude around the clock (`{"keep_hours": null}`) or for 1 to 24 hours after each question (admins) |
+| `POST /api/feedback` | send a bug report or a feature request `{kind: "bug" or "feature", title, body, page}`; Claude looks at it for the owner meanwhile |
+| `GET /api/feedback/mine` | the requests you've sent, the newest first: each one's `status` (`new`, `approved`, `declined`, `done`) and an admin's `reply` |
+| `GET /api/feedback` | every request, the newest first, with who sent it (`sender`), Claude's look (`evaluation`, or why it couldn't: `evaluation_problem`; `looking` while it is), what that cost, and the Claude Code session building it (`session_url`); and whether you can approve them (`can_approve`, `why_not_approve`) (admins) |
+| `POST /api/feedback/{id}/approve` | have Claude Code build it, with a `note` for it: fires the routine, and returns the request with its `session_url` (the owner) |
+| `POST /api/feedback/{id}/decline`, `POST /api/feedback/{id}/done` | turn it down, with a `reply` saying why, or mark it done, with a `reply` if you like (admins) |
+| `POST /api/feedback/{id}/look` | have Claude look at it again (admins) |
 
 ## Names from before YJSP
 

@@ -345,7 +345,7 @@ def test_upgrades_say_which_models_were_made_in_solidworks(tmp_path):
     """Caliper says where each model came from: the ones Vault for SolidWorks made are known by their reader (0); the
     server's from before it noted how stay unsaid, and Caliper calls them read from the file."""
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
-    migrate(engine, "0029")
+    migrate(engine, "0030")
     when = "'2026-11-01 12:00:00.000000'"
     with engine.begin() as db:
         db.exec_driver_sql(

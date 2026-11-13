@@ -899,6 +899,42 @@ test("Parts opens a page of every part: sorted by any column, narrowed to a kind
     expect(sensor).toBeTruthy();
 });
 
+test("a part drawn again, on a combined schematic, is taken out of the parts list from the inspector", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    place(drawing, "ball-valve", 0, 0);
+    const copy = place(drawing, "ball-valve", 200, 0);
+    // The same valve drawn twice: warned of, until one's out of the list.
+    drawing.value = {
+        ...drawing.value,
+        parts: drawing.value.parts.map((part) => (part.id === copy ? { ...part, tag: "BV-1" } : part)),
+    };
+    const made = await team.diagram(team.chief, "Combined", drawing.value);
+    const editor = renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    fireEvent.pointerDown(within(svg).getAllByRole("button", { name: "BV-1" })[1]!, at(200, 0));
+    fireEvent.pointerUp(svg, at(200, 0));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    expect(inspector.getByText(/Another part is tagged BV-1 too\. If it's the same part drawn again/)).toBeTruthy();
+    const listed = inspector.getByRole("checkbox", { name: "In the parts list" }) as HTMLInputElement;
+    expect(listed.checked).toBe(true);
+    await userEvent.click(listed);
+    expect(listed.checked).toBe(false);
+    expect(inspector.queryByText(/is tagged BV-1 too/)).toBeNull();
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read.parts.find((part) => part.id === copy)!;
+        expect(saved.unlisted).toBe(true);
+    });
+    editor.unmount();
+
+    // The list has it once, and says one's left out.
+    renderApp(team.chief, `/piper/diagrams/${made.id}/parts`);
+    const table = within(await screen.findByRole("table", { name: "Parts" }));
+    expect(table.getAllByRole("row").slice(1)).toHaveLength(1);
+    expect(screen.getByText(/1 part is left out: a copy of one drawn on another page too/)).toBeTruthy();
+});
+
 test("a sensor's fields fit what it measures: a thermocouple's type and probe, and what it said before stays its own", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

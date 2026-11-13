@@ -7,8 +7,9 @@ import { linesOn } from "./ports";
 // A diagram's parts list: every valve, instrument, tank, and the rest on its pages, each with what it is, the page it's
 // on, the fluids on it, and its specs. Not its lines, nor what's only written or drawn on it (notes, regions,
 // connectors, the title block, pictures, and a figure, a shape as Visio drew it, unless it's tagged, as a component
-// Piper has no part for is). The parts page shows it, sorted and narrowed as asked (PartsPage.tsx); as a CSV, it's a
-// valve list and an instrument list, in a spreadsheet.
+// Piper has no part for is), nor a part left out of it: a copy of one drawn on another page too (on a combined
+// schematic, beside the pressurant's and the propellant's that print), so it's listed once. The parts page shows it,
+// sorted and narrowed as asked (PartsPage.tsx); as a CSV, it's a valve list and an instrument list, in a spreadsheet.
 
 /** Kinds that aren't parts to list: what's written or drawn on a drawing, and where its lines meet. */
 const NOT_PARTS = new Set(["junction", "text", "region", "offpage", "legend", "titleblock", "picture"]);
@@ -58,7 +59,19 @@ export function partsOf(document: Document): PartsRow[] {
     return sortRows(rows, null);
 }
 
-const isListed = (part: Part) => !NOT_PARTS.has(part.kind) && (part.kind !== "figure" || part.tag !== "");
+/** Whether a part is one the list could have: not what's only written or drawn, nor an untagged figure. */
+export const isListable = (part: Part) => !NOT_PARTS.has(part.kind) && (part.kind !== "figure" || part.tag !== "");
+
+/** Whether the list has a part: one it could, not left out of it (a copy of a part on another page). */
+const isListed = (part: Part) => isListable(part) && !part.unlisted;
+
+/** How many parts on a diagram's pages are left out of the list: copies of parts drawn on another page too. */
+export function leftOutOf(document: Document): number {
+    return document.pages.reduce(
+        (count, page) => count + page.parts.filter((part) => isListable(part) && part.unlisted).length,
+        0,
+    );
+}
 
 function rowOf(document: Document, drawing: Drawing, part: Part, page: number): PartsRow {
     const kind = kindOf(part.kind);

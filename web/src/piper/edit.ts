@@ -13,8 +13,11 @@ import {
 } from "./drawing";
 import {
     dirOf,
+    GRID,
     grow,
+    lengthOf,
     nearestOnPolyline,
+    OPPOSITE,
     orthogonal,
     samePoint,
     simplify,
@@ -28,7 +31,7 @@ import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
 import { linesOn, partsById, placeEnd, portOf, portsOf, runLines, type PlacedEnd } from "./ports";
-import { route, STUB } from "./route";
+import { crosses, route, STUB } from "./route";
 
 // The changes the editor makes to a drawing, each a pure function from one drawing to the next: placing parts,
 // connecting them, putting one into a line, moving, turning, deleting (and joining a line back up where a part in it
@@ -78,7 +81,28 @@ function mendEnds(path: Point[], from: PlacedEnd, to: PlacedEnd, boxes: Box[]): 
     if (mended.length >= 3 && to.dir && dirOf(mended[last]!, mended[last - 1]!) !== to.dir) {
         mended = [...mended.slice(0, last - 1), ...route({ at: mended[last - 1]!, dir: null }, to, boxes)];
     }
-    return simplify(mended);
+    return simplify(unfold(mended));
+}
+
+/**
+ * A path with each run that turns straight back along itself cut short where it turns: a route from a bend that sets
+ * off back the way the line came to it is one run, to where it goes on from. Its ends stay.
+ */
+function unfold(path: Point[]): Point[] {
+    const kept: Point[] = [];
+    for (const point of path) {
+        kept.push(point);
+        while (kept.length >= 3) {
+            const [a, b, c] = kept.slice(-3) as [Point, Point, Point];
+            const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+            const dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
+            if (Math.abs(cross) > 1e-6 || dot >= 0) {
+                break;
+            }
+            kept.splice(-2, 1);
+        }
+    }
+    return kept;
 }
 
 /**
@@ -114,6 +138,129 @@ export function follow(before: Point[], from: PlacedEnd, to: PlacedEnd, boxes: B
 }
 
 /**
+ * A line routed by hand as it was before its ends moved: its run (runOf), end to end; that run as it was drawn
+ * (square); and the parts it ran through.
+ */
+interface Was {
+    run: Point[];
+    drawn: Point[];
+    through: Set<string>;
+}
+
+function wasOf(drawing: Drawing, parts: Map<string, Part>, line: Line): Was | null {
+    const run = runOf(parts, line);
+    const from = placeEnd(parts, line.from);
+    if (!run || !from) {
+        return null;
+    }
+    const drawn = orthogonal(run, from.dir);
+    return { run, drawn, through: partsThrough(drawing, line, drawn) };
+}
+
+/**
+ * The parts a line, as it's drawn (square: ports.pathOf), runs through: any it doesn't end on, and those it ends on but
+ * where it goes into them, its first run and its last (a port can be just inside its part's outline). Not what's drawn
+ * behind the lines, nor where they meet.
+ */
+function partsThrough(drawing: Drawing, line: Line, path: Point[]): Set<string> {
+    const own = new Set([line.from, line.to].filter(isPortEnd).map((end) => end.part));
+    const through = new Set<string>();
+    for (const part of drawing.parts) {
+        if (kindOf(part.kind).behind || part.kind === "junction") {
+            continue;
+        }
+        const box = boxOf(part, drawing);
+        const runs = own.has(part.id) ? path.slice(1, -1) : path;
+        if (runs.some((a, index) => index + 1 < runs.length && crosses(a, runs[index + 1]!, box))) {
+            through.add(part.id);
+        }
+    }
+    return through;
+}
+
+/**
+ * A line routed by hand whose end moved, brought up to date in the drawing as it is now: following its end (follow),
+ * if that leaves it drawn clean (clean), through nothing it wasn't through before, and still the line as it was drawn
+ * (asDrawn); else routed for itself, and Piper's to route from then on. A straight line whose end moved off its line, a
+ * run the move put through a part, a bend an end moved past that the line would loop round from: its bends can't be
+ * kept without going haywire, so they aren't. A part it ran over before (Visio sets a quick disconnect on a line, not
+ * into it), it may still.
+ */
+function followed(after: Drawing, line: Line, was: Was, parts: Map<string, Part>, boxes: Box[]): Line {
+    const from = placeEnd(parts, line.from);
+    const to = placeEnd(parts, line.to);
+    if (!from || !to) {
+        return line;
+    }
+    const points = follow(was.run, from, to, boxes);
+    const kept = orthogonal([from.at, ...points, to.at], from.dir);
+    const clear = [...partsThrough(after, line, kept)].every((id) => was.through.has(id));
+    let routed: Point[] | null = null;
+    const own = () => (routed ??= routeOf(after, line, parts, boxes));
+    if (clear && clean(kept, from, to) && asDrawn(kept, was.drawn, () => [from.at, ...own(), to.at])) {
+        return { ...line, points };
+    }
+    return { ...line, auto: true, points: own() };
+}
+
+/**
+ * A line drawn elsewhere (as Visio drew it: its run, end to end), on its ends as they're placed: its bends followed onto
+ * them (follow), as it was drawn, wrong way in to a port and all; unless that loops round to a port (asDrawn: one that
+ * faces away from Visio's last bend, a hair from it), when it's Piper's to route.
+ */
+export function traced(drawing: Drawing, from: End, to: End, run: Point[]): Pick<Line, "points" | "auto"> {
+    const parts = partsById(drawing);
+    const [start, end] = [placeEnd(parts, from), placeEnd(parts, to)];
+    const boxes = obstacles(drawing);
+    let routed: Point[] | null = null;
+    const own = () => (routed ??= routeOf(drawing, newLine(from, to), parts, boxes));
+    if (start && end) {
+        const points = follow(run, start, end, boxes);
+        const kept = orthogonal([start.at, ...points, end.at], start.dir);
+        if (asDrawn(kept, orthogonal(run, start.dir), () => [start.at, ...own(), end.at])) {
+            return { points, auto: false };
+        }
+    }
+    return { points: own(), auto: true };
+}
+
+/**
+ * Whether a line followed to where its ends are now (kept) is still the line as it was drawn (drawn): its bends no more
+ * than they were, moved with its ends; or, routed round to an end that came to face away from it, no longer than a
+ * route of its own would be (own) by more than a stub out and back. Longer, it's a loop round to its port that it only
+ * makes to keep a bend that's no use now.
+ */
+function asDrawn(kept: Point[], drawn: Point[], own: () => Point[]): boolean {
+    const bends = (path: Point[]) => simplify(path).length - 2;
+    return bends(kept) <= bends(drawn) || lengthOf(kept) <= lengthOf(own()) + 2 * STUB;
+}
+
+/**
+ * Whether a line, as it's drawn (square: ports.pathOf), is clean: out of its ports, and in to them, the way they face;
+ * and never back over itself, nor back beside itself a hair away.
+ */
+function clean(path: Point[], from: PlacedEnd, to: PlacedEnd): boolean {
+    const last = path.length - 1;
+    if (last < 1) {
+        return true;
+    }
+    if (
+        (from.dir && dirOf(path[0]!, path[1]!) !== from.dir) ||
+        (to.dir && dirOf(path[last]!, path[last - 1]!) !== to.dir)
+    ) {
+        return false;
+    }
+    const runs = path.slice(0, -1).map((a, index) => ({ a, b: path[index + 1]!, dir: dirOf(a, path[index + 1]!) }));
+    return runs.every(({ dir }, index) => {
+        // Back the way it came: straight, or round a step too small to read as turning round (half a grid, as the
+        // router turns round by no less).
+        const [next, after] = [runs[index + 1], runs[index + 2]];
+        const step = next ? Math.abs(next.b.x - next.a.x) + Math.abs(next.b.y - next.a.y) : Infinity;
+        return !(dir && (next?.dir === OPPOSITE[dir] || (step < GRID / 2 && after?.dir === OPPOSITE[dir])));
+    });
+}
+
+/**
  * The drawing's lines brought up to date with its parts, after some of them turned, flipped, changed, or were lined
  * up (moved: their ids): a line with an end on one of them is routed again, or follows its end if it was routed by
  * hand. before: the drawing as it was, for where lines' ends were. (Moving by an offset is moveItems'.)
@@ -132,13 +279,16 @@ export function followParts(before: Drawing, after: Drawing, moved: Set<string>)
         if (line.auto) {
             return { ...line, points: routeOf(after, line, parts, boxes) };
         }
-        const was = runOf(wasParts, line);
-        const fromNow = placeEnd(parts, line.from);
-        const toNow = placeEnd(parts, line.to);
-        if (!was || !fromNow || !toNow) {
+        // Routed by hand, its ends where they were and facing as they were (its part changed, not its ports): as it is.
+        const still = (end: End) => {
+            const [was, now] = [placeEnd(wasParts, end), placeEnd(parts, end)];
+            return !!was && !!now && samePoint(was.at, now.at) && was.dir === now.dir;
+        };
+        if (still(line.from) && still(line.to)) {
             return line;
         }
-        return { ...line, points: follow(was, fromNow, toNow, boxes) };
+        const was = wasOf(before, wasParts, line);
+        return was ? followed(after, line, was, parts, boxes) : line;
     });
     return { ...after, lines };
 }
@@ -176,13 +326,16 @@ export function nextTag(drawing: Drawing, prefix: string, taken: Set<string> = n
 /** A tag's prefix: what's before its number ("PT" of PT-12, "MOV-OX" of MOV-OX). */
 export const prefixOf = (tag: string): string => /^(.*?)-?\d+$/.exec(tag)?.[1] ?? tag;
 
-/** The tags two or more parts share: on this page, or on it and another of the diagram's. */
+/**
+ * The tags two or more parts in the parts list share: on this page, or on it and another of the diagram's. A copy of a
+ * part left out of the list (drawn again on a combined schematic) shares its tag on purpose.
+ */
 export function sharedTags(drawing: Drawing): Set<string> {
-    const seen = new Set((drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
+    const seen = new Set((drawing.listedElsewhere ?? drawing.elsewhere ?? []).map((tag) => tag.trim().toUpperCase()));
     const shared = new Set<string>();
     for (const part of drawing.parts) {
         const tag = part.tag.trim().toUpperCase();
-        if (!tag) {
+        if (!tag || part.unlisted) {
             continue;
         }
         if (seen.has(tag)) {
@@ -544,10 +697,8 @@ export function moveItems(drawing: Drawing, ids: Set<string>, by: Point): Drawin
         if (line.auto) {
             return { ...moved, points: routeOf(after, moved, parts, boxes) };
         }
-        const was = runOf(wasParts, line);
-        const fromNow = placeEnd(parts, moved.from);
-        const toNow = placeEnd(parts, moved.to);
-        return was && fromNow && toNow ? { ...moved, points: follow(was, fromNow, toNow, boxes) } : moved;
+        const was = wasOf(drawing, wasParts, line);
+        return was ? followed(after, moved, was, parts, boxes) : moved;
     });
     return { ...after, lines };
 }
@@ -570,6 +721,23 @@ export function reorderParts(drawing: Drawing, ids: Set<string>, to: "front" | "
         return changed;
     });
     return { ...drawing, parts: to === "front" ? [...staying, ...moved] : [...moved, ...staying] };
+}
+
+/** Parts put in the parts list, or left out of it (copies of parts drawn on another page too). */
+export function listParts(drawing: Drawing, ids: Set<string>, listed: boolean): Drawing {
+    return {
+        ...drawing,
+        parts: drawing.parts.map((part) => {
+            if (!ids.has(part.id) || !part.unlisted === listed) {
+                return part;
+            }
+            const changed: Part = { ...part, unlisted: true };
+            if (listed) {
+                delete changed.unlisted;
+            }
+            return changed;
+        }),
+    };
 }
 
 /** Kinds that keep upright: regions, legends, and title blocks don't turn or flip. */
@@ -819,29 +987,37 @@ export function clipBox(clip: Clip, drawing: Drawing): Box | null {
 
 /**
  * A clip pasted: its things given new ids, moved by an offset (on the grid), and their tags kept where they're free,
- * else given the next number free. Their ids, to select.
+ * else given the next number free. A part whose tag is taken only on another of the diagram's pages is that part
+ * drawn again (on a combined schematic, say): it keeps its tag, and is left out of the parts list, so the list has it
+ * once. Their ids, to select.
  */
 export function pasteClip(drawing: Drawing, clip: Clip, by: Point): { drawing: Drawing; ids: string[] } {
     const offset = snapPoint(by);
     const ids = new Map<string, string>();
-    const taken = new Set(
-        [...drawing.parts.map((part) => part.tag), ...(drawing.elsewhere ?? [])]
-            .map((tag) => tag.toUpperCase())
-            .filter(Boolean),
-    );
+    const taken = new Set(drawing.parts.map((part) => part.tag.toUpperCase()).filter(Boolean));
+    const elsewhere = new Set((drawing.elsewhere ?? []).map((tag) => tag.toUpperCase()));
     const fresh = new Set<string>();
     const parts = clip.parts.map((part) => {
         const id = newId("p");
         ids.set(part.id, id);
         let tag = part.tag;
+        let copy = false;
         if (tag && taken.has(tag.toUpperCase())) {
             tag = nextTag(drawing, prefixOf(tag), fresh);
+        } else if (tag && elsewhere.has(tag.toUpperCase())) {
+            copy = true;
         }
         if (tag) {
             taken.add(tag.toUpperCase());
             fresh.add(tag);
         }
-        return { ...part, id, tag, x: part.x + offset.x, y: part.y + offset.y };
+        const pasted: Part = { ...part, id, tag, x: part.x + offset.x, y: part.y + offset.y };
+        if (copy) {
+            pasted.unlisted = true;
+        } else if (tag !== part.tag) {
+            delete pasted.unlisted; // numbered anew, it is a part of its own, and listed
+        }
+        return pasted;
     });
     const shift = (point: Point) => ({ x: point.x + offset.x, y: point.y + offset.y });
     const end = (value: End): End =>

@@ -113,8 +113,8 @@ const TOPICS: Topic[] = [
                     Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
                     stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
                     <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
-                    orifice plate sits in its pipe; a vent is the spray of what it lets go, in its line's color; a pump
-                    stands on its base, its discharge leaving its top.
+                    orifice is its plate on a short run of pipe, half a valve's length; a vent is the spray of what it
+                    lets go, in its line's color; a pump stands on its base, its discharge leaving its top.
                 </li>
                 <li>
                     The <em>3/2</em> and <em>5/2 solenoid valves</em> are drawn as pneumatic schematics draw them (ISO
@@ -205,6 +205,14 @@ const TOPICS: Topic[] = [
                     the part it arrives at lists it under <em>Comes from</em>, to go back.
                 </li>
                 <li>
+                    A part can be drawn on more than one page: the pressurant system and the propellant system on sheets
+                    of their own, to print, and a combined schematic of both, to look at online. Copy parts from one
+                    page and paste them on another and they keep their tags, as the same parts drawn again, and they're
+                    taken out of the parts list, so it has each one once. <em>In the parts list</em>, in a part's panel
+                    (or for everything selected), takes a part out of the list or puts it back. Two parts in the list
+                    with the same tag are warned of; a copy taken out of it isn't.
+                </li>
+                <li>
                     Once a diagram is saved with pages, a tab opened before Piper had them can't save it (it would keep
                     only one page): it says to reload, which gets the new Piper.
                 </li>
@@ -229,7 +237,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     Drag a line's segment to move it: the line keeps its bends from then on, and follows its ends when
-                    they move. <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
+                    they move. Where following would tangle it (back over itself, into a port from behind, through a
+                    part, or round a loop it didn't have), it routes itself again instead, and from then on.{" "}
+                    <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
                     <em>Route again</em> tidies one that's gone wrong. Drag a selected line's end to another port.
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>
@@ -573,7 +583,7 @@ const TOPICS: Topic[] = [
                     size, Cv, range...). Click a column to sort by it, and again to turn it around; show only valves,
                     instruments, tanks..., one fluid, or one page; or find a tag, a model, a size. <em>Save as CSV</em>{" "}
                     there saves what's shown. Click a tag to open the drawing at its part. Lines aren't parts: they're
-                    not in it.
+                    not in it, nor is a part taken out of the list, a copy of one drawn on another page too.
                 </li>
             </ul>
         ),

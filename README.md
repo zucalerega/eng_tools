@@ -58,7 +58,10 @@ Claude has read all of the help, and answers with links to it, but it can be wro
 is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
 never paste a password or a key. The tab keeps the conversation until you start a new one. Each
 person can ask so much a day, and the server sets what Claude may spend each month, or in all;
-admins see what it has spent, and on whose questions, on Admin > People.
+admins see what it has spent, and on whose questions, on Admin > People. There, *Keep the help
+loaded* says whether the server keeps the help loaded for Claude around the clock, so every
+question costs a fraction of one that has to read all of it, or only for some hours after each
+question, for a team that asks rarely.
 
 ## Vault: CAD files
 
@@ -355,7 +358,11 @@ the keys.
   paper: its outline shows on the drawing, border and title block corner, and the page prints
   just there; **Fit the sheet to the page** moves it to what's on it. An **Off-page connector**
   goes to another page, and a part on it (**To page**, **At**): **Go to**, or a double-click,
-  goes there, and the part it arrives at lists it under **Comes from**. Once a diagram has
+  goes there, and the part it arrives at lists it under **Comes from**. A part can be drawn on
+  more than one page (the pressurant and propellant systems on sheets of their own, to print,
+  and a combined schematic, to look at online): parts pasted onto another page keep their tags
+  and are taken out of the parts list, so it has each part once; **In the parts list**, in a
+  part's panel, takes one out or puts it back. Once a diagram has
   pages, a tab opened before Piper had them is told to reload rather than save one page of it.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav, 3x2...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
@@ -382,7 +389,9 @@ the keys.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts
-  it back (**Route again** tidies a line that routes itself). Parts dragged together take the
+  it back (**Route again** tidies a line that routes itself). A line moved by hand, or brought
+  in from Visio, follows its parts, unless that would tangle it (back over itself, into a port
+  from behind, through a part, or round a loop it didn't have): then it routes itself again. Parts dragged together take the
   lines between them along, and a tee comes too. Everything snaps to a grid, and a part being
   dragged lines up with what its lines go to (a gold guide shows it; **Alt** drags freely).
   Lines that cross hop over each other.

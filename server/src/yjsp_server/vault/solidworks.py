@@ -107,7 +107,7 @@ from xml.etree import ElementTree
 
 from ..errors import ApiError
 from . import brep, parasolid
-from .caliper import MeshBody, MeshFace, Rgb
+from .caliper import MeshBody, MeshFace, Rgb, compose
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
 # This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
@@ -175,6 +175,8 @@ class Part:
     configuration: str  # the one asked for; else the one SolidWorks had open when it saved the file
     units: str
     bodies: list[MeshBody]
+    # Where its triangles came from: the 3D view SolidWorks saved ("view"), or the server's of its solid ("solid").
+    source: Literal["view", "solid"] = "view"
 
 
 @dataclass
@@ -1019,7 +1021,7 @@ def _viewed(found: dict[str, bytes], display: bytes) -> Part:
     bodies = _mesh(display, shape, len(display), first_face)
     tail = [text for _, text in _strings(display, faces[-1].end, len(display))]
     configuration = _part_configuration(_xml(found.get(_FEATURES)), tail)
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="view")
 
 
 # --- parts' solids --------------------------------------------------------------------------------
@@ -1114,7 +1116,7 @@ def _solid(
             raise Unreadable(f"SolidWorks kept no bodies of its {configuration} configuration: it may be empty")
         raise refused or Unreadable(_NO_VIEW)
     bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="solid")
 
 
 def _configuration_look(stream: bytes | None) -> _Look | None:
@@ -1214,16 +1216,6 @@ def _nodes(data: bytes) -> list[_Node]:
             continue
         found.append(_Node(at, name, rows, texts[0], path))
     return found
-
-
-def _compose(parent: list[float], child: list[float]) -> list[float]:
-    """Where a component of a sub-assembly is in the top assembly: the sub-assembly's place, then the component's."""
-    rows = []
-    for i in range(3):
-        for j in range(4):
-            value = sum(parent[4 * i + k] * child[4 * k + j] for k in range(3))
-            rows.append(value + (parent[4 * i + 3] if j == 3 else 0))
-    return rows
 
 
 def _xml_rows(text: str) -> list[float]:
@@ -1345,7 +1337,7 @@ def _read_assembly(data: bytes, configuration: str | None) -> list[Assembly]:
         for ref, used, file, assembly, virtual in refs:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
-            rows = own if place is None else _compose(place, own)
+            rows = own if place is None else compose(place, own)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
             inside = next((f for n in _kept_names(ref, assembly) if (f := streams.get(n))), None) if virtual else None

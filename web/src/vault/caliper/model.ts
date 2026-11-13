@@ -1,3 +1,4 @@
+import type { CaliperSource } from "../api";
 import type { MeshBody, RGB } from "./format";
 
 // What Caliper shows, whichever way it came: a part's or an assembly's model from the vault (made by Vault for
@@ -12,10 +13,17 @@ export interface Body extends MeshBody {
     indices: Uint32Array;
 }
 
+/**
+ * Where a shape came from, for the page to say: a model from the vault (made in SolidWorks, or read from the file by the
+ * server), or a STEP, IGES, or STL file read as it is, in the browser ("browser").
+ */
+export type Source = CaliperSource | "browser";
+
 /** What a node draws: one or more bodies. A part's shape is shared by every component that's that part. */
 export interface Shape {
     key: string; // the same for every node that draws it (a part at a version, in a configuration)
     bodies: Body[];
+    source?: Source; // where it came from, where that differs among a model's shapes (an assembly's parts)
 }
 
 /** A vault file, at a version and in a configuration: what an assembly's component is. */
@@ -29,7 +37,13 @@ export interface Node {
     id: string; // where it is in the tree: "2/0/1"
     name: string;
     kind: "assembly" | "part" | "body";
-    file?: FileRef;
+    file?: FileRef; // at the version shown
+    // In an assembly: the version of its file the assembly was checked in with (null: it wasn't in that check-in, but
+    // is in a sub-assembly's version since); and its file's latest.
+    checkedIn?: number | null;
+    latest?: number;
+    // Shown at the version the assembly was checked in with, though its latest was asked for: why the latest isn't.
+    older?: string;
     matrix: number[]; // 4 x 4, by columns (as three.js keeps them): from its shape's coordinates to the model's
     shape?: Shape;
     hidden: boolean; // as SolidWorks had it

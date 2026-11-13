@@ -61,7 +61,7 @@ def test_a_parts_model_is_its_mesh(team, client):
     assert made.json()["kind"] == "part"
     [model] = client.get(f"/api/files/{tab['id']}/caliper", headers=chief).json()["models"]
     assert (model["version"], model["configuration"], model["kind"], model["units"]) == (1, "Default", "part", "in")
-    assert model["created_by"]["email"] == "chief@x.test"
+    assert (model["source"], model["created_by"]["email"]) == ("solidworks", "chief@x.test")
 
     # It's sent as it's stored, gzip-compressed, for the browser to unpack; and not again while it's the same.
     shape = client.get(f"/api/files/{tab['id']}/caliper/mesh", params=params, headers=chief)
@@ -129,6 +129,9 @@ def test_an_assembly_model_places_its_parts(team, client):
     assert (two["transform"], two["hidden"], two["color"]) == (moved, True, [1, 0, 0])
     assert three["model"] is False  # Fin has no model in its Long configuration
     assert (virtual["file_id"], virtual["mesh"], virtual["model"]) == (None, bracket, False)
+    # Where each one's shape came from: SolidWorks, as Vault for SolidWorks made the models; the Long fin, nowhere yet.
+    assert [c["source"] for c in got["components"]] == ["solidworks", "solidworks", None, "solidworks", None]
+    assert got["model"]["source"] == "solidworks"
     shape = client.get(f"/api/files/{assembly['id']}/caliper/mesh", params={**params, "mesh": bracket}, headers=chief)
     assert shape.content.startswith(caliper.MAGIC)
     other = client.get(f"/api/files/{assembly['id']}/caliper/mesh", params={**params, "mesh": "f" * 64}, headers=chief)
@@ -236,3 +239,130 @@ def test_which_models_are_missing(team, client):
     asked = [(fin, 1, "Default"), (fin, 1, "Long"), (fin, 2, "Default"), (grain, 1, "Default"), (fin, 1, "Long")]
     assert missing(chief, *asked) == [(fin["id"], 1, "Long"), (grain["id"], 1, "Default")]
     assert missing(alice, *asked) == [(fin["id"], 1, "Long")]  # not the grain, which she can't see
+
+
+def again(team, who, path: str, data: bytes) -> dict:
+    """A file's next version, checked in."""
+    assert team.checkout(who, path).status_code == 200
+    return files(team.checkin(who, {path: data}))[path.rsplit("/", 1)[-1]]
+
+
+def assembly_of(client, who, file: dict, parts: str | None = None) -> dict[str, dict]:
+    """An assembly's components, as Caliper asks for them, by name at every level."""
+    params = {"version": file["version"], "configuration": "Default", **({"parts": parts} if parts else {})}
+    response = client.get(f"/api/files/{file['id']}/caliper/assembly", params=params, headers=who)
+    assert response.status_code == 200, response.text
+    found: dict[str, dict] = {}
+
+    def visit(components: list[dict]) -> None:
+        for c in components:
+            found[c["name"]] = c
+            visit(c["children"])
+
+    visit(response.json()["components"])
+    return found
+
+
+def test_an_assemblys_parts_show_at_their_latest_versions(team, client):
+    """A part checked in since the assembly was shows at its latest version, as SolidWorks would show the assembly once
+    it had the latest files, where the assembly has the version it was checked in with; each says both. Its own model
+    draws it, not the shape the assembly's 3D view kept of the older one. As checked in is still there to see."""
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Tab.SLDPRT": b"tab"}))
+    fin, tab = made["Fin.SLDPRT"], made["Tab.SLDPRT"]
+    rocket = files(
+        team.checkin(
+            chief, {"Rocket.SLDASM": b"rocket"}, refs={"Rocket.SLDASM": ["Fins/Fin.SLDPRT", "Fins/Tab.SLDPRT"]}
+        )
+    )["Rocket.SLDASM"]
+    old_tab, bracket = team.upload(chief, mesh()), team.upload(chief, mesh(CORNERS[::-1]))
+    components = [
+        component("Fin-1", fin),
+        component("Tab-1", tab, mesh=old_tab),  # as the assembly's 3D view kept it
+        {**component("Bracket^Rocket"), "mesh": bracket, "virtual": True},
+    ]
+    assert put_model(team, chief, rocket, components=components).status_code == 200
+    fin2 = again(team, chief, "Fins/Fin.SLDPRT", b"fin v2")
+    again(team, chief, "Fins/Tab.SLDPRT", b"tab v2")
+    assert put_model(team, chief, fin2, mesh=team.upload(chief, mesh())).status_code == 200
+
+    as_built = assembly_of(client, chief, rocket)  # unless asked, as it was checked in
+    assert {name: (c["version"], c["checked_in_version"], c["latest_version"]) for name, c in as_built.items()} == {
+        "Fin-1": (1, 1, 2),
+        "Tab-1": (1, 1, 2),
+        "Bracket^Rocket": (None, None, None),
+    }
+    assert assembly_of(client, chief, rocket, "checked_in") == as_built
+
+    latest = assembly_of(client, chief, rocket, "latest")
+    assert {name: (c["version"], c["checked_in_version"]) for name, c in latest.items()} == {
+        "Fin-1": (2, 1),
+        "Tab-1": (2, 1),
+        "Bracket^Rocket": (None, None),
+    }
+    assert (latest["Fin-1"]["model"], latest["Fin-1"]["source"]) == (True, "solidworks")
+    # The tab's v2 has no model yet: Caliper has the server make it, rather than show v1's shape.
+    assert (latest["Tab-1"]["mesh"], latest["Tab-1"]["model"], latest["Tab-1"]["source"]) == (None, False, None)
+    assert latest["Bracket^Rocket"]["mesh"] == bracket  # kept inside the assembly: as it was
+    assert latest["Fin-1"]["transform"] == as_built["Fin-1"]["transform"]
+
+
+def test_a_newer_sub_assembly_shows_its_newer_parts_where_they_are_in_it(team, client):
+    """A sub-assembly checked in since, with parts added or moved, shows that version's parts where it has them, if
+    it's rigid and that version has a model; a flexible one (its parts where the assembly moved them, not where its own
+    model has them) keeps its parts where they were, each at its latest; one with no model yet stays as it was."""
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Motor/Grain.SLDPRT": b"grain", "Motor/Igniter.SLDPRT": b"igniter"}))
+    grain, igniter = made["Grain.SLDPRT"], made["Igniter.SLDPRT"]
+    motor = files(
+        team.checkin(chief, {"Motor/Motor.SLDASM": b"motor"}, refs={"Motor/Motor.SLDASM": ["Motor/Grain.SLDPRT"]})
+    )["Motor.SLDASM"]
+    up = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 5.0]  # 5 mm along z, in the motor
+    assert put_model(team, chief, motor, components=[component("Grain-1", grain, transform=up)]).status_code == 200
+    rocket = files(team.checkin(chief, {"Rocket.SLDASM": b"rocket"}, refs={"Rocket.SLDASM": ["Motor/Motor.SLDASM"]}))[
+        "Rocket.SLDASM"
+    ]
+    aft = [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]  # turned a quarter about z, 100 mm along x
+    grain_there = [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 5.0]
+    rigid = component("Motor-1", motor, transform=aft, children=[component("Grain-1", grain, transform=grain_there)])
+    flexed = component(
+        "Motor-2", motor, transform=aft, children=[component("Grain-1", grain, transform=[*grain_there[:11], 9.0])]
+    )
+    assert put_model(team, chief, rocket, components=[rigid, flexed]).status_code == 200
+
+    # The motor's v2, with the igniter added and the grain moved; its model is relative to the motor.
+    motor2 = again(team, chief, "Motor/Motor.SLDASM", b"motor v2")
+    lower = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0]
+    nose = [1.0, 0.0, 0.0, 30.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    wire = team.upload(chief, mesh(CORNERS[::-1]))  # a virtual part, kept in the motor's v2
+    newer = [
+        component("Grain-1", grain, transform=lower),
+        component("Igniter-1", igniter, transform=nose),
+        {**component("Wire^Motor"), "mesh": wire, "virtual": True},
+    ]
+    response = client.get(
+        f"/api/files/{rocket['id']}/caliper/assembly",
+        params={"version": 1, "configuration": "Default", "parts": "latest"},
+        headers=chief,
+    )
+    shown = response.json()["components"]
+    assert [(c["name"], c["version"], c["latest_version"]) for c in shown] == [("Motor-1", 1, 2), ("Motor-2", 1, 2)]
+    assert put_model(team, chief, motor2, components=newer).status_code == 200
+
+    response = client.get(
+        f"/api/files/{rocket['id']}/caliper/assembly",
+        params={"version": 1, "configuration": "Default", "parts": "latest"},
+        headers=chief,
+    )
+    one, two = response.json()["components"]
+    assert (one["version"], one["checked_in_version"]) == (2, 1)
+    assert [(c["name"], c["transform"], c["checked_in_version"]) for c in one["children"]] == [
+        ("Grain-1", [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0], None),
+        ("Igniter-1", [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 30.0, 0.0, 0.0, 1.0, 0.0], None),
+        ("Wire^Motor", [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], None),
+    ]
+    # The rocket's model shows the wire the motor's v2 keeps, so its shape is the rocket's to give.
+    params = {"version": 1, "configuration": "Default", "mesh": wire}
+    assert client.get(f"/api/files/{rocket['id']}/caliper/mesh", params=params, headers=chief).status_code == 200
+    # Flexed: its grain stays where the rocket moved it.
+    assert (two["version"], [(c["name"], c["transform"][11]) for c in two["children"]]) == (1, [("Grain-1", 9.0)])

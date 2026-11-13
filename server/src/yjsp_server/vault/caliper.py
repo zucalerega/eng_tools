@@ -174,3 +174,15 @@ def write_mesh(bodies: list[MeshBody]) -> bytes:
         indices.byteswap()
     data = MAGIC + struct.pack("<II", FORMAT, len(header)) + header + positions.tobytes() + indices.tobytes()
     return gzip.compress(data, mtime=0)
+
+
+def compose(parent: list[float], child: list[float]) -> list[float]:
+    """Where a component of a sub-assembly is in the assembly the sub-assembly is in: the sub-assembly's place, then the
+    component's in it. Places are as assemblies' models keep them: the rows of a 3 x 4 matrix, rotation then translation
+    in millimeters."""
+    rows = []
+    for i in range(3):
+        for j in range(4):
+            value = sum(parent[4 * i + k] * child[4 * k + j] for k in range(3))
+            rows.append(value + (parent[4 * i + 3] if j == 3 else 0))
+    return rows

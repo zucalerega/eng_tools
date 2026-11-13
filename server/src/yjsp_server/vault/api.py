@@ -113,7 +113,8 @@ def get_caliper(file_id: int, user: ActiveUser, db: DB, store: Store) -> Caliper
 @router.put("/files/{file_id}/caliper")
 def put_caliper(file_id: int, body: CaliperModelIn, user: ChangingUser, db: DB, store: Store) -> CaliperModelOut:
     """Save a version's 3D model in one configuration: a part's mesh (upload it first, PUT /api/blobs/{sha256}), or an
-    assembly's components. Adding one that's missing takes editor access somewhere; replacing one, to its folder."""
+    assembly's components. Adding one that's missing, or replacing one the server read from the file, takes editor
+    access somewhere; replacing one made in SolidWorks, to its folder."""
     components = None if body.components is None else [c.model_dump() for c in body.components]
     view = vault.put_caliper_model(
         db,
@@ -149,19 +150,27 @@ def get_caliper_configurations(
 
 
 @router.post("/caliper/missing")
-def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB) -> CaliperMissingOut:
-    """Which of these versions, in these configurations, have no 3D model yet: what Vault for SolidWorks makes."""
+def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB, store: Store) -> CaliperMissingOut:
+    """Which of these versions, in these configurations, have no 3D model from SolidWorks yet (one the server read from
+    the file counts as missing): what Vault for SolidWorks makes."""
     wanted = [(m.file_id, m.version, m.configuration) for m in body.models]
-    missing = vault.caliper_missing(db, user, wanted)
+    missing = vault.caliper_missing(db, store, user, wanted)
     return CaliperMissingOut(missing=[CaliperWantIn(file_id=f, version=v, configuration=c) for f, v, c in missing])
 
 
 @router.get("/files/{file_id}/caliper/assembly")
 def get_caliper_assembly(
-    file_id: int, user: ActiveUser, db: DB, store: Store, version: int, configuration: str
+    file_id: int,
+    user: ActiveUser,
+    db: DB,
+    store: Store,
+    version: int,
+    configuration: str,
+    parts: vault.Parts = "checked_in",
 ) -> CaliperAssemblyOut:
-    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own."""
-    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration))
+    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own;
+    its parts at the versions it was checked in with, or with parts=latest, each at its latest."""
+    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration, parts))
 
 
 @router.get("/files/{file_id}/caliper/mesh", response_class=FileResponse)

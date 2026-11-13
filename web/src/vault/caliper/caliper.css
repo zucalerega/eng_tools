@@ -176,6 +176,20 @@
     box-shadow: none;
 }
 
+/* The name gives way after the marks beside it, and then ends in an ellipsis, its kind's mark kept whole. */
+.caliper-name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.caliper-row > .tag {
+    flex: 0 4 auto;
+    min-width: 1.6rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .caliper-name:hover:not(:disabled) {
     background: none;
     text-decoration: underline;
@@ -205,6 +219,79 @@
 .caliper-version {
     flex: none;
     font-size: 0.76rem;
+}
+
+/* Where a shape came from: a dot of its source's color, by a part's name, in the summary, and in the page's head. */
+.caliper-source-dot {
+    flex: none;
+    display: inline-block;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--muted);
+}
+
+.caliper-source-dot.caliper-source-solidworks {
+    background: var(--good);
+}
+
+.caliper-source-dot.caliper-source-saved_view {
+    background: var(--accent);
+}
+
+.caliper-source-dot.caliper-source-solid {
+    background: var(--gold);
+}
+
+.caliper-source-dot.caliper-source-browser {
+    background: var(--storage-piper);
+}
+
+.caliper-source-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.82rem;
+    border-radius: 999px;
+}
+
+.caliper-source-about {
+    max-width: 24rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+}
+
+.caliper-source-about p {
+    margin: 0.3rem 0;
+}
+
+.caliper-since {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.caliper-versions p {
+    margin: 0 0 0.4rem;
+}
+
+.caliper-versions {
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+}
+
+.caliper-sources ul {
+    margin: 0.25rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.caliper-sources li {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
 }
 
 /* Its file's title, after the name: it gives way first when the row runs short. */

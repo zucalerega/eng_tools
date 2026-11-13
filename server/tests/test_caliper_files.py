@@ -15,7 +15,7 @@ from sqlalchemy import select
 from yjsp_server.vault import parasolid, solidworks
 from yjsp_server.vault.models import CaliperModel, Version
 
-from .test_caliper import IDENTITY, mesh, put_model
+from .test_caliper import CORNERS, IDENTITY, mesh, put_model
 from .test_caliper import component as model_component
 
 FIXTURES = Path(__file__).parent / "fixtures" / "solidworks"
@@ -62,6 +62,7 @@ def test_a_part_is_read_from_its_file(team, client):
     assert made.status_code == 200, made.text
     model = made.json()
     assert (model["version"], model["configuration"], model["kind"], model["units"]) == (1, "Default", "part", "mm")
+    assert model["source"] == "saved_view"  # the triangles SolidWorks saved in it
     assert client.get(f"/api/files/{case['id']}/caliper", headers=chief).json()["models"] == [model]
 
     shape = client.get(
@@ -117,7 +118,7 @@ def test_an_assembly_is_read_with_its_components(team, client):
 
     made = make(client, chief, servo)
     assert made.status_code == 200, made.text
-    assert (made.json()["kind"], made.json()["configuration"]) == ("assembly", "Default")
+    assert (made.json()["kind"], made.json()["configuration"], made.json()["source"]) == ("assembly", "Default", "file")
     assembly = client.get(
         f"/api/files/{servo['id']}/caliper/assembly", params={"version": 1, "configuration": "Default"}, headers=chief
     ).json()
@@ -129,6 +130,7 @@ def test_an_assembly_is_read_with_its_components(team, client):
     for component, file in ((found["Embout-1"], spline), (found["Servomoteur-1"], case)):
         assert (component["file_id"], component["version"], component["configuration"]) == (file["id"], 1, "Default")
         assert component["mesh"] and component["model"] is False and component["hidden"] is False
+        assert component["source"] == "saved_view"  # its triangles as the assembly's 3D view keeps them
 
     # Placed where SolidWorks has them, the parts fill the box SolidWorks keeps for the assembly.
     placed = []
@@ -446,6 +448,7 @@ def test_a_part_kept_inside_an_assembly_is_read_from_its_solid(team, client):
     for folder in ("Kept", "Suffixed"):
         found = shown(client, chief, checked[f"{folder}/9347.SLDASM"])
         assert (found[case]["file_id"], found[case]["virtual"], found[case]["mesh"]) == (None, True, solid), folder
+        assert found[case]["source"] == "solid"
         assert found["Embout-1"]["file_id"] == checked["Embout.SLDPRT"]["id"]
     lost = shown(client, chief, checked["Lost/9347.SLDASM"])
     assert (lost[case]["file_id"], lost[case]["virtual"], lost[case]["mesh"]) == (None, True, None)
@@ -797,6 +800,8 @@ def test_a_part_without_a_3d_view_is_read_from_its_solid(team, client):
         made = make(client, chief, file)
         assert made.status_code == 200, f"{path}: {made.text}"
         assert (made.json()["configuration"], made.json()["units"]) == ("Default", "mm")
+        # Where its triangles came from: SolidWorks' saved 3D view, or Caliper's own of the solid.
+        assert made.json()["source"] == ("solid" if path.startswith("Bare/") else "saved_view"), path
     for name in ("Servomoteur.SLDPRT", "Embout.SLDPRT", "11351_body.SLDPRT"):
         viewed, bare = (measured(client, chief, checked[f"{folder}/{name}"]) for folder in ("Viewed", "Bare"))
         assert abs(bare[0] - viewed[0]) < viewed[0] / 500, name  # area, within 0.2%
@@ -1366,10 +1371,13 @@ def test_models_from_before_the_server_noted_their_reader_are_told_apart(team, c
     red = model_component("Tab-1", tab, color=[1, 0, 0])
     assert put_model(team, chief, bay, components=[red]).status_code == 200
     for file in (servo, case, tab, bay):
-        made_by(team, file, None)
+        made_by(team, file, None, source=None)
 
     assert listed(client, chief, case) == listed(client, chief, servo) == []  # the server's: read again
     assert listed(client, chief, tab) == listed(client, chief, bay) == [("Default", "mm")]  # Vault for SolidWorks'
+    for file in (tab, bay):
+        [model] = client.get(f"/api/files/{file['id']}/caliper", headers=chief).json()["models"]
+        assert model["source"] == "solidworks"
     for file in (servo, case, tab, bay):
         assert make(client, chief, file).status_code == 200
     assert [readers(team, file) for file in (servo, case, tab, bay)] == [
@@ -1378,6 +1386,39 @@ def test_models_from_before_the_server_noted_their_reader_are_told_apart(team, c
         {"Default": None},
         {"Default": None},
     ]
+
+
+def test_a_model_made_in_solidworks_takes_the_place_of_one_the_server_read(team, client):
+    """What SolidWorks drew is what a model should show: one the server read from the file counts as missing to Vault for
+    SolidWorks, which makes its own in its place, as anyone who may add a model may. One made in SolidWorks stays, and
+    only an editor of its folder makes it again."""
+    chief = team.member("chief@x.test", admin=True)
+    bob = team.member("bob@x.test")  # edits Structures, and sees Servo
+    case = files(team.checkin(chief, {"Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT")}))[
+        "Servomoteur.SLDPRT"
+    ]
+    team.checkin(chief, {"Structures/Fin.SLDPRT": b"fin"})
+    team.grant(chief, "", None, "viewer")
+    team.grant(chief, "Structures", "bob@x.test", "editor")
+
+    def missing(who: dict[str, str]) -> list[str]:
+        body = {"models": [{"file_id": case["id"], "version": 1, "configuration": c} for c in ("Default", "Long")]}
+        response = client.post("/api/caliper/missing", json=body, headers=who)
+        assert response.status_code == 200, response.text
+        return [m["configuration"] for m in response.json()["missing"]]
+
+    assert make(client, bob, case).status_code == 200
+    assert readers(team, case) == {"Default": solidworks.READER}
+    assert missing(bob) == ["Default", "Long"]
+
+    first, second = team.upload(bob, mesh()), team.upload(bob, mesh(list(reversed(CORNERS))))
+    assert put_model(team, bob, case, mesh=first).status_code == 200
+    assert readers(team, case) == {"Default": 0}
+    assert missing(bob) == ["Long"]
+    assert make(client, bob, case).json()["created_by"]["email"] == "bob@x.test"  # not read again
+    again = put_model(team, bob, case, mesh=second)
+    assert (again.status_code, again.json()["error"]) == (403, "forbidden")
+    assert put_model(team, chief, case, mesh=second).status_code == 200
 
 
 def test_an_older_readers_model_stands_while_its_file_cant_be_read(team, client):

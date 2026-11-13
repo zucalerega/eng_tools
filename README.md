@@ -128,7 +128,8 @@ replaces Kenesto.
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
   part on its own. Nothing in it changes a file. STEP, IGES, and STL files open as they are.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in; for any other version, the server reads the 3D view SolidWorks
+  version it checks in, exactly what SolidWorks drew, which takes the place of any the server
+  read before; for any other version, the server reads the 3D view SolidWorks
   saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. Pick
   another configuration from the Configuration list: the server reads it from the solid
   SolidWorks keeps of it in the file, which SolidWorks does for each configuration that was up
@@ -137,18 +138,36 @@ replaces Kenesto.
   it, check the file out, show that configuration (or add the mark), save, and check it in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
-  configurations; Caliper lists the parts it couldn't show, and why. A part saved without
+  configurations; Caliper lists the parts it couldn't show, and why. An assembly's latest
+  version shows each part's latest version, as SolidWorks does once you have the latest files,
+  so a part checked in since shows without the assembly being checked in again; it's marked
+  **Updated**, and sits where the assembly had the version it was checked in with (a
+  change that moves what its mates hold shows once the assembly is checked in again). A
+  sub-assembly checked in since shows its parts as they are now. A part whose latest has no
+  3D model shows the version the assembly was checked in with, marked **Not latest**. Pick
+  **Parts: As checked in** to see the parts the assembly was checked in with, as an older
+  version of it shows them. A part saved without
   its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
   in the colors SolidWorks shows, and so are routed tubes, which their assembly keeps inside
   its file. The server reads a version's model once and keeps it; when an update reads files
   better, it reads each one again the first time it's opened after. If Caliper can't read a
   file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
+  Caliper says where what it shows came from, beside the version (click it for what that
+  means): **Made in SolidWorks** is what SolidWorks drew; **SolidWorks' saved 3D view** is
+  the triangles SolidWorks kept in the file when it saved it, the same shape; **Caliper's
+  triangles of the solid** is Caliper's own drawing of the solid SolidWorks saved, to within
+  0.05% of the part's size, its colors as near as the file says. In an assembly, a dot beside
+  each part says which, and the list sums them up.
 - **See drawings and DXF files** with **Open in Caliper** too. A SolidWorks drawing shows
   as a PDF of all its sheets, as SolidWorks prints them, in the browser's own PDF viewer (to
   zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one
   each time it checks a drawing in. A version from before (or from Kenesto, or checked in
   from the web) shows the pictures of its sheets SolidWorks saved in it, which are too small
-  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. A DXF file (a
+  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. Beside the
+  version, Caliper says which it is (click it for who made the PDF, and when). If the part or
+  assembly a drawing shows has been checked in since the drawing was, Caliper warns that
+  the sheets may show its older shape, as SolidWorks redraws the views from the latest:
+  check the drawing in again from SolidWorks to update them. A DXF file (a
   flat pattern for the laser cutter or waterjet, say) is drawn as it is, in its own units:
   drag to pan, scroll to zoom, show and hide its layers, and measure a line's length, a
   hole's diameter, or the distance between two holes, lines, or corners.

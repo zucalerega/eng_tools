@@ -243,6 +243,11 @@ class CaliperModel(Base):
     # What made it: the server's reader, by its version (solidworks.READER), which reads it again once there's a newer
     # one; or 0, Vault for SolidWorks. None: made before the server noted which (vault.py tells by what it carries).
     reader: Mapped[int | None] = mapped_column(Integer)
+    # Where its shape came from, for Caliper to say (vault.Source): "solidworks", what SolidWorks drew, as Vault for
+    # SolidWorks made it; "saved_view", the 3D view SolidWorks saved in the file; "solid", the server's triangles of the
+    # solid SolidWorks saved in it; "file", an assembly's places as its file keeps them. None: made before the server
+    # noted it.
+    source: Mapped[str | None] = mapped_column(String(16))
 
 
 class DrawingPdf(Base):

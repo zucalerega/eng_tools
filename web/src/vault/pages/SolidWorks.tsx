@@ -112,9 +112,10 @@ export function SolidWorks() {
                 </li>
                 <li>
                     <strong>For Caliper</strong>, here in the browser: checking in a part or assembly makes the 3D view
-                    it shows, and checking in a drawing saves the PDF of its sheets it shows. For a file from before,
-                    open it and click <strong>Make 3D view</strong> (a part or assembly) or <strong>Make PDF</strong> (a
-                    drawing) on the Vault tab.
+                    it shows, exactly as SolidWorks draws it (Caliper says <em>Made in SolidWorks</em>), in place of any
+                    the server read from the file; and checking in a drawing saves the PDF of its sheets it shows. For a
+                    file from before, open it and click <strong>Make 3D view</strong> (a part or assembly) or{" "}
+                    <strong>Make PDF</strong> (a drawing) on the Vault tab.
                 </li>
             </ul>
             <h2>If something's not right</h2>

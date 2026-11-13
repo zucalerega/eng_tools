@@ -565,8 +565,11 @@ which SolidWorks loaded it (`RevisionNumber`: 34 for 2026, 33 for 2025).
   check-in.
 - **3D views for Caliper.** After a check-in, the add-in makes the 3D models (see
   "Caliper") of each checked-in part or assembly that SolidWorks has open, and of the parts
-  and rigid sub-assemblies it uses that have none, each of the vault version that's here
-  (`CaliperModels` in Vault.Client: it asks the server which are missing, then saves those).
+  and rigid sub-assemblies it uses that have none made in SolidWorks, each of the vault version
+  that's here (`CaliperModels` in Vault.Client: it asks the server which are missing, then
+  saves those). A model the server read from the file counts as missing, so SolidWorks' own
+  takes its place: it's what SolidWorks drew, where the server's is its reading of what
+  SolidWorks saved.
   Make 3D view does it for the active document. SolidWorks gives what it draws (each face's
   display triangles, `IFace2.GetTessTriangles`; a component's bodies come in its part's
   coordinates, in the configuration it uses) and where each component is (`Transform2`,
@@ -698,12 +701,40 @@ their own that loads without three.js (see "Drawings and DXF files", below).
   feet; the document's own units first.
 - **An assembly's components**, as a tree beside the view: show or hide each (hidden as
   SolidWorks had them, to start with), isolate one (show only it), or open one in its own
-  Caliper page, at the version and in the configuration the assembly uses. A STEP file's
+  Caliper page, at the version shown and in the configuration the assembly uses. A STEP file's
   products are its tree, and open where they are.
+- **Its parts at their latest versions**, as SolidWorks shows the assembly once it has the
+  latest files (Parts: Latest versions, `parts=latest`), for the assembly's latest version;
+  an older one asked for shows them **as checked in**, at the versions it was checked in with
+  (its references), and either can be picked. Someone checking in a part needn't check in the
+  assembly too for Caliper to show it. A part checked in since is placed where the assembly
+  had the version it was checked in with: SolidWorks would solve the assembly's mates again,
+  and Caliper can't, so a change that moves what a part's mates hold shows once the assembly is
+  checked in again, which the page says. Its own model draws it, not the triangles the
+  assembly's 3D view kept of the older one. A sub-assembly checked in since shows that version's
+  components (parts added or moved in it), placed where it is, if it's rigid; a flexible one,
+  whose parts are where the assembly moved them rather than where its own model has them
+  (`_rigid_in`, by its parts' names), keeps them there, each at its latest. Where the newer
+  sub-assembly has no model yet, Caliper has the server make it first. A part whose latest has
+  no 3D model the server can read (another configuration's, say) shows the version the
+  assembly was checked in with, marked **Not latest**, with why. The tree marks each part
+  changed since (**Updated**, its title saying which versions), and the side sums up how
+  many changed, and, as checked in, how many have newer versions.
 - **Configurations:** a part or assembly shows the configuration SolidWorks saved it in, and
   the Configuration list offers every other its file lists (`GET .../caliper/configurations`),
   each read from the file when it's picked (below). One the file kept no shape of says so,
   and why, and how to see it; so does a component used in one.
+- **Where it came from** (`Sources.tsx`), as a model's `source` says (`caliper_models.source`),
+  so nobody takes a reading for SolidWorks' own: in the page's head, the model's, which opens
+  to say what that means for how far it can be trusted, and who made it and when; in an
+  assembly's tree, a dot beside each part, and how many came from where. A part's shape is
+  **made in SolidWorks** (what SolidWorks drew, which Vault for SolidWorks saved), **SolidWorks'
+  saved 3D view** (the triangles SolidWorks kept in the file when it saved it, as eDrawings
+  shows), or **Caliper's triangles of the solid** (the server's, of the solid SolidWorks kept in
+  the file, to 0.05% of its size); an assembly's places are made in SolidWorks, or **placed as
+  its file says**. Models the server read before it noted which say **read from the file**;
+  those Vault for SolidWorks made are told by their reader. STEP, IGES, and STL files are read
+  in the browser, and say so.
 
 Where the 3D comes from:
 
@@ -831,9 +862,12 @@ Where the 3D comes from:
   as SolidWorks' `Transform2` gives); whether SolidWorks hid it; its color over its part's;
   and a sub-assembly's own components. A virtual part, kept inside the assembly, carries its
   own mesh. Caliper draws each part's own model wherever its components put it, fetching
-  each once (six at a time). A version the server can't read a model from says why, and
+  each once (six at a time), and asking the server to read those without one two at a time
+  (`turns.ts`), as it reads two files at once and refuses a request it can't start in a minute
+  (`busy`); one refused as busy, with others' reading too, is asked again after a wait, for
+  about three minutes. A version the server can't read a model from says why, and
   how to make one; with no version asked for, Caliper then shows the newest one that has a
-  model, and says so. A component that draws nothing says why beside its name, and the
+  model, with a warning that it isn't the latest (the Version list marks which is). A component that draws nothing says why beside its name, and the
   page sums them up by why: parts in a configuration their files have no 3D view of, files
   with no 3D view Caliper reads, and parts kept inside an assembly without a shape there
   that Caliper read (all of which Make 3D view in SolidWorks makes); sub-assemblies none of
@@ -859,6 +893,14 @@ Where the 3D comes from:
   anywhere) and can see a drawing can add a PDF its version doesn't have, as the add-in
   does; making one again, in place of the one there, takes editor rights to its folder. The
   server checks it's a PDF (`%PDF-`), and serves it as nothing else.
+- **Where it came from, and whether it's up to date.** The head says what the sheets are
+  (made in SolidWorks, with who and when, or the pictures saved in the file), as the 3D pages
+  do, and the Version list marks the latest. SolidWorks draws a drawing's views from its
+  model as it opens it, so once the model is checked in again, a PDF made at the drawing's
+  check-in may show an older shape. The drawing's latest version lists the files it was
+  checked in with that have newer versions (its references, `models`), with a warning to
+  check the drawing in again from SolidWorks. A drawing that references nothing (from
+  Kenesto, say) can't say.
 - **A version without one** (from before Vault for SolidWorks made them, from Kenesto, or
   checked in from the web) shows the pictures of its sheets that SolidWorks saved in the
   file for Windows' Explorer, which the server reads (`solidworks.read_sheets`): one of each
@@ -894,8 +936,9 @@ Where the 3D comes from:
 A model shows what the vault lets you see: a component in a file you can't see is left
 out, with everything in it, and the page says how many were. Anyone who may upload (an
 editor anywhere) and can see a file can add a model its version doesn't have yet, as the
-add-in does for every part of an assembly it checks in; making one again, in place of the
-one there, takes editor rights to the file's folder. Anyone who can see a file can have the
+add-in does for every part of an assembly it checks in, or one in place of a model the server
+read from the file, as SolidWorks' own is the better; making one again, in place of one made
+in SolidWorks, takes editor rights to the file's folder. Anyone who can see a file can have the
 server read its model from the file, as that adds nothing the file doesn't say. A model is
 made from its version and describes it: making one changes nothing in the file's history.
 
@@ -927,14 +970,14 @@ are in [design.md](design.md#api).
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
-| `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration |
+| `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration, each with where it came from (`source`: `solidworks`, `saved_view`, `solid`, or `file`) |
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); with `configuration`, in that one, which a part's is read from the solid SolidWorks kept of it; `unreadable_file`, `configuration_not_saved`, or `no_configuration` says why not |
 | `GET /api/files/{id}/caliper/configurations?version=` | a version's configurations, as its file lists them: whether SolidWorks had each open when it saved the file (`active`) and kept it up to date then (`saved`: the server can read it), and whether it has a model; then any others with models (`unreadable` says why the file's list couldn't be read) |
-| `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model yet, of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
+| `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model made in SolidWorks yet (one the server read counts as missing), of files you can see: what the add-in makes |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=&parts=` | an assembly's components that you can see, at the versions it was checked in with or, `parts=latest`, each at its latest (each with `checked_in_version` and `latest_version`) (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; `virtual` for a part kept inside the assembly; and its shape's `source`, where it has one), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
-| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
+| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one; its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none); and the files it was checked in with that you can see, each at that version and its latest (`models`) |
 | `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |
 | `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
 | `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |

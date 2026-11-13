@@ -341,6 +341,47 @@ def test_upgrades_keep_what_claudes_answers_cost(tmp_path):
         ).all() == [("alice@x.test", 207000), (None, 7520)]
 
 
+def test_upgrades_say_which_models_were_made_in_solidworks(tmp_path):
+    """Caliper says where each model came from: the ones Vault for SolidWorks made are known by their reader (0); the
+    server's from before it noted how stay unsaid, and Caliper calls them read from the file."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0030")
+    when = "'2026-11-01 12:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds, solidworks_seconds) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when}, 0, 0)"
+        )
+        db.exec_driver_sql(
+            f"INSERT INTO folders (id, parent_id, name, name_key, created_at, change_seq) VALUES (1, NULL, '', '', {when}, 0)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO files (id, folder_id, name, name_key, latest_version, created_at, created_by, change_seq) "
+            f"VALUES (1, 1, 'Fin.SLDPRT', 'fin.sldprt', 1, {when}, 1, 1)"
+        )
+        db.exec_driver_sql(
+            f"INSERT INTO checkins (id, user_id, host, comment, created_at) VALUES (1, 1, 'PC', '', {when})"
+        )
+        db.exec_driver_sql(f"INSERT INTO blobs (sha256, size, created_at) VALUES ('{'a' * 64}', 3, {when})")
+        db.exec_driver_sql(
+            "INSERT INTO versions (id, file_id, number, checkin_id, blob_sha256, size, created_at, created_by) "
+            f"VALUES (1, 1, 1, 1, '{'a' * 64}', 3, {when}, 1)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO caliper_models (id, version_id, configuration, units, mesh_sha256, created_at, created_by, "
+            f"reader) VALUES (1, 1, 'Default', 'mm', '{'a' * 64}', {when}, 1, 0), "
+            f"(2, 1, 'Long', 'mm', '{'a' * 64}', {when}, 1, 3), (3, 1, 'Short', 'mm', '{'a' * 64}', {when}, 1, NULL)"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT configuration, source FROM caliper_models ORDER BY id").all() == [
+            ("Default", "solidworks"),
+            ("Long", None),
+            ("Short", None),
+        ]
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

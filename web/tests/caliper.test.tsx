@@ -206,6 +206,12 @@ test("a part's model shows its bodies, to show and hide", async () => {
     expect(screen.getByText("Default")).toBeTruthy(); // its configuration
     // jsdom has no 3D, which the page says, keeping the list.
     expect(screen.getByText(/isn't drawing 3D/)).toBeTruthy();
+    // Where it came from: Vault for SolidWorks made it, and who did.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Made in SolidWorks" }));
+    const about = screen.getByRole("dialog", { name: "Where it came from" });
+    expect(within(about).getByText(/What SolidWorks drew/)).toBeTruthy();
+    expect(within(about).getByText(/^Made by chief, /)).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
 
     await userEvent.click(doubler);
     expect((doubler as HTMLInputElement).checked).toBe(false);
@@ -247,7 +253,12 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     const finOne = await screen.findByRole("checkbox", { name: "Show Fin-1" });
     expect((finOne as HTMLInputElement).checked).toBe(true);
     expect((tree().getByRole("checkbox", { name: "Show Fin-2" }) as HTMLInputElement).checked).toBe(false);
-    await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1 (now v2)")).toBeTruthy());
+    // Fin's v2 isn't a real SolidWorks part, so it has no 3D model: the fin shows v1, as the rocket was checked in,
+    // and says why.
+    await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1")).toBeTruthy());
+    expect(within(finOne.closest("li")!).getByText("Not latest").getAttribute("title")).toMatch(
+        /^v2, its latest, has no 3D model: .*It isn't a SolidWorks part that Caliper can read/,
+    );
     // Grain's file isn't a real SolidWorks part, so it has no 3D view to read.
     expect(screen.getByText("1 component isn't shown:")).toBeTruthy();
     expect(screen.getByText("1 part's file has no 3D view Caliper can read.")).toBeTruthy();
@@ -308,6 +319,8 @@ test("what an assembly doesn't show is summed up by why, with what to do about i
     );
     expect(within(row("Tail-1")).getByText("Parts not in the vault")).toBeTruthy();
     expect(within(row("Fin-1")).queryByText(/No 3D model|Other configuration/)).toBeNull();
+    expect(within(row("Fin-1")).getByRole("img", { name: "Made in SolidWorks" })).toBeTruthy();
+    expect(screen.getByText("1 made in SolidWorks")).toBeTruthy();
 });
 
 test("components in folders you can't see are left out, with what's in them", async () => {
@@ -325,6 +338,79 @@ test("components in folders you can't see are left out, with what's in them", as
     expect(tree().queryByRole("checkbox", { name: "Show Motor-1" })).toBeNull();
 });
 
+test("an assembly's parts show at their latest versions, or as it was checked in", async () => {
+    const team = await Team.create();
+    const { fin, rocket: assembly } = await rocket(team);
+    await team.checkout(team.chief, "Fins/Fin.SLDPRT", "CHIEF-PC");
+    const [fin2] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin v2" }, { host: "CHIEF-PC" });
+    await team.model(team.chief, fin2!, { mesh: tetrahedra("Fin", "Tab") });
+
+    // As SolidWorks shows it once it has the latest files: the fin's v2, where the rocket put its v1.
+    const page = renderApp(team.chief, caliperUrl(assembly.id));
+    const finRow = async () => (await screen.findByRole("checkbox", { name: "Show Fin-1" })).closest("li")!;
+    expect(within(await finRow()).getByText("v2")).toBeTruthy();
+    expect(
+        within(await finRow())
+            .getByText("Updated")
+            .getAttribute("title"),
+    ).toBe("The assembly was checked in with v1. This is v2, the latest, where the assembly put v1.");
+    const choice = screen.getByRole("combobox", { name: "Parts" }) as HTMLSelectElement;
+    expect(choice.value).toBe("latest");
+    expect(screen.getByText(/2 parts changed since v1 was checked in, and show at their latest/)).toBeTruthy();
+    expect(tree().getByRole("link", { name: "Open Fin-1 in Caliper" }).getAttribute("href")).toBe(
+        caliperUrl(fin.id, 2, "Default"),
+    );
+
+    // As it was checked in: the fin's v1, which says there's a newer one.
+    await userEvent.selectOptions(choice, "checked_in");
+    await waitFor(() => expect(within(screen.getAllByRole("treeitem")[0]!).getByText("v1 (now v2)")).toBeTruthy());
+    expect(screen.queryByText("Updated")).toBeNull();
+    expect(screen.getByText("2 parts have newer versions than v1 was checked in with.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Show the latest" }));
+    expect(within(await finRow()).getByText("v2")).toBeTruthy();
+    page.unmount();
+
+    // An older version of the assembly, asked for, shows as it was checked in.
+    await team.checkout(team.chief, "Rocket/Rocket.SLDASM", "CHIEF-PC");
+    await team.checkin(team.chief, { "Rocket/Rocket.SLDASM": "rocket v2" }, { host: "CHIEF-PC" });
+    renderApp(team.chief, caliperUrl(assembly.id, 1));
+    expect(within(await finRow()).getByText("v1 (now v2)")).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "Parts" }) as HTMLSelectElement).value).toBe("checked_in");
+});
+
+test("a sub-assembly checked in since shows its newer parts, its model made from its file", async () => {
+    // A rocket whose servo bay was checked in again since, as SparkFun's servo (server/tests/fixtures/solidworks): its
+    // v2 has no model yet, so the server reads it from the file, and the rocket shows its parts.
+    const team = await Team.create();
+    const [spline, , bay] = await team.checkin(team.chief, {
+        "Servo/Embout.SLDPRT": await servo("Embout.SLDPRT"),
+        "Servo/Servomoteur.SLDPRT": await servo("Servomoteur.SLDPRT"),
+        "Servo/9347.SLDASM": "an empty bay",
+    });
+    const [assembly] = await team.checkin(
+        team.chief,
+        { "Rocket/Rocket.SLDASM": "rocket" },
+        { refs: { "Rocket/Rocket.SLDASM": ["Servo/9347.SLDASM"] } },
+    );
+    await team.model(team.chief, assembly!, {
+        components: [component("Bay-1", bay!, { children: [component("Embout-1", spline!)] })],
+    });
+    await team.checkout(team.chief, "Servo/9347.SLDASM", "CHIEF-PC");
+    await team.checkin(
+        team.chief,
+        { "Servo/9347.SLDASM": await servo("9347.SLDASM") },
+        { host: "CHIEF-PC", refs: { "Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"] } },
+    );
+
+    renderApp(team.chief, caliperUrl(assembly!.id));
+    // The bay is all there is, so it's open.
+    expect(await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).toBeTruthy();
+    const bayRow = tree().getByRole("checkbox", { name: "Show Bay-1" }).parentElement!;
+    expect(within(bayRow).getByText("v2")).toBeTruthy();
+    expect(within(bayRow).getByText("Updated")).toBeTruthy();
+    expect((await team.caliperModels(bay!.id)).map((model) => model.version)).toEqual([2]);
+});
+
 test("a version with no model says why; with none asked for, the newest that has one shows", async () => {
     const team = await Team.create();
     const [fin] = await team.checkin(team.chief, { "Fin.SLDPRT": "fin v1" });
@@ -334,11 +420,12 @@ test("a version with no model says why; with none asked for, the newest that has
 
     // v2's model would be read from the file, which isn't a real SolidWorks part.
     const finPage = renderApp(team.chief, caliperUrl(fin!.id));
-    expect(await screen.findByText("v2, the latest version, has no 3D model, so this is v1.")).toBeTruthy();
+    expect(await screen.findByText(/v2, the latest, has no 3D model, so this is v1\./)).toBeTruthy();
+    expect(screen.getByText("This isn't the latest version.")).toBeTruthy();
     expect(screen.getByText(/v2: It isn't a SolidWorks part that Caliper can read/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fin" })).toBeTruthy();
     const version = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
-    expect([...version.options].map((option) => option.textContent)).toEqual(["v2 (no 3D model)", "v1"]);
+    expect([...version.options].map((option) => option.textContent)).toEqual(["v2 (latest, no 3D model)", "v1"]);
 
     await userEvent.selectOptions(version, "2");
     expect(await screen.findByText("v2 of Fin.SLDPRT has no 3D model.")).toBeTruthy();
@@ -371,6 +458,9 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
     expect(await screen.findByText(/Reading the 3D view SolidWorks saved in v1 of Embout.SLDPRT/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fillet3" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Show Boss-Extrude2" })).toBeTruthy();
+    // It says it's the 3D view SolidWorks saved in the file, and what that is.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: SolidWorks' saved 3D view" }));
+    expect(screen.getByText(/The triangles SolidWorks drew of it when it last saved this version/)).toBeTruthy();
     part.unmount();
 
     renderApp(team.chief, caliperUrl(assembly!.id));
@@ -379,6 +469,12 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
         caliperUrl(spline!.id, 1, "Default"),
     );
     expect(screen.queryByText(/no 3D model/)).toBeNull();
+    // Its parts are where its file says, each as the assembly's own 3D view keeps it.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Placed as its file says" }));
+    expect(screen.getByText("Where each part is, as SolidWorks saved v1 of the assembly in its file.")).toBeTruthy();
+    expect(screen.getByText("2 from SolidWorks' saved 3D views")).toBeTruthy();
+    const row = tree().getByRole("checkbox", { name: "Show Embout-1" }).closest("li")!;
+    expect(within(row).getByRole("img", { name: "SolidWorks' saved 3D view" })).toBeTruthy();
 });
 
 test("a part's configurations: each its file kept opens, and one it didn't says what to do", async () => {
@@ -398,11 +494,12 @@ test("a part's configurations: each its file kept opens, and one it didn't says 
     );
     expect(choice().value).toBe("Default");
 
-    // Spline is read from the solid SolidWorks kept of it: the spline's two bodies, here.
+    // Spline is read from the solid SolidWorks kept of it: the spline's two bodies, here, which the page says.
     await userEvent.selectOptions(choice(), "Spline");
     expect(await screen.findByRole("checkbox", { name: "Show Body 2" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Show Body 1" })).toBeTruthy();
     expect(choice().value).toBe("Spline");
+    expect(screen.getByRole("button", { name: "Where it came from: Caliper's triangles of the solid" })).toBeTruthy();
 
     // Old needed a rebuild when SolidWorks saved the file, so it kept nothing of it: the page says what to do.
     await userEvent.selectOptions(choice(), "Old");

@@ -215,8 +215,31 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   none of whose parts are in the vault. *Make 3D view* in SolidWorks makes the first three; the last
   need their parts in the vault. Parts in folders you can't see are left out, and the page says how
   many.
-- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time.
-  Wait a minute and open it again.
+- **Caliper shows a part that's out of date, or out of place, in an assembly.** An assembly's latest
+  version shows each part's latest version, marked *Updated* where it was checked in after the
+  assembly; a part marked *Not latest* has no 3D model of its latest version Caliper could make
+  (hover over the mark for why: a configuration its file kept no shape of, say), so it shows the
+  version the assembly was checked in with. Open the part in SolidWorks and click *Make 3D view* to
+  make it. A part changed since sits where the assembly had the older one, as Caliper can't solve
+  mates: check the assembly in again from SolidWorks and it's where SolidWorks puts it. *Parts: As
+  checked in* shows the assembly exactly as it was checked in.
+- **Caliper says a part is "Caliper's triangles of the solid" or "Read from the file".** No one has
+  checked that version in from SolidWorks with Vault for SolidWorks since Caliper began making its
+  models (from Kenesto, say, or uploaded in the web app), so the server read it from the file. It's
+  the right shape, but to have exactly what SolidWorks draws, open it in SolidWorks and click
+  *Make 3D view* on the Vault tab: that takes the place of the server's.
+- **Caliper shows a drawing's sheets as small pictures, too small to read.** Its version has no PDF:
+  Vault for SolidWorks (0.6.0 and later) saves one each time it checks a drawing in. Update the
+  add-in from the SolidWorks page, then open the drawing in SolidWorks and click *Make PDF* on the
+  Vault tab.
+- **Caliper says a drawing's model has changed since the drawing was checked in.** The PDF was saved
+  when the drawing was checked in; SolidWorks redraws the views from the model's latest version
+  when it opens the drawing. Open the drawing in SolidWorks, check it out, save, and check it in
+  again: its new PDF shows the model as it is now.
+- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time, and
+  Caliper asks it for no more than that, waiting and asking again for about three minutes while
+  others' are being read. If it still says so, the server is busy with big files: open it again in
+  a few minutes, by which time the parts read meanwhile are kept.
 - **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not
   checked in, gets none until it is. A part loaded lightweight needs resolving first: right-click
   the assembly, choose Set Lightweight to Resolved, then click *Make 3D view* again.

@@ -153,14 +153,22 @@ export interface CheckinRequest {
     items: { path: string; sha256: string; size: number; references: { path: string }[]; vendor?: boolean }[];
 }
 
-/** A version's 3D model in one configuration, for Caliper (made by Vault for SolidWorks). */
+/**
+ * Where a 3D model's shape came from: made in SolidWorks (by Vault for SolidWorks); the 3D view SolidWorks saved in the
+ * file; the server's triangles of the solid SolidWorks saved in it; or the file, as the server read it (an assembly's
+ * places, or a part read before the server noted which).
+ */
+export type CaliperSource = "solidworks" | "saved_view" | "solid" | "file";
+
+/** A version's 3D model in one configuration, for Caliper: made by Vault for SolidWorks, or read from the file. */
 export interface CaliperModel {
     version: number;
     configuration: string;
     kind: "part" | "assembly"; // a part's is a mesh; an assembly's, its components
     units: "mm" | "cm" | "m" | "in" | "ft"; // the document's length unit
+    source: CaliperSource;
     created_at: string;
-    created_by: UserRef;
+    created_by: UserRef; // who made it in SolidWorks, or had the server read it
 }
 
 /** A configuration of a version, as its file lists it, for Caliper to offer. */
@@ -177,11 +185,16 @@ export interface CaliperConfigurations {
     unreadable: string | null; // why the file's own list couldn't be read: then those with models are listed
 }
 
+/** Which versions of an assembly's parts Caliper shows: the ones it was checked in with, or each one's latest. */
+export type CaliperParts = "checked_in" | "latest";
+
 /** A component of an assembly's model: a part or sub-assembly, where the assembly has it. */
 export interface CaliperComponent {
     name: string;
     file_id: number | null; // null: a virtual part, which the assembly keeps (its mesh is the assembly's)
-    version: number | null;
+    version: number | null; // the one shown: as the assembly was checked in, or its latest
+    checked_in_version?: number | null; // the one the assembly was checked in with; null if it wasn't in it
+    latest_version?: number | null; // its file's latest
     configuration: string;
     transform: number[]; // rows of a 3 x 4 matrix to the assembly's coordinates (mm)
     hidden: boolean;
@@ -189,6 +202,7 @@ export interface CaliperComponent {
     opacity: number;
     mesh: string | null;
     model: boolean; // whether its file has a model of its own, at its version and in its configuration
+    source?: CaliperSource | null; // where its shape came from: its mesh's, or else its own model's
     kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
     format?: "step" | "iges" | null; // a STEP or IGES file's, placed with 3D Interconnect: read as it is
     virtual?: boolean; // kept inside the assembly (a routed tube): without a mesh, no shape of it was found there
@@ -213,6 +227,9 @@ export interface DrawingView {
     pdf: { size: number; created_at: string; created_by: UserRef } | null;
     sheets: DrawingSheet[];
     unreadable: string | null; // why its sheets couldn't be read
+    // The files it was checked in with that you can see (its model), at those versions and their latest: SolidWorks
+    // draws its views from the latest, so a newer one means its PDF may show an older shape.
+    models?: { file_id: number; path: string; version: number; latest_version: number }[];
 }
 
 export const vaultApi = {
@@ -297,8 +314,11 @@ export const vaultApi = {
     /** A version's configurations: which SolidWorks saved it in, which it kept, and which have models. */
     caliperConfigurations: (fileId: number, version: number) =>
         request<CaliperConfigurations>("GET", `/api/files/${fileId}/caliper/configurations?` + query({ version })),
-    caliperAssembly: (fileId: number, version: number, configuration: string) =>
-        request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
+    caliperAssembly: (fileId: number, version: number, configuration: string, parts: CaliperParts = "checked_in") =>
+        request<CaliperAssembly>(
+            "GET",
+            `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration, parts }),
+        ),
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */
     caliperMesh: (fileId: number, version: number, configuration: string, mesh?: string) =>
         requestBytes(`/api/files/${fileId}/caliper/mesh?` + query({ version, configuration, mesh })),

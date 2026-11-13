@@ -3,6 +3,7 @@ import { Link } from "../../router";
 import { caliperUrl, titleBeside } from "../paths";
 import { useVault } from "../store";
 import type { Node, Why } from "./model";
+import { SourceDot } from "./Sources";
 
 // What a component that draws nothing says beside its name (its full reason is the tag's title).
 const TAGS: Record<Why, string> = {
@@ -49,6 +50,9 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
     const latest = node.file ? vault.files.get(node.file.id) : undefined;
     const file = latest?.name;
     const titled = latest ? titleBeside(latest) : null; // what its file is called, where the name doesn't say
+    const newest = node.latest ?? latest?.version; // its file's latest version
+    // Shown at a newer version than the assembly was checked in with (its latest, asked for).
+    const since = node.file && node.checkedIn != null && node.checkedIn !== node.file.version ? node.checkedIn : null;
     return (
         <li
             role="treeitem"
@@ -87,13 +91,27 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                     onDoubleClick={() => props.zoomTo(node.id)}
                 >
                     <span className={`caliper-kind caliper-kind-${node.kind}`} aria-hidden="true" />
-                    {node.name}
+                    <span className="caliper-name-text">{node.name}</span>
                 </button>
                 {titled && <span className="file-title caliper-title">{titled}</span>}
+                {node.kind !== "body" && node.shape?.source && <SourceDot source={node.shape.source} />}
                 {node.file && (
                     <span className="muted caliper-version">
                         v{node.file.version}
-                        {latest && latest.version !== node.file.version && ` (now v${latest.version})`}
+                        {newest !== undefined && newest > node.file.version && !node.older && ` (now v${newest})`}
+                    </span>
+                )}
+                {since !== null && (
+                    <span
+                        className="tag caliper-since"
+                        title={`The assembly was checked in with v${since}. This is v${node.file!.version}, the latest, where the assembly put v${since}.`}
+                    >
+                        Updated
+                    </span>
+                )}
+                {node.older && (
+                    <span className="tag tag-warning" title={node.older}>
+                        Not latest
                     </span>
                 )}
                 {node.problem && (

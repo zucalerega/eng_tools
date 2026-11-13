@@ -1,7 +1,7 @@
 import { ApiError, requestBytes } from "../../api";
 import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
 import { readMesh, type Mesh } from "./format";
-import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
+import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Source, type Why } from "./model";
 import { fileFormat } from "../paths";
 import { bodiesOfCad, modelFromCad, readCadFile, type CadFormat } from "./step";
 import { modelFromStl } from "./stl";
@@ -100,14 +100,17 @@ export async function assemblyModel(
             : c.format
               ? `cad:${c.file_id}:${c.version}`
               : `${c.file_id}:${c.version}:${c.configuration}`;
-    const wanted = new Map<string, () => Promise<Body[]>>();
+    const wanted = new Map<string, () => Promise<{ bodies: Body[]; source: Source }>>();
     let cadTurn: Promise<unknown> = Promise.resolve();
     const oneAtATime = <T>(work: () => Promise<T>): Promise<T> => {
         const run = cadTurn.then(work, work);
         cadTurn = run.catch(() => undefined);
         return run;
     };
-    const meshBodies = async (bytes: Promise<ArrayBuffer>) => bodiesOf(readMesh(await bytes));
+    const meshBodies = async (bytes: Promise<ArrayBuffer>, source: Source) => ({
+        bodies: bodiesOf(readMesh(await bytes)),
+        source,
+    });
     // A part's model, made from its file where it has none yet, in the configuration it's used in (where the assembly
     // says which): once for each version and configuration, however many use it.
     const made = new Map<string, Promise<CaliperModel>>();
@@ -123,16 +126,22 @@ export async function assemblyModel(
             visit(c.children);
             if (c.mesh) {
                 const mesh = c.mesh;
+                // Its source is the server's to say; one from before it did is the assembly's file's.
+                const source = c.source ?? (c.virtual ? "solid" : "saved_view");
                 wanted.set(keyOf(c), () =>
-                    meshBodies(vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh)),
+                    meshBodies(vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh), source),
                 );
             } else if (c.format && c.children.length === 0 && c.file_id !== null && c.version !== null) {
                 const [id, version, format] = [c.file_id, c.version, c.format];
-                wanted.set(keyOf(c), () => oneAtATime(() => cadBodies(id, version, format)));
+                wanted.set(keyOf(c), async () => ({
+                    bodies: await oneAtATime(() => cadBodies(id, version, format)),
+                    source: "browser",
+                }));
             } else if (c.children.length === 0 && c.file_id !== null && c.version !== null && c.kind !== "assembly") {
                 const [id, version, configuration, own] = [c.file_id, c.version, c.configuration, c.model];
                 wanted.set(keyOf(c), async () => {
                     let shown = configuration;
+                    let source: Source = c.source ?? "file";
                     if (!own) {
                         // The server reads it from the file: the configuration it was saved in, from its 3D view;
                         // another, from the solid SolidWorks kept of it, which it doesn't of every one. An assembly
@@ -145,8 +154,9 @@ export async function assemblyModel(
                             throw new NoModel(message, other ? "configuration" : "unreadable");
                         });
                         shown = ready.configuration;
+                        source = ready.source;
                     }
-                    return meshBodies(vaultApi.caliperMesh(id, version, shown));
+                    return meshBodies(vaultApi.caliperMesh(id, version, shown), source);
                 });
             }
         }
@@ -158,7 +168,7 @@ export async function assemblyModel(
     progress(0, wanted.size);
     await inTurn([...wanted], 6, async ([key, load]) => {
         try {
-            shapes.set(key, { key, bodies: await load() });
+            shapes.set(key, { key, ...(await load()) });
         } catch (error) {
             shapes.set(key, error instanceof Error ? error : new Error(String(error)));
         }

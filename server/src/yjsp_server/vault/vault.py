@@ -2012,6 +2012,10 @@ def register_blob(db: Session, sha256: str, size: int) -> None:
 # --- Caliper: versions' 3D models ---------------------------------------------------------
 
 Units = Literal["mm", "cm", "m", "in", "ft"]  # a document's length unit, which Caliper measures in
+# Where a model's shape came from, for Caliper to say (CaliperModel.source): what SolidWorks drew, as Vault for
+# SolidWorks made it; the 3D view SolidWorks saved in the file; the server's triangles of the solid SolidWorks saved in
+# it; or the file, as the server read it: an assembly's places, or a part read before the server noted which of those.
+Source = Literal["solidworks", "saved_view", "solid", "file"]
 _MAX_COMPONENTS = 20_000  # a big assembly has a few thousand
 _MAX_DEPTH = 32
 
@@ -2023,6 +2027,7 @@ class ModelView:
     model: CaliperModel
     version: int
     created_by: User
+    source: Source
 
     @property
     def kind(self) -> Literal["part", "assembly"]:
@@ -2111,6 +2116,13 @@ def _reader(store: BlobStore, model: CaliperModel) -> int:
     return 1
 
 
+def _source(store: BlobStore, model: CaliperModel) -> Source:
+    """Where a model's shape came from (Source)."""
+    if _reader(store, model) == _UPLOADED:
+        return "solidworks"
+    return "saved_view" if model.source == "saved_view" else "solid" if model.source == "solid" else "file"
+
+
 def _outdated(store: BlobStore, model: CaliperModel) -> bool:
     """Whether an older reader of the server's made a model: it's read again when it's next wanted (make_caliper_model),
     so its version's models aren't listed till then, nor does it count as a part's own model in an assembly. Vault for
@@ -2146,7 +2158,7 @@ def caliper_models(db: Session, store: BlobStore, user: User, file_id: int) -> l
     outdated = {number for model, number in rows if _outdated(store, model)}
     rows = [(model, number) for model, number in rows if number not in outdated]
     users = _users(db, {model.created_by for model, _ in rows})
-    return [ModelView(model, number, users[model.created_by]) for model, number in rows]
+    return [ModelView(model, number, users[model.created_by], _source(store, model)) for model, number in rows]
 
 
 def caliper_missing(
@@ -2272,10 +2284,11 @@ def put_caliper_model(
         db.add(model)
     elif _reader(store, model) == _UPLOADED:
         access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
-    model.units, model.mesh_sha256, model.components, model.reader = units, mesh, components, _UPLOADED
+    model.units, model.mesh_sha256, model.components = units, mesh, components
+    model.reader, model.source = _UPLOADED, "solidworks"
     model.created_at, model.created_by = utcnow(), user.id
     db.commit()
-    return ModelView(model, version, user)
+    return ModelView(model, version, user, "solidworks")
 
 
 _MAX_READ = 1 << 28  # bigger files aren't read for their 3D view here: Vault for SolidWorks makes theirs
@@ -2446,8 +2459,8 @@ def _kept_in(store: BlobStore, version: Version, configuration: str, name: str) 
     return _kept_shapes(chosen.components) if chosen is not None else {}
 
 
-# A model to make, in one configuration: its name, units, and a part's mesh or an assembly's components.
-_Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None]
+# A model to make, in one configuration: its name, units, a part's mesh or an assembly's components, and its source.
+_Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None, Source]
 
 
 def _read_models(
@@ -2471,7 +2484,8 @@ def _read_models(
         if isinstance(read, solidworks.Part):
             mesh, size = _keep(store, caliper.write_mesh(read.bodies))
             kept[mesh] = size
-            wanted.append((read.configuration[:255], read.units, mesh, None))
+            source: Source = "saved_view" if read.source == "view" else "solid"
+            wanted.append((read.configuration[:255], read.units, mesh, None, source))
         else:
             finder = _Finder(db, tree, target.created_at)
             # The shapes of the virtual parts sub-assemblies keep in their own files, by file, version and
@@ -2524,7 +2538,7 @@ def _read_models(
                 if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
                     raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
                 if components:
-                    wanted.append((assembly.configuration[:255], assembly.units, None, components))
+                    wanted.append((assembly.configuration[:255], assembly.units, None, components, "file"))
             if not wanted:
                 raise solidworks.Unreadable(
                     "Caliper found none of its parts in the vault. Make its 3D view in SolidWorks (Make 3D view, on the "
@@ -2571,7 +2585,7 @@ def make_caliper_model(
         raise NotFound(f"{path} has no version {version}")
 
     def view(model: CaliperModel) -> ModelView:
-        return ModelView(model, version, _users(db, {model.created_by})[model.created_by])
+        return ModelView(model, version, _users(db, {model.created_by})[model.created_by], _source(store, model))
 
     def made() -> tuple[list[CaliperModel], list[CaliperModel]]:
         """The version's models, first made first, and those of them this reader's or Vault for SolidWorks'."""
@@ -2615,7 +2629,7 @@ def make_caliper_model(
     for sha, size in kept.items():
         if db.get(Blob, sha) is None:
             db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
-    for name, units, mesh, components in wanted:
+    for name, units, mesh, components, source in wanted:
         if name not in have:
             have[name] = CaliperModel(
                 version_id=target.id,
@@ -2626,6 +2640,7 @@ def make_caliper_model(
                 created_at=utcnow(),
                 created_by=user.id,
                 reader=solidworks.READER,
+                source=source,
             )
             db.add(have[name])
             db.flush()  # in order, so the one SolidWorks had open comes first
@@ -2712,7 +2727,8 @@ def caliper_assembly(
         raise ApiError(f"{tree.file_path(file)} is a part: its model is a mesh", code="bad_model")
     walked = [component for component, _ in _walk(model.components)]
     files = _files_by_id(db, {c["file_id"] for c in walked if c.get("file_id") is not None})
-    have: set[tuple[int, int, str]] = set()  # (file id, version, configuration) with models of their own
+    # (file id, version, configuration) with models of their own, and where each came from.
+    have: dict[tuple[int, int, str], Source] = {}
     ids = sorted(files)
     for start in range(0, len(ids), _BATCH):
         rows = db.execute(
@@ -2721,8 +2737,11 @@ def caliper_assembly(
             .where(Version.file_id.in_(ids[start : start + _BATCH]))
         )
         have.update(
-            (file_id, number, model.configuration) for file_id, number, model in rows if not _outdated(store, model)
+            ((file_id, number, model.configuration), _source(store, model))
+            for file_id, number, model in rows
+            if not _outdated(store, model)
         )
+    source = _source(store, model)
     left_out = 0
 
     def visible(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2734,16 +2753,30 @@ def caliper_assembly(
             if file_id is not None and (file is None or not access.can(file.folder_id, Role.VIEWER)):
                 left_out += 1
                 continue
-            own = (file_id, component.get("version"), component.get("configuration")) in have
+            own = have.get((file_id, component.get("version"), component.get("configuration")))
+            shown = own
+            if component.get("mesh"):
+                # A shape the assembly's model carries, which Caliper draws: SolidWorks', or the server's from the
+                # assembly's file (a virtual part's solid, or a part's triangles as the assembly's 3D view keeps them).
+                shown = source if source == "solidworks" else "solid" if component.get("virtual") else "saved_view"
             kind = _caliper_kind(file.name) if file is not None else None
             cad = _cad_format(file.name) if file is not None else None
             children = visible(component.get("children") or [])
-            kept.append({**component, "model": own, "kind": kind, "format": cad, "children": children})
+            kept.append(
+                {
+                    **component,
+                    "model": own is not None,
+                    "source": shown,
+                    "kind": kind,
+                    "format": cad,
+                    "children": children,
+                }
+            )
         return kept
 
     components = visible(model.components)
     creator = _users(db, {model.created_by})[model.created_by]
-    return AssemblyModel(ModelView(model, version, creator), components, left_out)
+    return AssemblyModel(ModelView(model, version, creator, source), components, left_out)
 
 
 def caliper_mesh(

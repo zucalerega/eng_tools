@@ -175,6 +175,8 @@ class Part:
     configuration: str  # the one asked for; else the one SolidWorks had open when it saved the file
     units: str
     bodies: list[MeshBody]
+    # Where its triangles came from: the 3D view SolidWorks saved ("view"), or the server's of its solid ("solid").
+    source: Literal["view", "solid"] = "view"
 
 
 @dataclass
@@ -1019,7 +1021,7 @@ def _viewed(found: dict[str, bytes], display: bytes) -> Part:
     bodies = _mesh(display, shape, len(display), first_face)
     tail = [text for _, text in _strings(display, faces[-1].end, len(display))]
     configuration = _part_configuration(_xml(found.get(_FEATURES)), tail)
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="view")
 
 
 # --- parts' solids --------------------------------------------------------------------------------
@@ -1114,7 +1116,7 @@ def _solid(
             raise Unreadable(f"SolidWorks kept no bodies of its {configuration} configuration: it may be empty")
         raise refused or Unreadable(_NO_VIEW)
     bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="solid")
 
 
 def _configuration_look(stream: bytes | None) -> _Look | None:

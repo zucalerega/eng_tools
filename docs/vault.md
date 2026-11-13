@@ -707,6 +707,17 @@ their own that loads without three.js (see "Drawings and DXF files", below).
   the Configuration list offers every other its file lists (`GET .../caliper/configurations`),
   each read from the file when it's picked (below). One the file kept no shape of says so,
   and why, and how to see it; so does a component used in one.
+- **Where it came from** (`Sources.tsx`), as a model's `source` says (`caliper_models.source`),
+  so nobody takes a reading for SolidWorks' own: in the page's head, the model's, which opens
+  to say what that means for how far it can be trusted, and who made it and when; in an
+  assembly's tree, a dot beside each part, and how many came from where. A part's shape is
+  **made in SolidWorks** (what SolidWorks drew, which Vault for SolidWorks saved), **SolidWorks'
+  saved 3D view** (the triangles SolidWorks kept in the file when it saved it, as eDrawings
+  shows), or **Caliper's triangles of the solid** (the server's, of the solid SolidWorks kept in
+  the file, to 0.05% of its size); an assembly's places are made in SolidWorks, or **placed as
+  its file says**. Models the server read before it noted which say **read from the file**;
+  those Vault for SolidWorks made are told by their reader. STEP, IGES, and STL files are read
+  in the browser, and say so.
 
 Where the 3D comes from:
 
@@ -931,12 +942,12 @@ are in [design.md](design.md#api).
 | `GET /api/sync?since=` | changes since a cursor, for clients |
 | `GET /api/activity?before=&file_id=` | activity log, newest first |
 | `GET/PUT /api/grants?path=` | who has access to a folder; change it |
-| `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration |
+| `GET /api/files/{id}/caliper` | a file's 3D models, for Caliper: each version's, in each configuration, each with where it came from (`source`: `solidworks`, `saved_view`, `solid`, or `file`) |
 | `PUT /api/files/{id}/caliper` | save a version's model `{version, configuration, units, mesh or components}` (upload a mesh first: `PUT /api/blobs`) |
 | `POST /api/files/{id}/caliper/make` | read a version's model `{version}` from the 3D view SolidWorks saved in the file (or get the one it has); with `configuration`, in that one, which a part's is read from the solid SolidWorks kept of it; `unreadable_file`, `configuration_not_saved`, or `no_configuration` says why not |
 | `GET /api/files/{id}/caliper/configurations?version=` | a version's configurations, as its file lists them: whether SolidWorks had each open when it saved the file (`active`) and kept it up to date then (`saved`: the server can read it), and whether it has a model; then any others with models (`unreadable` says why the file's list couldn't be read) |
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model made in SolidWorks yet (one the server read counts as missing), of files you can see: what the add-in makes |
-| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; and `virtual` for a part kept inside the assembly), and how many are left out |
+| `GET /api/files/{id}/caliper/assembly?version=&configuration=` | an assembly's components that you can see (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; `virtual` for a part kept inside the assembly; and its shape's `source`, where it has one), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
 | `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
 | `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |

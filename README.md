@@ -141,6 +141,12 @@ replaces Kenesto.
   its file. The server reads a version's model once and keeps it; when an update reads files
   better, it reads each one again the first time it's opened after. If Caliper can't read a
   file, it says so: open the file in SolidWorks and click Make 3D view on the Vault tab.
+  Caliper says where what it shows came from, beside the version (click it for what that
+  means): **Made in SolidWorks** is what SolidWorks drew; **SolidWorks' saved 3D view** is
+  the triangles SolidWorks kept in the file when it saved it, the same shape; **Caliper's
+  triangles of the solid** is Caliper's own drawing of the solid SolidWorks saved, to within
+  0.05% of the part's size, its colors as near as the file says. In an assembly, a dot beside
+  each part says which, and the list sums them up.
 - **See drawings and DXF files** with **Open in Caliper** too. A SolidWorks drawing shows
   as a PDF of all its sheets, as SolidWorks prints them, in the browser's own PDF viewer (to
   zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one

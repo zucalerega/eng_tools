@@ -206,6 +206,12 @@ test("a part's model shows its bodies, to show and hide", async () => {
     expect(screen.getByText("Default")).toBeTruthy(); // its configuration
     // jsdom has no 3D, which the page says, keeping the list.
     expect(screen.getByText(/isn't drawing 3D/)).toBeTruthy();
+    // Where it came from: Vault for SolidWorks made it, and who did.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Made in SolidWorks" }));
+    const about = screen.getByRole("dialog", { name: "Where it came from" });
+    expect(within(about).getByText(/What SolidWorks drew/)).toBeTruthy();
+    expect(within(about).getByText(/^Made by chief, /)).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
 
     await userEvent.click(doubler);
     expect((doubler as HTMLInputElement).checked).toBe(false);
@@ -308,6 +314,8 @@ test("what an assembly doesn't show is summed up by why, with what to do about i
     );
     expect(within(row("Tail-1")).getByText("Parts not in the vault")).toBeTruthy();
     expect(within(row("Fin-1")).queryByText(/No 3D model|Other configuration/)).toBeNull();
+    expect(within(row("Fin-1")).getByRole("img", { name: "Made in SolidWorks" })).toBeTruthy();
+    expect(screen.getByText("1 made in SolidWorks")).toBeTruthy();
 });
 
 test("components in folders you can't see are left out, with what's in them", async () => {
@@ -371,6 +379,9 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
     expect(await screen.findByText(/Reading the 3D view SolidWorks saved in v1 of Embout.SLDPRT/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fillet3" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Show Boss-Extrude2" })).toBeTruthy();
+    // It says it's the 3D view SolidWorks saved in the file, and what that is.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: SolidWorks' saved 3D view" }));
+    expect(screen.getByText(/The triangles SolidWorks drew of it when it last saved this version/)).toBeTruthy();
     part.unmount();
 
     renderApp(team.chief, caliperUrl(assembly!.id));
@@ -379,6 +390,12 @@ test("a SolidWorks file without a model shows the 3D view SolidWorks saved in it
         caliperUrl(spline!.id, 1, "Default"),
     );
     expect(screen.queryByText(/no 3D model/)).toBeNull();
+    // Its parts are where its file says, each as the assembly's own 3D view keeps it.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Placed as its file says" }));
+    expect(screen.getByText("Where each part is, as SolidWorks saved v1 of the assembly in its file.")).toBeTruthy();
+    expect(screen.getByText("2 from SolidWorks' saved 3D views")).toBeTruthy();
+    const row = tree().getByRole("checkbox", { name: "Show Embout-1" }).closest("li")!;
+    expect(within(row).getByRole("img", { name: "SolidWorks' saved 3D view" })).toBeTruthy();
 });
 
 test("a part's configurations: each its file kept opens, and one it didn't says what to do", async () => {
@@ -398,11 +415,12 @@ test("a part's configurations: each its file kept opens, and one it didn't says 
     );
     expect(choice().value).toBe("Default");
 
-    // Spline is read from the solid SolidWorks kept of it: the spline's two bodies, here.
+    // Spline is read from the solid SolidWorks kept of it: the spline's two bodies, here, which the page says.
     await userEvent.selectOptions(choice(), "Spline");
     expect(await screen.findByRole("checkbox", { name: "Show Body 2" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Show Body 1" })).toBeTruthy();
     expect(choice().value).toBe("Spline");
+    expect(screen.getByRole("button", { name: "Where it came from: Caliper's triangles of the solid" })).toBeTruthy();
 
     // Old needed a rebuild when SolidWorks saved the file, so it kept nothing of it: the page says what to do.
     await userEvent.selectOptions(choice(), "Old");

@@ -215,6 +215,11 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   none of whose parts are in the vault. *Make 3D view* in SolidWorks makes the first three; the last
   need their parts in the vault. Parts in folders you can't see are left out, and the page says how
   many.
+- **Caliper says a part is "Caliper's triangles of the solid" or "Read from the file".** No one has
+  checked that version in from SolidWorks with Vault for SolidWorks since Caliper began making its
+  models (from Kenesto, say, or uploaded in the web app), so the server read it from the file. It's
+  the right shape, but to have exactly what SolidWorks draws, open it in SolidWorks and click
+  *Make 3D view* on the Vault tab: that takes the place of the server's.
 - **Caliper says the server is reading other SolidWorks files.** The server reads two at a time.
   Wait a minute and open it again.
 - **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not

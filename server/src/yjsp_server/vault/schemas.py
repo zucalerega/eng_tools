@@ -466,6 +466,10 @@ class CaliperModelOut(BaseModel):
     configuration: str
     kind: Literal["part", "assembly"]  # a part's model is a mesh; an assembly's, its components
     units: str  # the document's length unit, for measurements: mm, cm, m, in, or ft
+    # Where its shape came from: made in SolidWorks (by Vault for SolidWorks, who's created_by); the 3D view SolidWorks
+    # saved in the file; the server's triangles of the solid SolidWorks saved in it; or the file, as the server read it
+    # (an assembly's places, or a part read before the server noted which). The server's are made when first wanted.
+    source: vault.Source
     created_at: datetime
     created_by: UserRef
 
@@ -477,6 +481,7 @@ class CaliperModelOut(BaseModel):
             configuration=model.configuration,
             kind=view.kind,
             units=model.units,
+            source=view.source,
             created_at=model.created_at,
             created_by=UserRef.of(view.created_by),
         )
@@ -544,6 +549,9 @@ class CaliperModelIn(BaseModel):
 
 class CaliperComponentOut(CaliperComponentIn):
     model: bool  # whether its file has a model of its own, at its version and in its configuration
+    # Where its shape came from (CaliperModelOut.source): its file's own model's, or the one its mesh is; None where it
+    # has neither yet.
+    source: vault.Source | None = None
     # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: it has
     # no file (a virtual part), or one that isn't a SolidWorks part or assembly.
     kind: Literal["part", "assembly"] | None = None

@@ -153,14 +153,22 @@ export interface CheckinRequest {
     items: { path: string; sha256: string; size: number; references: { path: string }[]; vendor?: boolean }[];
 }
 
-/** A version's 3D model in one configuration, for Caliper (made by Vault for SolidWorks). */
+/**
+ * Where a 3D model's shape came from: made in SolidWorks (by Vault for SolidWorks); the 3D view SolidWorks saved in the
+ * file; the server's triangles of the solid SolidWorks saved in it; or the file, as the server read it (an assembly's
+ * places, or a part read before the server noted which).
+ */
+export type CaliperSource = "solidworks" | "saved_view" | "solid" | "file";
+
+/** A version's 3D model in one configuration, for Caliper: made by Vault for SolidWorks, or read from the file. */
 export interface CaliperModel {
     version: number;
     configuration: string;
     kind: "part" | "assembly"; // a part's is a mesh; an assembly's, its components
     units: "mm" | "cm" | "m" | "in" | "ft"; // the document's length unit
+    source: CaliperSource;
     created_at: string;
-    created_by: UserRef;
+    created_by: UserRef; // who made it in SolidWorks, or had the server read it
 }
 
 /** A configuration of a version, as its file lists it, for Caliper to offer. */
@@ -189,6 +197,7 @@ export interface CaliperComponent {
     opacity: number;
     mesh: string | null;
     model: boolean; // whether its file has a model of its own, at its version and in its configuration
+    source?: CaliperSource | null; // where its shape came from: its mesh's, or else its own model's
     kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
     format?: "step" | "iges" | null; // a STEP or IGES file's, placed with 3D Interconnect: read as it is
     virtual?: boolean; // kept inside the assembly (a routed tube): without a mesh, no shape of it was found there

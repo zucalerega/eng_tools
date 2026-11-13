@@ -9,6 +9,7 @@ import { useBelowTopBar } from "./layout";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
+import { ModelSource, ShapeSources } from "./Sources";
 import { initiallyHidden, shownNodes, type Model, type Units, type Why } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
@@ -221,6 +222,7 @@ export function CaliperPage({ id }: { id: number }) {
                     </label>
                 )}
                 {!cad && configurations.length === 1 && <span className="muted">{configurations[0]}</span>}
+                {!reading && (cad || chosen) && <ModelSource model={cad ? null : chosen} />}
                 <span className="caliper-head-actions">
                     <OpenInSolidWorks path={file.path} />
                     <a className="button" href={vaultApi.downloadUrl(file.id, version)} download>
@@ -587,6 +589,7 @@ function CaliperView({
                     </p>
                 )}
                 {missing && <NotShown tally={missing} />}
+                {loaded && info?.kind === "assembly" && <ShapeSources model={loaded.model} />}
                 {loaded && (
                     <ComponentTree
                         nodes={loaded.model.nodes}

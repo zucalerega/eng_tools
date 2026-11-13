@@ -1,3 +1,4 @@
+import type { CaliperSource } from "../api";
 import type { MeshBody, RGB } from "./format";
 
 // What Caliper shows, whichever way it came: a part's or an assembly's model from the vault (made by Vault for
@@ -12,10 +13,17 @@ export interface Body extends MeshBody {
     indices: Uint32Array;
 }
 
+/**
+ * Where a shape came from, for the page to say: a model from the vault (made in SolidWorks, or read from the file by the
+ * server), or a STEP, IGES, or STL file read as it is, in the browser ("browser").
+ */
+export type Source = CaliperSource | "browser";
+
 /** What a node draws: one or more bodies. A part's shape is shared by every component that's that part. */
 export interface Shape {
     key: string; // the same for every node that draws it (a part at a version, in a configuration)
     bodies: Body[];
+    source?: Source; // where it came from, where that differs among a model's shapes (an assembly's parts)
 }
 
 /** A vault file, at a version and in a configuration: what an assembly's component is. */

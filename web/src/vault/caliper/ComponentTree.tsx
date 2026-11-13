@@ -3,6 +3,7 @@ import { Link } from "../../router";
 import { caliperUrl, titleBeside } from "../paths";
 import { useVault } from "../store";
 import type { Node, Why } from "./model";
+import { SourceDot } from "./Sources";
 
 // What a component that draws nothing says beside its name (its full reason is the tag's title).
 const TAGS: Record<Why, string> = {
@@ -90,6 +91,7 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                     {node.name}
                 </button>
                 {titled && <span className="file-title caliper-title">{titled}</span>}
+                {node.kind !== "body" && node.shape?.source && <SourceDot source={node.shape.source} />}
                 {node.file && (
                     <span className="muted caliper-version">
                         v{node.file.version}

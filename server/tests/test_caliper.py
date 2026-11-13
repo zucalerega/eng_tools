@@ -61,7 +61,7 @@ def test_a_parts_model_is_its_mesh(team, client):
     assert made.json()["kind"] == "part"
     [model] = client.get(f"/api/files/{tab['id']}/caliper", headers=chief).json()["models"]
     assert (model["version"], model["configuration"], model["kind"], model["units"]) == (1, "Default", "part", "in")
-    assert model["created_by"]["email"] == "chief@x.test"
+    assert (model["source"], model["created_by"]["email"]) == ("solidworks", "chief@x.test")
 
     # It's sent as it's stored, gzip-compressed, for the browser to unpack; and not again while it's the same.
     shape = client.get(f"/api/files/{tab['id']}/caliper/mesh", params=params, headers=chief)
@@ -129,6 +129,9 @@ def test_an_assembly_model_places_its_parts(team, client):
     assert (two["transform"], two["hidden"], two["color"]) == (moved, True, [1, 0, 0])
     assert three["model"] is False  # Fin has no model in its Long configuration
     assert (virtual["file_id"], virtual["mesh"], virtual["model"]) == (None, bracket, False)
+    # Where each one's shape came from: SolidWorks, as Vault for SolidWorks made the models; the Long fin, nowhere yet.
+    assert [c["source"] for c in got["components"]] == ["solidworks", "solidworks", None, "solidworks", None]
+    assert got["model"]["source"] == "solidworks"
     shape = client.get(f"/api/files/{assembly['id']}/caliper/mesh", params={**params, "mesh": bracket}, headers=chief)
     assert shape.content.startswith(caliper.MAGIC)
     other = client.get(f"/api/files/{assembly['id']}/caliper/mesh", params={**params, "mesh": "f" * 64}, headers=chief)

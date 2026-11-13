@@ -119,6 +119,7 @@ export function Workspace({ createRunner }: WorkspaceProps) {
 
     const [compat, setCompat] = useState<CompatibilityReport>(() => baselineCompatibilityReport());
     const [runtimeStatus, setRuntimeStatus] = useState("Python runtime idle (loads on first run)");
+    const [runtimeReady, setRuntimeReady] = useState(false);
     const [running, setRunning] = useState(false);
     const [runMode, setRunMode] = useState<"validate" | "simulate">("simulate");
     const [wallElapsed, setWallElapsed] = useState(0);
@@ -240,11 +241,23 @@ export function Workspace({ createRunner }: WorkspaceProps) {
     function ensureRunner(): TempoRunner {
         if (!runnerRef.current) {
             const runner = createRunner ? createRunner() : new TempoSandbox();
-            runner.onStatus = (msg) => setRuntimeStatus(msg);
+            runner.onStatus = (msg, ready) => {
+                setRuntimeStatus(msg);
+                setRuntimeReady(ready);
+            };
             runnerRef.current = runner;
         }
         return runnerRef.current;
     }
+
+    useEffect(() => {
+        if (!createRunner && typeof Worker !== "undefined") {
+            ensureRunner().warm?.();
+        }
+        return () => {
+            runnerRef.current?.stop();
+        };
+    }, []);
 
     async function runSequence(mode: "validate" | "simulate") {
         setRunError(null);
@@ -274,6 +287,8 @@ export function Workspace({ createRunner }: WorkspaceProps) {
     function stopRun() {
         runnerRef.current?.stop();
         setRunning(false);
+        setRuntimeReady(false);
+        setRuntimeStatus("Stopped (click Validate or Run to reload Python runtime)");
     }
 
     async function saveToServer(asNew = false) {
@@ -541,7 +556,11 @@ export function Workspace({ createRunner }: WorkspaceProps) {
                                 />
                             </label>
                             <span className="tempo-runtime-status muted" role="status">
-                                {running ? `Running (${wallElapsed.toFixed(1)}s wall · ${speed}×)` : runtimeStatus}
+                                {running
+                                    ? runtimeReady
+                                        ? `Running (${wallElapsed.toFixed(1)}s wall · ${speed}×)`
+                                        : `${runtimeStatus} (${wallElapsed.toFixed(1)}s)`
+                                    : runtimeStatus}
                             </span>
                         </div>
                     </div>

@@ -78,13 +78,17 @@ export class TempoSandbox implements TempoRunner {
         frame.setAttribute("title", "Tempo Python Simulator");
         frame.style.display = "none";
         frame.srcdoc = `<!doctype html><meta charset="utf-8"><script>
-const worker = new Worker(${JSON.stringify(WORKER_URL)}, { type: "module" });
-worker.onmessage = (event) => parent.postMessage(event.data, "*");
-worker.onerror = (event) => parent.postMessage({ type: "startup-error", message: event.message || "Python worker stopped" }, "*");
-addEventListener("message", (event) => {
-    if (event.source === parent) worker.postMessage(event.data);
-});
-parent.postMessage({ type: "frame" }, "*");
+try {
+    const worker = new Worker(${JSON.stringify(WORKER_URL)}, { type: "module" });
+    worker.onmessage = (event) => parent.postMessage(event.data, "*");
+    worker.onerror = (event) => parent.postMessage({ type: "startup-error", message: event.message || "Python worker stopped" }, "*");
+    addEventListener("message", (event) => {
+        if (event.source === parent) worker.postMessage(event.data);
+    });
+    parent.postMessage({ type: "frame" }, "*");
+} catch (error) {
+    parent.postMessage({ type: "startup-error", message: String(error) }, "*");
+}
 </script>`;
         document.body.appendChild(frame);
         this.frame = frame;
@@ -94,7 +98,7 @@ parent.postMessage({ type: "frame" }, "*");
                 this.onStatus?.("Python runtime timed out while loading.", false);
                 this.stop("Python runtime timed out while loading.");
             }
-        }, 45000);
+        }, 90000);
     }
 
     private handleMessage(event: MessageEvent): void {

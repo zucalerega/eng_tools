@@ -2769,22 +2769,28 @@ def _rigid_in(place: list[float], own: list[dict[str, Any]], children: list[dict
 
 
 def _latest_parts(
-    db: Session, store: BlobStore, components: list[dict[str, Any]], depth: int = 1
+    db: Session,
+    store: BlobStore,
+    components: list[dict[str, Any]],
+    depth: int = 1,
+    files: dict[int, File] | None = None,
 ) -> list[dict[str, Any]]:
     """An assembly's components with each part at its file's latest version, as SolidWorks shows the assembly once its
     files are the latest: placed where the assembly's model has the versions it was checked in with, which is where
     they are unless the part's change moved what its mates hold. A part whose version changed shows its own model's
     shape, not the one the assembly's 3D view kept of the older one. A sub-assembly with a newer version that has a
     model shows that version's components, where they are in it (its parts added since, and moved), if it's rigid: a
-    flexible one's parts stay where the assembly moved them, each at its latest."""
-    files = _files_by_id(db, {c["file_id"] for c, _ in _walk(components) if c.get("file_id") is not None})
+    flexible one's parts stay where the assembly moved them, each at its latest. (files: those already looked up.)"""
+    files = dict(files or {})
+    ids = {c["file_id"] for c, _ in _walk(components) if c.get("file_id") is not None}
+    files.update(_files_by_id(db, ids - files.keys()))
     out = []
     for component in components:
         component = dict(component)
         file = files.get(component["file_id"]) if component.get("file_id") is not None else None
         children = component.get("children") or []
         if file is None or component.get("version") is None or file.latest_version == component["version"]:
-            component["children"] = _latest_parts(db, store, children, depth + 1)
+            component["children"] = _latest_parts(db, store, children, depth + 1, files)
         elif _caliper_kind(file.name) == "assembly" and depth < _MAX_DEPTH:
             newer = _current_model(db, store, file.id, file.latest_version, component.get("configuration") or "")
             older = _current_model(db, store, file.id, component["version"], component.get("configuration") or "")
@@ -2792,7 +2798,7 @@ def _latest_parts(
             if newer is not None and newer.components is not None and rigid:
                 component["version"] = file.latest_version
                 children = _placed(component["transform"], newer.components)
-            component["children"] = _latest_parts(db, store, children, depth + 1)
+            component["children"] = _latest_parts(db, store, children, depth + 1, files)
         else:
             component["version"] = file.latest_version
             if component.get("mesh") and not component.get("virtual"):

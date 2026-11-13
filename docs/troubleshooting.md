@@ -228,6 +228,14 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   after it's checked in, newest first; one opened before its turn is read then. After an update
   that reads files better, or the first start with this feature, the server works through the
   whole vault, which can take hours.
+- **Caliper shows a drawing's sheets as small pictures, too small to read.** Its version has no PDF:
+  Vault for SolidWorks (0.6.0 and later) saves one each time it checks a drawing in. Update the
+  add-in from the SolidWorks page, then open the drawing in SolidWorks and click *Make PDF* on the
+  Vault tab.
+- **Caliper says a drawing's model has changed since the drawing was checked in.** The PDF was saved
+  when the drawing was checked in; SolidWorks redraws the views from the model's latest version
+  when it opens the drawing. Open the drawing in SolidWorks, check it out, save, and check it in
+  again: its new PDF shows the model as it is now.
 - **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not
   checked in, gets none until it is. A part loaded lightweight needs resolving first: right-click
   the assembly, choose Set Lightweight to Resolved, then click *Make 3D view* again.

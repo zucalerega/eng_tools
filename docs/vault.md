@@ -923,6 +923,14 @@ Where the 3D comes from:
   anywhere) and can see a drawing can add a PDF its version doesn't have, as the add-in
   does; making one again, in place of the one there, takes editor rights to its folder. The
   server checks it's a PDF (`%PDF-`), and serves it as nothing else.
+- **Where it came from, and whether it's up to date.** The strip under the header says
+  the version, whether it's the latest, and what the sheets are (from SolidWorks, with who
+  and when, or the pictures saved in the file), as the 3D pages' does. SolidWorks draws a drawing's views from its
+  model as it opens it, so once the model is checked in again, a PDF made at the drawing's
+  check-in may show an older shape. The drawing's latest version lists the files it was
+  checked in with that have newer versions (its references, `models`), with a warning to
+  check the drawing in again from SolidWorks. A drawing that references nothing (from
+  Kenesto, say) can't say.
 - **A version without one** (from before Vault for SolidWorks made them, from Kenesto, or
   checked in from the web) shows the pictures of its sheets that SolidWorks saved in the
   file for Windows' Explorer, which the server reads (`solidworks.read_sheets`): one of each
@@ -1000,7 +1008,7 @@ are in [design.md](design.md#api).
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=&latest=` | an assembly's components that you can see, as it was checked in, or with `latest=true` each at its file's latest version (each with its `version` shown and the one `pinned`; its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; `virtual` for a part kept inside the assembly; `source`; `file`, its file's name, for one that isn't in the vault; `layout` and `deleted`), how many are left out, and the sub-assemblies' versions `wanted`: made, they show their own components |
 | `POST /api/files/{id}/caliper/best` | the model that shows a part in an assembly `{version, configuration, pinned}`: that one, made from the file if need be, or the nearest there is, with why each better one is `missed` |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
-| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
+| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one; its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none); and the files it was checked in with that you can see, each at that version and its latest (`models`) |
 | `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |
 | `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
 | `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |

@@ -301,14 +301,28 @@ what it is, `data-hit`).
   with them once, as it was; a free end moves only with its line; and a junction comes along
   when every line through it goes to what's moving, so a tee picked up with the parts around it
   stays a tee. A line with an end that stays is routed again, or follows its end if it was
-  routed by hand, selected or not. Dragging a line's segment moves it, on the grid, and
-  routes that line by hand from then on: moving its parts then moves only the bends next to
-  them, and an end that comes to face away from its line is routed back around to it, never
-  through its part (`mendEnds`). Route automatically puts a line back, and Route again routes
-  one that routes itself afresh. Dragging a selected
-  line's end moves it to another port. Where two lines cross without joining, the one across
-  hops over the one down (`hops.ts`). A line's type (pipe, tubing, flex hose, pneumatic,
-  electrical, data) is its weight and dashes; flow arrows say which way it flows.
+  routed by hand, selected or not (and stays as it is if its part changed but its ports didn't
+  move). Dragging a line's segment moves it, on the grid, and routes that line by hand from
+  then on: moving its parts then moves only the bends next to them, and an end that comes to
+  face away from its line is routed back around to it, never through its part (`mendEnds`), a
+  route that sets off back along the line cut short where it turns (`unfold`). It keeps its
+  bends only while that leaves it clean and much as it was drawn (`followed`): out of its
+  ports and into them the way they face, never back over itself nor back beside itself a hair
+  away, through no part it wasn't through before (a quick disconnect Visio set on a line, not
+  into it, it may stay over), and, routed round to an end that came to face away from it, no
+  longer than a route of its own by more than a stub out and back (`asDrawn`: longer, it loops
+  round only to keep a bend that's no use now). Otherwise it's routed for itself, and routes
+  itself from then on: a straight line whose end moved off its line, a bend an end moved past.
+  The router keeps such moves tidy too: a stub that would run into a part close in front of
+  its port stops halfway to it; a part over an end (dropped on a port, or on a free end)
+  doesn't block the way to it; a route never turns back through a step narrower than half a
+  grid (two ends a hair out of line, as Visio places them), and it has lanes a stub either side
+  of an end to turn round by where no part beside it gives any (a figure's drawn behind the
+  lines). Route automatically puts a line back, and Route again routes one that routes itself
+  afresh. Dragging a selected line's end moves it to another port. Where two lines cross
+  without joining, the one across hops over the one down (`hops.ts`). A line's type (pipe,
+  tubing, flex hose, pneumatic, electrical, data) is its weight and dashes; flow arrows say
+  which way it flows.
 - **Snapping**: parts' centers and ports, and lines' bends, are on a 10-unit grid, and every
   kind's ports are on it, so lines between parts lined up are straight. A part being dragged
   also lines its ports up with the ports its lines go to, and its center and ports with other
@@ -493,18 +507,21 @@ valves as long as Piper's (40), or a hundred where it has none. Its shapes, in V
   valve's normal state isn't set: a preset's own would be a guess the drawing didn't make.
 - **Connectors** become lines along the routes they had (`auto` false, their runs made exactly
   level or upright where they nearly were, hops left out), on the ports nearest where they were
-  glued (a free one before one taken, not the one its other end is on; glued to a figure, a port
-  of its own there, facing the way the line leaves it; glued to another connector, a tee), their
-  bends following their ends to Piper's ports (`follow`). A connector glued at an end, or one
-  joined to nothing that's level and upright and a connector's, colored, or ending on a part's
-  port, is a line; a slanted one glued only to drawings (a vehicle's outline, glued to its nose)
-  or joined to nothing, and a line that's drawing (a border's), are figures, as Piper's lines
-  are always level and upright. A line carries the fluid its words name, else what a tank it's
-  drawn from holds (not from its top, unless it holds a gas), else what the key says lines in
-  its color carry (a shade of a key's color, the same hue, is the key's: a standard fluid if it
-  names one no other color does, with the key's color, else one of the diagram's own, named as
-  the key names it), else, colored, one of the diagram's own named for its color ("Red lines"),
-  to rename. Its kind is its master's (pneumatic, electrical, data, tubing, hose), else a pipe:
+  glued (a free one before one taken, not the one its other end is on; glued to a figure, a
+  port of its own there, facing the way the line leaves it; glued to another connector, a tee),
+  their bends following their ends to Piper's ports (`traced`): as drawn, wrong way into a port
+  and all, unless following would loop round to a port Visio's line came into from the side a
+  hair from its last bend (routed round to it, longer than Piper's own route there by more than
+  a stub out and back), when it routes itself. A connector glued at an end, or one joined to
+  nothing that's level and upright and a connector's, colored, or ending on a part's port, is a
+  line; a slanted one glued only to drawings (a vehicle's outline, glued to its nose) or joined
+  to nothing, and a line that's drawing (a border's), are figures, as Piper's lines are always
+  level and upright. A line carries the fluid its words name, else what a tank it's drawn from
+  holds (not from its top, unless it holds a gas), else what the key says lines in its color
+  carry (a shade of a key's color, the same hue, is the key's: a standard fluid if it names one
+  no other color does, with the key's color, else one of the diagram's own, named as the key
+  names it), else, colored, one of the diagram's own named for its color ("Red lines"), to
+  rename. Its kind is its master's (pneumatic, electrical, data, tubing, hose), else a pipe:
   dashes alone say what a key says they do, its size; its arrows, tag, and size words are
   Visio's.
 

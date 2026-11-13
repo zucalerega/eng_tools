@@ -229,7 +229,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>
                     Drag a line's segment to move it: the line keeps its bends from then on, and follows its ends when
-                    they move. <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
+                    they move. Where following would tangle it (back over itself, into a port from behind, through a
+                    part, or round a loop it didn't have), it routes itself again instead, and from then on.{" "}
+                    <em>Route automatically</em> (on the right) puts it back; on a line that routes itself,{" "}
                     <em>Route again</em> tidies one that's gone wrong. Drag a selected line's end to another port.
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>

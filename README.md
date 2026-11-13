@@ -363,7 +363,9 @@ the keys.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts
-  it back (**Route again** tidies a line that routes itself). Parts dragged together take the
+  it back (**Route again** tidies a line that routes itself). A line moved by hand, or brought
+  in from Visio, follows its parts, unless that would tangle it (back over itself, into a port
+  from behind, through a part, or round a loop it didn't have): then it routes itself again. Parts dragged together take the
   lines between them along, and a tee comes too. Everything snaps to a grid, and a part being
   dragged lines up with what its lines go to (a gold guide shows it; **Alt** drags freely).
   Lines that cross hop over each other.

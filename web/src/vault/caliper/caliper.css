@@ -176,6 +176,20 @@
     box-shadow: none;
 }
 
+/* The name gives way after the marks beside it, and then ends in an ellipsis, its kind's mark kept whole. */
+.caliper-name-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.caliper-row > .tag {
+    flex: 0 4 auto;
+    min-width: 1.6rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .caliper-name:hover:not(:disabled) {
     background: none;
     text-decoration: underline;

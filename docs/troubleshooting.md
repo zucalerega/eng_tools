@@ -216,8 +216,8 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   need their parts in the vault. Parts in folders you can't see are left out, and the page says how
   many.
 - **Caliper shows a part that's out of date, or out of place, in an assembly.** An assembly's latest
-  version shows each part's latest version, marked *Changed since* where it was checked in after the
-  assembly; a part marked *Not the latest* has no 3D model of its latest version Caliper could make
+  version shows each part's latest version, marked *Updated* where it was checked in after the
+  assembly; a part marked *Not latest* has no 3D model of its latest version Caliper could make
   (hover over the mark for why: a configuration its file kept no shape of, say), so it shows the
   version the assembly was checked in with. Open the part in SolidWorks and click *Make 3D view* to
   make it. A part changed since sits where the assembly had the older one, as Caliper can't solve

@@ -717,8 +717,8 @@ their own that loads without three.js (see "Drawings and DXF files", below).
   (`_rigid_in`, by its parts' names), keeps them there, each at its latest. Where the newer
   sub-assembly has no model yet, Caliper has the server make it first. A part whose latest has
   no 3D model the server can read (another configuration's, say) shows the version the
-  assembly was checked in with, marked **Not the latest**, with why. The tree marks each part
-  changed since (**Changed since**, its title saying which versions), and the side sums up how
+  assembly was checked in with, marked **Not latest**, with why. The tree marks each part
+  changed since (**Updated**, its title saying which versions), and the side sums up how
   many changed, and, as checked in, how many have newer versions.
 - **Configurations:** a part or assembly shows the configuration SolidWorks saved it in, and
   the Configuration list offers every other its file lists (`GET .../caliper/configurations`),

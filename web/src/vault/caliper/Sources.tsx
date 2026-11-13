@@ -30,13 +30,13 @@ export const SOURCE_ABOUT: Record<Source, string> = {
     browser: "Read from the file as it is.",
 };
 
-// How many parts came from each, in the order they're listed: the most exact first.
-const COUNTED: [Source, string][] = [
-    ["solidworks", "made in SolidWorks"],
-    ["saved_view", "from SolidWorks' saved 3D views"],
-    ["file", "read from their files"],
-    ["solid", "drawn by Caliper from their solids"],
-    ["browser", "STEP or IGES files read in your browser"],
+// How many parts came from each, in the order they're listed (the most exact first): said of one, and of more.
+const COUNTED: [Source, string, string][] = [
+    ["solidworks", "made in SolidWorks", "made in SolidWorks"],
+    ["saved_view", "from SolidWorks' saved 3D view", "from SolidWorks' saved 3D views"],
+    ["file", "read from its file", "read from their files"],
+    ["solid", "drawn by Caliper from its solid", "drawn by Caliper from their solids"],
+    ["browser", "STEP or IGES file read in your browser", "STEP or IGES files read in your browser"],
 ];
 
 const MEASURING =
@@ -123,10 +123,10 @@ export function ShapeSources({ model }: { model: Model }) {
         <div className="caliper-side-note caliper-sources">
             <p className="muted">Where the parts' shapes come from:</p>
             <ul>
-                {COUNTED.filter(([source]) => tally.has(source)).map(([source, said]) => (
+                {COUNTED.filter(([source]) => tally.has(source)).map(([source, one, many]) => (
                     <li key={source} title={SOURCE_ABOUT[source]}>
                         <SourceDot source={source} mark />
-                        {tally.get(source)} {said}
+                        {tally.get(source)} {tally.get(source) === 1 ? one : many}
                     </li>
                 ))}
             </ul>

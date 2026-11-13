@@ -255,8 +255,8 @@ test("an assembly's components: hidden as SolidWorks had them, isolated, and ope
     expect((tree().getByRole("checkbox", { name: "Show Fin-2" }) as HTMLInputElement).checked).toBe(false);
     // Fin's v2 isn't a real SolidWorks part, so it has no 3D model: the fin shows v1, as the rocket was checked in,
     // and says why.
-    await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1 (now v2)")).toBeTruthy());
-    expect(within(finOne.closest("li")!).getByText("Not the latest").getAttribute("title")).toMatch(
+    await waitFor(() => expect(within(finOne.closest("li")!).getByText("v1")).toBeTruthy());
+    expect(within(finOne.closest("li")!).getByText("Not latest").getAttribute("title")).toMatch(
         /^v2, its latest, has no 3D model: .*It isn't a SolidWorks part that Caliper can read/,
     );
     // Grain's file isn't a real SolidWorks part, so it has no 3D view to read.
@@ -351,12 +351,12 @@ test("an assembly's parts show at their latest versions, or as it was checked in
     expect(within(await finRow()).getByText("v2")).toBeTruthy();
     expect(
         within(await finRow())
-            .getByText("Changed since")
+            .getByText("Updated")
             .getAttribute("title"),
     ).toBe("The assembly was checked in with v1. This is v2, the latest, where the assembly put v1.");
     const choice = screen.getByRole("combobox", { name: "Parts" }) as HTMLSelectElement;
     expect(choice.value).toBe("latest");
-    expect(screen.getByText(/2 parts and sub-assemblies changed since v1 of the assembly was checked in/)).toBeTruthy();
+    expect(screen.getByText(/2 parts changed since v1 was checked in, and show at their latest/)).toBeTruthy();
     expect(tree().getByRole("link", { name: "Open Fin-1 in Caliper" }).getAttribute("href")).toBe(
         caliperUrl(fin.id, 2, "Default"),
     );
@@ -364,8 +364,8 @@ test("an assembly's parts show at their latest versions, or as it was checked in
     // As it was checked in: the fin's v1, which says there's a newer one.
     await userEvent.selectOptions(choice, "checked_in");
     await waitFor(() => expect(within(screen.getAllByRole("treeitem")[0]!).getByText("v1 (now v2)")).toBeTruthy());
-    expect(screen.queryByText("Changed since")).toBeNull();
-    expect(screen.getByText(/2 parts and sub-assemblies have a newer version than v1 of the assembly/)).toBeTruthy();
+    expect(screen.queryByText("Updated")).toBeNull();
+    expect(screen.getByText("2 parts have newer versions than v1 was checked in with.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Show the latest" }));
     expect(within(await finRow()).getByText("v2")).toBeTruthy();
     page.unmount();
@@ -407,7 +407,7 @@ test("a sub-assembly checked in since shows its newer parts, its model made from
     expect(await screen.findByRole("checkbox", { name: "Show Servomoteur-1" })).toBeTruthy();
     const bayRow = tree().getByRole("checkbox", { name: "Show Bay-1" }).parentElement!;
     expect(within(bayRow).getByText("v2")).toBeTruthy();
-    expect(within(bayRow).getByText("Changed since")).toBeTruthy();
+    expect(within(bayRow).getByText("Updated")).toBeTruthy();
     expect((await team.caliperModels(bay!.id)).map((model) => model.version)).toEqual([2]);
 });
 

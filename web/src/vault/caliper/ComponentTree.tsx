@@ -91,14 +91,14 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                     onDoubleClick={() => props.zoomTo(node.id)}
                 >
                     <span className={`caliper-kind caliper-kind-${node.kind}`} aria-hidden="true" />
-                    {node.name}
+                    <span className="caliper-name-text">{node.name}</span>
                 </button>
                 {titled && <span className="file-title caliper-title">{titled}</span>}
                 {node.kind !== "body" && node.shape?.source && <SourceDot source={node.shape.source} />}
                 {node.file && (
                     <span className="muted caliper-version">
                         v{node.file.version}
-                        {newest !== undefined && newest > node.file.version && ` (now v${newest})`}
+                        {newest !== undefined && newest > node.file.version && !node.older && ` (now v${newest})`}
                     </span>
                 )}
                 {since !== null && (
@@ -106,12 +106,12 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                         className="tag caliper-since"
                         title={`The assembly was checked in with v${since}. This is v${node.file!.version}, the latest, where the assembly put v${since}.`}
                     >
-                        Changed since
+                        Updated
                     </span>
                 )}
                 {node.older && (
                     <span className="tag tag-warning" title={node.older}>
-                        Not the latest
+                        Not latest
                     </span>
                 )}
                 {node.problem && (

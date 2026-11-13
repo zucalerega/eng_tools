@@ -760,39 +760,47 @@ function PartVersions({
     const newer = nodes.filter((node) => node.checkedIn != null && node.checkedIn !== node.file!.version);
     const older = nodes.filter((node) => node.older);
     const behind = nodes.filter((node) => node.latest !== undefined && node.latest > node.file!.version);
-    const count = (n: number) => (n === 1 ? "1 part or sub-assembly" : `${n} parts and sub-assemblies`);
+    // "2 parts and 1 sub-assembly"
+    const what = (found: Model["nodes"]) => {
+        const subs = found.filter((node) => node.kind === "assembly").length;
+        const parts = found.length - subs;
+        return [
+            parts > 0 && `${parts} ${parts === 1 ? "part" : "parts"}`,
+            subs > 0 && `${subs} ${subs === 1 ? "sub-assembly" : "sub-assemblies"}`,
+        ]
+            .filter(Boolean)
+            .join(" and ");
+    };
     if (parts === "checked_in") {
         return behind.length === 0 ? null : (
             <div className="caliper-side-note caliper-versions">
                 <p>
-                    {count(behind.length)} {behind.length === 1 ? "has" : "have"} a newer version than v{version} of the
-                    assembly was checked in with.{" "}
-                    <button type="button" className="button-small" onClick={() => setParts("latest")}>
-                        Show the latest
-                    </button>
+                    {what(behind)} {behind.length === 1 ? "has a newer version" : "have newer versions"} than v{version}{" "}
+                    was checked in with.
                 </p>
+                <button type="button" className="button-small" onClick={() => setParts("latest")}>
+                    Show the latest
+                </button>
             </div>
         );
     }
     if (newer.length === 0 && older.length === 0) {
         return null;
     }
+    const one = newer.length === 1;
     return (
         <div className="caliper-side-note caliper-versions">
             {newer.length > 0 && (
                 <p>
-                    {count(newer.length)} changed since v{version} of the assembly was checked in:{" "}
-                    {newer.length === 1 ? "it shows" : "they show"} at
-                    {newer.length === 1 ? " its" : " their"} latest, where the assembly put the version it was checked
-                    in with. A change that moved what a part's mates hold shows once the assembly is checked in again
-                    from SolidWorks.
+                    {what(newer)} changed since v{version} was checked in, and {one ? "shows" : "show"} at{" "}
+                    {one ? "its" : "their"} latest, where the assembly had the older version. If a change moved what a
+                    part's mates hold, check the assembly in again from SolidWorks.
                 </p>
             )}
             {older.length > 0 && (
                 <p>
-                    {older.length === 1 ? "1 part shows" : `${older.length} parts show`} the version the assembly was
-                    checked in with, as {older.length === 1 ? "its" : "their"} latest has no 3D model yet (beside{" "}
-                    {older.length === 1 ? "it" : "each"}, why).
+                    {what(older)} {older.length === 1 ? "shows" : "show"} the version v{version} was checked in with:
+                    the latest has no 3D model yet (Not latest, beside {older.length === 1 ? "it" : "each"}, says why).
                 </p>
             )}
             <button type="button" className="button-small" onClick={() => setParts("checked_in")}>

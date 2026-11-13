@@ -228,6 +228,14 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   models (from Kenesto, say, or uploaded in the web app), so the server read it from the file. It's
   the right shape, but to have exactly what SolidWorks draws, open it in SolidWorks and click
   *Make 3D view* on the Vault tab: that takes the place of the server's.
+- **Caliper shows a drawing's sheets as small pictures, too small to read.** Its version has no PDF:
+  Vault for SolidWorks (0.6.0 and later) saves one each time it checks a drawing in. Update the
+  add-in from the SolidWorks page, then open the drawing in SolidWorks and click *Make PDF* on the
+  Vault tab.
+- **Caliper says a drawing's model has changed since the drawing was checked in.** The PDF was saved
+  when the drawing was checked in; SolidWorks redraws the views from the model's latest version
+  when it opens the drawing. Open the drawing in SolidWorks, check it out, save, and check it in
+  again: its new PDF shows the model as it is now.
 - **Caliper says the server is reading other SolidWorks files.** The server reads two at a time, and
   Caliper asks it for no more than that, waiting and asking again for about three minutes while
   others' are being read. If it still says so, the server is busy with big files: open it again in

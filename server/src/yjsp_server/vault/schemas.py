@@ -608,11 +608,19 @@ class SheetOut(BaseModel):
     picture: bool  # whether SolidWorks saved a picture of it in the file (GET .../drawing/sheet)
 
 
+class DrawingModelOut(BaseModel):
+    file_id: int
+    path: str
+    version: int  # the one the drawing was checked in with
+    latest_version: int  # newer: SolidWorks would draw that one, and the PDF may show an older shape
+
+
 class DrawingOut(BaseModel):
     version: int
     pdf: DrawingPdfOut | None  # the PDF Vault for SolidWorks made of it (GET .../drawing/pdf), if it made one
     sheets: list[SheetOut]  # in order
     unreadable: str | None  # why its sheets couldn't be read, if they couldn't
+    models: list[DrawingModelOut] = []  # the files it was checked in with that you can see (its model), by path
 
     @classmethod
     def of(cls, view: vault.DrawingView) -> "DrawingOut":
@@ -621,6 +629,10 @@ class DrawingOut(BaseModel):
             pdf=DrawingPdfOut.of(view.pdf) if view.pdf else None,
             sheets=[SheetOut(name=sheet.name, picture=sheet.picture is not None) for sheet in view.sheets],
             unreadable=view.unreadable,
+            models=[
+                DrawingModelOut(file_id=m.file.id, path=m.path, version=m.version, latest_version=m.latest_version)
+                for m in view.models
+            ],
         )
 
 

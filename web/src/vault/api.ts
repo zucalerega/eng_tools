@@ -227,6 +227,9 @@ export interface DrawingView {
     pdf: { size: number; created_at: string; created_by: UserRef } | null;
     sheets: DrawingSheet[];
     unreadable: string | null; // why its sheets couldn't be read
+    // The files it was checked in with that you can see (its model), at those versions and their latest: SolidWorks
+    // draws its views from the latest, so a newer one means its PDF may show an older shape.
+    models?: { file_id: number; path: string; version: number; latest_version: number }[];
 }
 
 export const vaultApi = {

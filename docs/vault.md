@@ -893,6 +893,14 @@ Where the 3D comes from:
   anywhere) and can see a drawing can add a PDF its version doesn't have, as the add-in
   does; making one again, in place of the one there, takes editor rights to its folder. The
   server checks it's a PDF (`%PDF-`), and serves it as nothing else.
+- **Where it came from, and whether it's up to date.** The head says what the sheets are
+  (made in SolidWorks, with who and when, or the pictures saved in the file), as the 3D pages
+  do, and the Version list marks the latest. SolidWorks draws a drawing's views from its
+  model as it opens it, so once the model is checked in again, a PDF made at the drawing's
+  check-in may show an older shape. The drawing's latest version lists the files it was
+  checked in with that have newer versions (its references, `models`), with a warning to
+  check the drawing in again from SolidWorks. A drawing that references nothing (from
+  Kenesto, say) can't say.
 - **A version without one** (from before Vault for SolidWorks made them, from Kenesto, or
   checked in from the web) shows the pictures of its sheets that SolidWorks saved in the
   file for Windows' Explorer, which the server reads (`solidworks.read_sheets`): one of each
@@ -969,7 +977,7 @@ are in [design.md](design.md#api).
 | `POST /api/caliper/missing` | which of these `{models: [{file_id, version, configuration}]}` have no model made in SolidWorks yet (one the server read counts as missing), of files you can see: what the add-in makes |
 | `GET /api/files/{id}/caliper/assembly?version=&configuration=&parts=` | an assembly's components that you can see, at the versions it was checked in with or, `parts=latest`, each at its latest (each with `checked_in_version` and `latest_version`) (each with its file's `kind`: part or assembly; `format`, step or iges, for a STEP or IGES file; `virtual` for a part kept inside the assembly; and its shape's `source`, where it has one), and how many are left out |
 | `GET /api/files/{id}/caliper/mesh?version=&configuration=&mesh=` | a part's mesh (gzip: `Content-Encoding`), or with `mesh=`, a virtual part's from an assembly's model |
-| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one, and its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none) |
+| `GET /api/files/{id}/drawing?version=` | a drawing's version, for Caliper: its PDF, if Vault for SolidWorks made one; its sheets, each with whether SolidWorks saved a picture of it (`unreadable` says why there are none); and the files it was checked in with that you can see, each at that version and its latest (`models`) |
 | `GET /api/files/{id}/drawing/sheet?version=&sheet=` | the picture of a drawing's sheet (1 for the first) that SolidWorks saved in the file: a PNG |
 | `GET /api/files/{id}/drawing/pdf?version=` | a drawing version's PDF, which the site's own pages may frame |
 | `PUT /api/files/{id}/drawing/pdf` | save a drawing version's PDF `{version, pdf}` (upload it first: `PUT /api/blobs`) |

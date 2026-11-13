@@ -2928,14 +2928,28 @@ class PdfView:
 
 
 @dataclass
+class DrawingModel:
+    """A file a drawing's version shows (its model, or another it uses), at the version the drawing was checked in
+    with, and its latest: SolidWorks draws the drawing's views from the latest when it opens it, so a newer one means
+    the PDF, made at the check-in, may show an older shape."""
+
+    file: File
+    path: str
+    version: int
+    latest_version: int
+
+
+@dataclass
 class DrawingView:
-    """What Caliper shows of a drawing's version: the PDF of it Vault for SolidWorks made, if it made one; and its
-    sheets, each with whether SolidWorks saved a picture of it in the file (or, where they can't be read, why not)."""
+    """What Caliper shows of a drawing's version: the PDF of it Vault for SolidWorks made, if it made one; its sheets,
+    each with whether SolidWorks saved a picture of it in the file (or, where they can't be read, why not); and the
+    models it was checked in with, of those the user can see."""
 
     version: int
     pdf: PdfView | None
     sheets: list[solidworks.Sheet]
     unreadable: str | None
+    models: list[DrawingModel]
 
 
 _PDF = b"%PDF-"
@@ -2996,9 +3010,10 @@ def _pdf_view(db: Session, pdf: DrawingPdf) -> PdfView:
 
 
 def drawing_view(db: Session, store: BlobStore, user: User, file_id: int, version: int) -> DrawingView:
-    """A drawing's version, for Caliper: its PDF, which Vault for SolidWorks makes when it checks the drawing in; and its
+    """A drawing's version, for Caliper: its PDF, which Vault for SolidWorks makes when it checks the drawing in; its
     sheets, each with the picture of it SolidWorks saved in the file, to show where there's no PDF (as for versions from
-    before Vault for SolidWorks made them). Anyone who can see the file may look."""
+    before Vault for SolidWorks made them); and the models it was checked in with, at those versions and their latest,
+    so Caliper can say where the PDF may be older than they are. Anyone who can see the file may look."""
     tree, access = _context(db, user)
     file, target = _drawing_version(db, tree, access, file_id, version)
     pdf = db.scalar(select(DrawingPdf).where(DrawingPdf.version_id == target.id))
@@ -3006,7 +3021,13 @@ def drawing_view(db: Session, store: BlobStore, user: User, file_id: int, versio
         sheets, unreadable = _sheets_of(store, target, f"{tree.file_path(file)} v{version}"), None
     except (solidworks.Unreadable, Conflict) as e:
         sheets, unreadable = [], e.message
-    return DrawingView(version, _pdf_view(db, pdf) if pdf else None, sheets, unreadable)
+    models = [
+        DrawingModel(used, tree.file_path(used), number, used.latest_version)
+        for used, number in _refs_of(db, target)
+        if access.can(used.folder_id, Role.VIEWER)
+    ]
+    models.sort(key=lambda model: paths.key(model.path))
+    return DrawingView(version, _pdf_view(db, pdf) if pdf else None, sheets, unreadable, models)
 
 
 def sheet_picture(db: Session, store: BlobStore, user: User, file_id: int, version: int, sheet: int) -> bytes:

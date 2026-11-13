@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { requestBytes } from "../../api";
-import { Notice } from "../../components";
+import { Notice, usePopover } from "../../components";
+import { formatTime } from "../../format";
 import { Link, navigate, useSearch } from "../../router";
 import { vaultApi, type DrawingView, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
@@ -11,6 +12,7 @@ import { UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
 import type { Units } from "./model";
 import { SheetView } from "./sheet";
+import { SourceDot, SOURCE_NAMES } from "./Sources";
 import { measureOneOnSheet, measureTwoOnSheet } from "./sheetMeasure";
 import "./caliper.css";
 
@@ -24,7 +26,9 @@ export function DrawingPage({ id }: { id: number }) {
     const askedVersion = Number(params.get("version")) || null;
     const [detail, setDetail] = useState<FileDetail | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
-    const [pdf, setPdf] = useState(false); // whether the version shown has a PDF, for the header's link to it
+    // The version shown, once it's loaded: for the header's link to its PDF, where it came from, and its models.
+    const [shown, setShown] = useState<DrawingView | null>(null);
+    const pdf = shown?.pdf != null;
     const page = useRef<HTMLDivElement>(null);
     useBelowTopBar(page);
 
@@ -70,10 +74,12 @@ export function DrawingPage({ id }: { id: number }) {
                         {detail.versions.map((v) => (
                             <option key={v.number} value={v.number}>
                                 v{v.number}
+                                {v.number === file.version ? " (latest)" : ""}
                             </option>
                         ))}
                     </select>
                 </label>
+                {format === "drawing" && shown && <SheetsSource drawing={shown} />}
                 <span className="caliper-head-actions">
                     <OpenInSolidWorks path={file.path} />
                     {format === "drawing" && pdf && (
@@ -92,8 +98,9 @@ export function DrawingPage({ id }: { id: number }) {
                     </a>
                 </span>
             </header>
+            {format === "drawing" && shown && version === file.version && <ChangedModels drawing={shown} />}
             {format === "drawing" ? (
-                <DrawingSheets key={version} fileId={file.id} name={file.name} version={version} hasPdf={setPdf} />
+                <DrawingSheets key={version} fileId={file.id} name={file.name} version={version} loaded={setShown} />
             ) : format === "dxf" ? (
                 <DxfView key={version} fileId={file.id} version={version} />
             ) : (
@@ -108,6 +115,78 @@ export function DrawingPage({ id }: { id: number }) {
     );
 }
 
+/**
+ * Where a drawing's sheets come from, in the page's head: the PDF Vault for SolidWorks made, as SolidWorks prints the
+ * drawing; or the pictures SolidWorks saved in the file. Opened, what that means, and who made the PDF when.
+ */
+function SheetsSource({ drawing }: { drawing: DrawingView }) {
+    const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    const label = drawing.pdf ? SOURCE_NAMES.solidworks : "Pictures saved in the file";
+    return (
+        <div className="popover caliper-source" ref={within}>
+            <button
+                type="button"
+                className="caliper-source-button"
+                aria-haspopup="true"
+                aria-expanded={open}
+                aria-label={`Where it came from: ${label}`}
+                title="Where these sheets came from, and what that means"
+                onClick={() => setOpen(!open)}
+            >
+                <SourceDot source={drawing.pdf ? "solidworks" : "saved_view"} mark />
+                {label}
+            </button>
+            {open && (
+                <div className="menu menu-left caliper-source-about" role="dialog" aria-label="Where it came from">
+                    {drawing.pdf ? (
+                        <>
+                            <p>
+                                The drawing as SolidWorks prints it: Vault for SolidWorks saved this PDF of its sheets
+                                from SolidWorks when v{drawing.version} was checked in.
+                            </p>
+                            <p>{`Made by ${drawing.pdf.created_by.name}, ${formatTime(drawing.pdf.created_at)}.`}</p>
+                        </>
+                    ) : (
+                        <p>
+                            The small pictures of its sheets SolidWorks saves in the file, enough to see what's on them
+                            but too small to read. Make PDF, in SolidWorks on the Vault tab, makes the whole drawing.
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * The models a drawing's latest version shows that were checked in again since: SolidWorks draws its views from their
+ * latest versions as it opens it, so what Caliper shows, made at the drawing's check-in, may be of older shapes.
+ */
+function ChangedModels({ drawing }: { drawing: DrawingView }) {
+    const changed = (drawing.models ?? []).filter((model) => model.latest_version > model.version);
+    if (changed.length === 0) {
+        return null;
+    }
+    const one = changed.length === 1;
+    return (
+        <Notice tone="warning">
+            <p>
+                <strong>{one ? "Its model has" : "Its models have"} changed since this drawing was checked in.</strong>{" "}
+                SolidWorks draws the drawing's views from the latest versions when it opens it, so these sheets may show
+                older shapes. Open the drawing in SolidWorks and check it in again to bring them up to date.
+            </p>
+            <ul>
+                {changed.map((model) => (
+                    <li key={model.file_id}>
+                        <Link to={caliperUrl(model.file_id)}>{model.path}</Link>
+                        {`: v${model.version} here, now v${model.latest_version}`}
+                    </li>
+                ))}
+            </ul>
+        </Notice>
+    );
+}
+
 /** Whether this browser shows PDFs in a page: phones' often don't (Chrome on Android downloads them). */
 const showsPdfs = (): boolean => (navigator as Navigator & { pdfViewerEnabled?: boolean }).pdfViewerEnabled !== false;
 
@@ -116,12 +195,12 @@ function DrawingSheets({
     fileId,
     name,
     version,
-    hasPdf,
+    loaded,
 }: {
     fileId: number;
     name: string;
     version: number;
-    hasPdf(has: boolean): void;
+    loaded(drawing: DrawingView | null): void;
 }) {
     const [drawing, setDrawing] = useState<DrawingView | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
@@ -133,16 +212,16 @@ function DrawingSheets({
             (found) => {
                 if (current) {
                     setDrawing(found);
-                    hasPdf(found.pdf !== null);
+                    loaded(found);
                 }
             },
             (error: Error) => current && setProblem(error.message),
         );
         return () => {
             current = false;
-            hasPdf(false);
+            loaded(null);
         };
-    }, [fileId, version, hasPdf]);
+    }, [fileId, version, loaded]);
 
     if (problem) {
         return (

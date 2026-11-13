@@ -151,6 +151,9 @@ test("a drawing shows the pictures of its sheets until Vault for SolidWorks make
     const second = screen.getByRole("img", { name: "Detail of Fin.SLDDRW v1, as SolidWorks pictured it" });
     expect(second.getAttribute("src")).toBe(vaultApi.sheetPictureUrl(fin!.id, 1, 2));
     expect(screen.queryByRole("link", { name: "Open PDF" })).toBeNull();
+    // It says where the sheets came from, and what that means.
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Pictures saved in the file" }));
+    expect(screen.getByText(/too small to read\. Make PDF, in SolidWorks/)).toBeTruthy();
 
     // Vault for SolidWorks saves its PDF, which Caliper then shows, in the browser's own viewer.
     await team.drawingPdf(team.chief, fin!, "%PDF-1.7\n%%EOF\n");
@@ -162,6 +165,37 @@ test("a drawing shows the pictures of its sheets until Vault for SolidWorks make
     expect((await screen.findByRole("link", { name: "Open PDF" })).getAttribute("href")).toBe(
         vaultApi.drawingPdfUrl(fin!.id, 1),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Where it came from: Made in SolidWorks" }));
+    expect(screen.getByText(/^Made by chief, /)).toBeTruthy();
+});
+
+test("a drawing whose model changed since it was checked in says its sheets may show older shapes", async () => {
+    const team = await Team.create();
+    const [part] = await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin" });
+    const [fin] = await team.checkin(
+        team.chief,
+        { "Fins/Fin.SLDDRW": drawing("Sheet1") },
+        { refs: { "Fins/Fin.SLDDRW": ["Fins/Fin.SLDPRT"] } },
+    );
+    await team.drawingPdf(team.chief, fin!, "%PDF-1.7\n%%EOF\n");
+    const unchanged = renderApp(team.chief, caliperUrl(fin!.id));
+    expect(await screen.findByTitle("Fin.SLDDRW v1")).toBeTruthy();
+    expect(screen.queryByText(/changed since this drawing was checked in/)).toBeNull();
+    unchanged.unmount();
+
+    await team.checkout(team.chief, "Fins/Fin.SLDPRT", "CHIEF-PC");
+    await team.checkin(team.chief, { "Fins/Fin.SLDPRT": "fin v2" }, { host: "CHIEF-PC" });
+    const latest = renderApp(team.chief, caliperUrl(fin!.id));
+    expect(await screen.findByText("Its model has changed since this drawing was checked in.")).toBeTruthy();
+    expect(screen.getByText(/check it in again to bring them up to date/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: team.path("Fins/Fin.SLDPRT") }).getAttribute("href")).toBe(
+        caliperUrl(part!.id),
+    );
+    expect(screen.getByText(/v1 here, now v2/)).toBeTruthy();
+    expect(
+        [...(screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement).options].map((o) => o.textContent),
+    ).toEqual(["v1 (latest)"]);
+    latest.unmount();
 });
 
 test("a drawing Caliper can't read says why, and how to show it", async () => {

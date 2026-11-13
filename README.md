@@ -160,7 +160,11 @@ replaces Kenesto.
   zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one
   each time it checks a drawing in. A version from before (or from Kenesto, or checked in
   from the web) shows the pictures of its sheets SolidWorks saved in it, which are too small
-  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. A DXF file (a
+  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. Beside the
+  version, Caliper says which it is (click it for who made the PDF, and when). If the part or
+  assembly a drawing shows has been checked in since the drawing was, Caliper warns that
+  the sheets may show its older shape, as SolidWorks redraws the views from the latest:
+  check the drawing in again from SolidWorks to update them. A DXF file (a
   flat pattern for the laser cutter or waterjet, say) is drawn as it is, in its own units:
   drag to pan, scroll to zoom, show and hide its layers, and measure a line's length, a
   hole's diameter, or the distance between two holes, lines, or corners.

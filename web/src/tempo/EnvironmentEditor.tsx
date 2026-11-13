@@ -170,20 +170,30 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                     <strong>{environment.sensors.length}</strong> sensors
                 </span>
             </div>
-            <section className="tempo-env-group" aria-label="Valves">
+            <section className="tempo-env-group tempo-env-valve-section" aria-label="Valves">
                 <div className="tempo-env-heading">
                     <div className="tempo-env-title">
+                        <span className="tempo-env-icon tempo-env-icon-valve" aria-hidden="true">
+                            ⏻
+                        </span>
                         <h3>Valves</h3>
                         <span className="tempo-count-badge">{environment.valves.length}</span>
                     </div>
-                    <button type="button" className="button-small" onClick={addValve}>
+                    <button type="button" className="button-small tempo-env-add-valve" onClick={addValve}>
                         + Add valve
                     </button>
                 </div>
+                {environment.valves.length > 0 && (
+                    <div className="tempo-env-valve-table-head" aria-hidden="true">
+                        <span>VALVE NAME</span>
+                        <span>INITIAL</span>
+                        <span />
+                    </div>
+                )}
                 <div className="tempo-env-valves">
                     {environment.valves.map((valve, index) => (
                         <div key={index} className="tempo-env-valve-row">
-                            <label className="tempo-env-field">
+                            <label className="tempo-env-field tempo-env-sr-label">
                                 <span>Valve name</span>
                                 <input
                                     type="text"
@@ -192,7 +202,7 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                                     onChange={(e) => updateValve(index, { name: e.target.value })}
                                 />
                             </label>
-                            <label className="tempo-env-field">
+                            <label className="tempo-env-field tempo-env-sr-label">
                                 <span>Initial</span>
                                 <select
                                     value={valve.initial}
@@ -220,9 +230,12 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                 </div>
             </section>
 
-            <section className="tempo-env-group" aria-label="Sensors">
+            <section className="tempo-env-group tempo-env-sensor-section" aria-label="Sensors">
                 <div className="tempo-env-heading">
                     <div className="tempo-env-title">
+                        <span className="tempo-env-icon tempo-env-icon-sensor" aria-hidden="true">
+                            ∿
+                        </span>
                         <h3>Sensors</h3>
                         <span className="tempo-count-badge">{environment.sensors.length}</span>
                     </div>
@@ -242,7 +255,7 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                                 {allCollapsed ? "Expand all" : "Collapse all"}
                             </button>
                         )}
-                        <button type="button" className="button-small" onClick={addSensor}>
+                        <button type="button" className="button-small tempo-env-add-sensor" onClick={addSensor}>
                             + Add sensor
                         </button>
                     </div>

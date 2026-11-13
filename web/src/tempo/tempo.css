@@ -926,17 +926,96 @@
     font-size: 13px;
 }
 
-.tempo-env-valves {
+.tempo-env-group {
+    padding: 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.tempo-env-valve-section {
+    background: color-mix(in srgb, var(--gold) 8%, var(--surface));
+    border-color: color-mix(in srgb, var(--gold) 32%, var(--border));
+}
+
+.tempo-env-sensor-section {
+    background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+}
+
+.tempo-env-icon {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.tempo-env-icon-valve {
+    background: color-mix(in srgb, var(--gold) 20%, var(--surface));
+    color: var(--gold);
+}
+
+.tempo-env-icon-sensor {
+    background: color-mix(in srgb, var(--primary) 18%, var(--surface));
+    color: var(--primary);
+}
+
+.tempo-env-add-valve {
+    border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+    color: var(--gold);
+}
+
+.tempo-env-add-sensor {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+    color: var(--primary);
+}
+
+.tempo-env-valves {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tempo-env-valve-table-head,
+.tempo-env-valve-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(105px, 0.45fr) 28px;
+    align-items: center;
     gap: 8px;
 }
 
+.tempo-env-valve-table-head {
+    padding: 0 8px 4px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+}
+
 .tempo-env-valve-row {
-    padding: 8px;
-    border: 1px solid var(--border);
+    padding: 6px 8px;
+    border: 1px solid color-mix(in srgb, var(--gold) 24%, var(--border));
     border-radius: var(--radius);
-    background: var(--surface-2);
+    background: var(--surface);
+}
+
+.tempo-env-sr-label > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.tempo-env-sensor-section .tempo-sensor-card {
+    background: var(--surface);
+    border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
 }
 
 .tempo-truth-row input {

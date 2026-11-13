@@ -7,8 +7,9 @@ A conversation stays in the browser, which sends each question with the conversa
 help with every question, so Anthropic keeps it ready for an hour after each read (prompt caching): a question in that
 hour reads it for a fraction of the price. That only works while the help, the instructions, and each conversation's
 earlier turns stay exactly as they were, so everything that varies comes after them. Questions are often hours apart,
-so the server can keep the help ready itself (YJSP_ASSISTANT_KEEP_WARM): when nothing has read it for most of the hour,
-it reads it again, writing nothing, which costs a fraction of a question that has to read it all in full.
+so the server keeps the help loaded itself (YJSP_ASSISTANT_KEEP_WARM): when nothing has read it for most of the hour,
+it reads it again, writing nothing, which costs a fraction of a question that has to read it all in full. It does so
+around the clock, or, as admins may choose, only for some hours after each question (SiteSettings.assistant_keep_hours).
 """
 
 import asyncio
@@ -31,7 +32,7 @@ from . import __version__, help
 from .config import Settings
 from .db import utcnow
 from .errors import ApiError, Conflict, Forbidden
-from .models import AssistantRequest, User
+from .models import AssistantRequest, SiteSettings, User
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +51,14 @@ POLL = 0.1
 # How long to wait for Anthropic to take the question before giving up on it.
 START_WAIT = 120.0
 DAY = timedelta(hours=24)
-# Keeping the help ready (YJSP_ASSISTANT_KEEP_WARM): Anthropic keeps it an hour from the start of the last request that
-# read it, so the server reads it again once nothing has for this long; tries again this soon if Anthropic didn't take
-# it; and looks this often (in seconds).
+# Keeping the help loaded (YJSP_ASSISTANT_KEEP_WARM): Anthropic keeps it an hour from the start of the last request
+# that read it (KEPT), so the server reads it again once nothing has for this long; tries again this soon if Anthropic
+# didn't take it; and looks this often (in seconds). Admins may have it kept only so many hours after a question.
+KEPT = timedelta(hours=1)
 KEEP_WARM_AFTER = timedelta(minutes=50)
 KEEP_WARM_RETRY = timedelta(minutes=5)
 KEEP_WARM_LOOK = 60.0
+MOST_KEEP_HOURS = 24
 
 
 @dataclass(frozen=True)
@@ -192,8 +195,11 @@ class Spending:
     daily_limit: float
     model: str
     effort: str
-    keep_warm: bool  # whether it keeps the help ready between questions
+    keep_warm: bool  # whether the server may keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
+    keep_hours: int | None  # for how long after a question, as admins chose; None: always
     keep_warm_spent: float  # what that cost this month, in month_spent too
+    month_questions: int  # this month's questions
+    month_questions_loaded: int  # of those, the ones that found the help loaded, and read it for much less
     people: list[Spender]  # the most spent first
 
 
@@ -260,16 +266,18 @@ class Assistant:
                 log.exception("Keeping the help ready for Claude failed")
 
     def keep_warm(self) -> bool:
-        """Read the help again, writing nothing, so Anthropic keeps it ready for the next question: if keeping it ready
-        is on, someone could ask, and nothing has read it lately (KEEP_WARM_AFTER), or not as it is now. True if it
-        did. The read counts against the budgets, as no one's question."""
+        """Read the help again, writing nothing, so Anthropic keeps it loaded for the next question: if the server may
+        (YJSP_ASSISTANT_KEEP_WARM), someone could ask, nothing has read it lately (KEEP_WARM_AFTER), or not as it is
+        now, and admins want it loaded now: always, or for some hours after the last question. True if it did. The read
+        counts against the budgets, as no one's question."""
         settings = self.settings
         if not settings.assistant_keep_warm or self.client is None:
             return False
         found = help.load(settings.help_dir)
         with self.sessions() as db:
             if self._why_no_one(db, found) is not None:
-                return False  # no one can ask: nothing to keep ready, and no more to spend
+                return False  # no one can ask: nothing to keep loaded, and no more to spend
+            wanted = _keep_until(db)
         request: dict[str, Any] = {
             "model": settings.assistant_model,
             # Anthropic reads the request, keeping or refreshing the help, and writes nothing.
@@ -282,7 +290,11 @@ class Assistant:
         }
         key, now = _read_key(request), utcnow()
         with self._lock:
-            if self._read is not None and self._read[0] == key and now - self._read[1] < KEEP_WARM_AFTER:
+            last = self._read[1] if self._read is not None and self._read[0] == key else None
+            if last is not None and now - last < KEEP_WARM_AFTER:
+                return False
+            # Wanted only until some hours after the last question: once what's loaded lasts that long, it's enough.
+            if wanted is not None and (now if last is None else last + KEPT) >= wanted:
                 return False
             self._read = (key, now)
         try:
@@ -293,8 +305,19 @@ class Assistant:
                 if self._read == (key, now):
                     self._read = (key, now - KEEP_WARM_AFTER + KEEP_WARM_RETRY)
             return False
-        self._record(None, request["model"], message.model, _usage(message, request["model"]))
+        self._record(None, now, request["model"], message.model, _usage(message, request["model"]))
         return True
+
+    def keep_loaded(self, db: Session, admin: User, hours: int | None) -> int | None:
+        """Keep the help loaded around the clock (None), or only for `hours` after each question: 1 is just the hour
+        Anthropic keeps it after each read, with no reads in between (admins)."""
+        if not admin.is_admin:
+            raise Forbidden("Only admins can change how long Claude keeps the help loaded", code="admin_only")
+        if hours is not None and not 1 <= hours <= MOST_KEEP_HOURS:
+            raise ApiError(f"Claude keeps the help loaded for 1 to {MOST_KEEP_HOURS} hours after a question, or always")
+        db.get_one(SiteSettings, 1).assistant_keep_hours = hours
+        db.commit()
+        return hours
 
     def _was_read(self, key: str, at: datetime) -> None:
         """Anthropic has read the help (or read and kept it), as `key` says, for a request that started at `at`."""
@@ -383,22 +406,32 @@ class Assistant:
         # Whether people can ask, whatever the admin looking has asked today.
         why = self._why_no_one(db, help.load(self.settings.help_dir))
         now = utcnow()
+        month = _month_start(now)
         keeping = select(func.coalesce(func.sum(AssistantRequest.cost), 0)).where(
-            AssistantRequest.user_id.is_(None), AssistantRequest.at >= _month_start(now)
+            AssistantRequest.user_id.is_(None), AssistantRequest.at >= month
         )
+        # A question that read anything from what Anthropic kept read the help that way, as the help comes first.
+        questions, loaded = db.execute(
+            select(func.count(), func.count().filter(AssistantRequest.cache_read_tokens > 0)).where(
+                AssistantRequest.user_id.is_not(None), AssistantRequest.at >= month
+            )
+        ).one()
         return Spending(
             available=why is None,
             reason=None if why is None else why.message,
             budget=self.settings.assistant_budget,
             spent=_dollars(spent(db)),
             monthly_budget=self.settings.assistant_monthly_budget,
-            month_spent=_dollars(spent(db, since=_month_start(now))),
+            month_spent=_dollars(spent(db, since=month)),
             today=_dollars(spent(db, since=now - DAY)),
             daily_limit=self.settings.assistant_daily_limit,
             model=self.settings.assistant_model,
             effort=self.settings.assistant_effort,
             keep_warm=self.settings.assistant_keep_warm,
+            keep_hours=db.get_one(SiteSettings, 1).assistant_keep_hours,
             keep_warm_spent=_dollars(int(db.scalar(keeping) or 0)),
+            month_questions=questions,
+            month_questions_loaded=loaded,
             people=sorted(people, key=lambda p: -p.spent),
         )
 
@@ -488,8 +521,9 @@ class Assistant:
         assert self.client is not None
         stream = None
         written = 0  # characters of the answer so far
+        asked = utcnow()  # when Anthropic reads it, near enough
         try:
-            key, asked = _read_key(request), utcnow()  # before it's sent: nothing should hold up the answer once begun
+            key = _read_key(request)  # before it's sent: nothing should hold up the answer once begun
             with self.client.beta.messages.stream(**request) as stream:
                 answer.started(stream)
                 self._was_read(key, asked)
@@ -515,21 +549,27 @@ class Assistant:
                 anthropics = isinstance(error, anthropic.APIStatusError) and not stopped
                 output = _tokens(written) if anthropics else MAX_TOKENS
                 model = request["model"]
-                self._record(user_id, model, model, _usage_so_far(snapshot, model, output))
+                self._record(user_id, asked, model, model, _usage_so_far(snapshot, model, output))
             if stopped:
                 log.info("The assistant's answer was stopped, or its asker left")
             else:
                 log.warning("The assistant's answer failed (%s): %s", code, error)
             return {"type": "error", "error": code, "message": text}
-        self._record(user_id, request["model"], message.model, _usage(message, request["model"]))
+        self._record(user_id, asked, request["model"], message.model, _usage(message, request["model"]))
         return {"type": "done", "stop_reason": message.stop_reason}
 
     def _record(
-        self, user_id: int | None, asked: str, model: str, usage: list[tuple[str, int, int, int, int, int]]
+        self,
+        user_id: int | None,
+        at: datetime,
+        asked: str,
+        model: str,
+        usage: list[tuple[str, int, int, int, int, int]],
     ) -> None:
-        """What an answer took, in tokens, and what it cost, added up over the models that worked on it. Without a
-        user_id, it's no one's question: a read to keep the help ready."""
-        total = AssistantRequest(user_id=user_id, model=model or asked, at=utcnow())
+        """What an answer took, in tokens, and what it cost, added up over the models that worked on it, as of when it
+        was asked (`at`), which is when Anthropic read the help for it. Without a user_id, it's no one's question: a
+        read to keep the help loaded."""
+        total = AssistantRequest(user_id=user_id, model=model or asked, at=at)
         total.input_tokens = sum(u[1] for u in usage)
         total.cache_write_tokens = sum(u[2] + u[3] for u in usage)
         total.cache_read_tokens = sum(u[4] for u in usage)
@@ -548,6 +588,16 @@ def spent(db: Session, user_id: int | None = None, since: datetime | None = None
     if since is not None:
         stmt = stmt.where(AssistantRequest.at >= since)
     return int(db.scalar(stmt) or 0)
+
+
+def _keep_until(db: Session) -> datetime | None:
+    """Until when admins want the help loaded: None for always, as it starts; or as long after the last question was
+    asked as they chose (already past, before anyone has asked)."""
+    hours = db.get_one(SiteSettings, 1).assistant_keep_hours
+    if hours is None:
+        return None
+    last = db.scalar(select(func.max(AssistantRequest.at)).where(AssistantRequest.user_id.is_not(None)))
+    return (last or datetime.min.replace(tzinfo=UTC)) + timedelta(hours=hours)
 
 
 def _read_key(request: dict[str, Any]) -> str:

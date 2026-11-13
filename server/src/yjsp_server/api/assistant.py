@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from ..assistant import Assistant, Turn
 from .deps import DB, ActiveUser
-from .schemas import AskIn, AssistantOut, AssistantSpenderOut, AssistantSpendingOut, UserRef
+from .schemas import AskIn, AssistantOut, AssistantSettingsIo, AssistantSpenderOut, AssistantSpendingOut, UserRef
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -61,6 +61,16 @@ def get_spending(request: Request, user: ActiveUser, db: DB) -> AssistantSpendin
         model=found.model,
         effort=found.effort,
         keep_warm=found.keep_warm,
+        keep_hours=found.keep_hours,
         keep_warm_spent=found.keep_warm_spent,
+        month_questions=found.month_questions,
+        month_questions_loaded=found.month_questions_loaded,
         people=people,
     )
+
+
+@router.put("/settings")
+def put_settings(body: AssistantSettingsIo, request: Request, user: ActiveUser, db: DB) -> AssistantSettingsIo:
+    """Keep the help loaded for Claude around the clock (keep_hours null), or only for some hours after each question
+    (admins)."""
+    return AssistantSettingsIo(keep_hours=_assistant(request).keep_loaded(db, user, body.keep_hours))

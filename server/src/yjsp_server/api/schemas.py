@@ -305,6 +305,13 @@ class AskIn(BaseModel):
     messages: list[AssistantMessageIn] = Field(min_length=1, max_length=40)
 
 
+class AssistantSettingsIo(BaseModel):
+    """How long Claude keeps the help loaded after a question, in hours (1 to 24: 1 is only the hour Anthropic keeps it
+    after each read), or null for always, around the clock (admins, assistant.Assistant.keep_loaded)."""
+
+    keep_hours: int | None
+
+
 class AssistantOut(BaseModel):
     """What someone sees of the assistant before asking (assistant.Assistant.status)."""
 
@@ -338,6 +345,9 @@ class AssistantSpendingOut(BaseModel):
     daily_limit: float  # what one person's questions may cost in 24 hours
     model: str
     effort: str
-    keep_warm: bool = False  # whether it keeps the help ready between questions (YJSP_ASSISTANT_KEEP_WARM)
+    keep_warm: bool = False  # whether the server may keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
+    keep_hours: int | None = None  # for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: float = 0  # what that cost this month, in month_spent too
+    month_questions: int = 0  # this month's questions
+    month_questions_loaded: int = 0  # of those, the ones that found the help loaded, and read it for much less
     people: list[AssistantSpenderOut]  # the most spent first

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from yjsp_server import assistant
 from yjsp_server.app import create_app
 from yjsp_server.assistant import Assistant
+from yjsp_server.config import Settings
 
 from .conftest import BOOTSTRAP_ADMIN
 from .fake_claude import FakeClaude, Reply
@@ -338,6 +339,84 @@ def test_when_anthropic_wont_keep_the_help_it_tries_again_soon(app, team, claude
     claude.replies.append(KEEP)
     clock.now += timedelta(minutes=1)
     assert app.state.assistant.keep_warm() is True
+
+
+def test_the_server_keeps_the_help_loaded_unless_its_settings_say_not():
+    assert Settings(_env_file=None).assistant_keep_warm is True
+
+
+def keep_for(client: TestClient, who: dict[str, str], hours: int | None):
+    return client.put("/api/assistant/settings", json={"keep_hours": hours}, headers=who)
+
+
+def test_admins_can_have_the_help_kept_only_for_hours_after_a_question(app, client, team, claude, settings, clock):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    member = team.member("ana@rocketry.test")
+    assistant = app.state.assistant
+    settings.assistant_keep_warm = True
+    assert spending(client, admin)["keep_hours"] is None  # around the clock, as it starts
+    response = keep_for(client, admin, 3)
+    assert (response.status_code, response.json()) == (200, {"keep_hours": 3}), response.text
+    assert spending(client, admin)["keep_hours"] == 3
+
+    # No one has asked: there's nothing to keep loaded.
+    assert assistant.keep_warm() is False
+    start = clock.now
+    claude.replies.append(Reply(write_1h=75_000))
+    ask(client, member, QUESTION)
+    # Read again 50 minutes after each read, until what's loaded lasts to 3 hours after the question.
+    for minutes in (50, 100, 150):
+        clock.now = start + timedelta(minutes=minutes - 1)
+        assert assistant.keep_warm() is False
+        clock.now = start + timedelta(minutes=minutes)
+        claude.replies.append(KEPT)
+        assert assistant.keep_warm() is True
+    clock.now = start + timedelta(minutes=200)  # loaded until 3 hours 30 minutes: enough
+    assert assistant.keep_warm() is False
+    clock.now = start + timedelta(hours=8)
+    assert assistant.keep_warm() is False
+    assert len(claude.requests) == 4
+
+    # The next question, hours later, reads it in full again, and keeps it loaded for 3 hours after it.
+    claude.replies += [Reply(write_1h=75_000), KEPT]
+    ask(client, member, QUESTION)
+    clock.now += timedelta(minutes=50)
+    assert assistant.keep_warm() is True
+    claude.replies.append(Reply(read=75_000))
+    ask(client, member, QUESTION)
+    found = spending(client, admin)
+    assert (found["month_questions"], found["month_questions_loaded"]) == (3, 1)
+
+    # 1 hour is just the hour Anthropic keeps it after each read: nothing in between.
+    assert keep_for(client, admin, 1).status_code == 200
+    clock.now += timedelta(hours=3)
+    claude.replies.append(Reply(write_1h=75_000))
+    ask(client, member, QUESTION)
+    clock.now += timedelta(minutes=50)
+    assert assistant.keep_warm() is False
+    assert len(claude.requests) == 8
+
+    # And back to around the clock, with no one asking.
+    assert keep_for(client, admin, None).status_code == 200
+    claude.replies.append(KEPT)
+    assert assistant.keep_warm() is True
+    clock.now += timedelta(days=2)
+    claude.replies.append(KEEP)
+    assert assistant.keep_warm() is True
+
+
+def test_only_admins_choose_how_long_the_help_is_kept(client, team):
+    admin = team.member(BOOTSTRAP_ADMIN, admin=True)
+    member = team.member("ana@rocketry.test")
+    response = keep_for(client, member, 2)
+    assert (response.status_code, response.json()["error"]) == (403, "admin_only")
+    for hours in (0, 25):
+        response = keep_for(client, admin, hours)
+        assert (response.status_code, response.json()["error"]) == (400, "bad_request")
+        assert (
+            response.json()["message"] == "Claude keeps the help loaded for 1 to 24 hours after a question, or always"
+        )
+    assert spending(client, admin)["keep_hours"] is None
 
 
 def test_each_person_has_a_daily_limit(client, team, claude, settings):

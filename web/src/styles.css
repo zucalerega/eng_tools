@@ -1076,6 +1076,19 @@ a.tag:hover {
     margin: 0.75rem 0 0.5rem;
 }
 
+/* Claude's card: how long the help is kept loaded. */
+.keep-loaded {
+    margin-top: 0.75rem;
+}
+
+.keep-loaded .field {
+    margin: 0;
+}
+
+.keep-loaded select {
+    max-width: 18rem;
+}
+
 /* Admin > People's trackers: stat tiles, and a chart. */
 
 .tracker-head {

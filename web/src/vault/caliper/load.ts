@@ -5,6 +5,7 @@ import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type 
 import { fileFormat } from "../paths";
 import { bodiesOfCad, modelFromCad, readCadFile, type CadFormat } from "./step";
 import { modelFromStl } from "./stl";
+import { inTurns, unlessBusy } from "./turns";
 
 // Caliper's model of a file, from wherever it comes: a part's mesh, or an assembly's components and their parts'
 // meshes (made by Vault for SolidWorks, or by the server from the files), or the STEP and IGES files placed in it; or a
@@ -115,12 +116,18 @@ export async function assemblyModel(
     progress: Progress,
 ): Promise<{ model: Model; leftOut: number }> {
     // A version's model, made from its file where it has none yet, in the configuration it's used in (where the
-    // assembly says which): once for each version and configuration, however many use it.
+    // assembly says which): once for each version and configuration, however many use it. Two at a time, as the
+    // server reads two files at once, so a big assembly doesn't keep it busy past what it waits; and again, after a
+    // while, where it's busy with others'.
     const made = new Map<string, Promise<CaliperModel>>();
+    const reading = inTurns(2);
     const make = (id: number, version: number, configuration: string): Promise<CaliperModel> => {
         const key = `${id}:${version}:${configuration}`;
         if (!made.has(key)) {
-            made.set(key, vaultApi.makeCaliperModel(id, version, configuration || undefined));
+            made.set(
+                key,
+                reading(() => unlessBusy(() => vaultApi.makeCaliperModel(id, version, configuration || undefined))),
+            );
         }
         return made.get(key)!;
     };

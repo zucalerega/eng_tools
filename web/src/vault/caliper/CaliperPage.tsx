@@ -10,6 +10,7 @@ import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
 import { ModelSource, ShapeSources } from "./Sources";
+import { unlessBusy } from "./turns";
 import { initiallyHidden, shownNodes, walk, type Model, type Units, type Why } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
@@ -82,7 +83,7 @@ export function CaliperPage({ id }: { id: number }) {
             return;
         }
         asked.current.add(key);
-        vaultApi.makeCaliperModel(id, wanted, askedConfiguration ?? undefined).then(
+        unlessBusy(() => vaultApi.makeCaliperModel(id, wanted, askedConfiguration ?? undefined)).then(
             (model) =>
                 setModels((found) =>
                     [
@@ -209,12 +210,17 @@ export function CaliperPage({ id }: { id: number }) {
                             )
                         }
                     >
-                        {detail.versions.map((v) => (
-                            <option key={v.number} value={v.number}>
-                                v{v.number}
-                                {!cad && why(v.number) !== undefined ? " (no 3D model)" : ""}
-                            </option>
-                        ))}
+                        {detail.versions.map((v) => {
+                            const notes = [
+                                v.number === file.version && "latest",
+                                !cad && why(v.number) !== undefined && "no 3D model",
+                            ].filter(Boolean);
+                            return (
+                                <option key={v.number} value={v.number}>
+                                    {`v${v.number}${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`}
+                                </option>
+                            );
+                        })}
                     </select>
                 </label>
                 {!cad && configurations.length > 1 && (
@@ -269,9 +275,10 @@ export function CaliperPage({ id }: { id: number }) {
                 </span>
             </header>
             {fellBack && (
-                <Notice tone="info">
+                <Notice tone="warning">
                     <p>
-                        v{file.version}, the latest version, has no 3D model, so this is v{version}.
+                        <strong>This isn't the latest version.</strong> v{file.version}, the latest, has no 3D model, so
+                        this is v{version}.
                     </p>
                     {why(file.version) && <p>{why(file.version)}</p>}
                 </Notice>

@@ -228,8 +228,10 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   models (from Kenesto, say, or uploaded in the web app), so the server read it from the file. It's
   the right shape, but to have exactly what SolidWorks draws, open it in SolidWorks and click
   *Make 3D view* on the Vault tab: that takes the place of the server's.
-- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time.
-  Wait a minute and open it again.
+- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time, and
+  Caliper asks it for no more than that, waiting and asking again for about three minutes while
+  others' are being read. If it still says so, the server is busy with big files: open it again in
+  a few minutes, by which time the parts read meanwhile are kept.
 - **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not
   checked in, gets none until it is. A part loaded lightweight needs resolving first: right-click
   the assembly, choose Set Lightweight to Resolved, then click *Make 3D view* again.

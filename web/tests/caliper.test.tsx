@@ -420,11 +420,12 @@ test("a version with no model says why; with none asked for, the newest that has
 
     // v2's model would be read from the file, which isn't a real SolidWorks part.
     const finPage = renderApp(team.chief, caliperUrl(fin!.id));
-    expect(await screen.findByText("v2, the latest version, has no 3D model, so this is v1.")).toBeTruthy();
+    expect(await screen.findByText(/v2, the latest, has no 3D model, so this is v1\./)).toBeTruthy();
+    expect(screen.getByText("This isn't the latest version.")).toBeTruthy();
     expect(screen.getByText(/v2: It isn't a SolidWorks part that Caliper can read/)).toBeTruthy();
     expect(await screen.findByRole("checkbox", { name: "Show Fin" })).toBeTruthy();
     const version = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
-    expect([...version.options].map((option) => option.textContent)).toEqual(["v2 (no 3D model)", "v1"]);
+    expect([...version.options].map((option) => option.textContent)).toEqual(["v2 (latest, no 3D model)", "v1"]);
 
     await userEvent.selectOptions(version, "2");
     expect(await screen.findByText("v2 of Fin.SLDPRT has no 3D model.")).toBeTruthy();

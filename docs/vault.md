@@ -862,9 +862,12 @@ Where the 3D comes from:
   as SolidWorks' `Transform2` gives); whether SolidWorks hid it; its color over its part's;
   and a sub-assembly's own components. A virtual part, kept inside the assembly, carries its
   own mesh. Caliper draws each part's own model wherever its components put it, fetching
-  each once (six at a time). A version the server can't read a model from says why, and
+  each once (six at a time), and asking the server to read those without one two at a time
+  (`turns.ts`), as it reads two files at once and refuses a request it can't start in a minute
+  (`busy`); one refused as busy, with others' reading too, is asked again after a wait, for
+  about three minutes. A version the server can't read a model from says why, and
   how to make one; with no version asked for, Caliper then shows the newest one that has a
-  model, and says so. A component that draws nothing says why beside its name, and the
+  model, with a warning that it isn't the latest (the Version list marks which is). A component that draws nothing says why beside its name, and the
   page sums them up by why: parts in a configuration their files have no 3D view of, files
   with no 3D view Caliper reads, and parts kept inside an assembly without a shape there
   that Caliper read (all of which Make 3D view in SolidWorks makes); sub-assemblies none of

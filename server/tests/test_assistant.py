@@ -570,14 +570,25 @@ def test_a_question_that_fails_to_start_frees_whoever_asked(client, team, claude
     assert ask(client, member, QUESTION)[0].status_code == 200
 
 
-def test_an_answer_keeps_no_database_connection_while_it_comes(client, team, claude):
+def test_an_answer_keeps_no_database_connection_while_it_comes(client, team, claude, monkeypatch):
     member = team.member("ana@rocketry.test")
     hold = threading.Event()
     claude.replies.append(Reply(hold=hold, hold_after=1))
+    # When the server starts sending the answer, its request has returned: the stand-in can be partway through the
+    # answer before then, so that's what to wait for.
+    sending = threading.Event()
+    lines = assistant.Answer.lines
+
+    async def sent(answer):
+        sending.set()
+        async for line in lines(answer):
+            yield line
+
+    monkeypatch.setattr(assistant.Answer, "lines", sent)
     asking = threading.Thread(target=lambda: ask(client, member, QUESTION))
     asking.start()
     try:
-        assert claude.holding.wait(10)
+        assert claude.holding.wait(10) and sending.wait(10)
         # A dozen answers at once would otherwise take every connection the server has.
         assert client.app.state.sessionmaker.kw["bind"].pool.checkedout() == 0
     finally:

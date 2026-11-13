@@ -879,3 +879,112 @@
 .tempo-help-section h2 {
     margin-top: 0;
 }
+
+.tempo-output-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tempo-runtime-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tempo-rocket-spinner {
+    color: var(--gold);
+    animation: tempo-rocket-spin 0.9s linear infinite;
+    flex-shrink: 0;
+}
+
+.tempo-rocket-window {
+    fill: var(--surface);
+}
+
+.tempo-rocket-flame {
+    fill: var(--primary);
+}
+
+@keyframes tempo-rocket-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.tempo-env-summary {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    font-size: 13px;
+}
+
+.tempo-env-valves {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+}
+
+.tempo-env-valve-row {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.tempo-truth-row input {
+    padding: 5px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tempo-cursor-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.tempo-cursor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.tempo-cursor-table th,
+.tempo-cursor-table td {
+    padding: 7px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.tempo-cursor-table th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    background: var(--surface-2);
+}
+
+.tempo-cursor-table tr:last-child td {
+    border-bottom: none;
+}
+
+.tempo-cursor-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}

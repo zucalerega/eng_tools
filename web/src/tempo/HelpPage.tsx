@@ -10,7 +10,7 @@ export function HelpPage() {
                     <h1>Tempo Help</h1>
                     <p className="muted">Luna Sequence Simulator — operator guide and compatibility notes</p>
                 </div>
-                <Link to="/tempo" className="button-primary">
+                <Link to="/tempo" className="button button-primary">
                     Back to workspace
                 </Link>
             </header>

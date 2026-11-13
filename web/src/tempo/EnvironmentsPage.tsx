@@ -114,7 +114,7 @@ export function EnvironmentsPage() {
                     <button type="button" onClick={() => fileInputRef.current?.click()}>
                         Import JSON
                     </button>
-                    <Link to="/tempo" className="button-primary">
+                    <Link to="/tempo" className="button button-primary">
                         Open workspace
                     </Link>
                 </div>
@@ -185,7 +185,7 @@ export function EnvironmentsPage() {
                                 <td>{item.owner_name}</td>
                                 <td>{formatDate(item.updated_at)}</td>
                                 <td className="tempo-table-actions">
-                                    <Link to={`/tempo?env=${item.id}`} className="button-small">
+                                    <Link to={`/tempo?env=${item.id}`} className="button button-small">
                                         Load in workspace
                                     </Link>
                                     <button type="button" className="button-small" onClick={() => exportJson(item)}>

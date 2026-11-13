@@ -49,7 +49,7 @@ export function TestsPage() {
                         environment.
                     </p>
                 </div>
-                <Link to="/tempo" className="button-primary">
+                <Link to="/tempo" className="button button-primary">
                     Open workspace
                 </Link>
             </header>
@@ -98,7 +98,7 @@ export function TestsPage() {
                                 <td>{item.owner_name}</td>
                                 <td>{formatDate(item.updated_at)}</td>
                                 <td className="tempo-table-actions">
-                                    <Link to={`/tempo?test=${item.id}`} className="button-small">
+                                    <Link to={`/tempo?test=${item.id}`} className="button button-small">
                                         Open
                                     </Link>
                                     {item.can_change && (

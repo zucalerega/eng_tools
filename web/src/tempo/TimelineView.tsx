@@ -150,9 +150,7 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
         }
     }
 
-    const lastPin = pins[pins.length - 1];
-    const inspectTime = hoveredTime ?? (lastPin ? lastPin.time : null);
-    const abortStatus = inspectTime !== null ? abortStatusAt(events, inspectTime) : null;
+    const abortStatus = hoveredTime !== null ? abortStatusAt(events, hoveredTime) : null;
 
     // Valve timeline height
     const valveRowH = 28;
@@ -163,13 +161,17 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
     // Abort stage segments
     const abortEvents = events.filter((e) => e.kind === "abort_stage" || e.kind === "abort");
 
+    const sortedPins = useMemo(() => [...pins].sort((a, b) => a.time - b.time), [pins]);
+    const showAbortCol = abortStages.length > 0 || events.some((e) => e.kind === "abort" || e.kind === "abort_stage");
+
     return (
         <div className="tempo-timeline">
             <div className="tempo-cursor-bar">
                 <div className="tempo-pin-chips">
-                    {pins.map((pin) => (
+                    {pins.map((pin, idx) => (
                         <span key={pin.id} className="tempo-pin-chip" style={{ borderColor: pin.color }}>
                             <span className="tempo-pin-dot" style={{ background: pin.color }} />
+                            <strong>C{idx + 1}</strong>
                             <span>T+ {nice(pin.time)}s</span>
                             <button
                                 type="button"
@@ -181,7 +183,9 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                         </span>
                     ))}
                     {pins.length === 0 && (
-                        <span className="muted">Click any chart to pin up to 4 timeline cursors.</span>
+                        <span className="muted">
+                            Hover or click any chart to inspect and pin up to 4 timeline cursors.
+                        </span>
                     )}
                 </div>
                 {pins.length > 0 && (
@@ -191,11 +195,11 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                 )}
             </div>
 
-            {inspectTime !== null && (
+            {hoveredTime !== null && (
                 <div className="tempo-cursor-readout">
-                    <strong>T+ {nice(inspectTime)}s</strong>
+                    <strong>Hover · T+ {nice(hoveredTime)}s</strong>
                     {valveNames.map((name) => {
-                        const state = valveStateAt(initialValves, events, name, inspectTime);
+                        const state = valveStateAt(initialValves, events, name, hoveredTime);
                         return (
                             <span key={name} className="tempo-readout-item">
                                 <span className="muted">{name}:</span>{" "}
@@ -204,7 +208,7 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                         );
                     })}
                     {sensors.map((sensor) => {
-                        const val = sensorValueAt(sensor, inspectTime);
+                        const val = sensorValueAt(sensor, hoveredTime);
                         return (
                             <span key={sensor.name} className="tempo-readout-item">
                                 <span className="muted">{sensor.name}:</span>{" "}
@@ -212,7 +216,7 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                             </span>
                         );
                     })}
-                    {abortStatus && (abortStages.length > 0 || abortStatus.aborted) && (
+                    {abortStatus && showAbortCol && (
                         <span className="tempo-readout-item">
                             <span className="muted">Abort stage:</span>{" "}
                             <strong className={abortStatus.aborted ? "tempo-text-danger" : ""}>
@@ -220,6 +224,93 @@ export function TimelineView({ result, onJumpToSource }: TimelineViewProps) {
                             </strong>
                         </span>
                     )}
+                </div>
+            )}
+
+            {sortedPins.length > 0 && (
+                <div className="tempo-cursor-table-wrap">
+                    <table className="tempo-cursor-table">
+                        <thead>
+                            <tr>
+                                <th>Cursor</th>
+                                <th>Time</th>
+                                {sortedPins.length > 1 && <th>ΔT</th>}
+                                {valveNames.map((name) => (
+                                    <th key={name}>{name}</th>
+                                ))}
+                                {sensors.map((s) => (
+                                    <th key={s.name}>
+                                        {s.name} ({s.unit})
+                                    </th>
+                                ))}
+                                {showAbortCol && <th>Abort</th>}
+                                <th />
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedPins.map((pin, idx) => {
+                                const pinNum = pins.findIndex((p) => p.id === pin.id) + 1;
+                                const prev = idx > 0 ? sortedPins[idx - 1] : null;
+                                const delta = prev ? pin.time - prev.time : null;
+                                const st = abortStatusAt(events, pin.time);
+                                return (
+                                    <tr key={pin.id}>
+                                        <td>
+                                            <span className="tempo-cursor-label">
+                                                <span className="tempo-pin-dot" style={{ background: pin.color }} />
+                                                <strong>C{pinNum}</strong>
+                                            </span>
+                                        </td>
+                                        <td className="tempo-mono">T+ {nice(pin.time)}s</td>
+                                        {sortedPins.length > 1 && (
+                                            <td className="tempo-mono muted">
+                                                {delta !== null ? `+${nice(delta)}s` : "—"}
+                                            </td>
+                                        )}
+                                        {valveNames.map((name) => {
+                                            const state = valveStateAt(initialValves, events, name, pin.time);
+                                            return (
+                                                <td key={name}>
+                                                    <span
+                                                        className={`tempo-state-pill ${state === "OPEN" ? "open" : "closed"}`}
+                                                    >
+                                                        {state}
+                                                    </span>
+                                                </td>
+                                            );
+                                        })}
+                                        {sensors.map((sensor) => {
+                                            const val = sensorValueAt(sensor, pin.time);
+                                            return (
+                                                <td key={sensor.name} className="tempo-mono">
+                                                    {val !== null ? nice(val) : "—"}
+                                                </td>
+                                            );
+                                        })}
+                                        {showAbortCol && (
+                                            <td>
+                                                <strong className={st.aborted ? "tempo-text-danger" : ""}>
+                                                    {st.aborted ? "ABORTED" : st.stage}
+                                                </strong>
+                                            </td>
+                                        )}
+                                        <td>
+                                            <button
+                                                type="button"
+                                                className="tempo-icon-btn"
+                                                aria-label={`Remove cursor C${pinNum}`}
+                                                onClick={() =>
+                                                    setPins((prevPins) => prevPins.filter((p) => p.id !== pin.id))
+                                                }
+                                            >
+                                                ×
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             )}
 

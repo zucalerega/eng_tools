@@ -74,8 +74,17 @@ function ProfileChart({ sensor }: { sensor: SensorConfig }) {
             {samples.map((pt, idx) => (
                 <circle key={idx} cx={x(pt.at)} cy={y(pt.value)} r={3.5} className="tempo-env-chart-point" />
             ))}
+            <text x={left - 4} y={top + 4} className="tempo-env-chart-label" textAnchor="end">
+                {Number(high.toFixed(1))}
+            </text>
+            <text x={left - 4} y={bottom} className="tempo-env-chart-label" textAnchor="end">
+                {Number(low.toFixed(1))}
+            </text>
             <text x={left} y={119} className="tempo-env-chart-label" textAnchor="start">
                 0s
+            </text>
+            <text x={(left + right) / 2} y={119} className="tempo-env-chart-label" textAnchor="middle">
+                {sensor.unit} · {sensor.interpolation}
             </text>
             <text x={right} y={119} className="tempo-env-chart-label" textAnchor="end">
                 {Number(duration.toFixed(2))}s
@@ -90,9 +99,11 @@ export interface EnvironmentEditorProps {
 }
 
 export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorProps) {
-    const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+    const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
 
     const configuredValves = environment.valves.map((v) => v.name).filter((n) => n.trim().length > 0);
+    const openCount = environment.valves.filter((v) => v.initial === "OPEN").length;
+    const allCollapsed = environment.sensors.length > 0 && environment.sensors.every((_, idx) => collapsed[idx]);
 
     function updateValve(index: number, patch: Partial<ValveConfig>) {
         const nextValves = environment.valves.map((v, i) => (i === index ? { ...v, ...patch } : v));
@@ -120,7 +131,7 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
 
     function addSensor() {
         const nextIndex = environment.sensors.length;
-        setExpanded((prev) => ({ ...prev, [nextIndex]: true }));
+        setCollapsed((prev) => ({ ...prev, [nextIndex]: false }));
         onChange({
             ...environment,
             sensors: [
@@ -150,6 +161,15 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
 
     return (
         <div className="tempo-env-pane">
+            <div className="tempo-env-summary">
+                <span>
+                    <strong>{environment.valves.length}</strong> valves ({openCount} OPEN ·{" "}
+                    {environment.valves.length - openCount} CLOSED)
+                </span>
+                <span>
+                    <strong>{environment.sensors.length}</strong> sensors
+                </span>
+            </div>
             <section className="tempo-env-group" aria-label="Valves">
                 <div className="tempo-env-heading">
                     <div className="tempo-env-title">
@@ -206,13 +226,30 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                         <h3>Sensors</h3>
                         <span className="tempo-count-badge">{environment.sensors.length}</span>
                     </div>
-                    <button type="button" className="button-small" onClick={addSensor}>
-                        + Add sensor
-                    </button>
+                    <div className="tempo-sensor-actions">
+                        {environment.sensors.length > 0 && (
+                            <button
+                                type="button"
+                                className="button-small"
+                                onClick={() => {
+                                    const next: Record<number, boolean> = {};
+                                    environment.sensors.forEach((_, idx) => {
+                                        next[idx] = !allCollapsed;
+                                    });
+                                    setCollapsed(next);
+                                }}
+                            >
+                                {allCollapsed ? "Expand all" : "Collapse all"}
+                            </button>
+                        )}
+                        <button type="button" className="button-small" onClick={addSensor}>
+                            + Add sensor
+                        </button>
+                    </div>
                 </div>
                 <div className="tempo-env-sensors">
                     {environment.sensors.map((sensor, index) => {
-                        const isOpen = Boolean(expanded[index]);
+                        const isOpen = !collapsed[index];
                         const dynamic = sensor.mode === "valve";
                         const keys = dynamic ? tableKeys(sensor.valves.length) : [];
                         const completed = keys.filter(
@@ -267,9 +304,9 @@ export function EnvironmentEditor({ environment, onChange }: EnvironmentEditorPr
                                         <button
                                             type="button"
                                             className="button-small"
-                                            onClick={() => setExpanded((prev) => ({ ...prev, [index]: !isOpen }))}
+                                            onClick={() => setCollapsed((prev) => ({ ...prev, [index]: isOpen }))}
                                         >
-                                            {isOpen ? "Hide" : "Configure"}
+                                            {isOpen ? "Collapse" : "Expand"}
                                         </button>
                                         <button
                                             type="button"

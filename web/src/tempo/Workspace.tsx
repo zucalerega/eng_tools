@@ -92,6 +92,27 @@ function downloadText(filename: string, content: string, mime: string) {
     URL.revokeObjectURL(url);
 }
 
+function TempoRocketSpinner() {
+    return (
+        <svg className="tempo-rocket-spinner" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+                d="M12 2.5c2.7 2.4 4.2 5.6 4.2 9.2 0 1.4-.3 2.7-.8 3.8l-3.4-1.3-3.4 1.3c-.5-1.1-.8-2.4-.8-3.8 0-3.6 1.5-6.8 4.2-9.2Z"
+                fill="currentColor"
+            />
+            <path
+                d="M8.5 13.5 5.5 16l2.2.8m7.8-3.3 3 2.5-2.2.8"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <circle cx="12" cy="9.2" r="1.4" className="tempo-rocket-window" />
+            <path d="M10.5 16.5 12 21l1.5-4.5" className="tempo-rocket-flame" />
+        </svg>
+    );
+}
+
 export interface WorkspaceProps {
     createRunner?: () => TempoRunner;
 }
@@ -556,6 +577,7 @@ export function Workspace({ createRunner }: WorkspaceProps) {
                                 />
                             </label>
                             <span className="tempo-runtime-status muted" role="status">
+                                {running && runtimeReady && <TempoRocketSpinner />}
                                 {running
                                     ? runtimeReady
                                         ? `Running (${wallElapsed.toFixed(1)}s wall · ${speed}×)`
@@ -659,7 +681,10 @@ export function Workspace({ createRunner }: WorkspaceProps) {
             <section className="tempo-output-panel">
                 <div className="tempo-output-head">
                     <div>
-                        <h2>Simulation output</h2>
+                        <div className="tempo-output-title-row">
+                            <h2>Simulation output</h2>
+                            {running && runtimeReady && <TempoRocketSpinner />}
+                        </div>
                         {result?.timing && (
                             <p className="muted">
                                 {result.virtual_time.toFixed(2)}s simulated in {result.timing.wall_seconds.toFixed(2)}s

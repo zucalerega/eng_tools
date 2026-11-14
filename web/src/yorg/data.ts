@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { yorg, type Channel, type DatasetDetail, type Formula } from "./api";
-import { calculate, channelsOf, findChannel, FormulaError, readFormula, type Input } from "./formula";
+import { calculate, channelsOf, findChannel, FormulaError, readFormula, type Input, type Node } from "./formula";
+import type { Layout } from "./layout";
 import { intersect, runsOf, within, type Runs } from "./masks";
 import { Samples } from "./samples";
 
@@ -203,47 +204,214 @@ export function reloadFormulas(): Promise<void> {
     return formulaStore.refresh("all", () => yorg.formulas());
 }
 
-/** Whether a dataset has every channel an expression uses (and so can have the calculated channel). */
-export function fits(expression: string, detail: DatasetDetail): boolean {
-    const tree = readFormula(expression);
-    return !(tree instanceof FormulaError) && channelsOf(tree).every((name) => findChannel(detail.channels, name));
+/**
+ * A dataset an expression reads channels from, and how far its times move to line up with the first one's (whose
+ * times the result is on): a dataset's own calculated channels have one, with no shift; one across the datasets
+ * compared on a page has each of them, shifted as they are there.
+ */
+export interface Place {
+    detail: DatasetDetail;
+    shift: number;
 }
 
-/** An expression worked out for a dataset: for a calculated channel, or to try one out before saving it. */
-export async function calculateFor(detail: DatasetDetail, expression: string): Promise<Samples> {
+/** The datasets on a page, lined up as they are there: each shifted from the first. Null until they're all in. */
+export function placesOf(layout: Layout): Place[] | null {
+    const places: Place[] = [];
+    for (const ref of layout.datasets) {
+        const loaded = dataset(ref.id);
+        if (loaded.status !== "ready") {
+            return null;
+        }
+        places.push({ detail: loaded.value, shift: ref.shift - layout.datasets[0]!.shift });
+    }
+    return places;
+}
+
+/** Where a name in an expression comes from: a dataset's channel, or another calculated channel, worked out first. */
+type Source =
+    { kind: "channel"; place: Place; channel: Channel } | { kind: "formula"; formula: FormulaRef; plan: Plan };
+
+/** An expression ready to work out: where each name in it comes from, and a key that changes when any of that does. */
+export interface Plan {
+    tree: Node;
+    sources: ReadonlyMap<string, Source>;
+    key: string;
+    datasets: DatasetDetail[]; // those it reads channels from (through the calculated channels it uses, too)
+}
+
+/** What a calculated channel is to an expression: one the team has, or the one being written (id null, if new). */
+export type FormulaRef = Pick<Formula, "name" | "expression"> & { id: number | null };
+
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/** A calculated channel that comes back to itself: said as it is, wherever in the chain it's found. */
+class Loop extends FormulaError {}
+
+const placesText = (places: readonly Place[]): string => {
+    const names = places.map((place) => place.detail.name);
+    return names.length <= 2 ? names.join(" or ") : `${names.slice(0, -1).join(", ")}, or ${names.at(-1)}`;
+};
+
+function sourceOf(
+    name: string,
+    places: readonly Place[],
+    list: readonly FormulaRef[],
+    using: readonly string[],
+): Source | FormulaError {
+    // A dataset's own channel first (the first dataset's, across several), then a calculated channel.
+    for (const place of places) {
+        const channel = findChannel(place.detail.channels, name);
+        if (channel) {
+            return { kind: "channel", place, channel };
+        }
+    }
+    const formula = findChannel(list, name);
+    if (!formula) {
+        return new FormulaError(`${name} isn't a channel of ${placesText(places)}, or a calculated channel`, 0);
+    }
+    const loop = using.findIndex((one) => sameName(one, formula.name));
+    if (loop >= 0) {
+        const chain = [...using.slice(loop), formula.name];
+        return new Loop(
+            `A calculated channel can't use itself: ${chain[0]} uses ${chain.slice(1).join(", which uses ")}`,
+            0,
+        );
+    }
+    const inner = plan(formula.expression, places, list, [...using, formula.name]);
+    if (inner instanceof Loop) {
+        return inner;
+    }
+    if (inner instanceof FormulaError) {
+        return new FormulaError(`${formula.name}, which this uses: ${inner.message}`, 0);
+    }
+    return { kind: "formula", formula, plan: inner };
+}
+
+/**
+ * How an expression is worked out in places, or why it can't be: each name a channel of the first of them that has
+ * it, else a calculated channel, worked out there the same way (never one that comes back to itself: using names
+ * those it's inside).
+ */
+export function plan(
+    expression: string,
+    places: readonly Place[],
+    list: readonly FormulaRef[],
+    using: readonly string[] = [],
+): Plan | FormulaError {
     const tree = readFormula(expression);
     if (tree instanceof FormulaError) {
-        throw tree;
+        return tree;
     }
-    const inputs = new Map<string, Input>();
-    await Promise.all(
-        channelsOf(tree).map(async (name) => {
-            const channel = findChannel(detail.channels, name);
-            if (!channel) {
-                throw new FormulaError(`${detail.name} has no channel called ${name}`, 0);
-            }
-            const [times, values] = await Promise.all([array(detail, channel.time), array(detail, channel.values)]);
-            inputs.set(name, { samples: new Samples(times, values), step: channel.kind === "state" });
-        }),
+    const sources = new Map<string, Source>();
+    const datasets = new Map<number, DatasetDetail>();
+    for (const name of channelsOf(tree)) {
+        const source = sourceOf(name, places, list, using);
+        if (source instanceof FormulaError) {
+            return source;
+        }
+        sources.set(name, source);
+        if (source.kind === "channel") {
+            datasets.set(source.place.detail.id, source.place.detail);
+        } else {
+            source.plan.datasets.forEach((one) => datasets.set(one.id, one));
+        }
+    }
+    const parts = [...sources].map(([name, source]) =>
+        source.kind === "channel"
+            ? `${name}=${source.place.detail.id}/${source.place.detail.data_version}/${source.channel.values}@${source.place.shift}`
+            : `${name}=(${source.plan.key})`,
     );
-    return calculate(tree, inputs);
+    return { tree, sources, key: [expression, ...parts].join("\n"), datasets: [...datasets.values()] };
 }
 
-/** A calculated channel's samples, for a dataset's latest read (worked out again if its expression changes). */
-export function calculated(detail: DatasetDetail, formula: Formula): Loaded<Samples> {
-    const key = `${detail.id}/${detail.data_version}/formula/${formula.id}/${formula.expression}`;
-    return sampleStore.get(key, () => calculateFor(detail, formula.expression));
+/** How a calculated channel is worked out for a dataset on a page: in it alone, or across the page's datasets. */
+export interface Planned {
+    plan: Plan;
+    across: boolean;
+}
+
+/**
+ * A calculated channel for a dataset: in it alone if it has what it uses (as a calculated channel always was), else
+ * across the datasets on the page (page: as placesOf gives them), for the first of them, whose times are the result's.
+ */
+export function planFor(
+    formula: FormulaRef,
+    own: DatasetDetail,
+    page: readonly Place[] | null,
+    list: readonly FormulaRef[],
+): Planned | FormulaError {
+    const alone = plan(formula.expression, [{ detail: own, shift: 0 }], list, [formula.name]);
+    if (!(alone instanceof FormulaError) || !page || page.length < 2 || page[0]!.detail.id !== own.id) {
+        return alone instanceof FormulaError ? alone : { plan: alone, across: false };
+    }
+    const across = plan(formula.expression, page, list, [formula.name]);
+    return across instanceof FormulaError ? across : { plan: across, across: true };
+}
+
+/** Whether a dataset can have a calculated channel on its own: it has what that uses. */
+export function fitsAlone(formula: FormulaRef, detail: DatasetDetail, list: readonly FormulaRef[]): boolean {
+    return !(plan(formula.expression, [{ detail, shift: 0 }], list, [formula.name]) instanceof FormulaError);
+}
+
+const shifted = (times: Float64Array, shift: number): Float64Array =>
+    shift === 0 ? times : times.map((t) => t + shift);
+
+async function work(planned: Plan): Promise<Samples> {
+    const inputs = new Map<string, Input>();
+    await Promise.all(
+        [...planned.sources].map(async ([name, source]) => {
+            if (source.kind === "formula") {
+                inputs.set(name, { samples: await workedOut(source.plan), step: false });
+                return;
+            }
+            const { detail, shift } = source.place;
+            const [times, values] = await Promise.all([
+                array(detail, source.channel.time),
+                array(detail, source.channel.values),
+            ]);
+            inputs.set(name, {
+                samples: new Samples(shifted(times, shift), values),
+                step: source.channel.kind === "state",
+            });
+        }),
+    );
+    return calculate(planned.tree, inputs);
+}
+
+/** A plan's samples, worked out once and shared: a calculated channel plotted, used by another, or tried out. */
+export function worked(planned: Plan): Loaded<Samples> {
+    return sampleStore.get(`calculated/${planned.key}`, () => work(planned));
+}
+
+/** A plan's samples once they're worked out, for code that waits (trying an expression out as it's written). */
+export function workedOut(planned: Plan): Promise<Samples> {
+    return whenReady(sampleStore, () => worked(planned));
 }
 
 // --- masks --------------------------------------------------------------------------------------------------------
 
 const runStore = new Store<Runs>((runs) => runs.byteLength);
 
-/** Where every one of the tests holds in a dataset (its latest read): runs of its own time, worked out once. */
+/**
+ * Where every one of the tests holds in a dataset (its latest read): runs of its own time, worked out once. A test can
+ * use calculated channels, so this waits for them to be listed.
+ */
 export function maskRuns(detail: DatasetDetail, expressions: readonly string[]): Loaded<Runs> {
-    return runStore.get(`${detail.id}/${detail.data_version}/mask/${expressions.join("\n")}`, async () => {
+    const list = formulas();
+    if (list.status === "loading") {
+        return { status: "loading" };
+    }
+    const known = list.status === "ready" ? list.value : [];
+    const plans = expressions.map((expression) => plan(expression, [{ detail, shift: 0 }], known));
+    const key = plans.map((one) => (one instanceof FormulaError ? `!${one.message}` : one.key)).join("\n\n");
+    return runStore.get(`${detail.id}/${detail.data_version}/mask/${key}`, async () => {
         const each = await Promise.all(
-            expressions.map(async (expression) => runsOf(await calculateFor(detail, expression))),
+            plans.map(async (one) => {
+                if (one instanceof FormulaError) {
+                    throw one;
+                }
+                return runsOf(await workedOut(one));
+            }),
         );
         return each.reduce((all, runs) => intersect(all, runs));
     });

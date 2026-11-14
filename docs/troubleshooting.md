@@ -353,8 +353,19 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 ### Calculated channels and views
 
 - **A calculated channel doesn't show in a dataset.** It shows in every dataset that has the
-  channels it uses, by name, so a dataset missing one of them doesn't list it. Check the names in
-  brackets against the dataset's channels.
+  channels it uses, by name (or the calculated channels it uses can be worked out there), so a
+  dataset missing one of them doesn't list it. Check the names in brackets against the dataset's
+  channels. One that uses channels of more than one test shows only with them compared, under
+  **Across datasets**.
+- **"... isn't a channel of ..., or a calculated channel"** The name in brackets is neither a
+  channel of the dataset (or of any dataset compared) nor a calculated channel. Check its spelling;
+  a calculated channel renamed since keeps nothing that used its old name, so change those to it.
+- **"A calculated channel can't use itself: A uses B, which uses A"** Following the calculated
+  channels it uses comes back to it, so it could never be worked out. Write one of them from
+  channels instead.
+- **A calculated channel across tests is missing or looks shifted.** It's worked out on the first
+  test's times, with the others as they're shifted on the page: where they don't overlap, it has
+  no values, and changing a shift changes it. Line the tests up first.
 - **A calculated channel has gaps.** It's missing outside the samples of the channels it uses, and
   where it divides by zero; `min`, `max`, and `avg` skip missing samples, as for redundant sensors.
 - **"There's already a calculated channel called ..."** Calculated channels are the whole team's,

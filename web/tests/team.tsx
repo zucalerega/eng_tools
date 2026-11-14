@@ -11,7 +11,7 @@ import { StoreContext, VaultStore } from "../src/vault/store";
 import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Catalog } from "../src/piper/sim/api";
-import type { DataFolder, Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
+import type { DataFolder, Dataset, DatasetDetail, Formula, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
 // Drives the real server the way the add-in and the CLI do, to set up what a test looks at.
@@ -279,6 +279,16 @@ export class Team {
             ...(folder === null ? {} : { folder: String(folder) }),
         });
         return call<DatasetDetail>("POST", `/api/yorg/datasets?${params}`, who.token, new TextEncoder().encode(csv));
+    }
+
+    /** A calculated channel, for the whole team (named to be unique to this test). */
+    async formula(who: Member, name: string, expression: string, unit = ""): Promise<Formula> {
+        return call<Formula>("POST", "/api/yorg/formulas", who.token, {
+            name: this.named(name),
+            expression,
+            unit,
+            description: "",
+        });
     }
 
     /** A folder of Yorg's datasets (named to be unique to this test), in another or at the top. */

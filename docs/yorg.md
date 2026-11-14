@@ -126,6 +126,21 @@ in `web/src/yorg/index.tsx`).
   text; the browser reads and works it out (`formula.ts`) from the channels' arrays, on
   the times of the channel with the most samples, reading the others between their
   samples (states hold) and leaving gaps outside them and where a division is by zero.
+  A name in an expression is a channel of the dataset, else another calculated channel,
+  worked out first the same way (`data.plan`: never one that comes back to itself, which
+  says how it does), so CdA can use mdot by its name. One that a dataset doesn't have
+  everything for alone, but the datasets compared on a page do together, is worked out
+  across them (`planFor`): each name a channel of the first of them that has it, on the
+  first one's times, each dataset's times moved by its shift from the first (so it
+  follows the shifts), and listed under Across datasets, plotted as the first's. A
+  plan's key names everything it's worked out from (the expressions, each channel's
+  read, the shifts), so each is worked out once, shared by every plot and calculated
+  channel that uses it, and again when any of that changes; masks read through it too.
+  A page of plots lists the calculated channels again as it opens, so one added from
+  another tab shows. The expression's box (`ExpressionBox.tsx`) is a textarea, its text
+  clear, over a copy in colors (channels, calculated channels, functions, numbers, and
+  parentheses by depth, with the pair at the caret boxed and one without a partner
+  marked, as VS Code does), the two in one grid cell so they line up and grow together.
   Besides arithmetic, comparisons, and math functions, it has what test data needs:
   `where`/`if`, `and`/`or`/`not`/`between` for tests (missing only where a missing
   sample would decide it), `min`/`max`/`avg` that skip missing samples (redundant sensors),

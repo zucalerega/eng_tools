@@ -14,14 +14,18 @@ import { Link } from "../router";
 import type { Channel, DatasetDetail, Formula } from "./api";
 import { usePlotColors } from "./colors";
 import {
-    calculated,
     formulas as loadFormulas,
     dataset as loadDataset,
     samples as loadSamples,
     masked,
     maskRuns,
+    placesOf,
+    planFor,
+    reloadFormulas,
     useLoaded,
+    worked,
     type Loaded,
+    type Place as DataPlace,
 } from "./data";
 import { exportCsv, exportImage } from "./export";
 import {
@@ -40,6 +44,7 @@ import {
     type Side,
     type TimeMode,
 } from "./layout";
+import { FormulaError } from "./formula";
 import { MaskDialog } from "./MaskDialog";
 import {
     Plot,
@@ -123,6 +128,7 @@ function resolve(
     spec: SeriesSpec,
     several: boolean,
     formulaList: Loaded<Formula[]>,
+    page: DataPlace[] | null,
 ): Resolved {
     const base: Resolved = {
         spec,
@@ -169,10 +175,18 @@ function resolve(
         if (!formula) {
             return { ...base, ...named, problem: `The calculated channel ${spec.channel} was deleted` };
         }
-        const found = calculated(detail, formula);
+        // In its dataset alone, or across the page's (its dataset the first, whose times it's on), once they're in.
+        const how = planFor(formula, detail, page, formulaList.value);
+        if (how instanceof FormulaError) {
+            const waiting = page === null && several;
+            return { ...base, ...named, formula, problem: waiting ? null : how.message, loading: waiting };
+        }
+        const found = worked(how.plan);
+        const across = how.across && several && !spec.label;
         return {
             ...base,
             ...named,
+            name: across ? `${formula.name} · ${how.plan.datasets.map((one) => one.name).join(" + ")}` : named.name,
             formula,
             samples: found.status === "ready" ? found.value : null,
             problem: found.status === "failed" ? `Couldn't work it out: ${found.error}` : null,
@@ -416,16 +430,24 @@ export function Workspace({
     const primary = primaryLoaded?.status === "ready" ? primaryLoaded.value : null;
     const several = layout.datasets.length > 1;
 
+    // The team's calculated channels, as they are now: one added since this tab first listed them shows. (A list
+    // still coming is new already.)
+    useEffect(() => {
+        if (loadFormulas().status === "ready") {
+            void reloadFormulas();
+        }
+    }, []);
     // These depend on what's loaded as well as on the layout: version counts loads.
     const formulaList = loadFormulas();
     const hide = layout.masks.filter((mask) => mask.hide).map((mask) => mask.expression);
     const hideKey = hide.join("\n");
     const resolved = useMemo(() => {
         const byPanel = new Map<string, Resolved[]>();
+        const page = placesOf(layout);
         for (const panel of layout.panels) {
             byPanel.set(
                 panel.id,
-                panel.series.map((spec) => hideOutside(resolve(layout, panel, spec, several, formulaList), hide)),
+                panel.series.map((spec) => hideOutside(resolve(layout, panel, spec, several, formulaList, page), hide)),
             );
         }
         return byPanel;

@@ -250,7 +250,15 @@ the keys.
   for the whole team from an expression, like `[LC-1] + [LC-2]` for total thrust or
   `where([FM-FU] > 0.05, [FM-OX] / [FM-FU])` for O/F while fuel flows; `ddt`,
   `integral`, `smooth`, `avg`, and the usual math are there too. It shows in every
-  dataset that has the channels it uses, and plots like any channel.
+  dataset that has the channels it uses, and plots like any channel. One can use
+  another by its name: make `mdot` once, then CdA as
+  `[mdot] / sqrt(2 * 997 * ([PT-1] - [PT-2]) * 6894.76)`, never one that comes back to
+  itself. Comparing datasets (two loggers' files of one test, say), one can use channels
+  of more than one of them: it's worked out on the first one's times, with each lined
+  up as it's shifted on the page, and listed under **Across datasets**. The expression's
+  box colors channels, calculated channels, and functions, and colors parentheses by
+  depth, boxing the pair at the cursor (and marking one without a partner) so you can
+  see what goes together. Masks can use calculated channels too.
 - **Scale, label, and line up:** a channel's settings rename it and set its color, a
   scale and offset (volts to psi, psi to bar) with its unit, its axis, and lines or
   steps. Set T0 (type a time of day or a Unix time, click the plot, or pick an event like

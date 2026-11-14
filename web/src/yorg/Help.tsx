@@ -225,6 +225,20 @@ export function HelpPage() {
                         <li>
                             O/F while fuel flows: <code>where([FM-FU] &gt; 0.05, [FM-OX] / [FM-FU])</code>
                         </li>
+                        <li>
+                            One can use another by its name: make <code>mdot</code> once, then CdA as{" "}
+                            <code>[mdot] / sqrt(2 * 997 * ([PT-1] - [PT-2]) * 6894.76)</code>. Never one that comes back
+                            to itself. Masks can use them too.
+                        </li>
+                        <li>
+                            Comparing datasets (two loggers&apos; files of one test), one can use channels of more than
+                            one of them: it&apos;s worked out on the first one&apos;s times, each lined up as it&apos;s
+                            shifted, and listed under <em>Across datasets</em>.
+                        </li>
+                        <li>
+                            The expression&apos;s box colors parentheses by depth and boxes the pair at the cursor, as
+                            an editor does; one without a partner is marked.
+                        </li>
                     </ul>
                 </>
             ),

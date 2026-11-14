@@ -121,6 +121,8 @@ public sealed class CaliperTests : IDisposable
         Assert.Equal(3, plan.Count);
         Assert.True(plan.Needs(fin.ToLowerInvariant(), "Long")); // paths as Windows compares them
         Assert.Contains(plan.Problems, p => p.Contains("Draft.SLDPRT isn't in the vault yet", StringComparison.Ordinal));
+        Assert.True(plan.Carries(draft)); // not in the vault: the assembly's model carries its shape
+        Assert.False(plan.Carries(fin));
 
         var finMesh = new CaliperMesh();
         finMesh.AddBody("Fin", solid: true, color: null);
@@ -134,21 +136,27 @@ public sealed class CaliperTests : IDisposable
             new CaliperComponent { Name = "Fin-1", LocalPath = fin, Configuration = "Default" },
             new CaliperComponent { Name = "Fin-2", LocalPath = fin, Configuration = "Default", Transform = turned, Hidden = true },
             new CaliperComponent { Name = "Bracket^Fin Can", Mesh = bracket, Color = new CaliperColor(1, 0, 0) },
-            new CaliperComponent { Name = "Draft-1", LocalPath = draft, Configuration = "Default" },
+            new CaliperComponent { Name = "Draft-1", LocalPath = draft, Configuration = "Default", Mesh = bracket },
+            new CaliperComponent { Name = "Screw-1", LocalPath = Path.Combine(_temp, "Toolbox", "Screw.SLDPRT"), Configuration = "M3" },
         };
         var saved = await models.SaveAsync(
             plan,
             [new CaliperPart(fin, "Default", "in", finMesh)],
             [new CaliperAssembly(can, "Default", "mm", components)]);
         Assert.Equal(2, saved.Made);
-        Assert.Contains(saved.Problems, p => p.StartsWith("Draft-1 is left out of Fin Can.SLDASM's 3D model", StringComparison.Ordinal));
+        Assert.Empty(saved.Problems);
 
         // As the web app sees them.
         var ids = (await alice.StatusAsync([fin, can])).ToDictionary(s => Path.GetFileName(s.LocalPath), s => s.FileId!.Value);
         using var http = _server.Http(await _server.MemberTokenAsync("alice@rocketry.test"));
         var assembly = JsonNode.Parse(await http.GetStringAsync($"api/files/{ids["Fin Can.SLDASM"]}/caliper/assembly?version=1&configuration=Default"))!;
         var placed = assembly["components"]!.AsArray();
-        Assert.Equal(["Fin-1", "Fin-2", "Bracket^Fin Can"], placed.Select(c => c!["name"]!.GetValue<string>()));
+        Assert.Equal(["Fin-1", "Fin-2", "Bracket^Fin Can", "Draft-1", "Screw-1"], placed.Select(c => c!["name"]!.GetValue<string>()));
+        // Files that aren't in the vault: one with the shape SolidWorks had of it, which shows; one that's only listed.
+        Assert.Equal(("Draft.SLDPRT", placed[2]!["mesh"]!.GetValue<string>()), (placed[3]!["file"]!.GetValue<string>(), placed[3]!["mesh"]!.GetValue<string>()));
+        Assert.Equal("Screw.SLDPRT", placed[4]!["file"]!.GetValue<string>());
+        Assert.Null(placed[4]!["mesh"]);
+        Assert.Null(placed[4]!["file_id"]);
         Assert.Equal((ids["Fin.SLDPRT"], 1, true), (placed[0]!["file_id"]!.GetValue<long>(), placed[0]!["version"]!.GetValue<int>(), placed[0]!["model"]!.GetValue<bool>()));
         Assert.Equal(turned, placed[1]!["transform"]!.AsArray().Select(v => v!.GetValue<double>()));
         Assert.True(placed[1]!["hidden"]!.GetValue<bool>());

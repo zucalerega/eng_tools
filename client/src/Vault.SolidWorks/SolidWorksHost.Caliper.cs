@@ -34,7 +34,8 @@ internal sealed partial class SolidWorksHost
     /// <summary>
     /// Make the models a plan says to: of the document, of the parts it uses, and of its rigid sub-assemblies, each
     /// from what SolidWorks has open. A part with unsaved changes, or loaded lightweight (so its bodies aren't), isn't
-    /// made, and says why.
+    /// made, and says why. A part whose file isn't in the vault (a Toolbox screw, one not checked in yet) has no model
+    /// of its own: the models of the assemblies it's in carry its shape, as they do virtual parts'.
     /// </summary>
     public CaliperMade MakeCaliperModels(CaliperDocument read, CaliperPlan plan)
     {
@@ -67,6 +68,12 @@ internal sealed partial class SolidWorksHost
             foreach (var (component, solidWorks) in read.Virtual)
             {
                 component.Mesh = PartMesh(solidWorks, made.Problems);
+            }
+            foreach (var used in read.Parts.Values.Where(used => plan.Carries(used.Path)))
+            {
+                // One shape for every place the part's in, which is uploaded once.
+                var mesh = PartMesh(used.Component, made.Problems);
+                used.Placements.ForEach(component => component.Mesh = mesh);
             }
         }
         if (whole)
@@ -126,9 +133,13 @@ internal sealed partial class SolidWorksHost
                     read.SubAssemblies[key] = new UsedFile(path, component.Configuration, child, component);
                 }
             }
-            else if (!read.Parts.ContainsKey(key))
+            else
             {
-                read.Parts[key] = new UsedFile(path, component.Configuration, child, component);
+                if (!read.Parts.TryGetValue(key, out var part))
+                {
+                    read.Parts[key] = part = new UsedFile(path, component.Configuration, child, component);
+                }
+                part.Placements.Add(component);
             }
             components.Add(component);
         }
@@ -276,6 +287,9 @@ internal sealed class UsedFile
     public Component2 Component { get; }
 
     public CaliperComponent Placed { get; }
+
+    /// <summary>A part's components: every place it's in, in this configuration.</summary>
+    public List<CaliperComponent> Placements { get; } = new List<CaliperComponent>();
 }
 
 /// <summary>The models made, and what wasn't, and why.</summary>

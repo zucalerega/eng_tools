@@ -310,10 +310,17 @@ export function HelpPage() {
                             its channels.
                         </li>
                         <li>
-                            Views go in folders: pick one from the list when you save one, or type a new one (
-                            <code>Hotfires/HF-3</code>); later, <em>More</em> and <em>Rename or move</em>. The{" "}
-                            <em>Views</em> tab shows them in their folders: drag one of yours onto a folder to move it,
-                            or to the top, out of its folder.
+                            Views go in folders of their own, apart from the datasets&apos;: pick one from the list when
+                            you save one, or type a new one (<code>Hotfires/HF-3</code>); later, <em>More</em> and{" "}
+                            <em>Rename or move</em>.
+                        </li>
+                        <li>
+                            The <em>Views</em> tab works as the datasets&apos; list does: <em>New folder</em> where you
+                            are, a folder opened to see what&apos;s in it, and renamed or deleted once it&apos;s empty.
+                            Drag views or folders onto a folder (or one in the path at the top), or check views and{" "}
+                            <em>Move to…</em> or <em>Delete…</em> them together: your own, or anyone&apos;s if
+                            you&apos;re an admin. A deleted view is gone for good; its data stays. <em>Find views</em>{" "}
+                            looks in every folder.
                         </li>
                         <li>
                             <em>Copy link</em>, beside <em>Save view</em>, sends someone the plots as they are (tests

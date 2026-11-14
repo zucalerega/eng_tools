@@ -1,6 +1,6 @@
-// Folders of their own (Yorg's datasets', Piper's diagrams'): each in another, or at the top (parent_id null), as the
-// server lists them. The way down to one, for its breadcrumbs, and whether one is inside another, so nothing is moved
-// into itself. (Folders that are only paths, as Yorg's views' are, are pathTree.ts'.)
+// Folders of their own (Yorg's datasets' and saved views', Piper's diagrams'): each in another, or at the top
+// (parent_id null), as the server lists them. The way down to one, for its breadcrumbs, and whether one is inside
+// another, so nothing is moved into itself. (Folders that are only paths, as Yorg's scripts' are, are pathTree.ts'.)
 
 export interface TreeFolder {
     id: number;

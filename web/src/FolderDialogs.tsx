@@ -2,8 +2,8 @@ import { useState, type ReactNode } from "react";
 import { Dialog, Notice } from "./components";
 import type { TreeFolder } from "./folders";
 
-// What the pages of things in folders (Yorg's datasets, Piper's diagrams) ask: a folder's name, to make or rename one,
-// and which folder to move what's chosen to.
+// What the pages of things in folders (Yorg's datasets and saved views, Piper's diagrams) ask: a folder's name, to make
+// or rename one, and which folder to move what's chosen to.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

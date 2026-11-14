@@ -67,10 +67,10 @@ under `/yorg`, and Piper's under `/piper`, with the site's own page at `/`, whic
 any of them, and shows how full the server's disk is. No app imports another, and the site's own code imports none, except where it
 puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
 in the web app) and where accounts change (`people.py`, below). What more than one app needs
-is the site's: on the server, the folder paths Yorg's views and scripts are kept in, and Piper's
-diagrams can be named by (`FolderPath`, `api/schemas.py`); in the web app, their tree
+is the site's: on the server, the folder paths Yorg's scripts are kept in, and Yorg's views and
+Piper's diagrams can be named by (`FolderPath`, `api/schemas.py`); in the web app, their tree
 (`pathTree.ts`), the box a folder is picked in (`FolderPicker.tsx`), and for folders of their own
-(Yorg's datasets', Piper's diagrams'), the way down to one (`folders.ts`) and the dialogs that
+(Yorg's datasets' and views', Piper's diagrams'), the way down to one (`folders.ts`) and the dialogs that
 name one and move what's chosen to one (`FolderDialogs.tsx`), reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
 a link (`packed.ts`: Yorg's links to plots, which Piper makes too).
 

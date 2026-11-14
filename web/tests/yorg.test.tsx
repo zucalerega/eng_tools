@@ -428,23 +428,25 @@ test("saved views are kept in folders of their own: saved in one, moved, and fou
     expect(kept?.name).toBe("Ox tanks");
     expect(JSON.stringify(kept?.config)).not.toContain("PT-FU-01");
 
-    // The Views tab: in its folder, which shuts and opens; and found by a word.
+    // The Views tab: its folders, each a page, with the way back up; and a search, in every folder, says where.
     await userEvent.click(screen.getByRole("link", { name: "Views" }));
-    const table = within(await screen.findByRole("table", { name: "Saved views" }));
-    const folder = table.getByRole("button", { name: new RegExp(`^${team.folder}`) });
-    expect(folder.getAttribute("aria-expanded")).toBe("true");
-    expect(table.getByRole("button", { name: /^Cold flows/ })).toBeTruthy();
-    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
-    await userEvent.click(folder);
-    expect(table.queryByRole("link", { name: "Ox tanks" })).toBeNull();
-    await userEvent.click(folder);
-    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    const top = within(await screen.findByRole("table", { name: "Saved views" }));
+    await userEvent.click(await top.findByRole("link", { name: team.folder }));
+    expect(await screen.findByRole("heading", { name: team.folder })).toBeTruthy();
+    const folder = within(await screen.findByRole("table", { name: "Saved views" }));
+    expect(await folder.findByRole("link", { name: "Hotfires" })).toBeTruthy(); // made by saving, and left empty
+    await userEvent.click(folder.getByRole("link", { name: "Cold flows" }));
+    expect(await screen.findByRole("heading", { name: "Cold flows" })).toBeTruthy();
+    const inside = within(await screen.findByRole("table", { name: "Saved views" }));
+    expect(await inside.findByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    const crumbs = within(screen.getByRole("navigation", { name: "Folders" }));
+    expect(crumbs.getByRole("link", { name: team.folder })).toBeTruthy();
 
-    await userEvent.click(folder); // shut, but a search opens what it finds
-    await userEvent.type(screen.getByLabelText("Find a view"), `Ox tanks ${team.folder}`);
+    await userEvent.click(crumbs.getByRole("link", { name: "Views" }));
+    await userEvent.type(await screen.findByLabelText("Find views"), `Ox tanks ${team.folder}`);
     const found = within(screen.getByRole("table", { name: "Saved views" }));
     expect(found.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
-    expect(found.getByText(`in ${team.folder}/Cold flows`)).toBeTruthy();
+    expect(found.getByText(`in ${team.folder} / Cold flows`)).toBeTruthy();
 });
 
 test("a dataset's page says how it was read, and it can be read another way", async () => {

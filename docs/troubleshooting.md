@@ -378,10 +378,16 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 
 ### Organizing
 
-- **A folder won't delete.** Only an empty folder can be deleted: move its datasets and folders out
-  first. Deleted datasets that were in it go to the folder it's in.
+- **A folder won't delete.** Only an empty folder can be deleted: move its datasets (or views) and
+  folders out first. Deleted datasets that were in it go to the folder it's in.
 - **You deleted a dataset by mistake.** It waits in Deleted datasets, at the foot of the list:
   *Restore* puts it back in its folder. You can restore your own, or anyone's if you're an admin.
+- **You deleted a view by mistake.** A deleted view is gone for good; the data it plotted stays.
+  Plot the data again and *Save view*.
+- **A view, or a folder of views, won't move, or has no box to check.** Only whoever saved a view,
+  or made a folder, can move it (or an admin): a view of someone else's has no box to check, and
+  doesn't drag. Moving several is all or none. Views' folders are their own, apart from the
+  datasets' folders.
 - **A test split out of a file can't be read again or downloaded.** It has no file of its own. Read
   the file it came from again, and split it again.
 - **Split says a test would be empty.** One of its spans has no samples, so nothing was made. Change
@@ -703,11 +709,12 @@ a number. A few codes come up in more than one place.
   **There's already a calculated channel called ...** (`name_taken`): names are unique in a folder,
   and calculated channels' across the team, whatever their case. Pick another.
 - **... can't go inside itself** (`cycle`): a folder can't move into one of its own folders.
-- **... isn't empty: move what's in it out first** (`not_empty`): only an empty folder can be
-  deleted.
+- **... isn't empty: move what's in it out first** (`not_empty`): only an empty folder (of datasets,
+  or of views) can be deleted.
 - **Only whoever added this ..., or an admin, can change it** (`not_yours`): a dataset, folder,
-  view, calculated channel, or script is its owner's to change. *Save as a new view*, or
-  *Save as…* a script, for a copy of your own.
+  view, calculated channel, or script is its owner's to change, move, or delete; when several are
+  moved or deleted together, none are if one isn't yours. *Save as a new view*, or *Save as…* a
+  script, for a copy of your own.
 - **Simulations are for admins, while they're tried out** (`admins_only`): Piper's Simulation mode
   runs Yorg's system models, which are admins' for now.
 - **...'s ... is ..., which ... doesn't have** (`no_channel`): a simulation's part is linked to a

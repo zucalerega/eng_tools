@@ -1,4 +1,5 @@
-"""Yorg's tables: datasets (uploaded files and the channels read from them) and saved plot views."""
+"""Yorg's tables: datasets (uploaded files and the channels read from them), in their folders, and saved plot views,
+in theirs."""
 
 import enum
 from datetime import datetime
@@ -123,6 +124,33 @@ class Formula(Base):
     editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
 
 
+class ViewFolder(Base):
+    """A folder of saved views (a campaign's, a test day's), in another folder or at the top (parent_id None). Views
+    have a tree of their own, apart from the datasets' folders, kept by the same rules (views.py)."""
+
+    __tablename__ = "yorg_view_folders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("yorg_view_folders.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(200))  # lowercased: two in a folder can't differ only in case
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    parent: Mapped["ViewFolder | None"] = relationship(remote_side=[id])
+
+    @property
+    def path(self) -> str:
+        """Its folders' names from the top down to it, as a path: "Hotfires/HF-3"."""
+        names: list[str] = []
+        at: ViewFolder | None = self
+        while at is not None and len(names) < 100:  # a folder can't be in itself, but a path never goes on forever
+            names.insert(0, at.name)
+            at = at.parent
+        return "/".join(names)
+
+
 class View(Base):
     """A saved plot: its panels, channels, scales, time window, and markers, as the web app lays them out."""
 
@@ -130,8 +158,7 @@ class View(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
-    # Its folder, a path of its own ("Hotfires/HF-3"; "" at the top): views aren't in the datasets' folders.
-    folder: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("yorg_view_folders.id"), index=True)  # None: at the top
     description: Mapped[str] = mapped_column(Text, default="")
     datasets: Mapped[list[int]] = mapped_column(JSON, default=list)  # the datasets it plots, by id
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -142,3 +169,9 @@ class View(Base):
 
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
     editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
+    folder: Mapped[ViewFolder | None] = relationship(lazy="selectin")
+
+    @property
+    def folder_path(self) -> str:
+        """Its folder's path ("Hotfires/HF-3"), or "" at the top."""
+        return self.folder.path if self.folder else ""

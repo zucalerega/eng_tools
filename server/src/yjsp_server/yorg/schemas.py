@@ -9,9 +9,14 @@ from ..api.schemas import FolderPath, UserRef
 from ..models import User
 from .datasets import can_change
 from .ingest import Delimiter, ReadOptions, TimeFormat
-from .models import Channel, DataFolder, Dataset, Formula, View
+from .models import Channel, DataFolder, Dataset, Formula, View, ViewFolder
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+# A views' folder's name: no slashes, as a view's folder can be named by its path ("Hotfires/HF-3").
+ViewFolderName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200, pattern=r"^[^/\\]+$")
+]
+MAX_CHOSEN = 1000  # datasets or views moved, deleted, or restored together
 
 
 def _ref(user: User | None) -> UserRef | None:
@@ -144,16 +149,16 @@ class DatasetChangeIn(BaseModel):
 
 
 class MoveIn(BaseModel):
-    datasets: list[int] = Field(min_length=1, max_length=1000)
+    datasets: list[int] = Field(min_length=1, max_length=MAX_CHOSEN)
     folder_id: int | None  # None: to the top
 
 
 class DeleteIn(BaseModel):
-    datasets: list[int] = Field(min_length=1, max_length=1000)
+    datasets: list[int] = Field(min_length=1, max_length=MAX_CHOSEN)
 
 
 class RestoreIn(BaseModel):
-    datasets: list[int] = Field(min_length=1, max_length=1000)
+    datasets: list[int] = Field(min_length=1, max_length=MAX_CHOSEN)
 
 
 class PieceIn(BaseModel):
@@ -259,17 +264,33 @@ class FormulaOut(BaseModel):
 
 
 class ViewIn(BaseModel):
+    """A view: in a folder by its id (folder_id; null: the top), or by its path (folder: "Hotfires/HF-3", its folders
+    made where they aren't there yet, as before folders were their own). With neither, a new view's at the top and a
+    changed one stays where it is."""
+
     name: Name
     description: str = Field("", max_length=5000)
     datasets: list[int] = Field(default_factory=list, max_length=100)
     config: dict[str, Any]  # the web app's layout of the plots
-    folder: FolderPath | None = None  # None: at the top for a new view, and where it was for a changed one
+    folder: FolderPath | None = None
+    folder_id: int | None = None
+
+
+class ViewsIn(BaseModel):
+    """Views, by their ids, to delete together."""
+
+    views: list[int] = Field(min_length=1, max_length=MAX_CHOSEN)
+
+
+class ViewsMoveIn(ViewsIn):
+    folder_id: int | None  # None: to the top
 
 
 class ViewOut(BaseModel):
     id: int
     name: str
-    folder: str  # "" at the top
+    folder: str  # its folder's path ("Hotfires/HF-3"), "" at the top
+    folder_id: int | None  # its folder (GET /api/yorg/view-folders); None: at the top
     description: str
     datasets: list[int]
     config: dict[str, Any]
@@ -277,14 +298,15 @@ class ViewOut(BaseModel):
     created_by: UserRef | None
     updated_at: datetime
     updated_by: UserRef | None
-    can_change: bool
+    can_change: bool  # yours (or you're an admin): change it, move it, or delete it
 
     @classmethod
     def of(cls, view: View, user: User) -> "ViewOut":
         return cls(
             id=view.id,
             name=view.name,
-            folder=view.folder,
+            folder=view.folder_path,
+            folder_id=view.folder_id,
             description=view.description,
             datasets=view.datasets,
             config=view.config,
@@ -293,4 +315,38 @@ class ViewOut(BaseModel):
             updated_at=view.updated_at,
             updated_by=_ref(view.editor),
             can_change=can_change(user, view.created_by),
+        )
+
+
+class ViewFolderIn(BaseModel):
+    name: ViewFolderName
+    parent_id: int | None = None  # None: at the top
+
+
+class ViewFolderChangeIn(BaseModel):
+    """A new name, or a new place (parent_id; null: the top). Leave out what doesn't change."""
+
+    name: ViewFolderName | None = None
+    parent_id: int | None = None
+
+
+class ViewFolderOut(BaseModel):
+    id: int
+    parent_id: int | None  # the folder it's in; None: the top
+    name: str
+    path: str  # its folders' names, from the top down to it: "Hotfires/HF-3"
+    created_at: datetime
+    created_by: UserRef | None
+    can_change: bool  # yours (or you're an admin): rename, move, or delete it (if it's empty)
+
+    @classmethod
+    def of(cls, folder: ViewFolder, user: User) -> "ViewFolderOut":
+        return cls(
+            id=folder.id,
+            parent_id=folder.parent_id,
+            name=folder.name,
+            path=folder.path,
+            created_at=folder.created_at,
+            created_by=_ref(folder.creator),
+            can_change=can_change(user, folder.created_by),
         )

@@ -157,7 +157,8 @@ export interface FormulaBody {
 export interface SavedView {
     id: number;
     name: string;
-    folder: string; // a path of its own ("Hotfires/HF-3"), "" at the top
+    folder: string; // its folder's path ("Hotfires/HF-3"), "" at the top
+    folder_id: number | null; // its folder (a ViewFolder); null: at the top
     description: string;
     datasets: number[];
     config: unknown; // a Layout, as this app saved it (layout.ts reads it)
@@ -170,10 +171,24 @@ export interface SavedView {
 
 export interface ViewBody {
     name: string;
-    folder?: string; // left out: at the top for a new view, where it was for a changed one
+    // Its folder, by its path ("Hotfires/HF-3", its folders made where they aren't there) or its id (null: the top; it
+    // wins over a path). Both left out: at the top for a new view, where it was for a changed one.
+    folder?: string;
+    folder_id?: number | null;
     description: string;
     datasets: number[];
     config: unknown;
+}
+
+/** A folder of saved views: in another, or at the top (parent_id null). Views' folders aren't the datasets'. */
+export interface ViewFolder {
+    id: number;
+    parent_id: number | null;
+    name: string;
+    path: string; // its folders' names from the top down to it: "Hotfires/HF-3"
+    created_at: string;
+    created_by: UserRef | null;
+    can_change: boolean; // yours, or you're an admin: rename it, move it, delete it (if it's empty)
 }
 
 const datasetPath = (id: number) => `/api/yorg/datasets/${id}`;
@@ -229,4 +244,17 @@ export const yorg = {
     saveView: (body: ViewBody) => request<SavedView>("POST", "/api/yorg/views", body),
     updateView: (id: number, body: ViewBody) => request<SavedView>("PUT", `/api/yorg/views/${id}`, body),
     removeView: (id: number) => request<void>("DELETE", `/api/yorg/views/${id}`),
+    /** Put views in a folder (null: the top): all of them, or none if any isn't yours to move. */
+    moveViews: (views: number[], folder: number | null) =>
+        request<SavedView[]>("POST", "/api/yorg/views/move", { views, folder_id: folder }),
+    /** Delete views, for good: all of them, or none if any isn't yours to delete. */
+    removeViews: (views: number[]) => request<void>("POST", "/api/yorg/views/delete", { views }),
+    viewFolders: () => request<ViewFolder[]>("GET", "/api/yorg/view-folders"),
+    addViewFolder: (name: string, parent: number | null) =>
+        request<ViewFolder>("POST", "/api/yorg/view-folders", { name, parent_id: parent }),
+    renameViewFolder: (id: number, name: string) =>
+        request<ViewFolder>("PATCH", `/api/yorg/view-folders/${id}`, { name }),
+    moveViewFolder: (id: number, parent: number | null) =>
+        request<ViewFolder>("PATCH", `/api/yorg/view-folders/${id}`, { parent_id: parent }),
+    removeViewFolder: (id: number) => request<void>("DELETE", `/api/yorg/view-folders/${id}`),
 };

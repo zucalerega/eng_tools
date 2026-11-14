@@ -1,9 +1,9 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { tidyFolder } from "./pathTree";
 
-// A folder that's a path of its own (Yorg's saved views' and scripts', Piper's diagrams'): one there is, picked from
-// the list (which opens as you click or type, and keeps to what's typed), or a path typed for a new one
-// ("Hotfires/HF-4"). "" is no folder: at the top.
+// A folder by its path (Yorg's scripts', which are only paths; Yorg's saved views' and Piper's diagrams', which are
+// their own but can be named by their paths): one there is, picked from the list (which opens as you click or type,
+// and keeps to what's typed), or a path typed for a new one ("Hotfires/HF-4"). "" is no folder: at the top.
 
 interface Props {
     value: string;

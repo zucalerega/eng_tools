@@ -19,6 +19,8 @@ in `web/src/yorg/index.tsx`).
   itself), or deletes it, once it's empty (deleted datasets in it go up to its parent).
   Names are unique within a folder, whatever their case. Moving several datasets is all
   or none. The list shows each dataset's size, and its search looks in every folder.
+  Saved views have a tree of folders of their own (`yorg_view_folders`), kept by the same
+  rules (below).
 - **Reading a file** (`yorg/ingest.py`, pure Python, no numpy) happens once, on the
   server, when it's uploaded, about 15 MB of CSV a second. The first 512 KB say how it's
   laid out: the encoding (UTF-8, UTF-16, or Windows' cp1252), the delimiter (comma, tab,
@@ -86,12 +88,32 @@ in `web/src/yorg/index.tsx`).
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
-  another test's data. A view's folder is a path of its own (`yorg_views.folder`,
-  "Hotfires/HF-3", "" at the top), tidied by the server as a script's is (`FolderPath`),
-  not one of the datasets' folders; the Views tab arranges them in a tree
-  (`pathTree.ts`), each folder's views the most recently changed first. Renaming or
-  moving a view sends its plots as they were saved, so changes to them on the page stay
-  to be saved; a client from before folders, which sends none, leaves a view where it is.
+  another test's data. Only whoever saved a view (or an admin) changes it: renames it,
+  moves it, saves its plots, or deletes it, for good (there's no restoring a view; its
+  data stays). Moving or deleting several is all or none (`yorg/views.py`).
+- **Views' folders** (`yorg_view_folders`, a tree of their own, apart from the datasets')
+  are kept by the datasets' folders' rules: anyone makes one; whoever made it (or an
+  admin) renames it, moves it (never into itself), or deletes it once it's empty; names
+  are unique within a folder, whatever their case. A view is in one by its id
+  (`folder_id`), and the API still says its folder's path (`folder`, "Hotfires/HF-3", ""
+  at the top) and still takes one, tidied as a script's is (`FolderPath`), its folders
+  matched whatever their case and made where they aren't there (`views.folder_at`), so
+  clients from before folders were their own work as they did; one that names neither
+  leaves a changed view where it is. Until November 2026 a view's folder was only that
+  path (`yorg_views.folder`): migration 0033 made the folders from the paths, two that
+  differed only in case as one, each made by whoever saved the oldest view in it or
+  under it, when they saved it, so the person who started using a folder can still
+  change it. The Views tab (`Views.tsx`) works as the datasets' page does: a folder's own
+  folders and views (each folder's views the most recently changed first), each folder a
+  page of its own (`/yorg/views/folders/<id>`) with the way back up above its name;
+  views and folders dragged onto a folder or a folder on the way up, or views checked
+  and moved together (Move to…) or deleted together; and a search that looks in every
+  folder (names, folders, notes, and data) and says where each view is. Only your own
+  views (any, for an admin) can be checked or dragged, as only they can move. Save view's
+  and Rename or move's folder box still names a folder by its path (`FolderPicker`, from
+  the folders views are in). Renaming or moving a view sends its plots as they were
+  saved, so changes to them on the page stay to be saved, and its path only if it was
+  changed; saving its plots sends no folder, so it stays wherever it's been moved since.
 - **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
   page without saving a view, so views are kept for what's worth keeping. A link is the
   page's address with its layout in `?plots=`: the JSON a saved view keeps, deflated
@@ -457,7 +479,10 @@ links to plots as Copy link does (`?plots=`). They change only as the API's rule
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `POST /api/yorg/datasets/{id}/split` | make datasets of spans of it `{pieces: [{name, start, end, zero}], folder_id}`, all or none (422 if a span has no samples) |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
-| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder, description, datasets, config}` (`folder` optional: left out, a new view's at the top and a changed one stays put) |
+| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder_id, folder, description, datasets, config}`, each saying its folder by id (`folder_id`, null at the top) and by path (`folder`); a view's put in a folder by its id (null: the top), or by its path (its folders made where they aren't there), the id winning if both are sent; with neither, a new view's at the top and a changed one stays put. Yours, or any for an admin, to change or delete (deleted for good) |
+| `POST /api/yorg/views/move` | move views `{views, folder_id}` into a folder (null: the top); yours, or any for an admin; all or none |
+| `POST /api/yorg/views/delete` | delete views `{views}`, for good; yours, or any for an admin; all or none |
+| `GET`/`POST /api/yorg/view-folders`, `PATCH`/`DELETE /api/yorg/view-folders/{id}` | folders of views `{name, parent_id}` (no slashes in a name), each with its `path`, by name; rename or move one (yours, or any for an admin; 409 `name_taken`, `cycle`); delete an empty one (409 `not_empty`) |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
 | `GET /api/yorg/models/catalog` | the parts a system model can have: their settings (SI), links, and outputs; and the liquids and gases (admins, else 403 `admins_only`, as for each below) |
 | `POST /api/yorg/models/runs` | run a model against a dataset `{model, dataset_id, start, end, dt, solver, reading}` (422 `bad_model`, `no_channel`; 409 `busy`); its `id` |

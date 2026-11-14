@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type DragEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -17,13 +17,14 @@ import {
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { FolderPicker } from "../FolderPicker";
-import { countIn, folderTree, foldersOf, type Folder } from "../pathTree";
+import { foldersOf } from "../pathTree";
 import { formatClock, formatDuration, formatRate, formatValue } from "../scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
+import { viewFolderUrl } from "./Views";
 import { Workspace, type ExtraPlot } from "./Workspace";
 
-// Yorg's pages: a dataset's plots and its details, saved views, links to plots, and deleted datasets (the datasets:
-// Datasets.tsx).
+// Yorg's pages: a dataset's plots and its details, a saved view's plots, links to plots, and deleted datasets (the
+// datasets: Datasets.tsx; the saved views: Views.tsx).
 
 export const datasetUrl = (id: number): string => `/yorg/datasets/${id}`;
 export const aboutUrl = (id: number): string => `/yorg/datasets/${id}/about`;
@@ -498,12 +499,18 @@ function RenameViewDialog({
         try {
             const saved = await yorg.updateView(view.id, {
                 name: name.trim(),
-                folder,
+                // Its path only if it's changed: a folder renamed or moved since would be made again at the old one.
+                folder: folder === meta.folder ? undefined : folder,
                 description,
                 datasets: view.datasets,
                 config: view.config,
             });
-            onDone({ name: saved.name, folder: saved.folder, description: saved.description });
+            onDone({
+                name: saved.name,
+                folder: saved.folder,
+                folder_id: saved.folder_id,
+                description: saved.description,
+            });
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -1092,220 +1099,7 @@ function ReadSettings({ detail }: { detail: DatasetDetail }) {
     );
 }
 
-// --- saved views ----------------------------------------------------------------------------------------------------
-
-const CLOSED_KEY = "yorg.views.closed"; // the folders of views shut, by path
-
-function storedClosed(): Set<string> {
-    try {
-        const found: unknown = JSON.parse(window.localStorage.getItem(CLOSED_KEY) ?? "[]");
-        return new Set(Array.isArray(found) ? found.filter((path): path is string => typeof path === "string") : []);
-    } catch {
-        return new Set();
-    }
-}
-
-const DRAGGED_VIEW = "application/x-yorg-view"; // a saved view's id, as it's dragged onto a folder
-
-export function ViewsPage() {
-    const [views, setViews] = useState<SavedView[] | null>(null);
-    const [datasets, setDatasets] = useState<Map<number, string>>(new Map());
-    const [problem, setProblem] = useState<string | null>(null);
-    const [find, setFind] = useState("");
-    const [closed, setClosed] = useState<Set<string>>(storedClosed);
-    const [dragging, setDragging] = useState(false); // a view, onto a folder
-    const [over, setOver] = useState<string | null>(null); // the folder it's over ("": the top)
-    useEffect(() => {
-        yorg.views().then(setViews, (error: unknown) => setProblem(message(error)));
-        yorg.datasets().then(
-            (list) => setDatasets(new Map(list.map((one) => [one.id, one.name]))),
-            () => {},
-        );
-    }, []);
-
-    const dataOf = (view: SavedView) => view.datasets.map((id) => datasets.get(id) ?? `deleted (${id})`).join(", ");
-    const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const searching = words.length > 0;
-    // In their folders, each folder's the most recently changed first (as they come); found by a word, every folder
-    // that has one is open.
-    const tree = folderTree(
-        (views ?? [])
-            .map((view, order) => ({ ...view, order }))
-            .filter((view) => {
-                const text = [view.name, view.folder, view.description, dataOf(view)].join(" ").toLowerCase();
-                return words.every((word) => text.includes(word));
-            }),
-    );
-
-    function toggle(path: string) {
-        const next = new Set(closed);
-        if (next.has(path)) {
-            next.delete(path);
-        } else {
-            next.add(path);
-        }
-        setClosed(next);
-        try {
-            window.localStorage.setItem(CLOSED_KEY, JSON.stringify([...next]));
-        } catch {
-            // storage blocked: they're shut for this visit
-        }
-    }
-
-    /** A view into a folder ("": out of its folder), as whoever saved it (or an admin) can: its plots stay as saved. */
-    async function moveView(id: number, folder: string) {
-        const view = views?.find((one) => one.id === id);
-        if (!view || view.folder === folder) {
-            return;
-        }
-        setProblem(null);
-        try {
-            const { name, description, datasets: ids, config } = view;
-            await yorg.updateView(id, { name, folder, description, datasets: ids, config });
-            setViews(await yorg.views());
-        } catch (error) {
-            setProblem(message(error));
-        }
-    }
-
-    /** What a folder (or the top) does with a view dragged onto it. */
-    const dropOn = (folder: string) => ({
-        onDragOver: (event: DragEvent) => {
-            if (event.dataTransfer.types.includes(DRAGGED_VIEW)) {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                setOver(folder);
-            }
-        },
-        onDragLeave: () => setOver((now) => (now === folder ? null : now)),
-        onDrop: (event: DragEvent) => {
-            if (!event.dataTransfer.types.includes(DRAGGED_VIEW)) {
-                return;
-            }
-            event.preventDefault();
-            setOver(null);
-            setDragging(false);
-            void moveView(Number(event.dataTransfer.getData(DRAGGED_VIEW)), folder);
-        },
-    });
-
-    function rows(folder: Folder<SavedView>, depth: number): ReactNode[] {
-        const indent = (more: number) => ({ paddingLeft: `${depth * 1.25 + more}rem` });
-        const shut = !searching && closed.has(folder.path);
-        const head = folder.path ? (
-            <tr
-                key={`folder:${folder.path}`}
-                className={`yorg-folder-row${over === folder.path ? " yorg-drop-folder" : ""}`}
-                {...dropOn(folder.path)}
-            >
-                <td colSpan={3} style={indent(0.75)}>
-                    <button
-                        type="button"
-                        className="yorg-view-folder"
-                        aria-expanded={!shut}
-                        title={folder.path}
-                        onClick={() => toggle(folder.path)}
-                    >
-                        <span className="yorg-view-chevron" aria-hidden="true">
-                            {shut ? "▸" : "▾"}
-                        </span>
-                        <span className="file-icon file-icon-folder" aria-hidden="true" />
-                        {folder.name}
-                        <span className="muted">{countIn(folder)}</span>
-                    </button>
-                </td>
-            </tr>
-        ) : null;
-        if (shut) {
-            return [head];
-        }
-        const inner = folder.path ? depth + 1 : depth;
-        return [
-            head,
-            ...folder.folders.flatMap((one) => rows(one, inner)),
-            ...folder.items.map((view) => (
-                <tr
-                    key={view.id}
-                    // Yours (or any, for an admin) to drag onto a folder.
-                    draggable={view.can_change}
-                    title={view.can_change ? "Drag it onto a folder to move it" : undefined}
-                    onDragStart={(event) => {
-                        event.dataTransfer.setData(DRAGGED_VIEW, String(view.id));
-                        event.dataTransfer.effectAllowed = "move";
-                        setDragging(true);
-                    }}
-                    onDragEnd={() => {
-                        setDragging(false);
-                        setOver(null);
-                    }}
-                >
-                    <td style={{ paddingLeft: `${inner * 1.25 + 0.75}rem` }}>
-                        <Link to={viewUrl(view.id)} className="name">
-                            {view.name}
-                        </Link>
-                        {searching && view.folder && <p className="muted yorg-description">in {view.folder}</p>}
-                        {view.description && <p className="muted yorg-description">{view.description}</p>}
-                    </td>
-                    <td>{dataOf(view)}</td>
-                    <td>
-                        {view.updated_by?.name ?? "—"}
-                        <span className="muted">
-                            {" · "}
-                            <Time at={view.updated_at} />
-                        </span>
-                    </td>
-                </tr>
-            )),
-        ];
-    }
-
-    return (
-        <section className="yorg-page">
-            <div className="page-head">
-                <h1>Views</h1>
-            </div>
-            <p className="lead muted">
-                Plots someone saved: channels, scales, time windows, and markers, in folders. Open one, or use it with
-                another test&apos;s data.
-            </p>
-            {problem && <Notice tone="error">{problem}</Notice>}
-            {views?.length === 0 && (
-                <div className="empty">No saved views yet. Plot a dataset the way you want it, then Save view.</div>
-            )}
-            {views && views.length > 0 && (
-                <>
-                    <input
-                        className="search"
-                        type="search"
-                        placeholder="Find a view: its name, folder, notes, or data"
-                        aria-label="Find a view"
-                        value={find}
-                        onChange={(event) => setFind(event.target.value)}
-                    />
-                    {dragging && (
-                        <div className={`yorg-drop-top${over === "" ? " yorg-drop-folder" : ""}`} {...dropOn("")}>
-                            Drop here to take it out of its folder
-                        </div>
-                    )}
-                    {searching && tree.items.length === 0 && tree.folders.length === 0 ? (
-                        <div className="empty">No view has that.</div>
-                    ) : (
-                        <table className="table yorg-views" aria-label="Saved views">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Data</th>
-                                    <th>Changed</th>
-                                </tr>
-                            </thead>
-                            <tbody>{rows(tree, 0)}</tbody>
-                        </table>
-                    )}
-                </>
-            )}
-        </section>
-    );
-}
+// --- a saved view's plots (the views, in their folders: Views.tsx) --------------------------------------------------
 
 export function ViewPage({ id }: { id: number }) {
     const [view, setView] = useState<SavedView | null>(null);
@@ -1338,7 +1132,7 @@ export function ViewPage({ id }: { id: number }) {
 }
 
 /** What a view's called, where it's kept, and its notes: changed without its plots (RenameViewDialog). */
-type ViewMeta = Pick<SavedView, "name" | "folder" | "description">;
+type ViewMeta = Pick<SavedView, "name" | "folder" | "folder_id" | "description">;
 
 function ViewWorkspace({
     view,
@@ -1359,11 +1153,18 @@ function ViewWorkspace({
     const changed = JSON.stringify(layout) !== savedAs;
     const unreadable = useLinkUsed(linked, onLinkUsed);
     // Renamed or moved here, it stays as it is (a page made again would lose changes to its plots not yet saved).
-    const [meta, setMeta] = useState<ViewMeta>({ name: view.name, folder: view.folder, description: view.description });
+    const [meta, setMeta] = useState<ViewMeta>({
+        name: view.name,
+        folder: view.folder,
+        folder_id: view.folder_id,
+        description: view.description,
+    });
     const [dialog, setDialog] = useState<"copy" | "other" | "delete" | "rename" | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    // Its folder isn't sent: saving its plots leaves it in whichever folder it's in now, wherever it's been moved since.
     const body = () => ({
-        ...meta,
+        name: meta.name,
+        description: meta.description,
         datasets: layout.datasets.map((ref) => ref.id),
         config: layout,
     });
@@ -1451,7 +1252,7 @@ function ViewWorkspace({
                     onConfirm={() => {
                         setDialog(null);
                         yorg.removeView(view.id).then(
-                            () => navigate("/yorg/views"),
+                            () => navigate(viewFolderUrl(meta.folder_id)),
                             (error: unknown) => setProblem(message(error)),
                         );
                     }}

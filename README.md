@@ -286,12 +286,18 @@ the keys.
   on it; Esc clears the measurement.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
   with that test's channels of the same names. A dataset's views are listed on its page
-  (Saved views); open one and Save as a new view to keep your changes. Views go in
-  folders of their own, as scripts do: picked from a list of those there are when you
-  save one (or a new path typed, like `Hotfires/HF-3`), or later with More > Rename or
-  move; the Views tab shows them in their folders, finds them by a word, and moves yours
-  into another folder (or out of one) when you drag it there. Export the plots as an image (labels and all), or the
-  samples in view as CSV.
+  (Saved views); open one and Save as a new view to keep your changes. Export the plots
+  as an image (labels and all), or the samples in view as CSV.
+- **Views' folders:** the Views tab keeps views in folders of their own (not the datasets'),
+  and works as the datasets' list does. New folder makes one where you are; open one to see
+  what's in it, with the way back up above its name, and rename it, or delete it once it's
+  empty (your own folders, or anyone's if you're an admin). Drag views or folders onto a
+  folder (or a folder in the way back up) to move them, or check views and Move to…, or
+  Delete… to delete them together, for good (the data stays). Only whoever saved a view, or
+  an admin, moves or deletes it. Find views looks in every folder (names, folders, notes,
+  and data), and says where each is. A view's folder is also picked when you save it, from
+  a list of those there are (or a new path typed, like `Hotfires/HF-3`), or later with
+  More > Rename or move.
 - **Copy link** (beside Save view, on a dataset's or a view's page) to send someone what's
   on screen without saving a view: the plots, the tests compared and their shifts, the time
   in view, T0, and the rest. Whoever opens it sees those plots as unsaved changes, and can

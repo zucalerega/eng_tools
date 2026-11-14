@@ -153,14 +153,36 @@ export interface CheckinRequest {
     items: { path: string; sha256: string; size: number; references: { path: string }[]; vendor?: boolean }[];
 }
 
-/** A version's 3D model in one configuration, for Caliper (made by Vault for SolidWorks). */
+/**
+ * Where a 3D model is from: Vault for SolidWorks made it, from what SolidWorks had open ("solidworks"); or the server
+ * read it from the version's file: a part's from the 3D view SolidWorks saved there ("view": the triangles it drew),
+ * or made from the solid it kept ("solid": the server's own triangles, close to SolidWorks'); an assembly's components,
+ * or a part's from before the server noted which ("file").
+ */
+export type CaliperSource = "solidworks" | "view" | "solid" | "file";
+
+/** A version's 3D model in one configuration, for Caliper. */
 export interface CaliperModel {
     version: number;
     configuration: string;
     kind: "part" | "assembly"; // a part's is a mesh; an assembly's, its components
     units: "mm" | "cm" | "m" | "in" | "ft"; // the document's length unit
     created_at: string;
-    created_by: UserRef;
+    created_by: UserRef; // who made it, in SolidWorks; for one the server read, who first opened it
+    source: CaliperSource;
+}
+
+/** A model, by the file version and configuration it's of. */
+export interface CaliperModelKey {
+    file_id: number;
+    version: number;
+    configuration: string;
+}
+
+/** The model that shows a part in an assembly: the one wanted, or the nearest there is, and the better ones missed. */
+export interface CaliperBest {
+    model: CaliperModel;
+    missed: { version: number; configuration: string; message: string }[]; // best first; "": as it was saved
 }
 
 /** A configuration of a version, as its file lists it, for Caliper to offer. */
@@ -180,18 +202,24 @@ export interface CaliperConfigurations {
 /** A component of an assembly's model: a part or sub-assembly, where the assembly has it. */
 export interface CaliperComponent {
     name: string;
-    file_id: number | null; // null: a virtual part, which the assembly keeps (its mesh is the assembly's)
-    version: number | null;
+    file_id: number | null; // null: its file isn't in the vault (a virtual part's is kept inside the assembly)
+    version: number | null; // the one shown: its file's latest, or the one the assembly was checked in with
+    pinned: number | null; // the version the assembly was checked in with
     configuration: string;
     transform: number[]; // rows of a 3 x 4 matrix to the assembly's coordinates (mm)
     hidden: boolean;
     color: [number, number, number] | null;
     opacity: number;
-    mesh: string | null;
-    model: boolean; // whether its file has a model of its own, at its version and in its configuration
-    kind: "part" | "assembly" | null; // its file's: a sub-assembly without children has none of its parts here
+    mesh: string | null; // a shape the model carries: a virtual part's, or a part's that isn't in the vault
+    carrier: CaliperModelKey | null; // the model that carries it: this assembly's, or a sub-assembly's
+    model: boolean; // whether its file has a model of its own, at the version shown and in its configuration
+    source: CaliperSource | null; // where that model, or the shape carried, is from
+    kind: "part" | "assembly" | null; // its file's
     format?: "step" | "iges" | null; // a STEP or IGES file's, placed with 3D Interconnect: read as it is
     virtual?: boolean; // kept inside the assembly (a routed tube): without a mesh, no shape of it was found there
+    layout: number | null; // a sub-assembly's: the version whose components these are
+    deleted: boolean; // its file is in the trash
+    file: string | null; // its file's name, for one that isn't in the vault
     children: CaliperComponent[];
 }
 
@@ -199,6 +227,7 @@ export interface CaliperAssembly {
     model: CaliperModel;
     components: CaliperComponent[];
     left_out: number; // components in files you can't see
+    wanted: CaliperModelKey[]; // newer sub-assemblies without a model yet: made, they show their own components
 }
 
 /** A sheet of a drawing: its name ("" where the file doesn't say), and whether SolidWorks saved a picture of it. */
@@ -297,8 +326,22 @@ export const vaultApi = {
     /** A version's configurations: which SolidWorks saved it in, which it kept, and which have models. */
     caliperConfigurations: (fileId: number, version: number) =>
         request<CaliperConfigurations>("GET", `/api/files/${fileId}/caliper/configurations?` + query({ version })),
-    caliperAssembly: (fileId: number, version: number, configuration: string) =>
-        request<CaliperAssembly>("GET", `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration })),
+    /**
+     * An assembly's components: as its version was checked in, each part at the version it had then; or, with latest,
+     * as it is now, each part and sub-assembly at its latest version.
+     */
+    caliperAssembly: (fileId: number, version: number, configuration: string, latest = false) =>
+        request<CaliperAssembly>(
+            "GET",
+            `/api/files/${fileId}/caliper/assembly?` + query({ version, configuration, latest: latest || undefined }),
+        ),
+    /** The model that shows a part in an assembly, made from its file if need be: the one wanted, or the nearest. */
+    caliperBest: (fileId: number, version: number, configuration: string, pinned: number | null) =>
+        request<CaliperBest>("POST", `/api/files/${fileId}/caliper/best`, {
+            version,
+            configuration,
+            pinned: pinned ?? undefined,
+        }),
     /** A part's mesh (caliper/format.ts), or with mesh, a virtual part's that an assembly's model carries. */
     caliperMesh: (fileId: number, version: number, configuration: string, mesh?: string) =>
         requestBytes(`/api/files/${fileId}/caliper/mesh?` + query({ version, configuration, mesh })),

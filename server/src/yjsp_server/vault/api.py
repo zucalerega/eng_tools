@@ -18,6 +18,8 @@ from ..errors import ApiError, Forbidden, TooLarge
 from . import vault
 from .schemas import (
     CaliperAssemblyOut,
+    CaliperBestIn,
+    CaliperBestOut,
     CaliperConfigurationsOut,
     CaliperMakeIn,
     CaliperMissingIn,
@@ -158,10 +160,22 @@ def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB) -> Ca
 
 @router.get("/files/{file_id}/caliper/assembly")
 def get_caliper_assembly(
-    file_id: int, user: ActiveUser, db: DB, store: Store, version: int, configuration: str
+    file_id: int, user: ActiveUser, db: DB, store: Store, version: int, configuration: str, latest: bool = False
 ) -> CaliperAssemblyOut:
-    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own."""
-    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration))
+    """An assembly's model: its components that you can see, where each is, and whether each has a model of its own.
+    As the version was checked in, each part at the version it had then; or, with latest, as it is now: each part and
+    sub-assembly at its latest version, as SolidWorks opens it."""
+    return CaliperAssemblyOut.of(vault.caliper_assembly(db, store, user, file_id, version, configuration, latest))
+
+
+@router.post("/files/{file_id}/caliper/best")
+def post_caliper_best(file_id: int, body: CaliperBestIn, user: ActiveUser, db: DB, store: Store) -> CaliperBestOut:
+    """The model that shows a part in an assembly: of the version and in the configuration the assembly uses, made
+    from the file if need be (as caliper/make does); or, where that can't be had, the nearest there is (the version
+    the assembly was checked in with; the configuration the part was saved in), with why each better one isn't there.
+    Fails as caliper/make does where the part has none at all."""
+    best = vault.caliper_best(db, store, user, file_id, body.version, body.configuration, body.pinned)
+    return CaliperBestOut.of(best)
 
 
 @router.get("/files/{file_id}/caliper/mesh", response_class=FileResponse)

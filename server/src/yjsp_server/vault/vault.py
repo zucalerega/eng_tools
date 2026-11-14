@@ -11,14 +11,14 @@ import re
 import threading
 import unicodedata
 from collections import OrderedDict, defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
@@ -2016,6 +2016,13 @@ _MAX_COMPONENTS = 20_000  # a big assembly has a few thousand
 _MAX_DEPTH = 32
 
 
+# Where a model is from, most exact first: Vault for SolidWorks made it, from what SolidWorks had open; or the server
+# read it from the version's file: a part's from the 3D view SolidWorks saved there (the triangles it drew), or from
+# the solid it kept (the server's own triangles of it: close, not SolidWorks'); an assembly's components, or a part's
+# read before the server noted which of the two (file).
+Source = Literal["solidworks", "view", "solid", "file"]
+
+
 @dataclass
 class ModelView:
     """A version's 3D model in one configuration, for Caliper."""
@@ -2023,10 +2030,19 @@ class ModelView:
     model: CaliperModel
     version: int
     created_by: User
+    source: Source
 
     @property
     def kind(self) -> Literal["part", "assembly"]:
         return "part" if self.model.mesh_sha256 is not None else "assembly"
+
+
+@dataclass
+class BestView:
+    """The model that shows a part in an assembly (caliper_best), and the better ones it has none of."""
+
+    view: ModelView
+    missed: list[tuple[int, str, str]]  # (version, configuration: "" for the one it was saved in, why not)
 
 
 @dataclass
@@ -2049,10 +2065,12 @@ class ConfigurationsView:
 @dataclass
 class AssemblyModel:
     view: ModelView
-    # The components the user can see, each with "model": whether its file has a model of its own, at its version and
-    # in its configuration.
+    # The components the user can see (caliper_assembly says what each carries).
     components: list[dict[str, Any]]
     left_out: int  # components of files the user can't see, left out with everything in them
+    # Sub-assemblies' versions (file id, version, configuration), newer than the ones the assembly was checked in
+    # with, that have no model yet: once they do (make_caliper_model), their own components show.
+    wanted: list[tuple[int, int, str]]
 
 
 def _caliper_kind(name: str) -> Literal["part", "assembly"] | None:
@@ -2112,10 +2130,24 @@ def _reader(store: BlobStore, model: CaliperModel) -> int:
 
 
 def _outdated(store: BlobStore, model: CaliperModel) -> bool:
-    """Whether an older reader of the server's made a model: it's read again when it's next wanted (make_caliper_model),
-    so its version's models aren't listed till then, nor does it count as a part's own model in an assembly. Vault for
-    SolidWorks' models stay."""
-    return _UPLOADED < _reader(store, model) < solidworks.READER
+    """Whether an older reader of the server's made a model, one whose models of its kind no longer stand
+    (solidworks.STANDS): it's read again when it's next wanted (make_caliper_model), so its version's models aren't
+    listed till then, nor does it count as a part's own model in an assembly. Vault for SolidWorks' models stay."""
+    kind = "part" if model.mesh_sha256 is not None else "assembly"
+    return _UPLOADED < _reader(store, model) < solidworks.STANDS[kind]
+
+
+def _source(store: BlobStore, model: CaliperModel) -> Source:
+    """Where a model is from. One from before the server noted it (CaliperModel.source) is Vault for SolidWorks' if
+    that made it, and else read from its file."""
+    if model.source in get_args(Source):
+        return cast(Source, model.source)
+    return "solidworks" if _reader(store, model) == _UPLOADED else "file"
+
+
+def _view(db: Session, store: BlobStore, model: CaliperModel, version: int, creator: User | None = None) -> ModelView:
+    creator = creator or _users(db, {model.created_by})[model.created_by]
+    return ModelView(model, version, creator, _source(store, model))
 
 
 def _find_model(db: Session, tree: Tree, file: File, version: int, configuration: str) -> CaliperModel:
@@ -2146,7 +2178,7 @@ def caliper_models(db: Session, store: BlobStore, user: User, file_id: int) -> l
     outdated = {number for model, number in rows if _outdated(store, model)}
     rows = [(model, number) for model, number in rows if number not in outdated]
     users = _users(db, {model.created_by for model, _ in rows})
-    return [ModelView(model, number, users[model.created_by]) for model, number in rows]
+    return [_view(db, store, model, number, users[model.created_by]) for model, number in rows]
 
 
 def caliper_missing(db: Session, user: User, wanted: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
@@ -2187,7 +2219,8 @@ def _check_components(db: Session, tree: Tree, access: Access, components: list[
     for component, _ in walked:
         name, file_id, version = component["name"], component.get("file_id"), component.get("version")
         if file_id is None:
-            if not component.get("mesh") and not component.get("children"):
+            # One that's listed and nothing more names the file SolidWorks had for it, which isn't in the vault.
+            if not component.get("mesh") and not component.get("children") and not component.get("path"):
                 raise ApiError(f"Component {name} has no file, shape, or components", code="bad_model")
             continue
         file = files.get(file_id)
@@ -2264,12 +2297,13 @@ def put_caliper_model(
     else:
         access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
     model.units, model.mesh_sha256, model.components, model.reader = units, mesh, components, _UPLOADED
-    model.created_at, model.created_by = utcnow(), user.id
+    model.source, model.created_at, model.created_by = "solidworks", utcnow(), user.id
     db.commit()
-    return ModelView(model, version, user)
+    return ModelView(model, version, user, "solidworks")
 
 
 _MAX_READ = 1 << 28  # bigger files aren't read for their 3D view here: Vault for SolidWorks makes theirs
+_MAX_PATH = 1024  # of a path SolidWorks kept for a component's file, as a model keeps it
 # SolidWorks files read at once for their 3D views: each can take a few hundred MB, on a server with 6 GB.
 _READING = threading.BoundedSemaphore(2)
 _READING_WAIT = 60.0  # seconds a look waits for its turn before it's told to try again
@@ -2437,8 +2471,9 @@ def _kept_in(store: BlobStore, version: Version, configuration: str, name: str) 
     return _kept_shapes(chosen.components) if chosen is not None else {}
 
 
-# A model to make, in one configuration: its name, units, and a part's mesh or an assembly's components.
-_Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None]
+# A model to make, in one configuration: its name, units, a part's mesh or an assembly's components, and where it's
+# from.
+_Wanted = tuple[str, str, str | None, list[dict[str, Any]] | None, Source]
 
 
 def _read_models(
@@ -2462,7 +2497,7 @@ def _read_models(
         if isinstance(read, solidworks.Part):
             mesh, size = _keep(store, caliper.write_mesh(read.bodies))
             kept[mesh] = size
-            wanted.append((read.configuration[:255], read.units, mesh, None))
+            wanted.append((read.configuration[:255], read.units, mesh, None, read.source))
         else:
             finder = _Finder(db, tree, target.created_at)
             # The shapes of the virtual parts sub-assemblies keep in their own files, by file, version and
@@ -2490,8 +2525,9 @@ def _read_models(
                         if any(part.shape is None for part in _kept(component.children)):
                             _graft(component.children, kept_in(*match, component.configuration))
                     children = place(component.children, inner)
-                    if match is None and shape is None and not children and not component.virtual:
-                        continue  # nothing to show or open; a virtual part says why it shows nothing
+                    # One whose file isn't in the vault is listed all the same, with where SolidWorks kept it: it's
+                    # looked for again each time the model is shown (caliper_assembly), as it may be checked in since.
+                    lost = component.path[:_MAX_PATH] if match is None and not component.virtual else ""
                     out.append(
                         {
                             "name": component.name[:255],
@@ -2504,6 +2540,7 @@ def _read_models(
                             "opacity": 1.0,
                             "mesh": shape,
                             "virtual": component.virtual,
+                            "path": lost,
                             "children": children,
                         }
                     )
@@ -2515,16 +2552,12 @@ def _read_models(
                 if sum(1 for _ in _walk(components)) > _MAX_COMPONENTS:
                     raise solidworks.Unreadable(f"It has over {_MAX_COMPONENTS} components, more than Caliper shows")
                 if components:
-                    wanted.append((assembly.configuration[:255], assembly.units, None, components))
+                    wanted.append((assembly.configuration[:255], assembly.units, None, components, "file"))
             if not wanted:
-                raise solidworks.Unreadable(
-                    "Caliper found none of its parts in the vault. Make its 3D view in SolidWorks (Make 3D view, on the "
-                    "Vault tab)"
-                )
+                raise solidworks.Unreadable("It has no components: there's nothing to show")
             if configuration is not None and all(want[0] != configuration for want in wanted):
                 raise solidworks.Unreadable(
-                    f"Caliper found none of the parts of its {configuration} configuration in the vault: they show "
-                    "once they're checked in"
+                    f"Its {configuration} configuration has no components: there's nothing to show"
                 )
     except solidworks.Unreadable as e:
         raise solidworks.Unreadable(f"{name}: {e.message}") from e
@@ -2562,7 +2595,7 @@ def make_caliper_model(
         raise NotFound(f"{path} has no version {version}")
 
     def view(model: CaliperModel) -> ModelView:
-        return ModelView(model, version, _users(db, {model.created_by})[model.created_by])
+        return _view(db, store, model, version)
 
     def made() -> tuple[list[CaliperModel], list[CaliperModel]]:
         """The version's models, first made first, and those of them this reader's or Vault for SolidWorks'."""
@@ -2606,7 +2639,7 @@ def make_caliper_model(
     for sha, size in kept.items():
         if db.get(Blob, sha) is None:
             db.add(Blob(sha256=sha, size=size, created_at=utcnow()))
-    for name, units, mesh, components in wanted:
+    for name, units, mesh, components, source in wanted:
         if name not in have:
             have[name] = CaliperModel(
                 version_id=target.id,
@@ -2617,6 +2650,7 @@ def make_caliper_model(
                 created_at=utcnow(),
                 created_by=user.id,
                 reader=solidworks.READER,
+                source=source,
             )
             db.add(have[name])
             db.flush()  # in order, so the one SolidWorks had open comes first
@@ -2690,51 +2724,212 @@ def caliper_configurations(db: Session, store: BlobStore, user: User, file_id: i
     return ConfigurationsView(version, configurations, unreadable)
 
 
+class _Models:
+    """The 3D models of some files that stand (not an older reader's): for an assembly's components, which of their
+    files have one of their own, at which versions and in which configurations."""
+
+    def __init__(self, db: Session, store: BlobStore) -> None:
+        self._db, self._store = db, store
+        self._asked: set[int] = set()
+        self._models: dict[tuple[int, int], list[CaliperModel]] = {}  # by file and version, the first made first
+
+    def load(self, file_ids: Iterable[int]) -> None:
+        ids = sorted(set(file_ids) - self._asked)
+        self._asked.update(ids)
+        for start in range(0, len(ids), _BATCH):
+            # Not their components, which only a sub-assembly shown in place of an older one needs (and big ones are
+            # megabytes): those come when they're asked for.
+            rows = self._db.execute(
+                select(Version.file_id, Version.number, CaliperModel)
+                .join(Version, Version.id == CaliperModel.version_id)
+                .where(Version.file_id.in_(ids[start : start + _BATCH]))
+                .order_by(CaliperModel.id)
+                .options(defer(CaliperModel.components))
+            )
+            for file_id, number, model in rows:
+                if not _outdated(self._store, model):
+                    self._models.setdefault((file_id, number), []).append(model)
+
+    def of(self, file_id: int, version: int, configuration: str) -> CaliperModel | None:
+        """A file's model at a version, in a configuration; with none named (an assembly that doesn't say which it
+        uses), the first made: the one SolidWorks saved the file in."""
+        found = self._models.get((file_id, version), [])
+        return next((model for model in found if configuration in ("", model.configuration)), None)
+
+
+def _once[T](make: Callable[[], T]) -> Callable[[], T]:
+    """What make gives, made when it's first asked for."""
+    made: list[T] = []
+
+    def get() -> T:
+        if not made:
+            made.append(make())
+        return made[0]
+
+    return get
+
+
 def caliper_assembly(
-    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str
+    db: Session, store: BlobStore, user: User, file_id: int, version: int, configuration: str, latest: bool = False
 ) -> AssemblyModel:
     """An assembly's model, with the components the user can see: one of a file they can't see is left out, with
-    everything in it, as the rest of the vault leaves out such files. A component whose file's model an older reader
-    made has none of its own (model), so Caliper has the server make it again."""
+    everything in it, as the rest of the vault leaves out such files.
+
+    A model keeps the assembly as it was checked in: each component's file at the version it had then (pinned). Shown
+    as it was (latest false), each is at that version. Shown as it is now (latest), which is what SolidWorks opens once
+    it has the latest of every file, each is at its file's latest version, and a sub-assembly checked in since has its
+    own model's components, placed where the assembly has it, in place of the older ones the assembly's model kept
+    (layout says whose they are); where it has no model yet, the older ones stay, and it's wanted. Either way, a
+    component whose file wasn't in the vault when the model was made is looked for again (_Finder), as it may be now;
+    one that still isn't is listed without a file, by its file's name (file).
+
+    Each also says whether its file has a model of its own at the version shown, in its configuration (model: one an
+    older reader made doesn't count, so Caliper has the server make it again), and where that's from (source); a shape
+    the model carries (mesh), which model that is (carrier) and where it's from; and whether its file is in the trash
+    (deleted)."""
     tree, access = _context(db, user)
     file = _resolve(db, tree, access, file_id, deleted_ok=True)
     model = _find_model(db, tree, file, version, configuration)
     if model.components is None:
         raise ApiError(f"{tree.file_path(file)} is a part: its model is a mesh", code="bad_model")
-    walked = [component for component, _ in _walk(model.components)]
-    files = _files_by_id(db, {c["file_id"] for c in walked if c.get("file_id") is not None})
-    have: set[tuple[int, int, str]] = set()  # (file id, version, configuration) with models of their own
-    ids = sorted(files)
-    for start in range(0, len(ids), _BATCH):
-        rows = db.execute(
-            select(Version.file_id, Version.number, CaliperModel)
-            .join(Version, Version.id == CaliperModel.version_id)
-            .where(Version.file_id.in_(ids[start : start + _BATCH]))
-        )
-        have.update(
-            (file_id, number, model.configuration) for file_id, number, model in rows if not _outdated(store, model)
-        )
+    target = _version(db, file.id, version)
+    finder = _Finder(db, tree, target.created_at)
+    models = _Models(db, store)
+    files: dict[int, File] = {}
+    wanted: dict[tuple[int, int, str], None] = {}
     left_out = 0
+    total = sum(1 for _ in _walk(model.components))
 
-    def visible(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        nonlocal left_out
+    def know(components: list[dict[str, Any]]) -> None:
+        ids = {c["file_id"] for c, _ in _walk(components) if c.get("file_id") is not None} - files.keys()
+        files.update(_files_by_id(db, ids))
+        models.load(ids)
+
+    def moved(components: list[dict[str, Any]], place: list[float]) -> list[dict[str, Any]]:
+        """A sub-assembly's own components, which its model has in its coordinates, where the assembly has it."""
+        return [
+            {
+                **component,
+                "transform": solidworks.compose(place, component["transform"]),
+                "children": moved(component.get("children") or [], place),
+            }
+            for component in components
+        ]
+
+    def shown(
+        components: list[dict[str, Any]],
+        refs: Callable[[], list[tuple[File, int]]],  # of the version whose components these are
+        carrier: tuple[File, int, CaliperModel],  # the model that has them, and its file's version
+        above: frozenset[int],  # the assemblies they're in
+    ) -> list[dict[str, Any]]:
+        nonlocal left_out, total
         kept = []
         for component in components:
-            file_id = component.get("file_id")
-            file = files.get(file_id) if file_id is not None else None
-            if file_id is not None and (file is None or not access.can(file.folder_id, Role.VIEWER)):
+            used = component.get("configuration") or ""
+            found: File | None = files.get(component["file_id"]) if component.get("file_id") is not None else None
+            pinned: int | None = component.get("version")
+            lost = component.get("path") or ""
+            if component.get("file_id") is None and lost and not component.get("mesh"):
+                match = finder.file_of(lost, refs())
+                if match is not None:
+                    found, pinned = match
+                    files[found.id] = found
+                    models.load([found.id])
+            if component.get("file_id") is not None and found is None:
+                left_out += 1  # its file is gone from the database: nothing to show or say of it
+                continue
+            if found is not None and not access.can(found.folder_id, Role.VIEWER):
                 left_out += 1
                 continue
-            own = (file_id, component.get("version"), component.get("configuration")) in have
-            kind = _caliper_kind(file.name) if file is not None else None
-            cad = _cad_format(file.name) if file is not None else None
-            children = visible(component.get("children") or [])
-            kept.append({**component, "model": own, "kind": kind, "format": cad, "children": children})
+            kind = _caliper_kind(found.name) if found is not None else None
+            number = found.latest_version if found is not None and latest else pinned
+            children: list[dict[str, Any]] = component.get("children") or []
+            inner, layout = carrier, pinned
+            newer = found is not None and number is not None and kind == "assembly" and number != pinned
+            if found is not None and number is not None and newer and found.id not in above and len(above) < _MAX_DEPTH:
+                # Checked in since: its own model's components, where it has one. Its places are its own, which is
+                # where SolidWorks would put its components on opening it, a flexible sub-assembly's too.
+                own = models.of(found.id, number, used)
+                size = sum(1 for _ in _walk(own.components or [])) if own is not None else 0
+                if own is not None and own.components is not None and total + size <= _MAX_COMPONENTS:
+                    children = moved(own.components, component["transform"])
+                    inner, layout = (found, number, own), number
+                    total += size
+                    know(children)
+                elif own is None:
+                    wanted[(found.id, number, used)] = None
+            at = found, layout
+            below = _once(lambda at=at: _refs_of(db, _version(db, at[0].id, at[1])) if at[0] and at[1] else refs())
+            inside = shown(children, below, inner, above | {found.id} if found is not None else above)
+            own_model = models.of(found.id, number, used) if found is not None and number is not None else None
+            source: Source | None = _source(store, own_model) if own_model is not None else None
+            if component.get("mesh"):
+                # A shape the model carries is Vault for SolidWorks' if that made the model; else the server's, from
+                # the solid the assembly's file keeps of a part inside it.
+                source = "solidworks" if _source(store, carrier[2]) == "solidworks" else "solid"
+            kept.append(
+                {
+                    **{key: value for key, value in component.items() if key != "path"},
+                    "file_id": found.id if found is not None else None,
+                    "version": number if found is not None else None,
+                    "pinned": pinned if found is not None else None,
+                    "layout": layout if kind == "assembly" else None,
+                    "model": own_model is not None,
+                    "source": source,
+                    "carrier": (
+                        {"file_id": carrier[0].id, "version": carrier[1], "configuration": carrier[2].configuration}
+                        if component.get("mesh")
+                        else None
+                    ),
+                    "kind": kind,
+                    "format": _cad_format(found.name) if found is not None else None,
+                    "deleted": found is not None and found.deleted_at is not None,
+                    "file": re.split(r"[\\/]", lost)[-1][:255] if found is None and lost else None,
+                    "children": inside,
+                }
+            )
         return kept
 
-    components = visible(model.components)
-    creator = _users(db, {model.created_by})[model.created_by]
-    return AssemblyModel(ModelView(model, version, creator), components, left_out)
+    know(model.components)
+    top = shown(model.components, _once(lambda: _refs_of(db, target)), (file, version, model), frozenset({file.id}))
+    return AssemblyModel(_view(db, store, model, version), top, left_out, list(wanted))
+
+
+def caliper_best(
+    db: Session,
+    store: BlobStore,
+    user: User,
+    file_id: int,
+    version: int,
+    configuration: str = "",
+    pinned: int | None = None,
+) -> BestView:
+    """The model that shows a part in an assembly: of its version there (the latest, or the one the assembly was
+    checked in with), in the configuration the assembly uses, made from the file where the version has none
+    (make_caliper_model). Where that one can't be had, the nearest that can, so the part shows and Caliper says what
+    it shows instead: the version the assembly was checked in with (pinned), in that configuration; then the
+    configuration SolidWorks saved the part in, of the version, then of the pinned one. With why each better one
+    isn't there. A part with none of them is refused for the reason the first was; while the server's busy reading
+    others (Conflict), it's for asking again."""
+    asked = configuration or None
+    versions = [version] + ([pinned] if pinned is not None and pinned != version else [])
+    tries = [(number, asked) for number in versions]
+    if asked is not None:
+        tries += [(number, None) for number in versions]
+    missed: list[tuple[int, str, str]] = []
+    first: ApiError | None = None
+    for number, name in tries:
+        try:
+            view = make_caliper_model(db, store, user, file_id, number, name)
+        except Conflict:
+            raise
+        except (solidworks.Unreadable, solidworks.NoConfiguration, NotFound) as e:
+            first = first or e
+            missed.append((number, name or "", e.message))
+            continue
+        return BestView(view, missed)
+    assert first is not None
+    raise first
 
 
 def caliper_mesh(

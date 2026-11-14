@@ -467,7 +467,12 @@ class CaliperModelOut(BaseModel):
     kind: Literal["part", "assembly"]  # a part's model is a mesh; an assembly's, its components
     units: str  # the document's length unit, for measurements: mm, cm, m, in, or ft
     created_at: datetime
-    created_by: UserRef
+    created_by: UserRef  # who made it, in SolidWorks; or who first opened it, for one the server read from the file
+    # Where it's from: "solidworks", Vault for SolidWorks made it from what SolidWorks had open; or the server read it
+    # from the version's file: a part's from the 3D view SolidWorks saved there ("view": the triangles it drew) or
+    # from the solid it kept ("solid": triangles of the server's own, close to SolidWorks'); an assembly's components,
+    # or a part's from before the server noted which ("file").
+    source: vault.Source
 
     @classmethod
     def of(cls, view: vault.ModelView) -> "CaliperModelOut":
@@ -479,6 +484,7 @@ class CaliperModelOut(BaseModel):
             units=model.units,
             created_at=model.created_at,
             created_by=UserRef.of(view.created_by),
+            source=view.source,
         )
 
 
@@ -491,6 +497,30 @@ class CaliperMakeIn(BaseModel):
     # The configuration to make it in, which the file keeps the shape of. None: the one SolidWorks saved it in (and an
     # assembly's every other one up to date).
     configuration: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class CaliperBestIn(BaseModel):
+    version: int = Field(ge=1)  # the one the assembly shows the part at
+    configuration: str = Field(default="", max_length=255)  # the one the assembly uses; "": the one it was saved in
+    pinned: int | None = Field(default=None, ge=1)  # the version the assembly was checked in with, if another
+
+
+class CaliperMissedOut(BaseModel):
+    version: int
+    configuration: str  # "": the one SolidWorks saved the part in
+    message: str  # why it has no model
+
+
+class CaliperBestOut(BaseModel):
+    model: CaliperModelOut  # the one to show: of the version and configuration asked for, or the nearest there is
+    missed: list[CaliperMissedOut]  # the better ones it has none of, best first
+
+    @classmethod
+    def of(cls, best: vault.BestView) -> "CaliperBestOut":
+        return cls(
+            model=CaliperModelOut.of(best.view),
+            missed=[CaliperMissedOut(version=v, configuration=c, message=why) for v, c, why in best.missed],
+        )
 
 
 class CaliperConfigurationOut(BaseModel):
@@ -531,6 +561,9 @@ class CaliperComponentIn(BaseModel):
     # Kept inside the assembly (a virtual part, as routed tubes are): without a mesh, no shape of it was found there (its
     # solid empty, or the sub-assembly that keeps it not in the vault).
     virtual: bool = False
+    # Where SolidWorks had its file, for one that isn't a file of the vault (a Toolbox screw, a part never checked in):
+    # with its mesh, it shows; without, it's listed as not in the vault.
+    path: str = Field(default="", max_length=1024)
     children: list["CaliperComponentIn"] = []  # a sub-assembly's components
 
 
@@ -542,13 +575,48 @@ class CaliperModelIn(BaseModel):
     components: list[CaliperComponentIn] | None = None  # an assembly's
 
 
-class CaliperComponentOut(CaliperComponentIn):
-    model: bool  # whether its file has a model of its own, at its version and in its configuration
-    # Its file's, by its name: a sub-assembly without children here has none of its parts in the vault. None: it has
-    # no file (a virtual part), or one that isn't a SolidWorks part or assembly.
+class CaliperWantIn(BaseModel):
+    file_id: int
+    version: int
+    configuration: str = Field(max_length=255)
+
+
+class CaliperCarrierOut(BaseModel):
+    file_id: int
+    version: int
+    configuration: str
+
+
+class CaliperComponentOut(BaseModel):
+    name: str  # SolidWorks' name for it in the assembly: "Bracket-2"
+    file_id: int | None = None  # its part's or sub-assembly's file; none for one that isn't in the vault
+    # The version of its file that's shown: the latest (asked for with latest), or the one the assembly was checked in
+    # with, which pinned is either way.
+    version: int | None = None
+    pinned: int | None = None
+    configuration: str = ""
+    transform: list[float]  # the rows of a 3 x 4 matrix to the top assembly's coordinates (mm)
+    hidden: bool = False
+    color: Color | None = None
+    opacity: float = 1
+    # A shape the model carries (a virtual part's; a part's that isn't in the vault): GET .../caliper/mesh?mesh=, of
+    # the model that carries it (carrier: this assembly's, or a sub-assembly's, shown in place of an older one).
+    mesh: Sha256 | None = None
+    carrier: CaliperCarrierOut | None = None
+    virtual: bool = False
+    model: bool  # whether its file has a model of its own, at the version shown and in its configuration
+    # Where what it shows is from (as a model's source): its file's own model's, or the shape the model carries.
+    source: vault.Source | None = None
+    # Its file's, by its name: a sub-assembly without children here has no components. None: it has no file in the
+    # vault, or one that isn't a SolidWorks part or assembly.
     kind: Literal["part", "assembly"] | None = None
     # A STEP or IGES file's (placed with SolidWorks' 3D Interconnect), which the web app reads as it is.
     format: Literal["step", "iges"] | None = None
+    # A sub-assembly's: the version whose components these are. Older than version where it was checked in since and
+    # that version has no model in this configuration (the assembly's wanted has it, to make).
+    layout: int | None = None
+    deleted: bool = False  # its file is in the trash
+    file: str | None = None  # the name of its file, for one that isn't in the vault
     children: list["CaliperComponentOut"] = []
 
 
@@ -556,6 +624,9 @@ class CaliperAssemblyOut(BaseModel):
     model: CaliperModelOut
     components: list[CaliperComponentOut]  # the ones in files you can see
     left_out: int  # components in files you can't see, left out with everything in them
+    # Sub-assemblies' versions, checked in since the assembly was, that have no model yet: once each is made
+    # (POST .../caliper/make), asking again shows its own components in place of the older ones.
+    wanted: list[CaliperWantIn]
 
     @classmethod
     def of(cls, assembly: vault.AssemblyModel) -> "CaliperAssemblyOut":
@@ -563,13 +634,8 @@ class CaliperAssemblyOut(BaseModel):
             model=CaliperModelOut.of(assembly.view),
             components=[CaliperComponentOut.model_validate(c) for c in assembly.components],
             left_out=assembly.left_out,
+            wanted=[CaliperWantIn(file_id=f, version=v, configuration=c) for f, v, c in assembly.wanted],
         )
-
-
-class CaliperWantIn(BaseModel):
-    file_id: int
-    version: int
-    configuration: str = Field(max_length=255)
 
 
 class CaliperMissingIn(BaseModel):

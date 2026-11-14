@@ -77,6 +77,46 @@
     margin-left: auto;
 }
 
+/* What the view shows, under the header: which version, from where, how much of an assembly. */
+.caliper-about {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.86rem;
+}
+
+.caliper-about p {
+    margin: 0;
+    max-width: 110ch;
+}
+
+.caliper-about-mark {
+    flex: none;
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 50%;
+    font-weight: 700;
+    line-height: 1.3rem;
+    text-align: center;
+    color: var(--surface);
+    background: var(--muted);
+}
+
+.caliper-about-ok .caliper-about-mark {
+    background: var(--good);
+}
+
+.caliper-about-warning {
+    background: var(--warning-soft);
+}
+
+.caliper-about-warning .caliper-about-mark {
+    background: var(--warning);
+}
+
 .caliper-body {
     flex: 1;
     min-height: 0;
@@ -205,6 +245,20 @@
 .caliper-version {
     flex: none;
     font-size: 0.76rem;
+}
+
+/* A shape rebuilt from a solid isn't SolidWorks' own, which stands out among those that are. */
+.caliper-from-solid {
+    color: var(--warning);
+}
+
+/* What stands in for the version or configuration wanted: a configuration's name can be long. */
+.caliper-stand-in {
+    flex: 0 1 auto;
+    min-width: 3.5rem;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Its file's title, after the name: it gives way first when the row runs short. */

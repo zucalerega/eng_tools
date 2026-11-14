@@ -1,7 +1,7 @@
 import { ApiError, requestBytes } from "../../api";
-import { vaultApi, type CaliperComponent, type CaliperModel } from "../api";
+import { vaultApi, type CaliperComponent, type CaliperModel, type CaliperModelKey } from "../api";
 import { readMesh, type Mesh } from "./format";
-import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Why } from "./model";
+import { fromRows, IDENTITY, type Body, type Model, type Node, type Shape, type Source, type Why } from "./model";
 import { fileFormat } from "../paths";
 import { bodiesOfCad, modelFromCad, readCadFile, type CadFormat } from "./step";
 import { modelFromStl } from "./stl";
@@ -58,6 +58,7 @@ export async function partModel(fileId: number, model: CaliperModel): Promise<Mo
         kind: "body",
         matrix: IDENTITY,
         shape: { key: `${key}#${i}`, bodies: [body] },
+        source: model.source,
         hidden: false,
         children: [],
     }));
@@ -82,25 +83,79 @@ async function inTurn<T>(items: T[], at: number, work: (item: T) => Promise<void
 }
 
 /**
+ * Ask the server for something it reads SolidWorks files for, again while it says it's busy reading others (it reads
+ * a couple at a time, and an assembly's first look can ask for hundreds): a part isn't missing for having waited.
+ */
+export async function patiently<T>(work: () => Promise<T>, tries = 12, wait = 2500): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await work();
+        } catch (error) {
+            if (!(error instanceof ApiError && error.code === "busy") || attempt >= tries) {
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+    }
+}
+
+/** What a component's shape is of, and where from; and, where it stands in for the one wanted, why that isn't there. */
+interface Found {
+    shape: Shape;
+    source: Source;
+    version?: number;
+    configuration?: string;
+    why?: string;
+}
+
+const keyOf = (model: CaliperModelKey) => `${model.file_id}:${model.version}:${model.configuration}`;
+
+/**
  * An assembly's model: its components, where it has them, each part with its own model's mesh (the same part at the
- * same version and configuration comes once). A part without a model has one made from its file first, as opening it
- * on its own would; one that can't be made, or whose mesh doesn't come, says so and draws nothing, and the rest still
- * does. A STEP or IGES file placed in it (SolidWorks' 3D Interconnect) is read as it is, one at a time: OpenCascade
- * takes a lot of memory. Also says how many components are of files you can't see.
+ * same version and configuration comes once).
+ *
+ * As it is now (latest): each part and sub-assembly at its latest version, as SolidWorks opens it. The server says
+ * which sub-assemblies were checked in since the assembly was and have no model yet (wanted): each is made, and the
+ * assembly asked for again, so it shows their own components. As it was checked in (not latest): each at the version
+ * it had then.
+ *
+ * A part without a model of the version and configuration wanted has the best the server has or can make of its file
+ * (caliperBest): that one, or the nearest, which stands in, and the node says so. One with none, or whose mesh doesn't
+ * come, says why and draws nothing, and the rest still does; so does one whose file isn't in the vault. A STEP or IGES
+ * file placed in it (SolidWorks' 3D Interconnect) is read as it is, one at a time: OpenCascade takes a lot of memory.
+ * Also says how many components are of files you can't see.
  */
 export async function assemblyModel(
     fileId: number,
     model: CaliperModel,
+    latest: boolean,
     progress: Progress,
 ): Promise<{ model: Model; leftOut: number }> {
-    const assembly = await vaultApi.caliperAssembly(fileId, model.version, model.configuration);
-    const keyOf = (c: CaliperComponent) =>
+    const ask = () => vaultApi.caliperAssembly(fileId, model.version, model.configuration, latest);
+    let assembly = await ask();
+    const made = new Set<string>();
+    for (let round = 0; round < 8; round++) {
+        const wanted = assembly.wanted.filter((sub) => !made.has(keyOf(sub)));
+        if (wanted.length === 0) {
+            break;
+        }
+        // One that can't be made (its file unreadable) keeps the components the assembly was checked in with.
+        await inTurn(wanted, 3, async (sub) => {
+            made.add(keyOf(sub));
+            await patiently(() =>
+                vaultApi.makeCaliperModel(sub.file_id, sub.version, sub.configuration || undefined),
+            ).catch(() => undefined);
+        });
+        assembly = await ask();
+    }
+
+    const loadKey = (c: CaliperComponent) =>
         c.mesh
             ? `mesh:${c.mesh}`
             : c.format
               ? `cad:${c.file_id}:${c.version}`
-              : `${c.file_id}:${c.version}:${c.configuration}`;
-    const wanted = new Map<string, () => Promise<Body[]>>();
+              : `${c.file_id}:${c.version}:${c.configuration}:${c.pinned}`;
+    const wanted = new Map<string, () => Promise<Found>>();
     let cadTurn: Promise<unknown> = Promise.resolve();
     const oneAtATime = <T>(work: () => Promise<T>): Promise<T> => {
         const run = cadTurn.then(work, work);
@@ -108,64 +163,79 @@ export async function assemblyModel(
         return run;
     };
     const meshBodies = async (bytes: Promise<ArrayBuffer>) => bodiesOf(readMesh(await bytes));
-    // A part's model, made from its file where it has none yet, in the configuration it's used in (where the assembly
-    // says which): once for each version and configuration, however many use it.
-    const made = new Map<string, Promise<CaliperModel>>();
-    const make = (id: number, version: number, configuration: string): Promise<CaliperModel> => {
-        const key = `${id}:${version}:${configuration}`;
-        if (!made.has(key)) {
-            made.set(key, vaultApi.makeCaliperModel(id, version, configuration || undefined));
-        }
-        return made.get(key)!;
-    };
     const visit = (components: CaliperComponent[]) => {
         for (const c of components) {
             visit(c.children);
+            const key = loadKey(c);
+            if (c.children.length > 0 || wanted.has(key)) {
+                continue;
+            }
             if (c.mesh) {
-                const mesh = c.mesh;
-                wanted.set(keyOf(c), () =>
-                    meshBodies(vaultApi.caliperMesh(fileId, model.version, model.configuration, mesh)),
-                );
-            } else if (c.format && c.children.length === 0 && c.file_id !== null && c.version !== null) {
+                const [mesh, from] = [c.mesh, c.carrier ?? { file_id: fileId, ...model }];
+                wanted.set(key, async () => ({
+                    shape: {
+                        key,
+                        bodies: await meshBodies(
+                            vaultApi.caliperMesh(from.file_id, from.version, from.configuration, mesh),
+                        ),
+                    },
+                    source: c.source ?? "file",
+                }));
+            } else if (c.format && c.file_id !== null && c.version !== null) {
                 const [id, version, format] = [c.file_id, c.version, c.format];
-                wanted.set(keyOf(c), () => oneAtATime(() => cadBodies(id, version, format)));
-            } else if (c.children.length === 0 && c.file_id !== null && c.version !== null && c.kind !== "assembly") {
-                const [id, version, configuration, own] = [c.file_id, c.version, c.configuration, c.model];
-                wanted.set(keyOf(c), async () => {
-                    let shown = configuration;
-                    if (!own) {
-                        // The server reads it from the file: the configuration it was saved in, from its 3D view;
-                        // another, from the solid SolidWorks kept of it, which it doesn't of every one. An assembly
-                        // that doesn't say which configuration it uses shows the one it was saved in.
-                        const ready = await make(id, version, configuration).catch((error: unknown) => {
+                wanted.set(key, () =>
+                    oneAtATime(async () => ({
+                        shape: { key, bodies: await cadBodies(id, version, format) },
+                        source: "cad" as const,
+                    })),
+                );
+            } else if (c.file_id !== null && c.version !== null && c.kind !== "assembly") {
+                const [id, version, configuration] = [c.file_id, c.version, c.configuration];
+                wanted.set(key, async () => {
+                    let shown = { version, configuration, source: c.source ?? ("file" as const) };
+                    let why: string | undefined;
+                    // An assembly that doesn't say which configuration it uses shows the one the part was saved in,
+                    // which the server names.
+                    if (!c.model || c.source === null || configuration === "") {
+                        const best = await patiently(() =>
+                            vaultApi.caliperBest(id, version, configuration, c.pinned),
+                        ).catch((error: unknown) => {
                             const message = error instanceof Error ? error.message : String(error);
                             const other =
                                 error instanceof ApiError &&
                                 ["configuration_not_saved", "no_configuration"].includes(error.code);
                             throw new NoModel(message, other ? "configuration" : "unreadable");
                         });
-                        shown = ready.configuration;
+                        shown = best.model;
+                        why = best.missed[0]?.message;
                     }
-                    return meshBodies(vaultApi.caliperMesh(id, version, shown));
+                    const bodies = await meshBodies(vaultApi.caliperMesh(id, shown.version, shown.configuration));
+                    return {
+                        shape: { key: `${id}:${shown.version}:${shown.configuration}`, bodies },
+                        source: shown.source,
+                        version: shown.version,
+                        configuration: shown.configuration,
+                        ...(why === undefined ? {} : { why }),
+                    };
                 });
             }
         }
     };
     visit(assembly.components);
 
-    const shapes = new Map<string, Shape | Error>();
+    const shapes = new Map<string, Found | Error>();
     let done = 0;
     progress(0, wanted.size);
     await inTurn([...wanted], 6, async ([key, load]) => {
         try {
-            shapes.set(key, { key, bodies: await load() });
+            shapes.set(key, await load());
         } catch (error) {
             shapes.set(key, error instanceof Error ? error : new Error(String(error)));
         }
         progress(++done, wanted.size);
     });
 
-    const problem = (c: CaliperComponent, found: Shape | Error | undefined): Pick<Node, "problem" | "why"> => {
+    const problem = (c: CaliperComponent, found: Found | Error | undefined): Pick<Node, "problem" | "why"> => {
         if (c.children.length > 0 || (found && !(found instanceof Error))) {
             return {};
         }
@@ -177,9 +247,16 @@ export async function assemblyModel(
                 why: "inside",
             };
         }
+        if (c.file_id === null && !c.mesh) {
+            return {
+                problem:
+                    `${c.file ?? "Its file"} isn't in the vault, so there's no shape of it to show. It shows once ` +
+                    "it's checked in, or once this assembly is checked in from SolidWorks with it open",
+                why: "absent",
+            };
+        }
         if (c.kind === "assembly") {
-            // Nothing under it: none of its parts were found in the vault.
-            return { problem: "Caliper found none of its parts in the vault", why: "elsewhere" };
+            return { problem: "Its model has no components", why: "elsewhere" };
         }
         if (found instanceof NoModel) {
             return { problem: found.message, why: found.why };
@@ -193,9 +270,22 @@ export async function assemblyModel(
         };
     };
 
+    // What a part's shape is of, where that isn't the version and configuration the assembly shows it as.
+    const instead = (c: CaliperComponent, found: Found | Error | undefined): Pick<Node, "instead"> => {
+        if (!found || found instanceof Error || found.version === undefined || found.configuration === undefined) {
+            return {};
+        }
+        const other =
+            found.version !== c.version || (c.configuration !== "" && found.configuration !== c.configuration);
+        return other
+            ? { instead: { version: found.version, configuration: found.configuration, why: found.why ?? "" } }
+            : {};
+    };
+
     const node = (c: CaliperComponent, id: string): Node => {
         const leaf = c.children.length === 0;
-        const found = leaf ? shapes.get(keyOf(c)) : undefined;
+        const found = leaf ? shapes.get(loadKey(c)) : undefined;
+        const drawn = found && !(found instanceof Error) ? found : undefined;
         return {
             id,
             name: c.name,
@@ -203,8 +293,14 @@ export async function assemblyModel(
             ...(c.file_id !== null && c.version !== null
                 ? { file: { id: c.file_id, version: c.version, configuration: c.configuration } }
                 : {}),
+            ...(c.pinned !== null && c.version !== null && c.pinned !== c.version ? { pinned: c.pinned } : {}),
             matrix: fromRows(c.transform),
-            ...(found instanceof Error ? {} : found ? { shape: found } : {}),
+            ...(drawn ? { shape: drawn.shape, source: drawn.source } : {}),
+            ...instead(c, found),
+            ...(c.kind === "assembly" && c.layout !== null && c.version !== null && c.layout !== c.version
+                ? { layout: c.layout }
+                : {}),
+            ...(c.deleted ? { deleted: true } : {}),
             hidden: c.hidden,
             ...(c.color ? { color: c.color } : {}),
             ...(c.opacity < 1 ? { opacity: c.opacity } : {}),

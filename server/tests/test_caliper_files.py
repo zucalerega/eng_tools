@@ -1282,6 +1282,10 @@ def made_by(team, file: dict, reader: int | None, **changes) -> None:
         db.commit()
 
 
+# A reader of each kind of model whose models no longer stand: an older release of the server's.
+OLDER = {kind: stands - 1 for kind, stands in solidworks.STANDS.items()}
+
+
 def listed(client, who, file: dict) -> list[tuple[str, str]]:
     """A file's models, as Caliper lists them: each one's configuration and units."""
     response = client.get(f"/api/files/{file['id']}/caliper", headers=who)
@@ -1312,11 +1316,11 @@ def test_models_an_older_reader_made_are_read_again(team, client):
     # Vault for SolidWorks' model of another configuration of the assembly.
     added = put_model(team, chief, servo, configuration="Spline out", components=[model_component("Embout-1", spline)])
     assert added.status_code == 200, added.text
-    made_by(team, case, solidworks.READER - 1, units="in")
+    made_by(team, case, OLDER["part"], units="in")
     with team.app.state.sessionmaker() as db:  # the assembly's Default, but not Vault for SolidWorks' Spline out
         for model in db.scalars(select(CaliperModel).join(Version).where(Version.file_id == servo["id"])):
             if model.configuration == "Default":
-                model.reader, model.units = solidworks.READER - 1, "in"
+                model.reader, model.units = OLDER["assembly"], "in"
         db.commit()
 
     assert listed(client, chief, case) == []  # so Caliper asks for it again
@@ -1386,11 +1390,25 @@ def test_an_older_readers_model_stands_while_its_file_cant_be_read(team, client)
     chief = team.member("chief@x.test", admin=True)
     odd = files(team.checkin(chief, {"Odd.SLDPRT": b"not a SolidWorks file"}))["Odd.SLDPRT"]
     assert put_model(team, chief, odd, mesh=team.upload(chief, mesh()), units="in").status_code == 200
-    made_by(team, odd, solidworks.READER - 1)
+    made_by(team, odd, OLDER["part"])
     assert listed(client, chief, odd) == []
     kept = make(client, chief, odd)
     assert (kept.status_code, kept.json()["units"]) == (200, "in")
-    assert readers(team, odd) == {"Default": solidworks.READER - 1}
+    assert readers(team, odd) == {"Default": OLDER["part"]}
+
+
+def test_a_reader_that_reads_only_assemblies_anew_leaves_parts_models(team, client):
+    """What changes how assemblies are read needn't have every part read again: each kind's models stand from the
+    reader that last changed them (solidworks.STANDS)."""
+    assert solidworks.STANDS["part"] <= solidworks.STANDS["assembly"] <= solidworks.READER
+    chief = team.member("chief@x.test", admin=True)
+    case = files(team.checkin(chief, {"Servo/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT")}))[
+        "Servomoteur.SLDPRT"
+    ]
+    assert make(client, chief, case).status_code == 200
+    made_by(team, case, solidworks.STANDS["part"], units="in")  # the oldest that stands: not read again
+    assert listed(client, chief, case) == [("Default", "in")]
+    assert make(client, chief, case).json()["units"] == "in"
 
 
 def test_an_assembly_without_references_finds_its_parts_by_their_paths(team, client):
@@ -1538,12 +1556,24 @@ def test_an_assembly_whose_parts_caliper_cant_tell_apart_or_find(team, client):
     assert make(client, chief, servo).status_code == 200
     params = {"version": 1, "configuration": "Default"}
     assembly = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=chief).json()
-    assert [c["name"] for c in assembly["components"]] == ["Servomoteur-1"]
+    # The one it can't tell is listed all the same, by its file's name and without a file, so nothing goes missing
+    # unsaid; where SolidWorks kept it (a path on someone's computer) stays on the server.
+    spline, case = assembly["components"]
+    assert (spline["name"], spline["file_id"], spline["version"], spline["file"]) == (
+        "Embout-1",
+        None,
+        None,
+        "Embout.SLDPRT",
+    )
+    assert (spline["model"], spline["children"], "path" in spline) == (False, [], False)
+    assert (case["name"], case["file"]) == ("Servomoteur-1", None)
+    assert case["file_id"] == checked["Servomoteur SM-S4303R/Servomoteur.SLDPRT"]["id"]
 
 
-def test_an_assembly_with_nothing_to_show_says_so(team, client):
-    """No 3D view of its own, and none of its parts in the vault: nothing is made, and the reason says what to do. Files
-    with the parts' names, in folders of other names, aren't taken for them: a name alone could be any file's."""
+def test_an_assembly_none_of_whose_parts_are_in_the_vault_lists_them(team, client):
+    """No 3D view of its own, and none of its parts in the vault: its model lists every component, each without a
+    file, so Caliper says which files to check in. Files with the parts' names, in folders of other names, aren't
+    taken for them: a name alone could be any file's."""
     chief = team.member("chief@x.test", admin=True)
     checked = by_path(
         team.checkin(
@@ -1556,10 +1586,112 @@ def test_an_assembly_with_nothing_to_show_says_so(team, client):
         )
     )
     servo = checked["Servo/9347.SLDASM"]
-    refused = make(client, chief, servo)
+    assert make(client, chief, servo).status_code == 200
+    params = {"version": 1, "configuration": "Default"}
+    assembly = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=chief).json()
+    assert [(c["name"], c["file_id"], c["file"]) for c in assembly["components"]] == [
+        ("Embout-1", None, "Embout.SLDPRT"),
+        ("Servomoteur-1", None, "Servomoteur.SLDPRT"),
+    ]
+
+
+def test_a_part_checked_in_after_its_assemblys_model_was_made_shows(team, client):
+    """A model lists the components whose files weren't in the vault when it was made, and each is looked for again
+    whenever the assembly is shown: one checked in since is found, where SolidWorks kept it, at its first version as
+    the assembly was checked in, and at its latest as it is now."""
+    chief = team.member("chief@x.test", admin=True)
+    servo = files(team.checkin(chief, {"Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM"))}))["9347.SLDASM"]
+    assert make(client, chief, servo).status_code == 200
+    params = {"version": 1, "configuration": "Default"}
+    url = f"/api/files/{servo['id']}/caliper/assembly"
+    before = client.get(url, params=params, headers=chief).json()
+    assert [c["file_id"] for c in before["components"]] == [None, None]
+
+    added = {"Servomoteur SM-S4303R/Embout.SLDPRT": contents("Embout.SLDPRT")}
+    spline = files(team.checkin(chief, added))["Embout.SLDPRT"]
+    assert team.checkout(chief, spline["path"]).status_code == 200
+    again = {path: data + b"\0" for path, data in added.items()}
+    assert team.checkin(chief, again).status_code == 200  # its second version
+    as_checked_in = client.get(url, params=params, headers=chief).json()["components"][0]
+    assert (as_checked_in["file_id"], as_checked_in["version"], as_checked_in["pinned"]) == (spline["id"], 1, 1)
+    now = client.get(url, params={**params, "latest": True}, headers=chief).json()["components"][0]
+    assert (now["file_id"], now["version"], now["pinned"], now["file"]) == (spline["id"], 2, 1, None)
+
+
+def test_a_model_read_from_a_file_says_what_of_it_was_read(team, client):
+    """A part's model is the 3D view SolidWorks saved in its file (the triangles SolidWorks drew), or made from the
+    solid the file keeps (the server's own triangles of it, close to SolidWorks'), and says which; an assembly's is
+    its file's list of components, and each of them says where its own part's is from."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {
+                "Servo/9347.SLDASM": without_3d_view(contents("9347.SLDASM")),
+                "Servo/Embout.SLDPRT": without_3d_view(contents("Embout.SLDPRT")),
+                "Servo/Servomoteur.SLDPRT": case_in_configurations(),
+            },
+            refs={"Servo/9347.SLDASM": ["Servo/Embout.SLDPRT", "Servo/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo, spline, case = checked["9347.SLDASM"], checked["Embout.SLDPRT"], checked["Servomoteur.SLDPRT"]
+    assert make(client, chief, case).json()["source"] == "view"
+    assert make_in(client, chief, case, "Spline").json()["source"] == "solid"  # a configuration it wasn't saved in
+    assert make(client, chief, spline).json()["source"] == "solid"  # saved without its 3D view
+    assert make(client, chief, servo).json()["source"] == "file"
+    listed = client.get(f"/api/files/{case['id']}/caliper", headers=chief).json()["models"]
+    assert [(model["configuration"], model["source"]) for model in listed] == [("Default", "view"), ("Spline", "solid")]
+    params = {"version": 1, "configuration": "Default"}
+    assembly = client.get(f"/api/files/{servo['id']}/caliper/assembly", params=params, headers=chief).json()
+    assert {c["name"]: c["source"] for c in assembly["components"]} == {"Embout-1": "solid", "Servomoteur-1": "view"}
+
+
+def best(client, who, file: dict, **body):
+    return client.post(f"/api/files/{file['id']}/caliper/best", json=body, headers=who)
+
+
+def test_a_part_shows_in_an_assembly_as_the_nearest_model_it_has(team, client):
+    """An assembly shows each part at a version, in the configuration it uses. Where the part has no model of that,
+    and its file keeps none to read, the nearest it has shows instead, so no part is missing where one can stand in,
+    and Caliper says which it shows and why not the one wanted: first the version the assembly was checked in with, in
+    that configuration; then the configuration the part was saved in."""
+    chief = team.member("chief@x.test", admin=True)
+    case = files(team.checkin(chief, {"Servo/Servomoteur.SLDPRT": case_in_configurations()}))["Servomoteur.SLDPRT"]
+
+    # The one wanted, made from the file: nothing was missed.
+    wanted = best(client, chief, case, version=1, configuration="Spline")
+    assert wanted.status_code == 200, wanted.text
+    assert (wanted.json()["model"]["version"], wanted.json()["model"]["configuration"]) == (1, "Spline")
+    assert wanted.json()["missed"] == []
+
+    # A configuration its file keeps no shape of: the one it was saved in stands in, and why says what to do.
+    old = best(client, chief, case, version=1, configuration="Old").json()
+    assert (old["model"]["version"], old["model"]["configuration"]) == (1, "Default")
+    [missed] = old["missed"]
+    assert (missed["version"], missed["configuration"]) == (1, "Old")
+    assert "needing a rebuild" in missed["message"]
+
+    # A newer version that can't be read: the one the assembly was checked in with stands in, in its configuration.
+    assert team.checkout(chief, case["path"]).status_code == 200
+    assert team.checkin(chief, {case["path"]: b"not a SolidWorks file"}).status_code == 200
+    newer = best(client, chief, case, version=2, configuration="Spline", pinned=1).json()
+    assert (newer["model"]["version"], newer["model"]["configuration"]) == (1, "Spline")
+    assert [(m["version"], m["configuration"]) for m in newer["missed"]] == [(2, "Spline")]
+    # Neither version in that configuration: the newer one as it was saved, were it readable; so the older, as saved.
+    neither = best(client, chief, case, version=2, configuration="Old", pinned=1).json()
+    assert (neither["model"]["version"], neither["model"]["configuration"]) == (1, "Default")
+    assert [(m["version"], m["configuration"]) for m in neither["missed"]] == [(2, "Old"), (1, "Old"), (2, "")]
+
+    # No model at all: refused for the reason the one wanted was.
+    odd = files(team.checkin(chief, {"Odd.SLDPRT": b"not a SolidWorks file"}))["Odd.SLDPRT"]
+    refused = best(client, chief, odd, version=1, configuration="Default")
     assert (refused.status_code, refused.json()["error"]) == (422, "unreadable_file")
-    assert refused.json()["message"].startswith("Servo/9347.SLDASM v1: Caliper found none of its parts")
-    assert client.get(f"/api/files/{servo['id']}/caliper", headers=chief).json() == {"models": []}
+    # An assembly that doesn't say which configuration it uses shows the one the part was saved in.
+    unsaid = best(client, chief, case, version=1).json()
+    assert (unsaid["model"]["configuration"], unsaid["missed"]) == ("Default", [])
+    # Like any look at a file, it's for those who can see it.
+    eve = team.member("eve@x.test")
+    assert best(client, eve, case, version=1, configuration="Default").status_code == 404
 
 
 def test_who_may_read_and_see_a_files_model(team, client):

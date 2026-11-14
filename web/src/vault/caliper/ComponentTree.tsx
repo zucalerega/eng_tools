@@ -2,16 +2,59 @@ import { useState } from "react";
 import { Link } from "../../router";
 import { caliperUrl, titleBeside } from "../paths";
 import { useVault } from "../store";
-import type { Node, Why } from "./model";
+import type { Node, Source, Why } from "./model";
 
 // What a component that draws nothing says beside its name (its full reason is the tag's title).
 const TAGS: Record<Why, string> = {
-    elsewhere: "Parts not in the vault",
-    configuration: "Other configuration",
-    unreadable: "No 3D model",
+    absent: "Not in the vault",
+    elsewhere: "No components",
+    configuration: "No 3D view",
+    unreadable: "No 3D view",
     inside: "No shape inside",
     failed: "Didn't load",
 };
+
+// Where a part's shape is from, beside its version, in a word; and in full, for its title.
+const FROM: Record<Source, [string, string]> = {
+    solidworks: ["SW", "From SolidWorks: Vault for SolidWorks made this view there, so it's what SolidWorks showed"],
+    view: ["file", "Read from its file: the 3D view SolidWorks saved in it"],
+    file: ["file", "Read from its file"],
+    cad: ["file", "Its STEP or IGES file, read as it is"],
+    solid: [
+        "rebuilt",
+        "Rebuilt from the solid in its file, which has no saved 3D view of this configuration: its shape and sizes " +
+            "are the part's, but colors and cosmetic threads may differ. Checking it in from SolidWorks gives its " +
+            "exact view",
+    ],
+};
+
+/** What a component shows in place of what the assembly has, in a few words and in full; none where it shows that. */
+function standIn(node: Node): [string, string] | null {
+    if (node.instead && node.file) {
+        const { version, configuration, why } = node.instead;
+        const older = version !== node.file.version;
+        const said = why ? ` ${why}` : "";
+        return older
+            ? [
+                  `Shows v${version}`,
+                  `This is v${version}, the version the assembly was checked in with: v${node.file.version} has no ` +
+                      `3D view Caliper can show${configuration ? ` in ${node.file.configuration || configuration}` : ""}.${said}`,
+              ]
+            : [
+                  `Shows ${configuration}`,
+                  `This is its ${configuration} configuration: its file has no 3D view of ` +
+                      `${node.file.configuration}, the one the assembly uses.${said}`,
+              ];
+    }
+    if (node.layout !== undefined && node.file) {
+        return [
+            `v${node.layout}'s layout`,
+            `These are the components it had at v${node.layout}, when the assembly was checked in: v${node.file.version}, ` +
+                "its latest, has no 3D view in this configuration yet",
+        ];
+    }
+    return null;
+}
 
 // The model's tree, beside the view: an assembly's components (a part's bodies), each with a box to show or hide it,
 // and ways to isolate it (show only it) or open it on its own. Clicking one selects it in the view.
@@ -49,6 +92,9 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
     const latest = node.file ? vault.files.get(node.file.id) : undefined;
     const file = latest?.name;
     const titled = latest ? titleBeside(latest) : null; // what its file is called, where the name doesn't say
+    const other = standIn(node);
+    const from = node.shape && node.source ? FROM[node.source] : null;
+    const since = node.pinned !== undefined ? `; the assembly was checked in with v${node.pinned}` : "";
     return (
         <li
             role="treeitem"
@@ -90,15 +136,30 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                     {node.name}
                 </button>
                 {titled && <span className="file-title caliper-title">{titled}</span>}
-                {node.file && (
-                    <span className="muted caliper-version">
-                        v{node.file.version}
-                        {latest && latest.version !== node.file.version && ` (now v${latest.version})`}
+                {(node.file || from) && (
+                    <span
+                        className="muted caliper-version"
+                        title={[node.file && `v${node.file.version}${since}`, from?.[1]].filter(Boolean).join(". ")}
+                    >
+                        {node.file && `v${node.file.version}`}
+                        {node.file && latest && latest.version !== node.file.version && ` (now v${latest.version})`}
+                        {node.file && from && " · "}
+                        {from && <span className={`caliper-from caliper-from-${node.source}`}>{from[0]}</span>}
                     </span>
                 )}
                 {node.problem && (
                     <span className="tag tag-warning" title={node.problem}>
                         {TAGS[node.why ?? "unreadable"]}
+                    </span>
+                )}
+                {other && (
+                    <span className="tag tag-warning caliper-stand-in" title={other[1]}>
+                        {other[0]}
+                    </span>
+                )}
+                {node.deleted && (
+                    <span className="tag" title="Its file is in the trash">
+                        In the trash
                     </span>
                 )}
                 <span

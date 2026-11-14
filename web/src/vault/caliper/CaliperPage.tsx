@@ -4,12 +4,14 @@ import { Link, navigate, useSearch } from "../../router";
 import { vaultApi, type CaliperConfigurations, type CaliperModel, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
 import { caliperUrl, fileFormat, fileUrl, kindOf, sheetFormat } from "../paths";
+import { useVault } from "../store";
+import { About, Details } from "./About";
 import { ComponentTree } from "./ComponentTree";
 import { useBelowTopBar } from "./layout";
 import { assemblyModel, cadModel, partModel } from "./load";
 import { formatLength, measureOne, measureTwo, UNITS } from "./measure";
 import { MeasurePanel } from "./MeasurePanel";
-import { initiallyHidden, shownNodes, type Model, type Units, type Why } from "./model";
+import { initiallyHidden, shownNodes, tally, walk, type Model, type Units } from "./model";
 import { Viewer, type Pick, type Section, type View } from "./viewer";
 import "./caliper.css";
 
@@ -18,6 +20,10 @@ import "./caliper.css";
 // 3D view SolidWorks saved in the file, or another configuration's from the solid SolidWorks kept of it. STEP, IGES, and
 // STL files are read as they are. At /vault/caliper/<file id>, with ?version= and ?configuration= for which. Drawings
 // and DXF files are flat: DrawingPage shows them.
+//
+// What it shows has to be what's in the vault now, and say so (About): with no version asked for it's the latest
+// version, never an older one in its place; an assembly's latest version shows each part and sub-assembly at its own
+// latest version, as SolidWorks opens it; and a version checked in while the page is open is offered at once.
 
 // The vault's routes send drawings and DXF files to their own page, without this one or three.js; here it's only for a
 // file the vault's index doesn't have (one in the trash, say).
@@ -40,6 +46,10 @@ export function CaliperPage({ id }: { id: number }) {
     const [listed, setListed] = useState<{ key: string; found: CaliperConfigurations | null } | null>(null);
     const page = useRef<HTMLDivElement>(null);
     useBelowTopBar(page);
+    // The file's latest version as the vault's index has it, which keeps current while the page is open: once it's
+    // past the one this page loaded, the page says so, and loads again when asked (fresh).
+    const newest = useVault().files.get(id)?.version;
+    const [fresh, setFresh] = useState(0);
 
     useEffect(() => {
         let current = true;
@@ -55,7 +65,7 @@ export function CaliperPage({ id }: { id: number }) {
         return () => {
             current = false;
         };
-    }, [id]);
+    }, [id, fresh]);
 
     // A SolidWorks version without a model: the server reads one from the file, once. So does one without a model in
     // the configuration asked for, where the file kept that configuration.
@@ -95,10 +105,7 @@ export function CaliperPage({ id }: { id: number }) {
     }, [reading, id, wanted, askedConfiguration]);
 
     // The configurations of the version shown, to choose from (once it's known which that is).
-    const shown =
-        current && models && solidWorks && !(reading && askedConfiguration === null)
-            ? shownVersion(current.file.version, models, askedVersion, askedConfiguration, false).version
-            : null;
+    const shown = current && models && solidWorks && !(reading && askedConfiguration === null) ? wanted : null;
     useEffect(() => {
         if (shown === null) {
             return;
@@ -153,7 +160,8 @@ export function CaliperPage({ id }: { id: number }) {
         );
     }
 
-    const { version, fellBack } = shownVersion(file.version, models, askedVersion, askedConfiguration, cad);
+    // The version asked for, or the latest: never another in its place, so what's shown unasked is what's current.
+    const version = askedVersion ?? file.version;
     const here = models.filter((model) => model.version === version);
     const fromFile = listed?.key === `${id}:${version}` ? listed.found : null;
     const savedIn = fromFile?.configurations.find((c) => c.active)?.name;
@@ -228,12 +236,19 @@ export function CaliperPage({ id }: { id: number }) {
                     </a>
                 </span>
             </header>
-            {fellBack && (
-                <Notice tone="info">
-                    <p>
-                        v{file.version}, the latest version, has no 3D model, so this is v{version}.
-                    </p>
-                    {why(file.version) && <p>{why(file.version)}</p>}
+            {newest !== undefined && newest > file.version && (
+                <Notice tone="warning">
+                    Version {newest} of {file.name} was checked in while this page was open.{" "}
+                    <button
+                        type="button"
+                        className="button-small"
+                        onClick={() => {
+                            setFresh((n) => n + 1);
+                            navigate(caliperUrl(file.id, undefined, askedConfiguration ?? undefined));
+                        }}
+                    >
+                        Show version {newest}
+                    </button>
                 </Notice>
             )}
             {reading ? (
@@ -253,10 +268,11 @@ export function CaliperPage({ id }: { id: number }) {
                 />
             ) : (
                 <CaliperView
-                    key={`${version}|${chosen?.configuration ?? ""}`}
+                    key={`${version}|${chosen?.configuration ?? ""}|${fresh}`}
                     fileId={file.id}
                     name={file.name}
                     version={version}
+                    latest={file.version}
                     model={chosen}
                 />
             )}
@@ -267,27 +283,6 @@ export function CaliperPage({ id }: { id: number }) {
 /** What a model is asked for by: a file's version, and the configuration asked for, if one was. */
 const modelKey = (id: number, version: number, configuration: string | null = null) =>
     configuration === null ? `${id}:${version}` : `${id}:${version}:${configuration}`;
-
-/**
- * The version to show: the one asked for, or the latest; with neither it nor a configuration asked for, and the latest
- * without a model (the server couldn't read one), a SolidWorks file's newest version that has one (fellBack).
- */
-function shownVersion(
-    latest: number,
-    models: CaliperModel[],
-    askedVersion: number | null,
-    askedConfiguration: string | null,
-    cad: boolean,
-): { version: number; fellBack: boolean } {
-    const version = askedVersion ?? latest;
-    const fellBack =
-        askedVersion === null &&
-        askedConfiguration === null &&
-        !cad &&
-        models.length > 0 &&
-        !models.some((model) => model.version === version);
-    return { version: fellBack ? models[0]!.version : version, fellBack };
-}
 
 function NoModel({
     id,
@@ -384,11 +379,13 @@ function CaliperView({
     fileId,
     name,
     version,
+    latest,
     model: info,
 }: {
     fileId: number;
     name: string;
     version: number;
+    latest: number; // the file's latest version: an assembly's shows each part as it is now
     model: CaliperModel | null; // null: a STEP or IGES file, read as it is
 }) {
     const container = useRef<HTMLDivElement>(null);
@@ -412,16 +409,21 @@ function CaliperView({
         ([0, 1, 2] as const).map((axis) => ({ axis, on: false, offset: 0, flipped: false })),
     );
     const [bounds, setBounds] = useState<{ min: number[]; max: number[] } | null>(null);
+    // An assembly's parts are loaded again when asked, once any is checked in while the page is open.
+    const [again, setAgain] = useState(0);
+    const asItIsNow = version === latest;
 
     // The model, from the vault or from the file.
     useEffect(() => {
         let current = true;
+        setLoaded(null);
+        setFailure(null);
         const loading =
             info === null
                 ? cadModel(fileId, version, name).then((model) => ({ model, leftOut: 0 }))
                 : info.kind === "part"
                   ? partModel(fileId, info).then((model) => ({ model, leftOut: 0 }))
-                  : assemblyModel(fileId, info, (done, total) => current && setProgress([done, total]));
+                  : assemblyModel(fileId, info, asItIsNow, (done, total) => current && setProgress([done, total]));
         loading.then(
             (result) => {
                 if (!current) {
@@ -440,7 +442,7 @@ function CaliperView({
         return () => {
             current = false;
         };
-    }, [fileId, version, name, info]);
+    }, [fileId, version, name, info, asItIsNow, again]);
 
     // The view, once there's somewhere to draw it.
     useEffect(() => {
@@ -552,186 +554,158 @@ function CaliperView({
         setSelected(id);
         viewer.current?.fit(new Set([id]));
     };
-    const missing = loaded ? tallyMissing(loaded.model) : null;
+    const counted = useMemo(() => (loaded && info?.kind === "assembly" ? tally(loaded.model) : null), [loaded, info]);
     const isolatedName = isolated && loaded ? nameOf(loaded.model, [...isolated][0]!) : null;
+    // Components checked in since the assembly was loaded, as the vault's index has them now: it's shown as it was a
+    // moment ago, and says so.
+    const files = useVault().files;
+    const since = useMemo(() => {
+        if (!loaded || !asItIsNow || info?.kind !== "assembly") {
+            return 0;
+        }
+        const changed = new Set<number>();
+        for (const node of walk(loaded.model.nodes)) {
+            const now = node.file ? files.get(node.file.id)?.version : undefined;
+            if (node.file && now !== undefined && now > node.file.version) {
+                changed.add(node.file.id);
+            }
+        }
+        return changed.size;
+    }, [loaded, asItIsNow, info, files]);
 
     return (
-        <div className="caliper-body">
-            <aside className="caliper-side" aria-label="Components">
-                <div className="caliper-side-head">
-                    <h2>{info?.kind === "part" ? "Bodies" : "Components"}</h2>
-                    <button
-                        type="button"
-                        className="button-small"
-                        disabled={isolated === null && hidden.size === 0}
-                        onClick={() => {
-                            setHidden(new Set());
-                            setIsolated(null);
-                        }}
-                    >
-                        Show all
+        <>
+            <About fileId={fileId} version={version} latest={latest} model={info} tally={counted} />
+            {since > 0 && (
+                <Notice tone="warning">
+                    {since === 1 ? "A part of this assembly was" : `${since} parts of this assembly were`} checked in
+                    while this page was open.{" "}
+                    <button type="button" className="button-small" onClick={() => setAgain((n) => n + 1)}>
+                        Show {since === 1 ? "it" : "them"} as {since === 1 ? "it is" : "they are"} now
                     </button>
-                </div>
-                {isolatedName !== null && (
-                    <p className="caliper-isolated">
-                        Showing only {isolatedName}.{" "}
-                        <button type="button" className="button-small" onClick={() => setIsolated(null)}>
-                            Show the rest
-                        </button>
-                    </p>
-                )}
-                {loaded && loaded.leftOut > 0 && (
-                    <p className="caliper-side-note muted">
-                        {loaded.leftOut === 1 ? "1 component is" : `${loaded.leftOut} components are`} in folders you
-                        can't see, so they're left out.
-                    </p>
-                )}
-                {missing && <NotShown tally={missing} />}
-                {loaded && (
-                    <ComponentTree
-                        nodes={loaded.model.nodes}
-                        hidden={hidden}
-                        isolated={isolated}
-                        selected={selected}
-                        open={open}
-                        toggleOpen={(id) => setOpen((previous) => toggle(previous, id))}
-                        toggleHidden={(id) => setHidden((previous) => toggle(previous, id))}
-                        isolate={isolate}
-                        select={setSelected}
-                        zoomTo={(id) => viewer.current?.fit(new Set([id]))}
-                        openHere={info === null ? isolate : undefined}
-                    />
-                )}
-            </aside>
-            <section className="caliper-stage" aria-label="3D view">
-                <div className="caliper-viewport" ref={container} />
-                {!noWebgl && (
-                    <div className="caliper-toolbar" role="toolbar" aria-label="View">
-                        <button type="button" title="Zoom to show it all (F)" onClick={() => viewer.current?.fit()}>
-                            Fit
-                        </button>
-                        <ViewsMenu choose={(view) => viewer.current?.view(view)} />
-                        <SectionsMenu sections={sections} bounds={bounds} units={units} change={setSections} />
+                </Notice>
+            )}
+            <div className="caliper-body">
+                <aside className="caliper-side" aria-label="Components">
+                    <div className="caliper-side-head">
+                        <h2>{info?.kind === "part" ? "Bodies" : "Components"}</h2>
                         <button
                             type="button"
-                            aria-pressed={measuring}
-                            className={measuring ? "caliper-on" : undefined}
-                            title="Measure faces, edges, and corners (Esc to stop)"
+                            className="button-small"
+                            disabled={isolated === null && hidden.size === 0}
                             onClick={() => {
-                                setMeasuring(!measuring);
-                                setPicks([]);
+                                setHidden(new Set());
+                                setIsolated(null);
                             }}
                         >
-                            Measure
+                            Show all
                         </button>
-                        <DisplayMenu
-                            options={[
-                                ["Edges", edges, setEdges],
-                                ["Perspective", perspective, setPerspective],
-                                ["Axes at the origin", origin, setOrigin],
-                            ]}
+                    </div>
+                    {isolatedName !== null && (
+                        <p className="caliper-isolated">
+                            Showing only {isolatedName}.{" "}
+                            <button type="button" className="button-small" onClick={() => setIsolated(null)}>
+                                Show the rest
+                            </button>
+                        </p>
+                    )}
+                    {loaded && loaded.leftOut > 0 && (
+                        <p className="caliper-side-note muted">
+                            {loaded.leftOut === 1 ? "1 component is" : `${loaded.leftOut} components are`} in folders
+                            you can't see, so they're left out.
+                        </p>
+                    )}
+                    {counted && <Details tally={counted} latest={asItIsNow} />}
+                    {loaded && (
+                        <ComponentTree
+                            nodes={loaded.model.nodes}
+                            hidden={hidden}
+                            isolated={isolated}
+                            selected={selected}
+                            open={open}
+                            toggleOpen={(id) => setOpen((previous) => toggle(previous, id))}
+                            toggleHidden={(id) => setHidden((previous) => toggle(previous, id))}
+                            isolate={isolate}
+                            select={setSelected}
+                            zoomTo={(id) => viewer.current?.fit(new Set([id]))}
+                            openHere={info === null ? isolate : undefined}
                         />
-                        <label className="caliper-units">
-                            <span className="visually-hidden">Units</span>
-                            <select value={units} onChange={(event) => setUnits(event.target.value as Units)}>
-                                {UNITS.map((unit) => (
-                                    <option key={unit}>{unit}</option>
-                                ))}
-                            </select>
-                        </label>
-                    </div>
-                )}
-                {noWebgl && (
-                    <div className="caliper-stage-message">
-                        <Notice tone="warning">
-                            This browser isn't drawing 3D (WebGL is off or unavailable), so Caliper can't show the
-                            model. The components are listed beside it.
-                        </Notice>
-                    </div>
-                )}
-                {failure && (
-                    <div className="caliper-stage-message">
-                        <Notice tone="error">{failure}</Notice>
-                    </div>
-                )}
-                {!loaded && !failure && (
-                    <p className="caliper-loading-model" role="status">
-                        {progress && progress[1] > 0
-                            ? `Loading parts: ${progress[0]} of ${progress[1]}…`
-                            : info === null
-                              ? "Reading the file…"
-                              : "Loading the model…"}
-                    </p>
-                )}
-                {measuring && (
-                    <MeasurePanel
-                        hovering={hovering}
-                        picked={picks.map((pick) => pick.entity)}
-                        units={units}
-                        clear={() => setPicks([])}
-                        one={measureOne}
-                        two={measureTwo}
-                        hint="Click a face, an edge, or a corner. Click a second to measure between them; a third starts over."
-                    />
-                )}
-            </section>
-        </div>
-    );
-}
-
-/** How many components draw nothing, for each sort of reason. */
-function tallyMissing(model: Model): Record<Why, number> {
-    const tally: Record<Why, number> = { elsewhere: 0, configuration: 0, unreadable: 0, inside: 0, failed: 0 };
-    const visit = (nodes: Model["nodes"]) =>
-        nodes.forEach((node) => {
-            if (node.problem) {
-                tally[node.why ?? "unreadable"] += 1;
-            }
-            visit(node.children);
-        });
-    visit(model.nodes);
-    return tally;
-}
-
-/**
- * What an assembly doesn't show, by why, and how to show it: Make 3D view in SolidWorks makes the models of parts in
- * other configurations, of files without a 3D view Caliper reads, and of parts kept inside an assembly with no shape
- * there that Caliper found (routed tubes); parts not in the vault need checking in.
- */
-function NotShown({ tally }: { tally: Record<Why, number> }) {
-    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-    const { configuration, unreadable, inside, elsewhere, failed } = tally;
-    const theirFiles = configuration === 1 ? "its file has" : "their files have";
-    const theirParts = elsewhere === 1 ? "its" : "their";
-    const reasons = [
-        configuration > 0 &&
-            `${count(configuration, "part is", "parts are")} in a configuration ${theirFiles} no 3D view of`,
-        unreadable > 0 && `${count(unreadable, "part's file has", "parts' files have")} no 3D view Caliper can read`,
-        inside > 0 &&
-            `${count(inside, "part is", "parts are")} kept inside ${inside === 1 ? "its assembly" : "their assemblies"} (routed tubes) with no shape there that Caliper found`,
-        elsewhere > 0 &&
-            `${count(elsewhere, "sub-assembly has", "sub-assemblies have")} none of ${theirParts} parts in the vault`,
-        failed > 0 && `${count(failed, "part", "parts")} didn't load`,
-    ].filter((reason): reason is string => Boolean(reason));
-    const total = configuration + unreadable + inside + elsewhere + failed;
-    if (total === 0) {
-        return null;
-    }
-    return (
-        <div className="caliper-side-note muted">
-            <p>{count(total, "component isn't", "components aren't")} shown:</p>
-            <ul>
-                {reasons.map((reason) => (
-                    <li key={reason}>{reason}.</li>
-                ))}
-            </ul>
-            {configuration + unreadable + inside > 0 && (
-                <p>
-                    Open the assembly in SolidWorks and click Make 3D view on the Vault tab to make those parts' models.
-                </p>
-            )}
-            {elsewhere > 0 && <p>Parts that aren't in the vault show once someone checks them in.</p>}
-        </div>
+                    )}
+                </aside>
+                <section className="caliper-stage" aria-label="3D view">
+                    <div className="caliper-viewport" ref={container} />
+                    {!noWebgl && (
+                        <div className="caliper-toolbar" role="toolbar" aria-label="View">
+                            <button type="button" title="Zoom to show it all (F)" onClick={() => viewer.current?.fit()}>
+                                Fit
+                            </button>
+                            <ViewsMenu choose={(view) => viewer.current?.view(view)} />
+                            <SectionsMenu sections={sections} bounds={bounds} units={units} change={setSections} />
+                            <button
+                                type="button"
+                                aria-pressed={measuring}
+                                className={measuring ? "caliper-on" : undefined}
+                                title="Measure faces, edges, and corners (Esc to stop)"
+                                onClick={() => {
+                                    setMeasuring(!measuring);
+                                    setPicks([]);
+                                }}
+                            >
+                                Measure
+                            </button>
+                            <DisplayMenu
+                                options={[
+                                    ["Edges", edges, setEdges],
+                                    ["Perspective", perspective, setPerspective],
+                                    ["Axes at the origin", origin, setOrigin],
+                                ]}
+                            />
+                            <label className="caliper-units">
+                                <span className="visually-hidden">Units</span>
+                                <select value={units} onChange={(event) => setUnits(event.target.value as Units)}>
+                                    {UNITS.map((unit) => (
+                                        <option key={unit}>{unit}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+                    )}
+                    {noWebgl && (
+                        <div className="caliper-stage-message">
+                            <Notice tone="warning">
+                                This browser isn't drawing 3D (WebGL is off or unavailable), so Caliper can't show the
+                                model. The components are listed beside it.
+                            </Notice>
+                        </div>
+                    )}
+                    {failure && (
+                        <div className="caliper-stage-message">
+                            <Notice tone="error">{failure}</Notice>
+                        </div>
+                    )}
+                    {!loaded && !failure && (
+                        <p className="caliper-loading-model" role="status">
+                            {progress && progress[1] > 0
+                                ? `Loading parts: ${progress[0]} of ${progress[1]}…`
+                                : info === null
+                                  ? "Reading the file…"
+                                  : "Loading the model…"}
+                        </p>
+                    )}
+                    {measuring && (
+                        <MeasurePanel
+                            hovering={hovering}
+                            picked={picks.map((pick) => pick.entity)}
+                            units={units}
+                            clear={() => setPicks([])}
+                            one={measureOne}
+                            two={measureTwo}
+                            hint="Click a face, an edge, or a corner. Click a second to measure between them; a third starts over."
+                        />
+                    )}
+                </section>
+            </div>
+        </>
     );
 }
 

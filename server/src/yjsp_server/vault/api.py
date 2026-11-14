@@ -151,10 +151,11 @@ def get_caliper_configurations(
 
 
 @router.post("/caliper/missing")
-def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB) -> CaliperMissingOut:
-    """Which of these versions, in these configurations, have no 3D model yet: what Vault for SolidWorks makes."""
+def post_caliper_missing(body: CaliperMissingIn, user: ActiveUser, db: DB, store: Store) -> CaliperMissingOut:
+    """Which of these versions, in these configurations, have no 3D model made in SolidWorks yet (one the server read
+    from the file counts as missing): what Vault for SolidWorks makes."""
     wanted = [(m.file_id, m.version, m.configuration) for m in body.models]
-    missing = vault.caliper_missing(db, user, wanted)
+    missing = vault.caliper_missing(db, store, user, wanted)
     return CaliperMissingOut(missing=[CaliperWantIn(file_id=f, version=v, configuration=c) for f, v, c in missing])
 
 

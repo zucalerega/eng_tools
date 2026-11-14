@@ -49,6 +49,8 @@ public sealed class ServerFixture : IAsyncLifetime
         start.Environment["YJSP_PUBLIC_URL"] = Url.AbsoluteUri.TrimEnd('/');
         start.Environment["YJSP_DATABASE_URL"] = "sqlite:///" + Path.Combine(_data, "yjsp.db");
         start.Environment["YJSP_VAULT_DIR"] = Path.Combine(_data, "vault");
+        // The tests say when each 3D model is made: the server doesn't read them ahead in a thread of its own.
+        start.Environment["YJSP_CALIPER_READ_AHEAD"] = "0";
         start.Environment["YJSP_YORG_DIR"] = Path.Combine(_data, "yorg");
         Directory.CreateDirectory(DownloadsFolder);
         start.Environment["YJSP_DOWNLOADS_DIR"] = DownloadsFolder;

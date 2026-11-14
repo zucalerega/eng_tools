@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, defer
 
 from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
-from ..models import User
+from ..models import User, UserStatus
 from . import caliper, numbers, paths, solidworks
 from .access import Access, Tree
 from .models import (
@@ -2181,20 +2181,26 @@ def caliper_models(db: Session, store: BlobStore, user: User, file_id: int) -> l
     return [_view(db, store, model, number, users[model.created_by]) for model, number in rows]
 
 
-def caliper_missing(db: Session, user: User, wanted: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
-    """Which of these (file id, version, configuration) have no 3D model yet, of files the user can see: what Vault for
-    SolidWorks asks before making models, so it makes only those."""
+def caliper_missing(
+    db: Session, store: BlobStore, user: User, wanted: list[tuple[int, int, str]]
+) -> list[tuple[int, int, str]]:
+    """Which of these (file id, version, configuration) have no 3D model of SolidWorks' making yet, of files the user
+    can see: what Vault for SolidWorks asks before making models, so it makes only those. One the server read from the
+    file counts as missing: SolidWorks' own, made from what it has open, takes its place (put_caliper_model)."""
     _, access = _context(db, user)
     files = _files_by_id(db, {file_id for file_id, _, _ in wanted})
     have: set[tuple[int, int, str]] = set()
     ids = sorted(files)
     for start in range(0, len(ids), _BATCH):
         rows = db.execute(
-            select(Version.file_id, Version.number, CaliperModel.configuration)
+            select(Version.file_id, Version.number, CaliperModel)
             .join(Version, Version.id == CaliperModel.version_id)
             .where(Version.file_id.in_(ids[start : start + _BATCH]))
+            .options(defer(CaliperModel.components))
         )
-        have.update((file_id, number, configuration) for file_id, number, configuration in rows)
+        for file_id, number, model in rows:
+            if _source(store, model) == "solidworks":
+                have.add((file_id, number, model.configuration))
 
     def needs(file_id: int, version: int, configuration: str) -> bool:
         file = files.get(file_id)
@@ -2294,7 +2300,9 @@ def put_caliper_model(
     if model is None:
         model = CaliperModel(version_id=target.id, configuration=configuration)
         db.add(model)
-    else:
+    elif _source(store, model) == "solidworks":
+        # One made in SolidWorks is someone's work, so making it again is an editor's. One the server read from the
+        # file is nobody's: SolidWorks' own takes its place, from anyone who may add one.
         access.require(file.folder_id, Role.EDITOR, f"make the 3D model of {path} v{version} again")
     model.units, model.mesh_sha256, model.components, model.reader = units, mesh, components, _UPLOADED
     model.source, model.created_at, model.created_by = "solidworks", utcnow(), user.id
@@ -2658,6 +2666,48 @@ def make_caliper_model(
     return view(have[wanted[0][0] if configuration is None else configuration])
 
 
+def caliper_unread(db: Session, store: BlobStore, before: datetime) -> list[tuple[int, int]]:
+    """The versions (file id, number) the server reads ahead (vault/reading.py), so that Caliper needn't wait for them
+    when they're first opened: the latest of each SolidWorks part and assembly that isn't in the trash, checked in
+    before a time, with no model that stands (none, or an older reader's). Newest first, as what was just checked in
+    is what's looked at next. Not the bigger files the server doesn't read (_MAX_READ)."""
+    rows = db.execute(
+        select(File.id, File.name, Version.id, Version.number)
+        .join(Version, and_(Version.file_id == File.id, Version.number == File.latest_version))
+        .where(File.deleted_at.is_(None), Version.created_at <= before, Version.size <= _MAX_READ)
+        .order_by(Version.created_at.desc(), Version.id.desc())
+    )
+    latest = [(file_id, version_id, number) for file_id, name, version_id, number in rows if _caliper_kind(name)]
+    models: dict[int, list[CaliperModel]] = defaultdict(list)
+    ids = [version_id for _, version_id, _ in latest]
+    for start in range(0, len(ids), _BATCH):
+        found = select(CaliperModel).where(CaliperModel.version_id.in_(ids[start : start + _BATCH]))
+        for model in db.scalars(found.options(defer(CaliperModel.components))):
+            models[model.version_id].append(model)
+    return [
+        (file_id, number)
+        for file_id, version_id, number in latest
+        if not models[version_id] or any(_outdated(store, model) for model in models[version_id])
+    ]
+
+
+def read_ahead(db: Session, store: BlobStore, file_id: int, version: int) -> ModelView:
+    """Make a version's model from its file before anyone asks (make_caliper_model), for whoever checked the version
+    in, as it's their file that was read; or, where they no longer see it, for an admin. Refused as make_caliper_model
+    refuses: Conflict while the server's busy reading others."""
+    author = db.scalar(
+        select(User)
+        .join(Version, Version.created_by == User.id)
+        .where(Version.file_id == file_id, Version.number == version)
+    )
+    admins = db.scalars(select(User).where(User.is_admin, User.status == UserStatus.ACTIVE).order_by(User.id).limit(1))
+    for user in [author, *admins]:
+        if user is not None:
+            with contextlib.suppress(NotFound):
+                return make_caliper_model(db, store, user, file_id, version)
+    raise NotFound(f"File {file_id} has no version {version} anyone can read")
+
+
 # Versions' configurations (solidworks.read_configurations), by their contents' SHA-256 and kind, or why they couldn't
 # be read: a version's bytes never change, and Caliper asks each time it shows one.
 _CONFIGURATIONS: OrderedDict[str, list[solidworks.Configuration] | str] = OrderedDict()
@@ -2829,12 +2879,15 @@ def caliper_assembly(
             found: File | None = files.get(component["file_id"]) if component.get("file_id") is not None else None
             pinned: int | None = component.get("version")
             lost = component.get("path") or ""
-            if component.get("file_id") is None and lost and not component.get("mesh"):
+            if component.get("file_id") is None and lost:
                 match = finder.file_of(lost, refs())
                 if match is not None:
+                    # In the vault now: its file shows, as any other's, in place of a shape the model carried of it
+                    # (Vault for SolidWorks', of a part that wasn't checked in when the assembly was).
                     found, pinned = match
                     files[found.id] = found
                     models.load([found.id])
+                    component = {**component, "mesh": None}
             if component.get("file_id") is not None and found is None:
                 left_out += 1  # its file is gone from the database: nothing to show or say of it
                 continue

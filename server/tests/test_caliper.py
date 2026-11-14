@@ -3,6 +3,7 @@
 import gzip
 import json
 import struct
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -13,6 +14,8 @@ from yjsp_server.vault.models import CaliperModel
 CORNERS = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (0.0, 10.0, 0.0), (0.0, 0.0, 10.0)]
 TRIANGLES = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+# A part as SolidWorks saved it, which the server reads a model from (test_caliper_files.py has what it reads).
+FIXTURE = Path(__file__).parent / "fixtures" / "solidworks" / "Embout.SLDPRT"
 
 
 def mesh(
@@ -405,3 +408,66 @@ def test_a_component_whose_file_is_in_the_trash_says_so(team, client):
     assert deleted.status_code == 200, deleted.text
     [in_trash] = shown(client, chief, can, latest=True)["components"]
     assert (in_trash["deleted"], in_trash["file_id"], in_trash["version"]) == (True, fin["id"], 1)
+
+
+def test_a_part_that_isnt_in_the_vault_shows_the_shape_its_assembly_carries(team, client):
+    """Vault for SolidWorks sends an assembly's model with every component SolidWorks has: one whose file isn't in the
+    vault (a Toolbox screw, a part not checked in yet) comes with where SolidWorks had it and its shape there, and
+    shows. Once its file is checked in, the file shows in its place, as any other part's."""
+    chief = team.member("chief@x.test", admin=True)
+    can = files(team.checkin(chief, {"Fins/Fin Can.SLDASM": b"can"}))["Fin Can.SLDASM"]
+    screw = team.upload(chief, mesh())
+    outside = {"path": "C:\\VLT\\Fins\\Screw.SLDPRT", "mesh": screw}
+    components = [component("Screw-1", **outside), component("Clip-1", path="C:\\Toolbox\\Clip.SLDPRT")]
+    assert put_model(team, chief, can, components=components).status_code == 200
+
+    carried, listed = shown(client, chief, can, latest=True)["components"]
+    assert (carried["file_id"], carried["file"], carried["mesh"], carried["source"]) == (
+        None,
+        "Screw.SLDPRT",
+        screw,
+        "solidworks",
+    )
+    assert carried["carrier"] == {"file_id": can["id"], "version": 1, "configuration": "Default"}
+    assert (listed["file_id"], listed["file"], listed["mesh"]) == (None, "Clip.SLDPRT", None)
+    params = {"version": 1, "configuration": "Default", "mesh": screw}
+    assert client.get(f"/api/files/{can['id']}/caliper/mesh", params=params, headers=chief).status_code == 200
+
+    part = files(team.checkin(chief, {"Fins/Screw.SLDPRT": b"screw"}))["Screw.SLDPRT"]
+    now = shown(client, chief, can, latest=True)["components"][0]
+    assert (now["file_id"], now["version"], now["file"], now["mesh"], now["carrier"]) == (
+        part["id"],
+        1,
+        None,
+        None,
+        None,
+    )
+
+
+def test_solidworks_own_model_takes_the_place_of_one_the_server_read(team, client):
+    """A version someone opened in Caliper before Vault for SolidWorks got to it has the model the server read from
+    its file. That one counts as missing, so the add-in makes SolidWorks' own, and anyone who may add a model may put
+    it in the server's place; putting one in place of SolidWorks' own is still an editor's."""
+    chief = team.member("chief@x.test", admin=True)
+    bob = team.member("bob@x.test")  # edits Structures, and sees Servo
+    team.grant(chief, "", None, "viewer")
+    assert team.checkin(chief, {"Structures/Fin.SLDPRT": b"fin"}).status_code == 200
+    team.grant(chief, "Structures", "bob@x.test", "editor")
+    spline = files(team.checkin(chief, {"Servo/Embout.SLDPRT": FIXTURE.read_bytes()}))["Embout.SLDPRT"]
+    read = client.post(f"/api/files/{spline['id']}/caliper/make", json={"version": 1}, headers=bob)
+    assert (read.status_code, read.json()["source"]) == (200, "view")
+    name = read.json()["configuration"]
+
+    def missing() -> list[str]:
+        body = {"models": [{"file_id": spline["id"], "version": 1, "configuration": name}]}
+        response = client.post("/api/caliper/missing", json=body, headers=bob)
+        assert response.status_code == 200, response.text
+        return [model["configuration"] for model in response.json()["missing"]]
+
+    assert missing() == [name]
+    first, second = team.upload(chief, mesh()), team.upload(chief, mesh(CORNERS[::-1]))
+    assert put_model(team, bob, spline, mesh=first, configuration=name).status_code == 200
+    [model] = client.get(f"/api/files/{spline['id']}/caliper", headers=bob).json()["models"]
+    assert (model["source"], model["created_by"]["email"]) == ("solidworks", "bob@x.test")
+    assert missing() == []
+    assert put_model(team, bob, spline, mesh=second, configuration=name).status_code == 403

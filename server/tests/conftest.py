@@ -24,6 +24,8 @@ def settings(tmp_path) -> Settings:
         yorg_dir=tmp_path / "yorg",
         # The tests that keep the help loaded for Claude do it themselves, on their own clock, not in a thread.
         assistant_keep_warm=False,
+        # Nor does the server read Caliper's models ahead in a thread: the tests of that take its steps themselves.
+        caliper_read_ahead=False,
     )
 
 

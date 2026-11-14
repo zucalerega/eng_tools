@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     downloads_dir: Path | None = None
     # Vault's files: every version of every file, in blobs/. Back it up with the database.
     vault_dir: Path = Path("data/vault")
+    # Read each SolidWorks file's 3D model for Caliper once it's checked in (vault/reading.py), so it's there when the
+    # file's first opened. Off: each is read when someone first opens it, as before.
+    caliper_read_ahead: bool = True
     # Yorg's files: each dataset's upload and the arrays read from it, and saved scripts and models. Back it up too.
     yorg_dir: Path = Path("data/yorg")
     # What the off-site backup (deploy/yjsp-offsite, run by root) last wrote about itself, for Admin > People. Missing:

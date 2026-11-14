@@ -1,4 +1,5 @@
-"""The FastAPI application: the site (sign-in, accounts, the web app) and its three apps, Vault, Yorg, and Piper."""
+"""The FastAPI application: the site (sign-in, accounts, the web app) and its four apps, Vault, Yorg, Piper, and
+Buildflow."""
 
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,7 @@ from .api import feedback as feedback_api
 from .api import help as help_api
 from .api import people as people_api
 from .assistant import Assistant
+from .buildflow import api as buildflow_api
 from .config import Settings
 from .db import make_engine, migrate
 from .errors import ApiError
@@ -114,6 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(yorg_system_api.router)
     app.include_router(yorg_scripts.router)
     app.include_router(piper_api.router)
+    app.include_router(buildflow_api.router)
     web.mount_assets(app, settings)
     app.include_router(web.router)  # last: it takes every path nothing else did
     return app

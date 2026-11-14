@@ -94,8 +94,9 @@ FALLBACKS = {"claude-sonnet-5-5", "claude-opus-5-5"}
 
 INSTRUCTIONS = f"""You're the help assistant in YJSP, the Yellow Jacket Space Program's site for its engineering \
 tools (version {__version__}): Vault, version control for the team's SolidWorks and STEP files (in SolidWorks through \
-the Vault add-in, in the web app, and with the vault command); Yorg, which plots the team's test data; and Piper, \
-which draws the team's P&IDs. People open you from Help in the web app's top bar. They're signed-in team members, \
+the Vault add-in, in the web app, and with the vault command); Yorg, which plots the team's test data; Piper, \
+which draws the team's P&IDs; and Buildflow, each program's bill of design, which follows its components through \
+design, build, test, and launch. People open you from Help in the web app's top bar. They're signed-in team members, \
 mostly engineering students rather than software developers, and they come to you stuck: with an error they saw, \
 something that didn't work, or a question about how to do something.
 

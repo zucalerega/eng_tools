@@ -1,16 +1,17 @@
 # YJSP: agent guide
 
-YJSP is a college rocketry team's site for its engineering tools: three apps on one
+YJSP is a college rocketry team's site for its engineering tools: four apps on one
 server. **Vault** is CAD version control (check-out/check-in, version history, folder
 permissions) for the team's SolidWorks and STEP files; it replaces Kenesto. **Yorg**
 plots the team's test data. **Piper** draws the team's fluid systems as P&IDs (and reads
-Yorg's tests on them). The team trusts them with flight-hardware designs and test
+Yorg's tests on them). **Buildflow** is each program's bill of design: its components, on the
+vehicle, through design, build, test, and launch. The team trusts them with flight-hardware designs and test
 results, so correctness and not losing data come before speed. README.md is the user
 guide, and docs/troubleshooting.md says what goes wrong and what every error means; the
 site's help page (/help) shows both, for anyone, and Claude, in the web app's Help, reads
 them. docs/design.md has the site's design (architecture, sign-in, the web app's frame,
 the help and Claude, API conventions, the names from before YJSP); docs/vault.md,
-docs/yorg.md, and docs/piper.md have each app's design, API, and roadmap. Read the design
+docs/yorg.md, docs/piper.md, and docs/buildflow.md have each app's design, API, and roadmap. Read the design
 before changing
 behavior.
 
@@ -26,10 +27,10 @@ API, as a client would (docs/piper.md).
 
 | Path | What |
 |---|---|
-| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budgets, limits, and prompt), `feedback.py` bug reports and feature requests (Claude's look at each, and the owner's approval, which starts a Claude Code routine), `api/` sign-in, people, downloads, the help's pages, Claude's and the requests' routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`; `yorg/system/` runs system models with FullFlow, for Piper's Simulation mode). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, who's editing, deleting; `releases.py` releasing a revision to its approvers; `schemes.py` the team's color schemes; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). |
+| `server/` | Python 3.13 FastAPI server, the `yjsp_server` package. The site at its top level: `app.py` puts it together, `auth.py` accounts and tokens, `people.py` managing accounts and the whitelist, `config.py` the `YJSP_*` settings, `help.py` the help (the docs as a page, as Markdown, and as what Claude reads), `assistant.py` Claude in Help (its budgets, limits, and prompt), `feedback.py` bug reports and feature requests (Claude's look at each, and the owner's approval, which starts a Claude Code routine), `api/` sign-in, people, downloads, the help's pages, Claude's and the requests' routes, and serving the web app. `vault/`: Vault. Start at `vault.py` (every vault operation, no HTTP); `access.py`: folder tree and permissions; `paths.py`: path rules; `caliper.py`: the 3D models' mesh format; `solidworks.py`: reading the 3D view SolidWorks saves in its files; `api.py`: its routes. `yorg/`: Yorg, the test data app (its tables, reading CSV files into arrays, rules, and routes under `/api/yorg`; `yorg/system/` runs system models with FullFlow, for Piper's Simulation mode). `piper/`: Piper, the P&IDs (`diagrams.py` its rules: saving, revisions, who's editing, deleting; `releases.py` releasing a revision to its approvers; `schemes.py` the team's color schemes; `schemas.py` what the server checks of a drawing; routes under `/api/piper`). `buildflow/`: Buildflow, the bills of design (`programs.py` a program's layout, admins'; `progress.py` its components' progress, links, and people, anyone's; `templates.py` what a new program starts from; routes under `/api/buildflow`). |
 | `client/` | Vault's clients, in C#. `Vault.Client`: workspace library (netstandard2.0 for the SolidWorks add-in, net10.0 for the rest). `Vault.Cli`: the `vault` command. `Vault.SolidWorks`: the SolidWorks 2026 add-in, which runs in 2025 too (net48, COM; see its README). `Vault.SolidWorks.Open`: `vault-open.exe`, which follows the web app's links into the add-in. `Vault.Setup`: `Vault-Setup.exe`, the add-in's installer, which carries the add-in's build inside it. Tests run against the real server. |
-| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `feedback.tsx` (Help's requests tab, and Admin > Requests), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `vsdx.ts` reading a Visio drawing and `visio.ts` making a diagram of it, `pdf.ts` the PDF export, `sim/` Simulation mode: `model.ts` the P&ID as a FullFlow model, `SimPanel.tsx` its runs). Tests run against the real server. |
-| `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md` | The site's design, and each app's: design, API, roadmap, open questions. |
+| `web/` | TypeScript and React, built with Vite into `web/dist`, which the server serves (`api/web.py`). The frame at the top of `src`: `App.tsx` (the top bar, the app switcher), `session.ts` (who's signed in), `api.ts` (requests, and the site's API), `help.tsx` and `chat.ts` (Help: the panel, and the conversation with Claude), `feedback.tsx` (Help's requests tab, and Admin > Requests), `markdown.tsx` (Markdown, shown). `vault/`: Vault's pages (`index.tsx`), and `store.ts`, the vault index, kept current through the sync feed while a Vault page is open; `vault/caliper/`: Caliper, the 3D viewer (three.js; `viewer.ts` draws, `geometry.ts` measures). `yorg/`: Yorg's pages and its canvas plots (`samples.ts` decides what's drawn). `piper/`: Piper's pages and its editor (`drawing.ts` a drawing's JSON, `library/` the parts, `edit.ts` every change to a drawing, `route.ts` routing lines, `Canvas.tsx` the pointer, `vsdx.ts` reading a Visio drawing and `visio.ts` making a diagram of it, `pdf.ts` the PDF export, `sim/` Simulation mode: `model.ts` the P&ID as a FullFlow model, `SimPanel.tsx` its runs). `buildflow/`: Buildflow's pages (`Program.tsx` a program's bill of design, `Panel.tsx` a component beside it, `Layout.tsx` laying a program out, `vehicle.ts` the vehicle drawn and where each component is, `links.ts` links to the other apps' pages). Tests run against the real server. |
+| `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md`, `docs/buildflow.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/troubleshooting.md` | What goes wrong and what to do, and what every error the server sends means. Public, on /help. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
 | `docs/renumbering.md` | Numbering the vault's files all at once: what has to be checked in SolidWorks 2026 first, the plan, and the run. |
@@ -85,7 +86,8 @@ cd web && npm ci && npm run check && npm test && npm run build
 - **User-facing changes update the help people read, in the same PR.** Anything people
   see or do differently (a new button, a setting, a rule about who can do what) goes in
   the site's help: Yorg's Help page (`web/src/yorg/Help.tsx`, `/yorg/help`), Piper's
-  (`web/src/piper/Help.tsx`, `/piper/help`), the SolidWorks page for the add-in
+  (`web/src/piper/Help.tsx`, `/piper/help`), Buildflow's (`web/src/buildflow/Help.tsx`,
+  `/buildflow/help`), the SolidWorks page for the add-in
   (`web/src/vault/pages/SolidWorks.tsx`), the page's own hints, and README.md, the user
   guide; a new way for something to go wrong goes in docs/troubleshooting.md. A feature
   the help doesn't mention isn't done. Claude, in Help, knows only the docs `help.PARTS`
@@ -114,7 +116,8 @@ cd web && npm ci && npm run check && npm test && npm run build
 
 - **One home for each rule.** The site's rules live in `auth.py`/`people.py` (and `feedback.py`), Vault's in
   `vault/vault.py`, Yorg's in `yorg/` (`datasets.py`, ...), Piper's in `piper/diagrams.py`
-  (and what a drawing is, and how it changes, in `web/src/piper`), and Vault's client rules in
+  (and what a drawing is, and how it changes, in `web/src/piper`), Buildflow's in
+  `buildflow/programs.py` and `buildflow/progress.py`, and Vault's client rules in
   `Vault.Client`. Routes, the CLI, and the add-in only translate.
 - **Errors tell people what to do next,** e.g. "X is checked out by Alice on ALICE-PC".
   Server errors are `ApiError` subclasses with a stable `code`, and docs/troubleshooting.md

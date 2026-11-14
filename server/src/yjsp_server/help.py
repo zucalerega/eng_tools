@@ -1,4 +1,4 @@
-"""The help: the user guide, the SolidWorks add-in's, troubleshooting, and how Vault and Yorg work, all from the
+"""The help: the user guide, the SolidWorks add-in's, troubleshooting, and how the site and its apps work, all from the
 repository's own docs (Settings.help_dir). It's one page anyone can open (/help, api/help.py), Markdown for AI tools
 (/help.md), and what the assistant reads (assistant.py).
 
@@ -40,6 +40,7 @@ PARTS = (
     Part("vault", "docs/vault.md", False),
     Part("yorg", "docs/yorg.md", False),
     Part("piper", "docs/piper.md", False),
+    Part("buildflow", "docs/buildflow.md", False),
 )
 
 # CommonMark with tables, and never HTML from the docs: <name> in a sentence stays text.

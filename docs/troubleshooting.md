@@ -427,6 +427,22 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 - **A run's results are gone.** They're shown until you leave the diagram, and never saved: run it
   again. What a fit found is the P&ID's only once you *Apply to the P&ID*.
 
+## Buildflow
+
+- **There's no Layout button, or New program.** Admins lay programs out: ask one. Anyone signed in
+  sets statuses, dates, notes, people, and links.
+- **A component isn't on the vehicle.** It hasn't been placed: an admin places it on the program's
+  Layout page (*Place*, then a click where it goes). It's in the bill either way.
+- **A dot is gray, or the caption says fewer than you expected.** A dot's color is where its component
+  is in the phase picked above the vehicle, through every milestone it needs in that phase: one
+  milestone not done keeps it orange (or gray, if none has started). Mark what it doesn't need
+  *Not needed*. The caption counts the components through the phase's last milestone (CDR, in
+  design).
+- **A link shows its address, not its name.** Its page is gone, or isn't yours to see (a folder in
+  Vault you can't open). Links to other sites show the name they were given, or their address.
+- **Nothing on a program can be changed.** It's archived: an admin brings it back from *Show archived
+  programs*, on Programs.
+
 ## What an error means
 
 Each error the server sends has a code, in backticks below, and a message, which is what the web
@@ -781,6 +797,31 @@ a number. A few codes come up in more than one place.
   know it, by its stencil's name or by its tag. Drag the part it is from the library onto it,
   give it its tag, draw its lines to it, and delete the figure; the import lists the symbols it
   drew this way.
+
+### Buildflow
+
+- **Only admins can ...: ask one** (`admin_only`): laying a program out (making programs, their
+  drawing, subsystems, components, and milestones, archiving) is the admins'.
+- **There's a program called ... already**, **There's a milestone called ... already**, **There's a
+  subsystem called ... already**, or **There's a component called ... already** (`name_taken`): two
+  can't have the same name, whatever its case (an archived program keeps its name: bring it back
+  instead). Pick another.
+- **... is archived: an admin can bring it back to change it** (`archived`): an archived program is
+  kept as it was, its progress too. An admin brings it back from *Show archived programs*.
+- **... was removed from its program: an admin can bring it back to change it** (`removed`): the
+  component was taken off the program, with everything said of it kept. An admin brings it back
+  from the program's Layout page, under *Removed*.
+- **... has progress on ... components and ... links kept on it: rename it, or move it, instead**
+  (`milestone_in_use`): a milestone something's been kept on stays, so nothing said of a component
+  is lost. Rename it, or move it to where it belongs.
+- **... has ... components in it: move them to another subsystem first**, or **... removed components
+  to come back to it** (`not_empty`): only an empty subsystem is deleted. Move its components
+  elsewhere first; removed ones keep their subsystem, so bring them back and move them too.
+- **There's no active member ...: only people who've joined the site can be named** (`not_a_member`):
+  a component's lead and people are people who've joined the site. Pick someone from the list.
+- **... isn't a link a component can have: a link is an http or https address, or a page of the
+  site's own, like /vault/file/12** (`bad_link`): copy the page's whole address from the browser
+  (`https://...`), or a page of the site's own from its path (`/vault/file/12`).
 
 ### Asking Claude
 

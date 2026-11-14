@@ -2,15 +2,17 @@
 
 The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
 the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for its test
-data; and **[Piper](#piper-pids)** (`/piper`), for its P&IDs. The site's address on its own
-shows all three (the team's logo at the top left goes back to it), and how full the server's disk is,
-and how much of it each takes; the switcher beside the logo goes between them.
+data; **[Piper](#piper-pids)** (`/piper`), for its P&IDs; and
+**[Buildflow](#buildflow-bills-of-design)** (`/buildflow`), for each program's bill of design.
+The site's address on its own shows all four (the team's logo at the top left goes back to it),
+and how full the server's disk is, and how much of it each takes; the switcher beside the logo
+goes between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
 > in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
-> [docs/vault.md](docs/vault.md), [docs/yorg.md](docs/yorg.md), and [docs/piper.md](docs/piper.md) for each app and its
-> roadmap.
+> [docs/vault.md](docs/vault.md), [docs/yorg.md](docs/yorg.md), [docs/piper.md](docs/piper.md), and
+> [docs/buildflow.md](docs/buildflow.md) for each app and its roadmap.
 
 ## Signing in
 
@@ -496,17 +498,57 @@ the keys.
   of line, its fluids, and its valves' state colors, beside the drawing (a page whose printed
   sheet is set has its legend on a sheet of its own after it, in a PDF).
 
+## Buildflow: bills of design
+
+The site's fourth app, **Buildflow**, is each program's bill of design: Hopper, Elytra,
+Felicette 2, HETS, each with its components, by subsystem, on its vehicle, and how far each has
+come through design (DCR, CoDR, PDR, CDR), build (drawings, procurement, manufacturing,
+inspection), test (TRR, testing, QRR), and launch (integration, FRR, flight). Help, in
+Buildflow's top bar, has all of this on one page.
+
+- **Programs**: a card for each, with its vehicle and a bar for each phase (done, under way,
+  blocked). Open one to see its bill of design.
+- **The vehicle**: on a black stage, with the phases across the top. Its components are dots in
+  the colors of where each is in the phase picked: gold done (through every milestone it needs in
+  that phase), orange under way, red blocked, gray not started, and a small ring when it needs
+  nothing in it. Under it, in big letters, how many are through the phase: in design, how many
+  have passed their CDR ("18 component-level CDRs across the vehicle"); then how many are built,
+  through QRR, and flown. Click a dot to open its component. The phase and the component picked
+  are in the page's address, to share.
+- **The bill**: every component by subsystem, with its lead, a chip for each milestone, and
+  what's due next. Click a chip to set the component's status there: *Not started*, *In
+  progress*, *Done* (*Passed*, for a review), *Blocked*, or *Not needed*; a chip with a red edge
+  is late. *Coming up* lists what's due and not done, the late first, and *Recent activity* what
+  everyone's changed, and who.
+- **A component** opens beside the page: what it is, its lead, and for each phase its milestones
+  (status, due date or a review's day, the day it was done, and a note: a review's actions, or
+  what's holding it up), who's on it (designing, making, testing, and flying it: the build
+  phase's people are who's manufacturing it), and its links: CAD and drawings in Vault,
+  requirements, design documents, reviews' slides (on their milestone), P&IDs in Piper, test data
+  in Yorg, procedures. A link to a page of the site (copy its address: `/vault/file/12`,
+  `/piper/diagrams/3`, `/yorg/datasets/7`) shows its app and the name of what it goes to; any
+  other is an `http` or `https` address, which opens in a tab of its own. Anyone signed in keeps
+  all of this up.
+- **Laying out a program** is the admins': **New program** starts one from a rocket's, a
+  hopper's, or a test stand's layout (its drawing, subsystems, and components), or with nothing but
+  the milestones. **Layout**, on a program's page, draws the vehicle from its sections (an engine
+  with its nozzles, body tubes, tanks, couplers, transitions, and the nose cone, with fins, landing
+  legs, or a test stand's frame), places components on it by dragging their dots, and changes its
+  subsystems, components, and milestones. **Remove** keeps everything said of a component, to
+  **Bring back**; a milestone with anything kept on it can be renamed but not deleted; and
+  **Archive…** takes a program off the list, kept as it was, until an admin brings it back.
+
 ## Layout
 
 | Path | What | Status |
 |---|---|---|
-| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/` | working |
-| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper` | working |
+| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/`, Buildflow in `buildflow/` | working |
+| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper`, Buildflow's in `src/buildflow` | working |
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
 | `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
-| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
+| `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md), [buildflow.md](docs/buildflow.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
 

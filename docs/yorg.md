@@ -73,7 +73,8 @@ in `web/src/yorg/index.tsx`).
   else on a plot, it goes on the axis for its unit. Axes nothing's on go. A channel's
   settings set its scale, offset, unit, color, axis, and lines or steps; there's T0,
   markers (T0 and markers are dragged to move them), datasets compared, each shifted in
-  time (lined up by clock time when both have dates), and exports (a PNG of the plots, a
+  time (lined up by clock time when both have dates; picked from the datasets' folders,
+  starting in the first one's, with the site's `FolderBrowser`), and exports (a PNG of the plots, a
   CSV of the samples in view).
 - **Time** reads from T0 (T−10, T0, T+15 on the axis, at the cursor, and in the window's
   inputs; seconds from the start without a T0), or as time of day, in UTC or this

@@ -1,6 +1,7 @@
-import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
-import { yorg, type Channel, type Dataset, type DatasetDetail, type Formula } from "./api";
+import { useState, type DragEvent, type MouseEvent } from "react";
+import type { Channel, Dataset, DatasetDetail, Formula } from "./api";
 import { fits, dataset as loadDataset, formulas as loadFormulas, maskRuns } from "./data";
+import { DatasetPicker } from "./DatasetPicker";
 import { FormulaDialog } from "./Formulas";
 import { isPlotted, type Action, type AxisTarget, type Layout, type Mask, type PanelSpec } from "./layout";
 import { measure } from "./masks";
@@ -369,58 +370,34 @@ function ChannelList({
     );
 }
 
-/** Plot another dataset alongside: lined up by clock time if both have dates, else from their starts. */
+/**
+ * Plot another dataset alongside: lined up by clock time if both have dates, else from their starts. It's picked from
+ * the datasets' folders, starting in the first dataset's.
+ */
 function AddDataset({ layout, dispatch }: { layout: Layout; dispatch: (action: Action) => void }) {
-    const [choices, setChoices] = useState<Dataset[] | null>(null);
-    const [open, setOpen] = useState(false);
-    useEffect(() => {
-        if (open && choices === null) {
-            yorg.datasets().then(setChoices, () => setChoices([]));
-        }
-    }, [open, choices]);
     const first = layout.datasets[0] ? loadDataset(layout.datasets[0].id) : null;
-    const add = (id: number) => {
-        const chosen = choices?.find((one) => one.id === id);
-        const base = first?.status === "ready" ? first.value : null;
+    const base = first?.status === "ready" ? first.value : null;
+    const add = (chosen: Dataset) => {
         const lined =
-            chosen?.time_kind === "absolute" &&
+            chosen.time_kind === "absolute" &&
             base?.time_kind === "absolute" &&
             chosen.start_epoch !== null &&
             base.start_epoch !== null
                 ? chosen.start_epoch - base.start_epoch
                 : 0;
-        dispatch({ type: "addDataset", dataset: id, shift: lined });
-        setOpen(false);
+        dispatch({ type: "addDataset", dataset: chosen.id, shift: lined });
     };
-    if (!open) {
-        return (
-            <button type="button" className="button-small yorg-compare" onClick={() => setOpen(true)}>
-                Compare with another dataset
-            </button>
-        );
-    }
-    const others = (choices ?? []).filter(
-        (one) => one.status === "ready" && !layout.datasets.some((ref) => ref.id === one.id),
-    );
     return (
-        <label className="field yorg-compare">
-            Compare with
-            <select
-                autoFocus
-                value=""
-                onChange={(event) => add(Number(event.target.value))}
-                onBlur={() => setOpen(false)}
-            >
-                <option value="" disabled>
-                    {choices === null ? "Loading…" : others.length ? "Choose a dataset" : "No other datasets"}
-                </option>
-                {others.map((one) => (
-                    <option key={one.id} value={one.id}>
-                        {one.name}
-                    </option>
-                ))}
-            </select>
-        </label>
+        <div className="yorg-compare">
+            <DatasetPicker
+                label="Compare with"
+                button="Compare with another dataset"
+                buttonClass="button-small"
+                start={base?.folder_id ?? null}
+                except={layout.datasets.map((ref) => ref.id)}
+                onPick={add}
+            />
+        </div>
     );
 }
 

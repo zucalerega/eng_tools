@@ -107,7 +107,9 @@ export function HelpPage() {
                         </li>
                         <li>
                             <em>Compare with another dataset</em>, under the channels, overlays another test; shift it
-                            in time to line them up.
+                            in time to line them up. It opens in the folder of the test you&apos;re looking at: click a
+                            folder to go into it, the path above to go back up, or type a few letters of a name to find
+                            it in any folder.
                         </li>
                     </ul>
                 </>

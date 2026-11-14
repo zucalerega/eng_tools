@@ -11,7 +11,7 @@ import { StoreContext, VaultStore } from "../src/vault/store";
 import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Catalog } from "../src/piper/sim/api";
-import type { Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
+import type { DataFolder, Dataset, DatasetDetail, SavedView } from "../src/yorg/api";
 import { CHIEF } from "./server";
 
 // Drives the real server the way the add-in and the CLI do, to set up what a test looks at.
@@ -271,10 +271,22 @@ export class Team {
         return call<Dataset[]>("GET", "/api/yorg/datasets", who.token);
     }
 
-    /** A file of test data, uploaded to Yorg (named to be unique to this test). */
-    async data(who: Member, name: string, csv: string): Promise<DatasetDetail> {
-        const params = new URLSearchParams({ filename: `${name}.csv`, name: `${name} ${this.folder}` });
+    /** A file of test data, uploaded to Yorg (named to be unique to this test), in a folder or at the top. */
+    async data(who: Member, name: string, csv: string, folder: number | null = null): Promise<DatasetDetail> {
+        const params = new URLSearchParams({
+            filename: `${name}.csv`,
+            name: `${name} ${this.folder}`,
+            ...(folder === null ? {} : { folder: String(folder) }),
+        });
         return call<DatasetDetail>("POST", `/api/yorg/datasets?${params}`, who.token, new TextEncoder().encode(csv));
+    }
+
+    /** A folder of Yorg's datasets (named to be unique to this test), in another or at the top. */
+    async dataFolder(who: Member, name: string, parent: number | null = null): Promise<DataFolder> {
+        return call<DataFolder>("POST", "/api/yorg/folders", who.token, {
+            name: this.named(name),
+            parent_id: parent,
+        });
     }
 
     /** A Piper diagram (named to be unique to this test), with a drawing, or an empty one. */

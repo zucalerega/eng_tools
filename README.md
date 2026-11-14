@@ -257,7 +257,9 @@ the keys.
   MOV OPEN) and time reads T−10, T0, T+15; drag its line to move it. Unix-time data reads
   as time of day in UTC (or your computer's zone, in Options) until then. Add markers
   (drag them to move them) and fix an axis's range. Compare with another dataset to
-  overlay two tests, shifted in time to line them up.
+  overlay two tests, shifted in time to line them up: it opens in the folder of the test
+  you're looking at, and you go into a folder, back up by the path above, or type a few
+  letters of a name to find it in any folder.
 - **Masks:** Mask makes a test on channels, like the main valve open or a pressure over
   its redline: pick a channel, a comparison, and a value (a valve's OPEN, by name), or
   write one like a calculated channel (`and([MOV-OX] == 1, [PT-CHAMBER] > 450)`). A mask

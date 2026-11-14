@@ -2716,3 +2716,157 @@ input[type="checkbox"] {
     border-top: 1px solid var(--border);
     font-size: 0.85rem;
 }
+
+/* Picking from folders (FolderBrowser: a test to compare with, a folder to keep a view in): a button, and a dropdown
+   that browses the folders as their pages do, with the path above and a box to find anything in any folder. */
+.folder-browser {
+    min-width: 0;
+}
+
+.folder-browser-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+    font-weight: 400;
+    text-align: left;
+}
+
+.folder-browser-chosen {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.folder-browser-caret {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.folder-browser-pop {
+    z-index: 45; /* over a dialog */
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: min(24rem, calc(100vw - 16px));
+}
+
+.folder-browser-path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 0.2rem 0.4rem 0;
+    font-size: 0.88rem;
+}
+
+.folder-browser-path strong {
+    font-weight: 600;
+}
+
+.folder-browser-path .separator {
+    color: var(--border-strong);
+    margin: 0 0.35rem;
+}
+
+.folder-browser-up {
+    height: auto;
+    padding: 0.1rem 0.2rem;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.folder-browser-up:hover:not(:disabled) {
+    background: var(--row-hover);
+    color: var(--text);
+}
+
+.folder-browser-find {
+    width: 100%;
+}
+
+.folder-browser-list {
+    max-height: 18rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.folder-browser-row,
+.folder-browser-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    height: auto;
+    padding: 0.4rem 0.6rem;
+    border: none;
+    border-radius: var(--radius);
+    background: none;
+    font-size: 0.9rem;
+    font-weight: 400;
+    text-align: left;
+    color: var(--text);
+}
+
+.folder-browser-row:hover:not(:disabled),
+.folder-browser-row:focus-visible {
+    background: var(--row-hover);
+}
+
+.folder-browser-row[aria-current="true"] {
+    font-weight: 600;
+}
+
+.folder-browser-item {
+    color: var(--muted);
+}
+
+.folder-browser-name {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.folder-browser-where,
+.folder-browser-note {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.folder-browser-note {
+    flex: none;
+}
+
+.folder-browser-empty {
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+}
+
+.folder-browser-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    padding: 0.4rem 0.2rem 0.1rem;
+    border-top: 1px solid var(--border);
+}
+
+.folder-browser-foot input {
+    flex: 1;
+    min-width: 8rem;
+}
+
+.folder-browser-foot .field-problem {
+    flex-basis: 100%;
+    margin: 0;
+}

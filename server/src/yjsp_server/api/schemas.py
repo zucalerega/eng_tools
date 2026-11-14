@@ -7,7 +7,8 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field
 
 from .. import auth, clients
-from ..models import SiteSettings, Token, User, WhitelistEmail
+from ..feedback import Names
+from ..models import Feedback, SiteSettings, Token, User, WhitelistEmail
 
 
 def _tidy_folder(value: str) -> str:
@@ -305,6 +306,81 @@ class AskIn(BaseModel):
     messages: list[AssistantMessageIn] = Field(min_length=1, max_length=40)
 
 
+class FeedbackIn(BaseModel):
+    """A bug report (kind "bug") or a feature request ("feature"), from a page of the web app. feedback.py checks the
+    lengths, saying what fits."""
+
+    kind: str = Field(max_length=16)
+    title: str = Field(max_length=2_000)
+    body: str = Field(max_length=50_000)
+    page: str | None = Field(default=None, max_length=2_000)
+
+
+class FeedbackReplyIn(BaseModel):
+    reply: str | None = Field(default=None, max_length=20_000)  # for whoever sent it
+
+
+class FeedbackApproveIn(BaseModel):
+    note: str | None = Field(default=None, max_length=20_000)  # for Claude Code, with the request
+
+
+class FeedbackOut(BaseModel):
+    """A request, as whoever sent it sees it; admins see who sent it, Claude's look at it, and what's building it."""
+
+    id: int
+    kind: str  # "bug" or "feature"
+    title: str
+    body: str
+    page: str | None  # where in the web app it was sent from
+    created_at: datetime
+    status: str  # "new" (waiting for the owner), "approved" (Claude Code is building it), "declined", or "done"
+    reply: str | None  # an admin's answer to whoever sent it
+    decided_at: datetime | None
+    # Admins only:
+    sender: UserRef | None = None
+    decided_by: UserRef | None = None
+    evaluation: str | None = None  # Claude's look at it, in Markdown
+    evaluation_problem: str | None = None  # why Claude couldn't look
+    looking: bool = False  # Claude is looking at it now
+    evaluation_cost: float | None = None  # what Claude's looks at it cost, in US dollars
+    note: str | None = None  # the owner's note for Claude Code
+    session_url: str | None = None  # the Claude Code session building it
+
+    @classmethod
+    def of(cls, item: Feedback, names: Names | None = None, looking: bool = False) -> "FeedbackOut":
+        """With `names` (who's who), as admins see it."""
+        out = cls(
+            id=item.id,
+            kind=item.kind.value,
+            title=item.title,
+            body=item.body,
+            page=item.page,
+            created_at=item.created_at,
+            status=item.status.value,
+            reply=item.reply,
+            decided_at=item.decided_at,
+        )
+        if names is not None:
+            sender, decider = names(item.user_id), names(item.decided_by_id)
+            out.sender = UserRef.of(sender) if sender else None
+            out.decided_by = UserRef.of(decider) if decider else None
+            out.evaluation = item.evaluation
+            out.evaluation_problem = item.evaluation_problem
+            out.looking = looking
+            out.evaluation_cost = round(item.evaluation_cost / 1_000_000, 6)
+            out.note = item.note
+            out.session_url = item.session_url
+        return out
+
+
+class FeedbackListOut(BaseModel):
+    """Every request, the newest first, and whether the admin looking can approve them (and if not, why)."""
+
+    requests: list[FeedbackOut]
+    can_approve: bool
+    why_not_approve: str | None
+
+
 class AssistantSettingsIo(BaseModel):
     """How long Claude keeps the help loaded after a question, in hours (1 to 24: 1 is only the hour Anthropic keeps it
     after each read), or null for always, around the clock (admins, assistant.Assistant.keep_loaded)."""
@@ -348,6 +424,7 @@ class AssistantSpendingOut(BaseModel):
     keep_warm: bool = False  # whether the server may keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
     keep_hours: int | None = None  # for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: float = 0  # what that cost this month, in month_spent too
+    feedback_spent: float = 0  # what Claude's looks at bug reports and feature requests cost this month, in month_spent
     month_questions: int = 0  # this month's questions
     month_questions_loaded: int = 0  # of those, the ones that found the help loaded, and read it for much less
     people: list[AssistantSpenderOut]  # the most spent first

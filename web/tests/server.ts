@@ -8,7 +8,8 @@ import { fakeClaude } from "./claude";
 
 // Starts the real server (uv run yjsp-server in ../server) with development sign-in and a
 // throwaway vault and Yorg, once for the whole test run, and gives the tests its address. Its
-// assistant asks a stand-in for Anthropic's API (claude.ts), with $5 to spend.
+// assistant asks a stand-in for Anthropic's API (claude.ts), with $5 to spend, and the chief
+// approves requests, which start a stand-in for Claude Code's routines (claude.ts too).
 
 declare module "vitest" {
     export interface ProvidedContext {
@@ -83,6 +84,9 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_ASSISTANT_BUDGET: "5",
             YJSP_ASSISTANT_MONTHLY_BUDGET: "3",
             YJSP_ASSISTANT_KEEP_WARM: "1",
+            YJSP_FEEDBACK_APPROVER: CHIEF,
+            YJSP_FEEDBACK_ROUTINE_URL: `${claude.url}/v1/claude_code/routines/trig_test/fire`,
+            YJSP_FEEDBACK_ROUTINE_TOKEN: "sk-ant-oat01-test",
         },
     });
     let output = "";

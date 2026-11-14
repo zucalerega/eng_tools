@@ -1127,8 +1127,9 @@ test("a test from Yorg on the drawing: each instrument's value and each valve's 
     onTestFinished(() => open.mockRestore());
     renderApp(team.chief, `/piper/diagrams/${made.id}?test=${data.id}&t=0.3`);
     const panel = within(await screen.findByRole("region", { name: "Test data" }));
+    // Each channel comes as it's fetched, so the valve's may come after the sensor's.
     await waitFor(() => expect(badge(sensor)).toBe("330.0 psi"));
-    expect(badge(valve)).toBe("CLOSED");
+    await waitFor(() => expect(badge(valve)).toBe("CLOSED"));
     expect(panel.getByText(/has no channel for PT-2/)).toBeTruthy();
     // Each on a leader to its part, in its color: a valve's, its state's.
     const leader = (part: string) => drawingArea().querySelector(`[data-leader="${part}"]`);

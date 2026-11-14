@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     assistant_keep_warm: bool = True
     # Another address for Anthropic's API: a gateway, or the tests' stand-in. Empty: Anthropic's own.
     anthropic_base_url: str = ""
+    # Bug reports and feature requests members send from Help (feedback.py). The owner, who alone can approve one, by
+    # the email they sign in with: approving starts Claude Code building it, on their Claude account. Empty: no one can.
+    feedback_approver: str = ""
+    # The Claude Code routine an approval starts (docs/deploying.md, "Requests"): the URL and the token of its API
+    # trigger, from the routine's page at claude.ai/code/routines. The token is a secret, like YJSP_SECRET_KEY: only in
+    # the server's .env. Either empty: requests can be sent, looked at, and declined, but not approved.
+    feedback_routine_url: str = ""
+    feedback_routine_token: str = ""
 
     @property
     def production(self) -> bool:

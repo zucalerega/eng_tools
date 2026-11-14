@@ -73,6 +73,13 @@ export class Team {
         return signIn(email);
     }
 
+    /** Someone the chief invited and made an admin: not the site's owner, who alone approves requests. */
+    async admin(name: string): Promise<Member> {
+        const member = await this.member(name);
+        await call("PATCH", `/api/users/${member.user.id}`, this.chief.token, { is_admin: true });
+        return member;
+    }
+
     /** Someone signed in with the SolidWorks add-in on a computer, whose requests have said its version. */
     async addInOn(email: string, computer: string, version = "0.5.2.0"): Promise<Member> {
         const member = await call<Member>("POST", "/auth/dev-token", null, {

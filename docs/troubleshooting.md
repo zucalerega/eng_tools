@@ -457,10 +457,11 @@ a number. A few codes come up in more than one place.
 - **This sign-in has expired**, or **Sign-in verification failed** (`invalid_code`): the one-time
   code that finishes signing in from SolidWorks or the `vault` command was used already, was over 5
   minutes old, or didn't match. Sign in again from the client.
-- **Only admins can do that**, **Only admins can see what the assistant has cost**, or **Only
-  admins can change how long Claude keeps the help loaded** (`admin_only`): inviting, approving,
-  and disabling people, the whitelist, and Admin > People's figures and settings are for admins.
-  Ask an admin.
+- **Only admins can do that**, **Only admins can see what the assistant has cost**, **Only
+  admins can change how long Claude keeps the help loaded**, or **Only admins can see everyone's
+  requests and answer them** (`admin_only`): inviting, approving, and disabling people, the
+  whitelist, Admin > People's figures and settings, and Admin > Requests are for admins. Ask an
+  admin.
 - **... isn't an email address** (`bad_email`): an invite, or an email for the whitelist, that isn't
   an email address. Check what was typed.
 - **... already has an account** (`exists`): the person you're inviting has one already. One waiting
@@ -794,6 +795,34 @@ a number. A few codes come up in more than one place.
   **Claude's answer broke off**, and the like (`assistant_failed`): Claude didn't take the question,
   or its answer stopped partway. Try again in a minute or two, or ask another way if it says to; if
   it says Claude's API key isn't working, tell an admin.
+
+### Requests
+
+- **You've sent 10 requests in the last 24 hours** (`feedback_daily_limit`): each request has
+  Claude look at it, so each person sends so many a day. Send more tomorrow, or put several
+  things in one.
+- **Only the site's owner can approve requests** (`feedback_owner_only`): approving starts
+  Claude Code building it on the owner's Claude account, so only they can. Other admins can
+  decline a request, or mark it done.
+- **No one can approve requests on this server**, or **Approving needs the Claude Code routine
+  that builds requests** (`feedback_routine_off`): whoever runs the server hasn't set up the
+  owner, or the routine (its `YJSP_FEEDBACK_*` settings). Requests can still be sent, looked at,
+  and declined.
+- **Claude Code turned down the routine's token**, **Claude Code has no routine at ...**,
+  **Claude Code has started as many routines as it will this hour**, and the like
+  (`feedback_routine_failed`): Claude Code didn't start building it, and the request is still
+  waiting, to approve again. Do what the message says: a token turned down needs a new one,
+  made on the routine's page at claude.ai/code/routines and put in the server's settings; a
+  paused routine needs turning back on there.
+- **Request #... was approved already**, **was declined already**, or **is done already**
+  (`feedback_decided`): someone else answered it first, or it was approved in another tab. Load
+  the page again to see it.
+- **Claude is looking at request #... now** (`feedback_looking`): wait for its look; the page
+  shows it when it's done.
+- **Claude isn't set up on this server**, **Claude has spent this month's budget**, and the like,
+  as a request's look: Claude couldn't look at it then (see *Asking Claude*, above). Once it
+  can, *Ask Claude to look again*.
+- **Request #... not found** (`not_found`): there's no request with that number.
 
 ### Anything
 

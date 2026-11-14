@@ -341,6 +341,32 @@ def test_upgrades_keep_what_claudes_answers_cost(tmp_path):
         ).all() == [("alice@x.test", 207000), (None, 7520)]
 
 
+def test_upgrades_say_what_each_request_to_claude_was_for(tmp_path):
+    """Before Claude looked at people's requests, a request with someone asking was their question, and one without
+    was a read that kept the help loaded."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0030")
+    when = "'2026-11-12 14:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds, solidworks_seconds) "
+            f"VALUES (1, 'alice@x.test', 'Alice', 'active', 0, {when}, 0, 0)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO assistant_requests (id, user_id, at, model, input_tokens, cache_write_tokens, "
+            f"cache_read_tokens, output_tokens, cost) VALUES (1, 1, {when}, 'claude-sonnet-5-5', 1000, 50000, 0, 500, "
+            f"207000), (2, NULL, {when}, 'claude-sonnet-5-5', 10, 0, 75000, 0, 7520)"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("SELECT id, user_id, purpose, cost FROM assistant_requests ORDER BY id").all() == [
+            (1, 1, "question", 207000),
+            (2, None, "keep_warm", 7520),
+        ]
+        assert db.exec_driver_sql("SELECT count(*) FROM feedback").scalar() == 0
+
+
 def test_concurrent_checkouts_have_one_winner(app, team):
     chief = team.member("chief@x.test", admin=True)
     team.checkin(chief, {"Nozzle.SLDPRT": b"nozzle"})

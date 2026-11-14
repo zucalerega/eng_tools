@@ -209,14 +209,25 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   makes when a file is checked in; for other versions, the server reads the 3D view SolidWorks saved
   in the file, and some files have none it can read. Open the file in SolidWorks and click
   *Make 3D view* on the Vault tab: Caliper shows it after.
-- **Caliper shows an assembly with parts missing.** It lists the parts it couldn't show, and why: a
-  part used in a configuration its file has no 3D view of, a file with no 3D view Caliper reads, a
-  part kept inside the assembly (a routed tube, say) without a shape Caliper read, or a sub-assembly
-  none of whose parts are in the vault. *Make 3D view* in SolidWorks makes the first three; the last
-  need their parts in the vault. Parts in folders you can't see are left out, and the page says how
-  many.
-- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time.
-  Wait a minute and open it again.
+- **Caliper shows an assembly with parts missing.** The strip under the header says how many of its
+  parts are shown, and the list beside the tree says why the rest aren't: a part whose file isn't in
+  the vault, a file with no 3D view Caliper reads, a part kept inside the assembly (a routed tube,
+  say) without a shape Caliper read, or a sub-assembly with no components. Open the assembly in
+  SolidWorks and click *Make 3D view* on the Vault tab, or check it in from there: SolidWorks then
+  gives Caliper every part as it shows it, those that aren't in the vault too. Parts in folders you
+  can't see are left out, and the page says how many.
+- **A part in an assembly is tagged as an older version, or another configuration.** Caliper has no
+  3D view of the version or configuration the assembly uses, so it shows the nearest it has, and
+  the tag says which and why. *Make 3D view* on the assembly in SolidWorks makes the right one.
+- **An assembly in Caliper doesn't match SolidWorks after a part changed.** Caliper shows each part
+  at its latest version, where the assembly last had it. It can't solve mates, so if the change
+  moved what's mated to the part, check the assembly in again from SolidWorks.
+- **Caliper says the server is reading other SolidWorks files.** The server reads two at a time,
+  and Caliper keeps asking for a few minutes. If it gives up, wait a minute and reload the page.
+- **A file's first look in Caliper is slow.** The server reads each file's 3D view a few minutes
+  after it's checked in, newest first; one opened before its turn is read then. After an update
+  that reads files better, or the first start with this feature, the server works through the
+  whole vault, which can take hours.
 - **Make 3D view says a part's view wasn't made.** A part with unsaved changes, or changed and not
   checked in, gets none until it is. A part loaded lightweight needs resolving first: right-click
   the assembly, choose Set Lightweight to Resolved, then click *Make 3D view* again.
@@ -615,7 +626,7 @@ a number. A few codes come up in more than one place.
 ### Caliper
 
 - **SolidWorks saved no 3D view in it**, **Caliper can't make sense of the 3D view**,
-  **... is over 256 MB, too big to read here**, or **Caliper found none of its parts in the vault**
+  **... is over 256 MB, too big to read here**, or **It has no components: there's nothing to show**
   (`unreadable_file`): the server can't read a 3D view from that version of the file, and the
   message says why. Open the file in SolidWorks and click *Make 3D view* on the Vault tab.
 - **SolidWorks marked its ... configuration as needing a rebuild when it saved it**, or

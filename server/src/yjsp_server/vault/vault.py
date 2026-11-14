@@ -2916,10 +2916,15 @@ def caliper_assembly(
             inside = shown(children, below, inner, above | {found.id} if found is not None else above)
             own_model = models.of(found.id, number, used) if found is not None and number is not None else None
             source: Source | None = _source(store, own_model) if own_model is not None else None
-            if component.get("mesh"):
-                # A shape the model carries is Vault for SolidWorks' if that made the model; else the server's, from
-                # the solid the assembly's file keeps of a part inside it.
-                source = "solidworks" if _source(store, carrier[2]) == "solidworks" else "solid"
+            # A shape the model carries of a part with a file is the part as the assembly was checked in with it:
+            # shown at a version checked in since, the part's own model of that version shows instead.
+            mesh = component.get("mesh") if found is None or number == pinned else None
+            if mesh:
+                # It's Vault for SolidWorks' if that made the model. Else the server read it from the assembly's file:
+                # a part's with a file of its own from the 3D view SolidWorks saved of the assembly (the triangles it
+                # drew), and one kept inside the assembly from the solid kept of it there.
+                read: Source = "solid" if component.get("virtual") or found is None else "view"
+                source = "solidworks" if _source(store, carrier[2]) == "solidworks" else read
             kept.append(
                 {
                     **{key: value for key, value in component.items() if key != "path"},
@@ -2929,9 +2934,10 @@ def caliper_assembly(
                     "layout": layout if kind == "assembly" else None,
                     "model": own_model is not None,
                     "source": source,
+                    "mesh": mesh,
                     "carrier": (
                         {"file_id": carrier[0].id, "version": carrier[1], "configuration": carrier[2].configuration}
-                        if component.get("mesh")
+                        if mesh
                         else None
                     ),
                     "kind": kind,

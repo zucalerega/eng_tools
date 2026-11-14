@@ -157,6 +157,17 @@ function Row({ node, depth, ...props }: TreeProps & { node: Node; depth: number 
                         {other[0]}
                     </span>
                 )}
+                {node.outside && (
+                    <span
+                        className="tag"
+                        title={
+                            `${node.outside} isn't in the vault: this is the shape SolidWorks had of it when the ` +
+                            "assembly was checked in. It shows its own file once that's checked in"
+                        }
+                    >
+                        Not in the vault
+                    </span>
+                )}
                 {node.deleted && (
                     <span className="tag" title="Its file is in the trash">
                         In the trash

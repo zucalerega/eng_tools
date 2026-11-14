@@ -71,6 +71,8 @@ YJSP_HELP_DIR=/opt/yjsp/app/help
 # owner's Claude Max plan includes, and on one person's questions in any 24 hours, in US
 # dollars, as YJSP_ASSISTANT_MONTHLY_BUDGET and YJSP_ASSISTANT_DAILY_LIMIT. (It keeps the
 # help loaded between questions unless YJSP_ASSISTANT_KEEP_WARM=0.)
+# (The server reads each SolidWorks file's 3D view for Caliper a few minutes after it's checked
+# in, unless YJSP_CALIPER_READ_AHEAD=0: docs/vault.md, "Reading ahead".)
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without

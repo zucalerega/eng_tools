@@ -301,6 +301,7 @@ export async function assemblyModel(
                 ? { layout: c.layout }
                 : {}),
             ...(c.deleted ? { deleted: true } : {}),
+            ...(drawn && c.file_id === null && c.file ? { outside: c.file } : {}),
             hidden: c.hidden,
             ...(c.color ? { color: c.color } : {}),
             ...(c.opacity < 1 ? { opacity: c.opacity } : {}),

@@ -46,6 +46,9 @@ export interface Node {
     instead?: { version: number; configuration: string; why: string };
     layout?: number; // a sub-assembly whose components here are an older version's: that version
     deleted?: boolean; // its file is in the trash
+    // The name of its file, for a part that isn't in the vault and shows all the same: its shape is the one SolidWorks
+    // had of it when the assembly was checked in, which the assembly's model carries.
+    outside?: string;
     hidden: boolean; // as SolidWorks had it
     color?: RGB; // its own, over its shape's
     opacity?: number;

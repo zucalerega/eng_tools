@@ -1838,3 +1838,36 @@ def test_a_damaged_3d_view_is_refused_or_read_never_an_error(team, client):
     for file in files(team.checkin(chief, damaged)).values():
         made = make(client, chief, file)
         assert made.status_code in (200, 422), made.text
+
+
+def test_a_shape_an_assembly_carries_of_a_part_gives_way_to_the_parts_newer_version(team, client):
+    """Where SolidWorks saved each part's triangles in the assembly's own 3D view, the model carries them: the parts as
+    the assembly was checked in with them, and SolidWorks' own triangles (not rebuilt from a solid). A part checked in
+    since shows its own model of that version instead, as the assembly is now; as it was checked in, the shape stays."""
+    chief = team.member("chief@x.test", admin=True)
+    checked = files(
+        team.checkin(
+            chief,
+            {name: contents(name.rsplit("/", 1)[-1]) for name in ("S/9347.SLDASM", "S/Embout.SLDPRT")}
+            | {"S/Servomoteur.SLDPRT": contents("Servomoteur.SLDPRT")},
+            refs={"S/9347.SLDASM": ["S/Embout.SLDPRT", "S/Servomoteur.SLDPRT"]},
+        )
+    )
+    servo = checked["9347.SLDASM"]
+    assert make(client, chief, servo).status_code == 200
+    url = f"/api/files/{servo['id']}/caliper/assembly"
+
+    def spline(**params) -> dict:
+        asked = {"version": 1, "configuration": "Default", **params}
+        return client.get(url, params=asked, headers=chief).json()["components"][0]
+
+    carried = spline(latest=True)
+    assert carried["mesh"] and (carried["source"], carried["version"]) == ("view", 1)
+    assert carried["carrier"] == {"file_id": servo["id"], "version": 1, "configuration": "Default"}
+
+    assert team.checkout(chief, "S/Embout.SLDPRT").status_code == 200
+    assert team.checkin(chief, {"S/Embout.SLDPRT": contents("Embout.SLDPRT") + b"\0"}).status_code == 200
+    now = spline(latest=True)
+    assert (now["version"], now["pinned"], now["mesh"], now["carrier"]) == (2, 1, None, None)
+    then = spline()
+    assert (then["version"], then["mesh"]) == (1, carried["mesh"])

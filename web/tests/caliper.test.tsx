@@ -314,6 +314,11 @@ test("what an assembly doesn't show is summed up by why, with what to do about i
             component("Bolt-1", bolt!),
             component("Tail-1", tail!),
             component("Washer-1", null, { path: "C:\\Users\\alice\\Desktop\\Washer.SLDPRT" }),
+            // And one that isn't in the vault either, sent with the shape SolidWorks had of it, as the add-in does.
+            component("Screw-1", null, {
+                path: "C:\\SOLIDWORKS Data\\Screw.SLDPRT",
+                mesh: await team.mesh(team.chief, tetrahedra("Screw")),
+            }),
         ],
     });
 
@@ -346,13 +351,18 @@ test("what an assembly doesn't show is summed up by why, with what to do about i
     expect(within(row("Washer-1")).getByText("Not in the vault").getAttribute("title")).toMatch(
         /^Washer\.SLDPRT isn't in the vault, so there's no shape of it to show/,
     );
+    // One that came with its shape shows, and says whose shape that is.
+    expect(within(row("Screw-1")).getByText("Not in the vault").getAttribute("title")).toMatch(
+        /^Screw\.SLDPRT isn't in the vault: this is the shape SolidWorks had of it/,
+    );
+    expect(within(row("Screw-1")).getByText("SW")).toBeTruthy();
     expect(within(row("Bolt-1")).getByText("No 3D view")).toBeTruthy();
     expect(within(row("Fin-1")).queryByText(/No 3D view|Shows|Not in the vault/)).toBeNull();
     const about = within(screen.getByRole("status", { name: "What this view shows" }));
     expect(
-        about.getByText(/2 of 4 parts are shown, each as it is now; 1 shows something else in place of/),
+        about.getByText(/3 of 5 parts are shown, each as it is now; 1 shows something else in place of/),
     ).toBeTruthy();
-    expect(about.getByText(/1 from SolidWorks, 1 read from its file\./)).toBeTruthy();
+    expect(about.getByText(/2 from SolidWorks, 1 read from its file\./)).toBeTruthy();
 });
 
 test("components in folders you can't see are left out, with what's in them", async () => {

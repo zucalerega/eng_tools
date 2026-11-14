@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { requestBytes } from "../../api";
 import { Notice } from "../../components";
+import { formatDate } from "../../format";
 import { Link, navigate, useSearch } from "../../router";
 import { vaultApi, type DrawingView, type FileDetail } from "../api";
 import { FileIcon, OpenInSolidWorks } from "../components";
@@ -24,7 +25,9 @@ export function DrawingPage({ id }: { id: number }) {
     const askedVersion = Number(params.get("version")) || null;
     const [detail, setDetail] = useState<FileDetail | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
-    const [pdf, setPdf] = useState(false); // whether the version shown has a PDF, for the header's link to it
+    // The version shown, once it's loaded: for the header's link to its PDF, where it came from, and its models.
+    const [shown, setShown] = useState<DrawingView | null>(null);
+    const pdf = shown?.pdf != null;
     const page = useRef<HTMLDivElement>(null);
     useBelowTopBar(page);
 
@@ -92,8 +95,17 @@ export function DrawingPage({ id }: { id: number }) {
                     </a>
                 </span>
             </header>
+            {format === "drawing" && shown && (
+                <DrawingAbout
+                    fileId={file.id}
+                    drawing={shown}
+                    latest={file.version}
+                    changed={version === file.version && changedModels(shown).length > 0}
+                />
+            )}
+            {format === "drawing" && shown && version === file.version && <ChangedModels drawing={shown} />}
             {format === "drawing" ? (
-                <DrawingSheets key={version} fileId={file.id} name={file.name} version={version} hasPdf={setPdf} />
+                <DrawingSheets key={version} fileId={file.id} name={file.name} version={version} loaded={setShown} />
             ) : format === "dxf" ? (
                 <DxfView key={version} fileId={file.id} version={version} />
             ) : (
@@ -108,6 +120,82 @@ export function DrawingPage({ id }: { id: number }) {
     );
 }
 
+/**
+ * The strip under a drawing's header, as the 3D pages have (About.tsx): the version shown and whether it's the latest,
+ * and where its sheets are from: the PDF Vault for SolidWorks made, as SolidWorks prints the drawing, or the pictures
+ * SolidWorks saved in the file. A warning where it isn't the latest, or its models have changed since (changed).
+ */
+function DrawingAbout({
+    fileId,
+    drawing,
+    latest,
+    changed,
+}: {
+    fileId: number;
+    drawing: DrawingView;
+    latest: number; // the file's latest version
+    changed: boolean;
+}) {
+    const current = drawing.version === latest;
+    const tone = !current || changed ? "warning" : drawing.pdf ? "ok" : "note";
+    return (
+        <div className={`caliper-about caliper-about-${tone}`} role="status" aria-label="What this view shows">
+            <span className="caliper-about-mark" aria-hidden="true">
+                {{ ok: "✓", note: "≈", warning: "!" }[tone]}
+            </span>
+            <p>
+                <strong>
+                    {current
+                        ? `Version ${drawing.version}, the latest.`
+                        : `Version ${drawing.version} of ${latest}: not the latest.`}
+                </strong>{" "}
+                {!current && (
+                    <>
+                        <Link to={caliperUrl(fileId)}>Show version {latest}</Link>.{" "}
+                    </>
+                )}
+                {drawing.pdf
+                    ? `From SolidWorks: ${drawing.pdf.created_by.name} saved this PDF of its sheets there on ` +
+                      `${formatDate(drawing.pdf.created_at)}, as SolidWorks prints them.`
+                    : "Read from the file: the pictures of its sheets SolidWorks saved in it."}
+            </p>
+        </div>
+    );
+}
+
+/** The models a drawing's version was checked in with that have been checked in again since. */
+const changedModels = (drawing: DrawingView) =>
+    (drawing.models ?? []).filter((model) => model.latest_version > model.version);
+
+/**
+ * The models a drawing's latest version shows that were checked in again since: SolidWorks draws its views from their
+ * latest versions as it opens it, so what Caliper shows, made at the drawing's check-in, may be of older shapes.
+ */
+function ChangedModels({ drawing }: { drawing: DrawingView }) {
+    const changed = changedModels(drawing);
+    if (changed.length === 0) {
+        return null;
+    }
+    const one = changed.length === 1;
+    return (
+        <Notice tone="warning">
+            <p>
+                <strong>{one ? "Its model has" : "Its models have"} changed since this drawing was checked in.</strong>{" "}
+                SolidWorks draws the drawing's views from the latest versions when it opens it, so these sheets may show
+                older shapes. Open the drawing in SolidWorks and check it in again to bring them up to date.
+            </p>
+            <ul>
+                {changed.map((model) => (
+                    <li key={model.file_id}>
+                        <Link to={caliperUrl(model.file_id)}>{model.path}</Link>
+                        {`: v${model.version} here, now v${model.latest_version}`}
+                    </li>
+                ))}
+            </ul>
+        </Notice>
+    );
+}
+
 /** Whether this browser shows PDFs in a page: phones' often don't (Chrome on Android downloads them). */
 const showsPdfs = (): boolean => (navigator as Navigator & { pdfViewerEnabled?: boolean }).pdfViewerEnabled !== false;
 
@@ -116,12 +204,12 @@ function DrawingSheets({
     fileId,
     name,
     version,
-    hasPdf,
+    loaded,
 }: {
     fileId: number;
     name: string;
     version: number;
-    hasPdf(has: boolean): void;
+    loaded(drawing: DrawingView | null): void;
 }) {
     const [drawing, setDrawing] = useState<DrawingView | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
@@ -133,16 +221,16 @@ function DrawingSheets({
             (found) => {
                 if (current) {
                     setDrawing(found);
-                    hasPdf(found.pdf !== null);
+                    loaded(found);
                 }
             },
             (error: Error) => current && setProblem(error.message),
         );
         return () => {
             current = false;
-            hasPdf(false);
+            loaded(null);
         };
-    }, [fileId, version, hasPdf]);
+    }, [fileId, version, loaded]);
 
     if (problem) {
         return (

@@ -150,9 +150,12 @@ While you work:
   yours; design it, then check it in.
 - **3D views for Caliper**, the web app's 3D viewer: checking in a part or an assembly makes
   its 3D view (what SolidWorks shows of it, and for an assembly, where each part is), and
-  those of the parts and sub-assemblies it uses that have none yet, from what SolidWorks has
+  those of the parts and sub-assemblies it uses that have none made in SolidWorks yet (one
+  the server read from a file gives way to SolidWorks' own), from what SolidWorks has
   open, in the configurations it shows (Caliper reads a file's other configurations from the
-  file, where SolidWorks kept them). **Make 3D view**, on the tab, does the same for the
+  file, where SolidWorks kept them). A part that isn't in the vault (a Toolbox screw, one not
+  checked in yet) goes with the assembly's view, as SolidWorks shows it, so Caliper shows
+  the assembly whole. **Make 3D view**, on the tab, does the same for the
   active document: for files brought from Kenesto, or checked in from the web. A part
   changed and not checked in, or with changes not saved, gets none until it is; one loaded
   lightweight needs the assembly set to resolved first. The tab says what it made, and why
@@ -354,6 +357,12 @@ these on SolidWorks 2026, and 22 to 24 on 2025 as well:
     top, and isometric views), the blue one blue, the hidden one unticked in the tree and
     not drawn, the virtual part there. Open the sub-assembly from the tree: it shows on its
     own. Cut it with a section: what SolidWorks' section view shows.
+    Add a Toolbox screw (or any part saved outside the workspace) and a new part not checked
+    in, and check the assembly in alone: Caliper shows both, named as files that aren't in
+    the vault. Check the new part in: Caliper shows its file in its place, with a version.
+    Open a part in Caliper from the web before it has a view from SolidWorks (its strip says
+    Read from the file), then click Make 3D view on an assembly that uses it: the part's
+    strip now says From SolidWorks.
 28. Configurations: use two configurations of one part in an assembly and check it in:
     Caliper shows each configuration's shape, and the part's page offers both.
 29. Make 3D view: open an assembly uploaded from the web (it has no 3D view), resolve it

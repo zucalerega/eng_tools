@@ -76,6 +76,8 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_PUBLIC_URL: url,
             YJSP_DATABASE_URL: "sqlite:///" + join(data, "yjsp.db").replaceAll("\\", "/"),
             YJSP_VAULT_DIR: join(data, "vault"),
+            // The tests say when each 3D model is made: the server doesn't read them ahead in a thread of its own.
+            YJSP_CALIPER_READ_AHEAD: "0",
             YJSP_WEB_DIR: join(data, "web"),
             YJSP_DOWNLOADS_DIR: downloads,
             YJSP_YORG_DIR: join(data, "yorg"),

@@ -3,13 +3,19 @@
 import gzip
 import json
 import struct
+from pathlib import Path
+
+from sqlalchemy import select
 
 from yjsp_server.vault import caliper
+from yjsp_server.vault.models import CaliperModel
 
 # A tetrahedron, in millimeters: one body of four faces, a triangle each.
 CORNERS = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (0.0, 10.0, 0.0), (0.0, 0.0, 10.0)]
 TRIANGLES = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+# A part as SolidWorks saved it, which the server reads a model from (test_caliper_files.py has what it reads).
+FIXTURE = Path(__file__).parent / "fixtures" / "solidworks" / "Embout.SLDPRT"
 
 
 def mesh(
@@ -236,3 +242,232 @@ def test_which_models_are_missing(team, client):
     asked = [(fin, 1, "Default"), (fin, 1, "Long"), (fin, 2, "Default"), (grain, 1, "Default"), (fin, 1, "Long")]
     assert missing(chief, *asked) == [(fin["id"], 1, "Long"), (grain["id"], 1, "Default")]
     assert missing(alice, *asked) == [(fin["id"], 1, "Long")]  # not the grain, which she can't see
+
+
+def again(team, who, path: str, data: bytes) -> dict:
+    """A file's next version, checked out and in."""
+    assert team.checkout(who, path).status_code == 200
+    return files(team.checkin(who, {path: data}))[path.rsplit("/", 1)[-1]]
+
+
+def shown(client, who, file: dict, **params) -> dict:
+    """An assembly's model (version 1, Default), as Caliper asks for it."""
+    params = {"version": 1, "configuration": "Default", **params}
+    response = client.get(f"/api/files/{file['id']}/caliper/assembly", params=params, headers=who)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_an_assembly_shows_each_part_as_it_is_now(team, client):
+    """An assembly's model pins each part at the version the assembly was checked in with. Shown as it is now
+    (latest), which is what SolidWorks opens with the latest of every file, each part is at its file's latest version;
+    shown as it was checked in, at the pinned one. Either way it says both, and whether that version has a model."""
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Tab.SLDPRT": b"tab"}))
+    can = files(team.checkin(chief, {"Fins/Can.SLDASM": b"can"}, refs={"Fins/Can.SLDASM": ["Fins/Fin.SLDPRT"]}))
+    fin, tab, assembly = made["Fin.SLDPRT"], made["Tab.SLDPRT"], can["Can.SLDASM"]
+    for part in (fin, tab):
+        assert put_model(team, chief, part, mesh=team.upload(chief, mesh())).status_code == 200
+    components = [component("Fin-1", fin), component("Tab-1", tab)]
+    assert put_model(team, chief, assembly, components=components).status_code == 200
+
+    fin2 = again(team, chief, "Fins/Fin.SLDPRT", b"fin, longer")  # checked in since, and the assembly not
+    tab2 = again(team, chief, "Fins/Tab.SLDPRT", b"tab, thicker")
+    assert put_model(team, chief, tab2, mesh=team.upload(chief, mesh(CORNERS[::-1]))).status_code == 200
+
+    as_checked_in = shown(client, chief, assembly)
+    assert [(c["name"], c["version"], c["pinned"], c["model"]) for c in as_checked_in["components"]] == [
+        ("Fin-1", 1, 1, True),
+        ("Tab-1", 1, 1, True),
+    ]
+    now = shown(client, chief, assembly, latest=True)
+    assert [(c["name"], c["version"], c["pinned"], c["model"]) for c in now["components"]] == [
+        ("Fin-1", fin2["version"], 1, False),  # its new version has no model yet: Caliper asks for the best there is
+        ("Tab-1", 2, 1, True),
+    ]
+    assert (now["wanted"], now["left_out"]) == ([], 0)
+
+
+def test_a_sub_assembly_checked_in_since_shows_its_own_components(team, client):
+    """An assembly's model keeps each sub-assembly's components as they were when the assembly was checked in. Shown
+    as it is now, a sub-assembly checked in since has its own model's components, placed where the assembly has it:
+    a part added to it shows, without the assembly being checked in again. Until that version has a model, the older
+    components stay, and it's wanted, for Caliper to have made."""
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Tail.SLDASM": b"tail"}))
+    can = files(team.checkin(chief, {"Fins/Can.SLDASM": b"can"}))["Can.SLDASM"]
+    fin, tail = made["Fin.SLDPRT"], made["Tail.SLDASM"]
+    assert put_model(team, chief, fin, mesh=team.upload(chief, mesh())).status_code == 200
+    there = [1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]  # the tail, 100 mm along X in the can
+    assert put_model(team, chief, tail, components=[component("Fin-1", fin)]).status_code == 200
+    in_can = [component("Tail-1", tail, transform=there, children=[component("Fin-1", fin, transform=there)])]
+    assert put_model(team, chief, can, components=in_can).status_code == 200
+
+    tail2 = again(team, chief, "Fins/Tail.SLDASM", b"tail, with a second fin")
+    waiting = shown(client, chief, can, latest=True)
+    [sub] = waiting["components"]
+    assert (sub["version"], sub["pinned"], sub["layout"]) == (2, 1, 1)  # still the components it was checked in with
+    assert [c["name"] for c in sub["children"]] == ["Fin-1"]
+    assert waiting["wanted"] == [{"file_id": tail["id"], "version": 2, "configuration": "Default"}]
+
+    up = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 30.0, 0.0, 0.0, 1.0, 0.0]  # the second fin, 30 mm up in the tail
+    bracket = team.upload(chief, mesh([(c[0] + 1, c[1], c[2]) for c in CORNERS]))  # and a part the tail keeps inside
+    in_tail = [
+        component("Fin-1", fin),
+        component("Fin-2", fin, transform=up),
+        {"name": "Bracket^Tail", "transform": up, "mesh": bracket, "virtual": True},
+    ]
+    assert put_model(team, chief, tail2, components=in_tail).status_code == 200
+    now = shown(client, chief, can, latest=True)
+    [sub] = now["components"]
+    assert (sub["version"], sub["layout"], now["wanted"]) == (2, 2, [])
+    assert [(c["name"], c["transform"][3], c["transform"][7]) for c in sub["children"]] == [
+        ("Fin-1", 100.0, 0.0),
+        ("Fin-2", 100.0, 30.0),  # where the tail has it, where the can has the tail
+        ("Bracket^Tail", 100.0, 30.0),
+    ]
+    # The shape the tail's model carries comes from that model, which says so; and from SolidWorks, as the model is.
+    kept = sub["children"][2]
+    assert kept["carrier"] == {"file_id": tail["id"], "version": 2, "configuration": "Default"}
+    assert kept["source"] == "solidworks"
+    shape = client.get(
+        f"/api/files/{tail['id']}/caliper/mesh",
+        params={"version": 2, "configuration": "Default", "mesh": bracket},
+        headers=chief,
+    )
+    assert shape.status_code == 200
+    # As it was checked in, it's as the can's own model has it.
+    then = shown(client, chief, can)["components"][0]
+    assert (then["version"], then["layout"], [c["name"] for c in then["children"]]) == (1, 1, ["Fin-1"])
+
+
+def test_a_model_says_where_it_is_from(team, client):
+    """Vault for SolidWorks' models are from SolidWorks, and say so, in a file's list and in an assembly; so does one
+    from before the server noted where each was from, by what made it."""
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"}))
+    fin, can = made["Fin.SLDPRT"], made["Can.SLDASM"]
+    sha = team.upload(chief, mesh())
+    assert put_model(team, chief, fin, mesh=sha).json()["source"] == "solidworks"
+    kept = {"name": "Bracket^Can", "transform": IDENTITY, "mesh": sha, "virtual": True}
+    assert put_model(team, chief, can, components=[component("Fin-1", fin), kept]).json()["source"] == "solidworks"
+    [model] = client.get(f"/api/files/{fin['id']}/caliper", headers=chief).json()["models"]
+    assert model["source"] == "solidworks"
+    assert [c["source"] for c in shown(client, chief, can)["components"]] == ["solidworks", "solidworks"]
+
+    with team.app.state.sessionmaker() as db:  # as releases before this one left them
+        for model in db.scalars(select(CaliperModel)):
+            model.source = None
+        db.commit()
+    [model] = client.get(f"/api/files/{fin['id']}/caliper", headers=chief).json()["models"]
+    assert model["source"] == "solidworks"
+    with team.app.state.sessionmaker() as db:  # and one the server read, before it noted from what
+        for model in db.scalars(select(CaliperModel)):
+            model.reader = 3
+        db.commit()
+    [model] = client.get(f"/api/files/{fin['id']}/caliper", headers=chief).json()["models"]
+    assert model["source"] == "file"
+
+
+def test_a_model_lists_components_that_arent_in_the_vault(team, client):
+    """A component whose file isn't in the vault (a Toolbox screw, a part never checked in) is in the model all the
+    same: with its shape, which shows; or only named, so Caliper lists it as not in the vault rather than leave it out
+    unsaid. Where SolidWorks had its file stays on the server: Caliper gets its name."""
+    chief = team.member("chief@x.test", admin=True)
+    can = files(team.checkin(chief, {"Fins/Can.SLDASM": b"can"}))["Can.SLDASM"]
+    screw = team.upload(chief, mesh())
+    components = [
+        {"name": "Screw-1", "transform": IDENTITY, "mesh": screw, "path": "C:\\SOLIDWORKS Data\\browser\\Screw.SLDPRT"},
+        {"name": "Washer-1", "transform": IDENTITY, "path": "C:\\Users\\alice\\Desktop\\Washer.SLDPRT"},
+    ]
+    assert put_model(team, chief, can, components=components).status_code == 200
+    with_shape, named = shown(client, chief, can, latest=True)["components"]
+    assert (with_shape["file_id"], with_shape["mesh"], with_shape["file"], with_shape["source"]) == (
+        None,
+        screw,
+        "Screw.SLDPRT",
+        "solidworks",
+    )
+    assert with_shape["carrier"] == {"file_id": can["id"], "version": 1, "configuration": "Default"}
+    assert (named["file_id"], named["mesh"], named["file"], named["model"]) == (None, None, "Washer.SLDPRT", False)
+    assert "path" not in named
+
+    # Once the washer is checked in where SolidWorks had it (a folder of that name), it's found.
+    washer = files(team.checkin(chief, {"Desktop/Washer.SLDPRT": b"washer"}))["Washer.SLDPRT"]
+    found = shown(client, chief, can, latest=True)["components"][1]
+    assert (found["file_id"], found["version"], found["kind"], found["file"]) == (washer["id"], 1, "part", None)
+
+
+def test_a_component_whose_file_is_in_the_trash_says_so(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Fins/Can.SLDASM": b"can"}))
+    fin, can = made["Fin.SLDPRT"], made["Can.SLDASM"]
+    assert put_model(team, chief, can, components=[component("Fin-1", fin)]).status_code == 200
+    assert shown(client, chief, can, latest=True)["components"][0]["deleted"] is False
+    deleted = client.post("/api/delete", json={"files": [fin["id"]]}, headers=chief)
+    assert deleted.status_code == 200, deleted.text
+    [in_trash] = shown(client, chief, can, latest=True)["components"]
+    assert (in_trash["deleted"], in_trash["file_id"], in_trash["version"]) == (True, fin["id"], 1)
+
+
+def test_a_part_that_isnt_in_the_vault_shows_the_shape_its_assembly_carries(team, client):
+    """Vault for SolidWorks sends an assembly's model with every component SolidWorks has: one whose file isn't in the
+    vault (a Toolbox screw, a part not checked in yet) comes with where SolidWorks had it and its shape there, and
+    shows. Once its file is checked in, the file shows in its place, as any other part's."""
+    chief = team.member("chief@x.test", admin=True)
+    can = files(team.checkin(chief, {"Fins/Fin Can.SLDASM": b"can"}))["Fin Can.SLDASM"]
+    screw = team.upload(chief, mesh())
+    outside = {"path": "C:\\VLT\\Fins\\Screw.SLDPRT", "mesh": screw}
+    components = [component("Screw-1", **outside), component("Clip-1", path="C:\\Toolbox\\Clip.SLDPRT")]
+    assert put_model(team, chief, can, components=components).status_code == 200
+
+    carried, listed = shown(client, chief, can, latest=True)["components"]
+    assert (carried["file_id"], carried["file"], carried["mesh"], carried["source"]) == (
+        None,
+        "Screw.SLDPRT",
+        screw,
+        "solidworks",
+    )
+    assert carried["carrier"] == {"file_id": can["id"], "version": 1, "configuration": "Default"}
+    assert (listed["file_id"], listed["file"], listed["mesh"]) == (None, "Clip.SLDPRT", None)
+    params = {"version": 1, "configuration": "Default", "mesh": screw}
+    assert client.get(f"/api/files/{can['id']}/caliper/mesh", params=params, headers=chief).status_code == 200
+
+    part = files(team.checkin(chief, {"Fins/Screw.SLDPRT": b"screw"}))["Screw.SLDPRT"]
+    now = shown(client, chief, can, latest=True)["components"][0]
+    assert (now["file_id"], now["version"], now["file"], now["mesh"], now["carrier"]) == (
+        part["id"],
+        1,
+        None,
+        None,
+        None,
+    )
+
+
+def test_solidworks_own_model_takes_the_place_of_one_the_server_read(team, client):
+    """A version someone opened in Caliper before Vault for SolidWorks got to it has the model the server read from
+    its file. That one counts as missing, so the add-in makes SolidWorks' own, and anyone who may add a model may put
+    it in the server's place; putting one in place of SolidWorks' own is still an editor's."""
+    chief = team.member("chief@x.test", admin=True)
+    bob = team.member("bob@x.test")  # edits Structures, and sees Servo
+    team.grant(chief, "", None, "viewer")
+    assert team.checkin(chief, {"Structures/Fin.SLDPRT": b"fin"}).status_code == 200
+    team.grant(chief, "Structures", "bob@x.test", "editor")
+    spline = files(team.checkin(chief, {"Servo/Embout.SLDPRT": FIXTURE.read_bytes()}))["Embout.SLDPRT"]
+    read = client.post(f"/api/files/{spline['id']}/caliper/make", json={"version": 1}, headers=bob)
+    assert (read.status_code, read.json()["source"]) == (200, "view")
+    name = read.json()["configuration"]
+
+    def missing() -> list[str]:
+        body = {"models": [{"file_id": spline["id"], "version": 1, "configuration": name}]}
+        response = client.post("/api/caliper/missing", json=body, headers=bob)
+        assert response.status_code == 200, response.text
+        return [model["configuration"] for model in response.json()["missing"]]
+
+    assert missing() == [name]
+    first, second = team.upload(chief, mesh()), team.upload(chief, mesh(CORNERS[::-1]))
+    assert put_model(team, bob, spline, mesh=first, configuration=name).status_code == 200
+    [model] = client.get(f"/api/files/{spline['id']}/caliper", headers=bob).json()["models"]
+    assert (model["source"], model["created_by"]["email"]) == ("solidworks", "bob@x.test")
+    assert missing() == []
+    assert put_model(team, bob, spline, mesh=second, configuration=name).status_code == 403

@@ -37,6 +37,8 @@ public sealed class CaliperAssembly
 /// <summary>
 /// A component of an assembly, as SolidWorks has it: a part or sub-assembly (its file here, in a configuration), or a
 /// virtual part, which the assembly keeps (its own mesh); where it is, whether it's hidden, its color over its part's.
+/// A part whose file isn't in the vault (a Toolbox screw, one not checked in yet) has its mesh too, as the vault has no
+/// file to show for it.
 /// </summary>
 public sealed class CaliperComponent
 {
@@ -54,7 +56,7 @@ public sealed class CaliperComponent
 
     public CaliperColor? Color { get; set; }
 
-    /// <summary>A virtual part's shape.</summary>
+    /// <summary>A virtual part's shape, or that of a part whose file isn't in the vault.</summary>
     public CaliperMesh? Mesh { get; set; }
 
     /// <summary>A sub-assembly's components, placed in the same coordinates.</summary>
@@ -150,6 +152,8 @@ public sealed class CaliperPlan
 
     internal HashSet<(string Key, string Configuration)> Needed { get; } = new HashSet<(string, string)>();
 
+    internal HashSet<string> Outside { get; } = new HashSet<string>(StringComparer.Ordinal);
+
     /// <summary>Files there can be no model of, and why: changed here, or not in the vault yet.</summary>
     public List<string> Problems { get; } = new List<string>();
 
@@ -158,6 +162,12 @@ public sealed class CaliperPlan
 
     /// <summary>Whether to make the model of this file here, in this configuration.</summary>
     public bool Needs(string localPath, string configuration) => Needed.Contains((Key(localPath), configuration));
+
+    /// <summary>
+    /// Whether this file isn't in the vault (outside the workspace, or not checked in yet), so that an assembly's model
+    /// carries its shape. Not one that's in the vault and changed here: the vault's own version shows for that.
+    /// </summary>
+    public bool Carries(string localPath) => Outside.Contains(Key(localPath));
 
     // Local paths are compared as Windows does: case doesn't matter.
     internal static string Key(string localPath) => Path.GetFullPath(localPath).ToUpperInvariant();
@@ -178,6 +188,8 @@ public sealed class CaliperSaved
 /// </summary>
 public sealed class CaliperModels
 {
+    private const int MaxPath = 1024; // of where SolidWorks had a file, as the server keeps it
+
     private readonly Workspace _workspace;
 
     public CaliperModels(Workspace workspace) => _workspace = workspace;
@@ -204,7 +216,8 @@ public sealed class CaliperModels
             var name = Path.GetFileName(path);
             if (!byKey.TryGetValue(Key(path), out var status))
             {
-                plan.Problems.Add($"{name} isn't in the workspace, so it has no 3D model.");
+                plan.Outside.Add(Key(path));
+                plan.Problems.Add($"{name} isn't in the workspace, so it has no 3D model of its own: an assembly that uses it shows it as SolidWorks has it.");
                 continue;
             }
             switch (status.State)
@@ -213,6 +226,7 @@ public sealed class CaliperModels
                     plan.Versions[Key(path)] = (id, version);
                     break;
                 case FileState.New:
+                    plan.Outside.Add(Key(path));
                     plan.Problems.Add($"{name} isn't in the vault yet: it gets a 3D model when it's checked in.");
                     break;
                 case FileState.Modified or FileState.Conflict:
@@ -257,8 +271,9 @@ public sealed class CaliperModels
 
     /// <summary>
     /// Save models made by the plan: each mesh uploaded if the server doesn't have it, then each model. An assembly's
-    /// components are its files' versions; one that isn't a version of the vault is left out, and said. A model that
-    /// can't be saved doesn't stop the rest.
+    /// components are its files' versions; one whose file isn't a version of the vault here is listed with where
+    /// SolidWorks had it, and its shape if it has one (a part that isn't in the vault). A model that can't be saved
+    /// doesn't stop the rest.
     /// </summary>
     public async Task<CaliperSaved> SaveAsync(
         CaliperPlan plan,
@@ -267,6 +282,7 @@ public sealed class CaliperModels
         CancellationToken ct = default)
     {
         var saved = new CaliperSaved();
+        var uploaded = new Dictionary<CaliperMesh, string>(); // a screw used a hundred times is hashed and sent once
         foreach (var part in parts)
         {
             await SaveOneAsync(plan, saved, part.LocalPath, async at => new CaliperModelRequest
@@ -274,19 +290,21 @@ public sealed class CaliperModels
                 Version = at.Version,
                 Configuration = part.Configuration,
                 Units = part.Units,
-                Mesh = await UploadAsync(part.Mesh, ct).ConfigureAwait(false),
+                Mesh = await UploadAsync(part.Mesh, uploaded, ct).ConfigureAwait(false),
             }, ct).ConfigureAwait(false);
         }
         foreach (var assembly in assemblies)
         {
-            var name = Path.GetFileName(assembly.LocalPath);
-            await SaveOneAsync(plan, saved, assembly.LocalPath, async at => new CaliperModelRequest
+            Func<bool, Func<(long FileId, int Version), Task<CaliperModelRequest>>> request = listed => async at => new CaliperModelRequest
             {
                 Version = at.Version,
                 Configuration = assembly.Configuration,
                 Units = assembly.Units,
-                Components = await ComponentsAsync(plan, saved, name, assembly.Components, ct).ConfigureAwait(false),
-            }, ct).ConfigureAwait(false);
+                Components = await ComponentsAsync(plan, assembly.Components, listed, uploaded, ct).ConfigureAwait(false),
+            };
+            // A server from before it listed components without a file or a shape refuses a model that has one
+            // (bad_model): for that server, the model goes without them, as it used to.
+            await SaveOneAsync(plan, saved, assembly.LocalPath, request(true), ct, request(false)).ConfigureAwait(false);
         }
         return saved;
     }
@@ -296,7 +314,8 @@ public sealed class CaliperModels
         CaliperSaved saved,
         string localPath,
         Func<(long FileId, int Version), Task<CaliperModelRequest>> request,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<(long FileId, int Version), Task<CaliperModelRequest>>? otherwise = null)
     {
         if (!plan.Versions.TryGetValue(Key(localPath), out var at))
         {
@@ -304,7 +323,14 @@ public sealed class CaliperModels
         }
         try
         {
-            await _workspace.Api.PutCaliperModelAsync(at.FileId, await request(at).ConfigureAwait(false), ct).ConfigureAwait(false);
+            try
+            {
+                await _workspace.Api.PutCaliperModelAsync(at.FileId, await request(at).ConfigureAwait(false), ct).ConfigureAwait(false);
+            }
+            catch (VaultApiException e) when (e.Code == "bad_model" && otherwise != null)
+            {
+                await _workspace.Api.PutCaliperModelAsync(at.FileId, await otherwise(at).ConfigureAwait(false), ct).ConfigureAwait(false);
+            }
             saved.Made++;
         }
         catch (VaultApiException e)
@@ -315,9 +341,9 @@ public sealed class CaliperModels
 
     private async Task<List<CaliperComponentRequest>> ComponentsAsync(
         CaliperPlan plan,
-        CaliperSaved saved,
-        string assembly,
         IEnumerable<CaliperComponent> components,
+        bool listed,
+        Dictionary<CaliperMesh, string> uploaded,
         CancellationToken ct)
     {
         var requests = new List<CaliperComponentRequest>();
@@ -331,22 +357,26 @@ public sealed class CaliperModels
                 Hidden = component.Hidden,
                 Color = component.Color is { } color ? new[] { color.Red, color.Green, color.Blue } : null,
                 Opacity = component.Color?.Opacity ?? 1,
-                Children = await ComponentsAsync(plan, saved, assembly, component.Children, ct).ConfigureAwait(false),
+                Children = await ComponentsAsync(plan, component.Children, listed, uploaded, ct).ConfigureAwait(false),
             };
             if (component.LocalPath != null)
             {
-                if (!plan.Versions.TryGetValue(Key(component.LocalPath), out var at))
+                if (plan.Versions.TryGetValue(Key(component.LocalPath), out var at))
                 {
-                    saved.Problems.Add($"{component.Name} is left out of {assembly}'s 3D model: {Path.GetFileName(component.LocalPath)} isn't a version of the vault here.");
-                    continue;
+                    (request.FileId, request.Version) = (at.FileId, at.Version);
                 }
-                (request.FileId, request.Version) = (at.FileId, at.Version);
+                else
+                {
+                    // Not a version of the vault here: the server looks for it by where SolidWorks has it, each time
+                    // the assembly is shown, and until it finds it shows the shape that comes with it, if one does.
+                    request.Path = component.LocalPath.Length > MaxPath ? component.LocalPath.Substring(component.LocalPath.Length - MaxPath) : component.LocalPath;
+                }
             }
             if (component.Mesh != null)
             {
-                request.Mesh = await UploadAsync(component.Mesh, ct).ConfigureAwait(false);
+                request.Mesh = await UploadAsync(component.Mesh, uploaded, ct).ConfigureAwait(false);
             }
-            if (request.FileId == null && request.Mesh == null && request.Children.Count == 0)
+            if (request.FileId == null && request.Mesh == null && request.Children.Count == 0 && (request.Path.Length == 0 || !listed))
             {
                 continue; // a virtual part SolidWorks gave no shape: nothing to show
             }
@@ -356,8 +386,12 @@ public sealed class CaliperModels
     }
 
     /// <summary>Upload a mesh (if the server doesn't have it already), and give its SHA-256.</summary>
-    private async Task<string> UploadAsync(CaliperMesh mesh, CancellationToken ct)
+    private async Task<string> UploadAsync(CaliperMesh mesh, Dictionary<CaliperMesh, string> uploaded, CancellationToken ct)
     {
+        if (uploaded.TryGetValue(mesh, out var known))
+        {
+            return known;
+        }
         var bytes = mesh.ToArray();
         var sha256 = Hashing.Sha256(bytes);
         if (!await _workspace.Api.HasBlobAsync(sha256, ct).ConfigureAwait(false))
@@ -365,6 +399,7 @@ public sealed class CaliperModels
             using var content = new MemoryStream(bytes, writable: false);
             await _workspace.Api.UploadBlobAsync(sha256, content, ct).ConfigureAwait(false);
         }
+        uploaded[mesh] = sha256;
         return sha256;
     }
 

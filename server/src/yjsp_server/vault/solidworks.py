@@ -111,8 +111,12 @@ from .caliper import MeshBody, MeshFace, Rgb
 
 MAX_STREAM = 1 << 29  # a stream unpacks to at most this: a big assembly's display list is a hundred MB or two
 # This reader's version, which the models it makes keep (CaliperModel.reader): when what it reads from a file changes,
-# a newer one is out, and the server reads the models an older one made again, as they're next wanted.
-READER = 3
+# a newer one is out, and the server reads the models an older one made again, as they're next wanted. STANDS has the
+# oldest reader whose models of each kind still stand: what changed an assembly's reading needn't have every part read
+# again. (4: an assembly's model lists the components whose files weren't in the vault, and where SolidWorks kept
+# them; a part's says whether it's its 3D view or its solid, which changes no part's model.)
+READER = 4
+STANDS: dict[str, int] = {"part": 3, "assembly": 4}
 _MARKER = b"\x14\x00\x06\x00\x08\x00"
 _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _ZLB = bytes.fromhex("231dd571da8148a2a85898b21b89ef99")  # what a packed stream of an OLE file starts with
@@ -175,6 +179,9 @@ class Part:
     configuration: str  # the one asked for; else the one SolidWorks had open when it saved the file
     units: str
     bodies: list[MeshBody]
+    # Where its shape is from: the 3D view SolidWorks saved (the triangles it drew), or the solid it kept, which the
+    # server turned into triangles of its own.
+    source: Literal["view", "solid"]
 
 
 @dataclass
@@ -1019,7 +1026,7 @@ def _viewed(found: dict[str, bytes], display: bytes) -> Part:
     bodies = _mesh(display, shape, len(display), first_face)
     tail = [text for _, text in _strings(display, faces[-1].end, len(display))]
     configuration = _part_configuration(_xml(found.get(_FEATURES)), tail)
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="view")
 
 
 # --- parts' solids --------------------------------------------------------------------------------
@@ -1114,7 +1121,7 @@ def _solid(
             raise Unreadable(f"SolidWorks kept no bodies of its {configuration} configuration: it may be empty")
         raise refused or Unreadable(_NO_VIEW)
     bodies = _meshed(solids, _configuration_look(streams.get(names[3])))
-    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies)
+    return Part(configuration=configuration, units=_units(found.get(_INFO)), bodies=bodies, source="solid")
 
 
 def _configuration_look(stream: bytes | None) -> _Look | None:
@@ -1216,7 +1223,7 @@ def _nodes(data: bytes) -> list[_Node]:
     return found
 
 
-def _compose(parent: list[float], child: list[float]) -> list[float]:
+def compose(parent: list[float], child: list[float]) -> list[float]:
     """Where a component of a sub-assembly is in the top assembly: the sub-assembly's place, then the component's."""
     rows = []
     for i in range(3):
@@ -1345,7 +1352,7 @@ def _read_assembly(data: bytes, configuration: str | None) -> list[Assembly]:
         for ref, used, file, assembly, virtual in refs:
             name = f"{ref.get('swName') or ''}-{ref.get('swReferenceNumber') or '1'}"
             own = _xml_rows(ref.get("swTransform") or "")
-            rows = own if place is None else _compose(place, own)
+            rows = own if place is None else compose(place, own)
             path = file.get("swPath") or ""
             configuration = used.get("swConfigurationName") or ref.get("swConfigurationName") or ""
             inside = next((f for n in _kept_names(ref, assembly) if (f := streams.get(n))), None) if virtual else None

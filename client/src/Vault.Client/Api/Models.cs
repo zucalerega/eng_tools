@@ -375,6 +375,9 @@ internal sealed class CaliperComponentRequest
     public double[]? Color { get; set; }
     public double Opacity { get; set; } = 1;
     public string? Mesh { get; set; }
+
+    /// <summary>Where SolidWorks had its file, for one that isn't a version of the vault here; else empty.</summary>
+    public string Path { get; set; } = "";
     public List<CaliperComponentRequest> Children { get; set; } = new List<CaliperComponentRequest>();
 }
 

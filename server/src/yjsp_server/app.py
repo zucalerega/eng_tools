@@ -23,6 +23,7 @@ from .piper import api as piper_api
 from .piper.diagrams import stored as piper_stored
 from .security import SecurityHeaders, hide_sign_in_codes
 from .vault import api as vault_api
+from .vault.reading import Reader
 from .vault.storage import BlobStore
 from .vault.vault import init_vault
 from .yorg import api as yorg_api
@@ -49,7 +50,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             recover_yorg(db)
         app.state.server_load.start()
         app.state.assistant.start()
+        if settings.caliper_read_ahead:
+            app.state.caliper_reader.start()
         yield
+        app.state.caliper_reader.stop()
         app.state.assistant.stop()
         app.state.server_load.stop()
         app.state.yorg_runs.close()
@@ -62,6 +66,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = sessions
     app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)
     app.state.vault_store = BlobStore(settings.vault_dir / "blobs")
+    # Reads SolidWorks files' 3D models for Caliper ahead of their being opened.
+    app.state.caliper_reader = Reader(sessions, app.state.vault_store)
     app.state.yorg_files = DataFiles(settings.yorg_dir)
     app.state.yorg_scripts = Saved(settings.yorg_dir, "script", "code")
     app.state.yorg_runs = Runs(settings.yorg_dir)

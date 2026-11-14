@@ -136,9 +136,15 @@ replaces Kenesto.
   diameter, an edge's length, and the distance or angle between two faces, edges, or
   corners. In an assembly, show, hide, or isolate its parts, and open a sub-assembly or a
   part on its own. Nothing in it changes a file. STEP, IGES, and STL files open as they are.
+  A strip under the header says what you're looking at: the version and whether it's the
+  latest, where the view is from, and how much of an assembly is shown. An assembly shows
+  the latest version of every part in it, as SolidWorks opens it, each where the assembly
+  last had it; pick an older version of the assembly to see it as it was checked in.
   SolidWorks parts and assemblies show the 3D model Vault for SolidWorks makes of each
-  version it checks in; for any other version, the server reads the 3D view SolidWorks
-  saved in the file (any SolidWorks up to 2026), in the configuration it was saved in. Pick
+  version it checks in, which is exactly what SolidWorks draws; for any other version, the
+  server reads the 3D view SolidWorks saved in the file (any SolidWorks up to 2026), in the
+  configuration it was saved in, a few minutes after it's checked in, so it's ready when
+  you open it. Pick
   another configuration from the Configuration list: the server reads it from the solid
   SolidWorks keeps of it in the file, which SolidWorks does for each configuration that was up
   to date when it saved (one shown since the file last changed, or one with a Rebuild/Save
@@ -146,7 +152,10 @@ replaces Kenesto.
   it, check the file out, show that configuration (or add the mark), save, and check it in. An
   assembly shows each of its parts that's in the vault, read from the part's own file, even
   if it was uploaded in the web app, and the STEP and IGES files placed in it, in each of its
-  configurations; Caliper lists the parts it couldn't show, and why. A part saved without
+  configurations. Checked in from SolidWorks, it shows the parts that aren't in the vault
+  too (Toolbox screws, say), as SolidWorks had them. Caliper lists every part it couldn't
+  show, and why, and marks any that shows an older version or another configuration than
+  the assembly uses. A part saved without
   its 3D view, as vendors' parts often are, is drawn from the solid SolidWorks keeps in it,
   in the colors SolidWorks shows, and so are routed tubes, which their assembly keeps inside
   its file. The server reads a version's model once and keeps it; when an update reads files
@@ -157,7 +166,11 @@ replaces Kenesto.
   zoom, print, or open in a tab of its own with Open PDF): Vault for SolidWorks saves one
   each time it checks a drawing in. A version from before (or from Kenesto, or checked in
   from the web) shows the pictures of its sheets SolidWorks saved in it, which are too small
-  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. A DXF file (a
+  to read: open the drawing in SolidWorks and click Make PDF on the Vault tab. The strip
+  under the header says which it is, and who made the PDF and when. If the part or
+  assembly a drawing shows has been checked in since the drawing was, Caliper warns that
+  the sheets may show its older shape, as SolidWorks redraws the views from the latest:
+  check the drawing in again from SolidWorks to update them. A DXF file (a
   flat pattern for the laser cutter or waterjet, say) is drawn as it is, in its own units:
   drag to pan, scroll to zoom, show and hide its layers, and measure a line's length, a
   hole's diameter, or the distance between two holes, lines, or corners.

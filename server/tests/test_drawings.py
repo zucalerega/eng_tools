@@ -92,13 +92,14 @@ def put_pdf(team, who, file: dict, pdf: str, version: int = 1):
 def test_a_drawings_sheets_come_with_the_pictures_solidworks_saved_of_them(team, client):
     chief = team.member("chief@x.test", admin=True)
     general, detail = png(64, 48, 200), png(64, 48, 100)
-    _, fin = checked_in(team, chief, drawing(("Sheet1", general), ("Detail", detail)))
+    part, fin = checked_in(team, chief, drawing(("Sheet1", general), ("Detail", detail)))
 
     assert shown(client, chief, fin) == {
         "version": 1,
         "pdf": None,
         "sheets": [{"name": "Sheet1", "picture": True}, {"name": "Detail", "picture": True}],
         "unreadable": None,
+        "models": [{"file_id": part["id"], "path": "Fins/Fin.SLDPRT", "version": 1, "latest_version": 1}],
     }
     first = picture(client, chief, fin, 1)
     assert (first.status_code, first.headers["content-type"], first.content) == (200, "image/png", general)
@@ -191,6 +192,32 @@ def test_pdfs_are_checked(team, client):
     assert refused(part, pdf) == (400, "not_a_drawing")
     assert refused(fin, pdf, version=2) == (404, "not_found")
     assert shown(client, chief, fin)["pdf"] is None
+
+
+def test_a_drawing_says_which_of_its_models_changed_since_it_was_checked_in(team, client):
+    """SolidWorks draws a drawing's views from its model as it opens it, so once the model is checked in again, the PDF
+    made when the drawing was checked in may show an older shape: the drawing lists the models it was checked in with,
+    at those versions and their latest, of those you can see."""
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    made = files(team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin", "Secret/Tab.SLDPRT": b"tab"}))
+    sheet = drawing(("Sheet1", png(8, 6)))
+    fin = files(
+        team.checkin(
+            chief, {"Fins/Fin.SLDDRW": sheet}, refs={"Fins/Fin.SLDDRW": ["Fins/Fin.SLDPRT", "Secret/Tab.SLDPRT"]}
+        )
+    )["Fin.SLDDRW"]
+    assert team.checkout(chief, "Fins/Fin.SLDPRT").status_code == 200
+    assert team.checkin(chief, {"Fins/Fin.SLDPRT": b"fin v2"}).status_code == 200
+    team.grant(chief, "Fins", "alice@x.test", "viewer")  # but not Secret
+
+    models = shown(client, chief, fin)["models"]
+    assert [(m["path"], m["version"], m["latest_version"]) for m in models] == [
+        ("Fins/Fin.SLDPRT", 1, 2),
+        ("Secret/Tab.SLDPRT", 1, 1),
+    ]
+    assert models[0]["file_id"] == made["Fin.SLDPRT"]["id"]
+    assert [m["path"] for m in shown(client, alice, fin)["models"]] == ["Fins/Fin.SLDPRT"]
 
 
 def test_who_can_add_and_make_pdfs_again(team, client):

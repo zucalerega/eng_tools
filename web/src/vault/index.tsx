@@ -118,6 +118,8 @@ function page(route: string, vault: VaultState) {
             return <Admin section="numbers" />;
         case "/admin/requests":
             return <Admin section="requests" />;
+        case "/admin/deals":
+            return <Admin section="deals" />;
         default:
             return (
                 <Notice tone="error">

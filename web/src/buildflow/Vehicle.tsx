@@ -18,6 +18,7 @@ interface Props {
     placing?: Component | null; // a click on the drawing puts it there
     onPlace?: (x: number, y: number) => void;
     sections?: boolean; // the sections' names, under them (the layout page)
+    marks?: Map<number, number>; // components with deals found for them, and how many: a small mark by their dots
 }
 
 export function Vehicle({
@@ -32,6 +33,7 @@ export function Vehicle({
     placing = null,
     onPlace,
     sections = false,
+    marks,
 }: Props) {
     const svg = useRef<SVGSVGElement>(null);
     const [dragging, setDragging] = useState<{ id: number; x: number; y: number } | null>(null);
@@ -110,6 +112,7 @@ export function Vehicle({
             {placed.map((component) => {
                 const state = phaseState(component, milestones);
                 const at = where(component);
+                const deals = marks?.get(component.id) ?? 0;
                 return (
                     <g
                         key={component.id}
@@ -131,10 +134,11 @@ export function Vehicle({
                             }
                         }}
                     >
-                        <title>{`${component.name}: ${STATE_NAMES[state]}`}</title>
+                        <title>{`${component.name}: ${STATE_NAMES[state]}${deals ? `, ${deals} on eBay` : ""}`}</title>
                         <circle className="bf-dot-hit" r={dot * 2.4} />
                         {component.id === selected && <circle className="bf-dot-ring" r={dot * 2} />}
                         <circle className="bf-dot-mark" r={state === "skipped" ? dot * 0.8 : dot} />
+                        {deals > 0 && <circle className="bf-dot-deal" cx={dot * 1.5} cy={-dot * 1.5} r={dot * 0.55} />}
                     </g>
                 );
             })}

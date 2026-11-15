@@ -5,8 +5,8 @@ the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for
 data; **[Piper](#piper-pids)** (`/piper`), for its P&IDs; and
 **[Buildflow](#buildflow-bills-of-design)** (`/buildflow`), for each program's bill of design.
 The site's address on its own shows all four (the team's logo at the top left goes back to it),
-and how full the server's disk is, and how much of it each takes; the switcher beside the logo
-goes between them.
+how full the server's disk is, and how much of it each takes, and **[deals](#deals)** on eBay for
+what the team wants; the switcher beside the logo goes between them.
 
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
@@ -538,12 +538,39 @@ Buildflow's top bar, has all of this on one page.
   **Bring back**; a milestone with anything kept on it can be renamed but not deleted; and
   **Archive…** takes a program off the list, kept as it was, until an admin brings it back.
 
+## Deals
+
+Once a day the site searches eBay for what the team wants, and shows the listings that would do
+at the foot of its own page, as cards that slide by (or with the arrows): each with its picture,
+price and shipping, condition, how far under the typical price it is (against the others found
+like it), why it would do, what it's for (a link to it: a component on its program's bill of
+design, a vendor's part in Vault, a part on a P&ID), how long ago it was checked, and **View on
+eBay**, to buy it there. What it searches for:
+
+- **Buildflow's components not yet procured** (through Procurement): a bought one by the part
+  numbers in its description and links (`Swagelok SS-43GS4`), and by what it is; one the team
+  makes by the stock its description says it's made from ("6061-T6 aluminum, 8 in OD, 0.125 in
+  wall"). Those through design, and lately worked on, first. So say a component's part number,
+  or its material, form, and sizes, in what it is, for its deals to be found.
+- **Vendors' parts in Vault**, by their part numbers, in folders everyone can see.
+- **Parts on Piper's P&IDs** that say their model (`Omega PX309-1KG5V`).
+
+A component's links bring its CAD in Vault and its parts on P&IDs with it (a link to a diagram
+found at a tag, `/piper/diagrams/3?find=PR-101`), so their deals are the component's. On a
+program's bill of design, a component with deals has a small tag with how many beside its name,
+and a speck of gold by its dot on the vehicle; its panel lists them under **On eBay**. ✕ on a deal
+hides it for everyone, and it isn't found again for what it's for (**Undo** brings it back).
+Claude says which listings would do, and why, when it's set up and less than half of its budget is
+spent (so Help keeps the rest); otherwise a listing's words do.
+Deals are checked again on eBay every four hours, and one sold, ended, or not checked in six hours
+isn't shown. Admins see each search and check, and search at once, on Admin > Deals.
+
 ## Layout
 
 | Path | What | Status |
 |---|---|---|
-| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/`, Buildflow in `buildflow/` | working |
-| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper`, Buildflow's in `src/buildflow` | working |
+| `server/` | The server: Python, FastAPI, SQLAlchemy; Docker image. The site (sign-in, accounts, deals in `deals/`) at the top of `src/yjsp_server`, Vault in `vault/`, Yorg in `yorg/`, Piper in `piper/`, Buildflow in `buildflow/` | working |
+| `web/` | The web app: TypeScript, React, Vite; served by the server. The frame (and the deals, `deals.tsx`) at the top of `src`, Vault's pages in `src/vault`, Yorg's in `src/yorg`, Piper's in `src/piper`, Buildflow's in `src/buildflow` | working |
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |

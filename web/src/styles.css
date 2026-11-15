@@ -2716,3 +2716,239 @@ input[type="checkbox"] {
     border-top: 1px solid var(--border);
     font-size: 0.85rem;
 }
+
+/* --- deals: listings on eBay for what the team wants (deals.tsx) ------------------------------------------------------ */
+
+/* At the foot of the site's own page: cards that slide by, a few at a time. */
+.home-deals {
+    margin-top: 1.5rem;
+}
+
+.home-deals-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.9rem;
+    margin-bottom: 0.6rem;
+}
+
+.home-deals-head h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.home-deals-said {
+    flex: 1;
+    font-size: 0.82rem;
+}
+
+.home-deals-arrows {
+    display: inline-flex;
+    gap: 0.3rem;
+}
+
+.home-deals-strip {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    padding: 0.15rem 0.15rem 0.75rem;
+}
+
+.deal-slot {
+    flex: 0 0 min(14.5rem, 78vw);
+    scroll-snap-align: start;
+    display: flex;
+}
+
+.deal-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    box-shadow: var(--shadow);
+    transition:
+        border-color 0.12s,
+        transform 0.12s;
+}
+
+.deal-card:hover {
+    border-color: var(--gold);
+}
+
+.deal-picture {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 9.5rem;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+}
+
+.deal-picture img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.deal-no-picture {
+    font-family: var(--font-brand);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #8e99ab;
+}
+
+/* How far under the typical price, in the gold. */
+.deal-under {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #1b1300;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.deal-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.25rem;
+    padding: 0.65rem 0.8rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.deal-body p {
+    margin: 0;
+}
+
+.deal-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.deal-price strong {
+    font-size: 1.05rem;
+}
+
+.deal-kind {
+    font-size: 0.78rem;
+}
+
+.deal-for {
+    padding-top: 0.2rem;
+    border-top: 1px solid var(--border);
+}
+
+.deal-why {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+/* How old it is: what eBay's terms ask a page to say. */
+.deal-age {
+    margin-top: auto !important;
+    padding-top: 0.35rem;
+    font-size: 0.72rem;
+}
+
+.deal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.deal-under-inline {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #1b1300;
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.deal-dismiss {
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.deal-hidden {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 1rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-large);
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.deal-hidden p {
+    margin: 0;
+}
+
+/* Beside a component, in its panel: the picture small, at the left. */
+.deal-card-compact {
+    flex-direction: row;
+    margin-bottom: 0.6rem;
+}
+
+.deal-card-compact .deal-picture {
+    flex: 0 0 5.5rem;
+    height: auto;
+    min-height: 5.5rem;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+}
+
+.deal-card-compact .deal-under {
+    left: 0.25rem;
+    top: 0.25rem;
+    font-size: 0.65rem;
+}
+
+.deals-admin-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 0.9rem 1.2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+}
+
+.deals-admin-head p {
+    margin: 0;
+}
+
+.deals-problem {
+    max-width: 22rem;
+    font-size: 0.8rem;
+    color: var(--warning);
+}

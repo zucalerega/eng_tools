@@ -81,6 +81,14 @@ const TOPICS: Topic[] = [
                 <li>
                     A component bought rather than made is marked <em>COTS</em> (off the shelf).
                 </li>
+                <li>
+                    A small tag with a number beside a component&apos;s name says the site found deals on eBay for it
+                    (its dot on the vehicle has a speck of gold too). Click it to open the component, whose panel lists
+                    them under <em>On eBay</em>: each listing&apos;s price, why it would do, and a link to it. ✕ hides
+                    one that won&apos;t do, for everyone. Deals are searched for a component until it&apos;s procured,
+                    by the part numbers in what it is (<code>Swagelok SS-43GS4</code>) or, for a part the team makes, by
+                    the stock it names (&quot;6061-T6 aluminum, 8 in OD, 0.125 in wall&quot;).
+                </li>
             </ul>
         ),
     },

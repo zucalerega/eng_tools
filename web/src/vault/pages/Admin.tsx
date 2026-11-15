@@ -17,6 +17,7 @@ import { StorageBar } from "../../storage";
 import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
 import { AddInTracker } from "./AddIn";
+import { DealsAdmin } from "../../deals";
 import { FeedbackAdmin } from "../../feedback";
 import { ClaudeSpending } from "./Claude";
 import { ServerLoad } from "./Load";
@@ -24,7 +25,7 @@ import { SiteUsage } from "./Usage";
 
 // Admins manage accounts and who can make one; admins and folder leads manage who can do what where.
 
-export function Admin({ section }: { section: "people" | "whitelist" | "access" | "numbers" | "requests" }) {
+export function Admin({ section }: { section: "people" | "whitelist" | "access" | "numbers" | "requests" | "deals" }) {
     const vault = useVault();
     const isAdmin = vault.me?.is_admin ?? false;
     const shown = section !== "access" && !isAdmin ? "access" : section;
@@ -56,6 +57,11 @@ export function Admin({ section }: { section: "people" | "whitelist" | "access" 
                             Requests
                         </Link>
                     )}
+                    {isAdmin && (
+                        <Link to={`${VAULT}/admin/deals`} aria-current={shown === "deals" ? "page" : undefined}>
+                            Deals
+                        </Link>
+                    )}
                 </nav>
             </div>
             {shown === "people" ? (
@@ -66,6 +72,8 @@ export function Admin({ section }: { section: "people" | "whitelist" | "access" 
                 <PartNumbers />
             ) : shown === "requests" ? (
                 <FeedbackAdmin />
+            ) : shown === "deals" ? (
+                <DealsAdmin />
             ) : (
                 <Access vault={vault} />
             )}

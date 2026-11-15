@@ -109,11 +109,12 @@ in `web/src/yorg/index.tsx`).
   views and folders dragged onto a folder or a folder on the way up, or views checked
   and moved together (Move to…) or deleted together; and a search that looks in every
   folder (names, folders, notes, and data) and says where each view is. Only your own
-  views (any, for an admin) can be checked or dragged, as only they can move. Save view's
-  and Rename or move's folder box still names a folder by its path (`FolderPicker`, from
-  the folders views are in). Renaming or moving a view sends its plots as they were
-  saved, so changes to them on the page stay to be saved, and its path only if it was
-  changed; saving its plots sends no folder, so it stays wherever it's been moved since.
+  views (any, for an admin) can be checked or dragged, as only they can move. Save view
+  and Rename or move pick a folder as the Views page browses them (the site's
+  `FolderChooser`, its New folder making one where it's open), and send its `folder_id`.
+  Renaming or moving a view sends its plots as they were saved, so changes to them on the
+  page stay to be saved, and its folder only if it was changed; saving its plots sends no
+  folder, so it stays wherever it's been moved since.
 - **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
   page without saving a view, so views are kept for what's worth keeping. A link is the
   page's address with its layout in `?plots=`: the JSON a saved view keeps, deflated

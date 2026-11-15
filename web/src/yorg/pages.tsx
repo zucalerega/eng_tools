@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, MenuButton, Notice, Time } from "../components";
 import { formatSize, formatTime } from "../format";
@@ -13,11 +13,11 @@ import {
     type ReadOptions,
     type SavedView,
     type TimeFormat,
+    type ViewFolder,
 } from "./api";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
-import { FolderPicker } from "../FolderPicker";
-import { foldersOf } from "../pathTree";
+import { FolderChooser, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
 import { formatClock, formatDuration, formatRate, formatValue } from "../scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { viewFolderUrl } from "./Views";
@@ -387,31 +387,59 @@ function DatasetWorkspace({
     );
 }
 
-/** The folders views are in (and those they're in), to pick one from. */
-function useViewFolders(): string[] {
-    const [folders, setFolders] = useState<string[]>([]);
+/** Views' folders, and the views in them (to see where things are), to pick a folder from: null while they come. */
+function useViewFolders(): [{ folders: ViewFolder[]; views: SavedView[] } | null, (made: ViewFolder) => void] {
+    const [found, setFound] = useState<{ folders: ViewFolder[]; views: SavedView[] } | null>(null);
     useEffect(() => {
-        yorg.views().then(
-            (views) => setFolders(foldersOf(views)),
-            () => {},
+        Promise.all([yorg.viewFolders(), yorg.views()]).then(
+            ([folders, views]) => setFound({ folders, views }),
+            () => setFound({ folders: [], views: [] }),
         );
     }, []);
-    return folders;
+    const add = (made: ViewFolder) => setFound((now) => now && { ...now, folders: [...now.folders, made] });
+    return [found, add];
 }
 
-/** Where a view is kept: a folder there is, picked from the list, or a path for a new one ("Hotfires/HF-3"). */
-function FolderField({ value, onChange }: { value: string; onChange: (folder: string) => void }) {
-    const folders = useViewFolders();
+/** Where a view is kept: a folder of the views', picked as the Views page browses them, or a new one made there. */
+function FolderField({ value, onChange }: { value: number | null; onChange: (folder: number | null) => void }) {
+    const [found, add] = useViewFolders();
+    const folders = useMemo<BrowseFolder[]>(
+        () =>
+            (found?.folders ?? []).map((one) => ({
+                key: String(one.id),
+                parent: one.parent_id === null ? null : String(one.parent_id),
+                name: one.name,
+            })),
+        [found],
+    );
+    const views = useMemo<BrowseItem[]>(
+        () =>
+            (found?.views ?? []).map((one) => ({
+                key: String(one.id),
+                name: one.name,
+                folder: one.folder_id === null ? null : String(one.folder_id),
+            })),
+        [found],
+    );
+    // A div, not a label: a label would hand clicks in the dropdown to its button, closing it.
     return (
-        <label className="field">
-            Folder
-            <FolderPicker
-                value={value}
-                onChange={onChange}
+        <div className="field">
+            <span>Folder</span>
+            <FolderChooser
+                label="Folder"
+                top="Views"
                 folders={folders}
-                placeholder="None, or a new one, like Hotfires/HF-3"
+                items={views}
+                value={value === null ? null : String(value)}
+                onChange={(key) => onChange(key === null ? null : Number(key))}
+                onNewFolder={async (parent, name) => {
+                    const made = await yorg.addViewFolder(name, parent === null ? null : Number(parent));
+                    add(made);
+                    return String(made.id);
+                }}
+                disabled={found === null}
             />
-        </label>
+        </div>
     );
 }
 
@@ -419,15 +447,15 @@ function SaveViewDialog({
     layout,
     onClose,
     name = "",
-    folder: inFolder = "",
+    folder: inFolder = null,
 }: {
     layout: Layout;
     onClose: () => void;
     name?: string;
-    folder?: string; // a copy's: the view's own
+    folder?: number | null; // a copy's: the view's own
 }) {
     const [title, setTitle] = useState(name);
-    const [folder, setFolder] = useState(inFolder);
+    const [folder, setFolder] = useState<number | null>(inFolder);
     const [description, setDescription] = useState("");
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -436,7 +464,7 @@ function SaveViewDialog({
         try {
             const saved = await yorg.saveView({
                 name: title.trim(),
-                folder,
+                folder_id: folder,
                 description,
                 datasets: layout.datasets.map((ref) => ref.id),
                 config: layout,
@@ -490,7 +518,7 @@ function RenameViewDialog({
     onClose: () => void;
 }) {
     const [name, setName] = useState(meta.name);
-    const [folder, setFolder] = useState(meta.folder);
+    const [folder, setFolder] = useState<number | null>(meta.folder_id);
     const [description, setDescription] = useState(meta.description);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -499,8 +527,8 @@ function RenameViewDialog({
         try {
             const saved = await yorg.updateView(view.id, {
                 name: name.trim(),
-                // Its path only if it's changed: a folder renamed or moved since would be made again at the old one.
-                folder: folder === meta.folder ? undefined : folder,
+                // Its folder only if it's changed: it stays where it is otherwise, wherever that is now.
+                folder_id: folder === meta.folder_id ? undefined : folder,
                 description,
                 datasets: view.datasets,
                 config: view.config,
@@ -1228,7 +1256,7 @@ function ViewWorkspace({
                 <SaveViewDialog
                     layout={layout}
                     name={`${meta.name} (copy)`}
-                    folder={meta.folder}
+                    folder={meta.folder_id}
                     onClose={() => setDialog(null)}
                 />
             )}

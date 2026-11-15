@@ -310,9 +310,9 @@ export function HelpPage() {
                             its channels.
                         </li>
                         <li>
-                            Views go in folders of their own, apart from the datasets&apos;: pick one from the list when
-                            you save one, or type a new one (<code>Hotfires/HF-3</code>); later, <em>More</em> and{" "}
-                            <em>Rename or move</em>.
+                            Views go in folders of their own, apart from the datasets&apos;: when you save one, go into
+                            its folder as the <em>Views</em> tab does (or find it by name, or make a <em>New folder</em>{" "}
+                            where you are) and <em>Choose</em> it; later, <em>More</em> and <em>Rename or move</em>.
                         </li>
                         <li>
                             The <em>Views</em> tab works as the datasets&apos; list does: <em>New folder</em> where you

@@ -250,6 +250,11 @@ export class Team {
         });
     }
 
+    /** Every views' folder, as the server keeps them. */
+    async viewFolders(who: Member): Promise<ViewFolder[]> {
+        return call<ViewFolder[]>("GET", "/api/yorg/view-folders", who.token);
+    }
+
     /** A new saved script, in a folder ("": at the top). */
     async addScript(
         who: Member,

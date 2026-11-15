@@ -4,8 +4,8 @@ import { expect, test } from "vitest";
 import { dataTransfer, drag } from "./drag";
 import { renderApp, Team } from "./team";
 
-// Saved views and scripts in folders of their own: a folder picked from those there are (or a new one typed) as
-// they're saved. Views' folders are pages, as the datasets' are: made, renamed, moved, and deleted once they're empty,
+// Saved views and scripts in folders of their own: a folder picked as they're saved, browsed as the pages browse them
+// (the site's FolderBrowser), or made where it's open. Views' folders are pages, as the datasets' are: made, renamed, moved, and deleted once they're empty,
 // with views moved into them by dragging or by choosing them, and deleted together. Scripts drag onto a folder, or out
 // of one, on their list.
 
@@ -16,28 +16,44 @@ const counted = (row: HTMLElement) => within(row).getByText(/^\d+ views?$/).text
 
 const EMPTY = "This folder is empty: drag views onto it, or pick it when you save a view.";
 
-test("a view's folder is picked from those there are as it's saved", async () => {
+test("a view's folder is picked as the Views page browses them, or made where it's open, as it's saved", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Cold flow", DATA);
-    const folder = `Hotfires ${team.folder}`;
-    await team.view(team.chief, `Tank ${team.folder}`, data.id, "PT-TANK", folder);
+    const hotfires = await team.viewFolder(team.chief, "Hotfires");
+    const inner = await team.viewFolder(team.chief, "HF-3", hotfires.id);
+    const tank = `Tank ${team.folder}`;
+    await team.view(team.chief, tank, data.id, "PT-TANK", hotfires.name);
+    const user = userEvent.setup();
     renderApp(team.chief, `/yorg/datasets/${data.id}`);
-    await userEvent.click(await screen.findByRole("button", { name: "Save view" }));
+    await user.click(await screen.findByRole("button", { name: "Save view" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Save this view" }));
-    await userEvent.type(dialog.getByLabelText("Name"), `Manifold ${team.folder}`);
+    await user.type(dialog.getByLabelText("Name"), `Manifold ${team.folder}`);
 
-    // Typed, the list keeps to the folders that have it; a path there isn't is a new folder.
-    const box = dialog.getByRole("combobox", { name: "Folder" });
-    await userEvent.type(box, "Nowhere/New");
-    expect(screen.getByText("A new folder: Nowhere/New")).toBeTruthy();
-    await userEvent.clear(box);
-    await userEvent.type(box, folder.slice(0, 6).toLowerCase());
-    await userEvent.click(screen.getByRole("option", { name: folder }));
-    expect((box as HTMLInputElement).value).toBe(folder);
-    expect(screen.queryByRole("listbox", { name: "Folders" })).toBeNull();
+    // At the top to start with; into a folder, which lists its folders, and the views in it to see where things are.
+    await user.click(await dialog.findByRole("button", { name: "Folder: Views" }));
+    const chooser = within(await screen.findByRole("dialog", { name: "Folder" }));
+    await user.click(chooser.getByRole("button", { name: `${hotfires.name}: folder` }));
+    expect(chooser.getByRole("button", { name: `${inner.name}: folder` })).toBeTruthy();
+    expect(chooser.getByText(tank)).toBeTruthy();
+    expect(chooser.queryByRole("button", { name: tank })).toBeNull(); // only folders are picked
 
-    await userEvent.click(dialog.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText(new RegExp(`saved view in ${folder}`))).toBeTruthy();
+    // A new folder, made where it's open, and chosen.
+    await user.click(chooser.getByRole("button", { name: "New folder" }));
+    await user.type(chooser.getByLabelText("The new folder's name"), "Day 2{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Folder" })).toBeNull());
+    expect(dialog.getByRole("button", { name: `Folder: ${hotfires.name} / Day 2` })).toBeTruthy();
+    expect((await team.viewFolders(team.chief)).some((one) => one.path === `${hotfires.name}/Day 2`)).toBe(true);
+
+    // Or one there is, found by a few words, and chosen.
+    await user.click(dialog.getByRole("button", { name: `Folder: ${hotfires.name} / Day 2` }));
+    const again = within(await screen.findByRole("dialog", { name: "Folder" }));
+    await user.type(again.getByLabelText("Find a folder"), `hf-3 ${team.folder}`);
+    await user.click(again.getByRole("button", { name: `${hotfires.name} / ${inner.name}: folder` }));
+    await user.click(again.getByRole("button", { name: `Choose ${inner.name}` }));
+    expect(dialog.getByRole("button", { name: `Folder: ${hotfires.name} / ${inner.name}` })).toBeTruthy();
+
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(new RegExp(`saved view in ${hotfires.name}/${inner.name}`))).toBeTruthy();
 });
 
 test("views' folders: made, moved into by choosing or dragging, opened, and kept while they hold something", async () => {

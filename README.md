@@ -295,9 +295,9 @@ the keys.
   folder (or a folder in the way back up) to move them, or check views and Move to…, or
   Delete… to delete them together, for good (the data stays). Only whoever saved a view, or
   an admin, moves or deletes it. Find views looks in every folder (names, folders, notes,
-  and data), and says where each is. A view's folder is also picked when you save it, from
-  a list of those there are (or a new path typed, like `Hotfires/HF-3`), or later with
-  More > Rename or move.
+  and data), and says where each is. A view's folder is also picked when you save it, by going
+  into it as the Views tab does (or finding it by name, or making a new one where you
+  are with New folder), or later with More > Rename or move.
 - **Copy link** (beside Save view, on a dataset's or a view's page) to send someone what's
   on screen without saving a view: the plots, the tests compared and their shifts, the time
   in view, T0, and the rest. Whoever opens it sees those plots as unsaved changes, and can

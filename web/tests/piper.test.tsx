@@ -1135,7 +1135,7 @@ test("a test from Yorg on the drawing: each instrument's value and each valve's 
     const leader = (part: string) => drawingArea().querySelector(`[data-leader="${part}"]`);
     expect([leader(sensor), leader(valve)].every(Boolean)).toBe(true);
     expect(leader(valve)!.getAttribute("stroke")).toBe(LIGHT.nc);
-    await waitFor(() => expect(panel.getByRole("combobox", { name: "Test" })).toHaveProperty("value", String(data.id)));
+    expect(await panel.findByRole("button", { name: `Test: ${data.name}` })).toBeTruthy();
 
     fireEvent.change(panel.getByRole("slider", { name: "Time" }), { target: { value: "0.8" } });
     await waitFor(() => expect(badge(valve)).toBe("OPEN"));

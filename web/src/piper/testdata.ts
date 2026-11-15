@@ -2,14 +2,15 @@ import { request, requestBytes, uploadFile } from "../api";
 import { packJson } from "../packed";
 import type { Part } from "./drawing";
 
-// A test from Yorg, read as any client of Yorg's API reads one: its list of tests, a test's channels, and their
-// samples (and, for an example simulation, a test of its own added). Piper imports none of Yorg's code; what it knows
-// of Yorg is its API (docs/yorg.md), and the address of its plots, which links carry their layout in (?plots=, as
-// packed.ts packs it).
+// A test from Yorg, read as any client of Yorg's API reads one: its list of tests and their folders, a test's channels,
+// and their samples (and, for an example simulation, a test of its own added). Piper imports none of Yorg's code; what
+// it knows of Yorg is its API (docs/yorg.md), and the address of its plots, which links carry their layout in (?plots=,
+// as packed.ts packs it).
 
 /** A test as Yorg lists it (one of its datasets). */
 export interface Test {
     id: number;
+    folder_id?: number | null; // the folder it's in (null: at the top)
     name: string;
     status: "reading" | "ready" | "failed";
     created_at: string;
@@ -41,7 +42,16 @@ export interface TestDetail extends Test {
     events: TestEvent[];
 }
 
+/** A folder of Yorg's tests (a test campaign, a day of cold flows): in another, or at the top (parent_id null). */
+export interface TestFolder {
+    id: number;
+    parent_id: number | null;
+    name: string;
+}
+
 export const tests = (): Promise<Test[]> => request<Test[]>("GET", "/api/yorg/datasets");
+
+export const testFolders = (): Promise<TestFolder[]> => request<TestFolder[]>("GET", "/api/yorg/folders");
 
 export const test = (id: number): Promise<TestDetail> => request<TestDetail>("GET", `/api/yorg/datasets/${id}`);
 

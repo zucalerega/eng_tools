@@ -1,30 +1,28 @@
-"""Yorg's rules: reading a dataset's file into channels, and who may change datasets and views.
+"""Yorg's rules: reading a dataset's file into channels, and who may change datasets, their folders, and calculated
+channels (and, by the same rule, saved views: views.py).
 
 Everyone signed in (and approved) sees every dataset, view, and calculated channel, and can add them. Only the person
 who added one, or an admin, can change or delete it. Deleting a dataset keeps everything, so it can come back.
 """
 
-import json
 import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..db import utcnow
-from ..errors import ApiError, Conflict, Forbidden, NotFound, TooLarge
+from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User
 from .files import DataFiles
 from .ingest import ReadError, ReadOptions, read_csv
-from .models import Channel, DataFolder, Dataset, DatasetStatus, Formula, View
+from .models import Channel, DataFolder, Dataset, DatasetStatus, Formula
 from .pieces import Cutter
 
 log = logging.getLogger(__name__)
-MAX_VIEW_BYTES = 512 * 1024
 
 
 class Unreadable(ApiError):
@@ -460,84 +458,5 @@ def update_formula(
 def remove_formula(db: Session, user: User, formula_id: int) -> None:
     found = formula(db, formula_id)
     check_can_change(user, found.created_by, "calculated channel")
-    db.delete(found)
-    db.commit()
-
-
-# --- views --------------------------------------------------------------------------------------------------------
-
-
-def views(db: Session) -> Sequence[View]:
-    """The most recently changed first."""
-    return db.scalars(select(View).order_by(View.updated_at.desc(), View.id.desc())).all()
-
-
-def view(db: Session, view_id: int) -> View:
-    found = db.get(View, view_id, populate_existing=True)
-    if found is None:
-        raise NotFound(f"There's no view {view_id}")
-    return found
-
-
-def _check_size(config: dict[str, Any]) -> None:
-    if len(json.dumps(config)) > MAX_VIEW_BYTES:
-        raise TooLarge(f"A view can be up to {MAX_VIEW_BYTES // 1024} KB")
-
-
-def add_view(
-    db: Session,
-    user: User,
-    *,
-    name: str,
-    description: str,
-    datasets: list[int],
-    config: dict[str, Any],
-    folder: str = "",
-) -> View:
-    _check_size(config)
-    new = View(
-        name=name,
-        folder=folder,
-        description=description,
-        datasets=datasets,
-        config=config,
-        creator=user,
-        editor=user,
-    )
-    db.add(new)
-    db.commit()
-    return new
-
-
-def update_view(
-    db: Session,
-    user: User,
-    view_id: int,
-    *,
-    name: str,
-    description: str,
-    datasets: list[int],
-    config: dict[str, Any],
-    folder: str | None = None,
-) -> View:
-    """A view changed; its folder too, unless that's None (a client from before views had folders)."""
-    found = view(db, view_id)
-    check_can_change(user, found.created_by, "view")
-    _check_size(config)
-    found.name = name
-    if folder is not None:
-        found.folder = folder
-    found.description = description
-    found.datasets = datasets
-    found.config = config
-    found.updated_at = utcnow()
-    found.editor = user
-    db.commit()
-    return found
-
-
-def remove_view(db: Session, user: User, view_id: int) -> None:
-    found = view(db, view_id)
-    check_can_change(user, found.created_by, "view")
     db.delete(found)
     db.commit()

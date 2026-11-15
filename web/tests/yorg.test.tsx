@@ -379,10 +379,10 @@ test("a saved view opens for everyone, and works with another test's data", asyn
     await userEvent.click(screen.getByRole("button", { name: "More" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Use with another dataset…" }));
     const other = within(await screen.findByRole("dialog", { name: "Use this view with another dataset" }));
-    await userEvent.selectOptions(
-        await other.findByRole("combobox"),
-        await other.findByRole("option", { name: second.name }),
-    );
+    await userEvent.click(other.getByRole("button", { name: "Dataset: Choose a dataset" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Dataset" }));
+    await userEvent.type(picker.getByLabelText("Find a dataset"), second.name);
+    await userEvent.click(await picker.findByRole("button", { name: new RegExp(`^${second.name}`) }));
     await userEvent.click(other.getByRole("button", { name: "Open" }));
     expect(await screen.findByRole("heading", { name: second.name })).toBeTruthy();
     expect(
@@ -396,17 +396,29 @@ test("a saved view opens for everyone, and works with another test's data", asyn
 test("saved views are kept in folders of their own: saved in one, moved, and found in the Views tab", async () => {
     const team = await Team.create();
     const data = await team.data(team.chief, "Foldered", HOTFIRE);
+    const campaign = await team.viewFolder(team.chief, "Campaign");
+    const hotfires = await team.viewFolder(team.chief, "Hotfires", campaign.id);
+    const coldFlows = await team.viewFolder(team.chief, "Cold flows", campaign.id);
     renderApp(team.chief, `/yorg/datasets/${data.id}`);
     const channels = within(await screen.findByRole("complementary", { name: "Channels" }));
     await userEvent.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
 
+    /** A folder chosen in a dialog: its folder's button opened, the folder found by name, gone into, and chosen. */
+    async function choose(dialog: ReturnType<typeof within>, now: string, folder: { name: string }) {
+        await userEvent.click(dialog.getByRole("button", { name: `Folder: ${now}` }));
+        const chooser = within(await screen.findByRole("dialog", { name: "Folder" }));
+        await userEvent.type(chooser.getByLabelText("Find a folder"), folder.name);
+        await userEvent.click(chooser.getByRole("button", { name: `${campaign.name} / ${folder.name}: folder` }));
+        await userEvent.click(chooser.getByRole("button", { name: `Choose ${folder.name}` }));
+    }
+
     await userEvent.click(screen.getByRole("button", { name: "Save view" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Save this view" }));
     await userEvent.type(dialog.getByLabelText("Name"), "Tanks");
-    await userEvent.type(dialog.getByLabelText("Folder"), ` ${team.folder} / Hotfires `);
+    await choose(dialog, "Views", hotfires);
     await userEvent.click(dialog.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("heading", { name: "Tanks" })).toBeTruthy();
-    expect(screen.getByText(new RegExp(`saved view in ${team.folder}/Hotfires`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`saved view in ${campaign.name}/${hotfires.name}`))).toBeTruthy();
 
     // Moved and renamed with a change to its plots not saved: the change stays on the page, not saved with it.
     const viewChannels = within(await screen.findByRole("complementary", { name: "Channels" }));
@@ -417,34 +429,36 @@ test("saved views are kept in folders of their own: saved in one, moved, and fou
     const rename = within(await screen.findByRole("dialog", { name: "Rename or move the view" }));
     await userEvent.clear(rename.getByLabelText("Name"));
     await userEvent.type(rename.getByLabelText("Name"), "Ox tanks");
-    await userEvent.clear(rename.getByLabelText("Folder"));
-    await userEvent.type(rename.getByLabelText("Folder"), `${team.folder}/Cold flows`);
+    await choose(rename, `${campaign.name} / ${hotfires.name}`, coldFlows);
     await userEvent.click(rename.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("heading", { name: "Ox tanks" })).toBeTruthy();
-    expect(screen.getByText(new RegExp(`saved view in ${team.folder}/Cold flows.*changed`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`saved view in ${campaign.name}/${coldFlows.name}.*changed`))).toBeTruthy();
     const plotted = within(screen.getByRole("group", { name: "Plot 1: channels" }));
     expect(plotted.getByRole("button", { name: "PT-FU-01" })).toBeTruthy();
-    const kept = (await team.views(team.chief)).find((view) => view.folder === `${team.folder}/Cold flows`);
+    const kept = (await team.views(team.chief)).find((view) => view.folder_id === coldFlows.id);
     expect(kept?.name).toBe("Ox tanks");
+    expect(kept?.folder).toBe(`${campaign.name}/${coldFlows.name}`);
     expect(JSON.stringify(kept?.config)).not.toContain("PT-FU-01");
 
-    // The Views tab: in its folder, which shuts and opens; and found by a word.
+    // The Views tab: its folders, each a page, with the way back up; and a search, in every folder, says where.
     await userEvent.click(screen.getByRole("link", { name: "Views" }));
-    const table = within(await screen.findByRole("table", { name: "Saved views" }));
-    const folder = table.getByRole("button", { name: new RegExp(`^${team.folder}`) });
-    expect(folder.getAttribute("aria-expanded")).toBe("true");
-    expect(table.getByRole("button", { name: /^Cold flows/ })).toBeTruthy();
-    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
-    await userEvent.click(folder);
-    expect(table.queryByRole("link", { name: "Ox tanks" })).toBeNull();
-    await userEvent.click(folder);
-    expect(table.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    const top = within(await screen.findByRole("table", { name: "Saved views" }));
+    await userEvent.click(await top.findByRole("link", { name: campaign.name }));
+    expect(await screen.findByRole("heading", { name: campaign.name })).toBeTruthy();
+    const folder = within(await screen.findByRole("table", { name: "Saved views" }));
+    expect(await folder.findByRole("link", { name: hotfires.name })).toBeTruthy(); // left empty by the move
+    await userEvent.click(folder.getByRole("link", { name: coldFlows.name }));
+    expect(await screen.findByRole("heading", { name: coldFlows.name })).toBeTruthy();
+    const inside = within(await screen.findByRole("table", { name: "Saved views" }));
+    expect(await inside.findByRole("link", { name: "Ox tanks" })).toBeTruthy();
+    const crumbs = within(screen.getByRole("navigation", { name: "Folders" }));
+    expect(crumbs.getByRole("link", { name: campaign.name })).toBeTruthy();
 
-    await userEvent.click(folder); // shut, but a search opens what it finds
-    await userEvent.type(screen.getByLabelText("Find a view"), `Ox tanks ${team.folder}`);
+    await userEvent.click(crumbs.getByRole("link", { name: "Views" }));
+    await userEvent.type(await screen.findByLabelText("Find views"), `Ox tanks ${team.folder}`);
     const found = within(screen.getByRole("table", { name: "Saved views" }));
     expect(found.getByRole("link", { name: "Ox tanks" })).toBeTruthy();
-    expect(found.getByText(`in ${team.folder}/Cold flows`)).toBeTruthy();
+    expect(found.getByText(`in ${campaign.name} / ${coldFlows.name}`)).toBeTruthy();
 });
 
 test("a dataset's page says how it was read, and it can be read another way", async () => {

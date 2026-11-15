@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../components";
-import type { DatasetDetail } from "./api";
-import { calculateFor } from "./data";
-import { channelsOf, findChannel, FormulaError, readFormula } from "./formula";
+import type { DatasetDetail, Formula } from "./api";
+import { formulas, plan, workedOut } from "./data";
+import { ExpressionBox } from "./ExpressionBox";
+import { findChannel, FormulaError, readFormula } from "./formula";
 import { newId, type Mask } from "./layout";
 import { measure, runsOf } from "./masks";
 import { formatDuration, formatValue } from "../scale";
 
 // Making and changing a mask: where a test on channels holds (a valve open, a pressure over its redline), written like
 // a calculated channel, or put together from a channel, a comparison, and a value.
+
+const NONE: Formula[] = [];
 
 export const MASK_COLORS = ["#2ca25f", "#d64541", "#2f7ed8", "#e0a500", "#8e5bd6", "#16a5a5"];
 
@@ -58,21 +61,30 @@ export function MaskDialog({
     const [trial, setTrial] = useState<Trial>({ state: "idle" });
     const box = useRef<HTMLTextAreaElement>(null);
 
+    const loaded = formulas();
+    const list = loaded.status === "ready" ? loaded.value : NONE;
     const tree = expression.trim() ? readFormula(expression) : null;
     const error = tree instanceof FormulaError ? tree : null;
-    const used = tree && !(tree instanceof FormulaError) ? channelsOf(tree) : [];
-    const missing = used.filter((channel) => !findChannel(detail.channels, channel));
+    // Its channels, or calculated channels, in this dataset.
+    const planned = tree && !error ? plan(expression, [{ detail, shift: 0 }], list) : null;
+    const unusable = planned instanceof FormulaError ? planned : null;
+    const ready = planned && !(planned instanceof FormulaError) && planned.sources.size > 0 ? planned : null;
+    const calculatedNames = useMemo(() => {
+        const channels = new Set(detail.channels.map((one) => one.name.toLowerCase()));
+        return new Set(list.map((one) => one.name.toLowerCase()).filter((one) => !channels.has(one)));
+    }, [list, detail]);
 
     // Try it on the dataset once typing stops: how often it holds says whether it's what was meant.
+    const trying = ready?.key ?? null;
     useEffect(() => {
-        if (!tree || error || used.length === 0 || missing.length > 0) {
+        if (!ready) {
             setTrial({ state: "idle" });
             return;
         }
         let current = true;
         setTrial({ state: "trying" });
         const timer = setTimeout(() => {
-            calculateFor(detail, expression).then(
+            workedOut(ready).then(
                 (samples) => current && setTrial({ state: "done", ...measure(runsOf(samples)) }),
                 (failure: unknown) =>
                     current &&
@@ -83,14 +95,14 @@ export function MaskDialog({
             current = false;
             clearTimeout(timer);
         };
-        // Everything it uses comes from the expression and the dataset.
-    }, [expression, detail]);
+        // What it works out is the plan, which its key names.
+    }, [trying]);
 
     const length = detail.t_min !== null && detail.t_max !== null ? detail.t_max - detail.t_min : null;
     const check = error
         ? `${error.message} (at character ${error.at + 1})`
-        : missing.length > 0
-          ? `${detail.name} has no channel called ${missing.join(" or ")}.`
+        : unusable
+          ? `${unusable.message}.`
           : trial.state === "trying"
             ? "Working it out…"
             : trial.state === "failed"
@@ -101,7 +113,7 @@ export function MaskDialog({
                     : `In ${detail.name}, it holds ${trial.count === 1 ? "once" : `${trial.count} times`}: ` +
                       `${formatDuration(trial.total)} in all${length ? ` of ${formatDuration(length)}` : ""}.`
                 : "Put a test together above, or write one.";
-    const failing = error !== null || missing.length > 0 || trial.state === "failed";
+    const failing = error !== null || unusable !== null || trial.state === "failed";
 
     return (
         <Dialog
@@ -153,29 +165,27 @@ export function MaskDialog({
                     }}
                     joining={expression.trim() !== ""}
                 />
-                <label className="field">
-                    Test
-                    <textarea
-                        ref={box}
-                        className="yorg-expression"
-                        value={expression}
-                        spellCheck={false}
-                        placeholder="[MOV-OX] == 1"
-                        aria-invalid={failing}
-                        onChange={(event) => setExpression(event.target.value)}
-                    />
-                </label>
+                <ExpressionBox
+                    label="Test"
+                    box={box}
+                    value={expression}
+                    onChange={setExpression}
+                    calculated={calculatedNames}
+                    wrong={error?.at ?? null}
+                    invalid={failing}
+                    placeholder="[MOV-OX] == 1"
+                />
                 <p className={`yorg-formula-check${failing ? " field-problem" : " muted"}`} role="status">
                     {check}
                 </p>
                 <details className="yorg-formula-help">
                     <summary>What you can write</summary>
                     <p>
-                        What a calculated channel can: channels in brackets, numbers, arithmetic, and comparisons (
-                        <code>&lt; &gt; &lt;= &gt;= == !=</code>). It holds where it isn't 0, and not where a channel it
-                        uses has no sample. Tests go together with <code>and(a, b, …)</code> and{" "}
-                        <code>or(a, b, …)</code>; <code>not(test)</code> turns one around, and{" "}
-                        <code>between(x, low, high)</code> is a band.
+                        What a calculated channel can: channels (and calculated channels) in brackets, numbers,
+                        arithmetic, and comparisons (<code>&lt; &gt; &lt;= &gt;= == !=</code>). It holds where it isn't
+                        0, and not where a channel it uses has no sample. Tests go together with{" "}
+                        <code>and(a, b, …)</code> and <code>or(a, b, …)</code>; <code>not(test)</code> turns one around,
+                        and <code>between(x, low, high)</code> is a band.
                     </p>
                     <ul className="plain">
                         {EXAMPLES.map(([example, meaning]) => (

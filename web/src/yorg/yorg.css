@@ -12,6 +12,16 @@
     --plot-marker: #bc4c00;
     --plot-event: #7c4dcc;
     --plot-t0: #d64541;
+    /* An expression's colors (ExpressionBox): its names, numbers, and parentheses by depth, as an IDE colors them. */
+    --expr-channel: #1d4d94;
+    --expr-calculated: #0e7490;
+    --expr-function: #7a3ec8;
+    --expr-number: #b45309;
+    --expr-depth-0: #a07400;
+    --expr-depth-1: #b03fa6;
+    --expr-depth-2: #1a73c9;
+    --expr-match: rgb(224 165 0 / 30%);
+    --expr-selection: rgb(29 77 148 / 22%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +35,15 @@
         --plot-marker: #f0883e;
         --plot-event: #b392f0;
         --plot-t0: #f47067;
+        --expr-channel: #8fb6f2;
+        --expr-calculated: #56d4dd;
+        --expr-function: #b9a2ff;
+        --expr-number: #f6b26b;
+        --expr-depth-0: #ffd700;
+        --expr-depth-1: #da70d6;
+        --expr-depth-2: #4fb0ff;
+        --expr-match: rgb(224 165 0 / 30%);
+        --expr-selection: rgb(122 167 238 / 28%);
     }
 }
 
@@ -38,6 +57,15 @@
     --plot-marker: #f0883e;
     --plot-event: #b392f0;
     --plot-t0: #f47067;
+    --expr-channel: #8fb6f2;
+    --expr-calculated: #56d4dd;
+    --expr-function: #b9a2ff;
+    --expr-number: #f6b26b;
+    --expr-depth-0: #ffd700;
+    --expr-depth-1: #da70d6;
+    --expr-depth-2: #4fb0ff;
+    --expr-match: rgb(224 165 0 / 30%);
+    --expr-selection: rgb(122 167 238 / 28%);
 }
 
 .yorg-peak {
@@ -683,17 +711,111 @@
     flex: 0 0 8rem !important;
 }
 
-.yorg-expression {
-    width: 100%;
-    height: 4.5rem;
-    padding: 0.45rem 0.65rem;
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    resize: vertical;
+/*
+ * An expression's box (ExpressionBox): the textarea, its text clear, over a copy of its text in colors. Both are in
+ * one grid cell with the same box and text, so they line up, and the box grows with the text.
+ */
+.yorg-expression-box {
+    display: grid;
 }
 
-.yorg-expression[aria-invalid="true"] {
+.yorg-expression-box > .yorg-expression {
+    grid-area: 1 / 1;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 4.5rem;
+    margin: 0;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: normal;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
+}
+
+.yorg-expression-shown {
+    background: var(--surface);
+    color: var(--text);
+    pointer-events: none;
+}
+
+.yorg-expression-box > .yorg-expression-input {
+    overflow: hidden;
+    resize: none;
+    border-color: var(--border-strong);
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+}
+
+.yorg-expression-box > .yorg-expression-input:focus-visible {
+    border-color: var(--accent);
+}
+
+.yorg-expression-input::selection {
+    background: var(--expr-selection);
+    color: transparent;
+}
+
+.yorg-expression-input::placeholder {
+    color: var(--muted);
+}
+
+.yorg-expression-box > .yorg-expression-input[aria-invalid="true"] {
     border-color: var(--danger);
+}
+
+.yorg-x-channel {
+    color: var(--expr-channel);
+}
+
+/* Only colors, never weights: a glyph as wide as the textarea's keeps the two lined up. */
+.yorg-x-calculated {
+    color: var(--expr-calculated);
+}
+
+.yorg-x-function {
+    color: var(--expr-function);
+}
+
+.yorg-x-number {
+    color: var(--expr-number);
+}
+
+.yorg-x-paren {
+    border-radius: 2px;
+}
+
+.yorg-x-depth-0 {
+    color: var(--expr-depth-0);
+}
+
+.yorg-x-depth-1 {
+    color: var(--expr-depth-1);
+}
+
+.yorg-x-depth-2 {
+    color: var(--expr-depth-2);
+}
+
+/* The pair at the caret: a box around each, as an IDE marks them. */
+.yorg-x-match {
+    background: var(--expr-match);
+    box-shadow: inset 0 0 0 1px var(--expr-depth-0);
+}
+
+.yorg-x-unmatched,
+.yorg-x-wrong {
+    color: var(--danger);
+    text-decoration: wavy underline var(--danger);
+    text-decoration-skip-ink: none;
 }
 
 .yorg-formula-check {
@@ -937,43 +1059,26 @@
     }
 }
 
-/* Folders of saved views (ViewsPage): paths of their own, shut and opened in place, each with how many it has. */
-.yorg-view-folder {
-    gap: 0.45rem;
-    height: auto;
-    padding: 0.1rem 0.3rem 0.1rem 0;
-    border: none;
-    background: none;
-    font-weight: 600;
-}
-
-.yorg-view-folder:hover:not(:disabled) {
-    background: none;
-    color: var(--accent);
-}
-
-.yorg-view-chevron {
-    width: 0.8rem;
-    color: var(--muted);
-    font-size: 0.75rem;
-}
-
-/* Folders of datasets: a folder (or a folder in the path above) lights up while something can be dropped on it. */
+/* Folders of datasets, and of saved views: a folder (or a folder in the path above) lights up while something can be
+   dropped on it. */
 .yorg-folder-name {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
 }
 
-.yorg-datasets tr[draggable="true"] {
+.yorg-datasets tr[draggable="true"],
+.yorg-views tr[draggable="true"] {
     cursor: grab;
 }
 
-.yorg-datasets tr.yorg-drop-folder td {
+.yorg-datasets tr.yorg-drop-folder td,
+.yorg-views tr.yorg-drop-folder td {
     background: var(--accent-soft);
 }
 
-.yorg-datasets tr.yorg-drop-folder td:first-child {
+.yorg-datasets tr.yorg-drop-folder td:first-child,
+.yorg-views tr.yorg-drop-folder td:first-child {
     box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -983,19 +1088,12 @@
     border-radius: var(--radius);
 }
 
-/* Saved views and scripts dragged into folders: the folder they're over, and the top (no folder), shown as they're
-   dragged. */
-.yorg-views tr.yorg-drop-folder td,
+/* Scripts dragged into folders: the folder they're over, and the top (no folder), shown as they're dragged. */
 .scripts-folder.yorg-drop-folder {
     background: var(--accent-soft);
-}
-
-.yorg-views tr.yorg-drop-folder td:first-child,
-.scripts-folder.yorg-drop-folder {
     box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.yorg-views tr[draggable="true"],
 .scripts-tree li[draggable="true"] {
     cursor: grab;
 }
@@ -1214,6 +1312,12 @@
 
 .yorg-split .field {
     margin: 0.5rem 0;
+}
+
+/* What goes with where they're put: a new folder's name, or the folder there is (a FolderChooser). */
+.yorg-split .yorg-split-where {
+    max-width: 24rem;
+    margin: 0.2rem 0 0.5rem 1.6rem;
 }
 
 .yorg-split-finding {

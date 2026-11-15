@@ -65,17 +65,24 @@ test("scripts are opened from the examples, saved in folders, uploaded, changed,
     expect(cell(2).getAttribute("aria-label")).toBe("Cell 2: Load the data");
     expect(await codeOf(2)).toContain('pt = yorg.channel("PT-TANK")');
 
-    // Saved as a script of the team's own, in a folder.
+    // Saved as a script of the team's own, in a folder: made in the folder chooser, a folder in a folder.
     await userEvent.click(screen.getByRole("button", { name: "Save as…" }));
-    let dialog = within(screen.getByRole("dialog"));
+    let dialog = within(screen.getByRole("dialog", { name: "Save the script" }));
     await userEvent.clear(dialog.getByLabelText("Name"));
     await userEvent.type(dialog.getByLabelText("Name"), "Tank peak");
-    await userEvent.type(dialog.getByLabelText("Folder"), "Hotfires / Tanks");
+    for (const folder of ["Hotfires", "Tanks"]) {
+        await userEvent.click(dialog.getByRole("button", { name: /^Folder: / }));
+        const chooser = within(await screen.findByRole("dialog", { name: "Folder" }));
+        await userEvent.click(chooser.getByRole("button", { name: "New folder" }));
+        await userEvent.type(chooser.getByLabelText("The new folder's name"), `${folder}{Enter}`);
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Folder" })).toBeNull());
+    }
+    expect(dialog.getByRole("button", { name: "Folder: Hotfires / Tanks" })).toBeTruthy();
     await userEvent.click(dialog.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(list.getByRole("button", { name: "Tank peak" })).toBeTruthy());
     expect(list.getByRole("button", { name: "▾ Hotfires" })).toBeTruthy();
     expect(list.getByRole("button", { name: "▾ Tanks" })).toBeTruthy();
-    expect((screen.getByLabelText("Folder") as HTMLInputElement).value).toBe("Hotfires/Tanks");
+    expect(screen.getByRole("button", { name: "Folder: Hotfires / Tanks" })).toBeTruthy(); // its own, above it
 
     // Changed and saved again.
     await setCode(2, "print(1)");
@@ -100,6 +107,15 @@ test("scripts are opened from the examples, saved in folders, uploaded, changed,
     expect(list.getByRole("button", { name: "pi check" })).toBeTruthy();
 });
 
+/** A test attached, from the datasets' folders: found by a few words (its name, and its folder's), and the first taken. */
+async function attach(data: ReturnType<typeof within>, words: string) {
+    await userEvent.click(data.getByRole("button", { name: "Attach a test" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Attach a test" }));
+    await userEvent.type(picker.getByLabelText("Find a dataset"), words);
+    await waitFor(() => expect(within(picker.getByRole("list")).getAllByRole("button")).toHaveLength(1));
+    await userEvent.keyboard("{Enter}");
+}
+
 // Two tests, each a few channels.
 const TANK = ["Time (s),PT-TANK (psig),FM-OX (lbm/s)", "0,300,0", "1,301,2.5", "2,299,2.5"].join("\n");
 const CHAMBER = ["Time (s),PT-TANK (psig),PT-CHAMBER (psia)", "0,300,14.7", "1,280,250", "2,290,14.7"].join("\n");
@@ -113,9 +129,8 @@ test("a script works on the tests attached to it: their channels go in the code 
     expect(data.getByText("No test attached yet.")).toBeTruthy();
 
     // Two tests attached: the first is the one yorg.channel() takes from.
-    await waitFor(() => expect(data.getAllByRole("option", { name: tank.name }).length).toBeGreaterThan(0));
-    await userEvent.selectOptions(data.getByLabelText("Attach a test"), tank.name);
-    await userEvent.selectOptions(data.getByLabelText("Attach a test"), chamber.name);
+    await attach(data, tank.name);
+    await attach(data, chamber.name);
     const first = within(await data.findByRole("region", { name: tank.name }));
     const second = within(data.getByRole("region", { name: chamber.name }));
     expect(first.getByText("first")).toBeTruthy();
@@ -158,15 +173,17 @@ test("a script works on the tests attached to it: their channels go in the code 
 
 test("two tests with one name (in two folders): each shows its id, and the code names the other by it", async () => {
     const team = await Team.create();
-    const one = await team.data(team.chief, "Twin", TANK);
-    const other = await team.data(team.chief, "Twin", TANK);
+    const left = await team.dataFolder(team.chief, "Left");
+    const right = await team.dataFolder(team.chief, "Right");
+    const one = await team.data(team.chief, "Twin", TANK, left.id);
+    const other = await team.data(team.chief, "Twin", TANK, right.id);
     expect(other.name).toBe(one.name);
     renderApp(team.chief, "/yorg/scripts");
     const data = within(await screen.findByRole("complementary", { name: "Data" }));
     const label = (id: number) => `${one.name} (${id})`;
-    await waitFor(() => expect(data.getAllByRole("option", { name: label(other.id) }).length).toBe(1));
-    await userEvent.selectOptions(data.getByLabelText("Attach a test"), label(one.id));
-    await userEvent.selectOptions(data.getByLabelText("Attach a test"), label(other.id));
+    await attach(data, `${one.name} ${left.name}`); // the one in Left
+    await attach(data, one.name); // the other: the one left
+    expect(await data.findByRole("region", { name: label(one.id) })).toBeTruthy();
     const second = within(await data.findByRole("region", { name: label(other.id) }));
     await setCode(1, "");
     await userEvent.click(await second.findByRole("button", { name: /^FM-OX/ }));

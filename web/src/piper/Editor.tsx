@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
-import { FolderPicker } from "../FolderPicker";
+import { FolderChooser, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
 import { formatTime } from "../format";
 import { navigate, usePathname, useSearch } from "../router";
 import { useSession } from "../session";
-import { piper, type Diagram, type RevisionDetail, type Scheme } from "./api";
+import { piper, type Diagram, type DiagramFolder, type RevisionDetail, type Scheme } from "./api";
 import { monochrome } from "./fluids";
 import { Canvas } from "./Canvas";
 import { usePalette, withStates } from "./colors";
@@ -988,29 +988,46 @@ function EmptyHint({ editing }: { editing: boolean }) {
     );
 }
 
-/** The folders there are, by their paths ("Vespula/GSE"), to pick one from; a new path typed makes its folders. */
-function useFolders(): string[] {
-    const [folders, setFolders] = useState<string[]>([]);
-    useEffect(() => {
-        piper.folders().then(
-            (found) => setFolders(found.map((one) => one.path).sort((a, b) => a.localeCompare(b))),
-            () => {}, // none to pick from: a path can still be typed
-        );
-    }, []);
-    return folders;
-}
+const folderKey = (id: number | null | undefined): string | null =>
+    id === null || id === undefined ? null : String(id);
 
+/**
+ * A diagram's name, description, and folder: chosen from the diagrams' folders, as the Diagrams page shows them (the
+ * site's FolderChooser), opened where it is; New folder there makes one where it's open. It moves only if its folder
+ * changed.
+ */
 function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed: Diagram | null) => void }) {
     const [name, setName] = useState(diagram.name);
-    const [folder, setFolder] = useState(diagram.folder);
-    const folders = useFolders();
+    const [folder, setFolder] = useState<string | null>(folderKey(diagram.folder_id));
+    const [folders, setFolders] = useState<DiagramFolder[] | null>(null);
+    const [diagrams, setDiagrams] = useState<Diagram[]>([]); // to see what's in each folder
+    const [unlisted, setUnlisted] = useState<string | null>(null); // why the folders couldn't be listed
     const [description, setDescription] = useState(diagram.description);
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
+    useEffect(() => {
+        piper.folders().then(setFolders, (error: unknown) => setUnlisted(message(error)));
+        piper.diagrams().then(setDiagrams, () => {});
+    }, []);
+    const browseFolders = useMemo<BrowseFolder[]>(
+        () => (folders ?? []).map((one) => ({ key: String(one.id), parent: folderKey(one.parent_id), name: one.name })),
+        [folders],
+    );
+    const browseItems = useMemo<BrowseItem[]>(
+        () => diagrams.map((one) => ({ key: String(one.id), name: one.name, folder: folderKey(one.folder_id) })),
+        [diagrams],
+    );
     async function save() {
         setBusy(true);
+        const moved = folder !== folderKey(diagram.folder_id);
         try {
-            onDone(await piper.change(diagram.id, { name: name.trim(), folder, description }));
+            onDone(
+                await piper.change(diagram.id, {
+                    name: name.trim(),
+                    description,
+                    ...(moved ? { folder_id: folder === null ? null : Number(folder) } : {}),
+                }),
+            );
         } catch (error) {
             setProblem(message(error));
             setBusy(false);
@@ -1029,15 +1046,28 @@ function RenameDialog({ diagram, onDone }: { diagram: Diagram; onDone: (changed:
                 Name
                 <input autoFocus value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
             </label>
-            <label className="field">
+            <div className="field">
                 Folder
-                <FolderPicker
-                    value={folder}
-                    onChange={setFolder}
-                    folders={folders}
-                    placeholder="None, or a new one, like Vespula/GSE"
-                />
-            </label>
+                {unlisted ? (
+                    <p className="field-problem">The folders couldn&apos;t be listed: {unlisted}</p>
+                ) : folders === null ? (
+                    <p className="muted">Loading the folders…</p>
+                ) : (
+                    <FolderChooser
+                        label="Folder"
+                        top="Diagrams"
+                        folders={browseFolders}
+                        items={browseItems}
+                        value={folder}
+                        onChange={setFolder}
+                        onNewFolder={async (parent, named) => {
+                            const made = await piper.addFolder(named, parent === null ? null : Number(parent));
+                            setFolders((now) => [...(now ?? []), made]);
+                            return String(made.id);
+                        }}
+                    />
+                )}
+            </div>
             <label className="field">
                 Description
                 <textarea

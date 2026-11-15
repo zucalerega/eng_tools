@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type SetStateActi
 import { request } from "../../api";
 import { Dialog, Notice } from "../../components";
 import type { Dataset } from "../api";
-import { FolderPicker } from "../../FolderPicker";
+import { FolderChooser, pathFolders, type BrowseItem } from "../../FolderBrowser";
 import { foldersOf } from "../../pathTree";
 import { dataset as loadDataset, useLoaded } from "../data";
 import { scriptsApi, type Script } from "./api";
@@ -106,6 +106,7 @@ export function ScriptsPage() {
     const [runs, setRuns] = useState<Record<string, string>>(() => keptScript()?.runs ?? {});
     const [asking, setAsking] = useState<Asking>(null);
     const [saveAs, setSaveAs] = useState({ name: "", folder: "" });
+    const [made, setMade] = useState<string[]>([]); // folders made to save in: there once a script's saved in one
     const [search, setSearch] = useState("");
     const [closed, setClosed] = useState<Set<string>>(new Set());
     const [dragging, setDragging] = useState(false); // a script, onto a folder
@@ -190,7 +191,37 @@ export function ScriptsPage() {
         );
     }, [scripts, search]);
 
-    const folders = useMemo(() => foldersOf(scripts ?? []), [scripts]); // to pick one from
+    // The folders to pick one from, each by its path: those chosen (first, so they're found as they're written), the
+    // scripts', and those made here. The saved scripts show in theirs, to see where things are.
+    const folders = useMemo(
+        () => pathFolders([open.folder, saveAs.folder, ...made, ...foldersOf(scripts ?? [])]),
+        [open.folder, saveAs.folder, made, scripts],
+    );
+    const folderOf = useMemo(() => {
+        const keys = new Map(folders.map((one) => [one.key.toLowerCase(), one.key]));
+        return (path: string): string | null => keys.get(tidyFolder(path).toLowerCase()) ?? null;
+    }, [folders]);
+    const savedScripts = useMemo<BrowseItem[]>(
+        () => (scripts ?? []).map((one) => ({ key: one.id, name: one.name, folder: folderOf(one.folder) })),
+        [scripts, folderOf],
+    );
+
+    /** A new folder, in another (null: at the top): only a path until a script's saved in it. */
+    async function newFolder(parent: string | null, name: string): Promise<string> {
+        const path = tidyFolder(parent === null ? name : `${parent}/${name}`);
+        if (!path) {
+            throw new Error("Give the folder a name");
+        }
+        if (path.length > 300) {
+            throw new Error("That's too long: a folder's path, all of it, can be up to 300 characters");
+        }
+        const there = folderOf(path);
+        if (there !== null) {
+            return there;
+        }
+        setMade((now) => [...now, path]);
+        return path;
+    }
 
     function withSaved(then: () => void) {
         if (open.dirty) {
@@ -479,17 +510,21 @@ export function ScriptsPage() {
                             maxLength={120}
                             onChange={(event) => setOpen({ ...open, name: event.target.value, dirty: true })}
                         />
-                        <label
-                            className="scripts-path"
-                            title="Its folder: one there is, or a new one, like Hotfires/Injector"
-                        >
-                            <Icon name="folder" />
-                            <FolderPicker
-                                value={open.folder}
+                        <div className="scripts-path">
+                            <FolderChooser
+                                label="Folder"
+                                top="Scripts"
                                 folders={folders}
-                                onChange={(folder) => setOpen({ ...open, folder, dirty: true })}
+                                items={savedScripts}
+                                value={folderOf(open.folder)}
+                                onChange={(folder) => {
+                                    if (folder !== folderOf(open.folder)) {
+                                        setOpen({ ...open, folder: folder ?? "", dirty: true });
+                                    }
+                                }}
+                                onNewFolder={newFolder}
                             />
-                        </label>
+                        </div>
                         <div className="scripts-file-actions">
                             {open.dirty && (
                                 <span
@@ -615,15 +650,18 @@ export function ScriptsPage() {
                             autoFocus
                         />
                     </label>
-                    <label className="field">
+                    <div className="field">
                         Folder
-                        <FolderPicker
-                            value={saveAs.folder}
+                        <FolderChooser
+                            label="Folder"
+                            top="Scripts"
                             folders={folders}
-                            placeholder="None, or a new one, like Hotfires/Injector"
-                            onChange={(folder) => setSaveAs({ ...saveAs, folder })}
+                            items={savedScripts}
+                            value={folderOf(saveAs.folder)}
+                            onChange={(folder) => setSaveAs({ ...saveAs, folder: folder ?? "" })}
+                            onNewFolder={newFolder}
                         />
-                    </label>
+                    </div>
                 </Dialog>
             )}
             {asking?.ask === "delete" && open.id && (

@@ -107,7 +107,9 @@ export function HelpPage() {
                         </li>
                         <li>
                             <em>Compare with another dataset</em>, under the channels, overlays another test; shift it
-                            in time to line them up.
+                            in time to line them up. It opens in the folder of the test you&apos;re looking at: click a
+                            folder to go into it, the path above to go back up, or type a few letters of a name to find
+                            it in any folder.
                         </li>
                     </ul>
                 </>
@@ -223,6 +225,20 @@ export function HelpPage() {
                         <li>
                             O/F while fuel flows: <code>where([FM-FU] &gt; 0.05, [FM-OX] / [FM-FU])</code>
                         </li>
+                        <li>
+                            One can use another by its name: make <code>mdot</code> once, then CdA as{" "}
+                            <code>[mdot] / sqrt(2 * 997 * ([PT-1] - [PT-2]) * 6894.76)</code>. Never one that comes back
+                            to itself. Masks can use them too.
+                        </li>
+                        <li>
+                            Comparing datasets (two loggers&apos; files of one test), one can use channels of more than
+                            one of them: it&apos;s worked out on the first one&apos;s times, each lined up as it&apos;s
+                            shifted, and listed under <em>Across datasets</em>.
+                        </li>
+                        <li>
+                            The expression&apos;s box colors parentheses by depth and boxes the pair at the cursor, as
+                            an editor does; one without a partner is marked.
+                        </li>
                     </ul>
                 </>
             ),
@@ -238,7 +254,8 @@ export function HelpPage() {
                         </li>
                         <li>
                             Each test's time can start where its valve opened. They go in a new folder next to the file,
-                            which stays as it was.
+                            or in <em>A folder there is</em>: choose it from the datasets&apos; folders, starting where
+                            the file is, or make one there with <em>New folder</em>. The file stays as it was.
                         </li>
                     </ul>
                 </>
@@ -253,6 +270,10 @@ export function HelpPage() {
                             Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
                             <code>yorg.channel(&quot;PT-TANK&quot;)</code> is a channel of the test picked, and{" "}
                             <code>yorg.plot</code> draws on Yorg&apos;s plots.
+                        </li>
+                        <li>
+                            <em>Attach a test</em>, under <em>Data</em> beside the notebook, picks one from the
+                            datasets&apos; folders, starting in the folder of the first test attached.
                         </li>
                         <li>
                             A script is a notebook: load the data in one cell, then change and run the ones after it
@@ -271,8 +292,9 @@ export function HelpPage() {
                         <li>
                             Scripts are kept for everyone, in folders: anyone can open and run one, and only whoever
                             saved it (or an admin) changes it; <em>Save as…</em> keeps a copy of your own. Upload .py
-                            files, or start from the examples. Pick a script&apos;s folder from the list above it (or
-                            type a new one), or drag a script onto a folder in the list of scripts.
+                            files, or start from the examples. Choose a script&apos;s folder above it, from the
+                            scripts&apos; folders (<em>New folder</em> there makes one, kept once a script is saved in
+                            it), or drag a script onto a folder in the list of scripts.
                         </li>
                         <li>
                             <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
@@ -291,13 +313,21 @@ export function HelpPage() {
                         <li>
                             <em>Save view</em> keeps the plots for everyone. A dataset's views are under{" "}
                             <em>Saved views</em> on its page; open one with another test's data for the same plots of
-                            its channels.
+                            its channels (<em>More</em>, then <em>Use with another dataset</em>: it opens in the folder
+                            of the view&apos;s test).
                         </li>
                         <li>
-                            Views go in folders: pick one from the list when you save one, or type a new one (
-                            <code>Hotfires/HF-3</code>); later, <em>More</em> and <em>Rename or move</em>. The{" "}
-                            <em>Views</em> tab shows them in their folders: drag one of yours onto a folder to move it,
-                            or to the top, out of its folder.
+                            Views go in folders of their own, apart from the datasets&apos;: when you save one, go into
+                            its folder as the <em>Views</em> tab does (or find it by name, or make a <em>New folder</em>{" "}
+                            where you are) and <em>Choose</em> it; later, <em>More</em> and <em>Rename or move</em>.
+                        </li>
+                        <li>
+                            The <em>Views</em> tab works as the datasets&apos; list does: <em>New folder</em> where you
+                            are, a folder opened to see what&apos;s in it, and renamed or deleted once it&apos;s empty.
+                            Drag views or folders onto a folder (or one in the path at the top), or check views and{" "}
+                            <em>Move to…</em> or <em>Delete…</em> them together: your own, or anyone&apos;s if
+                            you&apos;re an admin. A deleted view is gone for good; its data stays. <em>Find views</em>{" "}
+                            looks in every folder.
                         </li>
                         <li>
                             <em>Copy link</em>, beside <em>Save view</em>, sends someone the plots as they are (tests

@@ -1,4 +1,5 @@
-"""Yorg's API (/api/yorg): datasets (upload a file, read it, fetch its arrays) and saved views."""
+"""Yorg's API (/api/yorg): datasets (upload a file, read it, fetch its arrays) and their folders, calculated channels,
+and saved views and theirs."""
 
 import hashlib
 import re
@@ -13,7 +14,7 @@ from .. import disk
 from ..api.deps import DB, ActiveUser, Config
 from ..errors import ApiError, NotFound, TooLarge
 from ..models import User
-from . import datasets
+from . import datasets, views
 from .files import DataFiles
 from .models import Dataset
 from .schemas import (
@@ -30,8 +31,13 @@ from .schemas import (
     ReadOptionsIn,
     RestoreIn,
     SplitIn,
+    ViewFolderChangeIn,
+    ViewFolderIn,
+    ViewFolderOut,
     ViewIn,
     ViewOut,
+    ViewsIn,
+    ViewsMoveIn,
 )
 
 router = APIRouter(prefix="/api/yorg", tags=["yorg"])
@@ -254,34 +260,62 @@ def delete_formula(formula_id: int, user: ActiveUser, db: DB) -> Response:
     return Response(status_code=204)
 
 
+def _folder_of(db: Session, user: User, body: ViewIn) -> tuple[bool, int | None]:
+    """Whether a request puts a view somewhere, and where: its folder_id, or the folder at its path (made where it isn't
+    there yet), as clients from before folders were their own name it."""
+    if "folder_id" in body.model_fields_set:
+        return True, body.folder_id
+    if body.folder is not None:
+        return True, views.folder_at(db, user, body.folder)
+    return False, None
+
+
 @router.get("/views")
 def get_views(user: ActiveUser, db: DB) -> list[ViewOut]:
     """Saved views, the most recently changed first."""
-    return [ViewOut.of(view, user) for view in datasets.views(db)]
+    return [ViewOut.of(view, user) for view in views.views(db)]
 
 
 @router.post("/views", status_code=201)
 def post_view(body: ViewIn, user: ActiveUser, db: DB) -> ViewOut:
-    new = datasets.add_view(
+    """A new view, in a folder (folder_id, or a path as folder), or at the top."""
+    _, folder_id = _folder_of(db, user, body)
+    new = views.add_view(
         db,
         user,
         name=body.name,
         description=body.description,
         datasets=body.datasets,
         config=body.config,
-        folder=body.folder or "",
+        folder_id=folder_id,
     )
     return ViewOut.of(new, user)
 
 
+@router.post("/views/move")
+def post_move_views(body: ViewsMoveIn, user: ActiveUser, db: DB) -> list[ViewOut]:
+    """Put views in a folder (folder_id null: the top): all of them, or none (403 `not_yours`) if any isn't yours or
+    you're no admin."""
+    return [ViewOut.of(view, user) for view in views.move_views(db, user, body.views, body.folder_id)]
+
+
+@router.post("/views/delete", status_code=204)
+def post_delete_views(body: ViewsIn, user: ActiveUser, db: DB) -> Response:
+    """Delete views, for good: all of them, or none (403 `not_yours`) if any isn't yours or you're no admin."""
+    views.remove_views(db, user, body.views)
+    return Response(status_code=204)
+
+
 @router.get("/views/{view_id}")
 def get_view(view_id: int, user: ActiveUser, db: DB) -> ViewOut:
-    return ViewOut.of(datasets.view(db, view_id), user)
+    return ViewOut.of(views.view(db, view_id), user)
 
 
 @router.put("/views/{view_id}")
 def put_view(view_id: int, body: ViewIn, user: ActiveUser, db: DB) -> ViewOut:
-    changed = datasets.update_view(
+    """A view changed; and moved, if its folder (folder_id, or a path as folder) is given."""
+    move, folder_id = _folder_of(db, user, body)
+    changed = views.update_view(
         db,
         user,
         view_id,
@@ -289,12 +323,42 @@ def put_view(view_id: int, body: ViewIn, user: ActiveUser, db: DB) -> ViewOut:
         description=body.description,
         datasets=body.datasets,
         config=body.config,
-        folder=body.folder,
+        folder_id=folder_id,
+        move=move,
     )
     return ViewOut.of(changed, user)
 
 
 @router.delete("/views/{view_id}", status_code=204)
 def delete_view(view_id: int, user: ActiveUser, db: DB) -> Response:
-    datasets.remove_view(db, user, view_id)
+    views.remove_view(db, user, view_id)
+    return Response(status_code=204)
+
+
+@router.get("/view-folders")
+def get_view_folders(user: ActiveUser, db: DB) -> list[ViewFolderOut]:
+    """Every folder of views, by name: each says which it's in (parent_id), for building the tree."""
+    return [ViewFolderOut.of(found, user) for found in views.folders(db)]
+
+
+@router.post("/view-folders", status_code=201)
+def post_view_folder(body: ViewFolderIn, user: ActiveUser, db: DB) -> ViewFolderOut:
+    """A new folder of views, in another (parent_id) or at the top: 409 `name_taken` if one there has its name."""
+    return ViewFolderOut.of(views.add_folder(db, user, name=body.name, parent_id=body.parent_id), user)
+
+
+@router.patch("/view-folders/{folder_id}")
+def patch_view_folder(folder_id: int, body: ViewFolderChangeIn, user: ActiveUser, db: DB) -> ViewFolderOut:
+    """Rename a folder of views, or move it (parent_id; null: the top), if it's yours or you're an admin: 409
+    `name_taken`, or `cycle` into itself."""
+    changed = views.change_folder(
+        db, user, folder_id, name=body.name, parent_id=body.parent_id, move="parent_id" in body.model_fields_set
+    )
+    return ViewFolderOut.of(changed, user)
+
+
+@router.delete("/view-folders/{folder_id}", status_code=204)
+def delete_view_folder(folder_id: int, user: ActiveUser, db: DB) -> Response:
+    """Delete an empty folder of views (409 `not_empty` if it isn't), if it's yours or you're an admin."""
+    views.remove_folder(db, user, folder_id)
     return Response(status_code=204)

@@ -49,10 +49,9 @@ test("a link to a dataset's plots opens them for someone else as they were, and 
     await user.click(await channels.findByRole("button", { name: /PT-OX-01/ }));
     fireEvent.click(channels.getByRole("button", { name: /TC-NOZ-01/ }), { shiftKey: true });
     await user.click(channels.getByRole("button", { name: "Compare with another dataset" }));
-    await user.selectOptions(
-        channels.getByLabelText("Compare with"),
-        await channels.findByRole("option", { name: coldFlow.name }),
-    );
+    const picker = within(await screen.findByRole("dialog", { name: "Compare with" }));
+    await user.type(picker.getByLabelText("Find a dataset"), coldFlow.name);
+    await user.click(await picker.findByRole("button", { name: new RegExp(`^${coldFlow.name}`) }));
     const shift = await channels.findByLabelText(`${coldFlow.name}: shift in time (s)`);
     await user.clear(shift);
     await user.type(shift, "0.25{Enter}");

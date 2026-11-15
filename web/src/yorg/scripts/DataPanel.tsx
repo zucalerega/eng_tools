@@ -1,11 +1,13 @@
 import { useState } from "react";
 import type { Dataset } from "../api";
 import { dataset as loadDataset } from "../data";
+import { DatasetPicker } from "../DatasetPicker";
 import { datasetUrl } from "../pages";
 import { channelCode, testRef } from "./complete";
 
 // The tests a script works on, beside it: attach one or more (the first is the one yorg.channel() takes from unless
-// told another), see their channels, and click one to put it in the code at the cursor.
+// told another), picked from the datasets' folders, starting in the first one's; see their channels, and click one to
+// put it in the code at the cursor.
 
 interface Props {
     datasets: Dataset[]; // every test there is (ready)
@@ -22,27 +24,22 @@ export function DataPanel({ datasets, attached, onChange, onChannel }: Props) {
     const shared = (name: string) => datasets.filter((one) => one.name.toLowerCase() === name.toLowerCase()).length > 1;
     const labelOf = (id: number) => (shared(nameOf(id)) ? `${nameOf(id)} (${id})` : nameOf(id));
     const tests = attached.map((id) => ({ id, name: nameOf(id), channels: [] }));
-    const others = datasets.filter((one) => !attached.includes(one.id));
     return (
         <aside className="scripts-data" aria-label="Data">
             <p className="muted scripts-data-help">
                 The tests the script works on. Click a channel to put it in the code; in quotes, type a few letters of
                 one.
             </p>
-            <label className="field">
-                Attach a test
-                <select
-                    value=""
-                    onChange={(event) => event.target.value && onChange([...attached, Number(event.target.value)])}
-                >
-                    <option value="">{others.length ? "Pick one" : "Every test is attached"}</option>
-                    {others.map((one) => (
-                        <option key={one.id} value={one.id}>
-                            {labelOf(one.id)}
-                        </option>
-                    ))}
-                </select>
-            </label>
+            <div className="scripts-attach">
+                <DatasetPicker
+                    label="Attach a test"
+                    button="Attach a test"
+                    buttonClass="button-small"
+                    start={datasets.find((one) => one.id === attached[0])?.folder_id ?? null}
+                    except={attached}
+                    onPick={(test) => onChange([...attached, test.id])}
+                />
+            </div>
             {attached.length > 0 && (
                 <input
                     className="scripts-find"

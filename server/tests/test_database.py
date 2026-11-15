@@ -173,7 +173,7 @@ def test_upgrades_keep_yorgs_data(tmp_path):
 
 
 def test_upgrades_keep_views(tmp_path):
-    """Views got folders: those saved before are at the top, as they were."""
+    """Views got folders (paths, then folders of their own): those saved before are at the top, as they were."""
     engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
     migrate(engine, "0006")
     when = "'2026-09-01 00:00:00.000000'"
@@ -189,12 +189,64 @@ def test_upgrades_keep_views(tmp_path):
 
     migrate(engine)
     with engine.connect() as db:
-        assert db.exec_driver_sql("SELECT name, folder, datasets, config FROM yorg_views").one() == (
+        assert db.exec_driver_sql("SELECT name, folder_id, datasets, config FROM yorg_views").one() == (
             "Tanks",
-            "",
+            None,
             "[3]",
             '{"panels": []}',
         )
+
+
+def test_upgrades_give_views_folders_of_their_own(tmp_path):
+    """Views' folder paths became folders, whatever their case, each made by whoever saved the oldest view in it or
+    under it, so they can still change it."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0032")
+    with engine.begin() as db:
+        for user_id, email in [(1, "chief@x.test"), (2, "bob@x.test"), (3, "alice@x.test")]:
+            db.exec_driver_sql(
+                "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds, solidworks_seconds) "
+                f"VALUES ({user_id}, '{email}', 'Someone', 'active', 0, '2026-09-01 00:00:00.000000', 0, 0)"
+            )
+        # Bob's Chamber is the oldest under Hotfires; Alice's Tanks, in hotfires/hf-3 by another case, is in the same
+        # folder; the chief's Fill is in a folder of its own, and Scratch at the top.
+        for view_id, name, folder, by, day in [
+            (1, "Tanks", "hotfires/hf-3", 3, 4),
+            (2, "Chamber", "Hotfires/HF-3", 2, 2),
+            (3, "Igniter", "Hotfires", 1, 3),
+            (4, "Fill", "Cold flows", 1, 5),
+            (5, "Scratch", "", 1, 6),
+        ]:
+            when = f"'2026-09-0{day} 00:00:00.000000'"
+            db.exec_driver_sql(
+                "INSERT INTO yorg_views (id, name, folder, description, datasets, config, created_at, created_by, "
+                f"updated_at) VALUES ({view_id}, '{name}', '{folder}', '', '[]', '{{}}', {when}, {by}, {when})"
+            )
+
+    migrate(engine)
+    with engine.connect() as db:
+        folders = {
+            row.id: row
+            for row in db.exec_driver_sql("SELECT id, parent_id, name, created_by, created_at FROM yorg_view_folders")
+        }
+        made = {
+            (row.name, folders[row.parent_id].name if row.parent_id else None): (row.created_by, row.created_at[:10])
+            for row in folders.values()
+        }
+        assert made == {
+            ("Hotfires", None): (2, "2026-09-02"),  # the oldest view under it is Bob's
+            ("HF-3", "Hotfires"): (2, "2026-09-02"),
+            ("Cold flows", None): (1, "2026-09-05"),
+        }
+        placed = db.exec_driver_sql("SELECT name, folder_id FROM yorg_views ORDER BY id").all()
+        named = {name: folders[folder].name if folder else None for name, folder in placed}
+        assert named == {
+            "Tanks": "HF-3",
+            "Chamber": "HF-3",
+            "Igniter": "Hotfires",
+            "Fill": "Cold flows",
+            "Scratch": None,
+        }
 
 
 def test_upgrades_give_piper_diagrams_folders_of_their_own(tmp_path):

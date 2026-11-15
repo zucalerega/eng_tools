@@ -11,6 +11,7 @@ import {
 } from "./buildflow";
 import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
+import { HomeDeals } from "./deals";
 import { HelpButton, HelpPanel } from "./help";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow, piperWide } from "./piper";
 import { Link, navigate, usePathname } from "./router";
@@ -225,7 +226,8 @@ export function App() {
     );
 }
 
-/** The site's own page, at its address alone: the team's logo and the site's name, and its apps, to go to any. */
+/** The site's own page, at its address alone: the team's logo and the site's name, its apps, to go to any, how full the
+ * server's disk is, and the deals found for what the team wants. */
 function Home({ pathname }: { pathname: string }) {
     return (
         <section className="home">
@@ -257,6 +259,7 @@ function Home({ pathname }: { pathname: string }) {
                 </Link>
             </div>
             <HomeStorage />
+            <HomeDeals />
         </section>
     );
 }

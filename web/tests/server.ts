@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { TestProject } from "vitest/node";
 import { fakeClaude } from "./claude";
+import { EBAY_CLIENT, fakeEbay } from "./ebay";
 
 // Starts the real server (uv run yjsp-server in ../server) with development sign-in and a
 // throwaway vault and Yorg, once for the whole test run, and gives the tests its address. Its
@@ -63,6 +64,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     writeFileSync(join(downloads, "Vault-Setup.exe"), program([0, 5, 0], "the add-in's installer"));
     writeFileSync(join(downloads, "vault.exe"), "the command line");
     const claude = await fakeClaude();
+    const ebay = await fakeEbay();
     const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",
@@ -89,6 +91,12 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_FEEDBACK_APPROVER: CHIEF,
             YJSP_FEEDBACK_ROUTINE_URL: `${claude.url}/v1/claude_code/routines/trig_test/fire`,
             YJSP_FEEDBACK_ROUTINE_TOKEN: "sk-ant-oat01-test",
+            // Deals from a stand-in for eBay, when a test asks for a search: the words alone say which would do.
+            YJSP_EBAY_CLIENT_ID: EBAY_CLIENT.id,
+            YJSP_EBAY_CLIENT_SECRET: EBAY_CLIENT.secret,
+            YJSP_EBAY_BASE_URL: ebay.url,
+            YJSP_DEALS_SCHEDULE: "0",
+            YJSP_DEALS_CLAUDE: "0",
         },
     });
     let output = "";
@@ -136,6 +144,7 @@ export default async function setup(project: TestProject): Promise<() => void> {
     return () => {
         stop(server);
         claude.close();
+        ebay.close();
         rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     };
 }

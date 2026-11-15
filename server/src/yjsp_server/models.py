@@ -1,11 +1,12 @@
 """The site's tables: accounts, their sign-in tokens, the settings and whitelist admins choose, what Claude in Help
-has cost, and the bug reports and feature requests members send. Each app keeps its own (vault/models.py,
-yorg/models.py, piper/models.py). Timestamps are timezone-aware UTC (db.UTCDateTime)."""
+has cost, the bug reports and feature requests members send, and the deals found for what the team wants. Each app
+keeps its own (vault/models.py, yorg/models.py, piper/models.py, buildflow/models.py). Timestamps are timezone-aware UTC
+(db.UTCDateTime)."""
 
 import enum
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Float, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, UTCDateTime, enum_column, utcnow
@@ -104,12 +105,13 @@ class AssistantPurpose(enum.StrEnum):
     QUESTION = "question"  # someone's question in Help
     KEEP_WARM = "keep_warm"  # a read to keep the help loaded between questions (YJSP_ASSISTANT_KEEP_WARM)
     FEEDBACK = "feedback"  # Claude's look at a bug report or feature request, for the owner (feedback.py)
+    DEALS = "deals"  # Claude's verdicts on listings found for what the team wants (deals/finder.py)
 
 
 class AssistantRequest(Base):
     """A request to Claude, and what it cost: its budget and each person's daily limit add these up (assistant.py).
-    What was asked, and the answer, aren't kept. Only a question is someone's: a read to keep the help loaded, or a
-    look at a request, is no one's, so it counts against the budgets, and no one's limit."""
+    What was asked, and the answer, aren't kept. Only a question is someone's: a read to keep the help loaded, a look
+    at a request, or a say on deals, is no one's, so it counts against the budgets, and no one's limit."""
 
     __tablename__ = "assistant_requests"
 
@@ -166,6 +168,66 @@ class Feedback(Base):
     # Approved: what the owner added for Claude Code, and the session building it.
     note: Mapped[str | None] = mapped_column(Text)
     session_url: Mapped[str | None] = mapped_column(String(500))
+
+
+class Deal(Base):
+    """A listing found for something the team wants (deals/), as its source said it when it was last checked: kept
+    current every few hours, and shown only while it's fresh, as eBay's terms ask. What it's for is said as the app that
+    wants it said it then (`want_*`), since the site asks no app again."""
+
+    __tablename__ = "deals"
+    __table_args__ = (UniqueConstraint("source", "listing", "want_key", name="uq_deals_source_listing_want"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(16))  # "ebay"
+    listing: Mapped[str] = mapped_column(String(100))  # its id there: "v1|1234567890|0"
+    title: Mapped[str] = mapped_column(String(300))
+    url: Mapped[str] = mapped_column(String(2000))  # its page there
+    image: Mapped[str | None] = mapped_column(String(2000))
+    price: Mapped[int]  # in cents: an auction's current bid
+    currency: Mapped[str] = mapped_column(String(3))
+    shipping: Mapped[int | None]  # in cents; None: worked out at checkout
+    condition: Mapped[str] = mapped_column(String(100), default="")
+    auction: Mapped[bool] = mapped_column(default=False)
+    ends_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    want_key: Mapped[str] = mapped_column(String(200), index=True)  # "buildflow:component:12"
+    want_title: Mapped[str] = mapped_column(String(200))  # "Main oxidizer valve"
+    want_where: Mapped[str] = mapped_column(String(300))  # "Elytra, Fluids"
+    want_href: Mapped[str] = mapped_column(String(500))  # its page on the site
+    search: Mapped[str] = mapped_column(String(400))  # what found it
+    fit: Mapped[float] = mapped_column(Float)  # 0 to 1: how well its words fit what's wanted (deals/rank.py)
+    # What the search found typically costs, shipped, in cents (the median of those that fit): its price against this is
+    # how good a deal it is. None: too few to say.
+    typical: Mapped[int | None]
+    reason: Mapped[str] = mapped_column(String(500), default="")  # why it would do, in words
+    found_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    checked_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)  # as its source said then
+    # Gone: ended, sold, taken down, or no longer wanted (what it's for is built or bought). Kept, as a dismissal is.
+    gone_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Dismissed: someone said it won't do, so it isn't found again for what it's for.
+    dismissed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    dismissed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class DealRun(Base):
+    """A run of the deals finder: a search for everything the team wants, or a check of the deals shown, and how it
+    went (Admin > Deals)."""
+
+    __tablename__ = "deal_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # "search" or "refresh"
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # None: on schedule
+    wants: Mapped[int] = mapped_column(default=0)  # searched for
+    searches: Mapped[int] = mapped_column(default=0)  # calls to the source
+    listings: Mapped[int] = mapped_column(default=0)  # seen
+    found: Mapped[int] = mapped_column(default=0)  # deals shown after it
+    gone: Mapped[int] = mapped_column(default=0)  # deals it found gone
+    judged: Mapped[bool] = mapped_column(default=False)  # Claude said which would do
+    cost: Mapped[int] = mapped_column(BigInteger, default=0)  # Claude's, in millionths of a US dollar
+    problem: Mapped[str | None] = mapped_column(String(500))  # what went wrong, if anything
 
 
 class ClientAuthCode(Base):

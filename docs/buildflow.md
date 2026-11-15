@@ -119,6 +119,19 @@ and `web/src/buildflow`.
   where it goes (`toDrawing`); subsystems and components, renamed where they are, moved, added,
   removed and brought back; and milestones, by phase. *Archive…* takes the program off the list.
 
+## Deals
+
+The site's deals finder (design.md, "Deals") asks each app what it wants found; Buildflow says its
+components not yet procured (`wants.py`): through the build phase's milestone for buying
+(Procurement, or one named for ordering, purchasing, or buying), else through the build phase.
+A bought one is searched for by the part numbers in its description and its links' names, and by
+what it is (its name and the start of its description); one the team makes, by the stock its
+description names. Those through design (or needing none), bought off the shelf, and changed in
+the last two weeks come first. A component stands for what its links go to in Vault (a file) and
+Piper (a diagram found at a tag, `?find=PR-101`), so their deals are its own. The bill marks a
+component with deals with a tag and how many beside its name (`DealMark`), and its dot with a
+speck of gold; its panel lists them under *On eBay*, each hidden for everyone with ✕.
+
 ## API
 
 Buildflow's endpoints, all under `/api/buildflow`. Every one needs sign-in; how errors look, and the

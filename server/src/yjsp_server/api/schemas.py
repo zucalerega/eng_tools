@@ -7,8 +7,9 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field
 
 from .. import auth, clients
+from ..deals import finder, rank
 from ..feedback import Names
-from ..models import Feedback, SiteSettings, Token, User, WhitelistEmail
+from ..models import Deal, DealRun, Feedback, SiteSettings, Token, User, WhitelistEmail
 
 
 def _tidy_folder(value: str) -> str:
@@ -425,6 +426,114 @@ class AssistantSpendingOut(BaseModel):
     keep_hours: int | None = None  # for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: float = 0  # what that cost this month, in month_spent too
     feedback_spent: float = 0  # what Claude's looks at bug reports and feature requests cost this month, in month_spent
+    deals_spent: float = 0  # what Claude's say on the deals finder's listings cost this month, in month_spent
     month_questions: int = 0  # this month's questions
     month_questions_loaded: int = 0  # of those, the ones that found the help loaded, and read it for much less
     people: list[AssistantSpenderOut]  # the most spent first
+
+
+class DealOut(BaseModel):
+    """A listing found for something the team wants, as its source said it when it was last checked (deals/)."""
+
+    id: int
+    source: str  # "ebay"
+    title: str
+    url: str  # its page there
+    image: str | None
+    price: float  # US dollars: an auction's current bid
+    shipping: float | None  # None: worked out at checkout
+    currency: str
+    condition: str
+    auction: bool
+    ends_at: datetime | None
+    want_key: str  # what it's for: "buildflow:component:12", "vault:file:34", "piper:5:MOV-101"
+    want_title: str
+    want_where: str
+    want_href: str  # its page on the site
+    reason: str  # why it would do, in words
+    typical: float | None  # what those found that fit typically cost, shipped, in US dollars
+    savings: float | None  # its share under that: 0.34
+    score: float  # 0 to 1: how good a deal it is
+    found_at: datetime
+    checked_at: datetime  # as its source said it then: at most six hours ago
+    dismissed: bool
+
+    @classmethod
+    def of(cls, deal: Deal) -> "DealOut":
+        paid = deal.price + (deal.shipping or 0)
+        return cls(
+            id=deal.id,
+            source=deal.source,
+            title=deal.title,
+            url=deal.url,
+            image=deal.image,
+            price=deal.price / 100,
+            shipping=None if deal.shipping is None else deal.shipping / 100,
+            currency=deal.currency,
+            condition=deal.condition,
+            auction=deal.auction,
+            ends_at=deal.ends_at,
+            want_key=deal.want_key,
+            want_title=deal.want_title,
+            want_where=deal.want_where,
+            want_href=deal.want_href,
+            reason=deal.reason,
+            typical=None if deal.typical is None else deal.typical / 100,
+            savings=rank.savings(paid, deal.typical),
+            score=finder.score(deal),
+            found_at=deal.found_at,
+            checked_at=deal.checked_at,
+            dismissed=deal.dismissed_at is not None,
+        )
+
+
+class DealDismissIn(BaseModel):
+    dismissed: bool = True
+
+
+class DealRunOut(BaseModel):
+    """A run of the deals finder, and how it went."""
+
+    id: int
+    kind: str  # "search" (for everything the team wants) or "refresh" (the deals shown, checked again)
+    started_at: datetime
+    finished_at: datetime | None  # None: going, or it broke
+    started_by: UserRef | None  # None: on schedule
+    wants: int
+    searches: int
+    listings: int
+    found: int  # deals shown after it
+    gone: int  # deals it found gone, or no longer wanted
+    judged: bool  # Claude said which listings would do
+    cost: float  # what Claude's say cost, in US dollars
+    problem: str | None
+
+    @classmethod
+    def of(cls, run: DealRun, user: User | None) -> "DealRunOut":
+        return cls(
+            id=run.id,
+            kind=run.kind,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            started_by=UserRef.of(user) if user else None,
+            wants=run.wants,
+            searches=run.searches,
+            listings=run.listings,
+            found=run.found,
+            gone=run.gone,
+            judged=run.judged,
+            cost=round(run.cost / 1_000_000, 6),
+            problem=run.problem,
+        )
+
+
+class DealsStatusOut(BaseModel):
+    """How the deals finder's doing (admins)."""
+
+    available: bool
+    reason: str | None  # why it isn't, when it isn't
+    claude: bool  # Claude says which listings would do
+    running: str | None  # "search" or "refresh", now
+    next_search: datetime | None
+    shown: int
+    runs: list[DealRunOut]  # the latest first

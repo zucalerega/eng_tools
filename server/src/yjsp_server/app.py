@@ -10,21 +10,26 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__, load, people
 from .api import assistant as assistant_api
+from .api import deals as deals_api
 from .api import downloads, signin, web
 from .api import feedback as feedback_api
 from .api import help as help_api
 from .api import people as people_api
 from .assistant import Assistant
 from .buildflow import api as buildflow_api
+from .buildflow import wants as buildflow_wants
 from .config import Settings
 from .db import make_engine, migrate
+from .deals.finder import Deals
 from .errors import ApiError
 from .feedback import Requests
 from .limits import BodyLimit
 from .piper import api as piper_api
+from .piper import wants as piper_wants
 from .piper.diagrams import stored as piper_stored
 from .security import SecurityHeaders, hide_sign_in_codes
 from .vault import api as vault_api
+from .vault import wants as vault_wants
 from .vault.reading import Reader
 from .vault.storage import BlobStore
 from .vault.vault import init_vault
@@ -54,7 +59,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.assistant.start()
         if settings.caliper_read_ahead:
             app.state.caliper_reader.start()
+        app.state.deals.start(schedule=settings.deals_schedule)
         yield
+        app.state.deals.stop()
         app.state.caliper_reader.stop()
         app.state.assistant.stop()
         app.state.server_load.stop()
@@ -78,6 +85,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.assistant = Assistant(settings, sessions)  # Claude, answering from the help (Help in the web app)
     # Bug reports and feature requests, which Claude looks at and the owner can have Claude Code build.
     app.state.feedback = Requests(settings, sessions, app.state.assistant)
+    # Deals on eBay for what the team wants: what each app wants, handed over here, as the site imports no app;
+    # Buildflow's first, its components standing for their CAD in Vault and their parts on P&IDs.
+    app.state.deals = Deals(
+        settings, sessions, app.state.assistant, [buildflow_wants.wants, piper_wants.wants, vault_wants.wants]
+    )
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
@@ -110,6 +122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(people_api.router)
     app.include_router(assistant_api.router)
     app.include_router(feedback_api.router)
+    app.include_router(deals_api.router)
     app.include_router(downloads.router)
     app.include_router(vault_api.router)
     app.include_router(yorg_api.router)

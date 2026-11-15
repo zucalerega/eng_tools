@@ -364,6 +364,40 @@ Admin > Requests says why (`feedback_routine_failed`): a token turned down means
 one (step 2) and putting it in `.env`. To stop approvals, delete the token on the routine's
 page, or unset `YJSP_FEEDBACK_ROUTINE_TOKEN`.
 
+### Deals
+
+The deals finder (design.md, "Deals") searches eBay each day for what the team wants, through
+eBay's own API, the Browse API, not by reading eBay's pages. Without a keyset it does nothing,
+and the site's own page shows no deals. To set it up, once:
+
+1. At [developer.ebay.com](https://developer.ebay.com), make a developer account (the team's, not
+   one person's), and an application's **production** keyset: its *App ID* (client ID) and *Cert
+   ID* (client secret).
+2. eBay leaves a production keyset off until it's said what it does with **Marketplace Account
+   Deletion** notifications. Deals keep nothing of anyone on eBay (no seller's name, nothing of
+   a buyer's), and the site answers the notifications anyway: on the keyset's *Notifications*
+   page, subscribe with the endpoint `https://<the site's address>/api/deals/ebay/account-deletion`
+   and a verification token of 32 to 80 letters, digits, underscores, and dashes, made up for
+   it. Put the same token in `YJSP_EBAY_VERIFICATION_TOKEN` and restart first, since eBay checks
+   the endpoint as it's saved (its challenge, which the server answers, `GET` with
+   `challenge_code`).
+3. In the server's `.env`: `YJSP_EBAY_CLIENT_ID` and `YJSP_EBAY_CLIENT_SECRET` (a secret like the
+   others); `YJSP_DEALS_HOUR`, the hour (UTC) it searches each day, if not 10; and
+   `YJSP_DEALS_ZIP`, the team's ZIP code, for eBay's shipping estimates. Restart the service.
+4. On Admin > Deals, *Search now* searches at once; the runs say how each went, and what went
+   wrong with eBay, if anything.
+
+A search makes at most 150 calls, and each of the five checks a day at most 400 more: eBay gives
+an application 5,000 calls a day. With Claude set up, it says which listings would do, from the
+budgets Help's questions use, but only while less than half of each is spent, so Help always
+keeps the rest; past that, the listings' words decide until the month turns. A search asks it
+once for every 12 wants with listings, five times for the 60 a search covers: with Claude Sonnet
+5.5 (the default), roughly $0.05 each, so some $0.25 a day, or $7.50 a month. Admin > People's
+*Claude* card says what it cost this month, and each run on Admin > Deals what it cost then.
+`YJSP_DEALS_CLAUDE=0` leaves it to the listings' words. eBay's terms: what's shown is never more than six hours older than eBay has it (the
+server checks what it shows every four hours, and stops showing what it couldn't check), and each
+deal says how old it is; its page is linked, never framed.
+
 ### Signing key
 
 CI signs `Vault-Setup.exe` on pushes to `main` and release tags, never for pull requests

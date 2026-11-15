@@ -1,10 +1,12 @@
 """Settings, read from YJSP_* environment variables or a .env file."""
 
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_SECRET = "dev-only-secret-do-not-use-in-production"
@@ -92,6 +94,26 @@ class Settings(BaseSettings):
     feedback_routine_url: str = ""
     feedback_routine_token: str = ""
 
+    # Deals (deals/): eBay's Browse API, which the server searches each day for what the team wants. A keyset of an
+    # application on developer.ebay.com, for production: its App ID (client ID), and its Cert ID (client secret), a
+    # secret like YJSP_SECRET_KEY. Either empty: no deals are looked for.
+    ebay_client_id: str = ""
+    ebay_client_secret: str = ""
+    # Another address for eBay's API: the tests' stand-in. Empty: eBay's own.
+    ebay_base_url: str = ""
+    # eBay's Marketplace Account Deletion notifications, which a production keyset needs answered (docs/deploying.md,
+    # "Deals"): the verification token given for {public_url}/api/deals/ebay/account-deletion on the keyset's page, 32 to
+    # 80 letters, digits, underscores, and dashes. Empty: that address isn't there.
+    ebay_verification_token: str = ""
+    # When to search each day: the hour, in UTC. Shown deals are checked again every four hours.
+    deals_hour: int = Field(default=10, ge=0, le=23)
+    # Where the team is, for eBay's shipping estimates: a US ZIP code. Empty: no estimates for calculated shipping.
+    deals_zip: str = ""
+    # Have Claude say which listings would do (its budgets permitting): off, a listing's words alone decide.
+    deals_claude: bool = True
+    # Search each day and keep what's shown current, on its own. Off: only when an admin asks (the tests).
+    deals_schedule: bool = True
+
     @property
     def production(self) -> bool:
         return self.env == "production"
@@ -123,6 +145,11 @@ class Settings(BaseSettings):
                 problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
+        if bool(self.ebay_client_id) != bool(self.ebay_client_secret):
+            problems.append("set both YJSP_EBAY_CLIENT_ID and YJSP_EBAY_CLIENT_SECRET, or neither")
+        token = self.ebay_verification_token
+        if token and not re.fullmatch(r"[A-Za-z0-9_-]{32,80}", token):
+            problems.append("YJSP_EBAY_VERIFICATION_TOKEN must be 32 to 80 letters, digits, underscores, and dashes")
         if self.anthropic_api_key and self.assistant_budget <= 0 and self.assistant_monthly_budget <= 0:
             problems.append(
                 "set YJSP_ASSISTANT_MONTHLY_BUDGET (each month) or YJSP_ASSISTANT_BUDGET (in all) to what the assistant "

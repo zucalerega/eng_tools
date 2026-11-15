@@ -39,6 +39,7 @@ Web app (React): the frame, and each app's pages ──────────�
                                │   system models' runs (FullFlow), which Piper's simulations use
                                ├── piper/: diagrams (P&IDs) and their revisions
                                ├── buildflow/: programs, their components, and their progress
+                               ├── deals/: listings on eBay for what the apps want, found each day
                                ├── database: SQLite or Postgres, one for all of it
                                ├── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
                                └── the help: the repository's docs (YJSP_HELP_DIR), which Claude
@@ -99,7 +100,7 @@ site's only one.
 
 | What | Setting (default) | Backed up |
 |---|---|---|
-| The database: accounts, Vault's tables, Yorg's, Piper's (its diagrams, and every revision of each), Buildflow's, and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
+| The database: accounts, Vault's tables, Yorg's, Piper's (its diagrams, and every revision of each), Buildflow's, the deals found, and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts (and the system models saved before Piper kept them) | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
@@ -401,6 +402,62 @@ and an admin can have Claude look again. Each person sends at most 10 a day.
 - **Statuses**: `new` (waiting for the owner), `approved` (Claude Code is building it),
   `declined`, and `done`. Nothing deletes a request.
 
+## Deals
+
+**Deals** (`deals/`, the `deals` and `deal_runs` tables) are listings on eBay for what the team
+wants, found once a day, and shown at the foot of the site's own page as cards that slide by
+(`web/src/deals.tsx`), each with its picture, price and shipping, condition, how far under the
+typical price it is, why it would do, what it's for (a link to its page on the site), how old it
+is, and a link to it on eBay; and beside what each is for on a program's bill of design (a tag
+with how many, and a speck of gold by its dot on the vehicle; its component's panel lists them).
+
+- **What's wanted** is each app's to say, in the site's terms (`deals.wants.Want`: a key, a title,
+  where it's from, its page, what to search for, its part numbers, what it has to be, and how much
+  it matters now), through a function `app.py` hands over, as the site imports no app:
+  - Buildflow's components not yet procured (through Procurement, or the build phase's milestone
+    for ordering, purchasing, or buying), the most wanted those through design (ready to buy),
+    bought off the shelf, and changed in the last two weeks (`buildflow/wants.py`): a bought one by
+    the part numbers in its description and links (`part_numbers`: SS-43GS4, PX309-1KG5V, never a
+    grade like 6061-T6 or a size), and by what it is; one the team makes by the stock its
+    description names (`stock`: "6061-T6 aluminum, 8 in OD, 0.125 in wall" searches for that).
+  - Vault's vendors' parts, by their part numbers, the latest checked in first, and only in
+    folders everyone can see, so a deal shown to everyone never names a file someone couldn't
+    open (`vault/wants.py`).
+  - The parts on Piper's 30 latest changed P&IDs that say their model, by it; one that says only
+    its size, rating, and fluid searches for nothing, but its needs count where a component stands
+    for it (`piper/wants.py`).
+
+  A component stands for its CAD in Vault (a link to `/vault/file/12`) and its parts on P&IDs (a
+  link to the diagram found at its tag, `/piper/diagrams/3?find=PR-101`): what they want is folded
+  into it (`wants.gather`), so their deals are the component's.
+- **A search** (`finder.Deals`, once a day at `YJSP_DEALS_HOUR`, UTC; or an admin's *Search now*)
+  searches eBay's Browse API (`deals/ebay.py`: `item_summary/search`, with an application's token,
+  the client credentials grant, kept until it lapses) for the 60 most wanted, at most 150 searches,
+  25 listings each, of those that ship to the US. A listing fits by its part number, or by the share
+  of what's wanted that its words say (`rank.py`), and none for parts or not working does. Then
+  Claude (`Assistant.judge`: the instructions, then the needs and their listings as data, never
+  instructions, and JSON verdicts in a schema, structured outputs, at medium effort) says which
+  would do and why, in a sentence, while less than half of each of its budgets is spent
+  (`JUDGE_SHARE`), so Help's questions keep the rest; for wants it didn't say of, a fit of half or
+  more does. Each want shows its best, and up to two more a tenth or more under the
+  typical price (the median of those that fit, shipped, with three or more to go by). A deal
+  someone dismissed isn't found again; one for a want searched for and not found again, or no
+  longer wanted, is gone.
+- **eBay's terms** (its API License Agreement): nothing's shown more than six hours older than eBay
+  has it, so the server checks the deals shown every four hours (`item/{id}`, up to 400 of them:
+  gone when it's sold, ended, or taken down), and shows only those checked in the last six hours,
+  each saying when;
+  eBay's pages are linked, never framed; and nothing of anyone on eBay is kept (a seller's name is
+  personal data), so the Marketplace Account Deletion notifications a production keyset has to
+  answer need nothing done: `/api/deals/ebay/account-deletion` answers eBay's challenge and
+  acknowledges each, without sign-in, once `YJSP_EBAY_VERIFICATION_TOKEN` is set.
+- **Runs** go one at a time (409 `deals_running`), in a thread the server starts and stops with
+  itself (`YJSP_DEALS_SCHEDULE`, off in the tests), each noting what it searched, saw, kept, and
+  found gone, what Claude cost, and what went wrong (Admin > Deals): an answer that isn't eBay's
+  is a problem with eBay, which the run notes and goes on from, and a run that breaks on anything
+  else says so, finished, with the trace in the log. Without a keyset there are no deals (503
+  `deals_off` to *Search now*).
+
 ## Server conventions
 
 - **Errors** are `ApiError`s (`errors.py`), sent as
@@ -440,8 +497,9 @@ and an admin can have Claude look again. Each person sends at most 10 a day.
 
 ## API
 
-Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`, `/help.md`,
-`/llms.txt`, which show members more). Interactive docs are at
+Every endpoint needs sign-in except `/auth/*`, `/healthz`, the help (`/help`, `/help.md`,
+`/llms.txt`, which show members more), and where eBay's account deletion notifications go
+(`/api/deals/ebay/account-deletion`, below). Interactive docs are at
 `/docs`. The site's own endpoints are below; each app's are in its page: [Vault's](vault.md#api)
 (`/api/folders`, `/api/files`, ...), [Yorg's](yorg.md#api) (`/api/yorg/...`), and
 [Piper's](piper.md#api) (`/api/piper/...`), and [Buildflow's](buildflow.md#api) (`/api/buildflow/...`).
@@ -469,6 +527,10 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 | `POST /api/feedback/{id}/approve` | have Claude Code build it, with a `note` for it: fires the routine, and returns the request with its `session_url` (the owner) |
 | `POST /api/feedback/{id}/decline`, `POST /api/feedback/{id}/done` | turn it down, with a `reply` saying why, or mark it done, with a `reply` if you like (admins) |
 | `POST /api/feedback/{id}/look` | have Claude look at it again (admins) |
+| `GET /api/deals?app=&limit=60` | the deals to show, the best first, checked on eBay in the last six hours: each listing's `title`, `url`, `image`, `price`, `shipping` (null: at checkout), `condition`, `auction` and `ends_at`; what it's for (`want_key`, `want_title`, `want_where`, `want_href`); why (`reason`); the `typical` price and its `savings` under it; its `score`, and when it was `checked_at`; `app`: only those for what one app wants (`buildflow`) |
+| `PUT /api/deals/{id}/dismissed` | say a deal won't do `{dismissed}`, so it isn't shown or found again for what it's for (or take that back) |
+| `GET /api/deals/status`, `POST /api/deals/search` | how the deals finder's doing (`available`, `reason`, `claude`, `running`, `next_search`, `shown`, and its latest `runs`); search now, in the background: 409 `deals_running`, 503 `deals_off` (admins) |
+| `GET`/`POST /api/deals/ebay/account-deletion` | eBay's Marketplace Account Deletion notifications: its `challenge_code` answered, and each notification acknowledged (no sign-in; 404 until `YJSP_EBAY_VERIFICATION_TOKEN` is set) |
 
 ## Names from before YJSP
 

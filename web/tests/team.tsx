@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { expect, inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
-import { configureApi, type Account, type SiteSettings, type WhitelistEntry } from "../src/api";
+import { configureApi, type Account, type DealsStatus, type SiteSettings, type WhitelistEntry } from "../src/api";
 import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
@@ -355,6 +355,21 @@ export class Team {
     /** A Buildflow program's bill of design, as the server keeps it. */
     async bill(id: number): Promise<ProgramDetail> {
         return call<ProgramDetail>("GET", `/api/buildflow/programs/${id}`, this.chief.token);
+    }
+
+    /** Say what a component is, as its panel does: a part number in it is what the deals finder searches for. */
+    async describe(component: number, description: string): Promise<Component> {
+        return call<Component>("PATCH", `/api/buildflow/components/${component}`, this.chief.token, { description });
+    }
+
+    /** Have the deals finder search now, as an admin does on Admin > Deals, and wait for it to finish. */
+    async searchDeals(): Promise<DealsStatus> {
+        let status = await call<DealsStatus>("POST", "/api/deals/search", this.chief.token);
+        while (status.running) {
+            await new Promise((wait) => setTimeout(wait, 100));
+            status = await call<DealsStatus>("GET", "/api/deals/status", this.chief.token);
+        }
+        return status;
     }
 
     /** A component's progress at a milestone, as the bill's chips and its panel set it. */

@@ -1,17 +1,35 @@
 """Migrations match the models and keep what's there, and concurrent writers are serialized safely."""
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+import yjsp_server.db
 from yjsp_server.db import Base, make_engine, migrate
 from yjsp_server.errors import Conflict
 from yjsp_server.models import User
 from yjsp_server.vault import vault
+
+
+def test_migrations_are_one_line():
+    """Each migration has a number of its own and follows the one before. Two branches merged one after the other, each
+    adding the next number, would otherwise leave Alembic one of them (or two heads), and a database without the other's
+    tables."""
+    migrations = Path(yjsp_server.db.__file__).parent / "migrations"
+    config = Config()
+    config.set_main_option("script_location", str(migrations))
+    script = ScriptDirectory.from_config(config)
+    files = sorted(path.name for path in (migrations / "versions").glob("[0-9]*.py"))
+    revisions = list(script.walk_revisions())
+    assert len(revisions) == len(files), "two migrations share a number: give the later one the next"
+    assert script.get_heads() == [revisions[0].revision], "migrations branch: each must follow the one before"
 
 
 def test_migrations_match_models(tmp_path):

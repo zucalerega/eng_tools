@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { UserRef } from "../api";
+import { api, type Deal, type UserRef } from "../api";
 import { Notice } from "../components";
+import { DealCard } from "../deals";
 import {
     buildflow,
     PHASE_NAMES,
@@ -42,11 +43,23 @@ interface Props {
     phase: Phase; // its section opens first
     focus: number | null; // a milestone to scroll to
     members: UserRef[];
+    deals: Deal[]; // found on eBay for it
+    onDismiss: (deal: Deal) => void;
     onChange: (component: Component) => void;
     onClose: () => void;
 }
 
-export function ComponentPanel({ program, component, phase, focus, members, onChange, onClose }: Props) {
+export function ComponentPanel({
+    program,
+    component,
+    phase,
+    focus,
+    members,
+    deals,
+    onDismiss,
+    onChange,
+    onClose,
+}: Props) {
     const [problem, setProblem] = useState<string | null>(null);
     const panel = useRef<HTMLElement>(null);
     const subsystem = program.subsystems.find((s) => s.id === component.subsystem_id);
@@ -94,6 +107,24 @@ export function ComponentPanel({ program, component, phase, focus, members, onCh
                 </button>
             </header>
             {problem && <Notice tone="error">{problem}</Notice>}
+            {deals.length > 0 && (
+                <section className="bf-deals" aria-label="On eBay">
+                    <h3>On eBay</h3>
+                    {deals.map((deal) => (
+                        <DealCard
+                            key={deal.id}
+                            deal={deal}
+                            compact
+                            onDismiss={() =>
+                                void api.dismissDeal(deal.id).then(
+                                    () => onDismiss(deal),
+                                    (error: unknown) => setProblem(message(error)),
+                                )
+                            }
+                        />
+                    ))}
+                </section>
+            )}
             <Describe
                 component={component}
                 onSave={(description) => act(() => buildflow.changeComponent(component.id, { description }))}

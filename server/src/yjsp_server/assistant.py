@@ -86,6 +86,11 @@ PRICES = {
 }
 # The most a look at a bug report or a feature request may write, thinking included: a few hundred words.
 LOOK_TOKENS = 8_000
+# The most Claude's verdicts on what the server asks it to sort out (deals: whether listings would do) may write.
+JUDGE_TOKENS = 16_000
+# Verdicts are asked for only while less than this share of a budget is spent (the budget in all, and this month's), so
+# Help's questions always keep the rest: past it, the deals finder goes by a listing's words.
+JUDGE_SHARE = 0.5
 # Claude Haiku 5.5 costs more for a question whose prompt, cached or not, is over 100,000 tokens.
 HAIKU_LONG = 100_000
 HAIKU_LONG_PRICE = Price(0.50, 0.625, 1, 0.05, 2.50)
@@ -219,6 +224,7 @@ class Spending:
     keep_hours: int | None  # for how long after a question, as admins chose; None: always
     keep_warm_spent: float  # what that cost this month, in month_spent too
     feedback_spent: float  # what looking at bug reports and feature requests cost this month, in month_spent too
+    deals_spent: float  # what saying which listings would do for the deals finder cost this month, in month_spent too
     month_questions: int  # this month's questions
     month_questions_loaded: int  # of those, the ones that found the help loaded, and read it for much less
     people: list[Spender]  # the most spent first
@@ -372,6 +378,46 @@ class Assistant:
         written = "".join(block.text for block in message.content if block.type == "text").strip()
         return ("" if message.stop_reason == "refusal" else written), sum(cost(*u) for u in usage)
 
+    def judge(self, system: str, content: str, schema: dict[str, Any]) -> tuple[dict[str, Any] | None, int]:
+        """Claude's verdicts on something the server asks it to sort out (deals.finder: whether listings would do for
+        what the team wants), as JSON that keeps to `schema`; and what that cost, in millionths of a US dollar. None if
+        it can't now (not set up, half a budget spent, Anthropic failing) or wouldn't. It doesn't read the help, and
+        counts against the budgets as no one's question."""
+        with self.sessions() as db:
+            if self._why_no_budget(db) is not None or self._past_judging_share(db):
+                return None, 0
+        assert self.client is not None
+        model = self.settings.assistant_model
+        request: dict[str, Any] = {
+            "model": model,
+            "max_tokens": JUDGE_TOKENS,
+            "system": system,
+            "messages": [{"role": "user", "content": content}],
+            "thinking": {"type": "adaptive"},
+            # Matching parts to what they're for wants some judgment, not the most: medium, whatever Help's is.
+            "output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": schema}},
+        }
+        if model in FALLBACKS:
+            request["betas"] = ["server-side-fallback-2026-07-01"]
+            request["fallbacks"] = "default"
+        asked = utcnow()
+        try:
+            message = self.client.beta.messages.create(**request)
+        except anthropic.APIError as error:
+            log.warning("Claude's verdicts failed: %s", error)
+            return None, 0
+        usage = _usage(message, model)
+        self._record(None, asked, model, message.model, usage, AssistantPurpose.DEALS)
+        spent = sum(cost(*u) for u in usage)
+        if message.stop_reason in ("refusal", "max_tokens"):
+            return None, spent
+        written = "".join(block.text for block in message.content if block.type == "text")
+        try:
+            verdicts = json.loads(written)
+        except ValueError:
+            return None, spent
+        return (verdicts if isinstance(verdicts, dict) else None), spent
+
     def keep_loaded(self, db: Session, admin: User, hours: int | None) -> int | None:
         """Keep the help loaded around the clock (None), or only for `hours` after each question: 1 is just the hour
         Anthropic keeps it after each read, with no reads in between (admins)."""
@@ -400,13 +446,27 @@ class Assistant:
 
     def _why_no_one(self, db: Session, found: help.Help) -> ApiError | None:
         """Why the assistant can't answer anyone now, or None if it can."""
+        if (why := self._why_no_budget(db)) is not None:
+            return why
+        if not found.docs:
+            return Unavailable("Claude has nothing to read on this server: the help isn't here", code="assistant_off")
+        return None
+
+    def _past_judging_share(self, db: Session) -> bool:
+        """Whether JUDGE_SHARE of a budget is spent, of the budget in all or this month's: Help keeps the rest."""
+        settings = self.settings
+        if settings.assistant_budget > 0 and spent(db) >= self._budget() * JUDGE_SHARE:
+            return True
+        month = _month_start(utcnow())
+        return settings.assistant_monthly_budget > 0 and spent(db, since=month) >= self._monthly_budget() * JUDGE_SHARE
+
+    def _why_no_budget(self, db: Session) -> ApiError | None:
+        """Why the server can't ask Claude anything now (it isn't set up, or a budget's spent), or None if it can."""
         settings = self.settings
         if self.client is None or (settings.assistant_budget <= 0 and settings.assistant_monthly_budget <= 0):
             return Unavailable(
                 "Claude isn't set up on this server: an admin can ask whoever runs it", code="assistant_off"
             )
-        if not found.docs:
-            return Unavailable("Claude has nothing to read on this server: the help isn't here", code="assistant_off")
         # The budget in all first: unlike the month's, it doesn't come back by itself.
         if settings.assistant_budget > 0 and spent(db) >= self._budget():
             return Unavailable(
@@ -474,6 +534,7 @@ class Assistant:
         this_month = select(func.coalesce(func.sum(AssistantRequest.cost), 0)).where(AssistantRequest.at >= month)
         keeping = this_month.where(AssistantRequest.purpose == AssistantPurpose.KEEP_WARM)
         looking = this_month.where(AssistantRequest.purpose == AssistantPurpose.FEEDBACK)
+        judging = this_month.where(AssistantRequest.purpose == AssistantPurpose.DEALS)
         # A question that read anything from what Anthropic kept read the help that way, as the help comes first.
         questions, loaded = db.execute(
             select(func.count(), func.count().filter(AssistantRequest.cache_read_tokens > 0)).where(
@@ -495,6 +556,7 @@ class Assistant:
             keep_hours=db.get_one(SiteSettings, 1).assistant_keep_hours,
             keep_warm_spent=_dollars(int(db.scalar(keeping) or 0)),
             feedback_spent=_dollars(int(db.scalar(looking) or 0)),
+            deals_spent=_dollars(int(db.scalar(judging) or 0)),
             month_questions=questions,
             month_questions_loaded=loaded,
             people=sorted(people, key=lambda p: -p.spent),

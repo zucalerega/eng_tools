@@ -201,6 +201,7 @@ export interface AssistantSpending {
     keep_hours: number | null; // for how long after a question, as admins chose (1 to 24); null: always
     keep_warm_spent: number; // what that cost this month, in month_spent too
     feedback_spent: number; // what Claude's looks at bug reports and feature requests cost this month, in month_spent
+    deals_spent?: number; // what its say on the deals finder's listings cost this month, in month_spent (left out before)
     month_questions: number; // this month's questions
     month_questions_loaded: number; // of those, the ones that found the help loaded, and read it for much less
     people: { user: UserRef; questions: number; spent: number; last_asked_at: string }[]; // the most spent first
@@ -241,6 +242,60 @@ export interface FeedbackSent {
     title: string;
     body: string;
     page: string | null;
+}
+
+/** A listing found for something the team wants, as its source said it at most six hours ago (server: deals/). */
+export interface Deal {
+    id: number;
+    source: string; // "ebay"
+    title: string;
+    url: string; // its page there
+    image: string | null;
+    price: number; // US dollars: an auction's current bid
+    shipping: number | null; // null: worked out at checkout
+    currency: string;
+    condition: string;
+    auction: boolean;
+    ends_at: string | null;
+    want_key: string; // what it's for: "buildflow:component:12", "vault:file:34", "piper:5:MOV-101"
+    want_title: string;
+    want_where: string;
+    want_href: string; // its page on the site
+    reason: string; // why it would do
+    typical: number | null; // what those found that fit typically cost, shipped
+    savings: number | null; // its share under that: 0.34
+    score: number;
+    found_at: string;
+    checked_at: string;
+    dismissed: boolean;
+}
+
+/** A run of the deals finder (admins). */
+export interface DealRun {
+    id: number;
+    kind: "search" | "refresh";
+    started_at: string;
+    finished_at: string | null;
+    started_by: UserRef | null; // null: on schedule
+    wants: number;
+    searches: number;
+    listings: number;
+    found: number;
+    gone: number;
+    judged: boolean; // Claude said which would do
+    cost: number; // what that cost, in US dollars
+    problem: string | null;
+}
+
+/** How the deals finder's doing (admins). */
+export interface DealsStatus {
+    available: boolean;
+    reason: string | null;
+    claude: boolean;
+    running: "search" | "refresh" | null;
+    next_search: string | null;
+    shown: number;
+    runs: DealRun[];
 }
 
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
@@ -462,4 +517,16 @@ export const api = {
         request<Feedback>("POST", `/api/feedback/${id}/done`, { reply: reply.trim() || null }),
     /** For admins: have Claude look at it again. */
     lookAgain: (id: number) => request<Feedback>("POST", `/api/feedback/${id}/look`),
+    /** The deals found for what the team wants, the best first (app: only what one app wants, as "buildflow"; at most
+     * limit, 60 unless it says). */
+    deals: (app?: string, limit?: number) => {
+        const params = query({ app: app || undefined, limit });
+        return request<Deal[]>("GET", `/api/deals${params ? `?${params}` : ""}`);
+    },
+    /** Say a deal won't do, so it isn't shown or found again; or take that back. */
+    dismissDeal: (id: number, dismissed = true) => request<Deal>("PUT", `/api/deals/${id}/dismissed`, { dismissed }),
+    /** For admins: how the deals finder's doing, and its runs. */
+    dealsStatus: () => request<DealsStatus>("GET", "/api/deals/status"),
+    /** For admins: search for everything now. */
+    searchDeals: () => request<DealsStatus>("POST", "/api/deals/search"),
 };

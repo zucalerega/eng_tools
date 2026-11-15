@@ -1256,3 +1256,47 @@ button.bf-chip:hover:not(:disabled) {
         grid-template-columns: 1fr;
     }
 }
+
+/* --- deals: what the deals finder found on eBay for a component (the site's deals.tsx) ---------------------------- */
+
+/* Quiet: a small tag and a count, beside its name in the bill. */
+.bf-deal-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    height: 1.25rem;
+    margin-left: 0.15rem;
+    padding: 0 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--gold) 12%, transparent);
+    color: var(--warning);
+    font-size: 0.7rem;
+    font-weight: 700;
+    vertical-align: middle;
+}
+
+button.bf-deal-mark:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--gold) 25%, transparent);
+}
+
+/* And a speck of gold by its dot on the vehicle. */
+.bf-dot-deal {
+    fill: var(--gold);
+    stroke: var(--bf-stage);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.bf-deals {
+    margin: 0.4rem 0 0.8rem;
+}
+
+.bf-deals h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--warning);
+}

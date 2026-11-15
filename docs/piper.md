@@ -657,6 +657,14 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
   opens the diagram in Simulation mode on it, to edit, as any diagram just made opens. A transient run of Vespula's at 0.1 s steps is
   its FullFlow run again, every channel to a few parts in a million.
 
+## Deals
+
+The site's deals finder (design.md, "Deals") asks each app what it wants found; Piper says the parts
+on its 30 latest changed diagrams that say their model, by it (`wants.py`), each with what it says
+it has to be (size, MAWP, Cv, range, and the like). A part that says no model searches for
+nothing, but what it needs counts for a Buildflow component that links to it (its diagram found at
+its tag). Copies (left out of the parts list) and what's only drawn aren't wanted.
+
 ## API
 
 Piper's endpoints, all under `/api/piper`. Every one needs sign-in; how errors look, and the

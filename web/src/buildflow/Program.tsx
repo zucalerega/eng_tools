@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type UserRef } from "../api";
+import { api, type Deal, type UserRef } from "../api";
 import { Notice, Time, usePopover } from "../components";
 import { Link } from "../router";
 import {
@@ -55,6 +55,7 @@ export function ProgramPage({ id }: { id: number }) {
     const [focus, setFocus] = useState<number | null>(null); // a milestone to show in the panel
     const [members, setMembers] = useState<UserRef[]>([]);
     const [activity, setActivity] = useState<Activity[]>([]);
+    const [deals, setDeals] = useState<Deal[]>([]); // on eBay, for what's on this bill
 
     const loadActivity = () => buildflow.activity(id, 15).then(setActivity, () => setActivity([]));
     useEffect(() => {
@@ -64,7 +65,22 @@ export function ProgramPage({ id }: { id: number }) {
             (people) => setMembers(people.filter((person) => person.status === "active")),
             () => setMembers([]),
         );
+        // All of Buildflow's, as many as the server gives, to find this program's among them.
+        api.deals("buildflow", 200).then(setDeals, () => setDeals([]));
     }, [id]);
+
+    // Deals found for each component of this program, by its id: the server's say on what they're for.
+    const dealsFor = useMemo(() => {
+        const found = new Map<number, Deal[]>();
+        const here = new Set(program?.components.map((c) => c.id));
+        for (const deal of deals) {
+            const component = Number(/^buildflow:component:(\d+)$/.exec(deal.want_key)?.[1]);
+            if (here.has(component)) {
+                found.set(component, [...(found.get(component) ?? []), deal]);
+            }
+        }
+        return found;
+    }, [deals, program]);
 
     // The phase and the component picked go in the address, without a page of history for each.
     useEffect(() => {
@@ -129,8 +145,22 @@ export function ProgramPage({ id }: { id: number }) {
             </div>
             {program.description && <p className="muted bf-lead">{program.description}</p>}
             {problem && <Notice tone="error">{problem}</Notice>}
-            <Stage program={program} phase={phase} onPhase={setPhase} selected={selected} onPick={pick} />
-            <Bill program={program} phase={phase} selected={selected} onPick={pick} onStatus={setStatus} />
+            <Stage
+                program={program}
+                phase={phase}
+                onPhase={setPhase}
+                selected={selected}
+                onPick={pick}
+                marks={new Map([...dealsFor].map(([component, found]) => [component, found.length]))}
+            />
+            <Bill
+                program={program}
+                phase={phase}
+                selected={selected}
+                onPick={pick}
+                onStatus={setStatus}
+                dealsFor={dealsFor}
+            />
             <div className="bf-lower">
                 <Coming program={program} onPick={pick} />
                 <section className="bf-activity" aria-label="Recent activity">
@@ -163,6 +193,8 @@ export function ProgramPage({ id }: { id: number }) {
                     phase={phase}
                     focus={focus}
                     members={members}
+                    deals={dealsFor.get(component.id) ?? []}
+                    onDismiss={(deal) => setDeals((now) => now.filter((each) => each.id !== deal.id))}
                     onChange={changed}
                     onClose={() => pick(null)}
                 />
@@ -179,12 +211,14 @@ function Stage({
     onPhase,
     selected,
     onPick,
+    marks,
 }: {
     program: ProgramDetail;
     phase: Phase;
     onPhase: (phase: Phase) => void;
     selected: number | null;
     onPick: (component: Component) => void;
+    marks: Map<number, number>;
 }) {
     const stones = inPhase(program.milestones, phase);
     const placed = program.components.filter((c) => c.x !== null && c.y !== null);
@@ -229,6 +263,7 @@ function Stage({
                         selected={selected}
                         onSelect={onPick}
                         label={program.name}
+                        marks={marks}
                     />
                 ) : (
                     <p className="bf-stage-empty">
@@ -279,12 +314,14 @@ function Bill({
     selected,
     onPick,
     onStatus,
+    dealsFor,
 }: {
     program: ProgramDetail;
     phase: Phase;
     selected: number | null;
     onPick: (component: Component, milestone?: Milestone | null) => void;
     onStatus: (component: Component, milestone: Milestone, status: Status) => void;
+    dealsFor: Map<number, Deal[]>;
 }) {
     const { milestones, subsystems, components } = program;
     if (components.length === 0) {
@@ -365,6 +402,11 @@ function Bill({
                                                 COTS
                                             </span>
                                         )}
+                                        <DealMark
+                                            component={component}
+                                            deals={dealsFor.get(component.id) ?? []}
+                                            onOpen={() => onPick(component)}
+                                        />
                                     </th>
                                     <td className="muted bf-bill-lead">{component.lead?.name ?? ""}</td>
                                     {milestones.map((milestone) => (
@@ -387,6 +429,36 @@ function Bill({
                 })}
             </table>
         </div>
+    );
+}
+
+/** A quiet mark beside a component the deals finder found something on eBay for: a tag, and how many; it opens the
+ * component, whose panel lists them. */
+function DealMark({ component, deals, onOpen }: { component: Component; deals: Deal[]; onOpen: () => void }) {
+    if (deals.length === 0) {
+        return null;
+    }
+    const best = deals[0]!;
+    const said = `${deals.length} ${deals.length === 1 ? "deal" : "deals"} on eBay for ${component.name}`;
+    return (
+        <button
+            type="button"
+            className="bf-deal-mark"
+            aria-label={said}
+            title={`${said}: ${best.title}`}
+            onClick={onOpen}
+        >
+            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                <path
+                    d="M1.5 8.6V2.5a1 1 0 0 1 1-1h6.1l6 6-7.1 7.1z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                />
+                <circle cx="5" cy="5" r="1.3" fill="currentColor" />
+            </svg>
+            {deals.length}
+        </button>
     );
 }
 

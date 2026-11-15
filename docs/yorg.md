@@ -101,7 +101,7 @@ in `web/src/yorg/index.tsx`).
   matched whatever their case and made where they aren't there (`views.folder_at`), so
   clients from before folders were their own work as they did; one that names neither
   leaves a changed view where it is. Until November 2026 a view's folder was only that
-  path (`yorg_views.folder`): migration 0033 made the folders from the paths, two that
+  path (`yorg_views.folder`): migration 0035 made the folders from the paths, two that
   differed only in case as one, each made by whoever saved the oldest view in it or
   under it, when they saved it, so the person who started using a folder can still
   change it. The Views tab (`Views.tsx`) works as the datasets' page does: a folder's own

@@ -89,7 +89,7 @@ and `web/src/buildflow`.
   picked in gold with a rule after it, each with how many are done in it; the vehicle, drawn from its
   sections (`vehicle.ts`, `drawVehicle`: pure SVG paths, white on black, its joints, tanks' domes,
   and a stand's frame fainter), its components dots in the colors of where each is in the phase
-  (`Vehicle.tsx`: gold done, orange in progress, red blocked, gray not started, a small ring when
+  (`VehicleView.tsx`: gold done, orange in progress, red blocked, gray not started, a small ring when
   it needs nothing in it), each a button that picks its component; the caption (`headline`: "18
   component-level CDRs across the vehicle" in design, then "7 of 19 components built", "through
   QRR", "flown"); and a legend, with how many are in each color. The phase and the component picked

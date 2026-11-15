@@ -1022,6 +1022,14 @@ add-in's or CLI's request with 426 `client_too_old`, a message saying how to upd
 requests from every older client, and it's off unless an admin sets it, for a release the
 team needs.
 
+## Deals
+
+The site's deals finder (design.md, "Deals") asks each app what it wants found; Vault says its
+vendors' parts, by the part numbers their names start with, the latest checked in first, at most
+40 (`wants.py`). Only those in folders everyone can see (a grant to everyone, on the folder or
+above it): a deal is shown to everyone, so it never names a file someone couldn't open.
+McMaster-Carr's come last, as their numbers are rarely on eBay.
+
 ## Roadmap
 
 1. **Server core** (done): folders, check-out/check-in with references, history,

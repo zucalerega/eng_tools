@@ -460,6 +460,33 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 - **Nothing on a program can be changed.** It's archived: an admin brings it back from *Show archived
   programs*, on Programs.
 
+## Deals
+
+- **There are no deals on the site's own page.** None were found, or eBay isn't set up on the server
+  (Admin > Deals says so, for admins). Deals are searched for once a day: what's wanted is
+  Buildflow's components not yet procured, vendors' parts in Vault, and parts on P&IDs with a
+  model. A component with nothing to search for (no part number, no material in what it is) has no
+  deals: say what it is on its panel, as "Swagelok SS-43GS4, 1/4 in ball valve" or "6061-T6
+  aluminum, 8 in OD, 0.125 in wall".
+- **A deal went away.** It sold, ended, or eBay said nothing of it for six hours (eBay's terms: what's
+  shown is checked every four hours); or what it was for was procured (through Procurement), or
+  someone hid it with ✕.
+- **A deal won't do.** ✕ hides it for everyone, and it isn't found for that again. Say more of what
+  it has to be (a rating, a size, a fluid) in the component's description, so the next search, and
+  Claude, can tell.
+- **The deals' reasons stopped coming from Claude.** Claude says which listings would do only while
+  less than half of its budget (this month's, or the one in all) is spent, so Help's questions keep
+  the rest; past that, a listing's words decide until the month turns, or an admin has the budget
+  raised.
+- **A run on Admin > Deals says something went wrong.** Each search and check notes it:
+  - *eBay turned down the site's keyset*: the keyset's App ID or Cert ID is wrong, or eBay hasn't
+    enabled it for production yet (docs/deploying.md, "Deals").
+  - *The server couldn't reach eBay*, or *eBay's answer to ... wasn't one it gives*: eBay, or the
+    network between, was down; the next run tries again, and the deals found before stay.
+  - *eBay's limit of calls for the day is reached*: the next day's run goes on.
+  - *The run broke partway, on something unforeseen*: whoever runs the server finds why in its log.
+    The next run goes on.
+
 ## What an error means
 
 Each error the server sends has a code, in backticks below, and a message, which is what the web
@@ -840,6 +867,13 @@ a number. A few codes come up in more than one place.
 - **... isn't a link a component can have: a link is an http or https address, or a page of the
   site's own, like /vault/file/12** (`bad_link`): copy the page's whole address from the browser
   (`https://...`), or a page of the site's own from its path (`/vault/file/12`).
+
+### Deals
+
+- **Deals aren't set up on this server** (`deals_off`): the server has no eBay keyset. Whoever runs it
+  sets one up (docs/deploying.md, "Deals").
+- **The deals finder is busy with a ... now: wait for it to finish** (`deals_running`): a search, or a
+  check of the deals shown, is going. Admin > Deals says when it's done; then search again.
 
 ### Asking Claude
 

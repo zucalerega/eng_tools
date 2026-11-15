@@ -82,6 +82,12 @@ export function ClaudeSpending() {
                         month.{" "}
                     </>
                 )}
+                {(spending.deals_spent ?? 0) > 0 && (
+                    <>
+                        Saying which listings the deals finder found would do cost{" "}
+                        {usd.format(spending.deals_spent ?? 0)} this month.{" "}
+                    </>
+                )}
                 {!spending.keep_warm && (
                     <>
                         The first question in an hour costs the most, as Claude reads all of the help; for the rest of

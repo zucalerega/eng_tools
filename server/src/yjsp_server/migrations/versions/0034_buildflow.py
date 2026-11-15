@@ -5,8 +5,12 @@ milestones in four phases (design, build, test, launch), its subsystems and thei
 progress at each milestone, its links, and its people; and what's been done to it, its activity. All new tables, so
 nothing there already changes.
 
-Revision ID: 0033
-Revises: 0032
+It was 0033 when it was merged, alongside Yorg's view folders, also 0033: two migrations with one number, so two heads,
+and a server that wouldn't migrate. It follows that one now. Neither can have run on the live site: main had the two
+within seconds of each other, and with both, no server migrates.
+
+Revision ID: 0034
+Revises: 0033
 Create Date: 2026-11-14 23:12:56.839389
 """
 
@@ -15,8 +19,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0033"
-down_revision: str | None = "0032"
+revision: str = "0034"
+down_revision: str | None = "0033"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

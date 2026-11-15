@@ -12,7 +12,7 @@ import {
     type Profile,
     type Section,
 } from "./api";
-import { Vehicle } from "./Vehicle";
+import { Vehicle } from "./VehicleView";
 import { inPhase } from "./vehicle";
 
 // A program's layout (/buildflow/programs/{id}/layout, admins'): its name, its vehicle's drawing (sections from the aft

@@ -1,7 +1,7 @@
 import type { Component, Milestone, Phase, PhaseState, Profile, Section, Status } from "./api";
 
 // A program's vehicle, drawn from its sections (aft end to nose) as line art, and where its components are on it and
-// in each phase: pure functions of a program, which the stage (Vehicle.tsx) draws and the tests read.
+// in each phase: pure functions of a program, which the stage (VehicleView.tsx) draws and the tests read.
 
 export interface Box {
     x: number;

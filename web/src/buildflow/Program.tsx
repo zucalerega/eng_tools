@@ -14,7 +14,7 @@ import {
     type Status,
 } from "./api";
 import { ComponentPanel } from "./Panel";
-import { Vehicle } from "./Vehicle";
+import { Vehicle } from "./VehicleView";
 import {
     formatDay,
     headline,

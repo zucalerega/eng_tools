@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import { api, type StorageSummary } from "./api";
+import {
+    BUILDFLOW,
+    BUILDFLOW_ICON,
+    BuildflowMark,
+    BuildflowPage,
+    buildflowSection,
+    buildflowWide,
+    inBuildflow,
+} from "./buildflow";
 import { ChatStore, forgetChat } from "./chat";
 import { Dialog, Notice, usePopover } from "./components";
 import { HelpButton, HelpPanel } from "./help";
@@ -44,11 +53,13 @@ export function App() {
             chat.belongsTo(me.id); // the tab's conversation is only ever its own person's
         }
     }, [me, chat]);
-    // Three apps share the site and its sign-in: Vault (the CAD files, under /vault), Yorg (test data, under /yorg), and
-    // Piper (P&IDs, under /piper). The site's own page, at / (Home), goes to any of them.
+    // Four apps share the site and its sign-in: Vault (the CAD files, under /vault), Yorg (test data, under /yorg), Piper
+    // (P&IDs, under /piper), and Buildflow (each program's bill of design, under /buildflow). The site's own page, at /
+    // (Home), goes to any of them.
     const yorg = inYorg(pathname);
     const vaultApp = inVault(pathname);
     const piperApp = inPiper(pathname);
+    const buildflowApp = inBuildflow(pathname);
     // A link from before Vault moved under /vault goes on to the same page there, with its query; one to Yorg's preview,
     // to the page it previewed.
     const moved = movedToVault(pathname) ?? fromPreview(pathname);
@@ -67,16 +78,24 @@ export function App() {
         }
     }, [vaultApp, store]);
     useEffect(() => {
-        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : SITE;
+        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : buildflowApp ? BUILDFLOW : SITE;
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
         if (icon) {
             vaultIcon ??= icon.getAttribute("href");
             icon.setAttribute(
                 "href",
-                yorg ? YORG_ICON : vaultApp ? (vaultIcon ?? "") : piperApp ? PIPER_ICON : SITE_ICON,
+                yorg
+                    ? YORG_ICON
+                    : vaultApp
+                      ? (vaultIcon ?? "")
+                      : piperApp
+                        ? PIPER_ICON
+                        : buildflowApp
+                          ? BUILDFLOW_ICON
+                          : SITE_ICON,
             );
         }
-    }, [yorg, vaultApp, piperApp]);
+    }, [yorg, vaultApp, piperApp, buildflowApp]);
     if (moved !== null) {
         return null; // for the moment it takes to go on to the page's new address
     }
@@ -86,7 +105,9 @@ export function App() {
           ? vaultSection(pathname)
           : piperApp
             ? piperSection(pathname)
-            : "";
+            : buildflowApp
+              ? buildflowSection(pathname)
+              : "";
     const nav = (to: string, name: string, label: string) => (
         <Link to={to} aria-current={section === name ? "page" : undefined}>
             {label}
@@ -112,6 +133,9 @@ export function App() {
                     <Link to="/piper" className="wordmark" aria-current={piperApp ? "page" : undefined}>
                         {PIPER}
                     </Link>
+                    <Link to="/buildflow" className="wordmark" aria-current={buildflowApp ? "page" : undefined}>
+                        {BUILDFLOW}
+                    </Link>
                 </nav>
                 <nav className="nav" aria-label="Main">
                     {yorg ? (
@@ -129,12 +153,17 @@ export function App() {
                             {nav(`${VAULT}/activity`, "activity", "Activity")}
                             {nav(`${VAULT}/solidworks`, "solidworks", "SolidWorks")}
                         </>
+                    ) : piperApp ? (
+                        <>
+                            {nav("/piper", "diagrams", "Diagrams")}
+                            {nav("/piper/schemes", "schemes", "Schemes")}
+                            {nav("/piper/help", "help", "Help")}
+                        </>
                     ) : (
-                        piperApp && (
+                        buildflowApp && (
                             <>
-                                {nav("/piper", "diagrams", "Diagrams")}
-                                {nav("/piper/schemes", "schemes", "Schemes")}
-                                {nav("/piper/help", "help", "Help")}
+                                {nav("/buildflow", "programs", "Programs")}
+                                {nav("/buildflow/help", "help", "Help")}
                             </>
                         )
                     )}
@@ -168,6 +197,10 @@ export function App() {
                 >
                     <PiperPage pathname={pathname} />
                 </main>
+            ) : buildflowApp ? (
+                <main className={buildflowWide(pathname) ? "main-wide" : undefined}>
+                    <BuildflowPage pathname={pathname} />
+                </main>
             ) : (
                 <main>
                     <Home pathname={pathname} />
@@ -181,7 +214,9 @@ export function App() {
                             ? { to: "/yorg/help", label: "Yorg's help" }
                             : vaultApp
                               ? { to: `${VAULT}/solidworks`, label: "SolidWorks" }
-                              : undefined
+                              : buildflowApp
+                                ? { to: "/buildflow/help", label: "Buildflow's help" }
+                                : undefined
                     }
                     onClose={() => setHelping(false)}
                 />
@@ -215,6 +250,10 @@ function Home({ pathname }: { pathname: string }) {
                 <Link to="/piper" className="home-app">
                     <PiperMark size={44} />
                     <span className="home-app-name">{PIPER}</span>
+                </Link>
+                <Link to="/buildflow" className="home-app">
+                    <BuildflowMark size={44} />
+                    <span className="home-app-name">{BUILDFLOW}</span>
                 </Link>
             </div>
             <HomeStorage />

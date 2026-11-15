@@ -1,18 +1,19 @@
 # YJSP design
 
-YJSP is the Yellow Jacket Space Program's site for its engineering tools: three apps on one
+YJSP is the Yellow Jacket Space Program's site for its engineering tools: four apps on one
 server. **Vault** keeps the team's SolidWorks and STEP files, with check-out/check-in
 locking, full version history, and per-folder permissions; it replaces Kenesto. **Yorg**
 plots the team's test data. **Piper** draws the team's fluid systems as P&IDs, and reads
-Yorg's tests on them. They share the server, the database, sign-in and accounts, and the
-web app's frame, and nothing else. It's built for a college rocketry team, not a
-company: a few dozen people, close to zero hosting cost, and simple enough for next year's
-team to keep running.
+Yorg's tests on them. **Buildflow** is each program's bill of design: its components, on the
+vehicle, through design, build, test, and launch. They share the server, the database, sign-in
+and accounts, and the web app's frame, and nothing else. It's built for a college rocketry
+team, not a company: a few dozen people, close to zero hosting cost, and simple enough for next
+year's team to keep running.
 
 This page is the site as a whole: how it's put together, sign-in and accounts, the web
 app's frame, the help and Claude, the API's conventions, the names from before YJSP, and
-deploying. Each app has its own: [vault.md](vault.md), [yorg.md](yorg.md), and
-[piper.md](piper.md).
+deploying. Each app has its own: [vault.md](vault.md), [yorg.md](yorg.md),
+[piper.md](piper.md), and [buildflow.md](buildflow.md).
 
 ## Context
 
@@ -30,13 +31,14 @@ deploying. Each app has its own: [vault.md](vault.md), [yorg.md](yorg.md), and
 SolidWorks add-in (C#, .NET Framework 4.8) ─┐
 vault CLI (C#, .NET 10, Windows + macOS)    ─┴─ Vault.Client library ─┐
                                                                        │ HTTPS, JSON
-Web app (React): the frame, Vault's, Yorg's, and Piper's pages ───────┤
+Web app (React): the frame, and each app's pages ──────────────────────┤
                                                                        ▼
                                YJSP server (Python, FastAPI): sign-in, accounts, the web app
                                ├── vault/: folders, files, versions, check-outs, permissions
                                ├── yorg/: datasets, views, calculated channels, scripts, and
                                │   system models' runs (FullFlow), which Piper's simulations use
                                ├── piper/: diagrams (P&IDs) and their revisions
+                               ├── buildflow/: programs, their components, and their progress
                                ├── database: SQLite or Postgres, one for all of it
                                ├── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)
                                └── the help: the repository's docs (YJSP_HELP_DIR), which Claude
@@ -55,16 +57,19 @@ Web app (React): the frame, Vault's, Yorg's, and Piper's pages ─────�
 | Yorg in the web app | `web/src/yorg` | working |
 | Piper on the server | `server/src/yjsp_server/piper` | working; new in October 2026 |
 | Piper in the web app | `web/src/piper` | working; new in October 2026 |
+| Buildflow on the server | `server/src/yjsp_server/buildflow` | working; new in November 2026 |
+| Buildflow in the web app | `web/src/buildflow` | working; new in November 2026 |
 | The help, and Claude in it | `server/src/yjsp_server/help.py`, `assistant.py`; `web/src/help.tsx`, `chat.ts` | working since October 2026 |
 
 **What the apps share, and what's their own.** One server process, one database, one
-sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg, Piper), the
-account menu, and the theme. Each app has its own tables (Vault's are named without a
-prefix, from before Yorg; Yorg's are `yorg_*`, Piper's `piper_*`), its own folder of files
-(Piper has none: its diagrams are all in the database), its own API, and its own pages:
-Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`, `/vault/locks`, ...), Yorg's
-under `/yorg`, and Piper's under `/piper`, with the site's own page at `/`, which goes to
-any of them, and shows how full the server's disk is. No app imports another, and the site's own code imports none, except where it
+sign-in, and one web app, whose top bar has the app switcher (Vault, Yorg, Piper, Buildflow),
+the account menu, and the theme. Each app has its own tables (Vault's are named without a
+prefix, from before Yorg; Yorg's are `yorg_*`, Piper's `piper_*`, Buildflow's `buildflow_*`),
+its own folder of files (Piper and Buildflow have none: theirs are all in the database), its own
+API, and its own pages: Vault's under `/vault` (`/vault/files/...`, `/vault/file/5`,
+`/vault/locks`, ...), Yorg's under `/yorg`, Piper's under `/piper`, and Buildflow's under
+`/buildflow`, with the site's own page at `/`, which goes to any of them, and shows how full the
+server's disk is. No app imports another, and the site's own code imports none, except where it
 puts them together (`app.py` and `migrations/env.py` on the server, `App.tsx` and `main.tsx`
 in the web app) and where accounts change (`people.py`, below). What more than one app needs
 is the site's: on the server, the folder paths Yorg's views and scripts are kept in, and Piper's
@@ -73,6 +78,10 @@ diagrams can be named by (`FolderPath`, `api/schemas.py`); in the web app, their
 (Yorg's datasets', Piper's diagrams'), the way down to one (`folders.ts`) and the dialogs that
 name one and move what's chosen to one (`FolderDialogs.tsx`), reading zip files (`zip.ts`: Vault's uploads, Piper's Visio drawings), and packing JSON into
 a link (`packed.ts`: Yorg's links to plots, which Piper makes too).
+
+Buildflow links to the others' pages by their addresses (`/vault/file/12`), and names what they
+go to from their APIs, as any client would (`GET /api/files/{id}`, a diagram's `.../lock`, a
+dataset); it imports none of their code, and they know nothing of it.
 
 Piper's one tie to Yorg is Yorg's API, which it uses as any client would: it reads a test's
 channels and samples to show them on a drawing, and links to Yorg's plots by their address
@@ -90,7 +99,7 @@ site's only one.
 
 | What | Setting (default) | Backed up |
 |---|---|---|
-| The database: accounts, Vault's tables, Yorg's, Piper's (its diagrams, and every revision of each), and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
+| The database: accounts, Vault's tables, Yorg's, Piper's (its diagrams, and every revision of each), Buildflow's, and what Claude's answers cost | `YJSP_DATABASE_URL` (`sqlite:///data/yjsp.db`) | nightly, on the server, for 14 days; and nightly off it |
 | Vault's files: every version of every file, and the meshes of Caliper's 3D models, in `blobs/` | `YJSP_VAULT_DIR` (`data/vault`) | nightly, off the server |
 | Yorg's files: uploads and their arrays (`datasets/`), saved scripts (and the system models saved before Piper kept them) | `YJSP_YORG_DIR` (`data/yorg`) | nightly, off the server |
 | Software to download (the add-in's installer, and its signature) | `YJSP_DOWNLOADS_DIR` | no need: it comes from CI |
@@ -254,9 +263,10 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   page), the app switcher, each app's own pages in it, and the account menu (your name,
   the theme, Admin and Vault's admin mode for those who have them, and signing out). Each
   app's pages come from its own folder: Vault's (`web/src/vault`, `VaultPage`, under
-  `/vault`), Yorg's (`web/src/yorg`, `YorgPage`, under `/yorg`), and Piper's
-  (`web/src/piper`, `PiperPage`, under `/piper`). The site's own page (`Home`, at `/`,
-  where signing in lands) has the team's logo with the site's name, and all three.
+  `/vault`), Yorg's (`web/src/yorg`, `YorgPage`, under `/yorg`), Piper's
+  (`web/src/piper`, `PiperPage`, under `/piper`), and Buildflow's (`web/src/buildflow`,
+  `BuildflowPage`, under `/buildflow`). The site's own page (`Home`, at `/`, where signing in
+  lands) has the team's logo with the site's name, and all four.
 - **Who you are** (`session.ts`) is the site's, for all the apps: loaded when the page opens
   and asked again every minute while it's visible. Vault's index (`vault/store.ts`, the
   sync feed) loads when a page of Vault first shows and keeps current only while one
@@ -264,10 +274,10 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Light and dark:** light, dark, or the computer's setting, chosen in the account menu
   and remembered per browser (`theme.ts`, `yjsp.theme`, as `data-theme` on the page). The
   sign-in pages follow the same choice.
-- **Help** (`help.tsx`), the question mark at the top right of both apps: a panel beside
+- **Help** (`help.tsx`), the question mark at the top right of every app: a panel beside
   the page, which stays as it is, with the help (`/help`), the open app's own (Yorg's Help
-  page, Vault's SolidWorks page), and Claude to ask (below). An error the page shows is
-  offered as a question, in a click.
+  page, Vault's SolidWorks page, Buildflow's Help page), and Claude to ask (below). An error
+  the page shows is offered as a question, in a click.
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
@@ -280,7 +290,8 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   anyone (`/brand/logo-on-light.png`, `/brand/logo-on-dark.png`), since the sign-in pages
   show them. Each app has its mark, after the team's logo: Vault's a vault door
   crossed by a gold orbit (`VaultMark`), Yorg's a signal rising to its gold peak
-  (`YorgMark`), Piper's a valve in a line, its ball gold (`PiperMark`). The tab's title and
+  (`YorgMark`), Piper's a valve in a line, its ball gold (`PiperMark`), Buildflow's a rocket with
+  a component on it in gold (`BuildflowMark`). The tab's title and
   icon are the app's. The site's own icon, on the
   sign-in pages, is the gold orbit alone.
 
@@ -288,7 +299,7 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 
 **The help** (`help.py`) is the repository's own docs, as one page: the user guide (README.md),
 the SolidWorks add-in's README, and troubleshooting (docs/troubleshooting.md), which anyone can
-read without signing in, and how the site works inside (this page, vault.md, yorg.md), which
+read without signing in, and how the site works inside (this page, and each app's), which
 only signed-in members see, as the repository is private. `help.PARTS` is the one list of what's
 in it, in order, with each file's sections for developers left out (running a server, the
 checks before a release). The server renders the Markdown itself (`markdown-it-py`, with no HTML
@@ -433,7 +444,7 @@ Every endpoint needs sign-in except `/auth/*`, `/healthz`, and the help (`/help`
 `/llms.txt`, which show members more). Interactive docs are at
 `/docs`. The site's own endpoints are below; each app's are in its page: [Vault's](vault.md#api)
 (`/api/folders`, `/api/files`, ...), [Yorg's](yorg.md#api) (`/api/yorg/...`), and
-[Piper's](piper.md#api) (`/api/piper/...`).
+[Piper's](piper.md#api) (`/api/piper/...`), and [Buildflow's](buildflow.md#api) (`/api/buildflow/...`).
 
 | Endpoint | Purpose |
 |---|---|

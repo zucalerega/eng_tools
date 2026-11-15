@@ -8,6 +8,7 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
+import type { Component, ProgramDetail, ProgressChange, Template } from "../src/buildflow/api";
 import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Catalog } from "../src/piper/sim/api";
@@ -341,6 +342,29 @@ export class Team {
 
     async changeScheme(who: Member, id: number, change: Partial<Pick<Scheme, "name" | "fluids">>): Promise<Scheme> {
         return call<Scheme>("PATCH", `/api/piper/schemes/${id}`, who.token, change);
+    }
+
+    /** A Buildflow program (named to be unique to this test), made by the chief from a starting layout. */
+    async program(name: string, template: Template = "rocket"): Promise<ProgramDetail> {
+        return call<ProgramDetail>("POST", "/api/buildflow/programs", this.chief.token, {
+            name: this.named(name),
+            template,
+        });
+    }
+
+    /** A Buildflow program's bill of design, as the server keeps it. */
+    async bill(id: number): Promise<ProgramDetail> {
+        return call<ProgramDetail>("GET", `/api/buildflow/programs/${id}`, this.chief.token);
+    }
+
+    /** A component's progress at a milestone, as the bill's chips and its panel set it. */
+    async progress(who: Member, component: number, milestone: number, change: ProgressChange): Promise<Component> {
+        return call<Component>(
+            "PUT",
+            `/api/buildflow/components/${component}/progress/${milestone}`,
+            who.token,
+            change,
+        );
     }
 }
 

@@ -9,6 +9,7 @@ site's tables and each app's. After changing any models.py, generate a migration
 from alembic import context
 
 from yjsp_server import models  # noqa: F401  (registers the site's tables)
+from yjsp_server.buildflow import models as buildflow_models  # noqa: F401  (and Buildflow's)
 from yjsp_server.db import Base, UTCDateTime, make_engine
 from yjsp_server.piper import models as piper_models  # noqa: F401  (and Piper's)
 from yjsp_server.vault import models as vault_models  # noqa: F401  (and Vault's)

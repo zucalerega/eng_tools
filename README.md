@@ -277,7 +277,8 @@ the keys.
   several: where a mask holds (from a second before each valve opening to two after, say,
   with chatter joined and blips left out), cut at times you type or at your markers. Each
   test's time can start where its valve opened. They go in a new folder next to the file,
-  which stays as it was.
+  or in a folder there is, chosen from the datasets' folders (it opens where the file is,
+  and New folder makes one there). The file stays as it was.
 - **Labels:** Label (or L), then click a plot: a label with an arrow to the data there.
   Drag the label to move it, or the arrow's tip to point it somewhere else; double-click
   it to change the words, or right-click it for more.
@@ -285,9 +286,10 @@ the keys.
   the change, and the slope (per second). Click on a channel and the second point stays
   on it; Esc clears the measurement.
 - **Save a view** for everyone, and open it with another test's data: the same plots,
-  with that test's channels of the same names. A dataset's views are listed on its page
-  (Saved views); open one and Save as a new view to keep your changes. Export the plots
-  as an image (labels and all), or the samples in view as CSV.
+  with that test's channels of the same names (More > Use with another dataset picks the
+  test from the datasets' folders, starting in the folder of the view's test). A dataset's
+  views are listed on its page (Saved views); open one and Save as a new view to keep your
+  changes. Export the plots as an image (labels and all), or the samples in view as CSV.
 - **Views' folders:** the Views tab keeps views in folders of their own (not the datasets'),
   and works as the datasets' list does. New folder makes one where you are; open one to see
   what's in it, with the way back up above its name, and rename it, or delete it once it's
@@ -309,7 +311,8 @@ the keys.
   runs them in order and stops at one that fails, and each cell's output is under it. Text
   cells are Markdown. After Escape, Jupyter's keys move between cells and add, delete, and
   turn them into text or code (the keyboard button in the notebook's bar lists them). A script
-  works on the tests attached to it (Data, beside it): their channels are listed there, and a
+  works on the tests attached to it (Data, beside it; Attach a test picks one from the
+  datasets' folders, starting in the first one's): their channels are listed there, and a
   click puts one in the code (`yorg.channel("PT-TANK")`, or with `dataset="Hotfire 4"` for
   another test). Beside it too, the **Reference** says what the `yorg` module has: each name
   with what it does, found by a word, and an example that **Insert** puts in your code. The editor
@@ -326,7 +329,9 @@ the keys.
   and the run waits, saying for what. As it runs, the output says each step (loading
   packages, importing a module, running your code) and how long it's taken, and after, how
   long the run took and where the time went. Scripts are kept for everyone in folders
-  (picked from a list, or dragged onto one in the list of scripts), with their tests, as .py code with a `# %%` line starting each cell (as VS Code and
+  (chosen above the script from the scripts' folders, where New folder makes one, or dragged
+  onto one in the list of scripts), with their tests, as .py code with a `# %%` line starting
+  each cell (as VS Code and
   Spyder read them); upload .py files as scripts and download scripts as them. Anyone can
   open and run a script; only whoever saved it (or an admin) can change or delete it, and
   saving someone else's keeps a copy of your own.
@@ -357,7 +362,9 @@ the keys.
   change folders; whoever made a diagram (or an admin) can delete it, checked ones together
   with **Delete…**, to **Deleted diagrams**, where they're checked and restored together.
   **Find diagrams** looks in every folder, in names, folders, and the tags on each drawing:
-  PT-101 finds every diagram it's on, each says its folder, and each opens at it. In a diagram,
+  PT-101 finds every diagram it's on, each says its folder, and each opens at it. A diagram's
+  name, at the top of it, renames, moves, or describes it: its folder is chosen from the
+  diagrams' folders, starting in the one it's in, and New folder makes one there. In a diagram,
   **Find a tag** (Ctrl+F) goes to a part by its tag (PUREG, PT-101) or what it is, on whichever
   page, and **Parts** opens every part of the diagram in a table on a page of its own (in a new
   tab): click a column to sort by it, show only valves, instruments, tanks, one fluid, or one
@@ -452,11 +459,13 @@ the keys.
   with why; once all of them approve, it's released as the diagram's next Rev (A, B...) and
   never changes, and editing goes on in a draft after it. One waits at a time; whoever asked
   can withdraw it. A PDF on a drawing sheet lists the releases and who approved each.
-- **Test data**: pick a test from Yorg, and each instrument shows its channel's value and each
-  valve whether it was open, in a badge on a line to it, at the time on the timeline: drag it or
-  play the test. A part reads the channel named as its tag (or its **Test channel**). **Plot in
-  Yorg** opens the test with those channels plotted, and the page's address keeps the test and
-  the time. The diagram opens to them again in the same browser until you close **Test data**.
+- **Test data**: pick a test from Yorg, in Yorg's folders (it opens in the folder of the test
+  chosen, each test says when it was added, and a few letters find one in any folder), and
+  each instrument shows its channel's value and each valve whether it was open, in a badge
+  on a line to it, at the time on the timeline: drag it or play the test. A part reads the
+  channel named as its tag (or its **Test channel**). **Plot in Yorg** opens the test with
+  those channels plotted, and the page's address keeps the test and the time. The diagram
+  opens to them again in the same browser until you close **Test data**.
 - **Simulation (admins, while it's tried out)**: **Simulation**, in the editor's bar, makes the
   P&ID a model of the system, simulated with FullFlow (Saaketh's network solver) and
   ThermoProp's properties against a test from Yorg, to tune it until it matches what was

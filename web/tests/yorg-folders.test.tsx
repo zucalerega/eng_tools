@@ -238,14 +238,26 @@ test("a script's folder is picked from those there are, and scripts drag into fo
     fireEvent.drop(top, { dataTransfer: transfer });
     await waitFor(() => expect(inFolder()).toBeNull());
 
-    // Open, its folder's picked from the list above it, to save it there.
+    // Open, its folder's chosen from the scripts' folders, above it, to save it there: opened at the top, where it is,
+    // with the folders in it and the scripts.
     await userEvent.click(side.getByRole("button", { name: loose }));
-    const box = (await screen.findByRole("combobox", { name: "Folder" })) as HTMLInputElement;
-    await waitFor(() => expect(box.value).toBe(""));
-    await userEvent.click(box);
-    await userEvent.click(
-        within(screen.getByRole("listbox", { name: "Folders" })).getByRole("option", { name: folder }),
-    );
-    expect(box.value).toBe(folder);
+    await userEvent.click(await screen.findByRole("button", { name: "Folder: Scripts" }));
+    const chooser = within(await screen.findByRole("dialog", { name: "Folder" }));
+    expect(within(chooser.getByRole("navigation", { name: "Folder: where" })).getByText("Scripts")).toBeTruthy();
+    expect(within(chooser.getByRole("list")).getByText(loose)).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Changes not saved" })).toBeNull();
+    await userEvent.click(chooser.getByRole("button", { name: `${folder}: folder` }));
+    expect(within(chooser.getByRole("list")).getByText(`CdA ${team.folder}`)).toBeTruthy();
+    await userEvent.click(chooser.getByRole("button", { name: `Choose ${folder}` }));
+    expect(screen.queryByRole("dialog", { name: "Folder" })).toBeNull();
+    expect(screen.getByRole("button", { name: `Folder: ${folder}` })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Changes not saved" })).toBeTruthy();
+
+    // Opened again, it's where the script is; going back up and choosing the top takes it out of the folder.
+    await userEvent.click(screen.getByRole("button", { name: `Folder: ${folder}` }));
+    const again = within(await screen.findByRole("dialog", { name: "Folder" }));
+    expect(within(again.getByRole("list")).getByText(`CdA ${team.folder}`)).toBeTruthy();
+    await userEvent.click(within(again.getByRole("navigation", { name: "Folder: where" })).getByRole("button"));
+    await userEvent.click(again.getByRole("button", { name: "Choose Scripts" }));
+    expect(screen.getByRole("button", { name: "Folder: Scripts" })).toBeTruthy();
 });

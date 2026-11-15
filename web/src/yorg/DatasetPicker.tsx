@@ -12,6 +12,7 @@ const keyOf = (id: number | null): string | null => (id === null ? null : String
 export function DatasetPicker({
     label,
     button,
+    buttonLabel,
     buttonClass,
     start,
     except,
@@ -20,6 +21,7 @@ export function DatasetPicker({
 }: {
     label: string; // the dropdown's name: "Compare with"
     button: ReactNode; // what its button says
+    buttonLabel?: string; // its button's name, where what it says isn't enough alone
     buttonClass?: string;
     start: number | null; // the folder it opens in (the folder of the dataset it's picked to go with); null: the top
     except?: readonly number[]; // datasets not to offer (those already there)
@@ -59,6 +61,7 @@ export function DatasetPicker({
         <ItemPicker
             label={label}
             button={button}
+            buttonLabel={buttonLabel}
             buttonClass={buttonClass}
             folders={folders}
             items={items}

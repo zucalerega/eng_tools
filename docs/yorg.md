@@ -88,7 +88,8 @@ in `web/src/yorg/index.tsx`).
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
-  another test's data. Only whoever saved a view (or an admin) changes it: renames it,
+  another test's data (Use with another dataset, which picks it from the datasets' folders
+  with the site's `FolderBrowser`, starting in the view's first dataset's). Only whoever saved a view (or an admin) changes it: renames it,
   moves it, saves its plots, or deletes it, for good (there's no restoring a view; its
   data stays). Moving or deleting several is all or none (`yorg/views.py`).
 - **Views' folders** (`yorg_view_folders`, a tree of their own, apart from the datasets')
@@ -192,7 +193,9 @@ in `web/src/yorg/index.tsx`).
   and statistics are worked out again. All or none: a span with no samples makes nothing.
   A piece says where it came from (`read_info.split_from`), and, having no file of its
   own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
-  to the file (or another folder), and are whoever split them's.
+  to the file, or a folder there is (chosen from the datasets' folders with the site's
+  `FolderChooser`, opened where the file is, whose New folder makes one there), and are
+  whoever split them's.
 - **Yorg's preview** (`/yorg/dev/...`), where admins tried what was new, has gone with
   nothing new left in it: a link to one of its pages goes on to the page it previewed
   (`fromPreview`), and to its Models, to Piper.
@@ -385,7 +388,9 @@ in `web/src/yorg/index.tsx`).
   stand-in (`web/tests/python.ts`) that says what a test tells it to: the page's side is
   tested, and `worker.js` and `yorg.py` are tried in a browser.
   A script works on the tests attached to it (`DataPanel.tsx`; kept with it), the first the
-  one `yorg.channel()` takes from unless given `dataset=`. Before it runs, the page loads the
+  one `yorg.channel()` takes from unless given `dataset=`. A test is attached from the
+  datasets' folders (`DatasetPicker`, the site's `FolderBrowser`), opened in the first
+  one's, without those attached. Before it runs, the page loads the
   channels it names in quotes: the first test's, and another's when the script names that
   test too (`tree.channelsToLoad`), so `yorg.channel("PT-TANK")` needs no `await`; any
   other comes with `await yorg.load(...)`. Tests' names needn't be unique (two folders can
@@ -449,7 +454,10 @@ in `web/src/yorg/index.tsx`).
   (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
   Scripts are JSON
   files in `YJSP_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
-  folder path, the code (its cells, marked), and who saved it (`created_by_id`). Anyone can
+  folder path, the code (its cells, marked), and who saved it (`created_by_id`). A script's
+  folder is chosen from the scripts' folders' paths, as a tree (the site's `FolderChooser`,
+  over `pathFolders`); New folder there makes only a path, in the page, which is a folder
+  once a script is saved in it. Anyone can
   open, run, and save one; only whoever saved it, or an admin, can change or delete it
   (`check_can_change`, as for a view), so saving another's keeps a copy of your own. Those
   saved while scripts were only admins' have no `created_by_id`, and only admins change

@@ -68,7 +68,7 @@ test("Simulation mode is admins', and what it adds shows only while it's on", as
     expect(bar.getByRole("button", { name: "Simulation" }).getAttribute("aria-pressed")).toBe("true");
     expect(window.location.search).toBe("?sim=1");
     const panel = within(await screen.findByRole("region", { name: "Simulation" }));
-    expect(panel.getByRole("combobox", { name: "Test" })).toBeTruthy();
+    expect(panel.getByRole("button", { name: /^Test: / })).toBeTruthy();
     expect(bar.queryByRole("button", { name: "Test data" })).toBeNull(); // its panel has the test
     // Nothing selected: the diagram's units, for the whole model.
     const box = within(await inspector().findByRole("region", { name: "Simulation settings" }));

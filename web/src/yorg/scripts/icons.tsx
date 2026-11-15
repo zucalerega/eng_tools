@@ -21,7 +21,6 @@ const DRAWINGS = {
     ),
     external: <path d="M9.5 2.5h4v4M13.5 2.5l-6 6M11.5 9.5v4h-9v-9h4" />,
     close: <path d="M4 4l8 8M12 4l-8 8" />,
-    folder: <path d="M1.8 4.2v8.3c0 .6.4 1 1 1h10.4c.6 0 1-.4 1-1V6c0-.6-.4-1-1-1H7.6L6.1 3.2H2.8c-.6 0-1 .4-1 1z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof DRAWINGS;

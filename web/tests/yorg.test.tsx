@@ -379,10 +379,10 @@ test("a saved view opens for everyone, and works with another test's data", asyn
     await userEvent.click(screen.getByRole("button", { name: "More" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Use with another dataset…" }));
     const other = within(await screen.findByRole("dialog", { name: "Use this view with another dataset" }));
-    await userEvent.selectOptions(
-        await other.findByRole("combobox"),
-        await other.findByRole("option", { name: second.name }),
-    );
+    await userEvent.click(other.getByRole("button", { name: "Dataset: Choose a dataset" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Dataset" }));
+    await userEvent.type(picker.getByLabelText("Find a dataset"), second.name);
+    await userEvent.click(await picker.findByRole("button", { name: new RegExp(`^${second.name}`) }));
     await userEvent.click(other.getByRole("button", { name: "Open" }));
     expect(await screen.findByRole("heading", { name: second.name })).toBeTruthy();
     expect(

@@ -1314,6 +1314,12 @@
     margin: 0.5rem 0;
 }
 
+/* What goes with where they're put: a new folder's name, or the folder there is (a FolderChooser). */
+.yorg-split .yorg-split-where {
+    max-width: 24rem;
+    margin: 0.2rem 0 0.5rem 1.6rem;
+}
+
 .yorg-split-finding {
     display: flex;
     flex-wrap: wrap;

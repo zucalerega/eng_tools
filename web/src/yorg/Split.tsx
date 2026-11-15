@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, Notice } from "../components";
+import { FolderChooser, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
 import { navigate } from "../router";
-import { yorg, type DataFolder, type DatasetDetail, type PieceBody } from "./api";
+import { yorg, type DataFolder, type Dataset, type DatasetDetail, type PieceBody } from "./api";
 import { maskRuns, useLoaded } from "./data";
 import { folderUrl } from "./Datasets";
 import { shiftOf, type Layout } from "./layout";
@@ -9,7 +10,8 @@ import { cutAt, edgeOf, readTimes, testsOf, type Finding, type Piece } from "./m
 import { formatDuration } from "../scale";
 
 // Splitting a file of several tests into a dataset for each: where a mask holds (each time a valve opens, say), cut
-// at times you choose, or both. Each test's samples are copied out, into a folder; the file stays as it was.
+// at times you choose, or both. Each test's samples are copied out, into a folder (a new one beside the file, or one
+// there is, chosen from the datasets' folders); the file stays as it was.
 
 const MOST = 200; // the server makes at most this many at once
 
@@ -19,6 +21,8 @@ type Zero = "edge" | "start" | "file";
 const FINDING: Record<keyof Finding, string> = { before: "1", after: "2", join: "1", shortest: "0.5" };
 
 const keyOf = (piece: Piece) => `${piece.start}:${piece.end}`;
+
+const folderKey = (id: number | null): string | null => (id === null ? null : String(id));
 
 export function SplitDialog({
     detail,
@@ -42,8 +46,10 @@ export function SplitDialog({
     const [zero, setZero] = useState<Zero>(masks.length > 0 ? "edge" : "start");
     const [prefix, setPrefix] = useState(`${detail.name} test`);
     const [folders, setFolders] = useState<DataFolder[] | null>(null);
-    const [where, setWhere] = useState("new"); // "new", "here" (its dataset's folder), or a folder's id
+    const [datasets, setDatasets] = useState<Dataset[]>([]); // to see what's in each folder
+    const [where, setWhere] = useState<"new" | "there">("new"); // a new folder beside the file, or one there is
     const [folderName, setFolderName] = useState(`${detail.name} tests`);
+    const [there, setThere] = useState<string | null>(folderKey(detail.folder_id)); // that one: the file's, at first
     const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
@@ -51,7 +57,16 @@ export function SplitDialog({
 
     useEffect(() => {
         yorg.folders().then(setFolders, () => setFolders([]));
+        yorg.datasets().then(setDatasets, () => {});
     }, []);
+    const browseFolders = useMemo<BrowseFolder[]>(
+        () => (folders ?? []).map((one) => ({ key: String(one.id), parent: folderKey(one.parent_id), name: one.name })),
+        [folders],
+    );
+    const browseItems = useMemo<BrowseItem[]>(
+        () => datasets.map((one) => ({ key: String(one.id), name: one.name, folder: folderKey(one.folder_id) })),
+        [datasets],
+    );
 
     // The tests: where the mask holds (as tests), or the whole file; then cut at the times given.
     const span: [number, number] = [detail.t_min ?? 0, detail.t_max ?? 0];
@@ -119,7 +134,7 @@ export function SplitDialog({
                 created = await yorg.addFolder(folderName.trim(), detail.folder_id);
                 folder = created.id;
             } else {
-                folder = where === "here" ? detail.folder_id : Number(where);
+                folder = there === null ? null : Number(there);
             }
             const made = await yorg.split(detail.id, making, folder);
             setDone({ folder, count: made.length, place: created?.name ?? placeOf(folder) });
@@ -284,30 +299,57 @@ export function SplitDialog({
                         <input value={prefix} onChange={(event) => setPrefix(event.target.value)} />
                     </label>
                 </div>
-                <div className="yorg-row">
-                    <label className="field">
-                        Put them in
-                        <select value={where} onChange={(event) => setWhere(event.target.value)}>
-                            <option value="new">A new folder, next to {detail.name}</option>
-                            <option value="here">
-                                {placeOf(detail.folder_id)}, with {detail.name}
-                            </option>
-                            {(folders ?? [])
-                                .filter((folder) => folder.id !== detail.folder_id)
-                                .map((folder) => (
-                                    <option key={folder.id} value={String(folder.id)}>
-                                        {placeOf(folder.id)}
-                                    </option>
-                                ))}
-                        </select>
+                <fieldset>
+                    <legend>Put them in</legend>
+                    <label className="check">
+                        <input
+                            type="radio"
+                            name="split-where"
+                            checked={where === "new"}
+                            onChange={() => setWhere("new")}
+                        />
+                        A new folder, next to {detail.name}
                     </label>
                     {where === "new" && (
-                        <label className="field">
+                        <label className="field yorg-split-where">
                             The new folder's name
                             <input value={folderName} onChange={(event) => setFolderName(event.target.value)} />
                         </label>
                     )}
-                </div>
+                    <label className="check">
+                        <input
+                            type="radio"
+                            name="split-where"
+                            checked={where === "there"}
+                            onChange={() => setWhere("there")}
+                        />
+                        A folder there is
+                    </label>
+                    {where === "there" && (
+                        <div className="field yorg-split-where">
+                            {folders === null ? (
+                                <p className="muted">Loading the folders…</p>
+                            ) : (
+                                <FolderChooser
+                                    label="Folder"
+                                    top="Datasets"
+                                    folders={browseFolders}
+                                    items={browseItems}
+                                    value={there}
+                                    onChange={setThere}
+                                    onNewFolder={async (parent, name) => {
+                                        const made = await yorg.addFolder(
+                                            name,
+                                            parent === null ? null : Number(parent),
+                                        );
+                                        setFolders((now) => [...(now ?? []), made]);
+                                        return String(made.id);
+                                    }}
+                                />
+                            )}
+                        </div>
+                    )}
+                </fieldset>
 
                 <div className="yorg-split-timeline" aria-hidden="true">
                     {runs?.status === "ready" &&

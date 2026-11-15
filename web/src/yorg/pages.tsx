@@ -16,6 +16,7 @@ import {
     type ViewFolder,
 } from "./api";
 import { dataset as loadDataset, reloadDataset, showDataset, useLoaded } from "./data";
+import { DatasetPicker } from "./DatasetPicker";
 import { forDataset, newLayout, readLayout, reduce, type Layout } from "./layout";
 import { FolderChooser, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
 import { formatClock, formatDuration, formatRate, formatValue } from "../scale";
@@ -1315,23 +1316,25 @@ function MoreViewActions({
     return <MenuButton label="More" items={items} />;
 }
 
-/** This view's plots for another dataset: its channels by name, in place of the view's first dataset's. */
+/**
+ * This view's plots for another dataset: its channels by name, in place of the view's first dataset's. It's picked from
+ * the datasets' folders, starting in the first dataset's.
+ */
 function OtherDatasetDialog({ layout, onClose }: { layout: Layout; onClose: () => void }) {
-    const [datasets, setDatasets] = useState<Dataset[] | null>(null);
-    const [chosen, setChosen] = useState("");
-    useEffect(() => {
-        yorg.datasets().then(setDatasets, () => setDatasets([]));
-    }, []);
-    const ready = (datasets ?? []).filter((one) => one.status === "ready");
+    useLoaded();
+    const [chosen, setChosen] = useState<Dataset | null>(null);
+    const first = layout.datasets[0] ? loadDataset(layout.datasets[0].id) : null;
+    const button = chosen?.name ?? "Choose a dataset";
     return (
         <Dialog
             title="Use this view with another dataset"
             confirm="Open"
             disabled={!chosen}
             onConfirm={() => {
-                const id = Number(chosen);
-                storeLayout(id, forDataset(layout, id));
-                navigate(datasetUrl(id));
+                if (chosen) {
+                    storeLayout(chosen.id, forDataset(layout, chosen.id));
+                    navigate(datasetUrl(chosen.id));
+                }
             }}
             onCancel={onClose}
         >
@@ -1339,19 +1342,17 @@ function OtherDatasetDialog({ layout, onClose }: { layout: Layout; onClose: () =
                 The same plots, with the other dataset's channels of the same names (another test with the same sensors,
                 say). It opens as that dataset's plots; save it as a view there if you want to keep it.
             </p>
-            <label className="field">
+            <div className="field">
                 Dataset
-                <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
-                    <option value="" disabled>
-                        {datasets === null ? "Loading…" : "Choose one"}
-                    </option>
-                    {ready.map((one) => (
-                        <option key={one.id} value={one.id}>
-                            {one.name}
-                        </option>
-                    ))}
-                </select>
-            </label>
+                <DatasetPicker
+                    label="Dataset"
+                    button={button}
+                    buttonLabel={`Dataset: ${button}`}
+                    start={first?.status === "ready" ? first.value.folder_id : null}
+                    chosen={chosen?.id ?? null}
+                    onPick={setChosen}
+                />
+            </div>
         </Dialog>
     );
 }

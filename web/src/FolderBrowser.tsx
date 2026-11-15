@@ -79,17 +79,20 @@ const pathText = (key: string | null, tree: Tree): string =>
         .map((one) => one.name)
         .join(" / ");
 
-/** Folders that are only paths ("Hotfires/HF-3", Yorg's scripts'), as a tree: each folder's key is its path. */
+/**
+ * Folders that are only paths ("Hotfires/HF-3", Yorg's scripts'), as a tree: each folder's key is its path, as the first
+ * path with it spelled it (whatever the case of the ones after), so a folder is in the one its parent's path names.
+ */
 export function pathFolders(paths: readonly string[]): BrowseFolder[] {
     const all = new Map<string, BrowseFolder>();
     for (const path of paths) {
-        const parts = tidyFolder(path).split("/").filter(Boolean);
-        parts.forEach((name, index) => {
-            const key = parts.slice(0, index + 1).join("/");
-            if (!all.has(key.toLowerCase())) {
-                all.set(key.toLowerCase(), { key, name, parent: index === 0 ? null : parts.slice(0, index).join("/") });
-            }
-        });
+        let parent: string | null = null;
+        for (const name of tidyFolder(path).split("/").filter(Boolean)) {
+            const spelled: string = parent === null ? name : `${parent}/${name}`;
+            const folder: BrowseFolder = all.get(spelled.toLowerCase()) ?? { key: spelled, name, parent };
+            all.set(spelled.toLowerCase(), folder);
+            parent = folder.key;
+        }
     }
     return [...all.values()];
 }
@@ -282,6 +285,7 @@ function Browser({
 export function ItemPicker({
     label,
     button,
+    buttonLabel,
     buttonClass = "",
     folders,
     items,
@@ -297,6 +301,7 @@ export function ItemPicker({
 }: {
     label: string; // the dropdown's name: "Compare with"
     button: ReactNode; // what its button says: "Compare with another dataset", or what's chosen
+    buttonLabel?: string; // its button's name, where what it says isn't enough alone: "Test: Cold flow 3"
     buttonClass?: string;
     folders: readonly BrowseFolder[] | null; // null: still loading
     items: readonly BrowseItem[] | null;
@@ -331,6 +336,7 @@ export function ItemPicker({
                 className={`folder-browser-button ${buttonClass}`}
                 aria-haspopup="dialog"
                 aria-expanded={open}
+                aria-label={buttonLabel}
                 disabled={disabled}
                 onClick={() => show(!open)}
             >

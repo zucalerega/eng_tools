@@ -254,7 +254,8 @@ export function HelpPage() {
                         </li>
                         <li>
                             Each test's time can start where its valve opened. They go in a new folder next to the file,
-                            which stays as it was.
+                            or in <em>A folder there is</em>: choose it from the datasets&apos; folders, starting where
+                            the file is, or make one there with <em>New folder</em>. The file stays as it was.
                         </li>
                     </ul>
                 </>
@@ -269,6 +270,10 @@ export function HelpPage() {
                             Python in your browser, with NumPy, SciPy, pandas, matplotlib, and CoolProp:{" "}
                             <code>yorg.channel(&quot;PT-TANK&quot;)</code> is a channel of the test picked, and{" "}
                             <code>yorg.plot</code> draws on Yorg&apos;s plots.
+                        </li>
+                        <li>
+                            <em>Attach a test</em>, under <em>Data</em> beside the notebook, picks one from the
+                            datasets&apos; folders, starting in the folder of the first test attached.
                         </li>
                         <li>
                             A script is a notebook: load the data in one cell, then change and run the ones after it
@@ -287,8 +292,9 @@ export function HelpPage() {
                         <li>
                             Scripts are kept for everyone, in folders: anyone can open and run one, and only whoever
                             saved it (or an admin) changes it; <em>Save as…</em> keeps a copy of your own. Upload .py
-                            files, or start from the examples. Pick a script&apos;s folder from the list above it (or
-                            type a new one), or drag a script onto a folder in the list of scripts.
+                            files, or start from the examples. Choose a script&apos;s folder above it, from the
+                            scripts&apos; folders (<em>New folder</em> there makes one, kept once a script is saved in
+                            it), or drag a script onto a folder in the list of scripts.
                         </li>
                         <li>
                             <em>Python</em> on a dataset&apos;s or view&apos;s page: a notebook beside its plots, on
@@ -307,7 +313,8 @@ export function HelpPage() {
                         <li>
                             <em>Save view</em> keeps the plots for everyone. A dataset's views are under{" "}
                             <em>Saved views</em> on its page; open one with another test's data for the same plots of
-                            its channels.
+                            its channels (<em>More</em>, then <em>Use with another dataset</em>: it opens in the folder
+                            of the view&apos;s test).
                         </li>
                         <li>
                             Views go in folders of their own, apart from the datasets&apos;: when you save one, go into

@@ -899,9 +899,13 @@
     font-size: 0.75rem;
 }
 
-.piper-test-head select {
+/* The test, picked from Yorg's folders (TestSelect): as wide as a test's name, within reason. */
+.piper-test-pick {
     min-width: 14rem;
     max-width: 28rem;
+}
+
+.piper-test-pick .folder-browser-button {
     height: 1.9rem;
     font-size: 0.85rem;
 }

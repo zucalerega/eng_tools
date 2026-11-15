@@ -155,7 +155,7 @@ button.icon-button.icon-danger:hover:not(:disabled) {
 }
 
 .scripts-name,
-.scripts-path input {
+.scripts-path .folder-browser-button {
     height: 1.9rem;
     border-color: transparent;
     background: transparent;
@@ -170,33 +170,30 @@ button.icon-button.icon-danger:hover:not(:disabled) {
     font-weight: 600;
 }
 
+/* Its folder, chosen from the scripts' folders (a FolderChooser). */
 .scripts-path {
-    display: flex;
-    flex: 0 1 10rem;
-    align-items: center;
-    gap: 0.1rem;
+    flex: 0 1 12rem;
     min-width: 6rem;
-    max-width: 14rem;
+    max-width: 16rem;
     padding-left: 0.35rem;
     border-left: 1px solid var(--border);
-    color: var(--muted);
 }
 
-.scripts-path input {
-    width: 100%;
-    min-width: 0;
+.scripts-path .folder-browser-button {
+    gap: 0.35rem;
     padding: 0 0.35rem;
     font-size: 0.85rem;
     color: var(--muted);
 }
 
 .scripts-name:hover,
-.scripts-path input:hover {
+.scripts-path .folder-browser-button:hover:not(:disabled) {
     border-color: var(--border);
+    background: transparent;
 }
 
 .scripts-name:focus,
-.scripts-path input:focus {
+.scripts-path .folder-browser-button[aria-expanded="true"] {
     border-color: var(--accent);
     background: var(--surface);
     color: var(--text);
@@ -300,7 +297,7 @@ button.icon-button.icon-danger:hover:not(:disabled) {
     font-size: 0.82rem;
 }
 
-.scripts-data .field {
+.scripts-attach {
     margin-bottom: 0.5rem;
 }
 

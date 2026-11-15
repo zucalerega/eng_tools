@@ -1,6 +1,6 @@
-// Folders that are paths of their own ("Hotfires/HF-3"): Yorg's saved views' and scripts' (not its datasets', which
-// are a tree of their own), and Piper's diagrams'. The server tidies a path as tidyFolder does (api/schemas.py,
-// FolderPath).
+// Folders that are paths ("Hotfires/HF-3"): Yorg's scripts' are only that, and Yorg's saved views' and Piper's
+// diagrams', trees of their own (folders.ts), can still be named by their paths, as the boxes their folders are picked
+// in do. The server tidies a path as tidyFolder does (api/schemas.py, FolderPath).
 
 /** A folder: what's in it, then its folders. */
 export interface Folder<T> {
@@ -40,11 +40,6 @@ export function folderTree<T extends { name: string; folder: string; order?: num
     };
     sort(top);
     return top;
-}
-
-/** How many things a folder has, in it and in its folders, as its row says beside its name. */
-export function countIn<T>(folder: Folder<T>): number {
-    return folder.items.length + folder.folders.reduce((sum, inner) => sum + countIn(inner), 0);
 }
 
 /** The folders things are in, and those folders' folders: Hotfires, then Hotfires/HF-3 (each once, sorted). */

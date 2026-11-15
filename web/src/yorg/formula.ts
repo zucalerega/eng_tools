@@ -593,3 +593,44 @@ export function calculate(node: Node, inputs: ReadonlyMap<string, Input>): Sampl
     }
     return new Samples(times, values);
 }
+
+// --- showing an expression ----------------------------------------------------------------------------------------
+
+/** A parenthesis in an expression: where it is, how deep (from 0), and where its partner is (null: it has none). */
+export interface Paren {
+    at: number;
+    depth: number;
+    partner: number | null;
+}
+
+/** The parentheses in an expression, each paired with its partner, leaving out those in channels' names ([PT (old)]). */
+export function parentheses(text: string): Paren[] {
+    const found: Paren[] = [];
+    const open: Paren[] = [];
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (char === "[") {
+            const close = text.indexOf("]", i + 1);
+            if (close < 0) {
+                break; // the rest is a name, until its ]
+            }
+            i = close;
+        } else if (char === "(") {
+            const paren: Paren = { at: i, depth: open.length, partner: null };
+            open.push(paren);
+            found.push(paren);
+        } else if (char === ")") {
+            const partner = open.pop();
+            if (partner) {
+                partner.partner = i;
+            }
+            found.push({ at: i, depth: partner?.depth ?? 0, partner: partner?.at ?? null });
+        }
+    }
+    return found;
+}
+
+/** The parenthesis at the caret (just before it, else just after it), as an IDE shows it with its partner. */
+export function parenAt(parens: readonly Paren[], caret: number): Paren | null {
+    return parens.find((one) => one.at === caret - 1) ?? parens.find((one) => one.at === caret) ?? null;
+}

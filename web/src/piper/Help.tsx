@@ -54,6 +54,10 @@ const TOPICS: Topic[] = [
                     descriptions, and parts&apos; tags (<code>PT-101</code> finds the diagrams it&apos;s on).
                 </li>
                 <li>
+                    In a diagram, its name at the top renames it, moves it, or describes it. Its folder is chosen from
+                    the diagrams&apos; folders, starting in the one it&apos;s in; <em>New folder</em> there makes one.
+                </li>
+                <li>
                     A diagram opens to be looked at: the drawing in the middle, and on the right whatever's selected, as
                     it is. <em>Edit</em>, at the top, makes it yours to change, with the library of parts on the left; a
                     diagram you've just made opens ready to edit. With nothing selected, the right side is the diagram's
@@ -355,6 +359,11 @@ const TOPICS: Topic[] = [
                     <em>Test data</em> reads the diagram against a test in <Link to="/yorg">Yorg</Link>: each instrument
                     shows its channel's value, and each valve its state (open green, closed red, anything else amber),
                     in a badge on a line to it.
+                </li>
+                <li>
+                    Pick the test from Yorg&apos;s folders, as Yorg&apos;s datasets page shows them: it opens in the
+                    folder of the test chosen, each test says when it was added, and a few letters of a name find it in
+                    any folder.
                 </li>
                 <li>
                     A part reads the channel named as its tag (<code>PT-101</code> reads PT-101), or the one in its{" "}

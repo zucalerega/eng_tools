@@ -19,6 +19,8 @@ in `web/src/yorg/index.tsx`).
   itself), or deletes it, once it's empty (deleted datasets in it go up to its parent).
   Names are unique within a folder, whatever their case. Moving several datasets is all
   or none. The list shows each dataset's size, and its search looks in every folder.
+  Saved views have a tree of folders of their own (`yorg_view_folders`), kept by the same
+  rules (below).
 - **Reading a file** (`yorg/ingest.py`, pure Python, no numpy) happens once, on the
   server, when it's uploaded, about 15 MB of CSV a second. The first 512 KB say how it's
   laid out: the encoding (UTF-8, UTF-16, or Windows' cp1252), the delimiter (comma, tab,
@@ -73,7 +75,8 @@ in `web/src/yorg/index.tsx`).
   else on a plot, it goes on the axis for its unit. Axes nothing's on go. A channel's
   settings set its scale, offset, unit, color, axis, and lines or steps; there's T0,
   markers (T0 and markers are dragged to move them), datasets compared, each shifted in
-  time (lined up by clock time when both have dates), and exports (a PNG of the plots, a
+  time (lined up by clock time when both have dates; picked from the datasets' folders,
+  starting in the first one's, with the site's `FolderBrowser`), and exports (a PNG of the plots, a
   CSV of the samples in view).
 - **Time** reads from T0 (T−10, T0, T+15 on the axis, at the cursor, and in the window's
   inputs; seconds from the start without a T0), or as time of day, in UTC or this
@@ -85,12 +88,34 @@ in `web/src/yorg/index.tsx`).
   JSON (`layout.ts`): each browser keeps its layout per dataset, and a saved view keeps
   one for everyone, listed on its datasets' pages; anyone can open one and save their
   changes as a view of their own. Views name channels by name, so a view opens with
-  another test's data. A view's folder is a path of its own (`yorg_views.folder`,
-  "Hotfires/HF-3", "" at the top), tidied by the server as a script's is (`FolderPath`),
-  not one of the datasets' folders; the Views tab arranges them in a tree
-  (`pathTree.ts`), each folder's views the most recently changed first. Renaming or
-  moving a view sends its plots as they were saved, so changes to them on the page stay
-  to be saved; a client from before folders, which sends none, leaves a view where it is.
+  another test's data (Use with another dataset, which picks it from the datasets' folders
+  with the site's `FolderBrowser`, starting in the view's first dataset's). Only whoever saved a view (or an admin) changes it: renames it,
+  moves it, saves its plots, or deletes it, for good (there's no restoring a view; its
+  data stays). Moving or deleting several is all or none (`yorg/views.py`).
+- **Views' folders** (`yorg_view_folders`, a tree of their own, apart from the datasets')
+  are kept by the datasets' folders' rules: anyone makes one; whoever made it (or an
+  admin) renames it, moves it (never into itself), or deletes it once it's empty; names
+  are unique within a folder, whatever their case. A view is in one by its id
+  (`folder_id`), and the API still says its folder's path (`folder`, "Hotfires/HF-3", ""
+  at the top) and still takes one, tidied as a script's is (`FolderPath`), its folders
+  matched whatever their case and made where they aren't there (`views.folder_at`), so
+  clients from before folders were their own work as they did; one that names neither
+  leaves a changed view where it is. Until November 2026 a view's folder was only that
+  path (`yorg_views.folder`): migration 0033 made the folders from the paths, two that
+  differed only in case as one, each made by whoever saved the oldest view in it or
+  under it, when they saved it, so the person who started using a folder can still
+  change it. The Views tab (`Views.tsx`) works as the datasets' page does: a folder's own
+  folders and views (each folder's views the most recently changed first), each folder a
+  page of its own (`/yorg/views/folders/<id>`) with the way back up above its name;
+  views and folders dragged onto a folder or a folder on the way up, or views checked
+  and moved together (Move to…) or deleted together; and a search that looks in every
+  folder (names, folders, notes, and data) and says where each view is. Only your own
+  views (any, for an admin) can be checked or dragged, as only they can move. Save view
+  and Rename or move pick a folder as the Views page browses them (the site's
+  `FolderChooser`, its New folder making one where it's open), and send its `folder_id`.
+  Renaming or moving a view sends its plots as they were saved, so changes to them on the
+  page stay to be saved, and its folder only if it was changed; saving its plots sends no
+  folder, so it stays wherever it's been moved since.
 - **Links** to plots (Copy link, beside Save view) send what's on a dataset's or view's
   page without saving a view, so views are kept for what's worth keeping. A link is the
   page's address with its layout in `?plots=`: the JSON a saved view keeps, deflated
@@ -125,6 +150,21 @@ in `web/src/yorg/index.tsx`).
   text; the browser reads and works it out (`formula.ts`) from the channels' arrays, on
   the times of the channel with the most samples, reading the others between their
   samples (states hold) and leaving gaps outside them and where a division is by zero.
+  A name in an expression is a channel of the dataset, else another calculated channel,
+  worked out first the same way (`data.plan`: never one that comes back to itself, which
+  says how it does), so CdA can use mdot by its name. One that a dataset doesn't have
+  everything for alone, but the datasets compared on a page do together, is worked out
+  across them (`planFor`): each name a channel of the first of them that has it, on the
+  first one's times, each dataset's times moved by its shift from the first (so it
+  follows the shifts), and listed under Across datasets, plotted as the first's. A
+  plan's key names everything it's worked out from (the expressions, each channel's
+  read, the shifts), so each is worked out once, shared by every plot and calculated
+  channel that uses it, and again when any of that changes; masks read through it too.
+  A page of plots lists the calculated channels again as it opens, so one added from
+  another tab shows. The expression's box (`ExpressionBox.tsx`) is a textarea, its text
+  clear, over a copy in colors (channels, calculated channels, functions, numbers, and
+  parentheses by depth, with the pair at the caret boxed and one without a partner
+  marked, as VS Code does), the two in one grid cell so they line up and grow together.
   Besides arithmetic, comparisons, and math functions, it has what test data needs:
   `where`/`if`, `and`/`or`/`not`/`between` for tests (missing only where a missing
   sample would decide it), `min`/`max`/`avg` that skip missing samples (redundant sensors),
@@ -153,7 +193,9 @@ in `web/src/yorg/index.tsx`).
   and statistics are worked out again. All or none: a span with no samples makes nothing.
   A piece says where it came from (`read_info.split_from`), and, having no file of its
   own, isn't read again: its dataset is, and split again. Pieces go in a new folder next
-  to the file (or another folder), and are whoever split them's.
+  to the file, or a folder there is (chosen from the datasets' folders with the site's
+  `FolderChooser`, opened where the file is, whose New folder makes one there), and are
+  whoever split them's.
 - **Yorg's preview** (`/yorg/dev/...`), where admins tried what was new, has gone with
   nothing new left in it: a link to one of its pages goes on to the page it previewed
   (`fromPreview`), and to its Models, to Piper.
@@ -346,7 +388,9 @@ in `web/src/yorg/index.tsx`).
   stand-in (`web/tests/python.ts`) that says what a test tells it to: the page's side is
   tested, and `worker.js` and `yorg.py` are tried in a browser.
   A script works on the tests attached to it (`DataPanel.tsx`; kept with it), the first the
-  one `yorg.channel()` takes from unless given `dataset=`. Before it runs, the page loads the
+  one `yorg.channel()` takes from unless given `dataset=`. A test is attached from the
+  datasets' folders (`DatasetPicker`, the site's `FolderBrowser`), opened in the first
+  one's, without those attached. Before it runs, the page loads the
   channels it names in quotes: the first test's, and another's when the script names that
   test too (`tree.channelsToLoad`), so `yorg.channel("PT-TANK")` needs no `await`; any
   other comes with `await yorg.load(...)`. Tests' names needn't be unique (two folders can
@@ -410,7 +454,10 @@ in `web/src/yorg/index.tsx`).
   (NumPy, SciPy, pandas, matplotlib, CoolProp, ...) load from the imports a script has.
   Scripts are JSON
   files in `YJSP_YORG_DIR/scripts` (`yorg/saved.py`, as system models are): a name, a
-  folder path, the code (its cells, marked), and who saved it (`created_by_id`). Anyone can
+  folder path, the code (its cells, marked), and who saved it (`created_by_id`). A script's
+  folder is chosen from the scripts' folders' paths, as a tree (the site's `FolderChooser`,
+  over `pathFolders`); New folder there makes only a path, in the page, which is a folder
+  once a script is saved in it. Anyone can
   open, run, and save one; only whoever saved it, or an admin, can change or delete it
   (`check_can_change`, as for a view), so saving another's keeps a copy of your own. Those
   saved while scripts were only admins' have no `created_by_id`, and only admins change
@@ -441,7 +488,10 @@ links to plots as Copy link does (`?plots=`). They change only as the API's rule
 | `POST /api/yorg/datasets/{id}/read`, `/restore` | read its file again another way `{time_column, time_format, sample_rate, header_row, delimiter}`; restore it |
 | `POST /api/yorg/datasets/{id}/split` | make datasets of spans of it `{pieces: [{name, start, end, zero}], folder_id}`, all or none (422 if a span has no samples) |
 | `GET /api/yorg/datasets/{id}/source`, `/data/{version}/{file}` | the file as uploaded; one of a read's arrays (little-endian float64) |
-| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder, description, datasets, config}` (`folder` optional: left out, a new view's at the top and a changed one stays put) |
+| `GET`/`POST /api/yorg/views`, `GET`/`PUT`/`DELETE /api/yorg/views/{id}` | saved plot layouts `{name, folder_id, folder, description, datasets, config}`, each saying its folder by id (`folder_id`, null at the top) and by path (`folder`); a view's put in a folder by its id (null: the top), or by its path (its folders made where they aren't there), the id winning if both are sent; with neither, a new view's at the top and a changed one stays put. Yours, or any for an admin, to change or delete (deleted for good) |
+| `POST /api/yorg/views/move` | move views `{views, folder_id}` into a folder (null: the top); yours, or any for an admin; all or none |
+| `POST /api/yorg/views/delete` | delete views `{views}`, for good; yours, or any for an admin; all or none |
+| `GET`/`POST /api/yorg/view-folders`, `PATCH`/`DELETE /api/yorg/view-folders/{id}` | folders of views `{name, parent_id}` (no slashes in a name), each with its `path`, by name; rename or move one (yours, or any for an admin; 409 `name_taken`, `cycle`); delete an empty one (409 `not_empty`) |
 | `GET`/`POST /api/yorg/formulas`, `PUT`/`DELETE /api/yorg/formulas/{id}` | calculated channels `{name, expression, unit, description}`; names are unique, whatever their case |
 | `GET /api/yorg/models/catalog` | the parts a system model can have: their settings (SI), links, and outputs; and the liquids and gases (admins, else 403 `admins_only`, as for each below) |
 | `POST /api/yorg/models/runs` | run a model against a dataset `{model, dataset_id, start, end, dt, solver, reading}` (422 `bad_model`, `no_channel`; 409 `busy`); its `id` |

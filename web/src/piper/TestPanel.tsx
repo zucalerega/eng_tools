@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Notice } from "../components";
+import { ItemPicker, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
 import { formatDate } from "../format";
-import { tests as fetchTests, type Test } from "./testdata";
+import { tests as fetchTests, testFolders, type Test, type TestFolder } from "./testdata";
 import { Timeline } from "./Timeline";
 import type { TestReading } from "./useTest";
 
@@ -80,35 +81,68 @@ export function TestPanel({
     );
 }
 
-/** Yorg's tests to read the diagram against, by name and when each was added. */
-export function TestSelect({ testId, onTest }: { testId: number | null; onTest: (id: number | null) => void }) {
-    const [tests, setTests] = useState<Test[] | null>(null);
-    const [problem, setProblem] = useState<string | null>(null);
+const keyOf = (id: number | null | undefined): string | null => (id === null || id === undefined ? null : String(id));
 
-    useEffect(() => {
-        fetchTests().then(
-            (found) => setTests(found.filter((test) => test.status === "ready" && !test.deleted_at)),
+/**
+ * The test to read the diagram against, picked from Yorg's tests in Yorg's folders, as Yorg's datasets page shows them
+ * (the site's FolderBrowser): it opens in the folder of the test chosen, and each test says when it was added. They're
+ * listed again each time it opens, so a test added meanwhile is there.
+ */
+export function TestSelect({ testId, onTest }: { testId: number | null; onTest: (id: number) => void }) {
+    const [lists, setLists] = useState<{ tests: Test[]; folders: TestFolder[] } | null>(null);
+    const [problem, setProblem] = useState<string | null>(null);
+    const load = useCallback(() => {
+        setProblem(null);
+        Promise.all([fetchTests(), testFolders()]).then(
+            ([found, folders]) =>
+                setLists({ tests: found.filter((test) => test.status === "ready" && !test.deleted_at), folders }),
             (error: unknown) => setProblem(error instanceof Error ? error.message : String(error)),
         );
     }, []);
+    useEffect(load, [load]); // for the chosen test's name
 
-    const chosen = tests?.find((test) => test.id === testId);
+    const folders = useMemo<BrowseFolder[] | null>(
+        () =>
+            lists?.folders.map((one) => ({ key: String(one.id), parent: keyOf(one.parent_id), name: one.name })) ??
+            null,
+        [lists],
+    );
+    const items = useMemo<BrowseItem[] | null>(
+        () =>
+            lists?.tests.map((test) => ({
+                key: String(test.id),
+                name: test.name,
+                folder: keyOf(test.folder_id),
+                note: formatDate(test.created_at),
+            })) ?? null,
+        [lists],
+    );
+    const chosen = lists?.tests.find((test) => test.id === testId);
+    const button = chosen
+        ? chosen.name
+        : testId === null
+          ? "Choose a test from Yorg"
+          : lists === null && problem === null
+            ? "Loading Yorg's tests…"
+            : `Test ${testId}`;
     return (
-        <>
-            <select
-                aria-label="Test"
-                value={testId ?? ""}
-                onChange={(event) => onTest(event.target.value ? Number(event.target.value) : null)}
-            >
-                <option value="">{tests === null ? "Loading Yorg's tests…" : "Choose a test from Yorg…"}</option>
-                {testId !== null && tests !== null && !chosen && <option value={testId}>Test {testId}</option>}
-                {tests?.map((test) => (
-                    <option key={test.id} value={test.id}>
-                        {test.name} ({formatDate(test.created_at)})
-                    </option>
-                ))}
-            </select>
-            {problem && <Notice tone="error">Yorg&apos;s tests couldn&apos;t be listed: {problem}</Notice>}
-        </>
+        <div className="piper-test-pick">
+            <ItemPicker
+                label="Test"
+                button={button}
+                buttonLabel={`Test: ${button}`}
+                buttonClass="button-small"
+                folders={folders}
+                items={items}
+                start={keyOf(chosen?.folder_id)}
+                chosen={keyOf(testId)}
+                top="Yorg"
+                findLabel="Find a test"
+                empty="No tests in it"
+                problem={problem && `Yorg's tests couldn't be listed: ${problem}`}
+                onOpen={load}
+                onPick={(key) => onTest(Number(key))}
+            />
+        </div>
     );
 }

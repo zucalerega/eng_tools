@@ -567,6 +567,163 @@ def test_views_are_kept_in_folders_of_their_own(team):
     assert sorted(v["folder"] for v in listed) == ["", ""]
 
 
+VIEW_FOLDERS = "/api/yorg/view-folders"
+
+
+def view_folder(team, who, name: str, parent: int | None = None) -> dict:
+    made = team.client.post(VIEW_FOLDERS, json={"name": name, "parent_id": parent}, headers=who)
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def a_view(team, who, name: str = "Tanks", **more) -> dict:
+    body = {"name": name, "datasets": [], "config": {"panels": []}, **more}
+    made = team.client.post("/api/yorg/views", json=body, headers=who)
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def test_view_folders_are_made_by_anyone_and_changed_by_whoever_made_them(team):
+    """As the datasets' folders are: names unique in a folder whatever their case, never inside themselves, and
+    deleted once they're empty, by whoever made them or an admin."""
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    hotfires = view_folder(team, alice, " Hotfires ")
+    hf3 = view_folder(team, alice, "HF-3", hotfires["id"])
+    assert (hf3["path"], hf3["parent_id"], hf3["created_by"]["email"]) == (
+        "Hotfires/HF-3",
+        hotfires["id"],
+        "alice@x.test",
+    )
+
+    # Two in a folder can't differ only in case; a name has no slashes (a view's folder can be its path).
+    taken = team.client.post(VIEW_FOLDERS, json={"name": "hf-3", "parent_id": hotfires["id"]}, headers=bob)
+    assert (taken.status_code, taken.json()["error"]) == (409, "name_taken")
+    assert team.client.post(VIEW_FOLDERS, json={"name": "HF-3"}, headers=bob).status_code == 201  # the top's free
+    assert team.client.post(VIEW_FOLDERS, json={"name": "a/b"}, headers=bob).status_code == 422
+    missing = team.client.post(VIEW_FOLDERS, json={"name": "Ox", "parent_id": 999}, headers=bob)
+    assert (missing.status_code, missing.json()["error"]) == (404, "not_found")
+    # They're views' own: the datasets' folders don't list them.
+    assert team.client.get("/api/yorg/folders", headers=bob).json() == []
+
+    listed = team.client.get(VIEW_FOLDERS, headers=bob).json()
+    assert [(one["path"], one["can_change"]) for one in listed] == [  # by name, whatever its case
+        ("Hotfires/HF-3", False),
+        ("HF-3", True),
+        ("Hotfires", False),
+    ]
+
+    # Only whoever made one (or an admin) renames or moves it; never into itself, nor onto a name that's taken.
+    url = f"{VIEW_FOLDERS}/{hf3['id']}"
+    refused = team.client.patch(url, json={"name": "Hot fire 3"}, headers=bob)
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    renamed = team.client.patch(url, json={"name": "Hot fire 3"}, headers=alice).json()
+    assert (renamed["name"], renamed["path"]) == ("Hot fire 3", "Hotfires/Hot fire 3")
+    cycle = team.client.patch(f"{VIEW_FOLDERS}/{hotfires['id']}", json={"parent_id": hf3["id"]}, headers=alice)
+    assert (cycle.status_code, cycle.json()["error"]) == (409, "cycle")
+    clash = team.client.patch(url, json={"parent_id": None, "name": "hf-3"}, headers=alice)
+    assert (clash.status_code, clash.json()["error"]) == (409, "name_taken")
+    moved = team.client.patch(url, json={"parent_id": None}, headers=chief).json()
+    assert (moved["path"], moved["parent_id"]) == ("Hot fire 3", None)
+
+    # One with a view in it isn't deleted; once it's empty, it is, by whoever made it (or an admin).
+    view = a_view(team, bob, folder_id=hotfires["id"])
+    assert (view["folder"], view["folder_id"]) == ("Hotfires", hotfires["id"])
+    busy = team.client.delete(f"{VIEW_FOLDERS}/{hotfires['id']}", headers=alice)
+    assert (busy.status_code, busy.json()["error"]) == (409, "not_empty")
+    assert team.client.delete(f"/api/yorg/views/{view['id']}", headers=bob).status_code == 204
+    assert team.client.delete(f"{VIEW_FOLDERS}/{hotfires['id']}", headers=bob).status_code == 403
+    assert team.client.delete(f"{VIEW_FOLDERS}/{hotfires['id']}", headers=alice).status_code == 204
+    assert team.client.delete(url, headers=chief).status_code == 204
+    assert [one["name"] for one in team.client.get(VIEW_FOLDERS, headers=bob).json()] == ["HF-3"]
+    gone = team.client.patch(url, json={"name": "Back"}, headers=alice)
+    assert (gone.status_code, gone.json()["error"]) == (404, "not_found")
+
+
+def test_a_view_put_in_a_folder_by_its_path_goes_in_the_folders_on_it(team):
+    """As clients from before folders were their own name it: the folders on the path, made where they aren't there,
+    and matched whatever their case."""
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    first = a_view(team, alice, "Chamber", folder="Hotfires/HF-3")
+    second = a_view(team, alice, "Tanks", folder=" hotfires / hf-3 ")
+    assert first["folder_id"] == second["folder_id"]
+    assert second["folder"] == "Hotfires/HF-3"
+    made = team.client.get(VIEW_FOLDERS, headers=alice).json()
+    assert [(one["path"], one["created_by"]["email"]) for one in made] == [
+        ("Hotfires/HF-3", "alice@x.test"),
+        ("Hotfires", "alice@x.test"),
+    ]
+
+    url = f"/api/yorg/views/{first['id']}"
+    body = {"name": "Chamber", "datasets": [], "config": {"panels": []}}
+    top = team.client.put(url, json={**body, "folder_id": None}, headers=alice).json()
+    assert (top["folder"], top["folder_id"]) == ("", None)
+    hotfires = next(one["id"] for one in made if one["path"] == "Hotfires")
+    back = team.client.put(url, json={**body, "folder_id": hotfires, "folder": "Elsewhere"}, headers=alice).json()
+    assert (back["folder"], back["folder_id"]) == ("Hotfires", hotfires)  # its id, over a path
+    assert team.client.put(url, json=body, headers=alice).json()["folder_id"] == hotfires  # neither: it stays
+    lost = team.client.put(url, json={**body, "folder_id": 999}, headers=alice)
+    assert (lost.status_code, lost.json()["error"]) == (404, "not_found")
+
+    # A change refused makes no folders on its path.
+    refused = team.client.put(url, json={**body, "folder": "Bob's/New"}, headers=bob)
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert len(team.client.get(VIEW_FOLDERS, headers=bob).json()) == 2
+    # A folder named on a path is still a name: up to 200 characters.
+    assert team.client.put(url, json={**body, "folder": "x" * 201}, headers=alice).status_code == 400
+
+
+def test_views_are_moved_and_deleted_together_by_whoever_may(team):
+    """Moving or deleting several views is changing them: yours, or anyone's for an admin; all of them, or none."""
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    bob = team.member("bob@x.test")
+    a, b = a_view(team, alice, "A"), a_view(team, alice, "B")
+    c = a_view(team, bob, "C")
+    hotfires = view_folder(team, bob, "Hotfires")
+
+    def move(who, ids, folder):
+        return team.client.post("/api/yorg/views/move", json={"views": ids, "folder_id": folder}, headers=who)
+
+    def delete(who, ids):
+        return team.client.post("/api/yorg/views/delete", json={"views": ids}, headers=who)
+
+    def where() -> list[tuple[str, int | None]]:
+        return [(one["name"], one["folder_id"]) for one in team.client.get("/api/yorg/views", headers=chief).json()]
+
+    # One that isn't yours, or isn't there, and none of them move.
+    refused = move(alice, [a["id"], c["id"]], hotfires["id"])
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert move(alice, [a["id"], 999], hotfires["id"]).status_code == 404
+    assert move(alice, [a["id"]], 999).status_code == 404
+    assert move(alice, [], None).status_code == 422
+    assert where() == [("C", None), ("B", None), ("A", None)]
+
+    # Yours move into anyone's folder, each changed by you; an admin moves anyone's.
+    moved = move(alice, [a["id"], b["id"], a["id"]], hotfires["id"])
+    assert [(one["name"], one["folder"], one["updated_by"]["email"]) for one in moved.json()] == [
+        ("A", "Hotfires", "alice@x.test"),
+        ("B", "Hotfires", "alice@x.test"),
+    ]
+    assert [one["id"] for one in move(chief, [c["id"], b["id"]], None).json()] == [c["id"], b["id"]]
+    # The latest changed first: C, at the top already, didn't move, so it wasn't changed.
+    assert where() == [("B", None), ("A", hotfires["id"]), ("C", None)]
+
+    # Deleted for good: one that isn't yours, or isn't there, and none of them go.
+    refused = delete(alice, [a["id"], c["id"]])
+    assert (refused.status_code, refused.json()["error"]) == (403, "not_yours")
+    assert delete(alice, [a["id"], 999]).status_code == 404
+    assert delete(alice, []).status_code == 422
+    assert len(where()) == 3
+    assert delete(alice, [a["id"], b["id"]]).status_code == 204
+    assert where() == [("C", None)]
+    assert team.client.get(f"/api/yorg/views/{a['id']}", headers=alice).status_code == 404
+    assert delete(chief, [c["id"]]).status_code == 204
+    assert where() == []
+
+
 def test_folders_keep_datasets_in_order(team):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test")

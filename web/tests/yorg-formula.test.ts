@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { calculate, channelsOf, FormulaError, parse, type Input } from "../src/yorg/formula";
+import { partsOf } from "../src/yorg/ExpressionBox";
+import { calculate, channelsOf, FormulaError, parenAt, parentheses, parse, type Input } from "../src/yorg/formula";
 import { Samples } from "../src/yorg/samples";
 
 // Calculated channels: reading expressions, and working them out over channels that may not share their times.
@@ -132,5 +133,73 @@ describe("working them out", () => {
         expect(() => calculate(parse("1 + 2"), new Map())).toThrow("Use at least one channel, like [PT-1]");
         expect(() => calculate(parse("[LC-9] * 2"), new Map([["A", a]]))).toThrow("No channel called LC-9");
         expect(() => run("smooth([A], [A])", { A: a })).toThrow("smooth's window is a number of seconds");
+    });
+});
+
+describe("showing an expression", () => {
+    const pairs = (text: string) => parentheses(text).map(({ at, depth, partner }) => [at, depth, partner]);
+
+    test("each parenthesis is paired with its partner, by depth; those in a channel's name aren't parentheses", () => {
+        expect(pairs("sqrt((1 + [A]) * 2)")).toEqual([
+            [4, 0, 18],
+            [5, 1, 13],
+            [13, 1, 5],
+            [18, 0, 4],
+        ]);
+        expect(pairs("[PT-1 (old)] - ([B])")).toEqual([
+            [15, 0, 19],
+            [19, 0, 15],
+        ]);
+    });
+
+    test("one without a partner has none, and doesn't throw the others off", () => {
+        expect(pairs("(([A])")).toEqual([
+            [0, 0, null],
+            [1, 1, 5],
+            [5, 1, 1],
+        ]);
+        expect(pairs("[A]) + (1)")).toEqual([
+            [3, 0, null],
+            [7, 0, 9],
+            [9, 0, 7],
+        ]);
+        expect(pairs("[A (")).toEqual([]); // a name not closed yet: the rest is in it
+    });
+
+    test("the pair at the caret: the parenthesis just before it, else just after it", () => {
+        const parens = parentheses("max((1), 2)");
+        expect(parenAt(parens, 5)?.at).toBe(4); // after the inner (
+        expect(parenAt(parens, 4)?.at).toBe(3); // between ( and (: the one before
+        expect(parenAt(parens, 3)?.at).toBe(3); // before max's (
+        expect(parenAt(parens, 1)).toBeNull();
+    });
+
+    test("its parts are its whole text, each colored for what it is", () => {
+        const text = "where([mdot] > 0.5, [mdot] / sqrt([PT-1]) * g0)";
+        const parts = partsOf(text, new Set(["mdot"]), parentheses(text)[0]!, null);
+        expect(parts.map((part) => part.text).join("")).toBe(text);
+        const kinds = Object.fromEntries(
+            parts.filter((part) => part.text.trim()).map((part) => [part.text, part.kind]),
+        );
+        expect(kinds).toMatchObject({
+            where: "function",
+            "[mdot]": "calculated",
+            "0.5": "number",
+            sqrt: "function",
+            "[PT-1]": "channel",
+            g0: null,
+        });
+        // The pair at the caret is marked; the others have their depth's color.
+        const parens = parts.filter((part) => part.kind?.startsWith("paren"));
+        expect(parens.map((part) => part.kind)).toEqual([
+            "paren yorg-x-depth-0 yorg-x-match",
+            "paren yorg-x-depth-1",
+            "paren yorg-x-depth-1",
+            "paren yorg-x-depth-0 yorg-x-match",
+        ]);
+        // A problem's place is marked, and a parenthesis without a partner.
+        const wrong = partsOf("[A] + * 2)", new Set(), null, 6);
+        expect(wrong.find((part) => part.text === "*")?.kind).toContain("yorg-x-wrong");
+        expect(wrong.find((part) => part.text === ")")?.kind).toBe("paren yorg-x-unmatched");
     });
 });

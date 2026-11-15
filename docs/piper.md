@@ -39,7 +39,10 @@ frame with them, and nothing else ([design.md](design.md) has those): its own ta
   own page, where they're checked and restored together. Its search looks in every folder, in
   names, folders, descriptions, and the tags of the drawings' parts and lines, so PT-101 finds
   the diagrams it's on, each saying its folder, and a diagram found opens at what was searched
-  for (`?find=PT-101`, as the editor's find goes to it). A new diagram
+  for (`?find=PT-101`, as the editor's find goes to it). In the editor, a diagram's name
+  opens what renames, moves, and describes it: its folder is chosen from the folders (the
+  site's `FolderChooser`), opened where it is, whose New folder makes one there
+  (`POST /api/piper/folders`), and it's sent as `folder_id` only if it changed. A new diagram
   starts empty or from an example (`example.ts`: a pressure-fed engine's feed system, built
   with the editor's own changes; for admins, Simulation's too, `sim/examples.ts`), and
   Duplicate copies one.
@@ -536,17 +539,19 @@ valves as long as Piper's (40), or a hundred where it has none. Its shapes, in V
 
 ## Test data from Yorg
 
-A diagram reads a test from Yorg: pick one of Yorg's datasets, and each instrument shows its
-channel's value, and each valve its state (open green, closed red, anything else amber), at a
-time on a timeline that plays the test (at a tenth of its speed to ten times it), with its
-events (a sequence's steps) marked, to go to. Selecting a part shows its channel over the whole
-test, and Plot in Yorg opens the test in Yorg with those channels plotted (in a tab of its
-own). The test and the time are in the page's address (`?test=5&t=12.5`), so a link opens the
-diagram at that moment of that test, and the browser keeps them for the diagram (`piper.test.<id>`
-in its local storage, as `5@12.5`), so it opens to them again without them in its address (from
-the diagrams' list) until Test data is closed, which unlinks it. A Test channel is typed, or
-picked from the test's channels in a list of the page's own (`ChannelInput`): a datalist's is the
-browser's, plain and white on Windows.
+A diagram reads a test from Yorg: pick one of Yorg's datasets, from Yorg's folders as Yorg's
+datasets page shows them (`TestSelect`, the site's `FolderBrowser`: opened in the folder of the
+test chosen, each saying when it was added, found in any folder by a few words), and each
+instrument shows its channel's value, and each valve its state (open green, closed red, anything
+else amber), at a time on a timeline that plays the test (at a tenth of its speed to ten times
+it), with its events (a sequence's steps) marked, to go to. Selecting a part shows its channel
+over the whole test, and Plot in Yorg opens the test in Yorg with those channels plotted (in a
+tab of its own). The test and the time are in the page's address (`?test=5&t=12.5`), so a link
+opens the diagram at that moment of that test, and the browser keeps them for the diagram
+(`piper.test.<id>` in its local storage, as `5@12.5`), so it opens to them again without them in
+its address (from the diagrams' list) until Test data is closed, which unlinks it. A Test
+channel is typed, or picked from the test's channels in a list of the page's own
+(`ChannelInput`): a datalist's is the browser's, plain and white on Windows.
 
 A part reads the channel named in its Test channel, or, without one, the channel named as its
 tag: PT-101 reads PT-101 (`testdata.ts`). Names match whatever their case, then ignoring spaces,
@@ -560,10 +565,11 @@ so a symbol's fill hides its end, and it seems to leave the symbol's outline. Th
 decides where a badge goes, not its value, so it stays put as the test plays.
 
 That's Piper's tie to Yorg, with Simulation (below), and it's through Yorg's API, as any
-client's would be: Piper asks `/api/yorg/datasets` for the tests, `/api/yorg/datasets/{id}` for
-a test's channels, and their arrays for the samples (each fetched once), and makes Yorg's links
-to plots as Yorg does (`?plots=`, a layout's JSON, deflated and base64url-encoded: the site's
-`packed.ts`, which both use). It imports none of Yorg's code, and Yorg knows nothing of Piper.
+client's would be: Piper asks `/api/yorg/datasets` for the tests, `/api/yorg/folders` for their
+folders, `/api/yorg/datasets/{id}` for a test's channels, and their arrays for the samples (each
+fetched once), and makes Yorg's links to plots as Yorg does (`?plots=`, a layout's JSON,
+deflated and base64url-encoded: the site's `packed.ts`, which both use). It imports none of
+Yorg's code, and Yorg knows nothing of Piper.
 
 ## Simulation
 

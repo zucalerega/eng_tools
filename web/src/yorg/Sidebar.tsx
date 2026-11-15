@@ -1,6 +1,8 @@
-import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
-import { yorg, type Channel, type Dataset, type DatasetDetail, type Formula } from "./api";
-import { fits, dataset as loadDataset, formulas as loadFormulas, maskRuns } from "./data";
+import { useState, type DragEvent, type MouseEvent } from "react";
+import type { Channel, Dataset, DatasetDetail, Formula } from "./api";
+import { fitsAlone, dataset as loadDataset, formulas as loadFormulas, maskRuns, placesOf, planFor } from "./data";
+import { DatasetPicker } from "./DatasetPicker";
+import { FormulaError } from "./formula";
 import { FormulaDialog } from "./Formulas";
 import { isPlotted, type Action, type AxisTarget, type Layout, type Mask, type PanelSpec } from "./layout";
 import { measure } from "./masks";
@@ -68,7 +70,7 @@ export function Sidebar({
     onEditMask: (mask: Mask) => void;
 }) {
     const [filter, setFilter] = useState("");
-    const [editing, setEditing] = useState<{ formula: Formula | null; detail: DatasetDetail } | null>(null);
+    const [editing, setEditing] = useState<{ formula: Formula | null; own: DatasetDetail } | null>(null);
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
     const several = layout.datasets.length > 1;
     // A click plots a channel on the selected plot (on the axis for its unit), or takes it off if it's plotted;
@@ -84,6 +86,19 @@ export function Sidebar({
     const colors = new Map(
         plotted.map((series) => [pickKey(series.spec), series.spec.color] as const).reverse(), // the first one's color
     );
+    const formulaList = loadFormulas();
+    const list = formulaList.status === "ready" ? formulaList.value : [];
+    const page = placesOf(layout);
+    const first = page?.[0]?.detail ?? null;
+    // Those that use channels of more than one of the datasets compared: on none alone, on the page's together.
+    const acrossList =
+        several && page
+            ? list.filter(
+                  (formula) =>
+                      !page.some((place) => fitsAlone(formula, place.detail, list)) &&
+                      !(planFor(formula, page[0]!.detail, page, list) instanceof FormulaError),
+              )
+            : [];
     return (
         <aside className="yorg-sidebar" aria-label="Channels">
             <input
@@ -113,35 +128,61 @@ export function Sidebar({
                             <>
                                 <ChannelList detail={loaded.value} words={words} colors={colors} onPick={pick} />
                                 <Calculated
-                                    detail={loaded.value}
+                                    title="Calculated"
+                                    dataset={loaded.value.id}
+                                    list={list.filter((formula) => fitsAlone(formula, loaded.value, list))}
+                                    problem={formulaList.status === "failed" ? formulaList.error : null}
                                     words={words}
                                     colors={colors}
                                     onPick={pick}
-                                    onEdit={(formula) => setEditing({ formula, detail: loaded.value })}
+                                    onEdit={(formula) => setEditing({ formula, own: loaded.value })}
                                 />
                             </>
                         )}
                     </section>
                 );
             })}
+            {several && first && (
+                <section className="yorg-source" aria-label="Across datasets">
+                    <Calculated
+                        title="Across datasets"
+                        hint="Calculated channels that use channels of more than one of these datasets, worked out on the first one's times, as they're lined up."
+                        dataset={first.id}
+                        list={acrossList}
+                        problem={null}
+                        words={words}
+                        colors={colors}
+                        onPick={pick}
+                        onEdit={(formula) => setEditing({ formula, own: first })}
+                    />
+                </section>
+            )}
             <AddDataset layout={layout} dispatch={dispatch} />
             <Masks layout={layout} dispatch={dispatch} onEdit={onEditMask} />
             <Markers layout={layout} dispatch={dispatch} view={view} time={time} />
             {editing && (
                 <FormulaDialog
                     formula={editing.formula}
-                    detail={editing.detail}
+                    own={editing.own}
+                    page={page}
                     onClose={() => setEditing(null)}
                     onSaved={(saved, created) => {
-                        const detail = editing.detail;
                         setEditing(null);
+                        // Plotted as its dataset's, if it has what it uses; else as the page's first, across them.
+                        const now = loadFormulas();
+                        const known = now.status === "ready" ? now.value : [saved];
+                        const own = fitsAlone(saved, editing.own, known)
+                            ? editing.own
+                            : first && !(planFor(saved, first, page, known) instanceof FormulaError)
+                              ? first
+                              : null;
                         const what = {
-                            dataset: detail.id,
+                            dataset: own?.id ?? editing.own.id,
                             channel: saved.name,
                             formula: saved.id,
                             quantity: quantityOf({ channel: null, unit: saved.unit }),
                         };
-                        if (created && fits(saved.expression, detail) && !isPlotted(layout, what)) {
+                        if (created && own && !isPlotted(layout, what)) {
                             pick(what, false);
                         }
                     }}
@@ -154,22 +195,31 @@ export function Sidebar({
 const pickKey = (what: { dataset: number; channel: string; formula: number | null }): string =>
     what.formula === null ? `${what.dataset}/channel/${what.channel}` : `${what.dataset}/formula/${what.formula}`;
 
-/** A dataset's calculated channels: the team's, where this dataset has every channel they use. */
+/**
+ * Calculated channels to plot: a dataset's (the team's that it has every channel of), or those across the datasets
+ * compared (for the first of them, whose times they're on).
+ */
 function Calculated({
-    detail,
+    title,
+    hint,
+    dataset,
+    list,
+    problem,
     words,
     colors,
     onPick,
     onEdit,
 }: {
-    detail: DatasetDetail;
+    title: string;
+    hint?: string;
+    dataset: number;
+    list: Formula[];
+    problem: string | null;
     words: string[];
     colors: ReadonlyMap<string, string>;
     onPick: (what: Pick, newPanel: boolean) => void;
     onEdit: (formula: Formula | null) => void;
 }) {
-    const loaded = loadFormulas();
-    const list = loaded.status === "ready" ? loaded.value.filter((formula) => fits(formula.expression, detail)) : [];
     const shown = list.filter((formula) =>
         words.every((word) => `${formula.name} ${formula.unit} ${formula.expression}`.toLowerCase().includes(word)),
     );
@@ -178,14 +228,15 @@ function Calculated({
     }
     return (
         <details className="yorg-group yorg-calculated" open>
-            <summary>
-                Calculated <span className="muted">{list.length}</span>
+            <summary title={hint}>
+                {title} <span className="muted">{list.length}</span>
             </summary>
-            {loaded.status === "failed" && <p className="field-problem">{loaded.error}</p>}
+            {problem && <p className="field-problem">{problem}</p>}
+            {hint && list.length === 0 && <p className="muted yorg-calculated-hint">{hint}</p>}
             <ul className="yorg-channels">
                 {shown.map((formula) => {
                     const what = {
-                        dataset: detail.id,
+                        dataset,
                         channel: formula.name,
                         formula: formula.id,
                         quantity: quantityOf({ channel: null, unit: formula.unit }),
@@ -369,58 +420,34 @@ function ChannelList({
     );
 }
 
-/** Plot another dataset alongside: lined up by clock time if both have dates, else from their starts. */
+/**
+ * Plot another dataset alongside: lined up by clock time if both have dates, else from their starts. It's picked from
+ * the datasets' folders, starting in the first dataset's.
+ */
 function AddDataset({ layout, dispatch }: { layout: Layout; dispatch: (action: Action) => void }) {
-    const [choices, setChoices] = useState<Dataset[] | null>(null);
-    const [open, setOpen] = useState(false);
-    useEffect(() => {
-        if (open && choices === null) {
-            yorg.datasets().then(setChoices, () => setChoices([]));
-        }
-    }, [open, choices]);
     const first = layout.datasets[0] ? loadDataset(layout.datasets[0].id) : null;
-    const add = (id: number) => {
-        const chosen = choices?.find((one) => one.id === id);
-        const base = first?.status === "ready" ? first.value : null;
+    const base = first?.status === "ready" ? first.value : null;
+    const add = (chosen: Dataset) => {
         const lined =
-            chosen?.time_kind === "absolute" &&
+            chosen.time_kind === "absolute" &&
             base?.time_kind === "absolute" &&
             chosen.start_epoch !== null &&
             base.start_epoch !== null
                 ? chosen.start_epoch - base.start_epoch
                 : 0;
-        dispatch({ type: "addDataset", dataset: id, shift: lined });
-        setOpen(false);
+        dispatch({ type: "addDataset", dataset: chosen.id, shift: lined });
     };
-    if (!open) {
-        return (
-            <button type="button" className="button-small yorg-compare" onClick={() => setOpen(true)}>
-                Compare with another dataset
-            </button>
-        );
-    }
-    const others = (choices ?? []).filter(
-        (one) => one.status === "ready" && !layout.datasets.some((ref) => ref.id === one.id),
-    );
     return (
-        <label className="field yorg-compare">
-            Compare with
-            <select
-                autoFocus
-                value=""
-                onChange={(event) => add(Number(event.target.value))}
-                onBlur={() => setOpen(false)}
-            >
-                <option value="" disabled>
-                    {choices === null ? "Loading…" : others.length ? "Choose a dataset" : "No other datasets"}
-                </option>
-                {others.map((one) => (
-                    <option key={one.id} value={one.id}>
-                        {one.name}
-                    </option>
-                ))}
-            </select>
-        </label>
+        <div className="yorg-compare">
+            <DatasetPicker
+                label="Compare with"
+                button="Compare with another dataset"
+                buttonClass="button-small"
+                start={base?.folder_id ?? null}
+                except={layout.datasets.map((ref) => ref.id)}
+                onPick={add}
+            />
+        </div>
     );
 }
 

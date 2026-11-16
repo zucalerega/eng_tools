@@ -687,3 +687,11 @@ YJSP, with Vault and Yorg, runs at https://lucazerega.tail07089c.ts.net, on an O
 Cloud VM, with its demo at https://lucazerega.tail07089c.ts.net/demo. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
 to look after it are in [docs/deploying.md](docs/deploying.md). To run it for your own team, with your name, your
 school's sign-in, and your data, see [docs/self-hosting.md](docs/self-hosting.md).
+
+## License
+
+The server and the web app (`server/`, `web/`) are under the GNU General Public License, version 3
+([LICENSE](LICENSE)); the `vault` command, the SolidWorks add-in, and their library (`client/`) are under the MIT
+license ([client/LICENSE](client/LICENSE)). What the repository uses and carries under others' terms, and why the
+server's is the GPL, is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). [CONTRIBUTING.md](CONTRIBUTING.md) says how
+to contribute, and [SECURITY.md](SECURITY.md) how to report a vulnerability.

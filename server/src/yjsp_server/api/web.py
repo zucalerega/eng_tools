@@ -35,13 +35,31 @@ def app_index(settings: Settings) -> Path | None:
     return index if index.is_file() else None
 
 
+def logos(settings: Settings) -> dict[str, Path]:
+    """The team's logo, by the names the pages ask for it by. YJSP's, where YJSP_BRAND_DIR is unset (YJSP's own site);
+    else only the team's own: either one for both themes where it has only one, and none where it has neither, when
+    the pages show the site's name instead (pages.mark)."""
+    if settings.brand_dir is None:
+        return {name: BRAND / name for name in _LOGOS}
+    own = {name: settings.brand_dir / name for name in _LOGOS if (settings.brand_dir / name).is_file()}
+    if len(own) == 1:
+        (only,) = own.values()
+        return dict.fromkeys(_LOGOS, only)
+    return own
+
+
 def index_response(index: Path, settings: Settings) -> HTMLResponse:
     """The web app's page, for a site at its root (Settings.root_path, "" at the root of its address): its scripts and
     styles at the site's /assets; and in meta tags, the root, for the app to start its addresses with (web/src/root.ts),
-    and whose site it is, for the app to say (web/src/site.ts)."""
+    and whose site it is, for the app to say (web/src/site.ts), with whether it has a logo to show."""
     root = settings.root_path
     page = index.read_text(encoding="utf-8").replace(_BUILT, f'"{root}/assets/')
-    said = {"yjsp-root": root, "yjsp-site": settings.site_name, "yjsp-team": settings.team_name}
+    said = {
+        "yjsp-root": root,
+        "yjsp-site": settings.site_name,
+        "yjsp-team": settings.team_name,
+        "yjsp-logo": "yes" if logos(settings) else "none",
+    }
     metas = "".join(f'\n<meta name="{name}" content="{html.escape(value)}">' for name, value in said.items())
     page = page.replace("<head>", "<head>" + metas, 1)
     # The page names its scripts by content hash; caching it would hide a new release.
@@ -55,12 +73,10 @@ def mount_assets(app: FastAPI, settings: Settings) -> None:
 
 @router.get("/brand/{name}")
 def brand(name: str, settings: Config) -> FileResponse:
-    """The team's logo, for anyone: the sign-in page shows it before anyone's signed in. The team's own, from
-    YJSP_BRAND_DIR, where it has it; else YJSP's."""
-    if name not in _LOGOS:
+    """The team's logo, for anyone: the sign-in page shows it before anyone's signed in (logos says whose)."""
+    found = logos(settings).get(name)
+    if found is None:
         raise NotFound("Not found")
-    own = settings.brand_dir / name if settings.brand_dir else None
-    found = own if own is not None and own.is_file() else BRAND / name
     return FileResponse(found, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 

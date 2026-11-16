@@ -23,7 +23,7 @@ import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, whole
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
 import { fromPreview, inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
-import { siteName } from "./site";
+import { hasLogo, siteName } from "./site";
 
 // The site's own icon, as on the sign-in pages (the server's signin.py): the gold orbit both marks take from the
 // team's logo, on the top bar's navy.
@@ -120,7 +120,13 @@ export function App() {
             <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
                 {/* The team's logo and the site's name, home to the site's front page, where all the apps are. */}
                 <Link to="/" className="brand" aria-label={`${siteName()} home`}>
-                    <span className="site-logo" aria-hidden="true" />
+                    {hasLogo() ? (
+                        <span className="site-logo" aria-hidden="true" />
+                    ) : (
+                        <span className="site-mark" aria-hidden="true">
+                            {siteName()}
+                        </span>
+                    )}
                     <span className="brand-name" aria-hidden="true">
                         Tools
                     </span>
@@ -244,7 +250,11 @@ function Home({ pathname }: { pathname: string }) {
             {pathname !== "/" && <Notice tone="error">There's no page here.</Notice>}
             <h1 className="home-lockup">
                 {/* The space keeps the heading's name "YJSP Engineering Tools": a flex box doesn't draw it. */}
-                <span className="site-logo" role="img" aria-label={siteName()} />{" "}
+                {hasLogo() ? (
+                    <span className="site-logo" role="img" aria-label={siteName()} />
+                ) : (
+                    <span className="site-mark">{siteName()}</span>
+                )}{" "}
                 <span className="home-lockup-rule" aria-hidden="true" />
                 <span className="home-lockup-words">
                     <span>Engineering</span> <span>Tools</span>

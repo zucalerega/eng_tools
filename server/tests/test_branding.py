@@ -57,13 +57,34 @@ def test_the_web_app_is_told_whose_site_it_is(their_site):
     page = their_site.get("/vault").text
     assert '<meta name="yjsp-site" content="RPL">' in page
     assert '<meta name="yjsp-team" content="Rocket Propulsion Lab">' in page
+    assert '<meta name="yjsp-logo" content="yes">' in page
 
 
-def test_the_teams_own_logo_where_it_has_one(their_site):
+def test_the_teams_own_logo_and_only_its_own(their_site):
     assert their_site.get("/brand/logo-on-light.png").content == b"\x89PNG their light logo"
-    # One it hasn't put there is YJSP's, so the dark theme still has a logo.
-    assert their_site.get("/brand/logo-on-dark.png").content.startswith(b"\x89PNG\r\n")
+    # It has only the one, so the dark theme has it too, never YJSP's.
+    assert their_site.get("/brand/logo-on-dark.png").content == b"\x89PNG their light logo"
     assert their_site.get("/brand/other.png").status_code == 404
+
+
+def test_a_team_without_a_logo_shows_its_name(theirs):
+    (theirs.brand_dir / "logo-on-light.png").unlink()
+    with TestClient(create_app(theirs)) as their_site:
+        assert their_site.get("/brand/logo-on-light.png").status_code == 404
+        assert their_site.get("/brand/logo-on-dark.png").status_code == 404
+        for page in (their_site.get("/").text, their_site.get("/help").text):
+            assert '<span class="mark">RPL</span>' in page
+            assert 'class="logo"' not in page
+        their_site.get("/auth/dev-login", params={"email": BOOTSTRAP_ADMIN}, follow_redirects=False)
+        assert '<meta name="yjsp-logo" content="none">' in their_site.get("/vault").text
+
+
+def test_yjsps_own_site_has_yjsps_logo(client):
+    # Without YJSP_BRAND_DIR, as on YJSP's own site.
+    for name in ("logo-on-light.png", "logo-on-dark.png"):
+        assert client.get(f"/brand/{name}").content.startswith(b"\x89PNG\r\n")
+    page = client.get("/").text
+    assert '<span class="logo" role="img" aria-label="YJSP"></span>' in page and 'class="mark"' not in page
 
 
 def test_claude_knows_whose_site_it_is(theirs):

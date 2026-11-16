@@ -1,5 +1,5 @@
-"""Sign-in pages: Georgia Tech accounts (through Microsoft) and Google for people, a browser handshake for the
-CLI/add-in, dev shortcuts.
+"""Sign-in pages: the school's accounts (through Microsoft: Georgia Tech's, for YJSP) and Google for people, a browser
+handshake for the CLI/add-in, dev shortcuts.
 
 The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
@@ -36,15 +36,20 @@ class _SignIn(NamedTuple):
     callback: str  # as registered with the provider: {public_url}{callback}
 
 
-# The ways to sign in, in the order the sign-in page offers them.
+# The ways to sign in, in the order the sign-in page offers them. The school's is called by its name (_label).
 _SIGN_INS: dict[Provider, _SignIn] = {
-    "microsoft": _SignIn("Georgia Tech", "/auth/microsoft/login", "/auth/microsoft/callback"),
+    "microsoft": _SignIn("", "/auth/microsoft/login", "/auth/microsoft/callback"),
     "google": _SignIn("Google", "/auth/login", "/auth/callback"),
 }
 
 
+def _label(settings: Settings, name: Provider) -> str:
+    """What a way to sign in is called: "Google", or the school's name (Georgia Tech, for YJSP)."""
+    return settings.school_name if name == "microsoft" else _SIGN_INS[name].label
+
+
 def make_oauth(settings: Settings) -> OAuth | None:
-    """The ways to sign in this server has set up: Google, Georgia Tech accounts (through Microsoft), or both."""
+    """The ways to sign in this server has set up: Google, the school's accounts (through Microsoft), or both."""
     if not (settings.google_client_id or settings.microsoft_client_id):
         return None
     oauth = OAuth()
@@ -57,19 +62,21 @@ def make_oauth(settings: Settings) -> OAuth | None:
             client_kwargs={"scope": "openid email profile"},
         )
     if settings.microsoft_client_id:
-        # GT's tenant's own endpoints: only its accounts can sign in there, and each ID token's issuer must be GT's
-        # (authlib checks it against this one). auth.sign_in_microsoft checks the rest.
-        gt = f"https://login.microsoftonline.com/{auth.GT_TENANT}"
+        # The school's tenant's own endpoints (YJSP_MICROSOFT_TENANT): only its accounts can sign in there, and each ID
+        # token's issuer must be the school's (authlib checks it against this one). auth.sign_in_microsoft checks the
+        # rest.
+        school = f"https://login.microsoftonline.com/{settings.microsoft_tenant}"
+        domains = settings.school_domain_list
         oauth.register(
             "microsoft",
             client_id=settings.microsoft_client_id,
             client_secret=settings.microsoft_client_secret,
-            authorize_url=f"{gt}/oauth2/v2.0/authorize",
-            # Straight on to GT's login page, without Microsoft first asking which account.
-            authorize_params={"domain_hint": auth.GT_DOMAIN},
-            access_token_url=f"{gt}/oauth2/v2.0/token",
-            issuer=f"{gt}/v2.0",
-            jwks_uri=f"{gt}/discovery/v2.0/keys",
+            authorize_url=f"{school}/oauth2/v2.0/authorize",
+            # Straight on to the school's login page, without Microsoft first asking which account.
+            authorize_params={"domain_hint": domains[0]} if domains else {},
+            access_token_url=f"{school}/oauth2/v2.0/token",
+            issuer=f"{school}/v2.0",
+            jwks_uri=f"{school}/discovery/v2.0/keys",
             client_kwargs={
                 "scope": "openid email profile",
                 "code_challenge_method": "S256",
@@ -162,7 +169,7 @@ def _safe_next(target: str | None) -> str:
 
 def _turned_away(settings: Settings, error: ApiError) -> HTMLResponse:
     """A sign-in that didn't let someone in, as a page that says why and what to do, not the API's JSON: they came
-    from Google's or GT's login page in their browser."""
+    from Google's or the school's login page in their browser."""
     return _page(
         settings,
         "Can't sign you in",
@@ -200,25 +207,34 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
             "history; Yorg, the test data, plotted; and Piper, the fluid systems, drawn.</p>"
         ]
-        offered = [_SIGN_INS[name] for name in _SIGN_INS if _provider(request, name) is not None]
+        offered = [name for name in _SIGN_INS if _provider(request, name) is not None]
         if offered:
+            school = esc(settings.school_name)
             query = urlencode({"next": _safe_next(next_path)})
             buttons = "".join(
-                f'<a class="button{" secondary" if i else ""}" href="{way.start}?{query}">Sign in with {way.label}</a>'
-                for i, way in enumerate(offered)
+                f'<a class="button{" secondary" if i else ""}" href="{_SIGN_INS[name].start}?{query}">Sign in with '
+                f"{esc(_label(settings, name))}</a>"
+                for i, name in enumerate(offered)
             )
             parts.append(f'<div class="choices">{buttons}</div>')
-            # Only Georgia Tech accounts make new accounts (auth._sign_in): Google is for accounts already there.
-            if _provider(request, "microsoft") is None:
+            # Only the school's accounts make new accounts (auth._sign_in): through Microsoft, or Google where the
+            # school's accounts are Google's. Google is otherwise for accounts already there.
+            microsoft = _provider(request, "microsoft") is not None
+            google = _provider(request, "google") is not None
+            if microsoft:
+                join, joining = f"Sign in with {school}", f"Sign in with your {school} account"
+            else:
+                join = joining = f"Sign in with Google, with your {school} address"
+            if not (microsoft or (google and settings.google_makes_accounts)):
                 first = "First time here? An admin needs to invite you first."
             elif auth.whitelist_on(db):
                 first = (
-                    "First time here? Sign in with Georgia Tech. If your GT email isn't on the team's whitelist yet, "
-                    "ask an admin to add it."
+                    f"First time here? {join}. If your {school} email isn't on the team's whitelist yet, ask an admin "
+                    "to add it."
                 )
             else:
-                first = "First time here? Sign in with your Georgia Tech account to join."
-            if _provider(request, "google") is not None:
+                first = f"First time here? {joining} to join."
+            if google and not settings.google_makes_accounts:
                 first += " Google is for accounts made with it before."
             parts.append(f'<p class="fine">{first}</p>')
         if settings.dev_auth and not settings.production:
@@ -255,7 +271,7 @@ async def _start_sign_in(request: Request, settings: Settings, name: Provider, n
     if provider is None:
         if settings.dev_auth and not settings.production:
             return RedirectResponse("/?" + urlencode({"next": _safe_next(next_path)}), status_code=303)
-        raise ApiError(f"{_SIGN_INS[name].label} sign-in isn't set up on this server", code="signin_unavailable")
+        raise ApiError(f"{_label(settings, name)} sign-in isn't set up on this server", code="signin_unavailable")
     request.session["next"] = _safe_next(next_path)
     return await provider.authorize_redirect(request, settings.public_url.rstrip("/") + _SIGN_INS[name].callback)
 
@@ -269,7 +285,7 @@ async def _signed_in_as(request: Request, name: Provider) -> dict[str, Any]:
     try:
         token = await provider.authorize_access_token(request)
     except OAuthError as exc:
-        message = f"{_SIGN_INS[name].label} sign-in failed: {exc.description or exc.error}"
+        message = f"{_label(request.app.state.settings, name)} sign-in failed: {exc.description or exc.error}"
         raise Forbidden(message, code="signin_failed") from exc
     return dict(token.get("userinfo") or {})
 
@@ -419,7 +435,7 @@ def dev_login(request: Request, db: DB, settings: Config, email: str, name: str 
 
 @router.post("/auth/dev-token")
 def dev_token(body: DevTokenIn, db: DB, settings: Config) -> TokenIssuedOut:
-    """Development only (YJSP_DEV_AUTH): a client token for any email, as if Georgia Tech vouched for it."""
+    """Development only (YJSP_DEV_AUTH): a client token for any email, as if the school vouched for it."""
     _require_dev(settings)
     user = auth.sign_in_dev(db, settings, body.email, body.name)
     token = auth.issue_token(db, user, kind=auth.CLIENT, name=body.client or "dev token")

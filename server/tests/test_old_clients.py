@@ -233,6 +233,8 @@ def test_only_admins_set_the_oldest_client_and_only_to_one_add_ins_can_update_to
     assert client.patch("/api/settings", json={"whitelist": True}, headers=chief).json() == {
         "whitelist": True,
         "min_client_version": "0.5.2",
+        "school_name": "Georgia Tech",
+        "school_domains": ["gatech.edu"],
     }
     assert take_changes_from(client, chief, None).json()["min_client_version"] is None  # any client again
     assert take_changes_from(client, chief, "0.5.4").json()["min_client_version"] == "0.5.4"

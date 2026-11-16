@@ -1,5 +1,5 @@
-"""Accounts and credentials: signing in with Google or a Georgia Tech account, tokens, and the CLI/add-in browser
-sign-in."""
+"""Accounts and credentials: signing in with Google or the school's accounts (Georgia Tech's, for YJSP), tokens, and the
+CLI/add-in browser sign-in."""
 
 import base64
 import hashlib
@@ -36,10 +36,6 @@ _SAME_VISIT = timedelta(minutes=5)
 # What the add-in's requests say (api/deps.ACTIVITY_HEADER) while SolidWorks has the foreground and someone has used
 # the computer in the last few minutes (SolidWorksActivity.cs).
 IN_SOLIDWORKS = "solidworks"
-# Georgia Tech's accounts are Microsoft 365 accounts, in GT's own directory (tenant) in Microsoft Entra, which sends
-# their sign-ins to GT's login page, Duo and all. Signing in with Microsoft lets in only this tenant's people.
-GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
-GT_DOMAIN = "gatech.edu"
 
 
 def _digest(secret: str) -> str:
@@ -55,52 +51,59 @@ def whitelist_on(db: Session) -> bool:
 def sign_in(db: Session, settings: Settings, *, subject: str, email: str, name: str, email_verified: bool) -> User:
     """Find the account for a Google identity.
 
-    Google doesn't make new accounts (since October 2026): new people join with their Georgia Tech account. It signs
-    in to one that's there already: its own, or one under its email, such as an admin's invite. Emails in
-    YJSP_BOOTSTRAP_ADMINS are always active admins, made if need be. A disabled account stays disabled.
+    It signs in to one that's there already: its own, or one under its email, such as an admin's invite. It makes a new
+    one only where the school's accounts are Google's (YJSP_GOOGLE_MAKES_ACCOUNTS), for one of the school's addresses,
+    as the school's own sign-in does; YJSP's school's are Microsoft's, so there Google makes none (since October 2026).
+    Emails in YJSP_BOOTSTRAP_ADMINS are always active admins, made if need be. A disabled account stays disabled.
     """
     if not email_verified:
         raise Forbidden("Your Google account's email address isn't verified", code="unverified_email")
     email = email.strip().lower()
-    return _sign_in(db, settings, "google_sub", subject, [email], name, "Google account", makes_accounts=False)
+    makes = settings.google_makes_accounts and school_address(settings, email)
+    return _sign_in(db, settings, "google_sub", subject, [email], name, "Google account", makes_accounts=makes)
 
 
 def sign_in_microsoft(db: Session, settings: Settings, claims: Mapping[str, Any]) -> User:
-    """Find or create the account for a Georgia Tech account, from the ID token Microsoft signed (whose signature,
-    issuer, audience, and nonce the sign-in has checked).
+    """Find or create the account for one of the school's accounts (Georgia Tech's, for YJSP), from the ID token
+    Microsoft signed (whose signature, issuer, audience, and nonce the sign-in has checked).
 
-    Only GT's own people get in: the token must come from GT's tenant, for someone with a GT address. A guest whom GT
-    invited from outside has an outside address. An account is tied to the person's Microsoft object ID, which stays
-    the same even if the app is registered again, and found the first time by any of their GT addresses: their GT
-    username's (gburdell3@gatech.edu), or an alias. The rest is as for Google (sign_in), except that a GT account
-    makes a new account: anyone's while the whitelist is off, and only one whose address is on it while it's on.
+    Only the school's own people get in: the token must come from its tenant (YJSP_MICROSOFT_TENANT), for someone with
+    one of its addresses (YJSP_SCHOOL_DOMAINS). A guest whom it invited from outside has an outside address. An account
+    is tied to the person's Microsoft object ID, which stays the same even if the app is registered again, and found the
+    first time by any of their addresses at the school: their username's (gburdell3@gatech.edu), or an alias. The rest
+    is as for Google (sign_in), except that the school's account makes a new account: anyone's while the whitelist is
+    off, and only one whose address is on it while it's on.
     """
+    school = settings.school_name
     addresses = [claims.get("preferred_username"), claims.get("email")]  # the username's first, for new accounts
     found = [a.strip().lower() for a in addresses if isinstance(a, str)]
-    gt_addresses = list(dict.fromkeys(a for a in found if gt_address(a)))
+    theirs = list(dict.fromkeys(a for a in found if school_address(settings, a)))
     subject = claims.get("oid")
-    if claims.get("tid") != GT_TENANT or not isinstance(subject, str) or not subject or not gt_addresses:
+    if claims.get("tid") != settings.microsoft_tenant or not isinstance(subject, str) or not subject or not theirs:
+        domains = settings.school_domain_list
+        where = f" (an address at {domains[0]})" if domains else ""
         raise Forbidden(
-            f"Only Georgia Tech accounts sign in this way: sign in with your GT username (like gburdell3@{GT_DOMAIN})",
-            code="not_georgia_tech",
+            f"Only {school} accounts sign in this way: sign in with your {school} account{where}",
+            code="not_georgia_tech",  # its name from when the school was always GT's: codes are the API's (CLAUDE.md)
         )
     name = claims.get("name")
     name = name if isinstance(name, str) else ""
-    return _sign_in(db, settings, "microsoft_oid", subject, gt_addresses, name, "GT account", makes_accounts=True)
+    return _sign_in(db, settings, "microsoft_oid", subject, theirs, name, f"{school} account", makes_accounts=True)
 
 
 def sign_in_dev(db: Session, settings: Settings, email: str, name: str) -> User:
-    """Sign in as any email, for local development (YJSP_DEV_AUTH), as if Georgia Tech vouched for it: a new account
-    follows GT's rules, the whitelist's, so they can be tried out."""
+    """Sign in as any email, for local development (YJSP_DEV_AUTH), as if the school vouched for it: a new account
+    follows the school's rules, the whitelist's, so they can be tried out."""
     email = email.strip().lower()
     name = name or email.split("@")[0]
     return _sign_in(db, settings, "google_sub", f"dev:{email}", [email], name, "Google account", makes_accounts=True)
 
 
-def gt_address(address: str) -> bool:
-    """Whether it's a Georgia Tech address: GT's own domain, or one of its departments'."""
+def school_address(settings: Settings, address: str) -> bool:
+    """Whether it's one of the school's addresses: at one of its domains (YJSP_SCHOOL_DOMAINS), or one of its
+    departments' (cc.gatech.edu)."""
     _, at, domain = address.rpartition("@")
-    return bool(at) and (domain == GT_DOMAIN or domain.endswith("." + GT_DOMAIN))
+    return bool(at) and any(domain == ours or domain.endswith("." + ours) for ours in settings.school_domain_list)
 
 
 def _sign_in(
@@ -132,15 +135,20 @@ def _sign_in(
     admin = not settings.admin_emails.isdisjoint(addresses)
     listed = db.scalar(select(WhitelistEmail).where(WhitelistEmail.email.in_(addresses)).limit(1))
     if user is None:
+        site, school = settings.site_name, settings.school_name
         if not admin and not makes_accounts:
+            how = (
+                f"only {school} addresses make one: sign in with yours"
+                if settings.google_makes_accounts
+                else f"Google doesn't make new ones: sign in with your {school} account"
+            )
             raise Forbidden(
-                f"{addresses[0]} has no YJSP account, and Google doesn't make new ones: sign in with your Georgia Tech "
-                "account, or ask an admin to invite this email",
+                f"{addresses[0]} has no {site} account, and {how}, or ask an admin to invite this email",
                 code="no_account",
             )
         if not admin and listed is None and whitelist_on(db):
             raise Forbidden(
-                f"{addresses[0]} isn't on YJSP's whitelist: ask an admin to add it, then sign in again",
+                f"{addresses[0]} isn't on {site}'s whitelist: ask an admin to add it, then sign in again",
                 code="not_whitelisted",
             )
         user = User(email=addresses[0], name=name.strip(), status=UserStatus.ACTIVE)

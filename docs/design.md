@@ -127,6 +127,14 @@ on every visit and measuring walks every file Vault has.
 
 ## Sign-in and accounts
 
+- **The school** is a setting, so another team's site takes its own school's accounts: its name
+  (`YJSP_SCHOOL_NAME`), its email domains (`YJSP_SCHOOL_DOMAINS`, each with its subdomains), and
+  its directory in Microsoft Entra (`YJSP_MICROSOFT_TENANT`, by its tenant ID), Georgia Tech's the
+  defaults. Only the school's addresses make an account by signing in, or go on the whitelist, so
+  with none, people join only by an admin's invite; and where the school's accounts are Google's,
+  Google makes them too (`YJSP_GOOGLE_MAKES_ACCOUNTS`), for its verified addresses alone. Below,
+  "GT" is the school, as it is for YJSP. Error codes and the API's field names keep the names they
+  had (`not_georgia_tech`), as the API's rules say.
 - **People** sign in with a Georgia Tech account, or with Google to an account already
   there. Since October 2026 only a GT sign-in makes an account (`auth._sign_in`): Google
   signs in to one it made before, or to an admin's invite, so someone without a GT account

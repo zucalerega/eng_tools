@@ -315,7 +315,7 @@ test("admins put a roster's Georgia Tech emails on the whitelist, see who has jo
     expect(dialog.getAllByRole("listitem").map((item) => item.textContent)).toEqual([george, jane, mom]);
     await userEvent.click(dialog.getByRole("button", { name: "Add all 3" }));
     expect(await screen.findByText("Added 2 emails.")).toBeTruthy();
-    expect(screen.getByText(/which isn't a Georgia Tech address\. Only GT accounts/).textContent).toMatch(
+    expect(screen.getByText(/which isn't a Georgia Tech address\. Only Georgia Tech accounts/).textContent).toMatch(
         new RegExp(`^Left off ${mom.replace(/[.]/g, "\\.")}, `),
     );
     expect(await team.whitelisted()).toEqual(expect.arrayContaining([george, jane]));

@@ -125,6 +125,10 @@ cd web && npm ci && npm run check && npm test && npm run build
 - **Comments explain why.** Match the style of the code around you.
 - **Dependencies:** add one only with a reason given in the PR. Lockfiles (`uv.lock`,
   `packages.lock.json`, `package-lock.json`) are committed and only change on purpose.
+- **Licenses:** `server/` and `web/` are GPL-3.0-only (`LICENSE`), `client/` is MIT (`client/LICENSE`), and code
+  keeps its part's license. A new dependency must allow that (GPL-compatible for the server and the web app;
+  permissive for the client, which runs inside SolidWorks), and one with terms of its own (copyleft, a notice, a
+  file the repository or a download carries) goes in `THIRD_PARTY_NOTICES.md`.
 - **Python:** type hints on every function, SQLAlchemy 2.0 typed models, ruff clean
   (line length 120).
 - **C#:** `Vault.Client` must build for netstandard2.0 (the add-in runs on .NET

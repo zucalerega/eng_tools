@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { Dialog, Notice } from "../components";
 import { FolderChooser, type BrowseFolder, type BrowseItem } from "../FolderBrowser";
@@ -166,8 +166,9 @@ export function EditorPage({ id }: { id: number }) {
     }, [diagram, toEdit]);
 
     // Saving refused: someone else is editing it now. It's only looked at here, and its banner asks what becomes of
-    // the changes that weren't saved.
-    useEffect(() => {
+    // the changes that weren't saved. As the refusal's shown, not after: the page never says it's someone else's
+    // without saying whose at the top too.
+    useLayoutEffect(() => {
         if (saving.status === "locked") {
             lock.lose(saving.locked, false);
         }
@@ -204,7 +205,9 @@ export function EditorPage({ id }: { id: number }) {
     // The drawing as it is (not a revision, nor deleted): to look at, and, while it's yours, to change.
     const live = diagram !== null && !diagram.deleted_at && looking === null;
     const editing = live && lock.mine && saving.status !== "locked";
-    useEffect(() => store.setReadOnly(!editing), [store, editing]);
+    // The drawing takes changes exactly while the page says it's being edited: set as the page shows it, not after,
+    // so there's no moment of Done editing on a drawing that won't take a part, a line, or a picture.
+    useLayoutEffect(() => store.setReadOnly(!editing), [store, editing]);
     useEditorKeys(store, commands, live && !renaming && !takingOver);
 
     if (problem) {

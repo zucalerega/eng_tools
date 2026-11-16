@@ -3,6 +3,7 @@ import { api, type Download } from "../../api";
 import { Notice } from "../../components";
 import { connectLink } from "../components";
 import { formatSize } from "../../format";
+import { useDemo } from "../../session";
 
 const INSTALLER = "vault-setup.exe";
 // What the files an admin puts in the server's downloads folder are, for the ones Vault makes.
@@ -12,6 +13,7 @@ const KNOWN: Record<string, string> = {
 
 /** Getting Vault into SolidWorks: download the add-in's installer, then connect it to this vault. */
 export function SolidWorks() {
+    const demo = useDemo();
     const [downloads, setDownloads] = useState<Download[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
     useEffect(() => {
@@ -63,11 +65,18 @@ export function SolidWorks() {
                 </li>
                 <li>
                     <h2>Connect it to this vault</h2>
-                    <p>
-                        <a className="button" href={connectLink()}>
-                            Connect SolidWorks
-                        </a>
-                    </p>
+                    {demo ? (
+                        <Notice>
+                            In the demo, there&apos;s nothing to connect: the add-in works with a team&apos;s own site,
+                            which its people sign in to.
+                        </Notice>
+                    ) : (
+                        <p>
+                            <a className="button" href={connectLink()}>
+                                Connect SolidWorks
+                            </a>
+                        </p>
+                    )}
                     <p>
                         SolidWorks starts with the Vault tab open, and your browser asks you to let it in. Then C:\VLT
                         has a folder for each of the vault's folders: save new parts in the one they belong in, and

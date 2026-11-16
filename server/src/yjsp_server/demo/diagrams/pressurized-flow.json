@@ -1,0 +1,552 @@
+{
+ "format": 4,
+ "pages": [
+  {
+   "id": "gmtim7pc029z8tw",
+   "name": "Page 1",
+   "parts": [
+    {
+     "id": "pmtim7pc01m37is",
+     "kind": "bottle",
+     "x": -320,
+     "y": -300,
+     "rotation": 0,
+     "flip": false,
+     "tag": "B-1",
+     "props": {
+      "fluid": "gn2",
+      "volume": "49 L"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "supply",
+      "settings": {
+       "pressure": 13890839
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc01nd4ya",
+     "kind": "regulator",
+     "x": -200,
+     "y": -380,
+     "rotation": 0,
+     "flip": false,
+     "tag": "REG-1",
+     "props": {},
+     "shown": [
+      "set"
+     ],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "",
+      "settings": {
+       "setpoint": 2169752.0999999996,
+       "cda": 0.000004
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc01p1m2a",
+     "kind": "junction",
+     "x": -80,
+     "y": -380,
+     "rotation": 0,
+     "flip": false,
+     "tag": "",
+     "props": {},
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    },
+    {
+     "id": "pmtim7pc01rruh9",
+     "kind": "instrument",
+     "x": -80,
+     "y": -460,
+     "rotation": 0,
+     "flip": false,
+     "tag": "PT-PRESS",
+     "props": {
+      "type": "pressure"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    },
+    {
+     "id": "pmtim7pc01t4up7",
+     "kind": "valve",
+     "x": 0,
+     "y": -300,
+     "rotation": 90,
+     "flip": false,
+     "tag": "SV-PRESS",
+     "props": {
+      "body": "globe",
+      "actuation": "solenoid",
+      "normal": "NC"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "",
+      "settings": {
+       "cda": 0.00002
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc01vzm8f",
+     "kind": "tank",
+     "x": 0,
+     "y": -140,
+     "rotation": 0,
+     "flip": false,
+     "tag": "TK-1",
+     "props": {
+      "fluid": "water",
+      "volume": "20 L"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "",
+      "settings": {
+       "mode": "ullage",
+       "pressure": 2169752.0999999996,
+       "volume": 0.02,
+       "liquid_volume": 0.015
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc01xrzpj",
+     "kind": "instrument",
+     "x": 80,
+     "y": -170,
+     "rotation": 0,
+     "flip": false,
+     "tag": "PT-TANK",
+     "props": {
+      "type": "pressure"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    },
+    {
+     "id": "pmtim7pc01zr0kd",
+     "kind": "valve",
+     "x": -100,
+     "y": -110,
+     "rotation": 0,
+     "flip": true,
+     "tag": "SV-VENT",
+     "props": {
+      "body": "globe",
+      "actuation": "solenoid",
+      "normal": "NO"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "",
+      "settings": {
+       "cda": 0.000005,
+       "check": "no",
+       "position": 0
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc021wfgc",
+     "kind": "vent",
+     "x": -180,
+     "y": -110,
+     "rotation": 0,
+     "flip": true,
+     "tag": "",
+     "props": {
+      "to": "Atmosphere"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    },
+    {
+     "id": "pmtim7pc02391rj",
+     "kind": "valve",
+     "x": 0,
+     "y": 60,
+     "rotation": 90,
+     "flip": false,
+     "tag": "MOV-01",
+     "props": {
+      "body": "ball",
+      "actuation": "pneumatic",
+      "normal": "NC"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null,
+     "sim": {
+      "as": "",
+      "settings": {
+       "cda": 0.00008
+      }
+     }
+    },
+    {
+     "id": "pmtim7pc0257u3o",
+     "kind": "venturi",
+     "x": 0,
+     "y": 160,
+     "rotation": 90,
+     "flip": false,
+     "tag": "CAV-1",
+     "props": {
+      "cavitating": "yes"
+     },
+     "shown": [
+      "throat"
+     ],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    },
+    {
+     "id": "pmtim7pc027ha70",
+     "kind": "vent",
+     "x": 60,
+     "y": 240,
+     "rotation": 0,
+     "flip": false,
+     "tag": "",
+     "props": {
+      "to": "Atmosphere"
+     },
+     "shown": [],
+     "label": null,
+     "text": "",
+     "w": 0,
+     "h": 0,
+     "scale": 1,
+     "labelSize": null
+    }
+   ],
+   "lines": [
+    {
+     "id": "lmtim7pc01o6u34",
+     "from": {
+      "part": "pmtim7pc01m37is",
+      "port": "top"
+     },
+     "to": {
+      "part": "pmtim7pc01nd4ya",
+      "port": "a"
+     },
+     "points": [
+      {
+       "x": -320,
+       "y": -380
+      }
+     ],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc01qn4dt",
+     "from": {
+      "part": "pmtim7pc01nd4ya",
+      "port": "b"
+     },
+     "to": {
+      "part": "pmtim7pc01p1m2a",
+      "port": "c"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": [],
+     "sim": {
+      "line": null,
+      "node": {
+       "pressure": 2169752.0999999996
+      }
+     }
+    },
+    {
+     "id": "lmtim7pc01s9a96",
+     "from": {
+      "part": "pmtim7pc01rruh9",
+      "port": "bottom"
+     },
+     "to": {
+      "part": "pmtim7pc01p1m2a",
+      "port": "c"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": [],
+     "sim": {
+      "line": null,
+      "node": {
+       "pressure": 2169752.0999999996
+      }
+     }
+    },
+    {
+     "id": "lmtim7pc01ubv07",
+     "from": {
+      "part": "pmtim7pc01p1m2a",
+      "port": "c"
+     },
+     "to": {
+      "part": "pmtim7pc01t4up7",
+      "port": "a"
+     },
+     "points": [
+      {
+       "x": 0,
+       "y": -380
+      }
+     ],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": [],
+     "sim": {
+      "line": null,
+      "node": {
+       "pressure": 2169752.0999999996
+      }
+     }
+    },
+    {
+     "id": "lmtim7pc01w38ub",
+     "from": {
+      "part": "pmtim7pc01t4up7",
+      "port": "b"
+     },
+     "to": {
+      "part": "pmtim7pc01vzm8f",
+      "port": "top"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc01yffj4",
+     "from": {
+      "part": "pmtim7pc01vzm8f",
+      "port": "right-upper"
+     },
+     "to": {
+      "part": "pmtim7pc01xrzpj",
+      "port": "left"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc020tguv",
+     "from": {
+      "part": "pmtim7pc01vzm8f",
+      "port": "left-upper"
+     },
+     "to": {
+      "part": "pmtim7pc01zr0kd",
+      "port": "a"
+     },
+     "points": [
+      {
+       "x": -50,
+       "y": -170
+      },
+      {
+       "x": -50,
+       "y": -110
+      }
+     ],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc022arf8",
+     "from": {
+      "part": "pmtim7pc01zr0kd",
+      "port": "b"
+     },
+     "to": {
+      "part": "pmtim7pc021wfgc",
+      "port": "in"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "gn2",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc024n2tz",
+     "from": {
+      "part": "pmtim7pc01vzm8f",
+      "port": "bottom"
+     },
+     "to": {
+      "part": "pmtim7pc02391rj",
+      "port": "a"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "water",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc026m29i",
+     "from": {
+      "part": "pmtim7pc02391rj",
+      "port": "b"
+     },
+     "to": {
+      "part": "pmtim7pc0257u3o",
+      "port": "a"
+     },
+     "points": [],
+     "auto": true,
+     "tag": "",
+     "fluid": "water",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    },
+    {
+     "id": "lmtim7pc028axej",
+     "from": {
+      "part": "pmtim7pc0257u3o",
+      "port": "b"
+     },
+     "to": {
+      "part": "pmtim7pc027ha70",
+      "port": "in"
+     },
+     "points": [
+      {
+       "x": 0,
+       "y": 240
+      }
+     ],
+     "auto": true,
+     "tag": "",
+     "fluid": "water",
+     "kind": "pipe",
+     "arrow": "none",
+     "props": {},
+     "shown": []
+    }
+   ],
+   "sheet": null
+  }
+ ],
+ "fluids": [],
+ "style": {
+  "no": "",
+  "nc": "",
+  "fip": "",
+  "labels": 1,
+  "scheme": "",
+  "schemeAt": ""
+ }
+}

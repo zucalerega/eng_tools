@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { request } from "../api";
+import { onSite, root } from "../root";
 import type { LinkKind } from "./api";
 
 // A component's links: what each kind is called, and the ones to the site's own apps (a model in Vault, a P&ID in
@@ -50,8 +51,13 @@ export function siteTarget(url: string): SiteTarget | null {
 /** A link as it's kept: trimmed, and an address on this site as its path, so it works wherever the site is reached. */
 export function tidyUrl(url: string): string {
     const trimmed = url.trim();
-    const origin = window.location.origin;
-    return trimmed.startsWith(origin + "/") ? trimmed.slice(origin.length) : trimmed;
+    const site = window.location.origin + root();
+    return trimmed.startsWith(site + "/") ? trimmed.slice(site.length) : trimmed;
+}
+
+/** Where a link goes, as the browser reaches it: a path on this site under its root (root.ts), anything else as is. */
+export function linkHref(url: string): string {
+    return url.startsWith("/") && !url.startsWith("//") ? onSite(url) : url;
 }
 
 /** The kind a link most likely is, from where it goes: a model in Vault, a P&ID in Piper, a test in Yorg. */

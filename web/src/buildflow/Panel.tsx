@@ -15,8 +15,9 @@ import {
     type ProgressChange,
     type Status,
 } from "./api";
-import { appName, guessKind, KIND_NAMES, KINDS, siteTarget, tidyUrl, useSiteName } from "./links";
+import { appName, guessKind, KIND_NAMES, KINDS, linkHref, siteTarget, tidyUrl, useSiteName } from "./links";
 import { inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
+import { useDemo } from "../session";
 
 // A component, beside the bill: what it is, its lead, and for each phase its milestones (status, due date, the day it
 // was done, a note), who's on it (the build phase's people are who's making it), and its links (CAD and drawings in
@@ -63,6 +64,7 @@ export function ComponentPanel({
     const [problem, setProblem] = useState<string | null>(null);
     const panel = useRef<HTMLElement>(null);
     const subsystem = program.subsystems.find((s) => s.id === component.subsystem_id);
+    const demo = useDemo();
 
     useEffect(() => {
         const close = (event: KeyboardEvent) => {
@@ -125,43 +127,46 @@ export function ComponentPanel({
                     ))}
                 </section>
             )}
-            <Describe
-                component={component}
-                onSave={(description) => act(() => buildflow.changeComponent(component.id, { description }))}
-            />
-            <label className="field">
-                Lead
-                <select
-                    aria-label="Lead"
-                    value={component.lead?.id ?? ""}
-                    onChange={(event) =>
-                        void act(() =>
-                            buildflow.changeComponent(component.id, {
-                                lead_id: event.target.value ? Number(event.target.value) : null,
-                            }),
-                        )
-                    }
-                >
-                    <option value="">No one yet</option>
-                    {withThem(members, component.lead).map((person) => (
-                        <option key={person.id} value={person.id}>
-                            {person.name}
-                        </option>
-                    ))}
-                </select>
-            </label>
-            {PHASES.map((each) => (
-                <PhaseSection
-                    key={each}
-                    phase={each}
-                    open={each === phase}
-                    program={program}
+            {/* In the demo, nothing in it can be changed: its controls are off, and its links and sections still open. */}
+            <fieldset className="bf-panel-body" disabled={demo}>
+                <Describe
                     component={component}
-                    members={members}
-                    focus={focus}
-                    act={act}
+                    onSave={(description) => act(() => buildflow.changeComponent(component.id, { description }))}
                 />
-            ))}
+                <label className="field">
+                    Lead
+                    <select
+                        aria-label="Lead"
+                        value={component.lead?.id ?? ""}
+                        onChange={(event) =>
+                            void act(() =>
+                                buildflow.changeComponent(component.id, {
+                                    lead_id: event.target.value ? Number(event.target.value) : null,
+                                }),
+                            )
+                        }
+                    >
+                        <option value="">No one yet</option>
+                        {withThem(members, component.lead).map((person) => (
+                            <option key={person.id} value={person.id}>
+                                {person.name}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                {PHASES.map((each) => (
+                    <PhaseSection
+                        key={each}
+                        phase={each}
+                        open={each === phase}
+                        program={program}
+                        component={component}
+                        members={members}
+                        focus={focus}
+                        act={act}
+                    />
+                ))}
+            </fieldset>
         </aside>
     );
 }
@@ -430,7 +435,7 @@ function LinkRow({ link, onRemove }: { link: ComponentLink; onRemove: () => void
             <span className="tag">{KIND_NAMES[link.kind]}</span>
             {target && <span className={`bf-app bf-app-${target.app}`}>{appName(target)}</span>}
             <a
-                href={link.url}
+                href={linkHref(link.url)}
                 target={external ? "_blank" : undefined}
                 rel={external ? "noopener noreferrer" : undefined}
                 title={link.added_by ? `${link.url}, added by ${link.added_by.name}` : link.url}
@@ -462,7 +467,7 @@ function AddLink({
     const [busy, setBusy] = useState(false);
     if (!open) {
         return (
-            <button type="button" className="button-small" onClick={() => setOpen(true)}>
+            <button type="button" className="button-small bf-add-link-start" onClick={() => setOpen(true)}>
                 + Add a link
             </button>
         );

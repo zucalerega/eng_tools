@@ -27,6 +27,7 @@ import {
     STATUS_NAMES,
     today,
 } from "./vehicle";
+import { useDemo } from "../session";
 
 // A program's bill of design (/buildflow/programs/{id}): its vehicle on the stage, each component a dot in the color of
 // where it is in the phase picked above it (Design, Build, Test, Launch), and under it the bill, every component's
@@ -475,6 +476,7 @@ function Chip({
     onMore: () => void;
 }) {
     const [open, setOpen, within] = usePopover<HTMLDivElement>();
+    const demo = useDemo(); // the demo: a chip shows its component, as nothing can be changed
     const status = statusAt(component, milestone);
     const kept = component.progress.find((p) => p.milestone_id === milestone.id);
     const said = [`${milestone.name}: ${statusName(status, milestone)}`];
@@ -491,9 +493,9 @@ function Chip({
                 className={`bf-chip bf-chip-${status} ${late ? "bf-chip-late" : ""}`}
                 aria-label={`${component.name}, ${said.join(", ")}`}
                 title={said.join(", ")}
-                aria-haspopup="menu"
-                aria-expanded={open}
-                onClick={() => setOpen(!open)}
+                aria-haspopup={demo ? undefined : "menu"}
+                aria-expanded={demo ? undefined : open}
+                onClick={() => (demo ? onMore() : setOpen(!open))}
             />
             {open && (
                 <div className="menu menu-left" role="menu" aria-label={`${component.name}, ${milestone.name}`}>

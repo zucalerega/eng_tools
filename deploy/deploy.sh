@@ -113,6 +113,16 @@ if healthy; then
     if ! curl -fs http://127.0.0.1:8100/help | grep -q 'id="guide"'; then
         echo "The help page is empty: set YJSP_HELP_DIR=/opt/yjsp/app/help in /srv/yjsp/.env and restart (docs/deploying.md)." >&2
     fi
+    # The demo, once it's set up (docs/deploying.md, "The demo"): made again from nothing by the new version. It's
+    # beside the site, not part of it, so a demo that doesn't start is said, and the site stays deployed.
+    if systemctl cat yjsp-demo.service >/dev/null 2>&1; then
+        if systemctl restart yjsp-demo.service && curl -fs -o /dev/null --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:8200/healthz; then
+            echo "The demo is made again, and answers."
+        else
+            echo "The demo didn't start: journalctl -u yjsp-demo says why. The site itself is deployed." >&2
+            journalctl -u yjsp-demo.service --no-pager -n 20 -o cat >&2
+        fi
+    fi
 else
     echo "The new version doesn't answer: putting the old one back." >&2
     journalctl -u yjsp.service --no-pager -n 20 -o cat >&2

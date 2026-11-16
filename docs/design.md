@@ -259,7 +259,8 @@ on every visit and measuring walks every file Vault has.
 
 `web/` is one page (TypeScript, React, Vite) that the server serves at `/` and at any path
 the API doesn't own (`api/web.py`), to people who are signed in and approved; everyone
-else signs in on the server's home page first. It uses the browser session cookie, and
+else signs in on the server's home page first. The same build is the demo's, at `/demo`
+([The demo](#the-demo)). It uses the browser session cookie, and
 sends `X-YJSP-Request` on every request (`api.ts`).
 
 - **The frame** (`App.tsx`): the top bar, with the team's logo (back to the site's own
@@ -460,6 +461,54 @@ with how many, and a speck of gold by its dot on the vehicle; its component's pa
   else says so, finished, with the trace in the log. Without a keyset there are no deals (503
   `deals_off` to *Search now*).
 
+## The demo
+
+**The demo** (`demo/`, `api/demo.py`) is the site with made-up data, at `/demo`, for anyone to look
+around without signing in, and for no one to change: a link to show another team what the site
+is. It's a server of its own, run from the same code and build as the site, with its own settings
+(`YJSP_DEMO=1`), process, user, and data ([deploying.md](deploying.md#the-demo)), so that what
+anyone can reach without signing in can't reach the team's data, whatever a bug lets it do.
+
+- **The site passes `/demo` on** (`api/demo.py`, when `YJSP_DEMO_URL` is set; a 404 when it isn't):
+  every request under it, `/demo` taken off its path (`YJSP_ROOT_PATH=/demo` tells the demo where it
+  is), and its answer, as it comes. It passes on what a request wants and in what form, never who's
+  asking: a browser's cookies and its `Authorization` stay on the site, so the demo never sees a
+  member's session (it's the same site to the browser, which sends it the site's cookies), and the
+  demo's `Set-Cookie` never reaches the browser. At most 16 requests go to it at once; the rest wait
+  10 seconds for their turn, then 503 `demo_busy`; a demo that doesn't answer is 502 `demo_down`.
+- **Everyone is its guest** (`demo.GUEST_EMAIL`, `api/deps.py`): every request, signed in or not,
+  whatever it sends. The guest is a member, not an admin, with Vault's viewer role on everything,
+  so the pages show only what can be looked at. Anything but a read (GET, HEAD, OPTIONS) is refused
+  before any route sees it (`demo.Guard`: 403 `demo_read_only`), and so is sign-in (`/auth/...`,
+  404). `GET /api/me` says `demo: true`, and the web app shows a banner under the top bar, has no
+  name to change or sign-out in the account menu, no Claude or requests in Help, and leaves out
+  what would change something (upload, new folders, diagrams, and schemes, Edit, Save view, Split,
+  a status's menu on Buildflow's chips, which open the component instead, whose panel's controls
+  are off). The help shows the demo what anyone sees, not the members' parts.
+- **It has nothing to spend or leak**: it refuses to start with any way to sign in, an Anthropic
+  or eBay key, a Claude Code routine, or a demo of its own (`Settings.check`), and on a database the
+  demo's seed didn't make (`demo.ready`: the seed's guest is in it), so it can't be turned on over
+  the team's own.
+- **Its data** is made from nothing by `yjsp-demo seed` (`demo/seed.py`), through the site's own
+  API, in a server that's only in that process, as a fictional team's semester: a 500 lbf LOX/RP-1
+  rocket, Kestrel, and its test stand; twelve people; Piper's own examples as their P&IDs
+  (`demo/diagrams/`, kept as Piper draws them by `web/tests/demo-diagrams.test.ts`), one revised,
+  released, and changed since; cold flows, a proof test, and two hot fires in Yorg, made from a few
+  lines of physics and noise (`demo/data.py`) and named after the P&IDs' tags, so Piper shows them
+  on the drawings; calculated channels and a saved view; both bills of design in Buildflow, partway
+  through, linked to all of those; and in Vault, SparkFun's model of a servo (`demo/files/`, CC
+  BY-SA 4.0, credited), its only CAD, with a part checked out. Each change is made at its time
+  (`db.clock`, which only the seed sets), counted back from the day it's made, and nothing in it is
+  anyone's real hardware or test. It's made in a folder beside the demo's and then put in its place,
+  so a seed that fails leaves the last demo as it was, and it replaces only a folder a seed made
+  (its `.yjsp-demo`). The demo's server makes it again each time it starts, and each night.
+- **Wherever the site is**: one build of the web app serves the site and the demo. Vite names the
+  build's files beside the page (`base: "./"`), the server makes the page's names its own and says
+  its root on the page (`<meta name="yjsp-root">`, `api/web.py`), and the app starts its addresses
+  with it (`root.ts`): the router's, requests to the API, links to the help and the team's logo.
+  The app's own paths (`/vault/file/12`) are the same anywhere. The sign-in pages don't follow a
+  root yet, so only the demo sets one.
+
 ## Server conventions
 
 - **Errors** are `ApiError`s (`errors.py`), sent as
@@ -500,15 +549,16 @@ with how many, and a speck of gold by its dot on the vehicle; its component's pa
 ## API
 
 Every endpoint needs sign-in except `/auth/*`, `/healthz`, the help (`/help`, `/help.md`,
-`/llms.txt`, which show members more), and where eBay's account deletion notifications go
-(`/api/deals/ebay/account-deletion`, below). Interactive docs are at
+`/llms.txt`, which show members more), where eBay's account deletion notifications go
+(`/api/deals/ebay/account-deletion`, below), and the demo, at `/demo` ([The demo](#the-demo)), where
+everyone's its guest. Interactive docs are at
 `/docs`. The site's own endpoints are below; each app's are in its page: [Vault's](vault.md#api)
 (`/api/folders`, `/api/files`, ...), [Yorg's](yorg.md#api) (`/api/yorg/...`), and
 [Piper's](piper.md#api) (`/api/piper/...`), and [Buildflow's](buildflow.md#api) (`/api/buildflow/...`).
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved; change your own name |
+| `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved, and whether this is the demo (`demo`, where everyone's its guest); change your own name |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) and in SolidWorks (`solidworks_seconds`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting; and the oldest add-in and CLI that can change the vault `{min_client_version}`, like `"0.5.4"`, no newer than the installer offered (`not_offered`, or `no_installer` if there's none), or `null` for any (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |

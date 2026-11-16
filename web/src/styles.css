@@ -26,8 +26,11 @@
     --topbar-dim: rgb(11 27 51 / 42%);
     --topbar-hover: rgb(11 27 51 / 6%);
     --topbar-press: rgb(11 27 51 / 10%);
-    /* The team's logo, its letters navy here and white in the dark (the server serves it: api/web.py). */
-    --site-logo: url("/brand/logo-on-light.png");
+    /* The team's logo, its letters navy here and white in the dark (the server serves it: api/web.py), under the
+       site's root (root.ts, placeLogos, sets these where it isn't at the root of its address). */
+    --logo-on-light: url("/brand/logo-on-light.png");
+    --logo-on-dark: url("/brand/logo-on-dark.png");
+    --site-logo: var(--logo-on-light);
     --gold: #e0a500;
     --danger: #c9252d;
     --danger-soft: #fdecec;
@@ -91,7 +94,7 @@
         --topbar-dim: rgb(255 255 255 / 45%);
         --topbar-hover: rgb(255 255 255 / 8%);
         --topbar-press: rgb(255 255 255 / 12%);
-        --site-logo: url("/brand/logo-on-dark.png");
+        --site-logo: var(--logo-on-dark);
         --danger: #f47067;
         --danger-soft: #3a1618;
         --warning: #d8a33a;
@@ -138,7 +141,7 @@
     --topbar-dim: rgb(255 255 255 / 45%);
     --topbar-hover: rgb(255 255 255 / 8%);
     --topbar-press: rgb(255 255 255 / 12%);
-    --site-logo: url("/brand/logo-on-dark.png");
+    --site-logo: var(--logo-on-dark);
     --danger: #f47067;
     --danger-soft: #3a1618;
     --warning: #d8a33a;
@@ -343,6 +346,30 @@ main {
     padding: 0.35rem 1rem;
     font-size: 0.88rem;
     font-weight: 600;
+}
+
+/* The demo (/demo): a banner under the top bar, so no one takes its made-up data for a team's. */
+.demo-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.35rem 1rem;
+    font-size: 0.88rem;
+}
+
+.demo-banner strong {
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    background: var(--gold);
+    color: #0b1b33;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 /* Yorg's preview (/yorg/dev, admins): a banner under the top bar while in it, and the way in from the top bar. */
@@ -2363,6 +2390,13 @@ input[type="checkbox"] {
     padding: 0 1rem 0.7rem;
     border-bottom: 1px solid var(--border);
     font-size: 0.88rem;
+}
+
+.help-demo {
+    margin: 0;
+    padding: 1rem;
+    color: var(--muted);
+    font-size: 0.92rem;
 }
 
 .chat-log {

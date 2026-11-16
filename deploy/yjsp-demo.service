@@ -1,0 +1,35 @@
+# /etc/systemd/system/yjsp-demo.service on the server: the demo, at /demo (docs/deploying.md, "The demo"). Keep this
+# copy the same as the server's.
+[Unit]
+Description=YJSP's demo: made-up data anyone can look at (yjsp-server, YJSP_DEMO=1)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=yjsp-demo
+Group=yjsp-demo
+# Its .env and data/ are here: nothing of the team's.
+WorkingDirectory=/srv/yjsp-demo
+# Made again from nothing each time it starts: after each deploy (deploy.sh), and each night (yjsp-demo-reseed.timer).
+ExecStartPre=/opt/yjsp/app/server/.venv/bin/yjsp-demo seed
+ExecStart=/opt/yjsp/app/server/.venv/bin/yjsp-server
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/yjsp-demo
+# Anyone can use it, so it can't see the team's site's settings, database, or files, whatever their permissions.
+InaccessiblePaths=/srv/yjsp /etc/yjsp
+LimitNOFILE=4096
+# And it gets only a little of the machine, so it can never take much from the team's site.
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

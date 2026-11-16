@@ -14,6 +14,7 @@ import { Dialog, Notice, usePopover } from "./components";
 import { HomeDeals } from "./deals";
 import { HelpButton, HelpPanel } from "./help";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow, piperWide } from "./piper";
+import { onSite } from "./root";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { StorageBar } from "./storage";
@@ -174,6 +175,15 @@ export function App() {
                     <AccountMenu vault={vault} />
                 </div>
             </header>
+            {me?.demo && (
+                <div className="demo-banner" role="note">
+                    <strong>Demo</strong>
+                    <span>Made-up data, for a look around: nothing here can be changed.</span>
+                    <a href={onSite("/help")} target="_blank" rel="noreferrer">
+                        What it does
+                    </a>
+                </div>
+            )}
             {adminMode && vaultApp && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.
@@ -267,11 +277,12 @@ function Home({ pathname }: { pathname: string }) {
 /** How full the server's disk is, under the apps, and how much of it each takes: quiet if it can't be measured. */
 function HomeStorage() {
     const [storage, setStorage] = useState<StorageSummary | null>(null);
+    const { me } = useSession();
     useEffect(() => {
         api.storageSummary().then(setStorage, () => setStorage(null));
     }, []);
-    if (!storage) {
-        return null;
+    if (!storage || me?.demo) {
+        return null; // in the demo, the machine's disk says nothing about the site
     }
     return (
         <section className="storage home-storage" aria-label="Storage">
@@ -318,17 +329,21 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         {me?.name}
                         <span className="muted">{me?.email}</span>
                     </p>
-                    <button
-                        type="button"
-                        className="menu-item"
-                        onClick={() => {
-                            setOpen(false);
-                            setNaming(true);
-                        }}
-                    >
-                        Change your name…
-                    </button>
-                    <hr />
+                    {!me?.demo && (
+                        <>
+                            <button
+                                type="button"
+                                className="menu-item"
+                                onClick={() => {
+                                    setOpen(false);
+                                    setNaming(true);
+                                }}
+                            >
+                                Change your name…
+                            </button>
+                            <hr />
+                        </>
+                    )}
                     <p className="menu-label" id="theme-label">
                         Theme
                     </p>
@@ -360,12 +375,16 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                             </label>
                         </>
                     )}
-                    <hr />
-                    <form method="post" action="/auth/logout" onSubmit={forgetChat}>
-                        <button type="submit" className="menu-item">
-                            Sign out
-                        </button>
-                    </form>
+                    {!me?.demo && (
+                        <>
+                            <hr />
+                            <form method="post" action={onSite("/auth/logout")} onSubmit={forgetChat}>
+                                <button type="submit" className="menu-item">
+                                    Sign out
+                                </button>
+                            </form>
+                        </>
+                    )}
                 </div>
             )}
             {naming && me && <NameDialog name={me.name} onClose={() => setNaming(false)} />}

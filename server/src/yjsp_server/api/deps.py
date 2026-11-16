@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from .. import auth, clients
+from .. import auth, clients, demo
 from ..config import Settings
 from ..errors import Forbidden, Unauthorized
 from ..models import User, UserStatus
@@ -45,9 +45,20 @@ def session_secret(request: Request) -> str:
 
 
 def session_user(request: Request, db: Session) -> User | None:
-    """Who the browser's session cookie belongs to, if anyone: for pages, which redirect instead of failing."""
+    """Who the browser's session cookie belongs to, if anyone: for pages, which redirect instead of failing. In the
+    demo, its guest."""
+    if get_settings(request).demo:
+        return _demo_guest(db)
     secret = session_secret(request)
     return _authenticate(request, db, secret) if secret else None
+
+
+def _demo_guest(db: Session) -> User:
+    """Everyone, in the demo, whatever they send: it has no sign-in, and its guest can only read (demo.Guard)."""
+    guest = demo.guest(db)
+    if guest is None:  # the server refuses to start without one (demo.ready)
+        raise Unauthorized("The demo isn't set up")
+    return guest
 
 
 def _credentials(request: Request) -> tuple[str, bool]:
@@ -60,7 +71,9 @@ def _credentials(request: Request) -> tuple[str, bool]:
 
 
 def any_user(request: Request, db: DB) -> User:
-    """The signed-in user, whether or not an admin has approved them yet."""
+    """The signed-in user, whether or not an admin has approved them yet. In the demo, its guest."""
+    if get_settings(request).demo:
+        return _demo_guest(db)
     secret, from_cookie = _credentials(request)
     user = _authenticate(request, db, secret) if secret else None
     if user is None:

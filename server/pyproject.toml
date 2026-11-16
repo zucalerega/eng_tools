@@ -25,6 +25,7 @@ postgres = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
 yjsp-server = "yjsp_server.__main__:main"
+yjsp-demo = "yjsp_server.demo.__main__:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

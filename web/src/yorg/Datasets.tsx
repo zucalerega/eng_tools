@@ -8,6 +8,7 @@ import { yorg, type DataFolder, type Dataset } from "./api";
 import { reloadDataset } from "./data";
 import { formatDuration, formatRate } from "../scale";
 import { DATA_FILES, UploadDialog } from "./Upload";
+import { useDemo } from "../session";
 
 // The datasets, in folders: a folder's own datasets and folders, and every dataset when searching. Datasets and
 // folders are moved by dragging them onto a folder (or a folder in the path above), or by choosing them and Move to;
@@ -23,6 +24,7 @@ const MAX_LISTED = 8; // datasets a delete names; past that, how many more
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function DatasetsPage({ folder }: { folder: number | null }) {
+    const demo = useDemo(); // the demo: nothing to upload, or folders to make
     const [datasets, setDatasets] = useState<Dataset[] | null>(null);
     const [folders, setFolders] = useState<DataFolder[] | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
@@ -184,12 +186,16 @@ export function DatasetsPage({ folder }: { folder: number | null }) {
                     <Link className="button" to="/yorg/views">
                         Saved views
                     </Link>
-                    <button type="button" onClick={() => setDialog({ kind: "new" })}>
-                        New folder
-                    </button>
-                    <button type="button" className="button-primary" onClick={() => picker.current?.click()}>
-                        Upload data
-                    </button>
+                    {!demo && (
+                        <>
+                            <button type="button" onClick={() => setDialog({ kind: "new" })}>
+                                New folder
+                            </button>
+                            <button type="button" className="button-primary" onClick={() => picker.current?.click()}>
+                                Upload data
+                            </button>
+                        </>
+                    )}
                     <input
                         ref={picker}
                         type="file"

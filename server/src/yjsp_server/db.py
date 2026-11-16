@@ -1,6 +1,7 @@
 """Database engine, migrations, and the column types the site's and apps' tables share: UTC datetimes and enums."""
 
 import enum
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,9 +11,13 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import TypeDecorator
 
+# What the time is, for everything the server keeps: the clock's, unless the demo's seed is making its data as if over
+# weeks (demo/seed.py, the only thing that sets this).
+clock: Callable[[], datetime] | None = None
+
 
 def utcnow() -> datetime:
-    return datetime.now(UTC)
+    return clock() if clock is not None else datetime.now(UTC)
 
 
 class UTCDateTime(TypeDecorator):

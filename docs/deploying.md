@@ -172,6 +172,8 @@ so.
 - The script said "Deployed: YJSP answers."
 - https://lucazerega.tail07089c.ts.net opens and you can sign in.
 - https://lucazerega.tail07089c.ts.net/help shows the help, signed out too.
+- Once the demo is set up ([The demo](#the-demo)): the script said "The demo is made again, and
+  answers", and https://lucazerega.tail07089c.ts.net/demo opens in a private window.
 - If the release changed Vault: on a scratch folder, check a file in, out, and in again.
 - If it changed Yorg: a dataset opens and plots.
 - The service's log is clean (see [Looking after it](#looking-after-it)).
@@ -538,6 +540,65 @@ sudo chown -R yjsp:yjsp data && sudo systemctl start yjsp.service
 If restic says its index is missing or damaged (the lock rules protect the data, keys,
 and snapshots, not the index), `restic repair index` rebuilds it from the data. Practice
 this on a scratch VM once a semester: a restore you've never done is a guess.
+
+### The demo
+
+https://lucazerega.tail07089c.ts.net/demo is the demo: the site with made-up data, for anyone
+to look around without signing in, and for no one to change ([design.md](design.md#the-demo)).
+It's a server of its own on the VM, `yjsp-demo.service`, run from the same code and build as the
+site, as its own user, `yjsp-demo`, with its own settings and data in `/srv/yjsp-demo`, which can't
+see the site's (`InaccessiblePaths`), and at most half a CPU and 512 MB. The site passes `/demo`
+on to it (`YJSP_DEMO_URL`, `127.0.0.1:8200`), without anyone's cookies. It's made again from
+nothing (`yjsp-demo seed`) each time it starts: after each deploy, which restarts it, and each
+night at 09:45 UTC (`yjsp-demo-reseed.timer`), so its dates stay recent. If it's down, `/demo`
+says so (502 `demo_down`), and the site carries on.
+
+Setting it up, once, on the server, after a deploy of the release that has it:
+
+```bash
+sudo useradd --system --home-dir /srv/yjsp-demo --shell /usr/sbin/nologin yjsp-demo
+sudo install -d -o yjsp-demo -g yjsp-demo -m 750 /srv/yjsp-demo
+key=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+sudo -u yjsp-demo tee /srv/yjsp-demo/.env > /dev/null <<EOF
+YJSP_ENV=production
+YJSP_DEMO=1
+YJSP_HOST=127.0.0.1
+YJSP_PORT=8200
+YJSP_ROOT_PATH=/demo
+YJSP_PUBLIC_URL=https://lucazerega.tail07089c.ts.net/demo
+YJSP_SECRET_KEY=$key
+YJSP_DATABASE_URL=sqlite:////srv/yjsp-demo/data/yjsp.db
+YJSP_VAULT_DIR=/srv/yjsp-demo/data/vault
+YJSP_YORG_DIR=/srv/yjsp-demo/data/yorg
+YJSP_WEB_DIR=/opt/yjsp/app/web/dist
+YJSP_HELP_DIR=/opt/yjsp/app/help
+EOF
+sudo chmod 600 /srv/yjsp-demo/.env
+```
+
+Then copy `deploy/yjsp-demo.service`, `deploy/yjsp-demo-reseed.service`, and
+`deploy/yjsp-demo-reseed.timer` to `/etc/systemd/system/`, start them, and have the site pass
+`/demo` on:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now yjsp-demo.service yjsp-demo-reseed.timer
+curl -fs http://127.0.0.1:8200/healthz
+echo 'YJSP_DEMO_URL=http://127.0.0.1:8200' | sudo tee -a /srv/yjsp/.env > /dev/null
+sudo systemctl restart yjsp.service
+```
+
+Check https://lucazerega.tail07089c.ts.net/demo in a private window: it opens, signed out, with the
+demo's banner. The demo's settings must have nothing secret but its own key: no sign-in, no
+Anthropic or eBay keys (it refuses to start with them), and it never shares the site's
+`YJSP_SECRET_KEY`. To take it down, `sudo systemctl disable --now yjsp-demo.service
+yjsp-demo-reseed.timer`, and take `YJSP_DEMO_URL` out of `/srv/yjsp/.env`: `/demo` is then a 404.
+
+| To | Run |
+|---|---|
+| See whether it's running | `sudo systemctl status yjsp-demo.service` |
+| Read its log, and the last seed's | `sudo journalctl -u yjsp-demo.service -n 100 --no-pager` |
+| Make it again now | `sudo systemctl restart yjsp-demo.service` |
+| Ask it directly | `curl -fs http://127.0.0.1:8200/healthz` |
 
 ## Moving to YJSP
 

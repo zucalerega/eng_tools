@@ -73,6 +73,13 @@ class UserOut(BaseModel):
         )
 
 
+class MeOut(UserOut):
+    """You (GET /api/me): your account, and whether this is the demo, where everyone's its guest and nothing can be
+    changed (docs/design.md, "The demo")."""
+
+    demo: bool = False
+
+
 class InviteIn(BaseModel):
     email: str
     name: str = ""

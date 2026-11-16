@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     # Search each day and keep what's shown current, on its own. Off: only when an admin asks (the tests).
     deals_schedule: bool = True
 
+    # The demo (docs/design.md, "The demo"): a server of its own beside the site, with made-up data (`yjsp-demo seed`
+    # makes it), that anyone can look at without signing in, as its guest, and no one can change. It has no sign-in,
+    # Claude, deals, or requests, and refuses to start with their settings (check).
+    demo: bool = False
+    # Where people reach the site when a proxy in front of it takes that off each request's path: /demo for the demo,
+    # which the site passes /demo to (demo_url). The web app's addresses, and the help's, start with it. Empty: the
+    # site's at the root of its address. Only the demo has one, for now: the sign-in pages don't follow it (check).
+    root_path: str = Field(default="", pattern=r"^(/[A-Za-z0-9._~-]+)*$")
+    # The demo, for the site to pass /demo and everything under it to (api/demo.py): the demo's own server, on this
+    # machine, like http://127.0.0.1:8200. Empty: there's no demo here.
+    demo_url: str = Field(default="", pattern=r"^(https?://[^/?#\s]+)?$")
+
     @property
     def production(self) -> bool:
         return self.env == "production"
@@ -123,7 +135,13 @@ class Settings(BaseSettings):
         return {e.strip().lower() for e in self.bootstrap_admins.split(",") if e.strip()}
 
     def check(self) -> None:
-        """Refuse to run production with development shortcuts or without a way to sign in."""
+        """Refuse to run production with development shortcuts or without a way to sign in, and the demo, in
+        production or not, with anything it mustn't have."""
+        if self.demo and (demo_problems := self._demo_problems()):
+            raise RuntimeError("Can't start the demo: " + "; ".join(demo_problems))
+        if self.root_path and not self.demo:
+            # The sign-in pages, and Google's and Microsoft's ways back to them, are at the root of the address yet.
+            raise RuntimeError("Can't start: YJSP_ROOT_PATH is only for the demo (YJSP_DEMO=1) for now: unset it")
         if not self.production:
             return
         problems = []
@@ -135,7 +153,7 @@ class Settings(BaseSettings):
             "GOOGLE": (self.google_client_id, self.google_client_secret),
             "MICROSOFT": (self.microsoft_client_id, self.microsoft_client_secret),
         }
-        if not any(all(pair) for pair in sign_ins.values()):
+        if not self.demo and not any(all(pair) for pair in sign_ins.values()):  # the demo has no sign-in
             problems.append(
                 "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech accounts), "
                 "or YJSP_GOOGLE_CLIENT_ID and YJSP_GOOGLE_CLIENT_SECRET"
@@ -157,6 +175,27 @@ class Settings(BaseSettings):
             )
         if problems:
             raise RuntimeError("Can't start in production: " + "; ".join(problems))
+
+    def _demo_problems(self) -> list[str]:
+        """What the demo can't have: anyone uses it without signing in, so nothing in it may sign anyone in, spend
+        anything, or reach anyone (docs/design.md, "The demo")."""
+        settings = {
+            "YJSP_DEV_AUTH": self.dev_auth,
+            "YJSP_GOOGLE_CLIENT_ID": self.google_client_id,
+            "YJSP_GOOGLE_CLIENT_SECRET": self.google_client_secret,
+            "YJSP_MICROSOFT_CLIENT_ID": self.microsoft_client_id,
+            "YJSP_MICROSOFT_CLIENT_SECRET": self.microsoft_client_secret,
+            "YJSP_ANTHROPIC_API_KEY": self.anthropic_api_key,
+            "YJSP_FEEDBACK_ROUTINE_URL": self.feedback_routine_url,
+            "YJSP_FEEDBACK_ROUTINE_TOKEN": self.feedback_routine_token,
+            "YJSP_EBAY_CLIENT_ID": self.ebay_client_id,
+            "YJSP_EBAY_CLIENT_SECRET": self.ebay_client_secret,
+            "YJSP_DEMO_URL": self.demo_url,
+        }
+        found = [name for name, value in settings.items() if value]
+        if not found:
+            return []
+        return [f"unset {', '.join(found)}: the demo has no sign-in, Claude, requests, deals, or demo of its own"]
 
 
 def refuse_old_settings(environ: Mapping[str, str] = os.environ, env_file: Path = Path(ENV_FILE)) -> None:

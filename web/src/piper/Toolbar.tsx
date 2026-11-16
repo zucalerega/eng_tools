@@ -101,6 +101,7 @@ export function Toolbar({
     // Someone editing it, not here: someone else, or you in another window.
     const elsewhere = !edit.mine && !diagram.deleted_at ? (diagram.editing ?? null) : null;
     const theirs = elsewhere !== null && elsewhere.by.id !== me?.id;
+    const demo = me?.demo === true; // the demo: diagrams to look at, not to edit
     return (
         <div className="piper-toolbar">
             <nav className="piper-where" aria-label="Where">
@@ -112,9 +113,18 @@ export function Toolbar({
                     </span>
                 ))}
                 <span className="muted"> / </span>
-                <button type="button" className="piper-name" title="Rename, move, or describe it" onClick={onRename}>
-                    {diagram.name}
-                </button>
+                {demo ? (
+                    <span className="piper-name">{diagram.name}</span>
+                ) : (
+                    <button
+                        type="button"
+                        className="piper-name"
+                        title="Rename, move, or describe it"
+                        onClick={onRename}
+                    >
+                        {diagram.name}
+                    </button>
+                )}
                 {diagram.released && (
                     <span
                         className={`badge piper-release-badge${
@@ -189,7 +199,8 @@ export function Toolbar({
                         </button>
                     </>
                 ) : (
-                    !diagram.deleted_at && (
+                    !diagram.deleted_at &&
+                    !demo && (
                         <>
                             {elsewhere && (
                                 <span

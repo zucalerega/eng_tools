@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Dialog, Notice, Time } from "../components";
-import { useSession } from "../session";
+import { useDemo, useSession } from "../session";
 import { piper, type Scheme, type SchemeBody } from "./api";
 import { STANDARD_FLUIDS } from "./fluids";
 
@@ -20,6 +20,7 @@ const PIPER_COLORS: SchemeBody = {
 export function SchemesPage() {
     const { me } = useSession();
     const [schemes, setSchemes] = useState<Scheme[] | null>(null);
+    const demo = useDemo(); // the demo: no schemes to make
     const [editing, setEditing] = useState<number | null>(null);
     const [deleting, setDeleting] = useState<Scheme | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
@@ -50,9 +51,11 @@ export function SchemesPage() {
             <div className="page-head">
                 <h1 className="page-title">Color schemes</h1>
                 <div className="page-actions">
-                    <button type="button" className="button-primary" onClick={() => void make()}>
-                        New scheme
-                    </button>
+                    {!demo && (
+                        <button type="button" className="button-primary" onClick={() => void make()}>
+                            New scheme
+                        </button>
+                    )}
                 </div>
             </div>
             <p className="muted piper-lead">

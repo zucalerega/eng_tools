@@ -1,0 +1,9 @@
+# /etc/systemd/system/yjsp-demo-reseed.service on the server: see docs/deploying.md, "The demo". Keep this copy the
+# same as the server's.
+[Unit]
+Description=Make YJSP's demo again, so its dates stay recent
+
+[Service]
+Type=oneshot
+# Restarting it seeds it again (yjsp-demo.service's ExecStartPre).
+ExecStart=/usr/bin/systemctl restart yjsp-demo.service

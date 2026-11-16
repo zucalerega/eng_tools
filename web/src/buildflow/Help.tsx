@@ -155,6 +155,46 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "The shop",
+        body: (
+            <ul>
+                <li>
+                    <Link to="/buildflow/shop">Shop</Link>, in the top bar, is the queue of parts the team needs
+                    machined, as the machining tracker was. The cards across the top say how many hours of work each
+                    machine has waiting, and how many people can run it.
+                </li>
+                <li>
+                    <em>Add part</em> queues one: what it is, what it&apos;s for (a program, and one of its components,
+                    or neither), the machine, the material, how many, about how many hours they&apos;ll all take, links
+                    to its drawing and CAD (a web address, or a page here like <code>/vault/file/12</code>), who asked
+                    for it (you, unless you say), who&apos;s making it, and when it&apos;s needed by. Anyone can change
+                    a part, or move it along: queued, in progress, blocked (say why in its note), done.
+                </li>
+                <li>
+                    A part for a component shows on the component&apos;s panel, in its build phase, under{" "}
+                    <em>In the shop</em>, and what becomes of it shows in the program&apos;s recent activity.{" "}
+                    <em>Queue a part for it</em>, there, starts one already for that component, with its drawing and CAD
+                    links.
+                </li>
+                <li>
+                    <em>Remove</em> takes a part off the queue, and keeps it: <em>Show parts taken off the queue</em>,
+                    at the bottom, puts it back.
+                </li>
+                <li>
+                    <em>Who&apos;s trained</em> is how far each person is trained on each machine: 0 not trained, 1
+                    supervised only, 2 runs it on their own, 3 trains others. Set your own there; admins can set
+                    anyone&apos;s. Those at 2 or 3 are who <em>can make</em> a part on that machine, in the queue, and
+                    are offered first as its machinist.
+                </li>
+                <li>
+                    Admins keep the list of machines, under <em>Machines</em>: add one, rename it, or retire it, which
+                    stops new parts going on it and keeps those made on it. <em>Export CSV</em> saves the queue and
+                    who&apos;s trained as a spreadsheet.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Laying out a program",
         body: (
             <ul>

@@ -1,6 +1,7 @@
 """Buildflow's tables: programs, each with its vehicle's drawing, its milestones (the steps every component goes through,
 in four phases), its subsystems and their components; each component's progress through each milestone, its links (CAD,
-drawings, requirements, documents, test data), and its people; and what's been done, for the activity."""
+drawings, requirements, documents, test data), and its people; and what's been done, for the activity. And the shop's:
+its machines, who's trained on each, and the parts queued to be machined (shop.py)."""
 
 import enum
 from datetime import date, datetime
@@ -193,3 +194,85 @@ class Event(Base):
     what: Mapped[str] = mapped_column(String(500))  # "CDR: done", in words, as the activity shows it
 
     user: Mapped[User | None] = relationship(lazy="selectin")
+
+
+# --- the shop -------------------------------------------------------------------------------------------------------
+
+
+class ShopStatus(enum.StrEnum):
+    """Where a part in the shop's queue is."""
+
+    QUEUED = "queued"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"  # held up: its note says by what
+    DONE = "done"
+
+
+class Machine(Base):
+    """A machine in the team's shop (the lathe, the mill, the waterjet, the CNC) that parts are made on and people are
+    trained on. Admins add and rename them; one that's retired takes no new parts, and keeps what was made on it."""
+
+    __tablename__ = "buildflow_machines"
+    __table_args__ = (UniqueConstraint("name_key", name="uq_buildflow_machines_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    name_key: Mapped[str] = mapped_column(String(40))  # lowercased: two machines can't differ only in case
+    position: Mapped[int] = mapped_column(default=0)  # its place in the list
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Skill(Base):
+    """How far someone's trained on a machine: 1, only supervised; 2, runs it on their own; 3, trains others (none kept:
+    not trained). Each person says their own; admins can change anyone's."""
+
+    __tablename__ = "buildflow_skills"
+    __table_args__ = (UniqueConstraint("user_id", "machine_id", name="uq_buildflow_skills_user_machine"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("buildflow_machines.id"), index=True)
+    level: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # who said so: them, or an admin
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
+
+
+class ShopPart(Base):
+    """A part to be machined in the team's shop: on which machine, from what, how many, and about how long they'll
+    take; who asked for it (its responsible engineer) and who's making it; its drawing and CAD; when it's needed; and
+    where it is in the queue. It can be for a component on a program's bill of design, or for a program as a whole, so
+    the bill shows it. Removed from the queue, it's kept, to bring back."""
+
+    __tablename__ = "buildflow_shop_parts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    program_id: Mapped[int | None] = mapped_column(ForeignKey("buildflow_programs.id"), index=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey("buildflow_components.id"), index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("buildflow_machines.id"), index=True)
+    material: Mapped[str] = mapped_column(String(100), default="")
+    quantity: Mapped[int] = mapped_column(default=1)
+    hours: Mapped[float | None] = mapped_column(Float)  # estimated, for all of them
+    drawing: Mapped[str] = mapped_column(String(2000), default="")  # a link, as a component's are (check_address)
+    cad: Mapped[str] = mapped_column(String(2000), default="")
+    status: Mapped[ShopStatus] = mapped_column(enum_column(ShopStatus), default=ShopStatus.QUEUED)
+    requester_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # its responsible engineer
+    machinist_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    need_by: Mapped[date | None] = mapped_column(Date)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    done_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # when it was last said to be done
+    removed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    removed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    machine: Mapped[Machine] = relationship(lazy="selectin")
+    program: Mapped[Program | None] = relationship(lazy="selectin")
+    component: Mapped[Component | None] = relationship(lazy="selectin")
+    requester: Mapped[User | None] = relationship(foreign_keys=[requester_id], lazy="selectin")
+    machinist: Mapped[User | None] = relationship(foreign_keys=[machinist_id], lazy="selectin")
+    editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")

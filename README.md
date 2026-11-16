@@ -562,6 +562,21 @@ Buildflow's top bar, has all of this on one page.
   subsystems, components, and milestones. **Remove** keeps everything said of a component, to
   **Bring back**; a milestone with anything kept on it can be renamed but not deleted; and
   **Archive…** takes a program off the list, kept as it was, until an admin brings it back.
+- **The shop** (**Shop**, in Buildflow's top bar) is the queue of parts the team needs machined,
+  as the machining tracker was. The cards across the top say how many hours each machine has
+  waiting, and how many people can run it. **Add part** queues one: what it is, what it's for (a
+  program, and one of its components, or neither), the machine, its material, how many, about how
+  many hours they'll take in all, links to its drawing and CAD (a web address, or a page of the
+  site's own like `/vault/file/12`), who asked for it (you, unless you say), who's making it, and
+  when it's needed. Anyone can change a part, or move it along: queued, in progress, blocked (say
+  why in its note), done. **Remove** takes a part off the queue and keeps it: **Show parts taken
+  off the queue** puts it back. A part for a component shows on the component's panel, in its build
+  phase (*In the shop*), and **Queue a part for it**, there, starts one for it. **Who's trained**
+  is each person's level on each machine (0 not trained, 1 supervised only, 2 runs it on their
+  own, 3 trains others): set your own there, and admins can set anyone's. Those at 2 or 3 are who
+  can make a machine's parts, and the queue names them. Admins add, rename, and retire machines
+  (**Machines**); a retired one takes no new parts. **Export CSV** saves the queue and who's
+  trained as a spreadsheet.
 
 ## Deals
 

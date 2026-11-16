@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type Deal, type UserRef } from "../api";
 import { Notice } from "../components";
 import { DealCard } from "../deals";
+import { Link } from "../router";
 import {
     buildflow,
     PHASE_NAMES,
     PHASES,
+    SHOP_STATUS_NAMES,
     type Component,
     type Link as ComponentLink,
     type LinkKind,
@@ -13,6 +15,7 @@ import {
     type Phase,
     type ProgramDetail,
     type ProgressChange,
+    type ShopPart,
     type Status,
 } from "./api";
 import { appName, guessKind, KIND_NAMES, KINDS, siteTarget, tidyUrl, useSiteName } from "./links";
@@ -20,7 +23,8 @@ import { inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from ".
 
 // A component, beside the bill: what it is, its lead, and for each phase its milestones (status, due date, the day it
 // was done, a note), who's on it (the build phase's people are who's making it), and its links (CAD and drawings in
-// Vault, requirements, design documents, reviews' slides, P&IDs in Piper, test data in Yorg). Anyone keeps them up.
+// Vault, requirements, design documents, reviews' slides, P&IDs in Piper, test data in Yorg). Anyone keeps them up. In
+// its build phase, its parts in the shop's queue (Shop.tsx), and a way to queue one.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -263,6 +267,7 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                     Not needed: skip what&apos;s not started
                 </button>
             )}
+            {phase === "build" && <InTheShop component={component} />}
             <div className="bf-people">
                 <h3>{WHO[phase]}</h3>
                 <ul className="plain bf-people-list">
@@ -320,6 +325,42 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                 />
             </div>
         </details>
+    );
+}
+
+/** A component's parts in the shop's queue, where each is, and a way to queue another for it. */
+function InTheShop({ component }: { component: Component }) {
+    const [parts, setParts] = useState<ShopPart[] | null>(null);
+    useEffect(() => {
+        buildflow.shopPartsFor(component.id).then(setParts, () => setParts([]));
+    }, [component.id]);
+    return (
+        <section className="bf-in-shop" aria-label="In the shop">
+            <h3>In the shop</h3>
+            {parts !== null && parts.length === 0 && <p className="muted bf-small">Nothing queued for it.</p>}
+            <ul className="plain">
+                {parts?.map((part) => (
+                    <li key={part.id} className="bf-in-shop-part">
+                        <span>
+                            {part.name}
+                            <span className="muted">
+                                {" "}
+                                · {part.machine}
+                                {part.quantity > 1 && ` · ${part.quantity} of them`}
+                            </span>
+                        </span>
+                        <span className={`bf-shop-chip bf-shop-status-${part.status}`}>
+                            {SHOP_STATUS_NAMES[part.status]}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+            <p className="bf-small">
+                <Link to={`/buildflow/shop?add=${component.id}`}>Queue a part for it</Link>
+                {" · "}
+                <Link to="/buildflow/shop">The shop</Link>
+            </p>
+        </section>
     );
 }
 

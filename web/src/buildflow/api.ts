@@ -145,8 +145,96 @@ export interface ComponentChange {
     lead_id?: number | null;
 }
 
+// --- the shop (server: buildflow/shop.py) ---
+
+export type ShopStatus = "queued" | "in_progress" | "blocked" | "done";
+export const SHOP_STATUSES: ShopStatus[] = ["queued", "in_progress", "blocked", "done"];
+export const SHOP_STATUS_NAMES: Record<ShopStatus, string> = {
+    queued: "Queued",
+    in_progress: "In progress",
+    blocked: "Blocked",
+    done: "Done",
+};
+/** How far someone's trained on a machine. */
+export const LEVEL_NAMES = ["Not trained", "Supervised only", "Runs it on their own", "Trains others"];
+/** The level at which someone can make a machine's parts: they run it on their own. */
+export const RUNS_IT = 2;
+
+export interface Machine {
+    id: number;
+    name: string;
+    position: number;
+    retired: boolean; // takes no new parts
+}
+
+export interface Trained {
+    user: UserRef;
+    levels: Record<string, number>; // by machine id: 1 to 3 (left out: not trained)
+}
+
+export interface ShopPart {
+    id: number;
+    name: string;
+    program: { id: number; name: string } | null; // what it's for: a program, and maybe one of its components
+    component: { id: number; name: string } | null;
+    machine_id: number;
+    machine: string; // its name
+    material: string;
+    quantity: number;
+    hours: number | null; // estimated, for all of them
+    drawing: string; // a link: an address, or a page of the site's own ("/vault/file/12")
+    cad: string;
+    status: ShopStatus;
+    requester: UserRef | null; // its responsible engineer
+    machinist: UserRef | null;
+    need_by: string | null; // a day, 2026-12-04
+    note: string;
+    created_at: string;
+    updated_at: string;
+    updated_by: UserRef | null;
+    done_at: string | null;
+    removed_at: string | null;
+}
+
+/** A part, as it's sent to be queued or changed: what's sent changes (component_id and program_id go together). */
+export interface ShopPartChange {
+    name?: string;
+    machine_id?: number;
+    component_id?: number | null;
+    program_id?: number | null;
+    material?: string;
+    quantity?: number;
+    hours?: number | null;
+    drawing?: string;
+    cad?: string;
+    status?: ShopStatus;
+    requester_id?: number | null;
+    machinist_id?: number | null;
+    need_by?: string | null;
+    note?: string;
+}
+
+/** A machine's open work (not done), and who can do it. */
+export interface Load {
+    machine_id: number;
+    parts: number;
+    hours: number;
+    unestimated: number;
+    operators: number; // who run it on their own, or train others on it
+    trainers: number;
+}
+
+export interface Shop {
+    machines: Machine[];
+    parts: ShopPart[];
+    trained: Trained[];
+    load: Load[];
+    can_edit_machines: boolean;
+}
+
 const program = (id: number) => `/api/buildflow/programs/${id}`;
 const component = (id: number) => `/api/buildflow/components/${id}`;
+const shopPart = (id: number) => `/api/buildflow/shop/parts/${id}`;
 
 export const buildflow = {
     programs: (archived = false) =>
@@ -191,4 +279,21 @@ export const buildflow = {
     removeLink: (id: number) => request<Component>("DELETE", `/api/buildflow/links/${id}`),
     setPeople: (id: number, phase: Phase, userIds: number[]) =>
         request<Component>("PUT", `${component(id)}/people`, { phase, user_ids: userIds }),
+
+    /** The shop: its machines, its queue (removed: the parts taken off it instead), who's trained, and its load. */
+    shop: (removed = false) => request<Shop>("GET", `/api/buildflow/shop${removed ? "?removed=true" : ""}`),
+    /** The parts in the shop's queue for a component. */
+    shopPartsFor: (componentId: number) =>
+        request<ShopPart[]>("GET", `/api/buildflow/shop/parts?component_id=${componentId}`),
+    addShopPart: (part: ShopPartChange & { name: string; machine_id: number }) =>
+        request<ShopPart>("POST", "/api/buildflow/shop/parts", part),
+    changeShopPart: (id: number, change: ShopPartChange) => request<ShopPart>("PATCH", shopPart(id), change),
+    removeShopPart: (id: number) => request<ShopPart>("DELETE", shopPart(id)),
+    restoreShopPart: (id: number) => request<ShopPart>("POST", `${shopPart(id)}/restore`),
+    /** Say how far someone's trained on each machine sent (0 to 3): your own, or anyone's for admins. */
+    setLevels: (userId: number, levels: Record<number, number>) =>
+        request<Trained>("PUT", `/api/buildflow/shop/skills/${userId}`, { levels }),
+    addMachine: (name: string) => request<Machine>("POST", "/api/buildflow/shop/machines", { name }),
+    changeMachine: (id: number, change: { name?: string; retired?: boolean }) =>
+        request<Machine>("PATCH", `/api/buildflow/shop/machines/${id}`, change),
 };

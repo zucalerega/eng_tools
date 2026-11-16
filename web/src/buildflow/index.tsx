@@ -4,13 +4,14 @@ import { Link } from "../router";
 import "./buildflow.css";
 
 // Buildflow: each program's bill of design, its components on the vehicle and their progress through design, build,
-// test, and launch. Its pages live under /buildflow; the app switcher in the top bar goes between it and the others.
-// Its pages load when one's first opened.
+// test, and launch; and the shop, the parts queued to be machined and who can run each machine. Its pages live under
+// /buildflow; the app switcher in the top bar goes between it and the others. Its pages load when one's first opened.
 
 const ProgramsPage = lazy(() => import("./Programs").then((module) => ({ default: module.ProgramsPage })));
 const ProgramPage = lazy(() => import("./Program").then((module) => ({ default: module.ProgramPage })));
 const LayoutPage = lazy(() => import("./Layout").then((module) => ({ default: module.LayoutPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
+const ShopPage = lazy(() => import("./Shop").then((module) => ({ default: module.ShopPage })));
 
 export const BUILDFLOW = "Buildflow";
 
@@ -42,10 +43,11 @@ export const BUILDFLOW_ICON =
 
 /** Which of Buildflow's sections a path is in, for the top bar. */
 export const buildflowSection = (pathname: string): string =>
-    pathname.startsWith("/buildflow/help") ? "help" : "programs";
+    pathname.startsWith("/buildflow/help") ? "help" : pathname.startsWith("/buildflow/shop") ? "shop" : "programs";
 
-/** Whether a page wants the room: a program's bill, wide with its milestones. */
-export const buildflowWide = (pathname: string): boolean => /^\/buildflow\/programs\/\d+(\/layout)?\/?$/.test(pathname);
+/** Whether a page wants the room: a program's bill, wide with its milestones, and the shop's queue. */
+export const buildflowWide = (pathname: string): boolean =>
+    /^\/buildflow\/programs\/\d+(\/layout)?\/?$/.test(pathname) || /^\/buildflow\/shop\/?$/.test(pathname);
 
 export function BuildflowPage({ pathname }: { pathname: string }) {
     const page = buildflowPage(pathname.replace(/\/$/, "") || "/buildflow");
@@ -74,6 +76,12 @@ function buildflowPage(path: string) {
             return <ProgramsPage />;
         case "/buildflow/help":
             return <HelpPage />;
+        case "/buildflow/shop":
+            return <ShopPage section="queue" />;
+        case "/buildflow/shop/skills":
+            return <ShopPage section="skills" />;
+        case "/buildflow/shop/machines":
+            return <ShopPage section="machines" />;
     }
     return null;
 }

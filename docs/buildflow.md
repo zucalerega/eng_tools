@@ -8,7 +8,9 @@ links to its CAD and drawings in Vault, its requirements and design documents, i
 and its test data in Yorg. Its program page puts the vehicle on a black stage, as a launch
 company's progress page does, each component a dot in the color of where it is in the phase picked,
 and under it, in big letters, how many are through it: "18 component-level CDRs across the
-vehicle". It's one of the four apps on the team's site, beside Vault, Yorg, and Piper, and shares
+vehicle". Its shop (from the team's machining tracker) is the queue of parts to be machined, how
+much work each machine has waiting, and who's trained to run it. It's one of the four apps on the
+team's site, beside Vault, Yorg, and Piper, and shares
 the server, the database, sign-in and accounts, and the web app's frame with them, and nothing
 else ([design.md](design.md) has those): its own tables (`buildflow_*`), its own API
 (`/api/buildflow`), and its own pages (`/buildflow`). Its code is `server/src/yjsp_server/buildflow`
@@ -119,6 +121,42 @@ and `web/src/buildflow`.
   where it goes (`toDrawing`); subsystems and components, renamed where they are, moved, added,
   removed and brought back; and milestones, by phase. *Archive…* takes the program off the list.
 
+## The shop
+
+The shop (`shop.py`; `Shop.tsx`, at `/buildflow/shop`) is the team's machining tracker, moved into
+Buildflow: the parts the team needs machined, in a queue, and how far each person's trained on each
+machine. The tracker ran on one laptop behind a secret link, with no accounts; here, people sign in
+as they do for everything else, names are accounts, and the site's backups keep it.
+
+- **Machines** (`buildflow_machines`): the lathe, the mill, the waterjet, and the CNC to start (the
+  tracker's), which admins rename, add to, and retire. One retired takes no new parts (409
+  `machine_retired`), and keeps those made on it.
+- **Parts** (`buildflow_shop_parts`): what it is, what it's for (a component, and so its program;
+  or a program as a whole; or neither), the machine, its material, how many, the hours they'll take
+  in all, links to its drawing and CAD (as a component's links are: an http or https address, or a
+  page of the site's own, `/vault/file/12`; 400 `bad_link`), its status (queued, in progress,
+  blocked, done), who asked for it (its responsible engineer: whoever adds it, unless they say), who's
+  making it, when it's needed by, and a note. Anyone signed in adds, changes, and moves parts along,
+  as in the tracker; one taken off the queue is kept, to put back, rather than deleted. The queue
+  shows what's under way first, then what's held up, then what's waiting, then what's done, the one
+  needed soonest first in each. A part can't newly be for a component that's removed (409
+  `removed`), or in an archived program (409 `archived`); one for it already stays the shop's to
+  finish.
+- **Who's trained** (`buildflow_skills`): each person's level on each machine, 0 not trained, 1
+  supervised only, 2 runs it on their own, 3 trains others. Each says their own; admins can say
+  anyone's, and each level keeps who said it. Those at 2 or 3 (`RUNS_IT`) are who can make a
+  machine's parts: the queue names them for each part, and the part's form offers them first as its
+  machinist. Someone who's left the team (their account disabled) runs nothing.
+- **Load**: for each machine that isn't retired, its parts not done, their hours added up (and how
+  many have no estimate), and how many can run it, and train others on it: the cards across the top
+  of the Shop page.
+- **On the bill**: a component's panel, in its build phase, lists its parts in the shop and where
+  each is (*In the shop*), with *Queue a part for it*, which starts one already for the component,
+  named for it, with its drawing and CAD links. What becomes of a part (queued, each status, taken
+  off and put back) is in its program's activity.
+- The Shop page refreshes itself every 30 seconds while it's in view, and *Export CSV* saves the
+  queue and who's trained as a spreadsheet, as the tracker's did.
+
 ## Deals
 
 The site's deals finder (design.md, "Deals") asks each app what it wants found; Buildflow says its
@@ -155,6 +193,13 @@ anyone else.
 | `PUT /api/buildflow/components/{id}/progress/{milestone}` | change its progress at a milestone `{status, due, done_on, note}`: what's sent; 409 `removed`, `archived` |
 | `POST /api/buildflow/components/{id}/links`, `DELETE /api/buildflow/links/{id}` | a link `{phase, kind, url, title, milestone_id}` (400 `bad_link`); remove one |
 | `PUT /api/buildflow/components/{id}/people` | who's on it in a phase `{phase, user_ids}`, in order (400 `not_a_member`) |
+| `GET /api/buildflow/shop?removed=` | the shop: its `machines` (each `retired` or not), the `parts` in its queue (`removed=true`: those taken off it), who's `trained` (each with their `levels` by machine id), each machine's `load`, and whether you keep the machines (`can_edit_machines`) |
+| `GET /api/buildflow/shop/parts?component_id=&program_id=&removed=` | the parts in the queue, or those for a component or a program |
+| `POST /api/buildflow/shop/parts` | a part for the queue `{name, machine_id, component_id, program_id, material, quantity, hours, drawing, cad, status, requester_id, machinist_id, need_by, note}`: `requester_id` left out is you; 409 `machine_retired`, `removed`, `archived`; 400 `bad_link`, `not_a_member` |
+| `PATCH /api/buildflow/shop/parts/{id}` | change what's sent of a part (`component_id` and `program_id` together: either sent, the other left out is none); 409 `removed` for one taken off the queue |
+| `DELETE /api/buildflow/shop/parts/{id}`, `POST .../restore` | take a part off the queue, keeping it, or put it back |
+| `PUT /api/buildflow/shop/skills/{user_id}` | someone's levels `{levels: {machine_id: 0-3}}`: your own, or anyone's (admins); machines left out stay as they were |
+| `POST /api/buildflow/shop/machines`, `PATCH /api/buildflow/shop/machines/{id}` | a new machine `{name}`; rename one, or retire it or bring it back `{name, retired}` (admins); 409 `name_taken` |
 
 ## Roadmap
 
@@ -168,8 +213,17 @@ anyone else.
    - **Pickers for the other apps**: a file found in Vault, a diagram in Piper, a test in Yorg,
      from the panel, rather than its address pasted.
    - **A timeline**: the due dates of a phase on a calendar, for the build schedule.
+2. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
+   with accounts for names, and parts for components on the bills of design. Next:
+   - **Bringing the tracker's data over**, if it holds parts or levels worth keeping: its *Export
+     CSV*, read in by an admin, names matched to accounts.
+   - **Hours spent**, beside the estimate, to estimate the next ones better.
+   - **The shop on the bill**: a component's parts on the bill itself, beside its Manufacturing
+     milestone, and a part's being done offered as the milestone's.
 
 ## Open questions
 
 - What do DCR and QRR stand for on the team? They're left without a title for admins to give.
 - Should leads of a subsystem (not only admins) lay out their own subsystem's components?
+- Should someone's level on a machine be theirs to say, as in the tracker, or a trainer's (level 3)
+  to sign off? Each says their own for now, and admins can change anyone's.

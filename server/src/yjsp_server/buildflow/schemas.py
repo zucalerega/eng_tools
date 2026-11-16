@@ -6,7 +6,21 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from ..api.schemas import UserRef
-from .models import Assignment, Component, Event, Link, Milestone, Phase, Program, Progress, Status, Subsystem
+from .models import (
+    Assignment,
+    Component,
+    Event,
+    Link,
+    Machine,
+    Milestone,
+    Phase,
+    Program,
+    Progress,
+    ShopPart,
+    ShopStatus,
+    Status,
+    Subsystem,
+)
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 LongName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -371,3 +385,165 @@ class EventOut(BaseModel):
             at=event.at,
             what=event.what,
         )
+
+
+# --- the shop (shop.py) ---------------------------------------------------------------------------------------------
+
+MachineName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+Material = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+# A part's drawing or CAD: empty, or a link as a component's are (progress.check_address).
+PartAddress = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MOST_URL)]
+Note = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+Quantity = Annotated[int, Field(ge=1, le=100_000)]
+Hours = Annotated[float, Field(allow_inf_nan=False, ge=0, le=100_000)]
+Level = Annotated[int, Field(ge=0, le=3)]
+MOST_MACHINES = 100
+
+
+class MachineIn(BaseModel):
+    name: MachineName
+
+
+class MachineChangeIn(BaseModel):
+    name: MachineName | None = None
+    retired: bool | None = None  # true: it takes no new parts; false: brought back
+
+
+class MachineOut(BaseModel):
+    id: int
+    name: str
+    position: int
+    retired: bool
+
+    @classmethod
+    def of(cls, machine: Machine) -> "MachineOut":
+        return cls(id=machine.id, name=machine.name, position=machine.position, retired=machine.retired_at is not None)
+
+
+class LevelsIn(BaseModel):
+    """Someone's level on each machine sent, by its id: 0 not trained, 1 supervised only, 2 runs it on their own, 3
+    trains others. Machines left out stay as they were."""
+
+    levels: dict[int, Level] = Field(max_length=MOST_MACHINES)
+
+
+class TrainedOut(BaseModel):
+    user: UserRef
+    levels: dict[int, int]  # by machine id: 1 to 3 (none: not trained)
+
+
+class ShopPartIn(BaseModel):
+    """A part for the shop's queue. requester_id left out: whoever adds it asked for it. component_id says what it's
+    for (and so its program); program_id, without one, a program as a whole."""
+
+    name: LongName
+    machine_id: int
+    component_id: int | None = None
+    program_id: int | None = None
+    material: Material = ""
+    quantity: Quantity = 1
+    hours: Hours | None = None  # estimated, for all of them
+    drawing: PartAddress = ""
+    cad: PartAddress = ""
+    status: ShopStatus = ShopStatus.QUEUED
+    requester_id: int | None = None
+    machinist_id: int | None = None
+    need_by: date | None = None
+    note: Note = ""
+
+
+class ShopPartChangeIn(BaseModel):
+    """What's sent of a part changes, and what's left out stays; component_id and program_id go together (either sent,
+    the other left out is none)."""
+
+    name: LongName | None = None
+    machine_id: int | None = None
+    component_id: int | None = None
+    program_id: int | None = None
+    material: Material | None = None
+    quantity: Quantity | None = None
+    hours: Hours | None = None
+    drawing: PartAddress | None = None
+    cad: PartAddress | None = None
+    status: ShopStatus | None = None
+    requester_id: int | None = None
+    machinist_id: int | None = None
+    need_by: date | None = None
+    note: Note | None = None
+
+
+class Named(BaseModel):
+    id: int
+    name: str
+
+
+class ShopPartOut(BaseModel):
+    id: int
+    name: str
+    program: Named | None  # what it's for: a program, and maybe one of its components
+    component: Named | None
+    machine_id: int
+    machine: str  # its name
+    material: str
+    quantity: int
+    hours: float | None
+    drawing: str
+    cad: str
+    status: ShopStatus
+    requester: UserRef | None
+    machinist: UserRef | None
+    need_by: date | None
+    note: str
+    created_at: datetime
+    updated_at: datetime
+    updated_by: UserRef | None
+    done_at: datetime | None
+    removed_at: datetime | None
+
+    @classmethod
+    def of(cls, part: ShopPart) -> "ShopPartOut":
+        return cls(
+            id=part.id,
+            name=part.name,
+            program=Named(id=part.program.id, name=part.program.name) if part.program is not None else None,
+            component=Named(id=part.component.id, name=part.component.name) if part.component is not None else None,
+            machine_id=part.machine_id,
+            machine=part.machine.name,
+            material=part.material,
+            quantity=part.quantity,
+            hours=part.hours,
+            drawing=part.drawing,
+            cad=part.cad,
+            status=part.status,
+            requester=_ref(part.requester),
+            machinist=_ref(part.machinist),
+            need_by=part.need_by,
+            note=part.note,
+            created_at=part.created_at,
+            updated_at=part.updated_at,
+            updated_by=_ref(part.editor),
+            done_at=part.done_at,
+            removed_at=part.removed_at,
+        )
+
+
+class LoadOut(BaseModel):
+    """A machine's open work (not done), and who can do it."""
+
+    machine_id: int
+    parts: int
+    hours: float  # their estimates, added up
+    unestimated: int  # of those, the ones with no estimate
+    operators: int  # who run it on their own, or train others on it
+    trainers: int
+
+
+class ShopOut(BaseModel):
+    """The shop: its machines (retired ones too), the parts in its queue, who's trained on what, and each machine's
+    load."""
+
+    machines: list[MachineOut]
+    parts: list[ShopPartOut]
+    trained: list[TrainedOut]
+    load: list[LoadOut]
+    can_edit_machines: bool  # admins

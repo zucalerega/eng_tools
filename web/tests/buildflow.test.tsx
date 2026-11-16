@@ -42,6 +42,11 @@ test("Buildflow is the site's fourth app: on its front page, and in the switcher
     expect(card.getAttribute("href")).toBe("/buildflow");
     const apps = within(screen.getByRole("navigation", { name: "Apps" }));
     expect(apps.getByRole("link", { name: "Buildflow" }).getAttribute("href")).toBe("/buildflow");
+    // A dot between each two names, so they read apart; only to see, as the links name the apps.
+    const switcher = screen.getByRole("navigation", { name: "Apps" });
+    expect(switcher.textContent).toBe("Vault·Yorg·Piper·Buildflow");
+    expect(apps.getAllByRole("link").map((link) => link.textContent)).toEqual(["Vault", "Yorg", "Piper", "Buildflow"]);
+    for (const dot of switcher.querySelectorAll(".apps-dot")) expect(dot.getAttribute("aria-hidden")).toBe("true");
 
     await userEvent.click(card);
     expect(await screen.findByRole("heading", { name: "Programs" })).toBeTruthy();

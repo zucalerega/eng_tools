@@ -33,6 +33,15 @@ const SITE_ICON =
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#0b1b33'/>" +
             "<path d='M4 57Q42 52 60 5Q36 45 4 57Z' fill='#e0a500'/></svg>",
     );
+/** The dot between two apps' names in the switcher, so the names read apart. Only to see: a screen reader has the links. */
+function Dot() {
+    return (
+        <span className="apps-dot" aria-hidden="true">
+            ·
+        </span>
+    );
+}
+
 let vaultIcon: string | null = null; // the tab's icon from index.html, put back on coming back to Vault
 
 const THEMES: [Theme, string][] = [
@@ -135,12 +144,15 @@ export function App() {
                     <Link to={VAULT} className="wordmark" aria-current={vaultApp ? "page" : undefined}>
                         Vault
                     </Link>
+                    <Dot />
                     <Link to="/yorg" className="wordmark" aria-current={yorg ? "page" : undefined}>
                         {YORG}
                     </Link>
+                    <Dot />
                     <Link to="/piper" className="wordmark" aria-current={piperApp ? "page" : undefined}>
                         {PIPER}
                     </Link>
+                    <Dot />
                     <Link to="/buildflow" className="wordmark" aria-current={buildflowApp ? "page" : undefined}>
                         {BUILDFLOW}
                     </Link>

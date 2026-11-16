@@ -285,6 +285,16 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
+- **Whose site it is**: the site's short name and the team's are settings (`YJSP_SITE_NAME`, "YJSP",
+  and `YJSP_TEAM_NAME`, "Yellow Jacket Space Program", the defaults), so another team runs the site as
+  its own: the server's own pages (sign-in, the help, `/help.md`, `/llms.txt`) and Claude's
+  instructions say them, and the web app has them from the page (`<meta name="yjsp-site">`,
+  `yjsp-team`, `api/web.py`; `site.ts`), for its top bar, its tabs, its home page, and a P&ID's title
+  block (its PDF too). The team's logo can be its own, in a folder of its own (`YJSP_BRAND_DIR`:
+  `logo-on-light.png` and `logo-on-dark.png`), which `/brand/...` serves in place of YJSP's: one it
+  has alone for both themes, and with neither, the pages show the site's name where the logo goes
+  (`web.logos`, `pages.mark`; `<meta name="yjsp-logo" content="none">` for the web app), never YJSP's
+  logo on another team's site. The colors, and the apps' marks, are YJSP's yet.
 - **Branding:** in the Yellow Jacket Space Program's colors: near-black, white, and dark
   blue, with its gold. The top bar, the help's too, is white in the light theme and
   near-black in the dark. The team's logo (`server/src/yjsp_server/brand`) heads the site:

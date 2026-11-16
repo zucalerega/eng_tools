@@ -74,7 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # The API's own docs (/docs) are for development: in production they'd map the whole API for anyone.
     hidden = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.production else {}
-    app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan, **hidden)
+    app = FastAPI(title=settings.site_name, version=__version__, lifespan=lifespan, **hidden)
     app.state.settings = settings
     app.state.sessionmaker = sessions
     app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)

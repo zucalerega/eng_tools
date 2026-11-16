@@ -258,6 +258,20 @@ main {
     height: 1.65rem;
 }
 
+/* The site's name in the logo's place, for a team that hasn't put one on the server (site.ts, hasLogo). */
+.site-mark {
+    flex: none;
+    font-family: var(--font-brand);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+
+.brand .site-mark {
+    font-size: 1.15rem;
+    color: var(--topbar-text);
+}
+
 .brand-name {
     font-family: var(--font-brand);
     font-size: 0.75rem;
@@ -557,6 +571,11 @@ main {
 
 .home-lockup .site-logo {
     height: 3.6rem;
+}
+
+.home-lockup .site-mark {
+    font-size: 2.6rem;
+    color: var(--text);
 }
 
 .home-lockup-rule {

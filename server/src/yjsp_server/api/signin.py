@@ -21,7 +21,7 @@ from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
 from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
-from .pages import FAVICON, NAME, PALETTE, SITE, THEME, esc
+from .pages import FAVICON, NAME, PALETTE, THEME, esc, mark
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -85,11 +85,14 @@ def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
     return None if oauth is None else oauth.create_client(name)
 
 
-# The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS).
-_LOCKUP = (
-    f'<div class="lockup"><span class="logo" role="img" aria-label="{SITE}"></span><span class="rule"></span>'
-    f'<span class="words">{" ".join(f"<span>{esc(word)}</span>" for word in NAME.split())}</span></div>'
-)
+def _lockup(settings: Settings) -> str:
+    """The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS), or the site's
+    short name in the logo's place, where the team has none on the server (pages.mark)."""
+    logo = mark(settings.site_name, bool(web.logos(settings)), labeled=True)
+    words = " ".join(f"<span>{esc(word)}</span>" for word in NAME.split())
+    return f'<div class="lockup">{logo}<span class="rule"></span><span class="words">{words}</span></div>'
+
+
 _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 2rem 1rem; background: var(--bg); color: var(--text);
     border-top: 3px solid #e0a500; }}
@@ -123,16 +126,18 @@ _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; fle
 """
 
 
-def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    """A sign-in page: a card with the team's logo and the site's name. The title "YJSP" is just the brand."""
-    heading = "" if title == SITE else f"<h1>{esc(title)}</h1>"
-    tab_title = title if title == SITE else f"{title} · {SITE}"
+def _page(settings: Settings, title: str, body: str, status_code: int = 200) -> HTMLResponse:
+    """A sign-in page: a card with the team's logo, the site's name, and the team's. A title that's the site's name is
+    just the brand."""
+    site = settings.site_name
+    heading = "" if title == site else f"<h1>{esc(title)}</h1>"
+    tab_title = title if title == site else f"{title} · {site}"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{esc(tab_title)}</title>
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
-<body><main class="card"><div class="brand">{_LOCKUP}<p class="org">Yellow Jacket Space Program</p></div>
+<body><main class="card"><div class="brand">{_lockup(settings)}<p class="org">{esc(settings.team_name)}</p></div>
 {heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
@@ -155,10 +160,11 @@ def _safe_next(target: str | None) -> str:
     return target
 
 
-def _turned_away(error: ApiError) -> HTMLResponse:
+def _turned_away(settings: Settings, error: ApiError) -> HTMLResponse:
     """A sign-in that didn't let someone in, as a page that says why and what to do, not the API's JSON: they came
     from Google's or GT's login page in their browser."""
     return _page(
+        settings,
         "Can't sign you in",
         f'<p class="lead">{esc(error.message)}.</p><a class="button secondary" href="/">Back to sign-in</a>',
         error.status,
@@ -188,7 +194,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             # Signed in already (or the demo's guest): carry on.
             return RedirectResponse(settings.root_path + _safe_next(next_path), status_code=303)
         if (index := web.app_index(settings)) is not None:
-            return web.index_response(index, settings.root_path)
+            return web.index_response(index, settings)
     if user is None:
         parts = [
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
@@ -225,7 +231,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             )
         if len(parts) == 1:
             parts.append('<p class="fine">Sign-in isn\'t set up on this server yet.</p>')
-        return _page("Sign in", "".join(parts))
+        return _page(settings, "Sign in", "".join(parts))
 
     body = f'<p class="lead">Signed in as <strong>{esc(user.display_name)}</strong><br>{esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
@@ -240,7 +246,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
         )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
-    return _page("Waiting for approval" if user.status == UserStatus.PENDING else SITE, body)
+    return _page(settings, "Waiting for approval" if user.status == UserStatus.PENDING else settings.site_name, body)
 
 
 async def _start_sign_in(request: Request, settings: Settings, name: Provider, next_path: str) -> Response:
@@ -286,7 +292,7 @@ async def callback(request: Request, db: DB, settings: Config) -> Response:
             email_verified=bool(info.get("email_verified")),
         )
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -300,7 +306,7 @@ async def microsoft_callback(request: Request, db: DB, settings: Config) -> Resp
     try:
         user = auth.sign_in_microsoft(db, settings, await _signed_in_as(request, "microsoft"))
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -342,6 +348,7 @@ def client_start(
         return RedirectResponse("/?" + urlencode({"next": here}), status_code=303)
     if user.status != UserStatus.ACTIVE:
         return _page(
+            settings,
             "Waiting for approval",
             f"<p>Signed in as {esc(user.email)}. An admin needs to approve your account first.</p>",
         )
@@ -351,6 +358,7 @@ def client_start(
     fields = {"port": port, "state": state, "challenge": challenge, "name": name, "approval": approval}
     hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(v)}">' for k, v in fields.items())
     return _page(
+        settings,
         "Sign in to Vault",
         f"""<p class="lead"><strong>{esc(name)}</strong> wants to use Vault as <strong>{esc(user.email)}</strong>.
 It will be able to check files in and out with your permissions until you sign it out.</p>
@@ -405,7 +413,7 @@ def dev_login(request: Request, db: DB, settings: Config, email: str, name: str 
     try:
         user = auth.sign_in_dev(db, settings, email, name)
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, next_path)
 
 

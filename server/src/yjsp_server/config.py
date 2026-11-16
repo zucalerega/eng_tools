@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     # Where people reach the site; Google redirects back to {public_url}/auth/callback, and Microsoft to
     # {public_url}/auth/microsoft/callback.
     public_url: str = "http://localhost:8000"
+    # Whose site it is, as its pages say: its short name (the top bar, the tabs, the sign-in pages, the help) and the
+    # team's (the sign-in pages, the help, Claude's instructions, a P&ID's title block). YJSP's are the defaults.
+    site_name: str = Field(default="YJSP", min_length=1, max_length=40, pattern=r"^[^<>&\"\x00-\x1f]+$")
+    team_name: str = Field(
+        default="Yellow Jacket Space Program", min_length=1, max_length=120, pattern=r"^[^<>&\"\x00-\x1f]+$"
+    )
+    # The team's logo: a folder with logo-on-light.png (its letters dark, for light pages) and logo-on-dark.png (light,
+    # for the dark theme), about 245 by 173 pixels or as wide for its height. Unset: YJSP's (brand/). Set, only the
+    # team's: one alone is for both themes, and with neither, the pages show the site's name in the logo's place.
+    brand_dir: Path | None = None
     # One database for the site: its accounts, and Vault's, Yorg's, and Piper's tables.
     database_url: str = "sqlite:///data/yjsp.db"
     # Signs the sign-in state cookie and the client sign-in confirmation form.

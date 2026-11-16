@@ -33,8 +33,9 @@ API, as a client would (docs/piper.md).
 | `docs/design.md`, `docs/vault.md`, `docs/yorg.md`, `docs/piper.md`, `docs/buildflow.md` | The site's design, and each app's: design, API, roadmap, open questions. |
 | `docs/troubleshooting.md` | What goes wrong and what to do, and what every error the server sends means. Public, on /help. |
 | `docs/deploying.md` | How the live site is hosted, and how to deploy and look after it. |
+| `docs/self-hosting.md` | Running the site for another team, with Docker: the compose setup, sign-in, the team's name and logo, backups, upgrades. |
 | `docs/renumbering.md` | Numbering the vault's files all at once: what has to be checked in SolidWorks 2026 first, the plan, and the run. |
-| `deploy/` | `deploy.sh`, which deploys the live site (and remakes its demo); `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files, the demo's (`yjsp-demo*`) among them. |
+| `deploy/` | `deploy.sh`, which deploys the live site (and remakes its demo); `migrate-to-yjsp.sh`, which moves the live server to the YJSP layout once; and copies of the server's service files, the demo's (`yjsp-demo*`) among them. `compose/`: a team's own site with Docker (`compose.yaml`, Caddy's `Caddyfile`, the settings' examples, and `backup.sh`), which `.github/compose-test.sh` tests in CI. |
 | `.github/workflows/ci.yml` | The checks every change must pass, and a release's downloads (`.github/sign-installer.sh` signs the installer). |
 
 ## Commands
@@ -274,7 +275,8 @@ rolling back, backups, setting up a new server, and the rules. In short:
   Deploy only `main` or a release tag, and only when the owner asks for a deploy.
 - **Releasing:**
   1. Bump the version in `server/pyproject.toml`, `server/src/yjsp_server/__init__.py`,
-     and `client/Directory.Build.props`.
+     and `client/Directory.Build.props`, and the release teams are told to run:
+     `YJSP_VERSION` in `deploy/compose/.env.example`, and the tags in docs/self-hosting.md.
   2. Tag `main`. CI makes the tag's GitHub release, a draft with the Windows downloads on it
      (`Vault-Setup.exe`, its signature, and `vault.exe`).
   3. Write release notes in that release, and publish it.
@@ -308,4 +310,5 @@ rolling back, backups, setting up a new server, and the rules. In short:
   once, when the owner asks (docs/deploying.md, "Moving to YJSP").
 - The Docker image (`server/Dockerfile`, which CI publishes to
   `ghcr.io/<owner>/yjsp-server:<tag>` for version tags) is another way to run the server.
-  The live site doesn't use it.
+  The live site doesn't use it; other teams' sites do, with `deploy/compose`
+  (docs/self-hosting.md).

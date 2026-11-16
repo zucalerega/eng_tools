@@ -682,3 +682,11 @@ The client and web app tests start the real server, so they need uv too. How we 
 YJSP, with Vault and Yorg, runs at https://lucazerega.tail07089c.ts.net, on an Oracle
 Cloud VM. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
 to look after it are in [docs/deploying.md](docs/deploying.md).
+
+## License
+
+The server and the web app (`server/`, `web/`) are under the GNU General Public License, version 3
+([LICENSE](LICENSE)); the `vault` command, the SolidWorks add-in, and their library (`client/`) are under the MIT
+license ([client/LICENSE](client/LICENSE)). What the repository uses and carries under others' terms, and why the
+server's is the GPL, is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). [CONTRIBUTING.md](CONTRIBUTING.md) says how
+to contribute, and [SECURITY.md](SECURITY.md) how to report a vulnerability.

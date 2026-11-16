@@ -54,7 +54,8 @@ class Settings(BaseSettings):
     # The school whose accounts people join with (docs/design.md, "Sign-in and accounts"): what the pages call it; its
     # email domains, comma-separated, each with its subdomains (cc.gatech.edu), the only addresses that make an account
     # by signing in or go on the whitelist; and its directory in Microsoft Entra, by its tenant ID. Georgia Tech's are
-    # the defaults. No domains: people join only by an admin's invite.
+    # the defaults. No domains: people join only by an admin's invite. Production refuses Microsoft's sign-in for another
+    # school's addresses while the directory is still Georgia Tech's (check).
     school_name: str = Field(default="Georgia Tech", min_length=1, max_length=60, pattern=_PLAIN)
     school_domains: str = Field(default=GT_DOMAIN, pattern=r"^\s*([a-z0-9.-]+\.[a-z]{2,}\s*(,\s*|$))*$")
     microsoft_tenant: str = Field(default=GT_TENANT, pattern=r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
@@ -189,6 +190,16 @@ class Settings(BaseSettings):
         for name, pair in sign_ins.items():
             if any(pair) and not all(pair):
                 problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
+        if (
+            all(sign_ins["MICROSOFT"])
+            and self.microsoft_tenant == GT_TENANT
+            and GT_DOMAIN not in self.school_domain_list
+        ):
+            # Georgia Tech's directory, the default, for another school's site: no one could ever sign in with it.
+            problems.append(
+                "set YJSP_MICROSOFT_TENANT to the Directory (tenant) ID of the school's directory in Microsoft Entra, "
+                "where its sign-in app is registered: it's Georgia Tech's until then"
+            )
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
         if bool(self.ebay_client_id) != bool(self.ebay_client_secret):

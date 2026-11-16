@@ -152,6 +152,33 @@ def test_with_no_domains_people_join_only_by_invite(settings, monkeypatch):
         assert client.get("/api/me").json()["is_admin"] is True
 
 
+def test_another_schools_site_needs_its_own_directory_for_microsoft(settings):
+    production = settings.model_copy(
+        update={
+            "env": "production",
+            "dev_auth": False,
+            "secret_key": "s" * 40,
+            "public_url": "https://tools.example.edu",
+            "microsoft_client_id": "app-id",
+            "microsoft_client_secret": "app-secret",
+        }
+    )
+    production.check()  # Purdue's directory, for Purdue's addresses
+    with pytest.raises(RuntimeError, match="set YJSP_MICROSOFT_TENANT to the Directory"):
+        production.model_copy(update={"microsoft_tenant": config.GT_TENANT}).check()  # left as Georgia Tech's
+    # Georgia Tech's own, as YJSP's is; and Google's alone needs no directory.
+    production.model_copy(update={"microsoft_tenant": config.GT_TENANT, "school_domains": "gatech.edu"}).check()
+    production.model_copy(
+        update={
+            "microsoft_tenant": config.GT_TENANT,
+            "microsoft_client_id": "",
+            "microsoft_client_secret": "",
+            "google_client_id": "id.apps.googleusercontent.com",
+            "google_client_secret": "secret",
+        }
+    ).check()
+
+
 def test_the_schools_settings_are_checked():
     for bad in ({"microsoft_tenant": "purdue.edu"}, {"school_domains": "purdue"}, {"school_domains": "@purdue.edu"}):
         with pytest.raises(ValueError):

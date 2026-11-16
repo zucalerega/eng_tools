@@ -21,7 +21,7 @@ from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
 from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
-from .pages import FAVICON, NAME, PALETTE, THEME, esc
+from .pages import FAVICON, NAME, PALETTE, THEME, esc, mark
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -86,12 +86,11 @@ def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
 
 
 def _lockup(settings: Settings) -> str:
-    """The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS)."""
-    return (
-        f'<div class="lockup"><span class="logo" role="img" aria-label="{esc(settings.site_name)}"></span>'
-        f'<span class="rule"></span>'
-        f'<span class="words">{" ".join(f"<span>{esc(word)}</span>" for word in NAME.split())}</span></div>'
-    )
+    """The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS), or the site's
+    short name in the logo's place, where the team has none on the server (pages.mark)."""
+    logo = mark(settings.site_name, bool(web.logos(settings)), labeled=True)
+    words = " ".join(f"<span>{esc(word)}</span>" for word in NAME.split())
+    return f'<div class="lockup">{logo}<span class="rule"></span><span class="words">{words}</span></div>'
 
 
 _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;

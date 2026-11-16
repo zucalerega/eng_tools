@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from .. import __version__, help
 from ..config import Settings
 from ..models import UserStatus
+from . import web
 from .deps import DB, Config, session_user
-from .pages import FAVICON, GOLD, PALETTE, THEME, esc
+from .pages import FAVICON, GOLD, PALETTE, THEME, esc, mark
 
 router = APIRouter(include_in_schema=False)
 
@@ -24,6 +25,7 @@ _STYLE = f"""{PALETTE}
     font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: .75rem; font-weight: 700;
     letter-spacing: .3em; text-transform: uppercase; }}
   .brand .logo {{ height: 1.6rem; }}
+  .brand .mark {{ font-size: 1.05rem; letter-spacing: .08em; color: var(--bar-text); }}
   .where {{ display: flex; align-items: center; align-self: stretch; margin: 0 0 -2px 1.25rem; padding: 0 .75rem;
     border-bottom: 2px solid {GOLD}; color: var(--bar-text); font-family: Bahnschrift, "DIN Alternate", Rubik,
     "Segoe UI", sans-serif; font-size: .78rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }}
@@ -153,13 +155,14 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
     body = found.html(members) if found.docs else "<p>The help isn't on this server.</p>"
     # The team's logo, and the Markdown, are the site's, wherever it is.
     style = _STYLE.replace('url("/brand/', f'url("{root}/brand/')
+    logo = mark(settings.site_name, bool(web.logos(settings)))
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>Help · {name}</title>
 <meta name="description" content="Help for {name}, the {team}'s tools: Vault, Yorg, Piper, and Buildflow.">
 <link rel="alternate" type="text/markdown" href="{root}/help.md" title="The help, as Markdown">
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{style}</style></head>
-<body><header class="bar"><a class="brand" href="{root}/" aria-label="{name} home"><span class="logo"></span>Tools</a>
+<body><header class="bar"><a class="brand" href="{root}/" aria-label="{name} home">{logo}Tools</a>
 <span class="where" aria-current="page">Help</span>
 <span class="grow"></span><a class="action markdown" href="{root}/help.md">Markdown</a>
 <button type="button" id="copy">Copy for an AI</button>{account}</header>

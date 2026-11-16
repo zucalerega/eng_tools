@@ -14,3 +14,9 @@ export function siteName(): string {
 export function teamName(): string {
     return said("yjsp-team") || "Yellow Jacket Space Program";
 }
+
+/** Whether the server has a logo for the team (it serves it at /brand/): a team that hasn't put one there yet has its
+ * site's name in the logo's place. */
+export function hasLogo(): boolean {
+    return said("yjsp-logo") !== "none";
+}

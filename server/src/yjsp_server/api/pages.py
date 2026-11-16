@@ -17,6 +17,9 @@ LOGO_CSS = """
   .lockup .words { font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-size: 1.1rem;
     font-weight: 700; letter-spacing: .24em; line-height: 1.25; text-transform: uppercase; }
   .lockup .words span { display: block; }
+  .mark { flex: none; font-family: Bahnschrift, "DIN Alternate", Rubik, "Segoe UI", sans-serif; font-weight: 700;
+    letter-spacing: .04em; line-height: 1; }
+  .lockup .mark { font-size: 2.4rem; color: var(--door); }
 """
 # The site's own icon: the gold orbit both marks take from the team's logo, on the top bar's navy.
 FAVICON = "data:image/svg+xml," + quote(
@@ -50,3 +53,12 @@ PALETTE = f"""
 
 def esc(value: object) -> str:
     return html.escape(str(value), quote=True)
+
+
+def mark(site_name: str, has_logo: bool, *, labeled: bool = False) -> str:
+    """Where the team's logo goes: the logo (named, for screen readers, where `labeled`), or, for a team that hasn't
+    one on the server, the site's name in its place (web.logos)."""
+    if not has_logo:
+        return f'<span class="mark">{esc(site_name)}</span>'
+    label = f' role="img" aria-label="{esc(site_name)}"' if labeled else ""
+    return f'<span class="logo"{label}></span>'

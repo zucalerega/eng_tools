@@ -291,8 +291,10 @@ sends `X-YJSP-Request` on every request (`api.ts`).
   instructions say them, and the web app has them from the page (`<meta name="yjsp-site">`,
   `yjsp-team`, `api/web.py`; `site.ts`), for its top bar, its tabs, its home page, and a P&ID's title
   block (its PDF too). The team's logo can be its own, in a folder of its own (`YJSP_BRAND_DIR`:
-  `logo-on-light.png` and `logo-on-dark.png`), which `/brand/...` serves in place of YJSP's, each
-  one it has. The colors, and the apps' marks, are YJSP's yet.
+  `logo-on-light.png` and `logo-on-dark.png`), which `/brand/...` serves in place of YJSP's: one it
+  has alone for both themes, and with neither, the pages show the site's name where the logo goes
+  (`web.logos`, `pages.mark`; `<meta name="yjsp-logo" content="none">` for the web app), never YJSP's
+  logo on another team's site. The colors, and the apps' marks, are YJSP's yet.
 - **Branding:** in the Yellow Jacket Space Program's colors: near-black, white, and dark
   blue, with its gold. The top bar, the help's too, is white in the light theme and
   near-black in the dark. The team's logo (`server/src/yjsp_server/brand`) heads the site:

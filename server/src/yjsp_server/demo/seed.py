@@ -33,7 +33,7 @@ from starlette.testclient import TestClient
 from .. import auth, db
 from ..config import Settings
 from ..models import ClientAuthCode, Token, User, UserStatus
-from . import GUEST_EMAIL, GUEST_NAME, data
+from . import GUEST_EMAIL, GUEST_NAME, SITE_NAME, data
 
 HERE = Path(__file__).parent
 # In the demo's folder, and only there: what a seed made, and may replace.
@@ -390,6 +390,9 @@ class Seed:
         by name."""
         drawings = {name: json.loads((HERE / "diagrams" / f"{name}.json").read_text()) for name in _DIAGRAMS}
         self.at(80)
+        # The team's default color scheme is the made-up team's, not named for YJSP as a new site's is.
+        default = next(scheme for scheme in self.call("ada", "GET", "/api/piper/schemes") if scheme["is_default"])
+        self.call("ada", "PATCH", f"/api/piper/schemes/{default['id']}", json={"name": f"{SITE_NAME} standard"})
         folders = {
             name: self.call("chloe", "POST", "/api/piper/folders", json={"name": name})["id"]
             for name in ("Kestrel", "Test stand")

@@ -1149,7 +1149,7 @@ export async function pdfOfPages(
     const catalog = add(`<< /Type /Catalog /Pages ${pages} 0 R >>`);
     const meta = drawn[0]?.meta ?? { name: "Diagram", revision: "", savedAt: null, by: "" };
     const now = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-    const info = add(`<< /Title ${textString(meta.name)} /Creator (YJSP Piper) /CreationDate (D:${now}Z) >>`);
+    const info = add(`<< /Title ${textString(meta.name)} /Creator (Piper) /CreationDate (D:${now}Z) >>`);
 
     const chunks: Uint8Array<ArrayBuffer>[] = [ascii("%PDF-1.4\n%âãÏÓ\n")];
     let length = chunks[0]!.length;

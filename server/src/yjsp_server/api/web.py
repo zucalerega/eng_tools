@@ -36,11 +36,12 @@ def app_index(settings: Settings) -> Path | None:
 
 
 def logos(settings: Settings) -> dict[str, Path]:
-    """The team's logo, by the names the pages ask for it by. YJSP's, where YJSP_BRAND_DIR is unset (YJSP's own site);
-    else only the team's own: either one for both themes where it has only one, and none where it has neither, when
-    the pages show the site's name instead (pages.mark)."""
+    """The team's logo, by the names the pages ask for it by. YJSP's, where YJSP_BRAND_DIR is unset (YJSP's own site),
+    except in the demo, a made-up team's (demo/__init__.py), which has none; else only the team's own: either one for
+    both themes where it has only one, and none where it has neither. Where there's none, the pages show the site's
+    name instead (pages.mark)."""
     if settings.brand_dir is None:
-        return {name: BRAND / name for name in _LOGOS}
+        return {} if settings.demo else {name: BRAND / name for name in _LOGOS}
     own = {name: settings.brand_dir / name for name in _LOGOS if (settings.brand_dir / name).is_file()}
     if len(own) == 1:
         (only,) = own.values()

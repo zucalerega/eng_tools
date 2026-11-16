@@ -16,6 +16,9 @@ from .conftest import BOOTSTRAP_ADMIN
 
 REPO = Path(__file__).resolve().parents[2]
 SERVER = REPO / "server" / "src" / "yjsp_server"
+# YJSP's names, which another team's site, or the demo, never shows: not its settings' (YJSP_...) or its request
+# header's (X-YJSP-Request), which are the code's.
+YJSPS = re.compile(r"(?<![-_])\bYJSP\b(?![-_])|Yellow Jacket|Georgia Tech|\bGT\b|gatech")
 
 # Docs laid out as the repository's, small enough to see what the help makes of each line.
 DOCS = {
@@ -225,6 +228,16 @@ def test_the_image_carries_every_doc_the_help_reads():
 
     assert left_out("docs/deploying.md") and left_out("server/tests/test_help.py")  # it does leave things out
     assert [part.path for part in help.PARTS if left_out(part.path)] == []
+
+
+def test_the_help_anyone_reads_is_any_teams(settings):
+    """README.md's guide and troubleshooting are every site's help, YJSP's and other teams' alike: they say the team,
+    the school, and the site, and leave YJSP's own to the sections the help leaves out (About, The live site)."""
+    theirs = settings.model_copy(update={"site_name": "RPL", "team_name": "Rocket Propulsion Lab"})
+    with TestClient(create_app(theirs)) as client:
+        shown = client.get("/help.md").text
+    assert "## Signing in" in shown and "## Running the site" in shown  # the guide, and troubleshooting
+    assert YJSPS.findall(shown) == []
 
 
 def test_troubleshooting_says_what_every_error_means():

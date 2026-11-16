@@ -13,7 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
+from ..config import Settings
 from ..models import User
+
+# Whose site the demo is: a made-up team's, whose rocket, Kestrel, its data is (seed.py), never YJSP's. Its pages say
+# these names, and it has no logo (api/web.py, logos), so nothing in it passes for the team's own.
+SITE_NAME = "LRT"
+TEAM_NAME = "Liquid Rocket Team"
 
 # Who everyone is in the demo. An address at .invalid can never be anyone's.
 GUEST_EMAIL = "guest@demo.invalid"
@@ -25,6 +31,14 @@ Scope = MutableMapping[str, Any]
 Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
+
+
+def branded(settings: Settings) -> Settings:
+    """The demo's settings, named for its made-up team where they don't name a site and team of their own."""
+    names = {"site_name": SITE_NAME, "team_name": TEAM_NAME}
+    return settings.model_copy(
+        update={key: value for key, value in names.items() if key not in settings.model_fields_set}
+    )
 
 
 def guest(db: Session) -> User | None:

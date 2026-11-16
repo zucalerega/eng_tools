@@ -126,7 +126,7 @@ While you work:
   with your last click) is a message on top of SolidWorks from `vault-open.exe`. Both write
   each click, and what became of it, to `addin.log`.
 - **Files brought over from Kenesto** (uploaded in the web app) name their parts where
-  Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\09_Hopper\...`), and the
+  Kenesto had them (`K:\Team\Project CAD\09_Hopper\...`), and the
   vault can't read what they use. Opening or getting one reads the parts' paths from the
   file, and from its sub-assemblies, and gets the vault's files whose paths end the same
   way (`09_Hopper\...`), so they come along like any other assembly's parts. So do the

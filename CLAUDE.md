@@ -245,6 +245,11 @@ keep working with older clients:
   on /help for anyone, signed in or not (the design docs only for members, as the
   repository is private). Keep anything private (addresses, keys, the live server's
   details) out of them; docs/deploying.md isn't on it at all.
+- **And it's every team's:** other teams' sites, and the demo, show the same help, so what it
+  shows says "the team", "the school", and "the site", never YJSP, Georgia Tech, or GT. YJSP's own
+  site goes in README.md's About and The live site, which the help leaves out (`help.PARTS`);
+  `test_the_help_anyone_reads_is_any_teams` holds the rest to it. The demo is a made-up team's,
+  the Liquid Rocket Team's (`demo/__init__.py`), never YJSP's.
 - **Tokens** are stored only as hashes on the server, and DPAPI-encrypted or owner-only
   on clients. Never log tokens or `Authorization` headers.
 - **Paths and permissions:** every vault path goes through `paths.split` /

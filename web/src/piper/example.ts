@@ -88,6 +88,6 @@ export function example(): Drawing {
     join([engine, "right"], [chamber, "left"]);
 
     place("legend", -300, 330);
-    place("title-block", 240, 420, 0, { number: "YJSP-PID-001" });
+    place("title-block", 240, 420, 0, { number: "PID-001" });
     return drawing;
 }

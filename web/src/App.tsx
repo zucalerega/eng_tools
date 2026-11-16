@@ -171,6 +171,7 @@ export function App() {
                         buildflowApp && (
                             <>
                                 {nav("/buildflow", "programs", "Programs")}
+                                {nav("/buildflow/shop", "shop", "Shop")}
                                 {nav("/buildflow/help", "help", "Help")}
                             </>
                         )

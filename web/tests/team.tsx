@@ -8,7 +8,15 @@ import { type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
-import type { Component, ProgramDetail, ProgressChange, Template } from "../src/buildflow/api";
+import type {
+    Component,
+    ProgramDetail,
+    ProgressChange,
+    Shop,
+    ShopPart,
+    ShopPartChange,
+    Template,
+} from "../src/buildflow/api";
 import type { Diagram, DiagramDetail, DiagramFolder, Revision, Scheme } from "../src/piper/api";
 import { readDocument, readDrawing, type Document, type Drawing } from "../src/piper/drawing";
 import type { Catalog } from "../src/piper/sim/api";
@@ -391,6 +399,16 @@ export class Team {
     /** A Buildflow program's bill of design, as the server keeps it. */
     async bill(id: number): Promise<ProgramDetail> {
         return call<ProgramDetail>("GET", `/api/buildflow/programs/${id}`, this.chief.token);
+    }
+
+    /** Buildflow's shop as the server keeps it: its machines, its queue, who's trained, and each machine's load. */
+    async shop(): Promise<Shop> {
+        return call<Shop>("GET", "/api/buildflow/shop", this.chief.token);
+    }
+
+    /** A part in the shop's queue, as someone queued it on the Shop page. */
+    async queuePart(who: Member, part: ShopPartChange & { name: string; machine_id: number }): Promise<ShopPart> {
+        return call<ShopPart>("POST", "/api/buildflow/shop/parts", who.token, part);
     }
 
     /** Say what a component is, as its panel does: a part number in it is what the deals finder searches for. */

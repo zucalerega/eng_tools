@@ -38,7 +38,7 @@ Web app (React): the frame, and each app's pages ──────────�
                                ├── yorg/: datasets, views, calculated channels, scripts, and
                                │   system models' runs (FullFlow), which Piper's simulations use
                                ├── piper/: diagrams (P&IDs) and their revisions
-                               ├── buildflow/: programs, their components, and their progress
+                               ├── buildflow/: programs, their components and progress, and the shop
                                ├── deals/: listings on eBay for what the apps want, found each day
                                ├── database: SQLite or Postgres, one for all of it
                                ├── files: Vault's (YJSP_VAULT_DIR) and Yorg's (YJSP_YORG_DIR)

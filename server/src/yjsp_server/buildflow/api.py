@@ -1,5 +1,6 @@
 """Buildflow's API (/api/buildflow): programs and their bills of design, their layout (admins'), and their components'
-progress, links, and people (anyone's)."""
+progress, links, and people (anyone's); and the shop (/api/buildflow/shop): the parts queued to be machined (anyone's),
+who's trained on which machine (each their own, and admins anyone's), and the machines (admins')."""
 
 from typing import Annotated
 
@@ -7,15 +8,21 @@ from fastapi import APIRouter, Query, Response
 from sqlalchemy.orm import Session
 
 from ..api.deps import DB, ActiveUser
+from ..api.schemas import UserRef
 from ..models import User
-from . import programs, progress
+from . import programs, progress, shop
 from .models import Program
 from .schemas import (
     ComponentChangeIn,
     ComponentIn,
     ComponentOut,
     EventOut,
+    LevelsIn,
     LinkIn,
+    LoadOut,
+    MachineChangeIn,
+    MachineIn,
+    MachineOut,
     MilestoneChangeIn,
     MilestoneIn,
     MilestoneOut,
@@ -25,9 +32,14 @@ from .schemas import (
     ProgramIn,
     ProgramOut,
     ProgressIn,
+    ShopOut,
+    ShopPartChangeIn,
+    ShopPartIn,
+    ShopPartOut,
     SubsystemChangeIn,
     SubsystemIn,
     SubsystemOut,
+    TrainedOut,
 )
 
 router = APIRouter(prefix="/api/buildflow", tags=["buildflow"])
@@ -250,3 +262,86 @@ def delete_link(link_id: int, user: ActiveUser, db: DB) -> ComponentOut:
 def put_people(component_id: int, body: PeopleIn, user: ActiveUser, db: DB) -> ComponentOut:
     """Who's on a component in a phase (user_ids, in order): the build phase's are who's making it."""
     return ComponentOut.of(progress.set_people(db, user, component_id, body.phase, body.user_ids))
+
+
+# --- the shop -------------------------------------------------------------------------------------------------------
+
+
+@router.get("/shop")
+def get_shop(user: ActiveUser, db: DB, removed: bool = False) -> ShopOut:
+    """The shop: its machines (retired ones too), the parts in its queue (removed=true: those taken off it instead),
+    who's trained on what, and how much work each machine has waiting."""
+    return ShopOut(
+        machines=[MachineOut.of(m) for m in shop.machines(db)],
+        parts=[ShopPartOut.of(p) for p in shop.parts(db, removed=removed)],
+        trained=[TrainedOut(user=UserRef.of(person), levels=levels) for person, levels in shop.trained(db)],
+        load=[
+            LoadOut(
+                machine_id=each.machine.id,
+                parts=each.parts,
+                hours=each.hours,
+                unestimated=each.unestimated,
+                operators=each.operators,
+                trainers=each.trainers,
+            )
+            for each in shop.load(db)
+        ],
+        can_edit_machines=user.is_admin,
+    )
+
+
+@router.get("/shop/parts")
+def get_shop_parts(
+    user: ActiveUser,
+    db: DB,
+    component_id: int | None = None,
+    program_id: int | None = None,
+    removed: bool = False,
+) -> list[ShopPartOut]:
+    """The parts in the shop's queue, or only those for a component, or a program; removed=true: those taken off it."""
+    found = shop.parts(db, removed=removed, component_id=component_id, program_id=program_id)
+    return [ShopPartOut.of(p) for p in found]
+
+
+@router.post("/shop/parts", status_code=201)
+def post_shop_part(body: ShopPartIn, user: ActiveUser, db: DB) -> ShopPartOut:
+    """Put a part in the shop's queue (anyone): asked for by you, unless requester_id says whose it is."""
+    return ShopPartOut.of(shop.add_part(db, user, {key: getattr(body, key) for key in body.model_fields_set}))
+
+
+@router.patch("/shop/parts/{part_id}")
+def patch_shop_part(part_id: int, body: ShopPartChangeIn, user: ActiveUser, db: DB) -> ShopPartOut:
+    """Change what's sent of a part (anyone): its status moves it through the queue."""
+    change = {key: getattr(body, key) for key in body.model_fields_set}
+    return ShopPartOut.of(shop.change_part(db, user, part_id, change))
+
+
+@router.delete("/shop/parts/{part_id}")
+def delete_shop_part(part_id: int, user: ActiveUser, db: DB) -> ShopPartOut:
+    """Take a part off the shop's queue, keeping it, to put back (anyone)."""
+    return ShopPartOut.of(shop.remove_part(db, user, part_id, removed=True))
+
+
+@router.post("/shop/parts/{part_id}/restore")
+def post_restore_shop_part(part_id: int, user: ActiveUser, db: DB) -> ShopPartOut:
+    """Put a part taken off the shop's queue back in it."""
+    return ShopPartOut.of(shop.remove_part(db, user, part_id, removed=False))
+
+
+@router.put("/shop/skills/{user_id}")
+def put_skills(user_id: int, body: LevelsIn, user: ActiveUser, db: DB) -> TrainedOut:
+    """How far someone's trained on each machine sent (0 to 3): your own, or anyone's, for admins."""
+    person, levels = shop.set_levels(db, user, user_id, body.levels)
+    return TrainedOut(user=UserRef.of(person), levels=levels)
+
+
+@router.post("/shop/machines", status_code=201)
+def post_machine(body: MachineIn, user: ActiveUser, db: DB) -> MachineOut:
+    """A new machine in the shop (admins)."""
+    return MachineOut.of(shop.add_machine(db, user, body.name))
+
+
+@router.patch("/shop/machines/{machine_id}")
+def patch_machine(machine_id: int, body: MachineChangeIn, user: ActiveUser, db: DB) -> MachineOut:
+    """Rename a machine, or retire it (it takes no new parts), or bring it back (admins)."""
+    return MachineOut.of(shop.change_machine(db, user, machine_id, name=body.name, retired=body.retired))

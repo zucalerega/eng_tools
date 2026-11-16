@@ -459,6 +459,13 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   Vault you can't open). Links to other sites show the name they were given, or their address.
 - **Nothing on a program can be changed.** It's archived: an admin brings it back from *Show archived
   programs*, on Programs.
+- **A part isn't in the shop's queue.** The queue shows parts not done, unless *Status* says
+  otherwise; set it to *All*. Someone may have taken it off: *Show parts taken off the queue*, at
+  the bottom, puts it back.
+- **No one "can make it".** No one's said they run that machine on their own (level 2) or train
+  others on it (3). Set your own level under *Who's trained*; an admin can set anyone's.
+- **A machine isn't offered for a new part.** It's retired: an admin brings it back under
+  *Machines*.
 
 ## Deals
 
@@ -886,7 +893,9 @@ a number. A few codes come up in more than one place.
   kept as it was, its progress too. An admin brings it back from *Show archived programs*.
 - **... was removed from its program: an admin can bring it back to change it** (`removed`): the
   component was taken off the program, with everything said of it kept. An admin brings it back
-  from the program's Layout page, under *Removed*.
+  from the program's Layout page, under *Removed*. **... was taken off the shop's queue: bring it
+  back to change it** (`removed`): put the part back in the queue first (*Show parts taken off the
+  queue*, at the bottom of the Shop page).
 - **... has progress on ... components and ... links kept on it: rename it, or move it, instead**
   (`milestone_in_use`): a milestone something's been kept on stays, so nothing said of a component
   is lost. Rename it, or move it to where it belongs.
@@ -894,7 +903,12 @@ a number. A few codes come up in more than one place.
   to come back to it** (`not_empty`): only an empty subsystem is deleted. Move its components
   elsewhere first; removed ones keep their subsystem, so bring them back and move them too.
 - **There's no active member ...: only people who've joined the site can be named** (`not_a_member`):
-  a component's lead and people are people who've joined the site. Pick someone from the list.
+  a component's lead and people, and a shop part's responsible engineer and machinist, are people
+  who've joined the site. Pick someone from the list.
+- **The ... is retired: put the part on another machine, or ask an admin** (`machine_retired`): a
+  retired machine takes no new parts. Pick another, or an admin brings it back under *Machines*.
+- **There's a machine called ... already** (`name_taken`): two machines can't have the same name,
+  whatever its case (a retired one keeps its name: bring it back instead).
 - **... isn't a link a component can have: a link is an http or https address, or a page of the
   site's own, like /vault/file/12** (`bad_link`): copy the page's whole address from the browser
   (`https://...`), or a page of the site's own from its path (`/vault/file/12`).

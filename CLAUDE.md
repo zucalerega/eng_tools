@@ -118,7 +118,7 @@ cd web && npm ci && npm run check && npm test && npm run build
 - **One home for each rule.** The site's rules live in `auth.py`/`people.py` (and `feedback.py`), Vault's in
   `vault/vault.py`, Yorg's in `yorg/` (`datasets.py`, ...), Piper's in `piper/diagrams.py`
   (and what a drawing is, and how it changes, in `web/src/piper`), Buildflow's in
-  `buildflow/programs.py` and `buildflow/progress.py`, and Vault's client rules in
+  `buildflow/programs.py`, `buildflow/progress.py`, and `buildflow/shop.py`, and Vault's client rules in
   `Vault.Client`. Routes, the CLI, and the add-in only translate.
 - **Errors tell people what to do next,** e.g. "X is checked out by Alice on ALICE-PC".
   Server errors are `ApiError` subclasses with a stable `code`, and docs/troubleshooting.md

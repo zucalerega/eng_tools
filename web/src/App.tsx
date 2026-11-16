@@ -14,6 +14,7 @@ import { Dialog, Notice, usePopover } from "./components";
 import { HomeDeals } from "./deals";
 import { HelpButton, HelpPanel } from "./help";
 import { inPiper, PIPER, PIPER_ICON, PiperMark, PiperPage, piperSection, piperWholeWindow, piperWide } from "./piper";
+import { onSite } from "./root";
 import { Link, navigate, usePathname } from "./router";
 import { useSession, useSessionStore } from "./session";
 import { StorageBar } from "./storage";
@@ -22,8 +23,8 @@ import { inVault, movedToVault, VAULT, VaultMark, VaultPage, vaultSection, whole
 import { canUseAdminMode, setAdminMode, useAdminMode } from "./vault/admin";
 import { useStore, useVault, type VaultState } from "./vault/store";
 import { fromPreview, inYorg, isWorkspace, YORG, YORG_ICON, YorgMark, YorgPage, yorgSection } from "./yorg";
+import { hasLogo, siteName } from "./site";
 
-const SITE = "YJSP";
 // The site's own icon, as on the sign-in pages (the server's signin.py): the gold orbit both marks take from the
 // team's logo, on the top bar's navy.
 const SITE_ICON =
@@ -79,7 +80,7 @@ export function App() {
         }
     }, [vaultApp, store]);
     useEffect(() => {
-        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : buildflowApp ? BUILDFLOW : SITE;
+        document.title = yorg ? YORG : vaultApp ? "Vault" : piperApp ? PIPER : buildflowApp ? BUILDFLOW : siteName();
         const icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
         if (icon) {
             vaultIcon ??= icon.getAttribute("href");
@@ -118,8 +119,14 @@ export function App() {
         <>
             <header className={`topbar ${adminMode && vaultApp ? "topbar-admin" : ""}`}>
                 {/* The team's logo and the site's name, home to the site's front page, where all the apps are. */}
-                <Link to="/" className="brand" aria-label={`${SITE} home`}>
-                    <span className="site-logo" aria-hidden="true" />
+                <Link to="/" className="brand" aria-label={`${siteName()} home`}>
+                    {hasLogo() ? (
+                        <span className="site-logo" aria-hidden="true" />
+                    ) : (
+                        <span className="site-mark" aria-hidden="true">
+                            {siteName()}
+                        </span>
+                    )}
                     <span className="brand-name" aria-hidden="true">
                         Tools
                     </span>
@@ -175,6 +182,15 @@ export function App() {
                     <AccountMenu vault={vault} />
                 </div>
             </header>
+            {me?.demo && (
+                <div className="demo-banner" role="note">
+                    <strong>Demo</strong>
+                    <span>Made-up data, for a look around: nothing here can be changed.</span>
+                    <a href={onSite("/help")} target="_blank" rel="noreferrer">
+                        What it does
+                    </a>
+                </div>
+            )}
             {adminMode && vaultApp && (
                 <div className="admin-banner" role="status">
                     Admin mode is on: you can release other people's check-outs and revert files they have checked out.
@@ -235,7 +251,11 @@ function Home({ pathname }: { pathname: string }) {
             {pathname !== "/" && <Notice tone="error">There's no page here.</Notice>}
             <h1 className="home-lockup">
                 {/* The space keeps the heading's name "YJSP Engineering Tools": a flex box doesn't draw it. */}
-                <span className="site-logo" role="img" aria-label={SITE} />{" "}
+                {hasLogo() ? (
+                    <span className="site-logo" role="img" aria-label={siteName()} />
+                ) : (
+                    <span className="site-mark">{siteName()}</span>
+                )}{" "}
                 <span className="home-lockup-rule" aria-hidden="true" />
                 <span className="home-lockup-words">
                     <span>Engineering</span> <span>Tools</span>
@@ -268,11 +288,12 @@ function Home({ pathname }: { pathname: string }) {
 /** How full the server's disk is, under the apps, and how much of it each takes: quiet if it can't be measured. */
 function HomeStorage() {
     const [storage, setStorage] = useState<StorageSummary | null>(null);
+    const { me } = useSession();
     useEffect(() => {
         api.storageSummary().then(setStorage, () => setStorage(null));
     }, []);
-    if (!storage) {
-        return null;
+    if (!storage || me?.demo) {
+        return null; // in the demo, the machine's disk says nothing about the site
     }
     return (
         <section className="storage home-storage" aria-label="Storage">
@@ -319,17 +340,21 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                         {me?.name}
                         <span className="muted">{me?.email}</span>
                     </p>
-                    <button
-                        type="button"
-                        className="menu-item"
-                        onClick={() => {
-                            setOpen(false);
-                            setNaming(true);
-                        }}
-                    >
-                        Change your name…
-                    </button>
-                    <hr />
+                    {!me?.demo && (
+                        <>
+                            <button
+                                type="button"
+                                className="menu-item"
+                                onClick={() => {
+                                    setOpen(false);
+                                    setNaming(true);
+                                }}
+                            >
+                                Change your name…
+                            </button>
+                            <hr />
+                        </>
+                    )}
                     <p className="menu-label" id="theme-label">
                         Theme
                     </p>
@@ -361,12 +386,16 @@ function AccountMenu({ vault }: { vault: VaultState }) {
                             </label>
                         </>
                     )}
-                    <hr />
-                    <form method="post" action="/auth/logout" onSubmit={forgetChat}>
-                        <button type="submit" className="menu-item">
-                            Sign out
-                        </button>
-                    </form>
+                    {!me?.demo && (
+                        <>
+                            <hr />
+                            <form method="post" action={onSite("/auth/logout")} onSubmit={forgetChat}>
+                                <button type="submit" className="menu-item">
+                                    Sign out
+                                </button>
+                            </form>
+                        </>
+                    )}
                 </div>
             )}
             {naming && me && <NameDialog name={me.name} onClose={() => setNaming(false)} />}

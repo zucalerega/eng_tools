@@ -60,6 +60,7 @@ import { sampleAt, Samples, type Placement } from "./samples";
 import { clockTicks, formatClock, formatDuration, formatTick, formatValue, ticks } from "../scale";
 import { Sidebar } from "./Sidebar";
 import { SplitDialog } from "./Split";
+import { useDemo } from "../session";
 
 // A page of plots: the channels on the left, and panels stacked on one time axis, each with its legend. Every
 // panel shows the same time window and the same cursor. A page may dock something beside the plots (its Python), and
@@ -421,6 +422,7 @@ export function Workspace({
     extraPlots?: ExtraPlot[]; // under them
     onRemoveExtra?: (id: string) => void;
 }) {
+    const demo = useDemo(); // the demo: plots to look at, not datasets to make
     const version = useLoaded();
     const colors = usePlotColors();
     const root = useRef<HTMLDivElement>(null);
@@ -873,14 +875,16 @@ export function Workspace({
                         >
                             Mask
                         </button>
-                        <button
-                            type="button"
-                            disabled={!primary}
-                            onClick={() => setSplitting(true)}
-                            title="Make a dataset of each test in this file: where a mask holds, or between times you choose"
-                        >
-                            Split
-                        </button>
+                        {!demo && (
+                            <button
+                                type="button"
+                                disabled={!primary}
+                                onClick={() => setSplitting(true)}
+                                title="Make a dataset of each test in this file: where a mask holds, or between times you choose"
+                            >
+                                Split
+                            </button>
+                        )}
                         <OptionsMenu layout={layout} dispatch={dispatch} time={time} />
                         <MenuButton
                             label="Export"

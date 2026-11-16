@@ -8,9 +8,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import __version__, load, people
+from . import __version__, demo, load, people
 from .api import assistant as assistant_api
 from .api import deals as deals_api
+from .api import demo as demo_api
 from .api import downloads, signin, web
 from .api import feedback as feedback_api
 from .api import help as help_api
@@ -52,6 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         migrate(engine)
         with sessions() as db:
+            if settings.demo:
+                demo.ready(db)  # only the demo's own database, never the team's
             people.init(db)
             init_vault(db)
             recover_yorg(db)
@@ -61,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.caliper_reader.start()
         app.state.deals.start(schedule=settings.deals_schedule)
         yield
+        await app.state.demo.close()
         app.state.deals.stop()
         app.state.caliper_reader.stop()
         app.state.assistant.stop()
@@ -70,7 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # The API's own docs (/docs) are for development: in production they'd map the whole API for anyone.
     hidden = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.production else {}
-    app = FastAPI(title="YJSP", version=__version__, lifespan=lifespan, **hidden)
+    app = FastAPI(title=settings.site_name, version=__version__, lifespan=lifespan, **hidden)
     app.state.settings = settings
     app.state.sessionmaker = sessions
     app.state.server_load = load.Sampler(sessions)  # a sample of the CPU and memory a minute (Admin > People)
@@ -90,6 +94,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.deals = Deals(
         settings, sessions, app.state.assistant, [buildflow_wants.wants, piper_wants.wants, vault_wants.wants]
     )
+    # The demo, at /demo: its own server, which this passes requests to (YJSP_DEMO_URL); none without one.
+    app.state.demo = demo_api.Passer(settings.demo_url)
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
@@ -103,6 +109,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Outside everything that reads a request, so that a request too big for the server is refused before anything
     # reads it. Only SecurityHeaders, which reads nothing of it, is outside it, so a refusal has the headers too.
     app.add_middleware(BodyLimit)
+    if settings.demo:
+        app.add_middleware(demo.Guard)  # reads only, before anything else looks: the demo can't be changed
     app.add_middleware(SecurityHeaders, https=settings.production)
     hide_sign_in_codes()
 
@@ -130,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(yorg_scripts.router)
     app.include_router(piper_api.router)
     app.include_router(buildflow_api.router)
+    app.include_router(demo_api.router)
     web.mount_assets(app, settings)
     app.include_router(web.router)  # last: it takes every path nothing else did
     return app

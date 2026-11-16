@@ -536,6 +536,23 @@ button.bf-chip:hover:not(:disabled) {
 
 /* --- a component, beside the page ---------------------------------------------------------------------------------- */
 
+/* The panel's own controls, in a fieldset the demo turns off (Panel.tsx), with no box of its own. */
+.bf-panel-body {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.bf-panel-body:disabled :is(input, select, textarea, button) {
+    color: var(--muted);
+    cursor: default;
+}
+
+.bf-panel-body:disabled :is(.bf-remove, .bf-skip-phase, .bf-add-link-start) {
+    display: none;
+}
+
 .bf-panel {
     position: fixed;
     top: 3.5rem;

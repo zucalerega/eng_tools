@@ -4,6 +4,7 @@ import { MoveDialog, NameDialog } from "../FolderDialogs";
 import { pathTo, within } from "../folders";
 import { Link } from "../router";
 import { yorg, type SavedView, type ViewFolder } from "./api";
+import { useDemo } from "../session";
 
 // The saved views, in folders of their own, as the datasets are in theirs (Datasets.tsx): a folder's own folders and
 // views, each folder's views the most recently changed first, and every view when searching. Views and folders are
@@ -19,6 +20,7 @@ const MAX_LISTED = 8; // views a delete names; past that, how many more
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function ViewsPage({ folder }: { folder: number | null }) {
+    const demo = useDemo(); // the demo: no folders to make
     const [views, setViews] = useState<SavedView[] | null>(null);
     const [folders, setFolders] = useState<ViewFolder[] | null>(null);
     const [datasets, setDatasets] = useState<Map<number, string>>(new Map()); // their names, for the Data column
@@ -166,9 +168,11 @@ export function ViewsPage({ folder }: { folder: number | null }) {
                     <h1>{here?.name ?? "Views"}</h1>
                 </div>
                 <div className="page-actions">
-                    <button type="button" onClick={() => setDialog({ kind: "new" })}>
-                        New folder
-                    </button>
+                    {!demo && (
+                        <button type="button" onClick={() => setDialog({ kind: "new" })}>
+                            New folder
+                        </button>
+                    )}
                 </div>
             </div>
             {folder === null && (

@@ -494,6 +494,36 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   - *The run broke partway, on something unforeseen*: whoever runs the server finds why in its log.
     The next run goes on.
 
+## Running the site
+
+For whoever runs the server. [docs/self-hosting.md](self-hosting.md) sets one up for a team with
+Docker.
+
+- **The server won't start, and its log says "Can't start in production: …".** It names each
+  setting it needs (a secret key, a way to sign in, an `https://` address): set them in its
+  settings (`.env`), and start it again. With Docker, `docker compose logs server` shows the log.
+- **The site doesn't answer at its address, or the browser refuses its certificate.** Caddy gets
+  the certificate from Let's Encrypt, which needs the domain's DNS to point at the machine and
+  ports 80 and 443 open to it from the internet. `docker compose logs caddy` says what it tried;
+  it tries again on its own.
+- **Signing in ends on Microsoft's or Google's page, with an error about the redirect URI**
+  (AADSTS50011, or `redirect_uri_mismatch`). The app's redirect URI has to be the site's address
+  exactly: `https://<the site>/auth/microsoft/callback` for Microsoft, and
+  `https://<the site>/auth/callback` for Google.
+- **Microsoft says the application wasn't found in the directory** (AADSTS700016).
+  `YJSP_MICROSOFT_TENANT` has to be the directory the app is registered in: its Directory (tenant)
+  ID, on the app's Overview.
+- **Admin > People says the off-site backup failed.** The warning says what failed and what the
+  backup said, and its log has the rest: `backup.log` beside `backup.sh` with Docker, or
+  `journalctl -u yjsp-offsite` on YJSP's own server. The usual causes are a wrong password or key
+  (`backup.env`), a token that was revoked or expired, and a full bucket.
+- **Admin > People says no off-site copy is recent.** It didn't run: check that it's still in
+  root's crontab (`sudo crontab -l`), or, on YJSP's own server,
+  `systemctl status yjsp-offsite.timer`.
+- **The weekly check, a restore, failed.** A copy didn't come back as it went. Run the check again
+  (`./backup.sh check`); if it fails again, read the whole repository back
+  (`docker compose run --rm backup check --read-data`), and make a new copy at once.
+
 ## What an error means
 
 Each error the server sends has a code, in backticks below, and a message, which is what the web
@@ -513,12 +543,13 @@ a number. A few codes come up in more than one place.
   Admin > People, or to put your GT email on the whitelist, then sign in again.
 - **... has no YJSP account, and Google doesn't make new ones** (`no_account`): you signed in with a
   Google account whose email has no account here. Sign in with Georgia Tech, or ask an admin to
-  invite the email you use with Google.
+  invite the email you use with Google. On a site where Google makes accounts, it says **only ...
+  addresses make one** instead: sign in with your school address, or ask for an invite.
 - **... isn't on YJSP's whitelist** (`not_whitelisted`): the whitelist is on, and your GT email
   isn't on it. Ask an admin to add it on Admin > Whitelist, then sign in again.
 - **Only Georgia Tech accounts sign in this way** (`not_georgia_tech`): the Microsoft account you
   used isn't one of GT's own, with a GT email. Sign in with your GT username, like
-  gburdell3@gatech.edu.
+  gburdell3@gatech.edu. (On another team's site, it names that site's school.)
 - **Your Google account's email address isn't verified** (`unverified_email`): verify it with
   Google, or sign in with Georgia Tech.
 - **... belongs to a different Google account**, or **GT account** (`identity_mismatch`): the
@@ -949,6 +980,21 @@ a number. A few codes come up in more than one place.
   as a request's look: Claude couldn't look at it then (see *Asking Claude*, above). Once it
   can, *Ask Claude to look again*.
 - **Request #... not found** (`not_found`): there's no request with that number.
+
+### The demo
+
+The demo, at `/demo`, has made-up data that anyone can look at without signing in.
+
+- **This is the demo, with made-up data: nothing in it can be changed** (`demo_read_only`): the
+  demo can only be looked at. Uploading, checking out, editing a P&ID, and the rest work on a real
+  site.
+- **The demo's busy: try again in a minute** (`demo_busy`): too many people are looking at it at
+  once. Wait a minute, and reload.
+- **The demo isn't answering right now: try again in a few minutes** (`demo_down`): the demo's own
+  server isn't running, perhaps because it's being remade, as it is each night. Try again in a few
+  minutes. The site itself isn't affected.
+- **The demo has no sign-in: everyone's its guest** (`not_found`): the demo has no sign-in pages.
+  Open it at `/demo`.
 
 ### Anything
 

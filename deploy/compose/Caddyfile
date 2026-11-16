@@ -1,0 +1,6 @@
+# Caddy, in front of the server (compose.yaml): HTTPS for the site's address, with a certificate from Let's Encrypt that
+# it renews on its own, and everything passed on to the server. YJSP_DOMAIN is in .env.
+{$YJSP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy server:8000
+}

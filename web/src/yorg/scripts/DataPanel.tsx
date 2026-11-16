@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Dataset } from "../api";
 import { dataset as loadDataset } from "../data";
 import { DatasetPicker } from "../DatasetPicker";
+import { onSite } from "../../root";
 import { datasetUrl } from "../pages";
 import { channelCode, testRef } from "./complete";
 
@@ -63,7 +64,7 @@ export function DataPanel({ datasets, attached, onChange, onChannel }: Props) {
                     <section key={id} className="scripts-test" aria-label={name}>
                         <div className="scripts-test-head">
                             <a
-                                href={datasetUrl(id)}
+                                href={onSite(datasetUrl(id))}
                                 target="_blank"
                                 rel="noreferrer"
                                 title="Open the test (in a new tab)"

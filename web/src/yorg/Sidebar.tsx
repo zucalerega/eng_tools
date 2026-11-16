@@ -9,6 +9,7 @@ import { measure } from "./masks";
 import { formatDuration, formatValue } from "../scale";
 import type { Resolved } from "./Workspace";
 import { CHANNEL_TYPE, quantityOf } from "./Workspace";
+import { useDemo } from "../session";
 
 // The workspace's left side: its datasets (and how each lines up in time), their channels and calculated channels to
 // plot, the masks, and the markers. A channel's dot says it's plotted: clicking it again takes it off.
@@ -220,6 +221,7 @@ function Calculated({
     onPick: (what: Pick, newPanel: boolean) => void;
     onEdit: (formula: Formula | null) => void;
 }) {
+    const demo = useDemo(); // the demo: calculated channels to use, not to make
     const shown = list.filter((formula) =>
         words.every((word) => `${formula.name} ${formula.unit} ${formula.expression}`.toLowerCase().includes(word)),
     );
@@ -273,9 +275,11 @@ function Calculated({
                     );
                 })}
             </ul>
-            <button type="button" className="button-small yorg-new-calculated" onClick={() => onEdit(null)}>
-                New calculated channel
-            </button>
+            {!demo && (
+                <button type="button" className="button-small yorg-new-calculated" onClick={() => onEdit(null)}>
+                    New calculated channel
+                </button>
+            )}
         </details>
     );
 }

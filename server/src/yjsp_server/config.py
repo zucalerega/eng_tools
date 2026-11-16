@@ -10,6 +10,11 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_SECRET = "dev-only-secret-do-not-use-in-production"
+# Georgia Tech's accounts, YJSP's school's: Microsoft 365 accounts in GT's own directory (tenant) in Microsoft Entra,
+# whose addresses are gatech.edu's. The defaults of the school's settings (Settings.school_name, ...).
+GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
+GT_DOMAIN = "gatech.edu"
+_PLAIN = r"^[^<>&\"\x00-\x1f]+$"  # a name the pages show as it is
 ENV_FILE = ".env"
 # What the settings were called before the site was YJSP. Kept only to refuse them (refuse_old_settings): with a .env
 # still using them, the server would otherwise start on its defaults, a development server with a new, empty database.
@@ -25,16 +30,36 @@ class Settings(BaseSettings):
     # Where people reach the site; Google redirects back to {public_url}/auth/callback, and Microsoft to
     # {public_url}/auth/microsoft/callback.
     public_url: str = "http://localhost:8000"
+    # Whose site it is, as its pages say: its short name (the top bar, the tabs, the sign-in pages, the help) and the
+    # team's (the sign-in pages, the help, Claude's instructions, a P&ID's title block). YJSP's are the defaults.
+    site_name: str = Field(default="YJSP", min_length=1, max_length=40, pattern=_PLAIN)
+    team_name: str = Field(default="Yellow Jacket Space Program", min_length=1, max_length=120, pattern=_PLAIN)
+    # The team's logo: a folder with logo-on-light.png (its letters dark, for light pages) and logo-on-dark.png (light,
+    # for the dark theme), about 245 by 173 pixels or as wide for its height. Unset: YJSP's (brand/). Set, only the
+    # team's: one alone is for both themes, and with neither, the pages show the site's name in the logo's place.
+    brand_dir: Path | None = None
     # One database for the site: its accounts, and Vault's, Yorg's, and Piper's tables.
     database_url: str = "sqlite:///data/yjsp.db"
     # Signs the sign-in state cookie and the client sign-in confirmation form.
     secret_key: str = DEV_SECRET
     google_client_id: str = ""
     google_client_secret: str = ""
-    # Sign-in with Georgia Tech accounts, which are Microsoft 365 accounts: an app registered in Microsoft Entra
-    # (docs/design.md, "Deploying"). Only GT's accounts can use it (auth.sign_in_microsoft).
+    # Google makes accounts too, for the school's addresses (school_domains): for a school whose accounts are Google's.
+    # Off: Google signs in only to accounts already there, or invited (YJSP's: its school's accounts are Microsoft's).
+    google_makes_accounts: bool = False
+    # Sign-in with the school's accounts, if they're Microsoft 365 accounts (Georgia Tech's are): an app registered in
+    # Microsoft Entra (docs/design.md, "Deploying"). Only the school's directory's accounts can use it, at an address of
+    # the school's (auth.sign_in_microsoft).
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
+    # The school whose accounts people join with (docs/design.md, "Sign-in and accounts"): what the pages call it; its
+    # email domains, comma-separated, each with its subdomains (cc.gatech.edu), the only addresses that make an account
+    # by signing in or go on the whitelist; and its directory in Microsoft Entra, by its tenant ID. Georgia Tech's are
+    # the defaults. No domains: people join only by an admin's invite. Production refuses Microsoft's sign-in for another
+    # school's addresses while the directory is still Georgia Tech's (check).
+    school_name: str = Field(default="Georgia Tech", min_length=1, max_length=60, pattern=_PLAIN)
+    school_domains: str = Field(default=GT_DOMAIN, pattern=r"^\s*([a-z0-9.-]+\.[a-z]{2,}\s*(,\s*|$))*$")
+    microsoft_tenant: str = Field(default=GT_TENANT, pattern=r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
     # Comma-separated emails that become active admins when they sign in.
     bootstrap_admins: str = ""
     # /auth/dev-login and /auth/dev-token: sign in as any email, for local testing only.
@@ -114,16 +139,39 @@ class Settings(BaseSettings):
     # Search each day and keep what's shown current, on its own. Off: only when an admin asks (the tests).
     deals_schedule: bool = True
 
+    # The demo (docs/design.md, "The demo"): a server of its own beside the site, with made-up data (`yjsp-demo seed`
+    # makes it), that anyone can look at without signing in, as its guest, and no one can change. It has no sign-in,
+    # Claude, deals, or requests, and refuses to start with their settings (check).
+    demo: bool = False
+    # Where people reach the site when a proxy in front of it takes that off each request's path: /demo for the demo,
+    # which the site passes /demo to (demo_url). The web app's addresses, and the help's, start with it. Empty: the
+    # site's at the root of its address. Only the demo has one, for now: the sign-in pages don't follow it (check).
+    root_path: str = Field(default="", pattern=r"^(/[A-Za-z0-9._~-]+)*$")
+    # The demo, for the site to pass /demo and everything under it to (api/demo.py): the demo's own server, on this
+    # machine, like http://127.0.0.1:8200. Empty: there's no demo here.
+    demo_url: str = Field(default="", pattern=r"^(https?://[^/?#\s]+)?$")
+
     @property
     def production(self) -> bool:
         return self.env == "production"
+
+    @property
+    def school_domain_list(self) -> list[str]:
+        """The school's email domains, each a domain its addresses are at, or under (school_domains)."""
+        return [domain.strip() for domain in self.school_domains.split(",") if domain.strip()]
 
     @property
     def admin_emails(self) -> set[str]:
         return {e.strip().lower() for e in self.bootstrap_admins.split(",") if e.strip()}
 
     def check(self) -> None:
-        """Refuse to run production with development shortcuts or without a way to sign in."""
+        """Refuse to run production with development shortcuts or without a way to sign in, and the demo, in
+        production or not, with anything it mustn't have."""
+        if self.demo and (demo_problems := self._demo_problems()):
+            raise RuntimeError("Can't start the demo: " + "; ".join(demo_problems))
+        if self.root_path and not self.demo:
+            # The sign-in pages, and Google's and Microsoft's ways back to them, are at the root of the address yet.
+            raise RuntimeError("Can't start: YJSP_ROOT_PATH is only for the demo (YJSP_DEMO=1) for now: unset it")
         if not self.production:
             return
         problems = []
@@ -135,14 +183,24 @@ class Settings(BaseSettings):
             "GOOGLE": (self.google_client_id, self.google_client_secret),
             "MICROSOFT": (self.microsoft_client_id, self.microsoft_client_secret),
         }
-        if not any(all(pair) for pair in sign_ins.values()):
+        if not self.demo and not any(all(pair) for pair in sign_ins.values()):  # the demo has no sign-in
             problems.append(
-                "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech accounts), "
+                "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (the school's accounts), "
                 "or YJSP_GOOGLE_CLIENT_ID and YJSP_GOOGLE_CLIENT_SECRET"
             )
         for name, pair in sign_ins.items():
             if any(pair) and not all(pair):
                 problems.append(f"set both YJSP_{name}_CLIENT_ID and YJSP_{name}_CLIENT_SECRET, or neither")
+        if (
+            all(sign_ins["MICROSOFT"])
+            and self.microsoft_tenant == GT_TENANT
+            and GT_DOMAIN not in self.school_domain_list
+        ):
+            # Georgia Tech's directory, the default, for another school's site: no one could ever sign in with it.
+            problems.append(
+                "set YJSP_MICROSOFT_TENANT to the Directory (tenant) ID of the school's directory in Microsoft Entra, "
+                "where its sign-in app is registered: it's Georgia Tech's until then"
+            )
         if not self.public_url.startswith("https://"):
             problems.append("YJSP_PUBLIC_URL must start with https://")
         if bool(self.ebay_client_id) != bool(self.ebay_client_secret):
@@ -157,6 +215,27 @@ class Settings(BaseSettings):
             )
         if problems:
             raise RuntimeError("Can't start in production: " + "; ".join(problems))
+
+    def _demo_problems(self) -> list[str]:
+        """What the demo can't have: anyone uses it without signing in, so nothing in it may sign anyone in, spend
+        anything, or reach anyone (docs/design.md, "The demo")."""
+        settings = {
+            "YJSP_DEV_AUTH": self.dev_auth,
+            "YJSP_GOOGLE_CLIENT_ID": self.google_client_id,
+            "YJSP_GOOGLE_CLIENT_SECRET": self.google_client_secret,
+            "YJSP_MICROSOFT_CLIENT_ID": self.microsoft_client_id,
+            "YJSP_MICROSOFT_CLIENT_SECRET": self.microsoft_client_secret,
+            "YJSP_ANTHROPIC_API_KEY": self.anthropic_api_key,
+            "YJSP_FEEDBACK_ROUTINE_URL": self.feedback_routine_url,
+            "YJSP_FEEDBACK_ROUTINE_TOKEN": self.feedback_routine_token,
+            "YJSP_EBAY_CLIENT_ID": self.ebay_client_id,
+            "YJSP_EBAY_CLIENT_SECRET": self.ebay_client_secret,
+            "YJSP_DEMO_URL": self.demo_url,
+        }
+        found = [name for name, value in settings.items() if value]
+        if not found:
+            return []
+        return [f"unset {', '.join(found)}: the demo has no sign-in, Claude, requests, deals, or demo of its own"]
 
 
 def refuse_old_settings(environ: Mapping[str, str] = os.environ, env_file: Path = Path(ENV_FILE)) -> None:

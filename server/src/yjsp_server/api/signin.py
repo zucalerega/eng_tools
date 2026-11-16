@@ -1,5 +1,5 @@
-"""Sign-in pages: Georgia Tech accounts (through Microsoft) and Google for people, a browser handshake for the
-CLI/add-in, dev shortcuts.
+"""Sign-in pages: the school's accounts (through Microsoft: Georgia Tech's, for YJSP) and Google for people, a browser
+handshake for the CLI/add-in, dev shortcuts.
 
 The home page is where people sign in; once they're signed in and approved, it's the web app.
 """
@@ -21,7 +21,7 @@ from ..errors import ApiError, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import web
 from .deps import DB, OLD_SESSION_COOKIE, SESSION_COOKIE, Config, session_user
-from .pages import FAVICON, NAME, PALETTE, SITE, THEME, esc
+from .pages import FAVICON, NAME, PALETTE, THEME, esc, mark
 from .schemas import ClientTokenIn, DevTokenIn, TokenIssuedOut, UserOut
 
 router = APIRouter(tags=["sign-in"])
@@ -36,15 +36,20 @@ class _SignIn(NamedTuple):
     callback: str  # as registered with the provider: {public_url}{callback}
 
 
-# The ways to sign in, in the order the sign-in page offers them.
+# The ways to sign in, in the order the sign-in page offers them. The school's is called by its name (_label).
 _SIGN_INS: dict[Provider, _SignIn] = {
-    "microsoft": _SignIn("Georgia Tech", "/auth/microsoft/login", "/auth/microsoft/callback"),
+    "microsoft": _SignIn("", "/auth/microsoft/login", "/auth/microsoft/callback"),
     "google": _SignIn("Google", "/auth/login", "/auth/callback"),
 }
 
 
+def _label(settings: Settings, name: Provider) -> str:
+    """What a way to sign in is called: "Google", or the school's name (Georgia Tech, for YJSP)."""
+    return settings.school_name if name == "microsoft" else _SIGN_INS[name].label
+
+
 def make_oauth(settings: Settings) -> OAuth | None:
-    """The ways to sign in this server has set up: Google, Georgia Tech accounts (through Microsoft), or both."""
+    """The ways to sign in this server has set up: Google, the school's accounts (through Microsoft), or both."""
     if not (settings.google_client_id or settings.microsoft_client_id):
         return None
     oauth = OAuth()
@@ -57,19 +62,21 @@ def make_oauth(settings: Settings) -> OAuth | None:
             client_kwargs={"scope": "openid email profile"},
         )
     if settings.microsoft_client_id:
-        # GT's tenant's own endpoints: only its accounts can sign in there, and each ID token's issuer must be GT's
-        # (authlib checks it against this one). auth.sign_in_microsoft checks the rest.
-        gt = f"https://login.microsoftonline.com/{auth.GT_TENANT}"
+        # The school's tenant's own endpoints (YJSP_MICROSOFT_TENANT): only its accounts can sign in there, and each ID
+        # token's issuer must be the school's (authlib checks it against this one). auth.sign_in_microsoft checks the
+        # rest.
+        school = f"https://login.microsoftonline.com/{settings.microsoft_tenant}"
+        domains = settings.school_domain_list
         oauth.register(
             "microsoft",
             client_id=settings.microsoft_client_id,
             client_secret=settings.microsoft_client_secret,
-            authorize_url=f"{gt}/oauth2/v2.0/authorize",
-            # Straight on to GT's login page, without Microsoft first asking which account.
-            authorize_params={"domain_hint": auth.GT_DOMAIN},
-            access_token_url=f"{gt}/oauth2/v2.0/token",
-            issuer=f"{gt}/v2.0",
-            jwks_uri=f"{gt}/discovery/v2.0/keys",
+            authorize_url=f"{school}/oauth2/v2.0/authorize",
+            # Straight on to the school's login page, without Microsoft first asking which account.
+            authorize_params={"domain_hint": domains[0]} if domains else {},
+            access_token_url=f"{school}/oauth2/v2.0/token",
+            issuer=f"{school}/v2.0",
+            jwks_uri=f"{school}/discovery/v2.0/keys",
             client_kwargs={
                 "scope": "openid email profile",
                 "code_challenge_method": "S256",
@@ -85,11 +92,14 @@ def _provider(request: Request, name: Provider) -> StarletteOAuth2App | None:
     return None if oauth is None else oauth.create_client(name)
 
 
-# The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS).
-_LOCKUP = (
-    f'<div class="lockup"><span class="logo" role="img" aria-label="{SITE}"></span><span class="rule"></span>'
-    f'<span class="words">{" ".join(f"<span>{esc(word)}</span>" for word in NAME.split())}</span></div>'
-)
+def _lockup(settings: Settings) -> str:
+    """The team's logo beside the site's name, as the web app's home page has them (pages.LOGO_CSS), or the site's
+    short name in the logo's place, where the team has none on the server (pages.mark)."""
+    logo = mark(settings.site_name, bool(web.logos(settings)), labeled=True)
+    words = " ".join(f"<span>{esc(word)}</span>" for word in NAME.split())
+    return f'<div class="lockup">{logo}<span class="rule"></span><span class="words">{words}</span></div>'
+
+
 _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 2rem 1rem; background: var(--bg); color: var(--text);
     border-top: 3px solid #e0a500; }}
@@ -123,16 +133,18 @@ _STYLE = f"""{PALETTE}  body {{ margin: 0; min-height: 100vh; display: flex; fle
 """
 
 
-def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
-    """A sign-in page: a card with the team's logo and the site's name. The title "YJSP" is just the brand."""
-    heading = "" if title == SITE else f"<h1>{esc(title)}</h1>"
-    tab_title = title if title == SITE else f"{title} · {SITE}"
+def _page(settings: Settings, title: str, body: str, status_code: int = 200) -> HTMLResponse:
+    """A sign-in page: a card with the team's logo, the site's name, and the team's. A title that's the site's name is
+    just the brand."""
+    site = settings.site_name
+    heading = "" if title == site else f"<h1>{esc(title)}</h1>"
+    tab_title = title if title == site else f"{title} · {site}"
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{esc(tab_title)}</title>
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{_STYLE}</style></head>
-<body><main class="card"><div class="brand">{_LOCKUP}<p class="org">Yellow Jacket Space Program</p></div>
+<body><main class="card"><div class="brand">{_lockup(settings)}<p class="org">{esc(settings.team_name)}</p></div>
 {heading}{body}</main>
 <p class="foot">Access is managed by the team's admins and subteam leads.</p></body></html>""",
         status_code=status_code,
@@ -155,10 +167,11 @@ def _safe_next(target: str | None) -> str:
     return target
 
 
-def _turned_away(error: ApiError) -> HTMLResponse:
+def _turned_away(settings: Settings, error: ApiError) -> HTMLResponse:
     """A sign-in that didn't let someone in, as a page that says why and what to do, not the API's JSON: they came
-    from Google's or GT's login page in their browser."""
+    from Google's or the school's login page in their browser."""
     return _page(
+        settings,
         "Can't sign you in",
         f'<p class="lead">{esc(error.message)}.</p><a class="button secondary" href="/">Back to sign-in</a>',
         error.status,
@@ -185,33 +198,43 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
     user = session_user(request, db)
     if user is not None and user.status == UserStatus.ACTIVE:
         if _safe_next(next_path) != "/":
-            return RedirectResponse(_safe_next(next_path), status_code=303)  # signed in already: carry on
+            # Signed in already (or the demo's guest): carry on.
+            return RedirectResponse(settings.root_path + _safe_next(next_path), status_code=303)
         if (index := web.app_index(settings)) is not None:
-            return web.index_response(index)
+            return web.index_response(index, settings)
     if user is None:
         parts = [
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '
             "history; Yorg, the test data, plotted; and Piper, the fluid systems, drawn.</p>"
         ]
-        offered = [_SIGN_INS[name] for name in _SIGN_INS if _provider(request, name) is not None]
+        offered = [name for name in _SIGN_INS if _provider(request, name) is not None]
         if offered:
+            school = esc(settings.school_name)
             query = urlencode({"next": _safe_next(next_path)})
             buttons = "".join(
-                f'<a class="button{" secondary" if i else ""}" href="{way.start}?{query}">Sign in with {way.label}</a>'
-                for i, way in enumerate(offered)
+                f'<a class="button{" secondary" if i else ""}" href="{_SIGN_INS[name].start}?{query}">Sign in with '
+                f"{esc(_label(settings, name))}</a>"
+                for i, name in enumerate(offered)
             )
             parts.append(f'<div class="choices">{buttons}</div>')
-            # Only Georgia Tech accounts make new accounts (auth._sign_in): Google is for accounts already there.
-            if _provider(request, "microsoft") is None:
+            # Only the school's accounts make new accounts (auth._sign_in): through Microsoft, or Google where the
+            # school's accounts are Google's. Google is otherwise for accounts already there.
+            microsoft = _provider(request, "microsoft") is not None
+            google = _provider(request, "google") is not None
+            if microsoft:
+                join, joining = f"Sign in with {school}", f"Sign in with your {school} account"
+            else:
+                join = joining = f"Sign in with Google, with your {school} address"
+            if not (microsoft or (google and settings.google_makes_accounts)):
                 first = "First time here? An admin needs to invite you first."
             elif auth.whitelist_on(db):
                 first = (
-                    "First time here? Sign in with Georgia Tech. If your GT email isn't on the team's whitelist yet, "
-                    "ask an admin to add it."
+                    f"First time here? {join}. If your {school} email isn't on the team's whitelist yet, ask an admin "
+                    "to add it."
                 )
             else:
-                first = "First time here? Sign in with your Georgia Tech account to join."
-            if _provider(request, "google") is not None:
+                first = f"First time here? {joining} to join."
+            if google and not settings.google_makes_accounts:
                 first += " Google is for accounts made with it before."
             parts.append(f'<p class="fine">{first}</p>')
         if settings.dev_auth and not settings.production:
@@ -224,7 +247,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             )
         if len(parts) == 1:
             parts.append('<p class="fine">Sign-in isn\'t set up on this server yet.</p>')
-        return _page("Sign in", "".join(parts))
+        return _page(settings, "Sign in", "".join(parts))
 
     body = f'<p class="lead">Signed in as <strong>{esc(user.display_name)}</strong><br>{esc(user.email)}</p>'
     if user.status == UserStatus.PENDING:
@@ -239,7 +262,7 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
             'Meanwhile you can try the API at <a href="/docs">/docs</a>.</p>'
         )
     body += '<form method="post" action="/auth/logout"><button class="secondary">Sign out</button></form>'
-    return _page("Waiting for approval" if user.status == UserStatus.PENDING else SITE, body)
+    return _page(settings, "Waiting for approval" if user.status == UserStatus.PENDING else settings.site_name, body)
 
 
 async def _start_sign_in(request: Request, settings: Settings, name: Provider, next_path: str) -> Response:
@@ -248,7 +271,7 @@ async def _start_sign_in(request: Request, settings: Settings, name: Provider, n
     if provider is None:
         if settings.dev_auth and not settings.production:
             return RedirectResponse("/?" + urlencode({"next": _safe_next(next_path)}), status_code=303)
-        raise ApiError(f"{_SIGN_INS[name].label} sign-in isn't set up on this server", code="signin_unavailable")
+        raise ApiError(f"{_label(settings, name)} sign-in isn't set up on this server", code="signin_unavailable")
     request.session["next"] = _safe_next(next_path)
     return await provider.authorize_redirect(request, settings.public_url.rstrip("/") + _SIGN_INS[name].callback)
 
@@ -262,7 +285,7 @@ async def _signed_in_as(request: Request, name: Provider) -> dict[str, Any]:
     try:
         token = await provider.authorize_access_token(request)
     except OAuthError as exc:
-        message = f"{_SIGN_INS[name].label} sign-in failed: {exc.description or exc.error}"
+        message = f"{_label(request.app.state.settings, name)} sign-in failed: {exc.description or exc.error}"
         raise Forbidden(message, code="signin_failed") from exc
     return dict(token.get("userinfo") or {})
 
@@ -285,7 +308,7 @@ async def callback(request: Request, db: DB, settings: Config) -> Response:
             email_verified=bool(info.get("email_verified")),
         )
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -299,7 +322,7 @@ async def microsoft_callback(request: Request, db: DB, settings: Config) -> Resp
     try:
         user = auth.sign_in_microsoft(db, settings, await _signed_in_as(request, "microsoft"))
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, request.session.pop("next", "/"))
 
 
@@ -341,6 +364,7 @@ def client_start(
         return RedirectResponse("/?" + urlencode({"next": here}), status_code=303)
     if user.status != UserStatus.ACTIVE:
         return _page(
+            settings,
             "Waiting for approval",
             f"<p>Signed in as {esc(user.email)}. An admin needs to approve your account first.</p>",
         )
@@ -350,6 +374,7 @@ def client_start(
     fields = {"port": port, "state": state, "challenge": challenge, "name": name, "approval": approval}
     hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(v)}">' for k, v in fields.items())
     return _page(
+        settings,
         "Sign in to Vault",
         f"""<p class="lead"><strong>{esc(name)}</strong> wants to use Vault as <strong>{esc(user.email)}</strong>.
 It will be able to check files in and out with your permissions until you sign it out.</p>
@@ -404,13 +429,13 @@ def dev_login(request: Request, db: DB, settings: Config, email: str, name: str 
     try:
         user = auth.sign_in_dev(db, settings, email, name)
     except ApiError as error:
-        return _turned_away(error)
+        return _turned_away(settings, error)
     return _start_session(request, db, settings, user, next_path)
 
 
 @router.post("/auth/dev-token")
 def dev_token(body: DevTokenIn, db: DB, settings: Config) -> TokenIssuedOut:
-    """Development only (YJSP_DEV_AUTH): a client token for any email, as if Georgia Tech vouched for it."""
+    """Development only (YJSP_DEV_AUTH): a client token for any email, as if the school vouched for it."""
     _require_dev(settings)
     user = auth.sign_in_dev(db, settings, body.email, body.name)
     token = auth.issue_token(db, user, kind=auth.CLIENT, name=body.client or "dev token")

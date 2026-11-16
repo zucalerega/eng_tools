@@ -23,6 +23,40 @@ test("the site's address shows its apps, and each goes to its own pages", async 
     expect(document.title).toBe("Vault");
 });
 
+/** What the server says on the page of whose site it is (api/web.py, index_response), for this test only. */
+function serverSays(said: Record<string, string>) {
+    const metas = Object.entries(said).map(([name, content]) => {
+        const meta = document.createElement("meta");
+        meta.name = name;
+        meta.content = content;
+        document.head.append(meta);
+        return meta;
+    });
+    onTestFinished(() => metas.forEach((meta) => meta.remove()));
+}
+
+test("another team's site has its own name: on the home page, in the top bar, and on the tab", async () => {
+    // From its YJSP_SITE_NAME and YJSP_TEAM_NAME.
+    serverSays({ "yjsp-site": "RPL", "yjsp-team": "Rocket Propulsion Lab", "yjsp-logo": "yes" });
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+    const home = within(await screen.findByRole("main"));
+    expect(home.getByRole("heading", { name: "RPL Engineering Tools" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "RPL home" })).toBeTruthy();
+    expect(document.title).toBe("RPL");
+    expect(document.querySelectorAll(".site-logo")).toHaveLength(2); // its logo, in the top bar and on the home page
+});
+
+test("a team that hasn't put its logo on the server has its site's name in the logo's place", async () => {
+    serverSays({ "yjsp-site": "RPL", "yjsp-team": "Rocket Propulsion Lab", "yjsp-logo": "none" });
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+    const home = within(await screen.findByRole("main"));
+    expect(home.getByRole("heading", { name: "RPL Engineering Tools" })).toBeTruthy();
+    expect(within(screen.getByRole("link", { name: "RPL home" })).getByText("RPL")).toBeTruthy();
+    expect(document.querySelectorAll(".site-logo")).toHaveLength(0); // never YJSP's
+});
+
 test("the home page shows everyone how full the server's disk is, and how much of it each app takes", async () => {
     const team = await Team.create();
     const member = await team.member("Storage");

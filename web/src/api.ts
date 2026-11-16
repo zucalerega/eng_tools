@@ -2,6 +2,8 @@
 // (server/src/yjsp_server/api/schemas.py, or /docs on a running server). Each app has the rest: vault/api.ts,
 // yorg/api.ts.
 
+import { inApp, onSite } from "./root";
+
 export interface UserRef {
     id: number;
     name: string;
@@ -19,19 +21,24 @@ export interface Account extends UserRef {
     // For admins: how long they've had the web app open, and worked in SolidWorks with the add-in, in seconds.
     site_seconds?: number | null;
     solidworks_seconds?: number | null;
+    // GET /api/me: this is the demo, where everyone's its guest and nothing can be changed.
+    demo?: boolean;
 }
 
 /** What admins decide for everyone. */
 export interface SiteSettings {
     // On: only the emails on the whitelist, and people an admin invited, can make an account; anyone else who signs
-    // in is turned away. Off: anyone with a Georgia Tech account can.
+    // in is turned away. Off: anyone with one of the school's accounts can.
     whitelist: boolean;
     // The oldest add-in and vault command that can change the vault, like "0.5.4": older ones can still read it, and
     // are told to update. Null: any version can. It can be no newer than the installer offered.
     min_client_version: string | null;
+    // The school whose accounts join (YJSP_SCHOOL_NAME, YJSP_SCHOOL_DOMAINS): "Georgia Tech", ["gatech.edu"] for YJSP.
+    school_name: string;
+    school_domains: string[];
 }
 
-/** A Georgia Tech address on the whitelist, with its account once it has one. */
+/** One of the school's addresses on the whitelist, with its account once it has one. */
 export interface WhitelistEntry {
     id: number;
     email: string;
@@ -43,7 +50,7 @@ export interface WhitelistEntry {
 export interface WhitelistAdded {
     added: string[];
     already: string[]; // on it before
-    not_georgia_tech: string[]; // left off: only Georgia Tech accounts make accounts
+    not_georgia_tech: string[]; // left off: only the school's addresses make accounts (its name's from before)
 }
 
 export class ApiError extends Error {
@@ -308,13 +315,15 @@ export function configureApi(options: { baseUrl: string; token: string | null })
     token = options.token;
 }
 
+/** A request's address: the server's path (/api/me), on the site, wherever it is (root.ts). */
 export function apiUrl(path: string): string {
-    return new URL(path, baseUrl).toString();
+    return new URL(onSite(path), baseUrl).toString();
 }
 
 /** Send the browser to sign in, then back here. */
 export function signIn(): void {
-    window.location.assign("/?next=" + encodeURIComponent(window.location.pathname + window.location.search));
+    const here = inApp(window.location.pathname) + window.location.search;
+    window.location.assign(onSite("/?next=" + encodeURIComponent(here)));
 }
 
 /** Bytes to send as they are (a file's contents), rather than as JSON. */
@@ -475,7 +484,7 @@ export const api = {
         request<Account>("PATCH", `/api/users/${id}`, change),
     settings: () => request<SiteSettings>("GET", "/api/settings"),
     /**
-     * Turning the whitelist off approves everyone waiting too: anyone with a GT account can join then. A null
+     * Turning the whitelist off approves everyone waiting too: anyone with the school's account can join then. A null
      * min_client_version lets any version change the vault again.
      */
     updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),

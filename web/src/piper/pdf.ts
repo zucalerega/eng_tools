@@ -3,6 +3,7 @@ import { svgOf, type ExportLegend } from "./exports";
 import type { DiagramMeta } from "./library/kinds";
 import type { Box } from "./geometry";
 import { bytesOf, deflate, pdfPicture, type PdfPicture, type PictureSource } from "./pictures";
+import { teamName } from "../site";
 
 // A diagram as a PDF file: the drawing as the exports draw it (exports.ts' SVG), turned into PDF's own drawing
 // operators, so it's vector, crisp printed at any size, its tags text that can be searched and copied. Only what the
@@ -920,7 +921,7 @@ function sheetSvg(page: { width: number; height: number }, sheet: Sheet, meta: D
 
     // The title block: who it's for, what it is, and its particulars.
     if (sheet.titleBlock) {
-        text(x0 + 6, y + 12, "YELLOW JACKET SPACE PROGRAM", 8, { bold: true, spacing: "0.08em" });
+        text(x0 + 6, y + 12, teamName().toUpperCase(), 8, { bold: true, spacing: "0.08em" });
         text(x0 + BLOCK - 6, y + 12, "P&ID", 8, { bold: true, anchor: "end", fill: muted });
         rule(x0, y + 18, x0 + BLOCK, y + 18);
         cell(x0, y + 18, BLOCK, "TITLE", meta.name, 13, true);

@@ -1,0 +1,5 @@
+# What a site keeps here of its own: its settings, its backup's keys and log, and its changes to compose.yaml.
+.env
+backup.env
+backup.log
+compose.override.yaml

@@ -3,6 +3,7 @@ import { api, type UserRef } from "../api";
 import { Dialog, Notice } from "../components";
 import { Link, navigate } from "../router";
 import { useSession } from "../session";
+import { siteName } from "../site";
 import {
     buildflow,
     LEVEL_NAMES,
@@ -1130,7 +1131,13 @@ function exportCsv(shop: Shop) {
     ];
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
-    link.download = `yjsp-shop-${new Date().toISOString().slice(0, 10)}.csv`;
+    // Named for the site, as its settings name it: yjsp-shop-2026-11-16.csv.
+    const site =
+        siteName()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "") || "site";
+    link.download = `${site}-shop-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.append(link);
     link.click();
     link.remove();

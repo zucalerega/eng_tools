@@ -49,6 +49,27 @@ async function startEditing() {
 /** What a test's badge beside a part says. */
 const badge = (part: string) => drawingArea().querySelector(`[data-live="${part}"] text`)?.textContent ?? null;
 
+/**
+ * What `read` says the moment `shown` first finds something on the page: in the microtask after the change that showed
+ * it, before anything the app put off until later has run. That's when Testing Library's waits see a change, and when a
+ * test (or someone quick) can act on it, so what the page shows has to be true of the editor by then.
+ */
+function atFirstSight<T>(shown: () => unknown, read: () => T): Promise<T> {
+    return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+            if (shown()) {
+                observer.disconnect();
+                resolve(read());
+            }
+        });
+        observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+        onTestFinished(() => observer.disconnect());
+    });
+}
+
+const button = (name: string) => () =>
+    Array.from(document.querySelectorAll("button")).find((found) => found.textContent?.trim() === name);
+
 test("Piper is the site's third app: its diagrams, in their folders", async () => {
     const team = await Team.create();
     await team.diagram(team.chief, "Feed system", undefined, "Vespula/Prop");
@@ -618,6 +639,34 @@ test("a change made after someone took over editing isn't saved over theirs: it'
         `${made.name} (my changes)`,
         ["gauge", "valve"],
     ]);
+});
+
+test("the moment it says it's being edited, the drawing takes changes", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "At once");
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    await screen.findByRole("application", { name: "Drawing" });
+    const lookedAt = atFirstSight(button("Done editing"), () => drawingArea().classList.contains("piper-looked-at"));
+    await startEditing();
+    expect(await lookedAt).toBe(false); // never Done editing on a drawing that won't take a part, a line, or a picture
+});
+
+test("the moment its save is refused, it says who's editing it instead, at the top too", async () => {
+    const team = await Team.create();
+    const bob = await team.member("Bob");
+    const made = await team.diagram(bob, "Refused at once");
+    renderApp(bob, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    await team.editDiagram(team.chief, made.id, true); // an admin takes it over
+    const named = atFirstSight(
+        () => screen.queryByText("Someone else is editing it"),
+        () => screen.queryByText(`${team.chief.user.name} is editing`) !== null,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Pressure gauge" }));
+    fireEvent.pointerDown(svg, at(200, 0));
+    fireEvent.pointerUp(svg, at(200, 0));
+    expect(await named).toBe(true);
 });
 
 test("a diagram deleted while it's open says so, and restoring it saves the change it wouldn't take", async () => {

@@ -660,7 +660,8 @@ If the VM is ever lost or moved:
    machines.
 
 The Docker image (`server/Dockerfile`, which CI builds, and publishes to ghcr.io for
-version tags) is another way to run the same server. The live site doesn't use it.
+version tags) is another way to run the same server. The live site doesn't use it; other
+teams' sites do, as [docs/self-hosting.md](self-hosting.md) sets them up.
 
 ## Rules
 

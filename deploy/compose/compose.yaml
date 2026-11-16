@@ -1,0 +1,63 @@
+# The site on any Linux machine with Docker: the server, from a release's image, behind Caddy, which gets the site's
+# HTTPS certificate and keeps it renewed. docs/self-hosting.md has all of it; in short, in this folder:
+#
+#   cp .env.example .env && chmod 600 .env   # then fill it in
+#   docker compose up -d
+#
+# Everything the site keeps (its database, Vault's and Yorg's files, the add-in's downloads, the team's logo) is in the
+# `data` volume, which backup.sh copies off the machine every night.
+name: yjsp
+
+services:
+  server:
+    image: ${YJSP_IMAGE:-ghcr.io/zucalerega/yjsp-server}:${YJSP_VERSION:?set YJSP_VERSION in .env to a release, like v0.7.0}
+    restart: unless-stopped
+    env_file: .env
+    # What this setup decides, whatever .env says: where the site is, and where things are in the volume.
+    environment:
+      YJSP_ENV: production
+      YJSP_PUBLIC_URL: https://${YJSP_DOMAIN:?set YJSP_DOMAIN in .env to the site's address, like tools.example.edu}
+      YJSP_BRAND_DIR: /data/brand
+      YJSP_DOWNLOADS_DIR: /data/downloads
+      YJSP_BACKUP_STATUS: /data/backups/offsite.json
+    volumes:
+      - data:/data
+    # Not published: only Caddy reaches it, over compose's own network.
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      YJSP_DOMAIN: ${YJSP_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # restic, for backup.sh only (`docker compose up` leaves it be): it copies the volume into the repository backup.env
+  # names, a file the server never sees.
+  backup:
+    image: restic/restic:0.19.1
+    profiles: [backup]
+    env_file:
+      - path: backup.env
+        required: false
+    environment:
+      RESTIC_CACHE_DIR: /cache
+    volumes:
+      - data:/data
+      - restic-cache:/cache
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:
+  restic-cache:

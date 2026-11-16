@@ -121,6 +121,10 @@ jobs:
           docker run -d --name yjsp -p 127.0.0.1:8000:8000 -e YJSP_DEV_AUTH=1 yjsp-server:ci
           curl -sf --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:8000/healthz
           docker rm -f yjsp
+      # The setup a team runs its own site with (deploy/compose), on this image: through Caddy, and backed up, checked,
+      # and put back.
+      - name: Team setup
+        run: bash .github/compose-test.sh yjsp-server:ci
       - name: Publish (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         env:

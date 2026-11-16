@@ -384,7 +384,8 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
     if (backup === null) {
         return (
             <p className="muted storage-backup">
-                Not copied off the server: there's no off-site backup here (docs/deploying.md, "Backups").
+                Not copied off the server: there's no off-site backup here (docs/self-hosting.md, "Backups", sets one
+                up).
             </p>
         );
     }
@@ -402,15 +403,15 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
         <>
             {failing ? (
                 <Notice tone="warning">
-                    The off-site backup failed {formatAgo(backup.backup_failed_at!)}: {backup.backup_error}. {last} On
-                    the server, <code>journalctl -u yjsp-offsite</code> says more.
+                    The off-site backup failed {formatAgo(backup.backup_failed_at!)}: {backup.backup_error}. {last} Its
+                    log, on the server, says more.
                 </Notice>
             ) : since(backup.backed_up_at, STALE_HOURS) ? (
                 <Notice tone="warning">
                     {backup.backed_up_at === null
                         ? "No off-site copy has been made yet."
                         : `The last off-site copy is from ${formatAgo(backup.backed_up_at)}, and one should run each night.`}{" "}
-                    On the server, <code>systemctl status yjsp-offsite.timer</code> says whether it's set to.
+                    Check, on the server, that it's still set to.
                 </Notice>
             ) : (
                 <p className="storage-backup">
@@ -430,8 +431,7 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
             {checkFailing && (
                 <Notice tone="warning">
                     The weekly check, a restore, failed {formatAgo(backup.verify_failed_at!)}: {backup.verify_error}.
-                    The copies may not come back as they went: on the server,{" "}
-                    <code>journalctl -u yjsp-offsite-verify</code> says more.
+                    The copies may not come back as they went: its log, on the server, says more.
                 </Notice>
             )}
         </>

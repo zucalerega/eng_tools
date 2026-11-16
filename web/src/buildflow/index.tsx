@@ -45,9 +45,10 @@ export const BUILDFLOW_ICON =
 export const buildflowSection = (pathname: string): string =>
     pathname.startsWith("/buildflow/help") ? "help" : pathname.startsWith("/buildflow/shop") ? "shop" : "programs";
 
-/** Whether a page wants the room: a program's bill, wide with its milestones, and the shop's queue. */
+/** Whether a page wants the room: a program's bill, wide with its milestones, and the shop, with its queue. */
 export const buildflowWide = (pathname: string): boolean =>
-    /^\/buildflow\/programs\/\d+(\/layout)?\/?$/.test(pathname) || /^\/buildflow\/shop\/?$/.test(pathname);
+    /^\/buildflow\/programs\/\d+(\/layout)?\/?$/.test(pathname) ||
+    /^\/buildflow\/shop(\/skills|\/machines)?\/?$/.test(pathname);
 
 export function BuildflowPage({ pathname }: { pathname: string }) {
     const page = buildflowPage(pathname.replace(/\/$/, "") || "/buildflow");

@@ -751,6 +751,7 @@ button.bf-chip:hover:not(:disabled) {
 
 .bf-people h3,
 .bf-links h3,
+.bf-in-shop h3,
 .bf-removed h3 {
     margin: 0 0 0.35rem;
     font-size: 0.78rem;
@@ -1552,8 +1553,8 @@ button.bf-deal-mark:hover:not(:disabled) {
 
 .bf-shop-levels {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-    gap: 0.6rem 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 17rem));
+    gap: 0.6rem 2.5rem;
 }
 
 .bf-shop-level {

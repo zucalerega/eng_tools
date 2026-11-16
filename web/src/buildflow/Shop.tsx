@@ -643,7 +643,9 @@ function PartForm({
                     />
                 </label>
                 <label className="field">
-                    For <span className="muted">(optional)</span>
+                    <span>
+                        For <span className="muted">(optional)</span>
+                    </span>
                     <select
                         value={form.programId ?? ""}
                         onChange={(event) => set({ programId: person(event.target.value), componentId: null })}
@@ -718,7 +720,9 @@ function PartForm({
                     />
                 </label>
                 <label className="field">
-                    Est. hours <span className="muted">(all of them)</span>
+                    <span>
+                        Est. hours <span className="muted">(all of them)</span>
+                    </span>
                     <input
                         type="number"
                         min={0}
@@ -729,7 +733,9 @@ function PartForm({
                     />
                 </label>
                 <label className="field bf-shop-wide">
-                    Drawing <span className="muted">(a link, or a page here like /vault/file/12)</span>
+                    <span>
+                        Drawing <span className="muted">(a link, or a page here like /vault/file/12)</span>
+                    </span>
                     <input value={form.drawing} onChange={(event) => set({ drawing: event.target.value })} />
                 </label>
                 <label className="field bf-shop-wide">
@@ -761,7 +767,9 @@ function PartForm({
                     </select>
                 </label>
                 <label className="field">
-                    Machinist <span className="muted">(optional)</span>
+                    <span>
+                        Machinist <span className="muted">(optional)</span>
+                    </span>
                     <select
                         value={form.machinistId ?? ""}
                         onChange={(event) => set({ machinistId: person(event.target.value) })}
@@ -786,11 +794,15 @@ function PartForm({
                     </select>
                 </label>
                 <label className="field">
-                    Need by <span className="muted">(optional)</span>
+                    <span>
+                        Need by <span className="muted">(optional)</span>
+                    </span>
                     <input type="date" value={form.needBy} onChange={(event) => set({ needBy: event.target.value })} />
                 </label>
                 <label className="field bf-shop-wide">
-                    Note <span className="muted">(what it&apos;s waiting on, say)</span>
+                    <span>
+                        Note <span className="muted">(what it&apos;s waiting on, say)</span>
+                    </span>
                     <textarea
                         rows={2}
                         maxLength={2000}
@@ -862,7 +874,9 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
                 <h2>{whose === me?.id ? "Your experience" : `${name}'s experience`}</h2>
                 {admin && (
                     <label className="field bf-shop-whose">
-                        Whose <span className="muted">(admins can change anyone&apos;s)</span>
+                        <span>
+                            Whose <span className="muted">(admins can change anyone&apos;s)</span>
+                        </span>
                         <select
                             value={whose}
                             onChange={(event) => {

@@ -190,8 +190,8 @@ def update_site_settings(
 ) -> SiteSettings:
     """Turn the whitelist on or off, or set the oldest Vault client that can change the vault.
 
-    Accounts that already exist keep their status either way. Off, anyone with a Georgia Tech account joins at once
-    (auth._sign_in), and anyone still waiting for approval from before would join by signing in again, so they're
+    Accounts that already exist keep their status either way. Off, anyone with one of the school's accounts joins at
+    once (auth._sign_in), and anyone still waiting for approval from before would join by signing in again, so they're
     approved now.
 
     min_client_version is a version like "0.5.4", no newer than the installer offered now (offered, its version), or ""
@@ -231,14 +231,17 @@ def whitelist(db: Session, admin: User) -> list[tuple[WhitelistEmail, User | Non
 class WhitelistAdded:
     added: list[str]
     already: list[str]  # on the whitelist before
-    not_georgia_tech: list[str]  # left off: only Georgia Tech accounts make accounts
+    # Left off: only the school's addresses make accounts. Named from when the school was always Georgia Tech; the
+    # name's the API's.
+    not_georgia_tech: list[str]
 
 
-def add_to_whitelist(db: Session, admin: User, emails: list[str]) -> WhitelistAdded:
+def add_to_whitelist(db: Session, settings: Settings, admin: User, emails: list[str]) -> WhitelistAdded:
     """Put emails on the whitelist (admins): one typed in, or a team roster's.
 
-    Only Georgia Tech addresses go on, since only GT accounts make accounts (auth._sign_in): any other is left off and
-    said so, rather than refusing the rest of a roster with it. Someone with another address can be invited instead.
+    Only the school's addresses go on (YJSP_SCHOOL_DOMAINS), since only its accounts make accounts (auth._sign_in): any
+    other is left off and said so, rather than refusing the rest of a roster with it. Someone with another address can
+    be invited instead.
     """
     _require_admin(admin)
     wanted: dict[str, None] = {}  # in the order given, once each
@@ -247,7 +250,7 @@ def add_to_whitelist(db: Session, admin: User, emails: list[str]) -> WhitelistAd
         email = typed.strip().lower()
         if not _EMAIL.match(email):
             raise ApiError(f"{typed.strip()!r} isn't an email address", code="bad_email")
-        (wanted if auth.gt_address(email) else other)[email] = None
+        (wanted if auth.school_address(settings, email) else other)[email] = None
     vault.begin_write(db)
     there = set(db.scalars(select(WhitelistEmail.email)))
     added = [email for email in wanted if email not in there]

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field
 
 from .. import auth, clients
+from ..config import Settings
 from ..deals import finder, rank
 from ..feedback import Names
 from ..models import Deal, DealRun, Feedback, SiteSettings, Token, User, WhitelistEmail
@@ -97,15 +98,23 @@ class MePatch(BaseModel):
 
 class SiteSettingsOut(BaseModel):
     # On: only the emails on the whitelist and invited people can make an account; anyone else who signs in is turned
-    # away. Off: anyone with a Georgia Tech account can.
+    # away. Off: anyone with one of the school's accounts can.
     whitelist: bool
     # The oldest Vault client (the add-in, the CLI) that can change the vault, like "0.5.4": older ones' changes are
     # refused (426 client_too_old), and they can still read it. Null: any client can.
     min_client_version: str | None
+    # The school whose accounts join (YJSP_SCHOOL_NAME, YJSP_SCHOOL_DOMAINS), as the server's settings say it.
+    school_name: str = "Georgia Tech"
+    school_domains: list[str] = []
 
     @classmethod
-    def of(cls, site: SiteSettings) -> "SiteSettingsOut":
-        return cls(whitelist=site.whitelist, min_client_version=site.min_client_version)
+    def of(cls, site: SiteSettings, settings: Settings) -> "SiteSettingsOut":
+        return cls(
+            whitelist=site.whitelist,
+            min_client_version=site.min_client_version,
+            school_name=settings.school_name,
+            school_domains=settings.school_domain_list,
+        )
 
 
 class UsageDayOut(BaseModel):
@@ -298,7 +307,7 @@ class WhitelistEntryOut(BaseModel):
 class WhitelistAddedOut(BaseModel):
     added: list[str]
     already: list[str]  # on the whitelist before
-    not_georgia_tech: list[str]  # left off: only Georgia Tech accounts make accounts
+    not_georgia_tech: list[str]  # left off: only the school's addresses make accounts (its name's from before: API)
 
 
 class AssistantMessageIn(BaseModel):

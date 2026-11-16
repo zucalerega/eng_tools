@@ -72,10 +72,10 @@ def patch_user(user_id: int, body: UserPatch, user: ActiveUser, db: DB) -> UserO
 
 
 @router.get("/settings")
-def get_site_settings(user: ActiveUser, db: DB) -> SiteSettingsOut:
+def get_site_settings(user: ActiveUser, db: DB, settings: Config) -> SiteSettingsOut:
     """Whether new people need an invite or an admin's approval to join (the whitelist), and the oldest Vault client
-    that can change the vault (admins)."""
-    return SiteSettingsOut.of(people.site_settings(db, user))
+    that can change the vault; and the school whose accounts join (admins)."""
+    return SiteSettingsOut.of(people.site_settings(db, user), settings)
 
 
 @router.patch("/settings")
@@ -86,21 +86,21 @@ def patch_site_settings(body: SiteSettingsPatch, user: ActiveUser, db: DB, setti
     oldest = (body.min_client_version or "") if "min_client_version" in body.model_fields_set else None
     offered = version_of(settings.downloads_dir, clients.INSTALLER) if oldest else None  # read only when it's needed
     site = people.update_site_settings(db, user, whitelist=body.whitelist, min_client_version=oldest, offered=offered)
-    return SiteSettingsOut.of(site)
+    return SiteSettingsOut.of(site, settings)
 
 
 @router.get("/whitelist")
 def get_whitelist(user: ActiveUser, db: DB) -> list[WhitelistEntryOut]:
-    """The emails that can make an account, by signing in with Georgia Tech, while the whitelist is on, each with its
-    account once it has one (admins)."""
+    """The emails that can make an account, by signing in with the school's account, while the whitelist is on, each
+    with its account once it has one (admins)."""
     return [WhitelistEntryOut.of(entry, account) for entry, account in people.whitelist(db, user)]
 
 
 @router.post("/whitelist")
-def post_whitelist(body: WhitelistIn, user: ActiveUser, db: DB) -> WhitelistAddedOut:
-    """Put emails on the whitelist (admins): Georgia Tech addresses only. Says which it added, which were on it already,
-    and which it left off for not being GT's."""
-    return WhitelistAddedOut(**asdict(people.add_to_whitelist(db, user, body.emails)))
+def post_whitelist(body: WhitelistIn, user: ActiveUser, db: DB, settings: Config) -> WhitelistAddedOut:
+    """Put emails on the whitelist (admins): the school's addresses only. Says which it added, which were on it already,
+    and which it left off for not being the school's."""
+    return WhitelistAddedOut(**asdict(people.add_to_whitelist(db, settings, user, body.emails)))
 
 
 @router.delete("/whitelist/{entry_id}", status_code=204)

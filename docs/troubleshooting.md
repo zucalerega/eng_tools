@@ -506,12 +506,13 @@ a number. A few codes come up in more than one place.
   Admin > People, or to put your GT email on the whitelist, then sign in again.
 - **... has no YJSP account, and Google doesn't make new ones** (`no_account`): you signed in with a
   Google account whose email has no account here. Sign in with Georgia Tech, or ask an admin to
-  invite the email you use with Google.
+  invite the email you use with Google. On a site where Google makes accounts, it says **only ...
+  addresses make one** instead: sign in with your school address, or ask for an invite.
 - **... isn't on YJSP's whitelist** (`not_whitelisted`): the whitelist is on, and your GT email
   isn't on it. Ask an admin to add it on Admin > Whitelist, then sign in again.
 - **Only Georgia Tech accounts sign in this way** (`not_georgia_tech`): the Microsoft account you
   used isn't one of GT's own, with a GT email. Sign in with your GT username, like
-  gburdell3@gatech.edu.
+  gburdell3@gatech.edu. (On another team's site, it names that site's school.)
 - **Your Google account's email address isn't verified** (`unverified_email`): verify it with
   Google, or sign in with Georgia Tech.
 - **... belongs to a different Google account**, or **GT account** (`identity_mismatch`): the

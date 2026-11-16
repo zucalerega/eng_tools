@@ -28,14 +28,17 @@ export interface Account extends UserRef {
 /** What admins decide for everyone. */
 export interface SiteSettings {
     // On: only the emails on the whitelist, and people an admin invited, can make an account; anyone else who signs
-    // in is turned away. Off: anyone with a Georgia Tech account can.
+    // in is turned away. Off: anyone with one of the school's accounts can.
     whitelist: boolean;
     // The oldest add-in and vault command that can change the vault, like "0.5.4": older ones can still read it, and
     // are told to update. Null: any version can. It can be no newer than the installer offered.
     min_client_version: string | null;
+    // The school whose accounts join (YJSP_SCHOOL_NAME, YJSP_SCHOOL_DOMAINS): "Georgia Tech", ["gatech.edu"] for YJSP.
+    school_name: string;
+    school_domains: string[];
 }
 
-/** A Georgia Tech address on the whitelist, with its account once it has one. */
+/** One of the school's addresses on the whitelist, with its account once it has one. */
 export interface WhitelistEntry {
     id: number;
     email: string;
@@ -47,7 +50,7 @@ export interface WhitelistEntry {
 export interface WhitelistAdded {
     added: string[];
     already: string[]; // on it before
-    not_georgia_tech: string[]; // left off: only Georgia Tech accounts make accounts
+    not_georgia_tech: string[]; // left off: only the school's addresses make accounts (its name's from before)
 }
 
 export class ApiError extends Error {
@@ -481,7 +484,7 @@ export const api = {
         request<Account>("PATCH", `/api/users/${id}`, change),
     settings: () => request<SiteSettings>("GET", "/api/settings"),
     /**
-     * Turning the whitelist off approves everyone waiting too: anyone with a GT account can join then. A null
+     * Turning the whitelist off approves everyone waiting too: anyone with the school's account can join then. A null
      * min_client_version lets any version change the vault again.
      */
     updateSettings: (change: Partial<SiteSettings>) => request<SiteSettings>("PATCH", "/api/settings", change),

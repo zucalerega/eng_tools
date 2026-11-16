@@ -10,6 +10,11 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_SECRET = "dev-only-secret-do-not-use-in-production"
+# Georgia Tech's accounts, YJSP's school's: Microsoft 365 accounts in GT's own directory (tenant) in Microsoft Entra,
+# whose addresses are gatech.edu's. The defaults of the school's settings (Settings.school_name, ...).
+GT_TENANT = "482198bb-ae7b-4b25-8b7a-6d7f32faa083"
+GT_DOMAIN = "gatech.edu"
+_PLAIN = r"^[^<>&\"\x00-\x1f]+$"  # a name the pages show as it is
 ENV_FILE = ".env"
 # What the settings were called before the site was YJSP. Kept only to refuse them (refuse_old_settings): with a .env
 # still using them, the server would otherwise start on its defaults, a development server with a new, empty database.
@@ -27,10 +32,8 @@ class Settings(BaseSettings):
     public_url: str = "http://localhost:8000"
     # Whose site it is, as its pages say: its short name (the top bar, the tabs, the sign-in pages, the help) and the
     # team's (the sign-in pages, the help, Claude's instructions, a P&ID's title block). YJSP's are the defaults.
-    site_name: str = Field(default="YJSP", min_length=1, max_length=40, pattern=r"^[^<>&\"\x00-\x1f]+$")
-    team_name: str = Field(
-        default="Yellow Jacket Space Program", min_length=1, max_length=120, pattern=r"^[^<>&\"\x00-\x1f]+$"
-    )
+    site_name: str = Field(default="YJSP", min_length=1, max_length=40, pattern=_PLAIN)
+    team_name: str = Field(default="Yellow Jacket Space Program", min_length=1, max_length=120, pattern=_PLAIN)
     # The team's logo: a folder with logo-on-light.png (its letters dark, for light pages) and logo-on-dark.png (light,
     # for the dark theme), about 245 by 173 pixels or as wide for its height. Unset: YJSP's (brand/).
     brand_dir: Path | None = None
@@ -40,10 +43,21 @@ class Settings(BaseSettings):
     secret_key: str = DEV_SECRET
     google_client_id: str = ""
     google_client_secret: str = ""
-    # Sign-in with Georgia Tech accounts, which are Microsoft 365 accounts: an app registered in Microsoft Entra
-    # (docs/design.md, "Deploying"). Only GT's accounts can use it (auth.sign_in_microsoft).
+    # Google makes accounts too, for the school's addresses (school_domains): for a school whose accounts are Google's.
+    # Off: Google signs in only to accounts already there, or invited (YJSP's: its school's accounts are Microsoft's).
+    google_makes_accounts: bool = False
+    # Sign-in with the school's accounts, if they're Microsoft 365 accounts (Georgia Tech's are): an app registered in
+    # Microsoft Entra (docs/design.md, "Deploying"). Only the school's directory's accounts can use it, at an address of
+    # the school's (auth.sign_in_microsoft).
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
+    # The school whose accounts people join with (docs/design.md, "Sign-in and accounts"): what the pages call it; its
+    # email domains, comma-separated, each with its subdomains (cc.gatech.edu), the only addresses that make an account
+    # by signing in or go on the whitelist; and its directory in Microsoft Entra, by its tenant ID. Georgia Tech's are
+    # the defaults. No domains: people join only by an admin's invite.
+    school_name: str = Field(default="Georgia Tech", min_length=1, max_length=60, pattern=_PLAIN)
+    school_domains: str = Field(default=GT_DOMAIN, pattern=r"^\s*([a-z0-9.-]+\.[a-z]{2,}\s*(,\s*|$))*$")
+    microsoft_tenant: str = Field(default=GT_TENANT, pattern=r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
     # Comma-separated emails that become active admins when they sign in.
     bootstrap_admins: str = ""
     # /auth/dev-login and /auth/dev-token: sign in as any email, for local testing only.
@@ -140,6 +154,11 @@ class Settings(BaseSettings):
         return self.env == "production"
 
     @property
+    def school_domain_list(self) -> list[str]:
+        """The school's email domains, each a domain its addresses are at, or under (school_domains)."""
+        return [domain.strip() for domain in self.school_domains.split(",") if domain.strip()]
+
+    @property
     def admin_emails(self) -> set[str]:
         return {e.strip().lower() for e in self.bootstrap_admins.split(",") if e.strip()}
 
@@ -164,7 +183,7 @@ class Settings(BaseSettings):
         }
         if not self.demo and not any(all(pair) for pair in sign_ins.values()):  # the demo has no sign-in
             problems.append(
-                "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech accounts), "
+                "set up a sign-in: YJSP_MICROSOFT_CLIENT_ID and YJSP_MICROSOFT_CLIENT_SECRET (the school's accounts), "
                 "or YJSP_GOOGLE_CLIENT_ID and YJSP_GOOGLE_CLIENT_SECRET"
             )
         for name, pair in sign_ins.items():

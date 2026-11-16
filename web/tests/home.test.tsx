@@ -23,6 +23,27 @@ test("the site's address shows its apps, and each goes to its own pages", async 
     expect(document.title).toBe("Vault");
 });
 
+test("another team's site has its own name: on the home page, in the top bar, and on the tab", async () => {
+    // As the server says it on the page, from its YJSP_SITE_NAME and YJSP_TEAM_NAME (api/web.py).
+    const metas = [
+        ["yjsp-site", "RPL"],
+        ["yjsp-team", "Rocket Propulsion Lab"],
+    ].map(([name, content]) => {
+        const meta = document.createElement("meta");
+        meta.name = name!;
+        meta.content = content!;
+        document.head.append(meta);
+        return meta;
+    });
+    onTestFinished(() => metas.forEach((meta) => meta.remove()));
+    const team = await Team.create();
+    renderApp(team.chief, "/");
+    const home = within(await screen.findByRole("main"));
+    expect(home.getByRole("heading", { name: "RPL Engineering Tools" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "RPL home" })).toBeTruthy();
+    expect(document.title).toBe("RPL");
+});
+
 test("the home page shows everyone how full the server's disk is, and how much of it each app takes", async () => {
     const team = await Team.create();
     const member = await team.member("Storage");

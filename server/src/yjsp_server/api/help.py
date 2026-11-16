@@ -9,7 +9,7 @@ from .. import __version__, help
 from ..config import Settings
 from ..models import UserStatus
 from .deps import DB, Config, session_user
-from .pages import FAVICON, GOLD, PALETTE, SITE, THEME, esc
+from .pages import FAVICON, GOLD, PALETTE, THEME, esc
 
 router = APIRouter(include_in_schema=False)
 
@@ -135,6 +135,7 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
     found = help.load(settings.help_dir)
     site = esc(settings.public_url.rstrip("/"))
     root = esc(settings.root_path)
+    name, team = esc(settings.site_name), esc(settings.team_name)
     if settings.demo:
         asking = "<p>This is the demo, with made-up data: anyone can look around it, and no one can change it.</p>"
         account = f'<a class="action primary" href="{root}/">Open the demo</a>'
@@ -143,7 +144,7 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
             "<p>In the web app, <strong>Help</strong> (top right) asks Claude, which has read all of this and answers "
             "with links to it.</p>"
         )
-        account = f'<a class="action primary" href="{root}/">Open YJSP</a>'
+        account = f'<a class="action primary" href="{root}/">Open {name}</a>'
     else:
         asking = (
             "<p>Members can also ask Claude, which has read all of this, from <strong>Help</strong> in the web app.</p>"
@@ -154,19 +155,20 @@ def help_page(request: Request, db: DB, settings: Config) -> HTMLResponse:
     style = _STYLE.replace('url("/brand/', f'url("{root}/brand/')
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>Help · {SITE}</title>
-<meta name="description" content="Help for YJSP, the Yellow Jacket Space Program's tools: Vault, Yorg, and Piper.">
+<meta name="color-scheme" content="light dark"><title>Help · {name}</title>
+<meta name="description" content="Help for {name}, the {team}'s tools: Vault, Yorg, Piper, and Buildflow.">
 <link rel="alternate" type="text/markdown" href="{root}/help.md" title="The help, as Markdown">
 <link rel="icon" href="{esc(FAVICON)}">{THEME}<style>{style}</style></head>
-<body><header class="bar"><a class="brand" href="{root}/" aria-label="{SITE} home"><span class="logo"></span>Tools</a>
+<body><header class="bar"><a class="brand" href="{root}/" aria-label="{name} home"><span class="logo"></span>Tools</a>
 <span class="where" aria-current="page">Help</span>
 <span class="grow"></span><a class="action markdown" href="{root}/help.md">Markdown</a>
 <button type="button" id="copy">Copy for an AI</button>{account}</header>
 <div class="layout">{_contents(found, members, settings)}<main>
 <section class="intro"><h1>Help</h1>
-<p>YJSP is the Yellow Jacket Space Program's engineering tools: <strong>Vault</strong>, for the team's SolidWorks and
-STEP files; <strong>Yorg</strong>, for its test data; and <strong>Piper</strong>, for its P&amp;IDs. Find your way with
-the contents, or search the page (Ctrl+F) for words from a message you saw:
+<p>{name} is the {team}'s engineering tools: <strong>Vault</strong>, for the team's SolidWorks and STEP files;
+<strong>Yorg</strong>, for its test data; <strong>Piper</strong>, for its P&amp;IDs; and <strong>Buildflow</strong>, for
+each program's bill of design. Find your way with the contents, or search the page (Ctrl+F) for words from a message you
+saw:
 <a href="#troubleshooting">Troubleshooting</a> has what each error means.</p>
 <p>Working it out with an AI assistant (ChatGPT, Claude, Gemini)? <strong>Copy for an AI</strong> puts all of this on
 your clipboard as Markdown, to paste into a chat with it, or give it this address: <code>{site}/help.md</code>.</p>
@@ -181,13 +183,14 @@ def help_markdown(request: Request, db: DB, settings: Config) -> Response:
     members = _member(request, db, settings)
     found = help.load(settings.help_dir)
     site = settings.public_url.rstrip("/")
-    preface = f"""# YJSP help
+    name, team = settings.site_name, settings.team_name
+    preface = f"""# {name} help
 
-> For an AI assistant helping someone with YJSP (version {__version__}): this is the site's own help, from {site}/help.
-> YJSP is the Yellow Jacket Space Program's engineering tools: Vault, version control for the team's SolidWorks and
-> STEP files; Yorg, for its test data; and Piper, for its P&IDs. Answer from this help, and say so when it doesn't
-> cover something: then the person should ask the team's admins. Each heading ends with its anchor on the page
-> ({{#vault-api}} is {site}/help#vault-api), for linking to it.
+> For an AI assistant helping someone with {name} (version {__version__}): this is the site's own help, from
+> {site}/help. {name} is the {team}'s engineering tools: Vault, version control for the team's SolidWorks and STEP
+> files; Yorg, for its test data; Piper, for its P&IDs; and Buildflow, for each program's bill of design. Answer from
+> this help, and say so when it doesn't cover something: then the person should ask the team's admins. Each heading
+> ends with its anchor on the page ({{#vault-api}} is {site}/help#vault-api), for linking to it.
 """
     text = preface + "\n" + found.markdown(members, f"{site}/help") + "\n"
     return Response(text, media_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-cache"})
@@ -197,15 +200,17 @@ def help_markdown(request: Request, db: DB, settings: Config) -> Response:
 def llms_txt(settings: Config) -> Response:
     """Where an AI tool finds the help (llmstxt.org): the Markdown, and the page."""
     site = settings.public_url.rstrip("/")
-    text = f"""# {SITE}
+    name, team = settings.site_name, settings.team_name
+    text = f"""# {name}
 
-> The Yellow Jacket Space Program's engineering tools: Vault, version control for the team's SolidWorks and STEP files
-> (check-out and check-in, version history, folder permissions, a SolidWorks add-in); Yorg, for its test data (CSV
-> files from hotfires and cold flows, plotted on one time axis); and Piper, for its P&IDs (the fluid systems' diagrams).
+> The {team}'s engineering tools: Vault, version control for the team's SolidWorks and STEP files (check-out and
+> check-in, version history, folder permissions, a SolidWorks add-in); Yorg, for its test data (CSV files from hotfires
+> and cold flows, plotted on one time axis); Piper, for its P&IDs (the fluid systems' diagrams); and Buildflow, for each
+> program's bill of design.
 
 ## Docs
 
-- [YJSP help]({site}/help.md): the user guide, the SolidWorks add-in, troubleshooting, and what each error means, as
+- [{name} help]({site}/help.md): the user guide, the SolidWorks add-in, troubleshooting, and what each error means, as
   one Markdown document
 - [The help page]({site}/help): the same, as a web page
 """

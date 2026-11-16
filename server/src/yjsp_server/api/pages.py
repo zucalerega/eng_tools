@@ -5,8 +5,7 @@ team's logo (web.py serves it), as the web app shows them."""
 import html
 from urllib.parse import quote
 
-SITE = "YJSP"
-NAME = "Engineering Tools"  # what the site's called beside the team's logo
+NAME = "Engineering Tools"  # what the site's called beside the team's logo (whose: Settings.site_name, team_name)
 GOLD = "#e0a500"
 # The logo's letters, navy or white, as a background's colors call for: a `--logo` the pages show with `.logo`.
 LOGO_CSS = """

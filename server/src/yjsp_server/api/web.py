@@ -35,12 +35,15 @@ def app_index(settings: Settings) -> Path | None:
     return index if index.is_file() else None
 
 
-def index_response(index: Path, root: str) -> HTMLResponse:
-    """The web app's page, for a site at `root` (Settings.root_path, "" at the root of its address): its scripts and
-    styles at the site's /assets, and the root in a meta tag, for the app to start its addresses with
-    (web/src/root.ts)."""
+def index_response(index: Path, settings: Settings) -> HTMLResponse:
+    """The web app's page, for a site at its root (Settings.root_path, "" at the root of its address): its scripts and
+    styles at the site's /assets; and in meta tags, the root, for the app to start its addresses with (web/src/root.ts),
+    and whose site it is, for the app to say (web/src/site.ts)."""
+    root = settings.root_path
     page = index.read_text(encoding="utf-8").replace(_BUILT, f'"{root}/assets/')
-    page = page.replace("<head>", f'<head>\n<meta name="yjsp-root" content="{html.escape(root)}">', 1)
+    said = {"yjsp-root": root, "yjsp-site": settings.site_name, "yjsp-team": settings.team_name}
+    metas = "".join(f'\n<meta name="{name}" content="{html.escape(value)}">' for name, value in said.items())
+    page = page.replace("<head>", "<head>" + metas, 1)
     # The page names its scripts by content hash; caching it would hide a new release.
     return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
@@ -51,11 +54,14 @@ def mount_assets(app: FastAPI, settings: Settings) -> None:
 
 
 @router.get("/brand/{name}")
-def brand(name: str) -> FileResponse:
-    """The team's logo, for anyone: the sign-in page shows it before anyone's signed in."""
+def brand(name: str, settings: Config) -> FileResponse:
+    """The team's logo, for anyone: the sign-in page shows it before anyone's signed in. The team's own, from
+    YJSP_BRAND_DIR, where it has it; else YJSP's."""
     if name not in _LOGOS:
         raise NotFound("Not found")
-    return FileResponse(BRAND / name, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+    own = settings.brand_dir / name if settings.brand_dir else None
+    found = own if own is not None and own.is_file() else BRAND / name
+    return FileResponse(found, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/{path:path}")
@@ -71,4 +77,4 @@ def app_page(path: str, request: Request, db: DB, settings: Config) -> Response:
     index = app_index(settings)
     if index is None:
         raise NotFound("The web app isn't built on this server")
-    return index_response(index, settings.root_path)
+    return index_response(index, settings)

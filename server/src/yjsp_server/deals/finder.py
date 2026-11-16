@@ -44,8 +44,8 @@ ENDPOINT = "/api/deals/ebay/account-deletion"  # where eBay sends its Marketplac
 BROKE = "The run broke partway, on something unforeseen: whoever runs the server finds why in its log"
 
 # What Claude is asked, before the needs and their listings.
-JUDGING = """You check listings that a search of eBay found against what the Yellow Jacket Space Program, a college \
-rocketry team, needs for its vehicles and test stands. Each need says what it is, where it's from, and what it has to \
+JUDGING = """You check listings that a search of eBay found against what TEAM, a college engineering team, needs for \
+its vehicles and test stands. Each need says what it is, where it's from, and what it has to \
 be: its part numbers, its requirements (size, connections, pressure rating, fluid, material), or the stock it's made \
 from. Under it are the listings found for it, each with an id.
 
@@ -324,7 +324,8 @@ class Deals:
                 f'<need id="N{number}">\n<what>{_escape(want.title)} ({_escape(want.where)})</what>\n'
                 f"<needs>{_escape(needs)}</needs>\n" + "\n".join(shown) + "\n</need>"
             )
-        verdicts, spent = self.assistant.judge(JUDGING, "\n\n".join(parts), VERDICTS)
+        asked = JUDGING.replace("TEAM", self.settings.team_name, 1)  # the team's, as the settings name it
+        verdicts, spent = self.assistant.judge(asked, "\n\n".join(parts), VERDICTS)
         if verdicts is None:
             return {}, spent
         said: dict[str, dict[str, str]] = {want.key: {} for want in wants}

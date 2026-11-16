@@ -8,6 +8,10 @@ The site's address on its own shows all four (the team's logo at the top left go
 how full the server's disk is, and how much of it each takes, and **[deals](#deals)** on eBay for
 what the team wants; the switcher beside the logo goes between them.
 
+**The demo**, at `/demo`, is the site with made-up data: a fictional team's rocket, its tests,
+P&IDs, and bill of design, for anyone to look around without signing in (send someone the link),
+and for no one to change.
+
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
 > in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
@@ -680,5 +684,5 @@ The client and web app tests start the real server, so they need uv too. How we 
 ## The live site
 
 YJSP, with Vault and Yorg, runs at https://lucazerega.tail07089c.ts.net, on an Oracle
-Cloud VM. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
+Cloud VM, with its demo at https://lucazerega.tail07089c.ts.net/demo. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
 to look after it are in [docs/deploying.md](docs/deploying.md).

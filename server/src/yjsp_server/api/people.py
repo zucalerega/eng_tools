@@ -14,6 +14,7 @@ from .schemas import (
     AddInOut,
     BackupOut,
     InviteIn,
+    MeOut,
     MePatch,
     ServerLoadOut,
     SiteSettingsOut,
@@ -33,9 +34,9 @@ router = APIRouter(prefix="/api", tags=["people"])
 
 
 @router.get("/me")
-def get_me(user: AnyUser) -> UserOut:
-    """Who you're signed in as, including whether an admin has approved you yet."""
-    return UserOut.of(user)
+def get_me(user: AnyUser, settings: Config) -> MeOut:
+    """Who you're signed in as, including whether an admin has approved you yet; and whether this is the demo."""
+    return MeOut(**UserOut.of(user).model_dump(), demo=settings.demo)
 
 
 @router.patch("/me")

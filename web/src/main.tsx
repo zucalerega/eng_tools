@@ -1,10 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { placeLogos } from "./root";
 import { SessionContext, SessionStore } from "./session";
 import "./styles.css";
 import { StoreContext, VaultStore } from "./vault/store";
 
+placeLogos();
 // Who's signed in, for both apps; and Vault's index, which App starts on the vault's pages.
 const session = new SessionStore();
 session.start();

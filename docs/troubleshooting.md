@@ -936,6 +936,21 @@ a number. A few codes come up in more than one place.
   can, *Ask Claude to look again*.
 - **Request #... not found** (`not_found`): there's no request with that number.
 
+### The demo
+
+The demo, at `/demo`, has made-up data that anyone can look at without signing in.
+
+- **This is the demo, with made-up data: nothing in it can be changed** (`demo_read_only`): the
+  demo can only be looked at. Uploading, checking out, editing a P&ID, and the rest work on a real
+  site.
+- **The demo's busy: try again in a minute** (`demo_busy`): too many people are looking at it at
+  once. Wait a minute, and reload.
+- **The demo isn't answering right now: try again in a few minutes** (`demo_down`): the demo's own
+  server isn't running, perhaps because it's being remade, as it is each night. Try again in a few
+  minutes. The site itself isn't affected.
+- **The demo has no sign-in: everyone's its guest** (`not_found`): the demo has no sign-in pages.
+  Open it at `/demo`.
+
 ### Anything
 
 - **Nothing to check in**, **... is listed twice**, and other messages that say what's wrong

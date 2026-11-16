@@ -3,7 +3,9 @@ import { type ChatStore, type Exchange, useChat } from "./chat";
 import { Notice } from "./components";
 import { FeedbackPane } from "./feedback";
 import { Markdown } from "./markdown";
+import { onSite } from "./root";
 import { Link, usePathname } from "./router";
+import { useDemo } from "./session";
 
 // Help, in the top bar of every app: a panel beside the page with the help (the server's /help, for anyone) and
 // Claude, which has read all of it, to ask how to do something or what an error means (chat.ts; assistant.py on the
@@ -69,6 +71,7 @@ export function HelpPanel({
     const log = useRef<HTMLDivElement>(null);
     const answering = chat.answering;
     const available = assistant?.available ?? false;
+    const demo = useDemo(); // the demo has no Claude, and no requests
 
     useEffect(() => {
         void chat.refresh();
@@ -121,7 +124,7 @@ export function HelpPanel({
                 </button>
             </div>
             <p className="help-links">
-                <a href="/help" target="_blank" rel="noreferrer">
+                <a href={onSite("/help")} target="_blank" rel="noreferrer">
                     The guide and troubleshooting
                 </a>
                 {more && (
@@ -131,92 +134,102 @@ export function HelpPanel({
                     </>
                 )}
             </p>
-            <div className="segmented help-tabs" role="group" aria-label="Help shows">
-                <button type="button" aria-pressed={tab === "ask"} onClick={() => setTab("ask")}>
-                    Ask Claude
-                </button>
-                <button type="button" aria-pressed={tab === "requests"} onClick={() => setTab("requests")}>
-                    Report a bug or idea
-                </button>
-            </div>
-            {tab === "requests" ? (
-                <FeedbackPane page={pathname} />
+            {demo ? (
+                <p className="help-demo">
+                    In the demo, the help is all there is: on a team&apos;s own site, Claude answers questions here from
+                    it, and people send the site&apos;s owner bug reports and ideas.
+                </p>
             ) : (
                 <>
-                    <div
-                        className="chat-log"
-                        ref={log}
-                        role="log"
-                        aria-label="Conversation with Claude"
-                        aria-busy={answering}
-                    >
-                        {exchanges.length === 0 ? (
-                            <div className="chat-welcome">
-                                <p>
-                                    <strong>Ask Claude</strong> how to do something in Vault, Yorg or Piper, or what an
-                                    error means. It has read all of the help, and answers with links to it.
-                                </p>
-                                {shown && available && (
-                                    <button
-                                        type="button"
-                                        className="chat-suggestion"
-                                        onClick={() => {
-                                            setQuestion(
-                                                `The page says: "${shown}". What does it mean, and what do I do?`,
-                                            );
-                                            box.current?.focus();
-                                        }}
-                                    >
-                                        Ask about “{shown.length > SHORT ? `${shown.slice(0, SHORT)}…` : shown}”
-                                    </button>
+                    <div className="segmented help-tabs" role="group" aria-label="Help shows">
+                        <button type="button" aria-pressed={tab === "ask"} onClick={() => setTab("ask")}>
+                            Ask Claude
+                        </button>
+                        <button type="button" aria-pressed={tab === "requests"} onClick={() => setTab("requests")}>
+                            Report a bug or idea
+                        </button>
+                    </div>
+                    {tab === "requests" ? (
+                        <FeedbackPane page={pathname} />
+                    ) : (
+                        <>
+                            <div
+                                className="chat-log"
+                                ref={log}
+                                role="log"
+                                aria-label="Conversation with Claude"
+                                aria-busy={answering}
+                            >
+                                {exchanges.length === 0 ? (
+                                    <div className="chat-welcome">
+                                        <p>
+                                            <strong>Ask Claude</strong> how to do something in Vault, Yorg or Piper, or
+                                            what an error means. It has read all of the help, and answers with links to
+                                            it.
+                                        </p>
+                                        {shown && available && (
+                                            <button
+                                                type="button"
+                                                className="chat-suggestion"
+                                                onClick={() => {
+                                                    setQuestion(
+                                                        `The page says: "${shown}". What does it mean, and what do I do?`,
+                                                    );
+                                                    box.current?.focus();
+                                                }}
+                                            >
+                                                Ask about “{shown.length > SHORT ? `${shown.slice(0, SHORT)}…` : shown}”
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    exchanges.map((exchange, at) => (
+                                        <ExchangeView key={at} exchange={exchange} again={() => void chat.again(at)} />
+                                    ))
                                 )}
                             </div>
-                        ) : (
-                            exchanges.map((exchange, at) => (
-                                <ExchangeView key={at} exchange={exchange} again={() => void chat.again(at)} />
-                            ))
-                        )}
-                    </div>
-                    {problem && <Notice tone="error">Couldn't ask the server about Claude: {problem}</Notice>}
-                    {assistant && !available && <Notice tone="info">{assistant.reason}.</Notice>}
-                    {/* One box, the question and its button together; it grows with the question, up to a point. */}
-                    <form
-                        className="chat-ask"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            ask();
-                        }}
-                    >
-                        <textarea
-                            ref={box}
-                            aria-label="Ask Claude"
-                            placeholder="Ask about Vault, Yorg or Piper, or paste an error"
-                            rows={2}
-                            maxLength={20_000}
-                            value={question}
-                            disabled={!available}
-                            onChange={(event) => setQuestion(event.target.value)}
-                            onKeyDown={keys}
-                        />
-                        {answering ? (
-                            <button type="button" className="button-small" onClick={() => chat.stop()}>
-                                Stop
-                            </button>
-                        ) : (
-                            <button
-                                type="submit"
-                                className="button-primary button-small"
-                                disabled={!available || !question.trim()}
+                            {problem && <Notice tone="error">Couldn't ask the server about Claude: {problem}</Notice>}
+                            {assistant && !available && <Notice tone="info">{assistant.reason}.</Notice>}
+                            {/* One box, the question and its button together; it grows with the question, up to a point. */}
+                            <form
+                                className="chat-ask"
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    ask();
+                                }}
                             >
-                                Ask
-                            </button>
-                        )}
-                    </form>
-                    <p className="chat-fine">
-                        Claude answers from the help, and can be wrong. Your questions go to Anthropic: never paste a
-                        password or a key.
-                        {used >= 50 && ` You've used ${used}% of your questions for today.`}
-                    </p>
+                                <textarea
+                                    ref={box}
+                                    aria-label="Ask Claude"
+                                    placeholder="Ask about Vault, Yorg or Piper, or paste an error"
+                                    rows={2}
+                                    maxLength={20_000}
+                                    value={question}
+                                    disabled={!available}
+                                    onChange={(event) => setQuestion(event.target.value)}
+                                    onKeyDown={keys}
+                                />
+                                {answering ? (
+                                    <button type="button" className="button-small" onClick={() => chat.stop()}>
+                                        Stop
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="submit"
+                                        className="button-primary button-small"
+                                        disabled={!available || !question.trim()}
+                                    >
+                                        Ask
+                                    </button>
+                                )}
+                            </form>
+                            <p className="chat-fine">
+                                Claude answers from the help, and can be wrong. Your questions go to Anthropic: never
+                                paste a password or a key.
+                                {used >= 50 && ` You've used ${used}% of your questions for today.`}
+                            </p>
+                        </>
+                    )}
                 </>
             )}
         </aside>

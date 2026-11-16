@@ -2,6 +2,8 @@
 // (server/src/yjsp_server/api/schemas.py, or /docs on a running server). Each app has the rest: vault/api.ts,
 // yorg/api.ts.
 
+import { inApp, onSite } from "./root";
+
 export interface UserRef {
     id: number;
     name: string;
@@ -19,6 +21,8 @@ export interface Account extends UserRef {
     // For admins: how long they've had the web app open, and worked in SolidWorks with the add-in, in seconds.
     site_seconds?: number | null;
     solidworks_seconds?: number | null;
+    // GET /api/me: this is the demo, where everyone's its guest and nothing can be changed.
+    demo?: boolean;
 }
 
 /** What admins decide for everyone. */
@@ -308,13 +312,15 @@ export function configureApi(options: { baseUrl: string; token: string | null })
     token = options.token;
 }
 
+/** A request's address: the server's path (/api/me), on the site, wherever it is (root.ts). */
 export function apiUrl(path: string): string {
-    return new URL(path, baseUrl).toString();
+    return new URL(onSite(path), baseUrl).toString();
 }
 
 /** Send the browser to sign in, then back here. */
 export function signIn(): void {
-    window.location.assign("/?next=" + encodeURIComponent(window.location.pathname + window.location.search));
+    const here = inApp(window.location.pathname) + window.location.search;
+    window.location.assign(onSite("/?next=" + encodeURIComponent(here)));
 }
 
 /** Bytes to send as they are (a file's contents), rather than as JSON. */

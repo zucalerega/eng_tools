@@ -5,6 +5,7 @@ import { Link } from "../router";
 import type { Lock, VaultFile } from "./api";
 import { on } from "./checkouts";
 import { caliperUrl, fileUrl, kindOf, opensInCaliper, opensInSolidWorks, sheetFormat, titleBeside } from "./paths";
+import { useDemo } from "../session";
 
 const KIND_LABELS = { part: "Part", assembly: "Assembly", drawing: "Drawing", model: "3D model", file: "File" };
 
@@ -119,7 +120,9 @@ export const connectLink = (): string =>
     `${LINK_SCHEME}://connect?` + new URLSearchParams({ server: window.location.origin }).toString();
 
 export function OpenInSolidWorks({ path, compact = false }: { path: string; compact?: boolean }) {
-    if (!opensInSolidWorks(path)) {
+    // Not in the demo: the add-in can't sign in to it, and its links would name the site it's on, not the demo.
+    const demo = useDemo();
+    if (!opensInSolidWorks(path) || demo) {
         return null;
     }
     // In a table's rows, just "Open": the column has no room for more, and its tooltip says the rest.

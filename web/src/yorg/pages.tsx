@@ -23,6 +23,7 @@ import { formatClock, formatDuration, formatRate, formatValue } from "../scale";
 import { dropPlotsFromAddress, plotsInAddress, plotsLink, readPlots } from "./share";
 import { viewFolderUrl } from "./Views";
 import { Workspace, type ExtraPlot } from "./Workspace";
+import { useDemo } from "../session";
 
 // Yorg's pages: a dataset's plots and its details, a saved view's plots, links to plots, and deleted datasets (the
 // datasets: Datasets.tsx; the saved views: Views.tsx).
@@ -331,6 +332,7 @@ function DatasetWorkspace({
     const [saving, setSaving] = useState(false);
     const views = useViewsOf(detail.id);
     const python = usePagePython(`dataset-${detail.id}`, layout, detail.name);
+    const demo = useDemo(); // the demo: plots to look at, not to save
     return (
         <>
             <Workspace
@@ -358,9 +360,11 @@ function DatasetWorkspace({
                                 }))}
                             />
                         )}
-                        <button type="button" onClick={() => setSaving(true)}>
-                            Save view
-                        </button>
+                        {!demo && (
+                            <button type="button" onClick={() => setSaving(true)}>
+                                Save view
+                            </button>
+                        )}
                         <CopyLink layout={layout} />
                         {python.button}
                         <Link className="button" to={aboutUrl(detail.id)}>
@@ -1180,6 +1184,7 @@ function ViewWorkspace({
     );
     const [savedAs] = useState(() => JSON.stringify(readLayout(view.config, view.datasets[0] ?? 0)));
     const changed = JSON.stringify(layout) !== savedAs;
+    const demo = useDemo(); // the demo: a view to look at, not to save
     const unreadable = useLinkUsed(linked, onLinkUsed);
     // Renamed or moved here, it stays as it is (a page made again would lose changes to its plots not yet saved).
     const [meta, setMeta] = useState<ViewMeta>({
@@ -1232,7 +1237,7 @@ function ViewWorkspace({
                 }
                 actions={
                     <>
-                        {view.can_change ? (
+                        {demo ? null : view.can_change ? (
                             <button type="button" disabled={!changed} onClick={() => void save()}>
                                 Save
                             </button>
@@ -1245,6 +1250,7 @@ function ViewWorkspace({
                         {python.button}
                         <MoreViewActions
                             canChange={view.can_change}
+                            canCopy={!demo}
                             onCopy={() => setDialog("copy")}
                             onRename={() => setDialog("rename")}
                             onOther={() => setDialog("other")}
@@ -1296,19 +1302,21 @@ function ViewWorkspace({
 
 function MoreViewActions({
     canChange,
+    canCopy,
     onCopy,
     onRename,
     onOther,
     onDelete,
 }: {
     canChange: boolean;
+    canCopy: boolean; // not in the demo, where nothing can be saved
     onCopy: () => void;
     onRename: () => void;
     onOther: () => void;
     onDelete: () => void;
 }) {
     const items = [
-        { label: "Save as a new view…", onSelect: onCopy },
+        ...(canCopy ? [{ label: "Save as a new view…", onSelect: onCopy }] : []),
         ...(canChange ? [{ label: "Rename or move…", onSelect: onRename }] : []),
         { label: "Use with another dataset…", onSelect: onOther },
         ...(canChange ? [{ label: "Delete this view…", onSelect: onDelete }] : []),

@@ -4,7 +4,7 @@ import { MoveDialog, NameDialog } from "../FolderDialogs";
 import { pathTo, within } from "../folders";
 import { formatSize, formatTime } from "../format";
 import { Link, navigate } from "../router";
-import { useSession } from "../session";
+import { useDemo, useSession } from "../session";
 import { piper, type Diagram, type DiagramFolder } from "./api";
 import { documentOf, emptyDrawing, pageOf, withPage, type Document, type Drawing } from "./drawing";
 import { example } from "./example";
@@ -40,6 +40,7 @@ type Asking =
     | null;
 
 export function DiagramsPage({ folder }: { folder: number | null }) {
+    const demo = useDemo(); // the demo: diagrams to look at, not to make or import
     const [diagrams, setDiagrams] = useState<Diagram[] | null>(null);
     const [folders, setFolders] = useState<DiagramFolder[] | null>(null);
     const [found, setFound] = useState<Diagram[] | null>(null); // what a search found, in every folder
@@ -233,31 +234,37 @@ export function DiagramsPage({ folder }: { folder: number | null }) {
                     )}
                     <h1>{here?.name ?? "Diagrams"}</h1>
                 </div>
-                <div className="page-actions">
-                    <button type="button" onClick={() => picker.current?.click()}>
-                        Import Visio…
-                    </button>
-                    <input
-                        ref={picker}
-                        type="file"
-                        accept={VISIO_FILES}
-                        hidden
-                        aria-label="Visio drawing to import"
-                        onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            event.target.value = "";
-                            if (file) {
-                                setImporting(file);
-                            }
-                        }}
-                    />
-                    <button type="button" onClick={() => setDialog({ kind: "new-folder" })}>
-                        New folder
-                    </button>
-                    <button type="button" className="button-primary" onClick={() => setDialog({ kind: "new-diagram" })}>
-                        New diagram
-                    </button>
-                </div>
+                {!demo && (
+                    <div className="page-actions">
+                        <button type="button" onClick={() => picker.current?.click()}>
+                            Import Visio…
+                        </button>
+                        <input
+                            ref={picker}
+                            type="file"
+                            accept={VISIO_FILES}
+                            hidden
+                            aria-label="Visio drawing to import"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = "";
+                                if (file) {
+                                    setImporting(file);
+                                }
+                            }}
+                        />
+                        <button type="button" onClick={() => setDialog({ kind: "new-folder" })}>
+                            New folder
+                        </button>
+                        <button
+                            type="button"
+                            className="button-primary"
+                            onClick={() => setDialog({ kind: "new-diagram" })}
+                        >
+                            New diagram
+                        </button>
+                    </div>
+                )}
             </div>
             {folder === null && (
                 <p className="muted piper-lead">

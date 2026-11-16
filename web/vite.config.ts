@@ -6,6 +6,10 @@ import { defineConfig } from "vitest/config";
 // (http://localhost:8000): the browser then sends that session to both.
 export default defineConfig({
     plugins: [react()],
+    // The build names its files beside the page, so one build works wherever the site is: at the root of its address,
+    // or under a path (the demo's /demo). The server makes the page's own names the site's (api/web.py), and the app
+    // starts its own addresses with the root the page says (src/root.ts).
+    base: "./",
     server: {
         proxy: {
             "/api": "http://127.0.0.1:8000",

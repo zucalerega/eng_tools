@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { onSite } from "./root";
 
 // Markdown, shown: a notebook's text cells (Yorg's scripts), and Claude's answers in Help. Headings, paragraphs, lists,
 // quotes, code, rules, tables, bold, italics, and links. It's made of React's elements, never HTML from the text, so
@@ -37,7 +38,7 @@ function inline(text: string, key = "i"): ReactNode[] {
         } else if (label !== undefined && href !== undefined) {
             found.push(
                 SAFE_LINK.test(href) ? (
-                    <a key={at} href={href} target="_blank" rel="noreferrer">
+                    <a key={at} href={href.startsWith("/") ? onSite(href) : href} target="_blank" rel="noreferrer">
                         {inline(label, at)}
                     </a>
                 ) : (

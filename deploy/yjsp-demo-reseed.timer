@@ -1,0 +1,12 @@
+# /etc/systemd/system/yjsp-demo-reseed.timer on the server: see docs/deploying.md, "The demo". Keep this copy the same
+# as the server's.
+[Unit]
+Description=Make YJSP's demo again each night
+
+[Timer]
+# 09:45 UTC: after the backups (08:30 and 09:00 UTC), 5:45 in the morning in Atlanta.
+OnCalendar=*-*-* 09:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

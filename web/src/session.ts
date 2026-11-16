@@ -109,3 +109,9 @@ export function useSession(): SessionState {
     const store = useSessionStore();
     return useSyncExternalStore(store.subscribe, store.getState);
 }
+
+/** Whether this is the demo, where everyone's its guest and nothing can be changed (docs/design.md, "The demo"): pages
+ * leave out what would change something, as they do what your role can't do. */
+export function useDemo(): boolean {
+    return useSession().me?.demo === true;
+}

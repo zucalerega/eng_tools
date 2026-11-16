@@ -185,9 +185,10 @@ def home(request: Request, db: DB, settings: Config, next_path: NextPath = "/") 
     user = session_user(request, db)
     if user is not None and user.status == UserStatus.ACTIVE:
         if _safe_next(next_path) != "/":
-            return RedirectResponse(_safe_next(next_path), status_code=303)  # signed in already: carry on
+            # Signed in already (or the demo's guest): carry on.
+            return RedirectResponse(settings.root_path + _safe_next(next_path), status_code=303)
         if (index := web.app_index(settings)) is not None:
-            return web.index_response(index)
+            return web.index_response(index, settings.root_path)
     if user is None:
         parts = [
             '<p class="lead">The team\'s engineering tools: Vault, every part, assembly, and drawing with its whole '

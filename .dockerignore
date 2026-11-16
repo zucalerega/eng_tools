@@ -11,6 +11,8 @@ docs
 !docs/troubleshooting.md
 !docs/vault.md
 !docs/yorg.md
+!docs/piper.md
+!docs/buildflow.md
 **/.env
 **/node_modules
 **/.venv

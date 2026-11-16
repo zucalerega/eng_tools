@@ -1,9 +1,10 @@
 """The help: the guide, the add-in's, and troubleshooting for anyone, and how it all works for members, from the
 repository's own docs: as a page (/help), as Markdown for AI tools (/help.md), and pointed to by /llms.txt."""
 
+import fnmatch
 import posixpath
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from fastapi.testclient import TestClient
@@ -205,6 +206,25 @@ def test_what_is_left_out_for_developers_is_still_in_the_docs():
     for part in help.PARTS:
         headings = re.findall(r"^## (.+?)\s*$", (REPO / part.path).read_text(encoding="utf-8"), re.MULTILINE)
         assert set(part.skip) <= set(headings), part.path
+
+
+def test_the_image_carries_every_doc_the_help_reads():
+    """The server's image (server/Dockerfile) copies the docs from what .dockerignore lets into its build, so it has to
+    let in each one the help reads: the image's help would be without it, as a team's own site would."""
+    rules = [line.strip() for line in (REPO / ".dockerignore").read_text(encoding="utf-8").splitlines()]
+    rules = [rule for rule in rules if rule and not rule.startswith("#")]
+
+    def left_out(path: str) -> bool:
+        # As Docker reads it: the last rule matching the file, or a folder it's in, decides.
+        candidates = [path] + [str(folder) for folder in PurePosixPath(path).parents if str(folder) != "."]
+        out = False
+        for rule in rules:
+            if any(fnmatch.fnmatchcase(candidate, rule.removeprefix("!")) for candidate in candidates):
+                out = not rule.startswith("!")
+        return out
+
+    assert left_out("docs/deploying.md") and left_out("server/tests/test_help.py")  # it does leave things out
+    assert [part.path for part in help.PARTS if left_out(part.path)] == []
 
 
 def test_troubleshooting_says_what_every_error_means():

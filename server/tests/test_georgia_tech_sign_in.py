@@ -12,14 +12,14 @@ import pytest
 from authlib.integrations.starlette_client import OAuthError
 from fastapi.testclient import TestClient
 
-from yjsp_server import auth
+from yjsp_server import config
 from yjsp_server.app import create_app
 from yjsp_server.models import UserStatus
 
 from .conftest import BOOTSTRAP_ADMIN
 
 GEORGE = {
-    "tid": auth.GT_TENANT,
+    "tid": config.GT_TENANT,
     "oid": "george-oid",
     "preferred_username": "gburdell3@gatech.edu",
     "email": "gburdell3@gatech.edu",
@@ -76,7 +76,7 @@ def test_the_sign_in_page_offers_georgia_tech_first(settings, client, team):
 
         team.whitelist(team.member("lead@x.test", admin=True), True)
         assert (
-            "First time here? Sign in with Georgia Tech. If your GT email isn't on the team's whitelist yet, ask an "
+            "First time here? Sign in with Georgia Tech. If your Georgia Tech email isn't on the team's whitelist yet, ask an "
             "admin to add it. Google is for accounts made with it before." in text(both.get("/"))
         )
 
@@ -88,7 +88,7 @@ def test_signing_in_goes_to_georgia_techs_own_login(client):
     assert (url.scheme, url.netloc, url.path) == (
         "https",
         "login.microsoftonline.com",
-        f"/{auth.GT_TENANT}/oauth2/v2.0/authorize",
+        f"/{config.GT_TENANT}/oauth2/v2.0/authorize",
     )
     query = {key: value for key, [value] in parse_qs(url.query).items()}
     assert query["client_id"] == "yjsp-app-id"
@@ -124,8 +124,9 @@ def test_only_georgia_tech_accounts_get_in(client, microsoft, claims):
     refused = sign_in(client, microsoft, {key: value for key, value in claims.items() if value is not None})
     assert refused.status_code == 403
     # A page that says what to sign in with instead, with the way back.
-    assert "Only Georgia Tech accounts sign in this way: sign in with your GT username (like gburdell3@gatech.edu)" in (
-        text(refused)
+    assert (
+        "Only Georgia Tech accounts sign in this way: sign in with your Georgia Tech account (an address at gatech.edu)"
+        in (text(refused))
     )
     assert 'href="/">Back to sign-in</a>' in refused.text
     assert client.get("/api/me").status_code == 401
@@ -193,7 +194,7 @@ def test_members_keep_their_accounts_when_they_first_sign_in_with_georgia_tech(c
     client.post("/auth/logout")
     taken = sign_in(client, microsoft, GEORGE | {"oid": "other-oid", "preferred_username": "alice3@gatech.edu"})
     assert taken.status_code == 403
-    assert "alice3@gatech.edu belongs to a different GT account" in text(taken)
+    assert "alice3@gatech.edu belongs to a different Georgia Tech account" in text(taken)
 
 
 def test_admins_named_in_the_settings_by_their_georgia_tech_address_are_admins(settings, client, microsoft):

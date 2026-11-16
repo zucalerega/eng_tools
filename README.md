@@ -603,7 +603,7 @@ isn't shown. Admins see each search and check, and search at once, on Admin > De
 | `client/` | Vault's clients, in C#: the workspace library and the `vault` CLI | working |
 | `client/src/Vault.SolidWorks` | Vault's SolidWorks 2026 add-in ([install](client/src/Vault.SolidWorks/README.md)) | working |
 | `client/src/Vault.Setup` | `Vault-Setup.exe`, the add-in's installer | working |
-| `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files | working |
+| `deploy/` | The deploy script, the one-time move to YJSP, and the live server's service files; in `compose/`, a team's own site with Docker ([running it for your team](docs/self-hosting.md)) | working |
 | `docs/` | The site's design ([design.md](docs/design.md)), each app's ([vault.md](docs/vault.md), [yorg.md](docs/yorg.md), [piper.md](docs/piper.md), [buildflow.md](docs/buildflow.md)), [troubleshooting](docs/troubleshooting.md), and [hosting and deploying](docs/deploying.md) | |
 
 ## Run the server locally
@@ -685,7 +685,8 @@ The client and web app tests start the real server, so they need uv too. How we 
 
 YJSP, with Vault and Yorg, runs at https://lucazerega.tail07089c.ts.net, on an Oracle
 Cloud VM, with its demo at https://lucazerega.tail07089c.ts.net/demo. How it's hosted, how to deploy a new version (`bash deploy/deploy.sh`), and how
-to look after it are in [docs/deploying.md](docs/deploying.md).
+to look after it are in [docs/deploying.md](docs/deploying.md). To run it for your own team, with your name, your
+school's sign-in, and your data, see [docs/self-hosting.md](docs/self-hosting.md).
 
 ## License
 

@@ -127,6 +127,14 @@ on every visit and measuring walks every file Vault has.
 
 ## Sign-in and accounts
 
+- **The school** is a setting, so another team's site takes its own school's accounts: its name
+  (`YJSP_SCHOOL_NAME`), its email domains (`YJSP_SCHOOL_DOMAINS`, each with its subdomains), and
+  its directory in Microsoft Entra (`YJSP_MICROSOFT_TENANT`, by its tenant ID), Georgia Tech's the
+  defaults. Only the school's addresses make an account by signing in, or go on the whitelist, so
+  with none, people join only by an admin's invite; and where the school's accounts are Google's,
+  Google makes them too (`YJSP_GOOGLE_MAKES_ACCOUNTS`), for its verified addresses alone. Below,
+  "GT" is the school, as it is for YJSP. Error codes and the API's field names keep the names they
+  had (`not_georgia_tech`), as the API's rules say.
 - **People** sign in with a Georgia Tech account, or with Google to an account already
   there. Since October 2026 only a GT sign-in makes an account (`auth._sign_in`): Google
   signs in to one it made before, or to an admin's invite, so someone without a GT account
@@ -285,6 +293,16 @@ sends `X-YJSP-Request` on every request (`api.ts`).
 - **Menus** (all of the app's, through `usePopover`) are fixed to the window where their
   button is, and moved or flipped to stay whole on screen, so neither a window edge nor
   a scrolling area cuts them off.
+- **Whose site it is**: the site's short name and the team's are settings (`YJSP_SITE_NAME`, "YJSP",
+  and `YJSP_TEAM_NAME`, "Yellow Jacket Space Program", the defaults), so another team runs the site as
+  its own: the server's own pages (sign-in, the help, `/help.md`, `/llms.txt`) and Claude's
+  instructions say them, and the web app has them from the page (`<meta name="yjsp-site">`,
+  `yjsp-team`, `api/web.py`; `site.ts`), for its top bar, its tabs, its home page, and a P&ID's title
+  block (its PDF too). The team's logo can be its own, in a folder of its own (`YJSP_BRAND_DIR`:
+  `logo-on-light.png` and `logo-on-dark.png`), which `/brand/...` serves in place of YJSP's: one it
+  has alone for both themes, and with neither, the pages show the site's name where the logo goes
+  (`web.logos`, `pages.mark`; `<meta name="yjsp-logo" content="none">` for the web app), never YJSP's
+  logo on another team's site. The colors, and the apps' marks, are YJSP's yet.
 - **Branding:** in the Yellow Jacket Space Program's colors: near-black, white, and dark
   blue, with its gold. The top bar, the help's too, is white in the light theme and
   near-black in the dark. The team's logo (`server/src/yjsp_server/brand`) heads the site:

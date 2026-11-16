@@ -58,6 +58,25 @@ test("the drawing's in PDF's own operators, its words as text", async () => {
     expect(lines.filter((line) => line === "BT").length).toBe(lines.filter((line) => line === "ET").length);
 });
 
+test("a title block names the team whose site it is", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "yjsp-team";
+    meta.content = "Rocket Propulsion Lab"; // as the server says it on the page (YJSP_TEAM_NAME)
+    document.head.append(meta);
+    try {
+        const sheet = { project: "", diagram: null, revisions: [], titleBlock: true };
+        const text = latin1(new Uint8Array(await (await pdfOf(example(), META, "tabloid", sheet)).arrayBuffer()));
+        const start = text.indexOf("stream\n") + "stream\n".length;
+        const content = await inflate(
+            Uint8Array.from(text.slice(start, text.indexOf("\nendstream")), (char) => char.charCodeAt(0)),
+        );
+        expect(content).toContain("(ROCKET PROPULSION LAB) Tj");
+        expect(content).not.toContain("YELLOW JACKET");
+    } finally {
+        meta.remove();
+    }
+});
+
 test("on a drawing sheet: a border with its zones, the releases, and a title block", async () => {
     const drawing = example();
     const sheet = {

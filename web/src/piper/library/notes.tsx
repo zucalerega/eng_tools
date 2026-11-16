@@ -3,6 +3,7 @@ import type { Drawing, Part } from "../drawing";
 import { fluidsUsed } from "../fluids";
 import { FONT, ink } from "./draw";
 import type { DrawContext, Field, Kind } from "./kinds";
+import { siteName } from "../../site";
 
 // What's written on a drawing rather than built: notes, regions around a part of the system (the vehicle, the GSE),
 // off-page connectors, a legend of its fluids and states, a title block, and pictures.
@@ -378,7 +379,7 @@ export const legend: Kind = {
 
 const BLOCK_FIELDS: Field[] = [
     { key: "title", label: "Title", type: "text", placeholder: "The diagram's name" },
-    { key: "number", label: "Drawing number", type: "text", placeholder: "YJSP-PID-001" },
+    { key: "number", label: "Drawing number", type: "text", placeholder: `${siteName()}-PID-001` },
     { key: "revision", label: "Revision", type: "text", placeholder: "The latest revision" },
     { key: "drawn", label: "Drawn by", type: "text", placeholder: "Whoever made the diagram" },
     { key: "checked", label: "Checked by", type: "text" },
@@ -440,7 +441,7 @@ export const titleblock: Kind = {
                     dominantBaseline="central"
                     fill={context.ink}
                 >
-                    YJSP
+                    {siteName()}
                 </text>
                 <Cell x={-150} y={-8} label="DRAWING" value={value("number", "")} context={context} />
                 <Cell x={-50} y={-8} label="REVISION" value={value("revision", meta.revision)} context={context} />

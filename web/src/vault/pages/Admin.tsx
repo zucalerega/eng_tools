@@ -124,14 +124,18 @@ function People() {
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
     const [sort, setSort] = useState<PeopleSort>({ key: "status", descending: false });
-    const [open, setOpen] = useState(false); // the whitelist is off: anyone at Georgia Tech can join
+    const [open, setOpen] = useState(false); // the whitelist is off: anyone at the school can join
+    const [school, setSchool] = useState("Georgia Tech"); // the school whose accounts join (YJSP_SCHOOL_NAME)
 
     useEffect(() => {
         reload().catch((error: Error) => setProblem(error.message));
     }, [reload, setProblem]);
     useEffect(() => {
         api.settings().then(
-            (site) => setOpen(!site.whitelist),
+            (site) => {
+                setOpen(!site.whitelist);
+                setSchool(site.school_name);
+            },
             () => {}, // the Whitelist tab says what's wrong
         );
     }, []);
@@ -188,7 +192,7 @@ function People() {
             </div>
             {open && (
                 <Notice tone="warning">
-                    The whitelist is off: anyone with a Georgia Tech account can make an account by signing in. Put the
+                    The whitelist is off: anyone with a {school} account can make an account by signing in. Put the
                     team's emails on it and turn it on, on the <Link to={`${VAULT}/admin/whitelist`}>Whitelist</Link>{" "}
                     tab.
                 </Notice>
@@ -209,7 +213,7 @@ function People() {
             </form>
             <p className="muted">
                 Invited people are active from their first sign-in, and can be given access before then. Someone without
-                a Georgia Tech account signs in with Google, once invited by their Google address.
+                a {school} account signs in with Google, once invited by their Google address.
             </p>
             {people === null ? (
                 <p className="muted">Loading…</p>
@@ -380,7 +384,8 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
     if (backup === null) {
         return (
             <p className="muted storage-backup">
-                Not copied off the server: there's no off-site backup here (docs/deploying.md, "Backups").
+                Not copied off the server: there's no off-site backup here (docs/self-hosting.md, "Backups", sets one
+                up).
             </p>
         );
     }
@@ -398,15 +403,15 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
         <>
             {failing ? (
                 <Notice tone="warning">
-                    The off-site backup failed {formatAgo(backup.backup_failed_at!)}: {backup.backup_error}. {last} On
-                    the server, <code>journalctl -u yjsp-offsite</code> says more.
+                    The off-site backup failed {formatAgo(backup.backup_failed_at!)}: {backup.backup_error}. {last} Its
+                    log, on the server, says more.
                 </Notice>
             ) : since(backup.backed_up_at, STALE_HOURS) ? (
                 <Notice tone="warning">
                     {backup.backed_up_at === null
                         ? "No off-site copy has been made yet."
                         : `The last off-site copy is from ${formatAgo(backup.backed_up_at)}, and one should run each night.`}{" "}
-                    On the server, <code>systemctl status yjsp-offsite.timer</code> says whether it's set to.
+                    Check, on the server, that it's still set to.
                 </Notice>
             ) : (
                 <p className="storage-backup">
@@ -426,8 +431,7 @@ function OffsiteBackup({ backup }: { backup: Backup | null }) {
             {checkFailing && (
                 <Notice tone="warning">
                     The weekly check, a restore, failed {formatAgo(backup.verify_failed_at!)}: {backup.verify_error}.
-                    The copies may not come back as they went: on the server,{" "}
-                    <code>journalctl -u yjsp-offsite-verify</code> says more.
+                    The copies may not come back as they went: its log, on the server, says more.
                 </Notice>
             )}
         </>
@@ -442,7 +446,7 @@ function emailsIn(text: string): string[] {
 
 const FOUND_SHOWN = 8; // of a file's emails, listed before adding them
 
-// Who can make an account: the whitelist's switch, and the Georgia Tech emails on it, typed in or from a file.
+// Who can make an account: the whitelist's switch, and the school's emails on it, typed in or from a file.
 function Whitelist() {
     const [site, setSite] = useState<SiteSettings | null>(null);
     const [entries, setEntries] = useState<WhitelistEntry[] | null>(null);
@@ -458,6 +462,8 @@ function Whitelist() {
     const [email, setEmail] = useState("");
     const [file, setFile] = useState<{ name: string; emails: string[] } | null>(null); // asking before adding them
     const [added, setAdded] = useState<WhitelistAdded | null>(null);
+    const school = site?.school_name ?? "Georgia Tech"; // whose addresses go on (YJSP_SCHOOL_NAME, _DOMAINS)
+    const domain = site?.school_domains[0] ?? "gatech.edu";
     const [filter, setFilter] = useState("");
     const picker = useRef<HTMLInputElement>(null);
 
@@ -516,13 +522,12 @@ function Whitelist() {
                     {site.whitelist ? (
                         <p className="muted">
                             On: only the emails below, and people invited on the People tab, can make an account, by
-                            signing in with Georgia Tech. Anyone else who signs in is turned away, and told to ask an
-                            admin.
+                            signing in with {school}. Anyone else who signs in is turned away, and told to ask an admin.
                         </p>
                     ) : (
                         <p className="muted">
-                            Off: anyone with a Georgia Tech account can make one by signing in. They get what Everyone
-                            has on the Vault Access tab, and Yorg's test data.
+                            Off: anyone with a {school} account can make one by signing in. They get what Everyone has
+                            on the Vault Access tab, and Yorg's test data.
                         </p>
                     )}
                     <p className="muted">Google signs in only to accounts made before: it makes no new ones.</p>
@@ -540,8 +545,8 @@ function Whitelist() {
                     }
                 >
                     <p>
-                        Anyone with a Georgia Tech account will be able to join by signing in. They'll get what Everyone
-                        has on the Vault Access tab, and Yorg's test data.
+                        Anyone with a {school} account will be able to join by signing in. They'll get what Everyone has
+                        on the Vault Access tab, and Yorg's test data.
                     </p>
                     {waiting > 0 && (
                         <p>
@@ -553,11 +558,11 @@ function Whitelist() {
             )}
             <form className="inline-form" onSubmit={addTyped}>
                 <label className="field">
-                    Add a Georgia Tech email
+                    Add a {school} email
                     <input
                         type="email"
                         required
-                        placeholder="gburdell3@gatech.edu"
+                        placeholder={`name@${domain}`}
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                     />
@@ -584,10 +589,10 @@ function Whitelist() {
                 />
             </form>
             <p className="muted">
-                A team roster's CSV, or any file with the emails in it: its Georgia Tech addresses go on. Taking an
-                email off doesn't change an account it already made; disable that on the People tab.
+                A team roster's CSV, or any file with the emails in it: its {school} addresses go on. Taking an email
+                off doesn't change an account it already made; disable that on the People tab.
             </p>
-            {added && <Added result={added} />}
+            {added && <Added result={added} school={school} />}
             {file && (
                 <Dialog
                     title={`Add the emails in ${file.name}?`}
@@ -612,7 +617,7 @@ function Whitelist() {
                     {file.emails.length > FOUND_SHOWN && (
                         <p className="muted">and {file.emails.length - FOUND_SHOWN} more.</p>
                     )}
-                    <p className="muted">Any that aren't Georgia Tech addresses are left off.</p>
+                    <p className="muted">Any that aren&apos;t {school} addresses are left off.</p>
                 </Dialog>
             )}
             {entries === null ? (
@@ -700,7 +705,7 @@ function Whitelist() {
 }
 
 /** What putting emails on the whitelist did: which went on, which were on it already, and which it left off. */
-function Added({ result }: { result: WhitelistAdded }) {
+function Added({ result, school }: { result: WhitelistAdded; school: string }) {
     const { added, already, not_georgia_tech: others } = result;
     return (
         <Notice tone={others.length > 0 ? "warning" : "info"}>
@@ -715,10 +720,10 @@ function Added({ result }: { result: WhitelistAdded }) {
             {others.length > 0 && (
                 <p>
                     {others.length === 1
-                        ? `Left off ${others[0]}, which isn't a Georgia Tech address`
-                        : `Left off ${others.length} addresses that aren't Georgia Tech's: ${others.join(", ")}`}
-                    . Only GT accounts can make an account; to let someone in by another address, invite them on the
-                    People tab, and they sign in with Google.
+                        ? `Left off ${others[0]}, which isn't a ${school} address`
+                        : `Left off ${others.length} addresses that aren't ${school}'s: ${others.join(", ")}`}
+                    . Only {school} accounts can make an account; to let someone in by another address, invite them on
+                    the People tab, and they sign in with Google.
                 </p>
             )}
         </Notice>

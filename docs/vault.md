@@ -156,6 +156,22 @@ has a tab or a line break in it. A change shows in the activity log (`describe`)
 clients get it in the sync feed like any other. A check-in item may bring a `title` and
 `vendor` too, which a new file takes, and an existing one changes to, as here.
 
+**Editing a check-in's comment.** `PUT /api/checkins/{id}/comment {comment}` changes a
+check-in's comment after it's made, to fix a typo or say more (`vault.edit_comment`). A
+check-in has one comment for every file it checked in, so it changes for all of them. The
+files don't change: no version, and no check-out. Whoever checked it in may, while they're an
+editor of every file it has; a lead of every one of those folders (or an admin) may too;
+anyone else is refused (403 `comment_locked`), and someone who can see none of its files is
+told it isn't there (404). A revert's comment ("Reverted to v2: …") is the vault's own, and
+stays (`comment_locked`). The comment is trimmed, and refused (`bad_comment`) if that leaves
+nothing; saving it unchanged changes nothing. The check-in keeps who changed it last, and
+when, and a file's history says so (`comment_edited_at`, `comment_edited_by`, and
+`comment_editable`, whether you may, on each version); the activity log has an `edit_comment`
+event for each of its files, with what it says now (`comment`) and said before (`was`), so the
+old wording is kept. It's a change like any other: it waits while the vault is paused, and
+takes the oldest client admins set. Comments aren't in the sync feed; `vault history` reads them from the
+server each time, so it shows the new one; the add-in doesn't show comments.
+
 **Part numbers** (`vault/numbers.py` has the rules, `vault.py` holds the vault to them). A
 part number is `NNNNNNNN-KKK`: eight digits the server hands out in order, and a kind,
 three digits from a list admins keep (`part_kinds`: 001 Part and 501 Assembly to start
@@ -612,7 +628,8 @@ in the frame the site gives both apps (design.md, "The web app").
   - Assemblies: the top-level assemblies (no other assembly uses them), each opening up
     into its sub-assemblies and parts, wherever those are kept.
   - A file: what it contains (or, for a drawing, shows), the assemblies it's in up to
-    the top-level ones, its drawings, and its history, with downloads; its title, with Edit
+    the top-level ones, its drawings, and its history, with downloads, and Edit comment… beside
+    each comment its author or a lead may change ("edited by …" once it has been); its title, with Edit
     title… for editors, the names it had before ("Formerly …"), and whether it's a vendor's
     part.
   - New part and New assembly (`newFile.tsx`): while part numbers are offered or required,
@@ -986,6 +1003,7 @@ are in [design.md](design.md#api).
 | `HEAD`/`PUT /api/blobs/{sha256}` | check for / upload file contents |
 | `POST /api/checkout` | lock files `{files: [id or path], host, force}` |
 | `POST /api/files/{id}/revert` | make an older version the latest again `{version, comment, force}` |
+| `PUT /api/checkins/{id}/comment` | change a check-in's comment, for every file in it `{comment}` (whoever checked it in, or a lead of its files' folders) |
 | `POST /api/checkin` | new versions and new files `{comment, host, items, keep_checked_out}`, with files renamed `{renames}`; or, `{dry_run}`, what it would do |
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |

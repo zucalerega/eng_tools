@@ -4,7 +4,7 @@ import { gzipSync } from "node:zlib";
 import { expect, inject, onTestFinished } from "vitest";
 import { App } from "../src/App";
 import { configureApi, type Account, type DealsStatus, type SiteSettings, type WhitelistEntry } from "../src/api";
-import { type VaultFile } from "../src/vault/api";
+import { type FileDetail, type VaultFile } from "../src/vault/api";
 import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
@@ -228,6 +228,22 @@ export class Team {
         const sha256 = createHash("sha256").update(data).digest("hex");
         await call("PUT", `/api/blobs/${sha256}`, who.token, data);
         await call("PUT", `/api/files/${file.id}/drawing/pdf`, who.token, { version: file.version, pdf: sha256 });
+    }
+
+    /** A file's history, newest first, as its page shows it to someone. */
+    async history(id: number, who: Member = this.chief): Promise<FileDetail["versions"]> {
+        return (await call<FileDetail>("GET", `/api/files/${id}`, who.token)).versions;
+    }
+
+    /** Make an older version the latest again, as Revert does. */
+    async revert(who: Member, file: VaultFile, version: number): Promise<void> {
+        await call("POST", `/api/files/${file.id}/revert`, who.token, { version });
+    }
+
+    /** Change the comment of the check-in that made a file's latest version, as Edit comment does. */
+    async editComment(who: Member, file: VaultFile, comment: string): Promise<void> {
+        const [latest] = await this.history(file.id, who);
+        await call("PUT", `/api/checkins/${latest!.checkin_id}/comment`, who.token, { comment });
     }
 
     async file(id: number): Promise<VaultFile> {

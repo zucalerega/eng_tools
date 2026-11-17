@@ -6,9 +6,10 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, FiniteFloat
 
 from ..api.schemas import UserRef
+from ..models import User
 from . import numbers, vault
 from .caliper import Color
-from .models import Applies, Numbering, PartKind, PartNumber, Role
+from .models import Applies, Checkin, Numbering, PartKind, PartNumber, Role
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 # A file id, or a vault path such as "Structures/Fins/Fin.SLDPRT".
@@ -136,6 +137,10 @@ class VersionOut(BaseModel):
     host: str
     checkin_id: int
     references: list[RefOut]
+    # Its check-in's comment, changed since (PUT /api/checkins/{id}/comment): when, and by whom; null if it never was.
+    comment_edited_at: datetime | None = None
+    comment_edited_by: UserRef | None = None
+    comment_editable: bool = False  # whether you may change it: you checked it in, or you lead its files' folders
 
 
 class UsedByOut(BaseModel):
@@ -166,6 +171,9 @@ class FileDetailOut(BaseModel):
                         RefOut(file_id=r.file_id, path=r.path, version=r.version, deleted=r.deleted)
                         for r in v.references
                     ],
+                    comment_edited_at=v.checkin.comment_edited_at,
+                    comment_edited_by=UserRef.of(v.comment_edited_by) if v.comment_edited_by else None,
+                    comment_editable=v.comment_editable,
                 )
                 for v in detail.versions
             ],
@@ -184,6 +192,28 @@ class FilesIn(BaseModel):
 class CheckoutIn(FilesIn):
     host: str  # this computer's name; the lock belongs to it
     force: bool = False  # take over files checked out elsewhere (someone else's: leads only)
+
+
+class CommentIn(BaseModel):
+    comment: str = Field(max_length=5000)
+
+
+class CommentOut(BaseModel):
+    """A check-in's comment, as it is now, and who changed it last."""
+
+    checkin_id: int
+    comment: str
+    edited_at: datetime | None
+    edited_by: UserRef | None
+
+    @classmethod
+    def of(cls, record: Checkin, editor: User | None) -> "CommentOut":
+        return cls(
+            checkin_id=record.id,
+            comment=record.comment,
+            edited_at=record.comment_edited_at,
+            edited_by=UserRef.of(editor) if editor else None,
+        )
 
 
 class RevertIn(BaseModel):

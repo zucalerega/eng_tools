@@ -234,6 +234,37 @@ test("Vespula: a COPV pressing two tanks, the chamber an outlet for each, and fl
     );
 });
 
+test("a tank with more ports on its ends is one tank: its top's are its ullage, its bottom's its liquid", () => {
+    const draw = sketch();
+    const tank = draw.place("tank", 0, 0, {
+        tag: "TK-1",
+        props: { fluid: "water", topPorts: "3", bottomPorts: "2" },
+    });
+    // Pressed through its first port on top, so it's under an ullage of nitrogen.
+    const bottle = draw.place("bottle", -200, -200, { tag: "B-1", props: { fluid: "gn2", meop: "2000 psi" } });
+    const press = draw.place("solenoid-valve", -100, -150, { tag: "SV-PRESS" });
+    draw.join([bottle, "top"], [press, "a"], "gn2");
+    draw.join([press, "b"], [tank, "top"], "gn2");
+    // A thermocouple on its third port on top reads its ullage, as one on its first would.
+    const thermocouple = draw.place("thermocouple", 20, -140, { tag: "TC-ULLAGE" });
+    draw.join([tank, "top-3"], [thermocouple, "bottom"], "gn2");
+    // Its liquid leaves by both of its bottom's ports, through a valve each, to a vent.
+    for (const [port, x] of [
+        ["bottom", -100],
+        ["bottom-2", 100],
+    ] as const) {
+        const valve = draw.place("ball-valve", x, 160, { tag: `BV-${port}`, rotation: 90 });
+        const vent = draw.place("vent", x, 260);
+        draw.join([tank, port], [valve, "a"], "water");
+        draw.join([valve, "b"], [vent, "in"], "water");
+    }
+    const built = buildModel(documentOf(draw.drawing), catalog, null);
+    expect(problems(built)).toEqual([]);
+    expect(built.model.nodes.filter((node) => node.type === "tank")).toHaveLength(1);
+    expect(nodeOf(built, tank)!.links).toEqual({ gas_temperature: "TC-ULLAGE" });
+    expect(built.model.edges.map((edge) => edge.name).sort()).toEqual(["BV-bottom", "BV-bottom-2", "SV-PRESS"]);
+});
+
 test("what flows through a part is what its lines carry: said, or mixed, or not said", () => {
     const draw = sketch();
     const tank = draw.place("tank", 0, -100, { tag: "TK-1", props: { fluid: "water" } });

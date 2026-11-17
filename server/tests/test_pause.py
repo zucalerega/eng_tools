@@ -7,7 +7,8 @@ def test_while_the_vault_is_paused_changes_wait_but_the_admins(team, client):
     alice = team.member("alice@x.test")
     client.post("/api/folders", json={"path": "Fins"}, headers=chief)
     team.grant(chief, "Fins", "alice@x.test", "editor")
-    assert team.checkin(alice, {"Fins/Fin.SLDPRT": b"fin"}).status_code == 200
+    checked_in = team.checkin(alice, {"Fins/Fin.SLDPRT": b"fin"}, comment="fin")
+    assert checked_in.status_code == 200
     assert team.checkout(alice, "Fins/Fin.SLDPRT").status_code == 200
 
     body = {"host": "RENUMBER-PC", "reason": "numbering every file"}
@@ -24,6 +25,7 @@ def test_while_the_vault_is_paused_changes_wait_but_the_admins(team, client):
         client.post(
             "/api/files/metadata", json={"files": [{"file": "Fins/Fin.SLDPRT", "title": "Fin"}]}, headers=alice
         ),
+        client.put(f"/api/checkins/{checked_in.json()['checkin_id']}/comment", json={"comment": "Fin"}, headers=alice),
         team.checkout(chief, "Fins/Fin.SLDPRT", host="CHIEF-LAPTOP", force=True),  # the admin, on another computer
     ):
         assert (response.status_code, response.json()["error"]) == (409, "paused")

@@ -70,7 +70,7 @@ export function Activity() {
                             <li key={event.id}>
                                 <span className="feed-text">{describe(event)}</span>
                                 <Time at={event.at} />
-                                {event.comment && <blockquote>{event.comment}</blockquote>}
+                                {quoted(event) && <blockquote>{quoted(event)}</blockquote>}
                             </li>
                         ))}
                     </ul>
@@ -83,6 +83,14 @@ export function Activity() {
             )}
         </section>
     );
+}
+
+/** The comment an event brings: its check-in's, or one just changed. */
+function quoted(event: VaultEvent): string | null {
+    if (event.action === "edit_comment") {
+        return typeof event.detail.comment === "string" ? event.detail.comment : null;
+    }
+    return event.comment ?? null;
 }
 
 function describe(event: VaultEvent): ReactNode {
@@ -103,6 +111,13 @@ function describe(event: VaultEvent): ReactNode {
             return (
                 <>
                     {who} checked in {file} v{text("number")}
+                </>
+            );
+        case "edit_comment":
+            return (
+                <>
+                    {who} changed the comment on {file} v{text("number")}
+                    {detail.was ? `, which said “${text("was")}”` : ""}
                 </>
             );
         case "revert":

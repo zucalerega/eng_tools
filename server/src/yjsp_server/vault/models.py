@@ -187,6 +187,11 @@ class Checkin(Base):
     host: Mapped[str] = mapped_column(String(255))
     comment: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # The comment's last edit, by its author or a lead (vault.edit_comment); what it said before is in the activity log.
+    comment_edited_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    comment_edited_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", name="fk_checkins_comment_edited_by_users")
+    )
 
 
 class Blob(Base):

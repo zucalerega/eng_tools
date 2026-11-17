@@ -99,6 +99,12 @@ replaces Kenesto.
   can open it read-only. Check it back in with a comment to save a new version.
 - **Every version is kept.** See who changed what and why, and download any old
   version.
+- **Fix a check-in's comment** with **Edit comment…** beside it in a file's history on the
+  web: a typo, or a note that says too little. It's one comment for every file checked in
+  together, so it changes on all of them; the files stay as they are (no new version, no
+  check-out). Whoever checked it in can change it, and so can a lead of the folders its
+  files are in. The history says it was edited, by whom and when, and the activity log
+  keeps what it said before. A revert's comment ("Reverted to v2: …") stays as it is.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
   or changed parts it uses. Getting an assembly brings its parts along. Saving one in
   SolidWorks saves its changed parts too, and SolidWorks 2026 counts every part saved in
@@ -410,7 +416,8 @@ the keys.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav, 3x2...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects, 3/2 and 5/2 solenoid valves...),
-  tanks, bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
+  tanks (1 to 5 ports on the top and on the bottom: **Top ports** and **Bottom ports**, on the
+  right; every port on its top is its ullage), bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
   engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
   box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**

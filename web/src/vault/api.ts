@@ -69,6 +69,10 @@ export interface Version {
     host: string;
     checkin_id: number;
     references: Reference[];
+    // Its check-in's comment, changed since it was made: when, and by whom (null if it never was).
+    comment_edited_at?: string | null;
+    comment_edited_by?: UserRef | null;
+    comment_editable?: boolean; // you may change it: you checked it in, or you lead its files' folders
 }
 
 export interface FileDetail {
@@ -266,6 +270,13 @@ export const vaultApi = {
         request<{ files: VaultFile[] }>("POST", "/api/undo-checkout", { files: fileIds }),
     revert: (fileId: number, version: number, comment: string, force: boolean) =>
         request<VaultFile>("POST", `/api/files/${fileId}/revert`, { version, comment, force }),
+    /** Change a check-in's comment, for every file in it: no new version, and no check-out. */
+    editComment: (checkinId: number, comment: string) =>
+        request<{ checkin_id: number; comment: string; edited_at: string | null; edited_by: UserRef | null }>(
+            "PUT",
+            `/api/checkins/${checkinId}/comment`,
+            { comment },
+        ),
     grants: (path: string) => request<Grants>("GET", "/api/grants?" + query({ path })),
     setGrant: (path: string, userId: number | null, role: Role | null) =>
         request<Grants>("PUT", "/api/grants", { path, user_id: userId, role }),

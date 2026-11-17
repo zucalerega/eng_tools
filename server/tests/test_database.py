@@ -122,6 +122,40 @@ def test_upgrades_give_files_titles(tmp_path):
         assert db.exec_driver_sql("SELECT COUNT(*) FROM former_names").scalar() == 0
 
 
+def test_upgrades_keep_check_ins_and_their_versions(tmp_path):
+    """Check-ins take who changed their comments, none yet; SQLite copies the table to add it, and the versions that
+    point at it come through."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    migrate(engine, "0036")
+    when = "'2026-11-01 00:00:00.000000'"
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            "INSERT INTO users (id, email, name, status, is_admin, created_at, site_seconds) "
+            f"VALUES (1, 'chief@x.test', 'Chief', 'active', 1, {when}, 0)"
+        )
+        _folder(db, 1, None, "")
+        db.exec_driver_sql(
+            "INSERT INTO files (id, folder_id, name, name_key, latest_version, created_at, created_by, change_seq) "
+            f"VALUES (1, 1, 'Fin.SLDPRT', 'fin.sldprt', 1, {when}, 1, 1)"
+        )
+        db.exec_driver_sql(
+            f"INSERT INTO checkins (id, user_id, host, comment, created_at) VALUES (1, 1, 'PC', 'frist cut', {when})"
+        )
+        db.exec_driver_sql(f"INSERT INTO blobs (sha256, size, created_at) VALUES ('ab', 3, {when})")
+        db.exec_driver_sql(
+            "INSERT INTO versions (id, file_id, number, checkin_id, blob_sha256, size, created_at, created_by) "
+            f"VALUES (1, 1, 1, 1, 'ab', 3, {when}, 1)"
+        )
+
+    migrate(engine)
+    with engine.connect() as db:
+        assert db.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+        assert db.exec_driver_sql(
+            "SELECT c.comment, c.comment_edited_at, c.comment_edited_by FROM versions v "
+            "JOIN checkins c ON c.id = v.checkin_id"
+        ).one() == ("frist cut", None, None)
+
+
 def test_upgrades_keep_the_part_numbers_from_before(tmp_path):
     """Parts and assemblies named by numbers of their own before part numbers (Ground Structures': a project's number,
     then its parts') keep them, and numbers handed out start after the largest any file's name has."""

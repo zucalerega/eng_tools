@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fileUrl } from "../src/vault/paths";
-import { pressable, renderApp, Team } from "./team";
+import { dialogClosed, pressable, renderApp, Team } from "./team";
 
 test("a file's page shows its history and what it uses, and follows check-outs live", async () => {
     const team = await Team.create();
@@ -86,6 +86,56 @@ test("viewers don't get to title files", async () => {
     renderApp(viewer, fileUrl(fin!.id));
     expect(await screen.findByRole("heading", { name: "Fin.SLDPRT" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit title…" })).toBeNull();
+});
+
+test("whoever checked a file in fixes its comment, for every file checked in with it, without a new version", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const [fin, tab] = await team.checkin(
+        alice,
+        { "Fins/Fin.SLDPRT": "fin", "Fins/Tab.SLDPRT": "tab" },
+        { comment: "frist cut" },
+    );
+
+    renderApp(alice, fileUrl(fin!.id));
+    expect(await screen.findByText("frist cut")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Edit comment…" }));
+    const dialog = screen.getByRole("dialog", { name: "Comment on Fin.SLDPRT v1" });
+    const comment = within(dialog).getByRole("textbox", { name: "Comment" });
+    await userEvent.clear(comment);
+    await userEvent.type(comment, "First cut of the fin, 3 mm plate");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await dialogClosed();
+    const fixed = await screen.findByRole("cell", { name: /^First cut of the fin, 3 mm plate/ });
+    expect(fixed.textContent).toContain("(edited by Alice");
+    const [tabs] = await team.history(tab!.id);
+    expect([tabs!.number, tabs!.comment, tabs!.comment_edited_by?.name]).toEqual([
+        1,
+        "First cut of the fin, 3 mm plate",
+        "Alice",
+    ]);
+});
+
+test("only whoever checked it in, or a lead, may change a comment, and a revert's stays", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const bob = await team.member("Bob");
+    const [valve] = await team.checkin(alice, { "Valve.SLDPRT": "valve v1" }, { comment: "first valve" });
+    await team.checkout(alice, "Valve.SLDPRT", "ALICE-PC");
+    await team.checkin(alice, { "Valve.SLDPRT": "valve v2" }, { comment: "leaks", host: "ALICE-PC" });
+    await team.revert(alice, valve!, 1);
+
+    const asBob = renderApp(bob, fileUrl(valve!.id));
+    expect(await screen.findByText("leaks")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit comment…" })).toBeNull(); // another editor's
+    asBob.unmount();
+
+    renderApp(alice, fileUrl(valve!.id));
+    const reverted = (await screen.findByText("Reverted to v1")).closest("tr")!;
+    expect(within(reverted).queryByRole("button", { name: "Edit comment…" })).toBeNull();
+    const leaks = screen.getByText("leaks").closest("tr")!;
+    expect(within(leaks).getByRole("button", { name: "Edit comment…" })).toBeTruthy();
 });
 
 test("editors can revert a file nobody else has checked out", async () => {

@@ -30,6 +30,11 @@ function variants() {
             parts.push(newPart("valve", { x: 0, y: 0 }, { props: { body: body.value, actuation } }));
         }
     }
+    for (const topPorts of ["", "2", "3", "4", "5"]) {
+        for (const bottomPorts of ["", "2", "3", "4", "5"]) {
+            parts.push(newPart("tank", { x: 0, y: 0 }, { props: { topPorts, bottomPorts } }));
+        }
+    }
     return parts;
 }
 
@@ -320,6 +325,54 @@ test("a manifold has as many outlets as it's set to, and a line on one taken awa
     // Its outlets are a choice of 2 to 8, 4 as it starts.
     const field = kindOf("manifold").fields.find((entry) => entry.key === "outlets")!;
     expect(field.options!.map((option) => option.label)).toEqual(["2", "3", "4", "5", "6", "7", "8"]);
+});
+
+test("a tank has as many ports on its top and its bottom as it's set to, and a line on one taken away stays", () => {
+    const ends = (part: Part) =>
+        portsOf(part)
+            .filter((port) => port.dir === "up" || port.dir === "down")
+            .map((port) => [port.id, port.at.x, port.at.y]);
+    // One on each end until it's said, where a tank's always were, and its sides' four as they were.
+    const plain = newPart("tank", { x: 0, y: 0 });
+    expect(ends(plain)).toEqual([
+        ["top", 0, -60],
+        ["bottom", 0, 60],
+    ]);
+    expect(portsOf(plain).map((port) => port.id)).toEqual([
+        "top",
+        "bottom",
+        "left-upper",
+        "right-upper",
+        "left-lower",
+        "right-lower",
+    ]);
+    // Up to 5 on each, on the grid across its head: the first nearest the middle, then outward, left before right.
+    const tank = newPart("tank", { x: 0, y: 0 }, { tag: "T-1", props: { topPorts: "5", bottomPorts: "2" } });
+    expect(ends(tank)).toEqual([
+        ["top", 0, -60],
+        ["top-2", -10, -60],
+        ["top-3", 10, -60],
+        ["top-4", -20, -60],
+        ["top-5", 20, -60],
+        ["bottom", -10, 60],
+        ["bottom-2", 10, 60],
+    ]);
+    // Each port off its middle has a nozzle out to it from the head.
+    const markup = renderToStaticMarkup(createElement(PartIcon, { part: tank, palette: LIGHT }));
+    expect(markup).toContain("M-20 -56.18");
+    // Fewer: a line on a port it no longer has stays, ending where the port was; one on a port it keeps follows it.
+    const outer = newLine({ part: tank.id, port: "top-5" }, { x: 20, y: -120 });
+    const inner = newLine({ part: tank.id, port: "top-2" }, { x: -10, y: -120 });
+    const drawing = { ...emptyDrawing(), parts: [tank], lines: [outer, inner] };
+    const fewer = updatePart(drawing, tank.id, (part) => ({ ...part, props: { ...part.props, topPorts: "3" } }));
+    expect(fewer.lines.find((line) => line.id === outer.id)!.from).toEqual({ x: 20, y: -60 });
+    expect(fewer.lines.find((line) => line.id === inner.id)!.from).toEqual({ part: tank.id, port: "top-2" });
+    expect(portsOf(fewer.parts[0]!).find((port) => port.id === "top-2")!.at).toEqual({ x: -20, y: -60 });
+    // A choice of 1 to 5 on each end.
+    for (const key of ["topPorts", "bottomPorts"]) {
+        const field = kindOf("tank").fields.find((entry) => entry.key === key)!;
+        expect(field.options!.map((option) => option.label)).toEqual(["1", "2", "3", "4", "5"]);
+    }
 });
 
 test("a pump stands on its base with its tag under it, and a vent is the spray of what it lets go", () => {

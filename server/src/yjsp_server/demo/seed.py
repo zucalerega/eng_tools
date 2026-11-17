@@ -593,6 +593,44 @@ class Seed:
             note="The vendor's lead time slipped to six weeks: looking for another",
         )
 
+        # The build plan: what each part takes to get or make, the day it has to be ready for the vehicle's
+        # integration, and what has to be ready before it can be started. The regulator's lead time has slipped.
+        self.at(17, hour=20)
+        weeks = {
+            "Thrust chamber": 6,
+            "Injector": 4,
+            "Igniter": 2,
+            "Main oxidizer valve": 10,
+            "Main fuel valve": 8,
+            "LOX tank": 8,
+            "LOX vent valve": 6,
+            "Fuel tank": 8,
+            "Pressurant tank": 16,
+            "Pressure regulator": 12,
+            "Thrust structure": 3,
+            "Fins": 2,
+            "Intertank": 3,
+            "Nose cone": 3,
+            "Flight computer": 4,
+            "Telemetry radio": 4,
+            "Batteries": 2,
+            "Drogue parachute": 2,
+            "Main parachute": 3,
+        }
+        ready = {"LOX tank": -40, "Fuel tank": -40, "Thrust chamber": -45, "Injector": -45}
+        for name, lead in weeks.items():
+            component = components[name]
+            who = LEADS[subsystems[component["subsystem_id"]]]
+            change = {"lead_days": lead * 7, "need_by": self.day(ready.get(name, -60))}
+            self.call(who, "PATCH", f"/api/buildflow/components/{component['id']}", json=change)
+        for name, first in (
+            ("Thrust structure", ["Thrust chamber"]),
+            ("Intertank", ["LOX tank", "Fuel tank"]),
+            ("Fins", ["Thrust structure"]),
+        ):
+            body = {"component_ids": [components[each]["id"] for each in first]}
+            self.call("jonas", "PUT", f"/api/buildflow/components/{components[name]['id']}/needs", json=body)
+
         # Test: the engine's parts were proven on the stand.
         self.at(32, hour=21)
         for name in ("Thrust chamber", "Injector"):

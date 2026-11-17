@@ -20,8 +20,10 @@ import {
     type Status,
 } from "./api";
 import { appName, guessKind, KIND_NAMES, KINDS, linkHref, siteTarget, tidyUrl, useSiteName } from "./links";
+import { planOf } from "./planning";
+import { LeadField, NeedsDialog } from "./Plan";
 import { reviewPath, reviewsOf } from "./reviews";
-import { inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
+import { formatDay, inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
 import { useDemo } from "../session";
 
 // A component, beside the bill: what it is, its lead, and for each phase its milestones (status, due date, the day it
@@ -275,6 +277,7 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                     Not needed: skip what&apos;s not started
                 </button>
             )}
+            {phase === "build" && <PlanSection program={program} component={component} act={act} />}
             {phase === "build" && <InTheShop component={component} />}
             <div className="bf-people">
                 <h3>{WHO[phase]}</h3>
@@ -333,6 +336,91 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                 />
             </div>
         </details>
+    );
+}
+
+/** A component's build plan: its lead time, the day it has to be ready by, and so the day to order or start it by;
+ * what it needs first, and what it holds up. */
+function PlanSection({
+    program,
+    component,
+    act,
+}: {
+    program: ProgramDetail;
+    component: Component;
+    act: (action: () => Promise<Component>) => Promise<boolean>;
+}) {
+    const [needing, setNeeding] = useState(false);
+    const planned = planOf(program, today()).find((p) => p.component.id === component.id);
+    if (!planned) {
+        return null;
+    }
+    const names = (ids: number[]) =>
+        program.components
+            .filter((c) => ids.includes(c.id))
+            .map((c) => c.name)
+            .join(", ");
+    return (
+        <section className="bf-plan-section" aria-label="Build plan">
+            <h3>Build plan</h3>
+            <div className="bf-plan-fields">
+                <label>
+                    Lead time
+                    <LeadField component={component} disabled={false} change={act} />
+                    <span className="muted">weeks</span>
+                </label>
+                <label>
+                    Ready by
+                    <input
+                        type="date"
+                        aria-label={`${component.name}: ready by`}
+                        value={component.need_by ?? ""}
+                        onChange={(event) =>
+                            void act(() =>
+                                buildflow.changeComponent(component.id, { need_by: event.target.value || null }),
+                            )
+                        }
+                    />
+                </label>
+            </div>
+            {planned.startBy && (
+                <p className={`bf-small ${planned.lateToStart ? "bf-late" : ""}`}>
+                    {component.bought ? "Order" : "Start"} by {formatDay(planned.startBy)}
+                    {planned.lateToStart && ": late"}
+                    {planned.long && <span className="tag bf-long-lead">Long lead</span>}
+                </p>
+            )}
+            {planned.atRisk && planned.projected && (
+                <p className="bf-small bf-late">Ready {formatDay(planned.projected)} as things stand: after its day.</p>
+            )}
+            <p className="bf-small">
+                Needs first:{" "}
+                {component.needs.length > 0 ? names(component.needs) : <span className="muted">nothing</span>}{" "}
+                <button type="button" className="bf-link-button" onClick={() => setNeeding(true)}>
+                    Change…
+                </button>
+            </p>
+            {planned.waitingOn.length > 0 && (
+                <p className="bf-small muted">Waiting on {planned.waitingOn.map((c) => c.name).join(", ")}</p>
+            )}
+            {planned.holdsUp.length > 0 && (
+                <p className="bf-small muted">Holds up {planned.holdsUp.map((c) => c.name).join(", ")}</p>
+            )}
+            <p className="bf-small">
+                <Link to={`/buildflow/programs/${program.id}/plan`}>The build plan</Link>
+            </p>
+            {needing && (
+                <NeedsDialog
+                    program={program}
+                    component={component}
+                    onSaved={(changed) => {
+                        setNeeding(false);
+                        void act(() => Promise.resolve(changed));
+                    }}
+                    onCancel={() => setNeeding(false)}
+                />
+            )}
+        </section>
     );
 }
 

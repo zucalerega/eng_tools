@@ -479,6 +479,13 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   progress*, its note saying what).
 - **A review isn't on the program's page.** Someone removed it: *Removed reviews*, under the
   program's reviews, lists them, and *Bring it back* on its page puts it back.
+- **A component has no order-by day on the build plan.** It takes a lead time and a day it has to be
+  ready by, both: the day to order it (or start making it) by is the one less the other.
+- **A component is at risk though its dates look right.** What it needs first won't be ready in time:
+  it can't start until that's ready (made, or bought and in hand), and then takes its lead time.
+  *Waiting on* says which. Or its day to order or start it by has passed, and it hasn't started.
+- **A component still shows on the build plan once it's in hand.** It's ready when it's through the
+  build phase: every build milestone done, or *Not needed*. *Hide what's ready* hides those.
 
 ## Deals
 
@@ -924,6 +931,10 @@ a number. A few codes come up in more than one place.
   (`not_a_review`): a review is held at a milestone that's a review (DCR, CoDR, PDR, CDR, TRR, QRR,
   FRR, as a program starts), not at one for work, as Manufacturing. An admin marks a milestone a
   review on the program's Layout page.
+- **... needs ... already (through ...): a component can't need one that needs it**, or **... can't
+  need itself** (`needs_cycle`): what a component needs first has to be ready before it can start, so
+  it can't need one that needs it, however far along: neither could ever start. Take one of them off
+  what the other needs first.
 - **The review ... was removed: bring it back to change it** (`removed`): bring it back first, with
   *Bring it back* on its page (*Removed reviews*, on the program's page, lists it).
 - **... has ... components in it: move them to another subsystem first**, or **... removed components

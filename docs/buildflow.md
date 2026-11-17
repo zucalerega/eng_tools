@@ -78,6 +78,31 @@ and `web/src/buildflow`.
   first. A component's `updated_at` is its last change, its progress's included: what's been worked
   on lately.
 
+## The build plan
+
+Each component's lead time, the day it has to be ready by, and what it needs first make the program's
+build plan: what to order (or start making) when, so the long leads are seen early, and what holds
+up what. Anyone signed in keeps it, as they do progress.
+
+- **A component's lead time** (`lead_days`, 0 to 3,650 days: from ordering it, or starting to make
+  it, to having it) and **the day it has to be ready by** (`need_by`), each none until it's said,
+  are changed as its description is (`programs.change_component`), and noted in the activity ("Lead
+  time: 12 weeks", "Ready by Mar 1, 2027").
+- **What it needs first** (`buildflow_needs`, `progress.set_needs`): the components that have to be
+  ready before it can be started, on its program and not removed (409 `removed`). None of them may
+  need it, however far along (400 `needs_cycle`, saying the way round): neither could ever start.
+  A component removed keeps what it needs, as everything said of it.
+- **Worked out in the web app** (`planning.ts`, which `buildflow-plan.test.ts` holds to it): the day
+  to order or start it by is its ready-by day less its lead time. It's **ready** when it's through
+  the build phase. **When it'll be ready as things stand**: once ready, it is; under way, by its day
+  (or today, past it); not started, its lead time after the last of its start-by day, today, and
+  when what it needs will be ready. From that: *late* (its day's passed, not ready), *late to start*
+  (its start-by day's passed, not started), *at risk* (it won't be ready by its day), a *long lead*
+  (six weeks or more, not ready), and what it's *waiting on* and *holds up*.
+- The server keeps the numbers people say, and none it works out, so the plan's rules stay in one
+  place, beside the phases' (`phaseState`), and the deals finder, say, could use the same lead times
+  later.
+
 ## Reviews
 
 A design review is often held for several components at once: a subsystem's PDR covers its eight
@@ -111,7 +136,8 @@ place. Anyone signed in keeps reviews, as they do progress.
 ## The web app
 
 `web/src/buildflow`: the programs (`Programs.tsx`), a program's bill of design (`Program.tsx`, and
-`Panel.tsx` for a component beside it), its reviews (`Review.tsx`, and `reviews.ts`), its layout
+`Panel.tsx` for a component beside it), its build plan (`Plan.tsx`, and `planning.ts`), its reviews
+(`Review.tsx`, and `reviews.ts`), its layout
 (`Layout.tsx`, admins'), and the help (`Help.tsx`, `/buildflow/help`: keep it in step with the
 features).
 
@@ -136,6 +162,18 @@ features).
   milestone's status, due date, done date, and note (saved as it's changed; a note when it's left),
   its people, and its links. *Not needed: skip what's not started* skips the phase's milestones
   that haven't started, as for a bought part's design reviews.
+- **The build plan** (`/buildflow/programs/{id}/plan`, *Build plan* on the program's page,
+  `Plan.tsx`): how many components are to order or start now, late, at risk, long leads, waiting on
+  others, and not planned; and a table, the soonest to order or start first (or by subsystem), each
+  component's lead time in weeks and its ready-by day (changed where they are), the day to order or
+  start it by (red when it's passed), what it needs first (*What ... needs first*, the component
+  picker, without itself), and its lane on a calendar: a bar from its start-by day to its ready-by
+  day in the color of where it is in the build phase, taller for a long lead, ringed in red when
+  it's at risk, with a red line where it'd be ready as things stand; today down the calendar, and
+  the months across its head. *Hide what's ready* hides those through the build phase. A
+  component's panel, in its build phase, has the same: its lead time and ready-by day, its start-by
+  day, what it needs first (*Change…*), what it's waiting on, and what it holds up. The bill marks
+  a long lead with a tag (*Long lead*).
 - **Reviews**, under the bill: each with its milestone, its day (red once it's past and some of its
   components haven't passed), how many have passed, and its files; *New review* (its milestone, a
   name, its day, and its components, by subsystem, *All of* one at once); and *Removed reviews*.
@@ -228,7 +266,8 @@ anyone else.
 | `PATCH`/`DELETE /api/buildflow/milestones/{id}` | rename it, say what it stands for, make it a review, or move it in its phase or to another, its links with it; delete one nothing's kept on (409 `milestone_in_use`) (admins) |
 | `POST /api/buildflow/programs/{id}/subsystems`, `PATCH`/`DELETE /api/buildflow/subsystems/{id}` | a new subsystem `{name, position}`; rename or move one; delete one with no components, removed ones included (409 `not_empty`) (admins) |
 | `POST /api/buildflow/programs/{id}/components` | a new component `{subsystem_id, name, description, bought, x, y}`, at the end of its subsystem (admins) |
-| `GET`/`PATCH /api/buildflow/components/{id}` | a component; change what's sent of it: its `name`, `subsystem_id`, `bought`, `x` and `y` (null: off the drawing), and `position` are admins'; its `description` and `lead_id` (null: no one; 400 `not_a_member`) anyone's |
+| `GET`/`PATCH /api/buildflow/components/{id}` | a component, with its `lead_days`, `need_by`, and `needs` (ids); change what's sent of it: its `name`, `subsystem_id`, `bought`, `x` and `y` (null: off the drawing), and `position` are admins'; its `description`, `lead_id` (null: no one; 400 `not_a_member`), `lead_days`, and `need_by` (null: none) anyone's |
+| `PUT /api/buildflow/components/{id}/needs` | what has to be ready before it can be started `{component_ids}`: 400 `needs_cycle` for one that needs it; 409 `removed` |
 | `DELETE /api/buildflow/components/{id}`, `POST .../restore` | remove a component, keeping everything said of it, or bring it back (admins) |
 | `PUT /api/buildflow/components/{id}/progress/{milestone}` | change its progress at a milestone `{status, due, done_on, note}`: what's sent; 409 `removed`, `archived` |
 | `POST /api/buildflow/components/{id}/links`, `DELETE /api/buildflow/links/{id}` | a link `{phase, kind, url, title, milestone_id}` (400 `bad_link`); remove one |
@@ -258,13 +297,20 @@ anyone else.
      SolidWorks) rather than its sections, for a vehicle the sections don't draw well.
    - **Pickers for the other apps**: a file found in Vault, a diagram in Piper, a test in Yorg,
      from the panel, rather than its address pasted.
-   - **A timeline**: the due dates of a phase on a calendar, for the build schedule.
-2. **Reviews** (November 2026): a review held for several components at once, at one of the
+   - **The milestones' due dates on the build plan's calendar**, beside each component's lead time
+     (the build plan, below, is the build schedule's calendar).
+2. **The build plan** (November 2026): each component's lead time, ready-by day, and what it needs
+   first; the day to order or start it by, on a calendar, with what's late, at risk, and a long
+   lead. Next:
+   - **Lead times from a BOM**: a component's parts, each with its lead time, the longest its own.
+   - **Long leads first for the deals finder**: a component with a long lead, not ordered, searched
+     for first.
+3. **Reviews** (November 2026): a review held for several components at once, at one of the
    program's reviews, its day each one's date there, passing it passing each one, with its files
    and the notes taken in it. Next:
    - **A review's actions** as items of their own (each with who's to close it and by when), rather
      than each component's note.
-3. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
+4. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
    with accounts for names, and parts for components on the bills of design. Next:
    - **Bringing the tracker's data over**, if it holds parts or levels worth keeping: its *Export
      CSV*, read in by an admin, names matched to accounts.

@@ -11,6 +11,7 @@ const ProgramsPage = lazy(() => import("./Programs").then((module) => ({ default
 const ProgramPage = lazy(() => import("./Program").then((module) => ({ default: module.ProgramPage })));
 const LayoutPage = lazy(() => import("./Layout").then((module) => ({ default: module.LayoutPage })));
 const ReviewPage = lazy(() => import("./Review").then((module) => ({ default: module.ReviewPage })));
+const PlanPage = lazy(() => import("./Plan").then((module) => ({ default: module.PlanPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
 const ShopPage = lazy(() => import("./Shop").then((module) => ({ default: module.ShopPage })));
 
@@ -46,9 +47,10 @@ export const BUILDFLOW_ICON =
 export const buildflowSection = (pathname: string): string =>
     pathname.startsWith("/buildflow/help") ? "help" : pathname.startsWith("/buildflow/shop") ? "shop" : "programs";
 
-/** Whether a page wants the room: a program's bill, wide with its milestones, and the shop, with its queue. */
+/** Whether a page wants the room: a program's bill, wide with its milestones, its build plan's calendar, and the shop,
+ * with its queue. */
 export const buildflowWide = (pathname: string): boolean =>
-    /^\/buildflow\/programs\/\d+(\/layout)?\/?$/.test(pathname) ||
+    /^\/buildflow\/programs\/\d+(\/layout|\/plan)?\/?$/.test(pathname) ||
     /^\/buildflow\/shop(\/skills|\/machines)?\/?$/.test(pathname);
 
 export function BuildflowPage({ pathname }: { pathname: string }) {
@@ -72,6 +74,10 @@ function buildflowPage(path: string) {
     const layout = /^\/buildflow\/programs\/(\d+)\/layout$/.exec(path);
     if (layout) {
         return <LayoutPage key={layout[1]} id={Number(layout[1])} />;
+    }
+    const plan = /^\/buildflow\/programs\/(\d+)\/plan$/.exec(path);
+    if (plan) {
+        return <PlanPage key={plan[1]} id={Number(plan[1])} />;
     }
     const review = /^\/buildflow\/programs\/(\d+)\/reviews\/(\d+)$/.exec(path);
     if (review) {

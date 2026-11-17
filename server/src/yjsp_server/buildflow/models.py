@@ -108,6 +108,10 @@ class Component(Base):
     y: Mapped[float | None] = mapped_column(Float)
     position: Mapped[int] = mapped_column(default=0)  # its order in its subsystem
     lead_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # who's responsible for it
+    # Its build plan: how long it takes to get, from ordering it (bought) or starting it (made) to having it; and when
+    # it has to be ready by, for the build. None: not said yet.
+    lead_days: Mapped[int | None]
+    need_by: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)  # anything about it, its progress too
@@ -120,6 +124,19 @@ class Component(Base):
     progress: Mapped[list["Progress"]] = relationship(lazy="selectin", order_by="Progress.id")
     links: Mapped[list["Link"]] = relationship(lazy="selectin", order_by="Link.id")
     people: Mapped[list["Assignment"]] = relationship(lazy="selectin", order_by="Assignment.id")
+    needs: Mapped[list["Need"]] = relationship(lazy="selectin", order_by="Need.id", foreign_keys="Need.component_id")
+
+
+class Need(Base):
+    """A component that has to be ready before another can be started: the thrust structure needs the thrust chamber,
+    say. Each program's needs never go round in a circle (progress.set_needs)."""
+
+    __tablename__ = "buildflow_needs"
+    __table_args__ = (UniqueConstraint("component_id", "needs_id", name="uq_buildflow_needs_component_needs"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("buildflow_components.id"), index=True)
+    needs_id: Mapped[int] = mapped_column(ForeignKey("buildflow_components.id"), index=True)
 
 
 class Progress(Base):

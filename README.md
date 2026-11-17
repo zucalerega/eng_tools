@@ -576,6 +576,15 @@ Buildflow's top bar, has all of this on one page.
   `/piper/diagrams/3`, `/yorg/datasets/7`) shows its app and the name of what it goes to; any
   other is an `http` or `https` address, which opens in a tab of its own. Anyone signed in keeps
   all of this up.
+- **The build plan** (**Build plan**, on a program's page) is each component's lead time (how long
+  it takes to get once it's ordered, or to make once it's started), the day it has to be ready by,
+  and what it needs first (what has to be ready before it can start). From them it works out the day
+  to order or start each one by, and draws it all on a calendar: the soonest to order first, so the
+  long leads (six weeks or more) come to the top. It counts what to order or start now (past its
+  day), what's late, what's at risk (it won't be ready in time as things stand, waiting on what it
+  needs), and what isn't planned yet. Set a component's lead time (in weeks) and ready-by day in the
+  plan's table or on its panel, in the build phase, and what it needs first with **What ... needs
+  first** (not one that needs it). The bill marks a long lead not in hand yet with *Long lead*.
 - **Reviews** cover several components at once: a subsystem's PDR, say, for its eight components.
   **New review**, under the bill, takes the milestone it's held at (a review: DCR, CoDR, PDR, CDR,
   TRR, QRR, FRR), a name, its day, and the components it covers (**All of** a subsystem picks

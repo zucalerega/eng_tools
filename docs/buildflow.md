@@ -113,10 +113,12 @@ and `web/src/buildflow`.
   Its kind is guessed from where it goes (a P&ID, test data, CAD) until it's picked. Anything else
   opens in a tab of its own (`noopener noreferrer`).
 - **The layout** (`/buildflow/programs/{id}/layout`, admins'; members are told it's admins'):
-  the program's name and description; its drawing's sections (an engine, with 1 to 9 nozzles side by
-  side; body tubes; tanks; couplers; transitions to another diameter; the nose cone; each with its
-  length and diameter in any one unit, fins at its aft end, landing legs from it), and whether it's
-  on a test stand, changed together, previewed, and saved with *Save the drawing*; the vehicle with
+  the program's name and description, and its drawing's sections (an engine, with 1 to 9 nozzles
+  side by side; body tubes; tanks; couplers; transitions to another diameter; the nose cone; each
+  with its length and diameter in any one unit, fins at its aft end, landing legs from it) and
+  whether it's on a test stand, changed together, the drawing previewed, and saved at once with
+  *Save*, in a bar kept at the foot of the window that says what isn't saved yet (the browser asks
+  before the page is left with changes not saved); the vehicle with
   its components' dots, which drag to move them, and *Place* for one that isn't on it, then a click
   where it goes (`toDrawing`); subsystems and components, renamed where they are, moved, added,
   removed and brought back; and milestones, by phase. *Archive…* takes the program off the list.

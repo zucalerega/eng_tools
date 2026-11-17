@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Dialog, Notice } from "../components";
 import { Link } from "../router";
 import {
@@ -9,15 +9,15 @@ import {
     type Milestone,
     type Phase,
     type ProgramDetail,
-    type Profile,
     type Section,
 } from "./api";
 import { Vehicle } from "./VehicleView";
 import { inPhase } from "./vehicle";
 
 // A program's layout (/buildflow/programs/{id}/layout, admins'): its name, its vehicle's drawing (sections from the aft
-// end to the nose, and the components dragged onto it), its subsystems and components, and its milestones. Each change
-// is saved as it's made, but the drawing's sections, which are saved together.
+// end to the nose, and the components dragged onto it), its subsystems and components, and its milestones. The name,
+// the description, and the drawing's sections are changed, then saved together, with the bar that says what isn't saved
+// yet; everything else is saved as it's changed.
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -32,16 +32,87 @@ const SECTION_KINDS: { value: Section["kind"]; name: string }[] = [
 
 const NEW_SECTION: Section = { kind: "body", length: 20, diameter: 8, label: "", count: 1, fins: false, legs: false };
 
+/** What's changed on the page, to save together: the name, the description, and the drawing. */
+interface Draft {
+    name: string;
+    description: string;
+    sections: Section[];
+    stand: boolean;
+}
+
+type ProgramChange = Parameters<typeof buildflow.changeProgram>[1];
+
+const draftOf = (program: ProgramDetail): Draft => ({
+    name: program.name,
+    description: program.description,
+    sections: program.profile.sections,
+    stand: program.profile.stand,
+});
+
+const drawing = (sections: Section[], stand: boolean) => JSON.stringify({ sections, stand });
+
+/** What of the draft isn't saved yet, as the change that saves it: only what's changed. */
+function changeOf(draft: Draft, program: ProgramDetail): ProgramChange {
+    const change: ProgramChange = {};
+    if (draft.name.trim() !== program.name) {
+        change.name = draft.name.trim();
+    }
+    if (draft.description.trim() !== program.description) {
+        change.description = draft.description.trim();
+    }
+    if (drawing(draft.sections, draft.stand) !== drawing(program.profile.sections, program.profile.stand)) {
+        change.profile = { sections: draft.sections, stand: draft.stand };
+    }
+    return change;
+}
+
+const UNSAVED: Record<keyof ProgramChange, string> = {
+    name: "the name",
+    description: "the description",
+    profile: "the drawing",
+    position: "its place in the list",
+};
+
+/** Things in words: "the name", "the name and the drawing", "the name, the description, and the drawing". */
+const listed = (items: string[]) =>
+    items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+
 export function LayoutPage({ id }: { id: number }) {
     const [program, setProgram] = useState<ProgramDetail | null>(null);
+    const [draft, setDraft] = useState<Draft | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
     const [placing, setPlacing] = useState<Component | null>(null);
     const [archiving, setArchiving] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [saveProblem, setSaveProblem] = useState<string | null>(null);
 
-    const load = () => buildflow.program(id).then(setProgram, (error: unknown) => setProblem(message(error)));
+    // What's being changed stays as it is while the rest of the page is saved and shown again.
+    const load = () =>
+        buildflow.program(id).then(
+            (loaded) => {
+                setProgram(loaded);
+                setDraft((now) => now ?? draftOf(loaded));
+            },
+            (error: unknown) => setProblem(message(error)),
+        );
     useEffect(() => {
+        setDraft(null);
         void load();
     }, [id]);
+
+    const change = program && draft ? changeOf(draft, program) : {};
+    const unsaved = (Object.keys(change) as (keyof ProgramChange)[]).map((key) => UNSAVED[key]);
+    const dirty = unsaved.length > 0;
+
+    // Leaving with changes not saved yet: the browser asks first.
+    useEffect(() => {
+        if (!dirty) {
+            return;
+        }
+        const leaving = (event: BeforeUnloadEvent) => event.preventDefault();
+        window.addEventListener("beforeunload", leaving);
+        return () => window.removeEventListener("beforeunload", leaving);
+    }, [dirty]);
 
     /** Make a change, then show the program as it is after it: whether it worked (if not, the page says why). */
     async function run(action: () => Promise<unknown>): Promise<boolean> {
@@ -57,7 +128,26 @@ export function LayoutPage({ id }: { id: number }) {
         }
     }
 
-    if (!program) {
+    /** Save what's changed in the draft, all at once, and start again from what's saved. */
+    async function save() {
+        if (!dirty || saving || !draft?.name.trim()) {
+            return;
+        }
+        setSaving(true);
+        setSaveProblem(null);
+        try {
+            await buildflow.changeProgram(id, change);
+            const saved = await buildflow.program(id);
+            setProgram(saved);
+            setDraft(draftOf(saved));
+        } catch (error) {
+            setSaveProblem(message(error));
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (!program || !draft) {
         return problem ? <Notice tone="error">{problem}</Notice> : <p className="muted">Loading…</p>;
     }
     if (!program.can_edit) {
@@ -69,6 +159,7 @@ export function LayoutPage({ id }: { id: number }) {
     }
     const archived = program.archived_at !== null;
     const unplaced = program.components.filter((c) => c.x === null || c.y === null);
+    const edit = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
     return (
         <section className="bf-layout">
             <div className="page-head">
@@ -97,7 +188,7 @@ export function LayoutPage({ id }: { id: number }) {
             )}
             {problem && <Notice tone="error">{problem}</Notice>}
 
-            <About program={program} run={run} />
+            <About draft={draft} disabled={archived} onChange={edit} onSave={() => void save()} />
 
             <h2>The vehicle</h2>
             <p className="muted bf-small">
@@ -152,11 +243,11 @@ export function LayoutPage({ id }: { id: number }) {
                 </div>
             )}
             <Sections
-                key={JSON.stringify(program.profile)}
-                profile={program.profile}
+                sections={draft.sections}
+                stand={draft.stand}
+                changed={change.profile !== undefined}
                 disabled={archived}
-                run={run}
-                id={id}
+                onChange={edit}
             />
 
             <h2>Subsystems and components</h2>
@@ -172,6 +263,35 @@ export function LayoutPage({ id }: { id: number }) {
                     <Milestones key={phase} program={program} phase={phase} disabled={archived} run={run} />
                 ))}
             </div>
+            {dirty && (
+                <section className="bf-save-bar" aria-label="Changes not saved yet">
+                    <span>Not saved yet: {listed(unsaved)}.</span>
+                    {(saveProblem || !draft.name.trim()) && (
+                        <span className="bf-save-problem" role="alert">
+                            {saveProblem ?? "A program needs a name."}
+                        </span>
+                    )}
+                    <span className="bf-grow" />
+                    <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => {
+                            setDraft(draftOf(program));
+                            setSaveProblem(null);
+                        }}
+                    >
+                        Undo changes
+                    </button>
+                    <button
+                        type="button"
+                        className="button-primary"
+                        disabled={saving || !draft.name.trim()}
+                        onClick={() => void save()}
+                    >
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                </section>
+            )}
             {archiving && (
                 <Dialog
                     title={`Archive ${program.name}?`}
@@ -195,49 +315,119 @@ export function LayoutPage({ id }: { id: number }) {
 
 type Run = (action: () => Promise<unknown>) => Promise<boolean>;
 
-function About({ program, run }: { program: ProgramDetail; run: Run }) {
-    const [name, setName] = useState(program.name);
-    const [description, setDescription] = useState(program.description);
-    const changed = name.trim() !== program.name || description.trim() !== program.description;
+/** The name and the description, saved with the page's other changes (Enter saves them all). */
+function About({
+    draft,
+    disabled,
+    onChange,
+    onSave,
+}: {
+    draft: Draft;
+    disabled: boolean;
+    onChange: (patch: Partial<Draft>) => void;
+    onSave: () => void;
+}) {
+    const enter = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            onSave();
+        }
+    };
     return (
-        <form
-            className="bf-about"
-            onSubmit={(event) => {
-                event.preventDefault();
-                void run(() =>
-                    buildflow.changeProgram(program.id, { name: name.trim(), description: description.trim() }),
-                );
-            }}
-        >
+        <div className="bf-about">
             <label className="field">
                 Name
-                <input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
+                <input
+                    value={draft.name}
+                    maxLength={100}
+                    disabled={disabled}
+                    onChange={(event) => onChange({ name: event.target.value })}
+                    onKeyDown={enter}
+                />
             </label>
             <label className="field bf-grow">
                 Description
-                <input value={description} onChange={(event) => setDescription(event.target.value)} />
+                <input
+                    value={draft.description}
+                    disabled={disabled}
+                    onChange={(event) => onChange({ description: event.target.value })}
+                    onKeyDown={enter}
+                />
             </label>
-            <button type="submit" className="button-primary" disabled={!changed || !name.trim()}>
-                Save
-            </button>
-        </form>
+        </div>
     );
 }
 
-/** The drawing's sections, aft to nose, changed together and saved with Save the drawing. */
-function Sections({ profile, disabled, run, id }: { profile: Profile; disabled: boolean; run: Run; id: number }) {
-    const [sections, setSections] = useState(profile.sections);
-    const [stand, setStand] = useState(profile.stand);
-    const changed = JSON.stringify({ sections, stand }) !== JSON.stringify(profile);
+/** A number typed in: what's typed stays as typed (cleared, say, to type another), taken each time it's a number in
+ * range, and shown as what was taken once it's left. */
+function NumberField({
+    value,
+    label,
+    min,
+    max,
+    whole = false,
+    disabled,
+    onChange,
+}: {
+    value: number;
+    label: string;
+    min: number;
+    max?: number;
+    whole?: boolean;
+    disabled: boolean;
+    onChange: (value: number) => void;
+}) {
+    const [text, setText] = useState(String(value));
+    useEffect(() => {
+        if (Number(text) !== value) {
+            setText(String(value)); // changed from outside it: undone, or saved
+        }
+    }, [value]);
+    return (
+        <input
+            type="number"
+            className="bf-number"
+            aria-label={label}
+            value={text}
+            min={min}
+            max={max}
+            step={whole ? 1 : "any"}
+            disabled={disabled}
+            onChange={(event) => {
+                setText(event.target.value);
+                const typed = Number(event.target.value);
+                const fits = event.target.value.trim() !== "" && Number.isFinite(typed) && typed >= min;
+                if (fits && (max === undefined || typed <= max) && (!whole || Number.isInteger(typed))) {
+                    onChange(typed);
+                }
+            }}
+            onBlur={() => setText(String(value))}
+        />
+    );
+}
+
+/** The drawing's sections, aft to nose, changed together and saved with the page's other changes. */
+function Sections({
+    sections,
+    stand,
+    changed,
+    disabled,
+    onChange,
+}: {
+    sections: Section[];
+    stand: boolean;
+    changed: boolean;
+    disabled: boolean;
+    onChange: (patch: Partial<Draft>) => void;
+}) {
     const change = (index: number, patch: Partial<Section>) =>
-        setSections(sections.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+        onChange({ sections: sections.map((s, i) => (i === index ? { ...s, ...patch } : s)) });
     const move = (index: number, by: number) => {
         const next = [...sections];
         const [taken] = next.splice(index, 1);
         next.splice(index + by, 0, taken!);
-        setSections(next);
+        onChange({ sections: next });
     };
-    const number = (value: string) => Math.max(0.01, Number(value) || 0.01);
     return (
         <div className="bf-sections">
             <table className="table bf-sections-table" aria-label="Sections, aft to nose">
@@ -280,44 +470,33 @@ function Sections({ profile, disabled, run, id }: { profile: Profile; disabled: 
                                 />
                             </td>
                             <td>
-                                <input
-                                    type="number"
-                                    className="bf-number"
-                                    aria-label={`Section ${index + 1}: length`}
+                                <NumberField
+                                    label={`Section ${index + 1}: length`}
                                     value={section.length}
                                     min={0.01}
-                                    step="any"
                                     disabled={disabled}
-                                    onChange={(event) => change(index, { length: number(event.target.value) })}
+                                    onChange={(length) => change(index, { length })}
                                 />
                             </td>
                             <td>
-                                <input
-                                    type="number"
-                                    className="bf-number"
-                                    aria-label={`Section ${index + 1}: diameter`}
+                                <NumberField
+                                    label={`Section ${index + 1}: diameter`}
                                     value={section.diameter}
                                     min={0.01}
-                                    step="any"
                                     disabled={disabled}
-                                    onChange={(event) => change(index, { diameter: number(event.target.value) })}
+                                    onChange={(diameter) => change(index, { diameter })}
                                 />
                             </td>
                             <td>
                                 {section.kind === "engine" && (
-                                    <input
-                                        type="number"
-                                        className="bf-number"
-                                        aria-label={`Section ${index + 1}: nozzles`}
+                                    <NumberField
+                                        label={`Section ${index + 1}: nozzles`}
                                         value={section.count}
                                         min={1}
                                         max={9}
+                                        whole
                                         disabled={disabled}
-                                        onChange={(event) =>
-                                            change(index, {
-                                                count: Math.min(9, Math.max(1, Math.round(Number(event.target.value)))),
-                                            })
-                                        }
+                                        onChange={(count) => change(index, { count })}
                                     />
                                 )}
                             </td>
@@ -363,7 +542,7 @@ function Sections({ profile, disabled, run, id }: { profile: Profile; disabled: 
                                     className="button-small"
                                     aria-label={`Delete section ${index + 1}`}
                                     disabled={disabled}
-                                    onClick={() => setSections(sections.filter((_, i) => i !== index))}
+                                    onClick={() => onChange({ sections: sections.filter((_, i) => i !== index) })}
                                 >
                                     ✕
                                 </button>
@@ -378,7 +557,9 @@ function Sections({ profile, disabled, run, id }: { profile: Profile; disabled: 
                     className="button-small"
                     disabled={disabled}
                     onClick={() =>
-                        setSections([...sections, { ...NEW_SECTION, diameter: sections.at(-1)?.diameter ?? 8 }])
+                        onChange({
+                            sections: [...sections, { ...NEW_SECTION, diameter: sections.at(-1)?.diameter ?? 8 }],
+                        })
                     }
                 >
                     + Add a section
@@ -388,33 +569,10 @@ function Sections({ profile, disabled, run, id }: { profile: Profile; disabled: 
                         type="checkbox"
                         checked={stand}
                         disabled={disabled}
-                        onChange={(event) => setStand(event.target.checked)}
+                        onChange={(event) => onChange({ stand: event.target.checked })}
                     />
                     On a test stand
                 </label>
-                <span className="bf-grow" />
-                {changed && (
-                    <>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSections(profile.sections);
-                                setStand(profile.stand);
-                            }}
-                        >
-                            Undo changes
-                        </button>
-                        <button
-                            type="button"
-                            className="button-primary"
-                            onClick={() =>
-                                void run(() => buildflow.changeProgram(id, { profile: { sections, stand } }))
-                            }
-                        >
-                            Save the drawing
-                        </button>
-                    </>
-                )}
             </div>
             {changed && (
                 <div className="bf-stage bf-preview" aria-label="The drawing, as it'll be saved">

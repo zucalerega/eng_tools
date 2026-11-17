@@ -18,7 +18,9 @@ import { VAULT } from "../paths";
 import { atLeast, useVault, type VaultState } from "../store";
 import { AddInTracker } from "./AddIn";
 import { DealsAdmin } from "../../deals";
+import { DeployCard } from "../../deploy";
 import { FeedbackAdmin } from "../../feedback";
+import { useSession } from "../../session";
 import { ClaudeSpending } from "./Claude";
 import { ServerLoad } from "./Load";
 import { SiteUsage } from "./Usage";
@@ -118,6 +120,7 @@ const PEOPLE_REFRESH_MS = 30_000; // how often the list of people is fetched aga
 
 function People() {
     const vault = useVault();
+    const owner = useSession().me?.can_deploy === true; // the site's owner, who deploys it
     const [people, setPeople] = useState<Account[] | null>(null);
     const reload = useCallback(async () => setPeople(await api.users()), []);
     const { problem, busy, run, setProblem } = useAction(reload);
@@ -184,6 +187,7 @@ function People() {
     return (
         <>
             <div className="dashboard">
+                {owner && <DeployCard />}
                 <SiteUsage />
                 <ServerLoad />
                 <AddInTracker />

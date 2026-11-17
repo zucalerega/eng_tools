@@ -1,0 +1,25 @@
+# /etc/systemd/system/yjsp-deploy.service on the server: deploys main's newest commit, when the site's owner asks on
+# Admin > People (docs/deploying.md, "Deploying from the site"). Keep this copy the same as the server's.
+[Unit]
+Description=Deploy YJSP: main's newest commit, once CI has passed on it (yjsp-deploy)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# As root, as it replaces the site's code and restarts it. The site can start it (yjsp-deploy.rules) and do nothing
+# else with it: no arguments, so all it can ask for is main, deployed as this does it.
+ExecStart=/usr/local/sbin/yjsp-deploy
+# The build is the slow part (a few minutes); past this, the deploy is stopped.
+TimeoutStartSec=45min
+# Gently: the site keeps answering while the web app builds, on a machine with one CPU, and the build can never take
+# the memory the site needs.
+Nice=10
+CPUWeight=20
+MemoryHigh=1536M
+MemoryMax=2G
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+# No [Install]: it never starts at boot, only when it's asked to.

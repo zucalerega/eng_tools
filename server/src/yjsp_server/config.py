@@ -119,6 +119,19 @@ class Settings(BaseSettings):
     feedback_routine_url: str = ""
     feedback_routine_token: str = ""
 
+    # Deploying main from the site (deploy.py; docs/deploying.md, "Deploying from the site"): the owner, who alone sees
+    # Admin > People's Deploy card and deploys from it, by the email they sign in with (an admin's). Empty: no one.
+    deployer: str = ""
+    # Where yjsp-deploy (deploy/deploy-here.sh, run as root) writes how each deploy goes, and what's live, for the site to
+    # read: it can't write there. Not there: deploying from the site isn't set up on this server.
+    deploy_dir: Path = Path("/var/lib/yjsp-deploy")
+    # The repository on GitHub whose main is deployed, as yjsp-deploy has it: the card shows its newest commit and CI.
+    deploy_repository: str = Field(default="zucalerega/eng_tools", pattern=r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
+    # What asks systemd to start yjsp-deploy.service, as a JSON list (the tests' stand-in). The site may only start it.
+    deploy_systemctl: list[str] = Field(default=["systemctl"], min_length=1)
+    # Another address for GitHub's API: the tests' stand-in. Empty: GitHub's own.
+    github_base_url: str = ""
+
     # Deals (deals/): eBay's Browse API, which the server searches each day for what the team wants. A keyset of an
     # application on developer.ebay.com, for production: its App ID (client ID), and its Cert ID (client secret), a
     # secret like YJSP_SECRET_KEY. Either empty: no deals are looked for.
@@ -231,11 +244,14 @@ class Settings(BaseSettings):
             "YJSP_EBAY_CLIENT_ID": self.ebay_client_id,
             "YJSP_EBAY_CLIENT_SECRET": self.ebay_client_secret,
             "YJSP_DEMO_URL": self.demo_url,
+            "YJSP_DEPLOYER": self.deployer,
         }
         found = [name for name, value in settings.items() if value]
         if not found:
             return []
-        return [f"unset {', '.join(found)}: the demo has no sign-in, Claude, requests, deals, or demo of its own"]
+        return [
+            f"unset {', '.join(found)}: the demo has no sign-in, Claude, requests, deals, deploys, or demo of its own"
+        ]
 
 
 def refuse_old_settings(environ: Mapping[str, str] = os.environ, env_file: Path = Path(ENV_FILE)) -> None:

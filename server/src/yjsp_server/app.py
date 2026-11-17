@@ -12,6 +12,7 @@ from . import __version__, demo, load, people
 from .api import assistant as assistant_api
 from .api import deals as deals_api
 from .api import demo as demo_api
+from .api import deploys as deploys_api
 from .api import downloads, signin, web
 from .api import feedback as feedback_api
 from .api import help as help_api
@@ -22,6 +23,7 @@ from .buildflow import wants as buildflow_wants
 from .config import Settings
 from .db import make_engine, migrate
 from .deals.finder import Deals
+from .deploy import Deploys
 from .errors import ApiError
 from .feedback import Requests
 from .limits import BodyLimit
@@ -98,6 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # The demo, at /demo: its own server, which this passes requests to (YJSP_DEMO_URL); none without one.
     app.state.demo = demo_api.Passer(settings.demo_url)
+    # Deploying main, which the site's owner asks for and yjsp-deploy does (deploy/deploy-here.sh): the site only starts it.
+    app.state.deploys = Deploys(settings)
     # Carries sign-in state between the redirect to Google or Microsoft and the callback.
     app.add_middleware(
         SessionMiddleware,
@@ -133,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(assistant_api.router)
     app.include_router(feedback_api.router)
     app.include_router(deals_api.router)
+    app.include_router(deploys_api.router)
     app.include_router(downloads.router)
     app.include_router(vault_api.router)
     app.include_router(yorg_api.router)

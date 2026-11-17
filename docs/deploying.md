@@ -38,6 +38,9 @@ On the server:
 | `/srv/yjsp/downloads` | `Vault-Setup.exe` and `vault.exe`, offered on Vault's SolidWorks page, and `Vault-Setup.exe.sig`, the installer's signature |
 | `/srv/yjsp/backups` | Database backups, nightly and before each deploy, kept 14 days; `offsite/yjsp.db`, the database as the off-site backup last copied it; `offsite.json`, how the off-site backup went (written by root) |
 | `/etc/yjsp/offsite.env`, `/etc/yjsp/offsite.password` | The off-site backup's settings and keys ([Off-site backups](#off-site-backups)). Readable only by root |
+| `/var/lib/yjsp-deploy` | How deploys went, from the site and with deploy.sh (`deploys/`), and what's live (`live.json`): written by root, read by the site ([Deploying from the site](#deploying-from-the-site)) |
+| `/var/cache/yjsp-deploy` | main, as a deploy from the site last fetched it, and the web app's build while it runs |
+| `/opt/yjsp/node` | Node.js 24, which builds the web app when deploying from the site |
 
 Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs as.
 
@@ -53,6 +56,9 @@ Everything under `/srv/yjsp` belongs to the user `yjsp`, which the server runs a
   09:00 UTC: the database, Vault's files, and Yorg's, copied off the server, encrypted, to
   Cloudflare R2. `yjsp-offsite-verify.timer` checks it by a restore every Sunday at 10:00
   UTC ([Off-site backups](#off-site-backups)).
+- `yjsp-deploy.service` runs `/usr/local/sbin/yjsp-deploy` as root when the owner deploys from
+  Admin > People, and never on its own: it deploys main's newest commit
+  ([Deploying from the site](#deploying-from-the-site)).
 
 **Settings** (`/srv/yjsp/.env`; `server/.env.example` explains each one):
 
@@ -73,6 +79,8 @@ YJSP_HELP_DIR=/opt/yjsp/app/help
 # help loaded between questions unless YJSP_ASSISTANT_KEEP_WARM=0.)
 # (The server reads each SolidWorks file's 3D view for Caliper a few minutes after it's checked
 # in, unless YJSP_CALIPER_READ_AHEAD=0: docs/vault.md, "Reading ahead".)
+# The owner, who deploys from Admin > People, by the email they sign in with ("Deploying from the
+# site", below), as YJSP_DEPLOYER.
 # And the secrets, which are only in the server's copy: YJSP_SECRET_KEY,
 # YJSP_GOOGLE_CLIENT_ID, YJSP_GOOGLE_CLIENT_SECRET, YJSP_BOOTSTRAP_ADMINS, and
 # YJSP_MICROSOFT_CLIENT_ID, YJSP_MICROSOFT_CLIENT_SECRET (Georgia Tech sign-in; without
@@ -126,6 +134,12 @@ computer without one, an agent says it can't deploy and leaves it to someone who
 
 ## Deploying
 
+There are two ways. The owner deploys main from the site itself, on Admin > People
+([Deploying from the site](#deploying-from-the-site)): its newest commit, once CI has passed on
+it, built and switched over on the server. Or anyone with [access](#getting-access) runs
+`deploy/deploy.sh` from a computer: main, or a release tag. Both switch over the same way, and
+one deploy runs at a time.
+
 You need bash (Git Bash on Windows), git, [Node.js](https://nodejs.org/) 24 with npm, and
 SSH access. From this repository (a clone whose `origin` is GitHub):
 
@@ -147,17 +161,22 @@ What [`deploy/deploy.sh`](../deploy/deploy.sh) does:
    So what ships is exactly that commit, whatever you have open, and the web app always
    matches the server.
 3. It copies `server/`, `web/dist`, and the docs the help shows (`README.md`, `docs/`, the
-   add-in's README) to the server, beside the running ones.
-4. On the server it backs up the database (`backups/yjsp-before-deploy-<time>.db.gz`),
+   add-in's README) to the server, beside the running ones (`/opt/yjsp/app/*.new`).
+4. On the server it switches over as a deploy from the site does: your checkout's
+   [`deploy/deploy-here.sh`](../deploy/deploy-here.sh), run by the server's bash through SSH
+   (`switch-over`). It backs up the database (`backups/yjsp-before-deploy-<time>.db.gz`),
    stops `yjsp.service`, swaps the new code in (keeping the `.venv`), updates the Python
    packages with `uv sync --locked`, and starts the service again. The site is down for
-   about half a minute.
-5. It waits up to 30 seconds for `/healthz`. If the new version doesn't answer, it shows
-   the service's last log lines, puts the old version back, and fails.
+   about half a minute. If a deploy from the site is running, it waits 10 seconds for it, then
+   stops without changing anything.
+5. It waits up to 30 seconds for `/healthz`. If the new version doesn't answer (or its packages
+   don't install), it shows the service's last log lines, puts the old version back, and fails.
+   Then it makes the demo again, if it's set up.
 
 It ends with **"Deployed: YJSP answers."** A deploy takes a few minutes, mostly `npm ci`. If
 the help page is empty after it, the server's `.env` lacks `YJSP_HELP_DIR`, and the script says
-so.
+so. On a server set up to deploy from the site, Admin > People's Deploy card lists the deploy
+too, with what it said on the server, and what's live.
 
 ### Before deploying
 
@@ -165,11 +184,15 @@ so.
   (tags like `v0.2.0`) are described in [CLAUDE.md](../CLAUDE.md), under "Releasing".
 - Read any migration in the release (`server/src/yjsp_server/migrations/versions`). The
   server runs it when it starts, and the backup the script takes is what you'd go back to.
+  The Deploy card lists the ones main would run, each linked, and a deploy from the site
+  rehearses them on a copy of the database first. With deploy.sh, rehearse a release's
+  yourself: copy the database as `yjsp`, and migrate the copy with the new version's code, as
+  `rehearse` in `deploy-here.sh` does.
 - For a big release, tell the team first: check-ins stop for about half a minute.
 
 ### After deploying
 
-- The script said "Deployed: YJSP answers."
+- The script said "Deployed: YJSP answers." (from the site: the Deploy card says it's live).
 - https://lucazerega.tail07089c.ts.net opens and you can sign in.
 - https://lucazerega.tail07089c.ts.net/help shows the help, signed out too.
 - Once the demo is set up ([The demo](#the-demo)): the script said "The demo is made again, and
@@ -184,7 +207,132 @@ Deploy the previous release again: `bash deploy/deploy.sh v0.4.0`. If the bad re
 migration, also put back the database from the backup taken just before it
 ([below](#putting-back-a-database-backup)). A release from before YJSP (0.3.0 and
 earlier) runs only in the old layout: going back to one after the move takes
-`bash deploy/migrate-to-yjsp.sh --back` ([Moving to YJSP](#moving-to-yjsp)).
+`bash deploy/migrate-to-yjsp.sh --back` ([Moving to YJSP](#moving-to-yjsp)). The site
+deploys only main's newest commit, so going back is deploy.sh's, or a revert merged to main,
+which the site then deploys once CI has passed on it.
+
+## Deploying from the site
+
+The owner (`YJSP_DEPLOYER` in `.env`, an admin) deploys main from the site itself, on Admin >
+People's **Deploy** card, which only they see. It shows what's live; main's newest commit, with
+what's new on main since what's live (each pull request, linked on GitHub); every job of CI on
+that commit (server, client, web, image); and the migrations it would run, each linked, to read
+first. **Deploy** says what it's about to do and asks; then the card follows the deploy, step by
+step, with its log, through the half minute the site is down, and says how it ended. Under it
+are the last deploys, from the site and with deploy.sh, each with its log. It deploys only main's
+newest commit, once CI has passed on it: a release tag, or anything else, is deploy.sh's.
+
+**How it works.** The site never deploys itself: it runs as `yjsp`, which can't change the site's
+code (and, with `NoNewPrivileges`, can't use sudo), and a deploy stops it. So *Deploy* asks
+systemd to start `yjsp-deploy.service`, a oneshot unit that runs as root, and a polkit rule lets
+`yjsp` start that unit and nothing else: not stop it, nor start or change any other. The unit
+passes no arguments, so all the site can ever ask for is main's newest commit, deployed as the
+script does it. The script, [`deploy/deploy-here.sh`](../deploy/deploy-here.sh), installed as
+`/usr/local/sbin/yjsp-deploy`:
+
+1. Fetches main from GitHub (into `/var/cache/yjsp-deploy/repo.git`), and stops unless every
+   one of CI's jobs passed on that exact commit, as GitHub's check runs say.
+2. Builds the web app from it, in `/var/cache/yjsp-deploy/build`, as `yjsp-build`, a user that
+   can't read the site's data: `npm ci` runs the packages' install scripts as it. Then it stops
+   whatever the build left running, and refuses a build that made anything but files and
+   folders (a link could have the site serve something else, its settings even).
+3. Rehearses the migrations: it makes the new version's Python environment (from uv's cache,
+   which the switch-over then finds full), copies the database (as `yjsp`, into
+   `backups/.rehearsal.db`), migrates the copy as the new version will when it starts, checks it
+   with SQLite, and deletes it, saying in its log which migration it went from and to, and any
+   table that has fewer rows after. If they fail, it stops: until here, nothing has changed.
+4. Switches over, as deploy.sh does (the same code): backs up the database, stops
+   `yjsp.service`, swaps the new version in, installs its packages, starts it, and waits 30
+   seconds for `/healthz`. If it doesn't answer, it puts the old version back. Then it makes the
+   demo again, if it's set up.
+
+It writes how each deploy goes in `/var/lib/yjsp-deploy`: `deploys/<when it started>.json` and
+`.log` (the last 30 are kept), touched every 10 seconds while it runs, and `live.json`, what's
+live, once a deploy has made it so. That folder is root's, in the group `yjsp`, so the site reads
+it and can't write it. One deploy runs at a time: the script takes a lock
+(`/run/lock/yjsp-deploy.lock`), which deploy.sh's switch-over takes too, and whichever comes second
+stops, having changed nothing. The unit runs at a low priority, with at most 2 GB of memory (the
+build takes about 700 MB), so the site answers while it builds. A deploy takes a few minutes, mostly
+`npm ci` and the build.
+
+The card reads main and CI from GitHub's API, without a token, as the repository is public: GitHub
+answers a server 60 requests an hour that way, so the site keeps what can't change (what a commit
+holds, how two compare) and asks about main and CI at most every 15 seconds, and while CI runs, the
+card asks again each minute, 20 times at most. *Check again* asks anew.
+
+### Setting it up
+
+Once, by the owner, after a deploy of the release that has it (with deploy.sh). On the server
+(`ssh -i ~/.ssh/yjsp_oracle opc@lucazerega.tail07089c.ts.net`):
+
+1. **git, and Node.js 24** in `/opt/yjsp/node`, from nodejs.org, for the VM's ARM processor, checked
+   against Node's own list of checksums:
+
+   ```bash
+   sudo dnf install -y git
+   cd /tmp && curl -fsSLO https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt
+   node=$(grep -o 'node-v24[.0-9]*-linux-arm64\.tar\.xz' SHASUMS256.txt | head -n 1)
+   curl -fsSLO "https://nodejs.org/dist/latest-v24.x/$node" && grep " $node\$" SHASUMS256.txt | sha256sum -c -
+   sudo mkdir -p /opt/yjsp/node && sudo tar -C /opt/yjsp/node --strip-components=1 -xJf "$node"
+   /opt/yjsp/node/bin/node --version
+   ```
+
+   The same again updates it. polkit, which the rule needs, comes with Oracle Linux (`rpm -q
+   polkit`).
+2. **A user for the build**, which owns nothing else:
+   `sudo useradd --system --no-create-home --home-dir /var/cache/yjsp-deploy --shell /usr/sbin/nologin yjsp-build`.
+3. **The script, the unit, the rule, and the folder the site reads.** From a checkout of `main`
+   on your computer:
+   `scp -i ~/.ssh/yjsp_oracle deploy/deploy-here.sh deploy/yjsp-deploy.service deploy/yjsp-deploy.rules opc@lucazerega.tail07089c.ts.net:/tmp/`.
+   Then on the server:
+
+   ```bash
+   cd /tmp
+   sudo install -m 755 deploy-here.sh /usr/local/sbin/yjsp-deploy
+   sudo install -m 644 yjsp-deploy.service /etc/systemd/system/
+   sudo install -m 644 yjsp-deploy.rules /etc/polkit-1/rules.d/50-yjsp-deploy.rules
+   sudo install -d -m 2750 -o root -g yjsp /var/lib/yjsp-deploy
+   sudo systemctl daemon-reload
+   ```
+
+4. **Check the rule** lets the site start that unit, and nothing else, without deploying: as
+   `yjsp`, `pkcheck` says yes for it, and starting another unit is refused.
+
+   ```bash
+   sudo -u yjsp sh -c 'pkcheck --action-id org.freedesktop.systemd1.manage-units --process $$ --detail unit yjsp-deploy.service --detail verb start' && echo "may start yjsp-deploy"
+   sudo -u yjsp systemctl --no-ask-password start yjsp-backup.service  # refused
+   ```
+
+5. **The owner:** add `YJSP_DEPLOYER=<the owner's email>` (the admin account they sign in with) to
+   `/srv/yjsp/.env` (`sudo -u yjsp vi /srv/yjsp/.env`), and `sudo systemctl restart yjsp.service`.
+   Admin > People then has the Deploy card, for them. What's live shows once a deploy (from the
+   site, or deploy.sh) has said.
+
+When a change to `deploy/deploy-here.sh`, the unit, or the rule merges, install it again (step 3):
+the site's deploys run the installed copy, where deploy.sh runs its checkout's. If the repository
+moves, set `YJSP_DEPLOY_REPOSITORY` (`owner/name`) in `.env`, and for the script, in the unit
+(`sudo systemctl edit yjsp-deploy.service`: `[Service]`, `Environment=YJSP_DEPLOY_REPOSITORY=...`).
+
+### When a deploy from the site doesn't deploy
+
+The card says how it ended, and its log why; on the server, `sudo journalctl -u yjsp-deploy -n 200
+--no-pager` has the same.
+
+- **Stopped:** nothing changed. CI hadn't passed, the build or the migrations failed, or another
+  deploy was running. Fix main, and deploy what CI passes.
+- **Rolled back:** the new version didn't answer, so the old one is back, and the log ends with the
+  server's last lines. If the new version had migrated the database, the old one may not run on it:
+  then it says *failed*.
+- **Failed:** the site may be down. `sudo systemctl status yjsp.service`; put the last good version
+  back with deploy.sh ([Rolling back](#rolling-back)), and, if the new version migrated the
+  database, the backup from just before, which the message names
+  ([Putting back a database backup](#putting-back-a-database-backup)).
+- **Interrupted:** it stopped without saying how (the VM restarted, or it was stopped). Look at
+  the site, and the journal; if the site is down, as for *failed*.
+
+To stop a deploy before it switches over (the card's steps up to *Rehearse the migrations*), `sudo
+systemctl stop yjsp-deploy.service`: nothing has changed by then. Don't stop one that's switching
+over: the site would be left half swapped.
 
 ## Looking after it
 
@@ -650,8 +798,10 @@ If the VM is ever lost or moved:
    [Off-site backups](#off-site-backups), with the existing `offsite.env` and password if
    it's a move: then put the data back from it before the first start.
 5. The first deploy expects a `server/.venv` already in place: copy `server/` and
-   `web/dist` in by hand, run the `uv sync` line from `deploy/deploy.sh` there, and start the
-   service. From then on, `deploy/deploy.sh` does it (and the help's docs, in `help/`).
+   `web/dist` in by hand, run the `uv sync` line from `deploy/deploy-here.sh` (`sync_venv`) there,
+   and start the service. From then on, `deploy/deploy.sh` does it (and the help's docs, in
+   `help/`), and the site too, once it's set up to ([Deploying from the
+   site](#deploying-from-the-site)).
 6. Tailscale on the VM: `sudo tailscale up`, turn key expiry off for the machine in the
    Tailscale admin console, and `sudo tailscale funnel --bg 8100`. Then point the
    sign-ins' redirect URIs (Microsoft's and Google's) and `YJSP_PUBLIC_URL` at the new

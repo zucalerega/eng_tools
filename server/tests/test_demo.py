@@ -92,6 +92,7 @@ def test_the_demo_wont_have_sign_in_or_anything_that_costs(settings):
         {"ebay_client_id": "x", "ebay_client_secret": "y"},
         {"feedback_routine_url": "https://api.anthropic.com/x", "feedback_routine_token": "t"},
         {"demo_url": "http://127.0.0.1:8200"},
+        {"deployer": "chief@rocketry.test"},
     ):
         wrong = demo_settings(settings).model_copy(update=unwanted)
         with pytest.raises(RuntimeError, match="Can't start the demo: unset YJSP_"):

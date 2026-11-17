@@ -1,0 +1,14 @@
+// /etc/polkit-1/rules.d/50-yjsp-deploy.rules on the server: the site, which runs as yjsp, may start
+// yjsp-deploy.service, and nothing more: not stop it, nor start or change any other unit (docs/deploying.md, "Deploying
+// from the site"). It can't use sudo (yjsp.service has NoNewPrivileges), so this is its only way to ask. Keep this copy
+// the same as the server's.
+polkit.addRule(function (action, subject) {
+    if (
+        action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "yjsp-deploy.service" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "yjsp"
+    ) {
+        return polkit.Result.YES;
+    }
+});

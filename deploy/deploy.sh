@@ -87,53 +87,14 @@ tar -C "$work/web" -cf - dist | run 'sudo rm -rf /opt/yjsp/app/web.new && sudo m
 # The help (/help, and what the assistant reads), laid out as in the repository: YJSP_HELP_DIR=/opt/yjsp/app/help.
 git -C "$work" archive --format=tar HEAD README.md docs client/src/Vault.SolidWorks/README.md | run 'sudo rm -rf /opt/yjsp/app/help.new && sudo mkdir -p /opt/yjsp/app/help.new && sudo tar -C /opt/yjsp/app/help.new --no-same-owner -xf -'
 
-run 'sudo bash -s' <<'EOF'
-set -euo pipefail
-cd /opt/yjsp/app
-healthy() {
-    for _ in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8100/healthz && return 0; sleep 1; done
-    return 1
-}
-sync() {
-    env UV_PYTHON_INSTALL_DIR=/opt/yjsp/python UV_CACHE_DIR=/opt/yjsp/cache UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy \
-        UV_PYTHON_DOWNLOADS=never /usr/local/bin/uv sync --quiet --locked --no-dev --no-editable --python 3.13 --project server
-}
-backup=/srv/yjsp/backups/yjsp-before-deploy-$(date -u +%Y%m%d-%H%M%S).db
-sudo -u yjsp sqlite3 /srv/yjsp/data/yjsp.db ".backup '$backup'" && sudo -u yjsp gzip "$backup" # kept 14 days
-systemctl stop yjsp.service
-rm -rf server.old web.old help.old
-mv server server.old && mv server.new server && mv server.old/.venv server/.venv # the venv stays where it was
-mv web web.old && mv web.new web
-if [ -d help ]; then mv help help.old; fi # not before the first deploy with the help
-mv help.new help
-sync
-systemctl start yjsp.service
-if healthy; then
-    echo "Deployed: YJSP answers."
-    if ! curl -fs http://127.0.0.1:8100/help | grep -q 'id="guide"'; then
-        echo "The help page is empty: set YJSP_HELP_DIR=/opt/yjsp/app/help in /srv/yjsp/.env and restart (docs/deploying.md)." >&2
-    fi
-    # The demo, once it's set up (docs/deploying.md, "The demo"): made again from nothing by the new version. It's
-    # beside the site, not part of it, so a demo that doesn't start is said, and the site stays deployed.
-    if systemctl cat yjsp-demo.service >/dev/null 2>&1; then
-        if systemctl restart yjsp-demo.service && curl -fs -o /dev/null --retry 30 --retry-all-errors --retry-delay 1 http://127.0.0.1:8200/healthz; then
-            echo "The demo is made again, and answers."
-        else
-            echo "The demo didn't start: journalctl -u yjsp-demo says why. The site itself is deployed." >&2
-            journalctl -u yjsp-demo.service --no-pager -n 20 -o cat >&2
-        fi
-    fi
-else
-    echo "The new version doesn't answer: putting the old one back." >&2
-    journalctl -u yjsp.service --no-pager -n 20 -o cat >&2
-    systemctl stop yjsp.service
-    mv server/.venv server.old/.venv && rm -rf server && mv server.old server
-    rm -rf web && mv web.old web
-    rm -rf help && if [ -d help.old ]; then mv help.old help; fi
-    sync
-    systemctl start yjsp.service
-    healthy && echo "The old version is back." >&2
-    exit 1
+# The switch-over is the site's own deploys' (deploy-here.sh, this checkout's): it backs the database up, swaps the new
+# version in, and puts the old one back if the new one doesn't answer, one deploy at a time. On a server set up to deploy
+# from the site, the Deploy card then shows this one too: with the commit's subject, or its pull request's title.
+subject=$(git -C "$work" log -1 --format=%s HEAD)
+merge='^Merge pull request #([0-9]+) '
+if [[ $subject =~ $merge ]]; then
+    title=$(git -C "$work" log -1 --format=%b HEAD | grep -m 1 -v '^[[:space:]]*$' || true)
+    if [ -n "$title" ]; then subject="$title (#${BASH_REMATCH[1]})"; fi
 fi
-EOF
+run "sudo bash -s -- switch-over $commit $(printf %q "$subject")" <"$(dirname "${BASH_SOURCE[0]}")/deploy-here.sh"
 echo "Now check the site: docs/deploying.md, \"After deploying\"."

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
-from .. import auth, clients
+from .. import auth, clients, deploy
 from ..config import Settings
 from ..deals import finder, rank
 from ..feedback import Names
@@ -79,6 +79,8 @@ class MeOut(UserOut):
     changed (docs/design.md, "The demo")."""
 
     demo: bool = False
+    # You're the site's owner, who deploys it from Admin > People (YJSP_DEPLOYER; deploy.py).
+    can_deploy: bool = False
 
 
 class InviteIn(BaseModel):
@@ -554,3 +556,121 @@ class DealsStatusOut(BaseModel):
     next_search: datetime | None
     shown: int
     runs: list[DealRunOut]  # the latest first
+
+
+class DeployCommitOut(BaseModel):
+    """A commit on GitHub, as the Deploy card shows it."""
+
+    sha: str
+    title: str  # its subject, or for a pull request's merge, the pull request's title
+    pull: int | None  # the pull request it merged
+    author: str | None
+    at: datetime | None
+
+    @classmethod
+    def of(cls, commit: deploy.Commit) -> "DeployCommitOut":
+        return cls(sha=commit.sha, title=commit.title, pull=commit.pull, author=commit.author, at=commit.at)
+
+
+class DeployCheckOut(BaseModel):
+    """One of CI's jobs on main's newest commit: its latest run."""
+
+    name: str  # server, client, web, or image
+    status: str  # queued, in_progress, completed; or missing, when CI hasn't started it
+    conclusion: str | None  # once it's completed: success, failure, cancelled, ...
+    url: str | None  # its page on GitHub
+    passed: bool
+
+
+class DeployMigrationOut(BaseModel):
+    name: str  # its file's: 0037_deploys.py
+    title: str | None  # the first line of its docstring
+    url: str  # on GitHub
+
+
+class DeployMainOut(BaseModel):
+    """What deploying now would deploy: main's newest commit, CI on it, and the migrations it would run (the owner)."""
+
+    commit: DeployCommitOut
+    checks: list[DeployCheckOut]  # CI's jobs, in CI's order
+    passed: bool  # every one of them passed: it can be deployed
+    migrations: list[DeployMigrationOut]
+    # main's own commits since what's live (its merges, and any commit straight to it), newest first, and how many
+    # commits there are in all; null: what's live isn't known, or GitHub can't compare it with main.
+    commits: list[DeployCommitOut] | None
+    ahead: int | None
+
+    @classmethod
+    def of(cls, main: deploy.Main) -> "DeployMainOut":
+        return cls(
+            commit=DeployCommitOut.of(main.commit),
+            checks=[
+                DeployCheckOut(
+                    name=check.name,
+                    status=check.status,
+                    conclusion=check.conclusion,
+                    url=check.url,
+                    passed=check.passed,
+                )
+                for check in main.checks
+            ],
+            passed=all(check.passed for check in main.checks),
+            migrations=[DeployMigrationOut(name=m.name, title=m.title, url=m.url) for m in main.migrations],
+            commits=None if main.commits is None else [DeployCommitOut.of(commit) for commit in main.commits],
+            ahead=main.ahead,
+        )
+
+
+class DeployRunOut(BaseModel):
+    """A deploy, as yjsp-deploy recorded it."""
+
+    id: str  # when it started: 20261116-193000
+    source: str  # "site", or "laptop" (deploy.sh)
+    commit: str | None
+    subject: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    # running; deployed; stopped (before anything changed); rolled-back (the new version didn't answer, and the old one
+    # is back); failed (the site may be down); interrupted (it stopped without saying how it ended)
+    state: str
+    step: str | None  # what it's doing, or was when it ended: fetch, checks, build, rehearse, backup, switch, ...
+    message: str | None
+
+    @classmethod
+    def of(cls, run: deploy.Deploy) -> "DeployRunOut":
+        return cls(
+            id=run.id,
+            source=run.source,
+            commit=run.commit,
+            subject=run.subject,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            state=run.state,
+            step=run.step,
+            message=run.message,
+        )
+
+
+class DeployLiveOut(BaseModel):
+    commit: str
+    subject: str | None
+    deployed_at: datetime | None
+
+
+class DeploysOut(BaseModel):
+    """Deploying from the site, as it stands here (the owner)."""
+
+    available: bool  # deploying from the site is set up on this server
+    reason: str | None  # why it isn't
+    repository: str  # on GitHub: owner/name
+    live: DeployLiveOut | None  # null: no deploy has said yet
+    deploys: list[DeployRunOut]  # the newest first, a running one among them
+
+
+class DeployIn(BaseModel):
+    commit: str = Field(pattern=r"^[0-9a-f]{40}$")  # main's newest, as the card showed it
+
+
+class DeployLogOut(BaseModel):
+    text: str  # the log from where it was asked from
+    size: int  # where it ends now: ask from here next

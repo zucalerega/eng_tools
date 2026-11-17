@@ -580,7 +580,7 @@ everyone's its guest. Interactive docs are at
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved, and whether this is the demo (`demo`, where everyone's its guest); change your own name |
+| `GET /api/me`, `PATCH /api/me` | who you are, and whether you're approved, whether this is the demo (`demo`, where everyone's its guest), and whether you're the site's owner, who deploys it (`can_deploy`); change your own name |
 | `GET/POST /api/users`, `PATCH /api/users/{id}` | accounts: invite, approve, disable (admins); to admins, when each was last on (`last_active_at`, `active_now`) and their time on the site (`site_seconds`) and in SolidWorks (`solidworks_seconds`) |
 | `GET/PATCH /api/settings` | the whitelist `{whitelist}`: on, only GT addresses on it and invited people make accounts; turning it off approves anyone left waiting; and the oldest add-in and CLI that can change the vault `{min_client_version}`, like `"0.5.4"`, no newer than the installer offered (`not_offered`, or `no_installer` if there's none), or `null` for any (admins) |
 | `GET/POST /api/whitelist`, `DELETE /api/whitelist/{id}` | the whitelist's GT addresses, each with its `account` once it has one; adding `{emails}` says which it `added`, which were on it `already`, and which it left off as `not_georgia_tech` (admins) |
@@ -605,6 +605,10 @@ everyone's its guest. Interactive docs are at
 | `PUT /api/deals/{id}/dismissed` | say a deal won't do `{dismissed}`, so it isn't shown or found again for what it's for (or take that back) |
 | `GET /api/deals/status`, `POST /api/deals/search` | how the deals finder's doing (`available`, `reason`, `claude`, `running`, `next_search`, `shown`, and its latest `runs`); search now, in the background: 409 `deals_running`, 503 `deals_off` (admins) |
 | `GET`/`POST /api/deals/ebay/account-deletion` | eBay's Marketplace Account Deletion notifications: its `challenge_code` answered, and each notification acknowledged (no sign-in; 404 until `YJSP_EBAY_VERIFICATION_TOKEN` is set) |
+| `GET /api/deploys` | deploying from the site: whether it's set up here (`available`, and if not, `reason`), the GitHub `repository`, what's `live` (`commit`, `subject`, `deployed_at`), and the last `deploys`, the newest first: each one's `id`, `source` (`site`, or `laptop` for deploy.sh's), `commit`, `subject`, `started_at`, `finished_at`, `state` (`running`, `deployed`, `stopped`, `rolled-back`, `failed`, `interrupted`), `step`, and `message` (the owner) |
+| `GET /api/deploys/main?fresh=` | what deploying now would deploy, from GitHub: main's newest `commit` (`sha`, `title`, the `pull` request it merged, `author`, `at`), CI's `checks` on it (each job's `status`, `conclusion`, `url`, and whether it `passed`) and whether every one `passed`, the `migrations` it would run (`name`, `title`, `url`), and main's own `commits` since what's live, the newest first, with how many commits that is in all (`ahead`); both null when what's live isn't known. `fresh`: asked of GitHub anew (the owner) |
+| `POST /api/deploys` | deploy main `{commit}`, which must be its newest (409 `deploy_main_moved`) and passed by CI (`deploy_checks_failed`), with no deploy running (`deploy_running`): starts yjsp-deploy (502 `deploy_start_failed`, `deploy_not_started`), and returns its deploy as it starts, 202 (the owner) |
+| `GET /api/deploys/{id}/log?start=0` | what a deploy has said from byte `start` of its log (`text`, whole characters), and where its log ends now (`size`), to ask from next (the owner) |
 
 ## Names from before YJSP
 
@@ -634,9 +638,43 @@ in again, and whatever its old workspace had checked out is sorted out by hand.
 
 The live site runs on an Oracle Cloud "Always Free" VM, reached through Tailscale
 Funnel, with the server running from a uv environment as a systemd service.
-[deploying.md](deploying.md) has how it's hosted, how to deploy (`deploy/deploy.sh`), its
-backups, and how to set up a new server; the release and rollback rules are in
+[deploying.md](deploying.md) has how it's hosted, how to deploy (`deploy/deploy.sh`, or from the
+site), its backups, and how to set up a new server; the release and rollback rules are in
 CLAUDE.md, under "Deployment".
+
+**Deploying from the site** (`deploy.py`, `api/deploys.py`, `web/src/deploy.tsx`;
+`deploy/deploy-here.sh`, `yjsp-deploy.service`, `yjsp-deploy.rules`): the owner (`YJSP_DEPLOYER`, an
+admin, who alone sees Admin > People's Deploy card; `GET /api/me` says `can_deploy`) deploys main's
+newest commit from the site.
+
+- **The site never deploys itself.** It runs as `yjsp`, which can't write its own code and, with
+  `NoNewPrivileges`, can't use sudo; and a deploy stops it. So it asks systemd, over D-Bus
+  (`systemctl start --no-block`, which doesn't wait), to start `yjsp-deploy.service`, a oneshot unit
+  run as root, which a polkit rule lets `yjsp` start and do nothing else with. The unit passes no
+  arguments: all the site can ask for, even taken over, is main's newest commit, as it is, deployed
+  as the script does it, once CI has passed on it.
+- **The script decides.** It fetches main itself and checks every one of CI's jobs passed on that
+  commit (GitHub's check runs: `deploy.CHECKS`, the script's `CHECKS`, and CI's jobs, which a test
+  holds together). It builds the web app as `yjsp-build`, which can't read the site's data, so
+  npm's install scripts never run as root or as the site, and refuses a build with anything but
+  files and folders in it. It rehearses the migrations on a copy of the database, as `yjsp`, with
+  the new version's code in an environment of its own, and stops if they fail, before anything has
+  changed. Then it switches over with the same code deploy.sh runs over SSH (`switch-over`): one way
+  to back up, swap, start, check `/healthz`, and put the old version back.
+- **What the site sees** is what the script writes in `YJSP_DEPLOY_DIR` (root's, readable by the
+  site's group): each deploy's record (`deploys/<id>.json`, its id when it started, to the second)
+  and its log (`.log`), and what's live (`live.json`), which deploy.sh's switch-over writes too. A
+  running deploy touches its record every 10 seconds, so one untouched for a minute, without an
+  ending, stopped without saying (*interrupted*): the site never has to ask systemd. A deploy holds
+  a lock that deploy.sh's switch-over takes too: one deploy at a time.
+- **Before it starts the unit**, the site checks that main's newest commit is the one the card
+  showed (409 `deploy_main_moved`), that CI passed on it (`deploy_checks_failed`), and that no deploy
+  is running (`deploy_running`), for a quick answer; then it waits up to 15 seconds for the deploy's
+  record, to return it. The script checks again, as it alone decides.
+- **GitHub** is read through its API without a token, as the repository is public, which allows a
+  server 60 requests an hour: what can't change (a commit's migrations, how two commits compare) is
+  kept for good, and main and CI on it for 15 seconds (`fresh` asks anew). The migrations main
+  would run are those in its `migrations/versions` that the site's own code hasn't.
 
 The server also ships as a Docker image (`server/Dockerfile`). It runs as a non-root
 user, has a health check, and keeps its database and files on a `/data` volume.
@@ -674,7 +712,8 @@ nothing. The image would run on Render, a VPS, or a machine on campus too.
 The site's own; each app has its roadmap in its page.
 
 1. **Deploy**: Docker image and CI (done). Hosted on an Oracle Cloud VM since September
-   2026, with a deploy script and nightly database backups ([deploying.md](deploying.md)).
+   2026, with a deploy script and nightly database backups ([deploying.md](deploying.md)), and
+   since November 2026, the owner deploys main from the site, once CI has passed on it.
    Still to do: Vault's blobs and Yorg's files backed up off the host (Yorg's scripts and
    models with their old versions), and an R2 store for the blobs.
 2. **YJSP** (0.4.0): the site renamed from CVC, Vault and Yorg side by side in the code,

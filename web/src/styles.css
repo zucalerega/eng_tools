@@ -1102,8 +1102,172 @@ a.tag:hover {
 }
 
 .dashboard > .storage,
-.dashboard > .addin {
+.dashboard > .addin,
+.dashboard > .deploy {
     grid-column: 1 / -1;
+}
+
+/* The site's owner's Deploy card (deploy.tsx): what's live and what main would deploy, CI on it, its migrations, a
+   deploy's steps and log as it runs, and the last deploys. */
+.deploy-facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.35rem 1rem;
+    margin: 0.75rem 0;
+}
+
+.deploy-facts div {
+    display: contents;
+}
+
+.deploy-facts dt {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding-top: 0.1rem;
+}
+
+.deploy-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.deploy-sha {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+
+.deploy-note {
+    margin: 0.5rem 0;
+}
+
+.deploy-new ul,
+.deploy-migrations ul {
+    max-height: 12rem;
+    overflow: auto;
+    margin: 0.25rem 0 0.75rem;
+    padding-left: 1.25rem;
+}
+
+.deploy-new li,
+.deploy-migrations li {
+    margin: 0.15rem 0;
+}
+
+.deploy-ci {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.deploy-ci-head {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.deploy-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.deploy-check-passed > span:first-child {
+    color: var(--good);
+}
+
+.deploy-check-failed > span:first-child {
+    color: var(--danger);
+}
+
+.deploy-check-waiting > span:first-child {
+    color: var(--warning);
+}
+
+.deploy-go {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin: 1rem 0;
+}
+
+.deploy-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.25rem;
+    margin: 1rem 0 0.75rem;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.deploy-steps li::before {
+    content: "○ ";
+}
+
+.deploy-steps .deploy-step-done {
+    color: var(--text);
+}
+
+.deploy-steps .deploy-step-done::before {
+    content: "✓ ";
+    color: var(--good);
+}
+
+.deploy-steps .deploy-step-now {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.deploy-steps .deploy-step-now::before {
+    content: "● ";
+    color: var(--accent);
+}
+
+.deploy-log {
+    max-height: 20rem;
+    overflow: auto;
+    margin: 0.5rem 0 1rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.deploy-history {
+    max-height: 18rem;
+    overflow: auto;
+    margin-top: 1rem;
+}
+
+.deploy-state-deployed {
+    color: var(--good);
+    font-weight: 600;
+}
+
+.deploy-state-failed {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.deploy-state-stopped,
+.deploy-state-rolled-back,
+.deploy-state-interrupted {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.deploy-message {
+    font-size: 0.85rem;
 }
 
 /* Who has the add-in, and who asked Claude: lists that scroll rather than pushing the page down. */

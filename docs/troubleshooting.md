@@ -528,6 +528,13 @@ Docker.
 - **The weekly check, a restore, failed.** A copy didn't come back as it went. Run the check again
   (`./backup.sh check`); if it fails again, read the whole repository back
   (`docker compose run --rm backup check --read-data`), and make a new copy at once.
+- **A deploy from the site didn't deploy** (Admin > People's Deploy card, on a server set up for it:
+  docs/deploying.md). Its *Log* says why. *Stopped* means nothing changed: CI hadn't passed, the web
+  app didn't build, or the migrations failed on a copy of the database; fix main, and deploy what
+  passes. *Rolled back* means the new version didn't answer, so the old one is back: the log ends
+  with the server's last lines. *Failed* means the site may be down: put the last version back as
+  docs/deploying.md says, under "Rolling back". *Interrupted* means it stopped without saying how
+  (the server restarted, or it was stopped): `journalctl -u yjsp-deploy` on the server says more.
 
 ## What an error means
 
@@ -992,6 +999,32 @@ a number. A few codes come up in more than one place.
   as a request's look: Claude couldn't look at it then (see *Asking Claude*, above). Once it
   can, *Ask Claude to look again*.
 - **Request #... not found** (`not_found`): there's no request with that number.
+
+### Deploying
+
+The site's owner deploys main from Admin > People, on a server set up for it.
+
+- **Only the site's owner can deploy it** (`deploy_owner_only`): deploying changes what the site
+  runs, so only its owner (an admin, named in the server's settings as `YJSP_DEPLOYER`) can, and
+  only they see the Deploy card.
+- **Deploying from the site isn't set up on this server** (`deploy_off`): the server hasn't the
+  deploy service the card starts. Whoever runs it sets it up, or deploys another way.
+- **A deploy is running: wait for it to finish** (`deploy_running`): one deploy at a time. The card
+  shows how it's going.
+- **main is at ... now, not ...: look at it before deploying it** (`deploy_main_moved`): something
+  was merged since the card showed main. It shows main's newest commit now: look at what that
+  would deploy, and deploy it.
+- **CI hasn't passed on ...** (`deploy_checks_failed`): every job of CI has to pass on main's newest
+  commit before it's deployed. Wait for those still running, and *Check again*; one that failed
+  needs a fix on main, which CI passes.
+- **systemd won't let the site start yjsp-deploy.service**, **yjsp-deploy.service isn't installed on
+  this server**, and the like (`deploy_start_failed`): the server isn't set up all the way for
+  deploying from the site. Whoever runs it installs what the message names.
+- **systemd started yjsp-deploy.service, but it hasn't begun deploying** (`deploy_not_started`): the
+  deploy service broke as it started. Its log on the server, `journalctl -u yjsp-deploy`, says why.
+- **GitHub didn't answer**, **GitHub has answered all it will this hour for this server**, and the
+  like (`deploy_github_failed`): the card reads main and CI from GitHub, which answers a server
+  without a token 60 times an hour. Try again when the message says.
 
 ### The demo
 

@@ -45,8 +45,11 @@ SolidWorks with the add-in), who has the SolidWorks add-in (on
 how many computers and which versions, and how many people in all), what Claude in Help has
 cost, and on whose questions, how hard the server is working
 (whether the site is overloaded), how many people there are and how many are on now, and
-when each joined and was last on. Change the name everyone sees you by
-from your account menu.
+when each joined and was last on. On a server set up for it, the site's owner also deploys
+from there, on the *Deploy* card: main's newest commit, once every job of CI has passed on it,
+with what's new since what's live, the migrations it runs, and each deploy's steps and log as it
+goes; the site is down for about half a minute while it switches over. Change the name everyone
+sees you by from your account menu.
 
 Under who has the add-in, admins can set the oldest version of the add-in and the `vault`
 command that can change the vault, for when the team needs a release's fixes: older ones can

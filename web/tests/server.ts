@@ -6,17 +6,22 @@ import { join, resolve } from "node:path";
 import type { TestProject } from "vitest/node";
 import { fakeClaude } from "./claude";
 import { EBAY_CLIENT, fakeEbay } from "./ebay";
+import { fakeGitHub, REPOSITORY } from "./github";
 
 // Starts the real server (uv run yjsp-server in ../server) with development sign-in and a
 // throwaway vault and Yorg, once for the whole test run, and gives the tests its address. Its
 // assistant asks a stand-in for Anthropic's API (claude.ts), with $5 to spend, and the chief
-// approves requests, which start a stand-in for Claude Code's routines (claude.ts too). Beside it,
+// approves requests, which start a stand-in for Claude Code's routines (claude.ts too). The chief
+// is the site's owner, who deploys it: from a stand-in for GitHub (github.ts), with a stand-in
+// for systemctl (systemctl.mjs) that begins a deploy in a folder the tests carry on. Beside it,
 // the demo: its made-up data seeded as `yjsp-demo seed` makes it, and its own server, which the
 // first passes /demo to, as the live site does (docs/design.md, "The demo").
 
 declare module "vitest" {
     export interface ProvidedContext {
         serverUrl: string;
+        githubUrl: string; // the stand-in for GitHub's API: tests say what it says (deploy.test.tsx)
+        deployDir: string; // yjsp-deploy's folder, where deploys say how they're going
     }
 }
 
@@ -98,6 +103,7 @@ async function startDemo(data: string, site: string): Promise<{ server: ChildPro
         YJSP_EBAY_CLIENT_ID: "",
         YJSP_FEEDBACK_ROUTINE_URL: "",
         YJSP_DEMO_URL: "",
+        YJSP_DEPLOYER: "",
     };
     const cwd = resolve(import.meta.dirname, "../../server");
     const seeded = spawnSync("uv", ["run", "--quiet", "yjsp-demo", "seed"], {
@@ -140,6 +146,9 @@ export default async function setup(project: TestProject): Promise<() => void> {
     writeFileSync(join(downloads, "vault.exe"), "the command line");
     const claude = await fakeClaude();
     const ebay = await fakeEbay();
+    const github = await fakeGitHub();
+    const deploys = join(data, "deploy");
+    mkdirSync(deploys);
     const server = spawn("uv", ["run", "--quiet", "yjsp-server"], {
         cwd: resolve(import.meta.dirname, "../../server"),
         detached: process.platform !== "win32",
@@ -173,6 +182,15 @@ export default async function setup(project: TestProject): Promise<() => void> {
             YJSP_DEALS_SCHEDULE: "0",
             YJSP_DEALS_CLAUDE: "0",
             YJSP_DEMO_URL: demo.url,
+            YJSP_DEPLOYER: CHIEF,
+            YJSP_DEPLOY_DIR: deploys,
+            YJSP_DEPLOY_REPOSITORY: REPOSITORY,
+            YJSP_GITHUB_BASE_URL: github.url,
+            YJSP_DEPLOY_SYSTEMCTL: JSON.stringify([
+                process.execPath,
+                resolve(import.meta.dirname, "systemctl.mjs"),
+                deploys,
+            ]),
         },
     });
     let output = "";
@@ -205,11 +223,14 @@ export default async function setup(project: TestProject): Promise<() => void> {
     }
 
     project.provide("serverUrl", url);
+    project.provide("githubUrl", github.url);
+    project.provide("deployDir", deploys);
     return () => {
         stop(server);
         stop(demo.server);
         claude.close();
         ebay.close();
+        github.close();
         rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     };
 }

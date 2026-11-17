@@ -23,6 +23,8 @@ export interface Account extends UserRef {
     solidworks_seconds?: number | null;
     // GET /api/me: this is the demo, where everyone's its guest and nothing can be changed.
     demo?: boolean;
+    // GET /api/me: you're the site's owner, who deploys it from Admin > People.
+    can_deploy?: boolean;
 }
 
 /** What admins decide for everyone. */
@@ -305,6 +307,58 @@ export interface DealsStatus {
     runs: DealRun[];
 }
 
+/** A commit on GitHub, as the Deploy card shows it. */
+export interface DeployCommit {
+    sha: string;
+    title: string; // its subject, or for a pull request's merge, the pull request's title
+    pull: number | null; // the pull request it merged
+    author: string | null;
+    at: string | null;
+}
+
+/** One of CI's jobs on main's newest commit: its latest run. */
+export interface DeployCheck {
+    name: string; // server, client, web, or image
+    status: string; // queued, in_progress, completed; or missing, when CI hasn't started it
+    conclusion: string | null; // once it's completed: success, failure, cancelled, ...
+    url: string | null; // its page on GitHub
+    passed: boolean;
+}
+
+/** What deploying now would deploy: main's newest commit, CI on it, and the migrations it would run. */
+export interface DeployMain {
+    commit: DeployCommit;
+    checks: DeployCheck[];
+    passed: boolean; // every one of CI's jobs passed on it: it can be deployed
+    migrations: { name: string; title: string | null; url: string }[];
+    commits: DeployCommit[] | null; // main's own since what's live, the newest first; null: not known
+    ahead: number | null; // commits in all since what's live
+}
+
+/** A deploy, as yjsp-deploy recorded it. */
+export interface DeployRun {
+    id: string; // when it started: 20261116-193000
+    source: "site" | "laptop"; // deploy.sh's, from a laptop
+    commit: string | null;
+    subject: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    // stopped: before anything changed; rolled-back: the new version didn't answer, and the old one is back; failed: the
+    // site may be down; interrupted: it stopped without saying how it ended.
+    state: "running" | "deployed" | "stopped" | "rolled-back" | "failed" | "interrupted";
+    step: string | null; // what it's doing, or was when it ended
+    message: string | null;
+}
+
+/** Deploying from the site, as it stands (the site's owner). */
+export interface Deploys {
+    available: boolean; // it's set up on this server
+    reason: string | null; // why it isn't
+    repository: string; // on GitHub: owner/name
+    live: { commit: string; subject: string | null; deployed_at: string | null } | null;
+    deploys: DeployRun[]; // the newest first
+}
+
 // The browser talks to the server it came from, with its session cookie. Tests point it at a test
 // server and use a client token instead.
 let baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
@@ -538,4 +592,13 @@ export const api = {
     dealsStatus: () => request<DealsStatus>("GET", "/api/deals/status"),
     /** For admins: search for everything now. */
     searchDeals: () => request<DealsStatus>("POST", "/api/deals/search"),
+    /** For the site's owner: whether deploying from the site is set up, what's live, and the last deploys. */
+    deploys: () => request<Deploys>("GET", "/api/deploys"),
+    /** For the site's owner: what deploying now would deploy, from GitHub (fresh: asked anew, not as it was kept). */
+    deployMain: (fresh = false) => request<DeployMain>("GET", `/api/deploys/main${fresh ? "?fresh=true" : ""}`),
+    /** For the site's owner: deploy main's newest commit, which must be the one shown. */
+    deploy: (commit: string) => request<DeployRun>("POST", "/api/deploys", { commit }),
+    /** For the site's owner: what a deploy has said, from byte start of its log; ask from size next. */
+    deployLog: (id: string, start: number) =>
+        request<{ text: string; size: number }>("GET", `/api/deploys/${encodeURIComponent(id)}/log?start=${start}`),
 };

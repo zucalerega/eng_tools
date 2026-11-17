@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 
-from .. import auth, backups, clients, people
+from .. import auth, backups, clients, deploy, people
 from ..models import UserStatus
 from .deps import DB, ActiveUser, AnyUser, Config
 from .downloads import version_of
@@ -35,8 +35,9 @@ router = APIRouter(prefix="/api", tags=["people"])
 
 @router.get("/me")
 def get_me(user: AnyUser, settings: Config) -> MeOut:
-    """Who you're signed in as, including whether an admin has approved you yet; and whether this is the demo."""
-    return MeOut(**UserOut.of(user).model_dump(), demo=settings.demo)
+    """Who you're signed in as, including whether an admin has approved you yet; whether this is the demo; and whether
+    you're the site's owner, who deploys it."""
+    return MeOut(**UserOut.of(user).model_dump(), demo=settings.demo, can_deploy=deploy.is_owner(settings, user))
 
 
 @router.patch("/me")

@@ -141,6 +141,9 @@ The pages show them at once (a browser may keep showing the old one for up to a 
 there's a logo, the pages show the site's name instead; with only one, it's used for both
 themes.
 
+Piper's default color scheme comes named "YJSP standard": an admin can rename it, on Piper's
+Schemes page.
+
 ## The SolidWorks add-in and the `vault` command
 
 Each release has, on its GitHub release, `Vault-Setup.exe` (the SolidWorks add-in's

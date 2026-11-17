@@ -45,6 +45,8 @@ from .yorg.system.runs import Runs
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
+    if settings.demo:
+        settings = demo.branded(settings)  # a made-up team's site, never YJSP's
     settings.check()
     engine = make_engine(settings.database_url)
     sessions = sessionmaker(engine, expire_on_commit=False)

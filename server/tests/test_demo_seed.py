@@ -82,6 +82,12 @@ def test_the_seed_makes_a_demo_the_demo_serves(seeded):
     ]
 
 
+def test_the_demos_color_scheme_is_its_teams(seeded):
+    _, client = seeded
+    default = client.get("/api/piper/schemes").json()[0]
+    assert (default["name"], default["is_default"]) == ("LRT standard", True)  # not the YJSP standard a new site has
+
+
 def test_the_demo_happened_over_a_semester_up_to_now(seeded):
     _, client = seeded
     now = datetime.now(UTC)

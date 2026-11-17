@@ -16,6 +16,7 @@ from yjsp_server.models import User, UserStatus
 from yjsp_server.vault.models import Grant, Role
 
 from .conftest import BOOTSTRAP_ADMIN
+from .test_help import YJSPS
 
 PAGE = """<!doctype html>
 <html><head><title>Vault</title>
@@ -61,6 +62,25 @@ def demo_app(settings, built):
 def visitor(demo_app):
     with TestClient(demo_app) as client:
         yield client
+
+
+def test_the_demo_is_a_made_up_teams_never_yjsps(visitor):
+    page = visitor.get("/vault").text
+    assert '<meta name="yjsp-site" content="LRT">' in page
+    assert '<meta name="yjsp-team" content="Liquid Rocket Team">' in page
+    assert '<meta name="yjsp-logo" content="none">' in page  # its name in the logo's place, never YJSP's logo
+    assert visitor.get("/brand/logo-on-light.png").status_code == 404
+    assert "LRT is the Liquid Rocket Team's engineering tools" in visitor.get("/help").text
+    assert YJSPS.findall(visitor.get("/help.md").text) == []
+
+
+def test_a_demo_named_otherwise_keeps_its_names(settings, built):
+    guest_database(settings)
+    named = demo_settings(settings).model_copy(update={"site_name": "Show", "team_name": "Example Team"})
+    with TestClient(create_app(named)) as visitor:
+        page = visitor.get("/vault").text
+    assert '<meta name="yjsp-site" content="Show">' in page
+    assert '<meta name="yjsp-team" content="Example Team">' in page
 
 
 def test_the_demo_wont_have_sign_in_or_anything_that_costs(settings):

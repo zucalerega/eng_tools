@@ -1,6 +1,6 @@
-# YJSP Eng Tools
+# Engineering Tools
 
-The Yellow Jacket Space Program's engineering tools, on one site: **Vault** (`/vault`), for
+The team's engineering tools, on one site: **Vault** (`/vault`), for
 the team's SolidWorks and STEP files; **[Yorg](#yorg-test-data)** (`/yorg`), for its test
 data; **[Piper](#piper-pids)** (`/piper`), for its P&IDs; and
 **[Buildflow](#buildflow-bills-of-design)** (`/buildflow`), for each program's bill of design.
@@ -9,28 +9,37 @@ how full the server's disk is, and how much of it each takes, and **[deals](#dea
 what the team wants; the switcher beside the logo, the four names with a dot between each,
 goes between them.
 
-**The demo**, at `/demo`, is the site with made-up data: a fictional team's rocket, its tests,
-P&IDs, and bill of design, for anyone to look around without signing in (send someone the link),
-and for no one to change.
-
 > **Status:** early development. The server, the web app, and Vault's `vault` command-line
 > tool work and are tested. Vault's SolidWorks add-in had its first run in SolidWorks
 > in September 2026, and is for SolidWorks 2026 since October 2026. See [docs/design.md](docs/design.md) for how the site works, and
 > [docs/vault.md](docs/vault.md), [docs/yorg.md](docs/yorg.md), [docs/piper.md](docs/piper.md), and
 > [docs/buildflow.md](docs/buildflow.md) for each app and its roadmap.
 
+## About
+
+YJSP, the Yellow Jacket Space Program at Georgia Tech, built these tools for its own team, and runs
+them on its own site ([The live site](#the-live-site)). **Its demo**, at `/demo`, is the site as a
+made-up team's, the Liquid Rocket Team's, with made-up data: a rocket, its tests, P&IDs, and bill of
+design, for anyone to look around without signing in (send someone the link), and for no one to
+change. Any team can run a site of its own, with its own name, its school's sign-in, and its own
+data: [docs/self-hosting.md](docs/self-hosting.md).
+
+The rest of this page is also each site's user guide: its help (`/help`) shows it, all but this
+section and the ones about the code and YJSP's own site, so it's written for any team's site.
+
 ## Signing in
 
-Sign in with your Georgia Tech account, on GT's own login page: it gets you both apps, and
-it's how new people join. Anyone with a GT account can, unless an admin turns on the
-whitelist (Admin > Whitelist, from the account menu at the top right): then only GT emails
-on it, and people an admin invites, can, and anyone else who signs in is told to ask an
-admin to add theirs. Admins put the team's emails on the whitelist by uploading a roster's
+Sign in with your school's account, on its own login page (the sign-in page's button names
+the school): it's how new people join. Anyone with an account at the school can, unless an
+admin turns on the whitelist (Admin > Whitelist, from the account menu at the top right): then
+only the school's addresses on it, and people an admin invites, can, and anyone else who signs
+in is told to ask an admin to add theirs. Admins put the team's emails on the whitelist by uploading a roster's
 CSV, or one at a time, and see who on it has joined.
 
 Google signs in to accounts already there: one made with Google before, or an admin's
-invite. Someone without a GT account (a mentor, say) joins by an invite to the address they
-use with Google (Admin > People). Admin > People also shows how many people used the site
+invite; and, at a school whose accounts are Google's, the school's own people, as above.
+Someone without an account at the school (a mentor, say) joins by an invite to the address
+they use with Google (Admin > People). Admin > People also shows how many people used the site
 each day this past month and how long they spent on it (on the web app, and working in
 SolidWorks with the add-in), who has the SolidWorks add-in (on
 how many computers and which versions, and how many people in all), what Claude in Help has
@@ -45,9 +54,10 @@ still open, get, and browse files, but checking out, checking in, and anything e
 changes the vault says to update first. It's off until an admin sets it, and it can be no
 newer than the `Vault-Setup.exe` the site offers, so everyone can update to it.
 
-Joined with Google? Keep signing in with Google for now. Signing in with Georgia Tech finds
-your account only if its email is your GT address; otherwise it makes a new, empty one,
-and what you have checked out stays with the old one.
+Joined with Google, at a school whose own sign-in isn't Google's? Keep signing in with Google
+for now. Signing in with the school's account finds your account only if its email is your
+school address; otherwise it makes a new, empty one, and what you have checked out stays
+with the old one.
 
 ## Help
 
@@ -201,7 +211,7 @@ replaces Kenesto.
   each click; the SolidWorks page's "If something's not right" has the rest.
 - **Bringing files over from Kenesto:** upload the project folders as they are (the web
   app takes whole folders), so `09_Hopper` stays `09_Hopper`. Assemblies from there still
-  name their parts where Kenesto had them (`K:\Yellow Jacket Space Program\Project
+  name their parts where Kenesto had them (`K:\Team\Project
   CAD\09_Hopper\Stringer.SLDPRT`), and the web app can't read that. So open them from
   the Vault pane in SolidWorks, or with Open in SolidWorks on the web: the add-in reads the
   paths from the files, gets the vault's files whose paths end the same way, and shows
@@ -452,7 +462,7 @@ the keys.
 - **Color schemes**: **Schemes**, in Piper's top bar, has the team's color schemes, each one's
   fluids (color, label, name, gas or not) and valve state colors: anyone makes one, and only
   whoever made it, or an admin, changes or deletes it. New diagrams start in the team's default
-  (YJSP standard; an admin picks it, and only admins change it), and
+  (an admin picks it, and only admins change it), and
   **Colors from**, with nothing selected, gives a diagram another's; when that scheme changes,
   **Take its colors again**. A PDF can be in black and white, to print without color.
 - **Saving and history**: a diagram you're editing saves itself as you go; if a save fails,

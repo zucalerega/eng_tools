@@ -6,36 +6,38 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 
 ## Signing in
 
-- **Signing in with Google says your email has no YJSP account.** Google signs in only to accounts
-  already there: one made with Google before, or an admin's invite. New people join with their
-  Georgia Tech account: click *Sign in with Georgia Tech*. Without a GT account (a mentor, say), ask
-  an admin to invite the address you use with Google (Admin > People).
-- **Signing in with Georgia Tech says your email isn't on YJSP's whitelist.** The admins have turned
-  the whitelist on, so only GT emails on it, and people they invite, can make an account. Ask an
-  admin to add your GT email (Admin > Whitelist), then sign in again.
-- **Signing in says only Georgia Tech accounts sign in this way.** *Sign in with Georgia Tech* takes
-  only GT's own accounts, with a GT email; a personal Microsoft account, or a guest GT invited from
-  outside, isn't one. Sign in on GT's login page with your GT username, like gburdell3@gatech.edu.
-- **You joined with Google, then signed in with Georgia Tech, and your check-outs are gone.**
-  Signing in with Georgia Tech finds your account only if its email is your GT address; otherwise it
-  makes a new, empty account, and what you have checked out stays with the old one. Sign out (in the
-  account menu, top right) and keep signing in with Google for now: admins can't change an
+- **Signing in with Google says your email has no account here.** Google signs in only to accounts
+  already there: one made with Google before, or an admin's invite (except at a school whose
+  accounts are Google's: there, the school's addresses make one). New people join with their school
+  account: click the sign-in button with the school's name. Without an account at the school (a
+  mentor, say), ask an admin to invite the address you use with Google (Admin > People).
+- **Signing in says your email isn't on the site's whitelist.** The admins have turned the whitelist
+  on, so only the school's addresses on it, and people they invite, can make an account. Ask an admin
+  to add your school email (Admin > Whitelist), then sign in again.
+- **Signing in says only the school's accounts sign in this way.** The sign-in with the school's name
+  takes only the school's own accounts, at one of its addresses; a personal Microsoft account, or a
+  guest the school invited from outside, isn't one. Sign in on the school's login page with your
+  school username.
+- **You joined with Google, then signed in with your school account, and your check-outs are gone.**
+  Signing in with the school's account finds your account only if its email is your school address;
+  otherwise it makes a new, empty account, and what you have checked out stays with the old one. Sign
+  out (in the account menu, top right) and keep signing in with Google for now: admins can't change an
   account's email yet.
 - **The page says "Waiting for approval".** Your account was made when new accounts waited for an
   admin. Ask an admin to approve it (*Approve*, on Admin > People), then reload the page; or to put
-  your GT email on the whitelist, then sign in again.
+  your school email on the whitelist, then sign in again.
 - **The page says the account is disabled.** An admin disabled it. If that's a mistake, ask an admin
   to enable it (*Enable*, on Admin > People).
 - **Google says your email address isn't verified.** The site takes a Google account only once
-  Google has verified its email. Verify it with Google, or sign in with Georgia Tech.
-- **Signing in says your email belongs to a different Google account, or GT account.** The account
-  with that email here is tied to another Google or GT account than the one you used. Sign in with
-  the one you used before; if you can't, ask an admin.
-- **"Georgia Tech sign-in failed", or "Google sign-in failed".** The trip to GT's or Google's login
-  page didn't finish, and the rest of the message is theirs: often it was cancelled, or took more
-  than 10 minutes. Go back to the sign-in page and start again.
-- **"Georgia Tech sign-in isn't set up on this server", or Google's.** That way to sign in isn't
-  ready on the site. Use the other button, and tell an admin.
+  Google has verified its email. Verify it with Google, or sign in with your school account.
+- **Signing in says your email belongs to a different Google account, or school account.** The
+  account with that email here is tied to another Google or school account than the one you used.
+  Sign in with the one you used before; if you can't, ask an admin.
+- **Signing in says "sign-in failed"**, after the school's name or Google's. The trip to the school's
+  or Google's login page didn't finish, and the rest of the message is theirs: often it was
+  cancelled, or took more than 10 minutes. Go back to the sign-in page and start again.
+- **Signing in says the school's sign-in, or Google's, "isn't set up on this server".** That way to
+  sign in isn't ready on the site. Use the other button, and tell an admin.
 - **The web app sends you to the sign-in page.** A browser stays signed in for 30 days, or until you
   sign out. Sign in again, and you come back to the page you were on.
 - **A link to Yorg's plots opens without them after you sign in.** Signing in brings you back to the
@@ -127,7 +129,7 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   files placed with 3D Interconnect included. Whatever the vault doesn't have, the Vault tab names:
   add it to the vault, or take it out of the assembly.
 - **An assembly from Kenesto names its parts on Kenesto's drive.** Files brought over from Kenesto
-  name their parts where Kenesto had them (`K:\Yellow Jacket Space Program\Project CAD\...`). Open
+  name their parts where Kenesto had them (`K:\Team\Project CAD\...`). Open
   them from the Vault tab, or with *Open in SolidWorks*: the add-in gets the vault's files whose
   paths end the same way. To keep the vault's paths in an assembly for good, check it out, save it,
   and check it in.
@@ -515,10 +517,10 @@ Docker.
   ID, on the app's Overview.
 - **Admin > People says the off-site backup failed.** The warning says what failed and what the
   backup said, and its log has the rest: `backup.log` beside `backup.sh` with Docker, or
-  `journalctl -u yjsp-offsite` on YJSP's own server. The usual causes are a wrong password or key
+  `journalctl -u yjsp-offsite` where it runs as a service (docs/deploying.md). The usual causes are a wrong password or key
   (`backup.env`), a token that was revoked or expired, and a full bucket.
 - **Admin > People says no off-site copy is recent.** It didn't run: check that it's still in
-  root's crontab (`sudo crontab -l`), or, on YJSP's own server,
+  root's crontab (`sudo crontab -l`), or, where it runs as a service,
   `systemctl status yjsp-offsite.timer`.
 - **The weekly check, a restore, failed.** A copy didn't come back as it went. Run the check again
   (`./backup.sh check`); if it fails again, read the whole repository back
@@ -540,25 +542,25 @@ a number. A few codes come up in more than one place.
 - **An admin needs to approve your account first**, or **Your account isn't active**
   (`pending_approval`): the account is waiting for an admin, from when new accounts did (signing in
   from SolidWorks or the `vault` command, it may be disabled instead). Ask an admin to approve it on
-  Admin > People, or to put your GT email on the whitelist, then sign in again.
-- **... has no YJSP account, and Google doesn't make new ones** (`no_account`): you signed in with a
-  Google account whose email has no account here. Sign in with Georgia Tech, or ask an admin to
-  invite the email you use with Google. On a site where Google makes accounts, it says **only ...
+  Admin > People, or to put your school email on the whitelist, then sign in again.
+- **... has no ... account, and Google doesn't make new ones** (`no_account`): you signed in with a
+  Google account whose email has no account here. Sign in with your school account, or ask an admin
+  to invite the email you use with Google. On a site where Google makes accounts, it says **only ...
   addresses make one** instead: sign in with your school address, or ask for an invite.
-- **... isn't on YJSP's whitelist** (`not_whitelisted`): the whitelist is on, and your GT email
+- **... isn't on ...'s whitelist** (`not_whitelisted`): the whitelist is on, and your school email
   isn't on it. Ask an admin to add it on Admin > Whitelist, then sign in again.
-- **Only Georgia Tech accounts sign in this way** (`not_georgia_tech`): the Microsoft account you
-  used isn't one of GT's own, with a GT email. Sign in with your GT username, like
-  gburdell3@gatech.edu. (On another team's site, it names that site's school.)
+- **Only ... accounts sign in this way** (`not_georgia_tech`, a name from before the school was a
+  setting): the Microsoft account you used isn't one of the school's own, at one of its addresses.
+  Sign in with your school username.
 - **Your Google account's email address isn't verified** (`unverified_email`): verify it with
-  Google, or sign in with Georgia Tech.
-- **... belongs to a different Google account**, or **GT account** (`identity_mismatch`): the
-  account with that email here is tied to another Google or GT account than the one you used. Sign
-  in with that one; if you can't, ask an admin.
+  Google, or sign in with your school account.
+- **... belongs to a different Google account**, or **... account** (`identity_mismatch`): the
+  account with that email here is tied to another Google or school account than the one you used.
+  Sign in with that one; if you can't, ask an admin.
 - **... sign-in isn't set up on this server** (`signin_unavailable`): that way to sign in isn't
   ready on the site. Use the other one, and tell an admin.
-- **... sign-in failed: ...** (`signin_failed`): GT's or Google's login didn't finish, and the rest
-  of the message is theirs. Start again from the sign-in page.
+- **... sign-in failed: ...** (`signin_failed`): the school's or Google's login didn't finish, and
+  the rest of the message is theirs. Start again from the sign-in page.
 - **Requests from the browser need an X-YJSP-Request header** (`csrf`): a change came with your
   browser's sign-in, but not from the web app; that's how the site keeps other sites from acting as
   you. If it happens in the web app, reload the page.
@@ -849,7 +851,7 @@ a number. A few codes come up in more than one place.
 - **Only whoever asked for this release, or an admin, can withdraw it** (`not_yours`): ask them,
   or reject it if you're one of its approvers.
 - **Only whoever made ..., or an admin, can change it** (or **delete it**) (`not_yours`): a color
-  scheme is its maker's (the team's first, YJSP standard, the admins'), since a change reaches
+  scheme is its maker's (the team's first one, the admins'), since a change reaches
   every diagram that takes its colors again. Make a scheme of your own with **New scheme**.
 - **... is the team's default: make another the default first** (`scheme_default`): the team's
   default color scheme can't be deleted. An admin makes another the default on Schemes, then

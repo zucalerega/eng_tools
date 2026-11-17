@@ -507,8 +507,12 @@ anyone can reach without signing in can't reach the team's data, whatever a bug 
   or eBay key, a Claude Code routine, or a demo of its own (`Settings.check`), and on a database the
   demo's seed didn't make (`demo.ready`: the seed's guest is in it), so it can't be turned on over
   the team's own.
+- **It's a made-up team's site, never YJSP's**: the Liquid Rocket Team's (LRT), as its names
+  (`demo.SITE_NAME`, `TEAM_NAME`, which `create_app` gives the demo's settings unless they name a
+  site and team of their own), with no logo (`web.logos`: the site's name in its place), and its
+  default color scheme "LRT standard", so nothing in it passes for the team's own, or another's.
 - **Its data** is made from nothing by `yjsp-demo seed` (`demo/seed.py`), through the site's own
-  API, in a server that's only in that process, as a fictional team's semester: a 500 lbf LOX/RP-1
+  API, in a server that's only in that process, as the made-up team's semester: a 500 lbf LOX/RP-1
   rocket, Kestrel, and its test stand; twelve people; Piper's own examples as their P&IDs
   (`demo/diagrams/`, kept as Piper draws them by `web/tests/demo-diagrams.test.ts`), one revised,
   released, and changed since; cold flows, a proof test, and two hot fires in Yorg, made from a few

@@ -28,7 +28,12 @@ class Part:
 
 # What's in the help, in the page's order: the one list, for the page, the Markdown, and the assistant alike.
 PARTS = (
-    Part("guide", "README.md", True, skip=("Layout", "Run the server locally", "Tests", "The live site", "License")),
+    Part(
+        "guide",
+        "README.md",
+        True,
+        skip=("About", "Layout", "Run the server locally", "Tests", "The live site", "License"),
+    ),
     Part(
         "solidworks",
         "client/src/Vault.SolidWorks/README.md",

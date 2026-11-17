@@ -399,7 +399,8 @@ the keys.
 - **Parts**: drag one from the library on the left (search it: valve, PT, COPV, cav, 3x2...), or
   click it and click where it goes. Valves (ball, solenoid, pneumatic, motorized, needle,
   check, relief, regulators, burst discs, quick disconnects, 3/2 and 5/2 solenoid valves...),
-  tanks, bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
+  tanks (1 to 5 ports on the top and on the bottom: **Top ports** and **Bottom ports**, on the
+  right; every port on its top is its ullage), bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
   engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
   box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**

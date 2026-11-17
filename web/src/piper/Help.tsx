@@ -133,7 +133,10 @@ const TOPICS: Topic[] = [
                 <li>
                     A <em>Manifold</em> takes its supply at one end and gives it out along its top to its{" "}
                     <em>Outlets</em> (2 to 8, on the right); its far end is a port too. Take an outlet away and a line
-                    on it stays, ending where the outlet was. A <em>Diffuser</em> goes into a line, as a tank's
+                    on it stays, ending where the outlet was. A <em>Tank</em> has two ports on each side, and 1 to 5 on
+                    its top and on its bottom: <em>Top ports</em> and <em>Bottom ports</em>, on the right. Every port on
+                    its top is its ullage, its pressurant or vent, and every one on its bottom its liquid; take one away
+                    and a line on it stays, ending where it was. A <em>Diffuser</em> goes into a line, as a tank's
                     pressurant inlet has one, its arrows the way the flow leaves it.
                 </li>
                 <li>

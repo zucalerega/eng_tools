@@ -114,6 +114,12 @@ test("a tank's top is its ullage: a line from it doesn't take the liquid it hold
     const above = place("check-valve", 0, -120, { rotation: 90 });
     expect(line(join([tank, "bottom"], [below, "a"])).fluid).toBe("lox");
     expect(line(join([above, "b"], [tank, "top"])).fluid).toBe("");
+    // A tank with more ports on its ends: every one on its top is its ullage, every one on its bottom its liquid.
+    const more = place("tank", 300, 0, { props: { fluid: "lox", topPorts: "3", bottomPorts: "3" } });
+    const vent = place("check-valve", 320, -120, { rotation: 90 });
+    const drain = place("ball-valve", 320, 120, { rotation: 90 });
+    expect(line(join([vent, "b"], [more, "top-3"])).fluid).toBe("");
+    expect(line(join([more, "bottom-3"], [drain, "a"])).fluid).toBe("lox");
 });
 
 test("a line drawn to another line tees into it at a junction on the grid", () => {

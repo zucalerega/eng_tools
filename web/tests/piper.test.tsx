@@ -264,6 +264,42 @@ test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the libr
     });
 });
 
+test("a tank's ports on its top and its bottom are chosen on the right, and a line drawn to one of them stays on it", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const tank = place(drawing, "tank", 0, 0); // TK-1
+    const made = await team.diagram(team.chief, "Run tank", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "TK-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    expect(await screen.findByRole("heading", { name: "Tank" })).toBeTruthy();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Top ports" }), "4");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Bottom ports" }), "2");
+    // Each port off its middle drawn as a nozzle out from its head.
+    const drawn = [...svg.querySelectorAll('[data-kind="tank"] path')].map((path) => path.getAttribute("d") ?? "");
+    expect(drawn.find((d) => d.includes("V-60"))!.match(/M/g)).toHaveLength(6);
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.parts[0]!.props).toMatchObject({ topPorts: "4", bottomPorts: "2" });
+    });
+    // The pointer on the tank shows its new ports, to drag a line from.
+    fireEvent.pointerMove(within(svg).getByRole("button", { name: "TK-1" }), at(0, 0));
+    const port = await waitFor(() => {
+        const found = svg.querySelector(`[data-hit="port:${tank}:top-4"]`);
+        expect(found).not.toBeNull();
+        return found!;
+    });
+    fireEvent.pointerDown(port, at(20, -60));
+    fireEvent.pointerMove(svg, at(20, -100));
+    fireEvent.pointerUp(svg, at(20, -140));
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.lines.map((line) => line.from)).toEqual([{ part: tank, port: "top-4" }]);
+    });
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

@@ -30,6 +30,7 @@ import {
 import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
+import { isTopPort } from "./library/vessels";
 import { linesOn, partsById, placeEnd, portOf, portsOf, runLines, type PlacedEnd } from "./ports";
 import { crosses, route, STUB } from "./route";
 
@@ -380,8 +381,8 @@ function fluidAt(drawing: Drawing, end: End): string {
         }
     }
     const holds = part?.props.fluid ?? "";
-    // A tank's top is its ullage: what's drawn from there is its pressurant, not its liquid.
-    if (!holds || kind?.through || (end.port === "top" && !isGas(drawing, holds))) {
+    // A tank's top is its ullage (any port on it): what's drawn from there is its pressurant, not its liquid.
+    if (!holds || kind?.through || (isTopPort(end.port) && !isGas(drawing, holds))) {
         return "";
     }
     return holds;

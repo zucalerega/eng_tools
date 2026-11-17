@@ -631,6 +631,74 @@ class Seed:
             body = {"component_ids": [components[each]["id"] for each in first]}
             self.call("jonas", "PUT", f"/api/buildflow/components/{components[name]['id']}/needs", json=body)
 
+        # Its BOM, read in from the team's spreadsheet: the valves and fittings on order, the engine's hardware in hand.
+        self.at(16, hour=19)
+        bom = [
+            ("Main oxidizer valve", "SS-63TS8", "1/2 in ball valve, 316 SS", 1, "Swagelok", 41250, 70, "ordered"),
+            ("Main oxidizer valve", "MS-133-H", "Pneumatic actuator", 1, "Swagelok", 38900, 56, "to_order"),
+            ("Main fuel valve", "SS-63TS8", "1/2 in ball valve, 316 SS", 1, "Swagelok", 41250, 56, "ordered"),
+            (
+                "Pressure regulator",
+                "TESCOM 26-1000",
+                "Dome-loaded regulator, 6000 psi",
+                1,
+                "Emerson",
+                189000,
+                84,
+                "to_order",
+            ),
+            (
+                "Pressurant tank",
+                "COPV-2L-6K",
+                "2 L carbon composite tank, 6000 psi",
+                1,
+                "Luxfer",
+                240000,
+                112,
+                "to_order",
+            ),
+            ("LOX vent valve", "SS-4BK-1C", "Bellows-sealed valve, 1/4 in", 1, "Swagelok", 21500, 42, "ordered"),
+            ("Injector", "91251A463", "Socket head screw, 1/4-20 x 1 in", 12, "McMaster-Carr", 38, 2, "received"),
+            ("Injector", "9452K33", "O-ring, -214, Viton", 4, "McMaster-Carr", 120, 3, "received"),
+            ("Thrust chamber", "C101-PLATE-1", "C101 copper plate, 1 in", 2, "Online Metals", 31200, 21, "received"),
+            (
+                "LOX tank",
+                "6061-TUBE-8",
+                "6061-T6 tube, 8 in OD, 0.125 in wall",
+                4,
+                "Online Metals",
+                9800,
+                28,
+                "to_order",
+            ),
+            (
+                "Fuel tank",
+                "6061-TUBE-8",
+                "6061-T6 tube, 8 in OD, 0.125 in wall",
+                3,
+                "Online Metals",
+                9800,
+                28,
+                "to_order",
+            ),
+            ("Flight computer", "TEENSY-4.1", "Teensy 4.1", 2, "PJRC", 3160, 10, "received"),
+        ]
+        lines = [
+            {
+                "component_id": components[name]["id"],
+                "part_number": number,
+                "description": description,
+                "quantity": quantity,
+                "vendor": vendor,
+                "unit_cost": cost,
+                "lead_days": lead,
+                "status": status,
+            }
+            for name, number, description, quantity, vendor, cost, lead, status in bom
+        ]
+        body = {"lines": lines, "component_id": None, "file": "Kestrel BOM.xlsx"}
+        self.call("chloe", "PUT", f"/api/buildflow/programs/{program['id']}/bom", json=body)
+
         # Test: the engine's parts were proven on the stand.
         self.at(32, hour=21)
         for name in ("Thrust chamber", "Injector"):

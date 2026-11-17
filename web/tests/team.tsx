@@ -9,6 +9,9 @@ import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
 import type {
+    BomLine,
+    BomLineIn,
+    BomRead,
     Component,
     ProgramDetail,
     ProgressChange,
@@ -446,6 +449,33 @@ export class Team {
     /** A component's build plan, as its panel or the plan page sets it: its lead time (days), and its ready-by day. */
     async plan(component: number, change: { lead_days?: number | null; need_by?: string | null }): Promise<Component> {
         return call<Component>("PATCH", `/api/buildflow/components/${component}`, this.chief.token, change);
+    }
+
+    /** A program's BOM read in, as the BOM page reads in a spreadsheet: the whole BOM (or one component's). */
+    async readBom(program: number, lines: Partial<BomLineIn>[], componentId: number | null = null): Promise<BomRead> {
+        const full = lines.map((line) => ({
+            component_id: null,
+            part_number: "",
+            description: "",
+            quantity: null,
+            unit: "",
+            vendor: "",
+            unit_cost: null,
+            lead_days: null,
+            url: "",
+            status: null,
+            ...line,
+        }));
+        return call<BomRead>("PUT", `/api/buildflow/programs/${program}/bom`, this.chief.token, {
+            lines: full,
+            component_id: componentId,
+            file: "BOM.xlsx",
+        });
+    }
+
+    /** A program's BOM, as the server keeps it. */
+    async bom(program: number): Promise<BomLine[]> {
+        return call<BomLine[]>("GET", `/api/buildflow/programs/${program}/bom`, this.chief.token);
     }
 
     /** A design review, as someone starts one on a program's page with New review. */

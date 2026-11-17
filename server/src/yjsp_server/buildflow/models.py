@@ -1,8 +1,8 @@
 """Buildflow's tables: programs, each with its vehicle's drawing, its milestones (the steps every component goes through,
 in four phases), its subsystems and their components; each component's progress through each milestone, its links (CAD,
 drawings, requirements, documents, test data), and its people; what's been done, for the activity; and its design
-reviews, each held for several components at once (reviews.py). And the shop's: its machines, who's trained on each, and
-the parts queued to be machined (shop.py)."""
+reviews, each held for several components at once (reviews.py); and its bill of materials (bom.py). And the shop's: its
+machines, who's trained on each, and the parts queued to be machined (shop.py)."""
 
 import enum
 from datetime import date, datetime
@@ -269,6 +269,43 @@ class ReviewLink(Base):
     added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
     adder: Mapped[User | None] = relationship(foreign_keys=[added_by], lazy="selectin")
+
+
+class BomStatus(enum.StrEnum):
+    """Where a part on a program's BOM is."""
+
+    TO_ORDER = "to_order"
+    ORDERED = "ordered"
+    RECEIVED = "received"  # in hand
+
+
+class BomLine(Base):
+    """A line of a program's bill of materials (bom.py): a part to buy, how many, from whom, at what cost each, how long
+    it takes to come, and where it is; and the component it's for (none: not matched to one). Read in from the team's
+    own BOM spreadsheet, and read in again as that changes, matched by part number."""
+
+    __tablename__ = "buildflow_bom_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("buildflow_programs.id"), index=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey("buildflow_components.id"), index=True)
+    position: Mapped[int] = mapped_column(default=0)  # its place in the BOM, as the spreadsheet has it
+    part_number: Mapped[str] = mapped_column(String(100), default="")
+    description: Mapped[str] = mapped_column(String(500), default="")
+    quantity: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(20), default="")  # "ft", "ea"
+    vendor: Mapped[str] = mapped_column(String(200), default="")
+    unit_cost: Mapped[int | None]  # in cents, each
+    lead_days: Mapped[int | None]  # from ordering it to having it
+    url: Mapped[str] = mapped_column(String(2000), default="")  # where it's bought: a link, as a component's are
+    status: Mapped[BomStatus] = mapped_column(enum_column(BomStatus), default=BomStatus.TO_ORDER)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
 
 
 # --- the shop -------------------------------------------------------------------------------------------------------

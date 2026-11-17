@@ -770,6 +770,7 @@ button.bf-chip:hover:not(:disabled) {
 .bf-links h3,
 .bf-in-shop h3,
 .bf-plan-section h3,
+.bf-parts h3,
 .bf-removed h3 {
     margin: 0 0 0.35rem;
     font-size: 0.78rem;
@@ -2033,4 +2034,112 @@ button.bf-deal-mark:hover:not(:disabled) {
 
 .bf-plan-fields .bf-number {
     width: 4.5rem;
+}
+
+/* --- the bill of materials (Bom.tsx) ------------------------------------------------------------------------------- */
+
+.bf-inline-field {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.bf-bom-table {
+    font-size: 0.86rem;
+}
+
+.bf-bom-table tbody th[scope="row"] {
+    font-size: inherit;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    color: inherit;
+    background: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.9rem;
+}
+
+.bf-bom-table tbody th[scope="row"] > span {
+    display: block;
+}
+
+.bf-bom-part {
+    white-space: nowrap;
+}
+
+/* A part in hand: there, but done with. */
+.bf-bom-table tr.bf-plan-ready th,
+.bf-bom-table tr.bf-plan-ready td {
+    color: var(--muted);
+}
+
+.bf-bom-table .bf-note {
+    width: 100%;
+    min-width: 8rem;
+}
+
+.bf-bom-reading,
+.bf-bom-columns {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.6rem 1rem;
+    margin: 0.75rem 0;
+}
+
+.bf-bom-reading .field,
+.bf-bom-columns .field {
+    margin: 0;
+}
+
+.bf-bom-columns {
+    padding: 0.6rem 0.9rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+}
+
+.bf-bom-columns legend {
+    padding: 0 0.3rem;
+    font-weight: 600;
+}
+
+.bf-bom-columns select {
+    max-width: 12rem;
+}
+
+.bf-bom-preview {
+    font-size: 0.82rem;
+}
+
+/* A component's parts, on its panel, in its build phase. */
+.bf-parts {
+    margin: 0.6rem 0;
+}
+
+.bf-parts p {
+    margin: 0.2rem 0;
+}
+
+.bf-parts-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+
+.bf-bom-status {
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.bf-bom-status-ordered {
+    color: var(--bf-chip-progress);
+}
+
+.bf-bom-status-received {
+    color: var(--warning);
 }

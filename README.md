@@ -585,6 +585,17 @@ Buildflow's top bar, has all of this on one page.
   needs), and what isn't planned yet. Set a component's lead time (in weeks) and ready-by day in the
   plan's table or on its panel, in the build phase, and what it needs first with **What ... needs
   first** (not one that needs it). The bill marks a long lead not in hand yet with *Long lead*.
+- **The BOM** (**BOM**, on a program's page) is its bill of materials, read in from the team's own
+  spreadsheet: **Read in a spreadsheet…** takes an Excel workbook (.xlsx) or a CSV file, guesses
+  which column says what from its headers (part number, description, the component it's for,
+  quantity, vendor, cost each, lead time, link, status), and shows the lines as they'll come in.
+  Each line goes to the component its *Component* column names, or all to one component (that
+  component's BOM alone). Reading it in again as the spreadsheet changes keeps what the site says
+  of a part already on it (where it is, and its note). The page lists each part with the day to
+  order it by (to have it when its component's build has to start, by the build plan), the long
+  leads (six weeks or more), what to order now, and the cost in all; set where each is (to order,
+  ordered, received) and a note (a PO, a tracking number) there. A component's panel lists its
+  parts in its build phase, the longest lead first.
 - **Reviews** cover several components at once: a subsystem's PDR, say, for its eight components.
   **New review**, under the bill, takes the milestone it's held at (a review: DCR, CoDR, PDR, CDR,
   TRR, QRR, FRR), a name, its day, and the components it covers (**All of** a subsystem picks

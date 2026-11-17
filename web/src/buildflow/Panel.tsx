@@ -4,10 +4,12 @@ import { Notice } from "../components";
 import { DealCard } from "../deals";
 import { Link } from "../router";
 import {
+    BOM_STATUS_NAMES,
     buildflow,
     PHASE_NAMES,
     PHASES,
     SHOP_STATUS_NAMES,
+    type BomLine,
     type Component,
     type Link as ComponentLink,
     type LinkKind,
@@ -20,7 +22,8 @@ import {
     type Status,
 } from "./api";
 import { appName, guessKind, KIND_NAMES, KINDS, linkHref, siteTarget, tidyUrl, useSiteName } from "./links";
-import { planOf } from "./planning";
+import { partsPlan } from "./billOfMaterials";
+import { leadInWords, planOf } from "./planning";
 import { LeadField, NeedsDialog } from "./Plan";
 import { reviewPath, reviewsOf } from "./reviews";
 import { formatDay, inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
@@ -278,6 +281,7 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                 </button>
             )}
             {phase === "build" && <PlanSection program={program} component={component} act={act} />}
+            {phase === "build" && <Parts program={program} component={component} />}
             {phase === "build" && <InTheShop component={component} />}
             <div className="bf-people">
                 <h3>{WHO[phase]}</h3>
@@ -420,6 +424,62 @@ function PlanSection({
                     onCancel={() => setNeeding(false)}
                 />
             )}
+        </section>
+    );
+}
+
+/** A component's parts on the program's BOM: each, where it is, and the day to order it by; the longest lead first. */
+function Parts({ program, component }: { program: ProgramDetail; component: Component }) {
+    const [lines, setLines] = useState<BomLine[] | null>(null);
+    useEffect(() => {
+        buildflow.bom(program.id, component.id).then(setLines, () => setLines([]));
+    }, [program.id, component.id]);
+    if (lines === null) {
+        return null;
+    }
+    const planned = partsPlan(lines, program, today()).sort(
+        (a, b) => (b.line.lead_days ?? -1) - (a.line.lead_days ?? -1),
+    );
+    const open = planned.filter((p) => p.line.status !== "received");
+    return (
+        <section className="bf-parts" aria-label="Parts">
+            <h3>Parts</h3>
+            {lines.length === 0 ? (
+                <p className="muted bf-small">None on the BOM.</p>
+            ) : (
+                <>
+                    <p className="bf-small muted">
+                        {open.length} of {lines.length} still to come
+                        {open.some((p) => p.late) && (
+                            <span className="bf-late">, {open.filter((p) => p.late).length} to order now</span>
+                        )}
+                    </p>
+                    <ul className="plain">
+                        {planned.slice(0, 6).map((p) => (
+                            <li key={p.line.id} className="bf-parts-line">
+                                <span>
+                                    {p.line.part_number || p.line.description}
+                                    {p.line.lead_days !== null && (
+                                        <span className="muted"> · {leadInWords(p.line.lead_days)}</span>
+                                    )}
+                                    {p.orderBy && p.line.status === "to_order" && (
+                                        <span className={p.late ? "bf-late" : "muted"}>
+                                            {" "}
+                                            · order by {formatDay(p.orderBy)}
+                                        </span>
+                                    )}
+                                </span>
+                                <span className={`bf-bom-status bf-bom-status-${p.line.status}`}>
+                                    {BOM_STATUS_NAMES[p.line.status]}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </>
+            )}
+            <p className="bf-small">
+                <Link to={`/buildflow/programs/${program.id}/bom?component=${component.id}`}>The BOM</Link>
+            </p>
         </section>
     );
 }

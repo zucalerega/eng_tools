@@ -173,6 +173,40 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "The BOM",
+        body: (
+            <ul>
+                <li>
+                    <em>BOM</em>, on a program&apos;s page, is its bill of materials: the parts to buy, read in from the
+                    team&apos;s own BOM spreadsheet. <em>Read in a spreadsheet…</em> takes an Excel workbook (.xlsx) or
+                    a CSV file (an older .xls: save it as .xlsx first; from Google Sheets: download it as .xlsx or CSV).
+                </li>
+                <li>
+                    It guesses which column says what from its headers: the part number, the description, the component
+                    it&apos;s for, how many, the vendor, the cost each, the lead time (in weeks or days), a link, and
+                    where it is. Fix any it got wrong, and the row the headers are in, and check the lines as
+                    they&apos;ll come in.
+                </li>
+                <li>
+                    <em>Lines are for</em>: the component each one&apos;s <em>Component</em> column names (by its name
+                    here), none yet, or one component (its BOM alone, the rest staying as they are). A name no component
+                    has comes in for none, and the dialog says which.
+                </li>
+                <li>
+                    Read it in again whenever the spreadsheet changes: the BOM becomes what it says, and a part already
+                    on it keeps where it is (to order, ordered, received) and its note, unless the spreadsheet says.
+                </li>
+                <li>
+                    Each part&apos;s day to order it by is the day its component&apos;s build has to start (from its
+                    lead time and ready-by day, on the build plan), less the part&apos;s own lead time. The page counts
+                    what to order now and the long leads (six weeks or more), and the cost in all. Set where each part
+                    is, and a note (a PO, a tracking number), right there. A component&apos;s panel lists its parts, in
+                    its build phase.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Reviews",
         body: (
             <ul>

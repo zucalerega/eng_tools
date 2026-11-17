@@ -3,11 +3,13 @@
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from ..api.schemas import UserRef
 from .models import (
     Assignment,
+    BomLine,
+    BomStatus,
     Component,
     Event,
     Link,
@@ -484,6 +486,109 @@ class EventOut(BaseModel):
             at=event.at,
             what=event.what,
         )
+
+
+# --- bills of materials (bom.py) ------------------------------------------------------------------------------------
+
+PartNumber = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+PartWords = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+Unit = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)]
+Vendor = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+LineUrl = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MOST_URL)]  # empty, or a link
+Amount = Annotated[float, Field(allow_inf_nan=False, ge=0, le=1_000_000)]
+Cents = Annotated[int, Field(ge=0, le=1_000_000_000)]
+LineNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+MOST_BOM_LINES = 5000
+
+
+class BomLineIn(BaseModel):
+    """A part on a program's BOM: a part number or a description, at least."""
+
+    component_id: int | None = None
+    part_number: PartNumber = ""
+    description: PartWords = ""
+    quantity: Amount | None = None
+    unit: Unit = ""
+    vendor: Vendor = ""
+    unit_cost: Cents | None = None  # in cents, each
+    lead_days: LeadDays | None = None
+    url: LineUrl = ""
+    status: BomStatus | None = None  # none said: to order, for a new line; as it was, for one read in again
+
+    @model_validator(mode="after")
+    def _named(self) -> "BomLineIn":
+        if not self.part_number and not self.description:
+            raise ValueError("a BOM line needs a part number or a description")
+        return self
+
+
+class BomImportIn(BaseModel):
+    lines: list[BomLineIn] = Field(max_length=MOST_BOM_LINES)
+    component_id: int | None = None  # one component's BOM; none: the program's whole BOM
+    file: Title = ""  # the spreadsheet it's from, for the activity
+
+
+class BomLineChangeIn(BaseModel):
+    """What's sent is changed, and what's left out stays (component_id null: for no component)."""
+
+    component_id: int | None = None
+    part_number: PartNumber | None = None
+    description: PartWords | None = None
+    quantity: Amount | None = None
+    unit: Unit | None = None
+    vendor: Vendor | None = None
+    unit_cost: Cents | None = None
+    lead_days: LeadDays | None = None
+    url: LineUrl | None = None
+    status: BomStatus | None = None
+    note: LineNote | None = None
+
+
+class BomLineOut(BaseModel):
+    id: int
+    program_id: int
+    component_id: int | None
+    position: int
+    part_number: str
+    description: str
+    quantity: float | None
+    unit: str
+    vendor: str
+    unit_cost: int | None
+    lead_days: int | None
+    url: str
+    status: BomStatus
+    note: str
+    updated_at: datetime
+    updated_by: UserRef | None
+
+    @classmethod
+    def of(cls, line: BomLine) -> "BomLineOut":
+        return cls(
+            id=line.id,
+            program_id=line.program_id,
+            component_id=line.component_id,
+            position=line.position,
+            part_number=line.part_number,
+            description=line.description,
+            quantity=line.quantity,
+            unit=line.unit,
+            vendor=line.vendor,
+            unit_cost=line.unit_cost,
+            lead_days=line.lead_days,
+            url=line.url,
+            status=line.status,
+            note=line.note,
+            updated_at=line.updated_at,
+            updated_by=_ref(line.editor),
+        )
+
+
+class BomImportOut(BaseModel):
+    lines: list[BomLineOut]  # the BOM read in: the program's, or the component's
+    added: int
+    changed: int
+    removed: int
 
 
 # --- the shop (shop.py) ---------------------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """Buildflow's API (/api/buildflow): programs and their bills of design, their layout (admins'), and their components'
-progress, links, and people, and their design reviews (anyone's); and the shop (/api/buildflow/shop): the parts queued to
+progress, links, and people, their design reviews, and their bills of materials (anyone's); and the shop (/api/buildflow/shop): the parts queued to
 be machined (anyone's), who's trained on which machine (each their own, and admins anyone's), and the machines
 (admins')."""
 
@@ -11,9 +11,14 @@ from sqlalchemy.orm import Session
 from ..api.deps import DB, ActiveUser
 from ..api.schemas import UserRef
 from ..models import User
-from . import programs, progress, reviews, shop
+from . import bom, programs, progress, reviews, shop
 from .models import Program
 from .schemas import (
+    BomImportIn,
+    BomImportOut,
+    BomLineChangeIn,
+    BomLineIn,
+    BomLineOut,
     ComponentChangeIn,
     ComponentIn,
     ComponentOut,
@@ -342,6 +347,42 @@ def post_review_file(review_id: int, body: ReviewFileIn, user: ActiveUser, db: D
 @router.delete("/reviews/{review_id}/files/{file_id}")
 def delete_review_file(review_id: int, file_id: int, user: ActiveUser, db: DB) -> ReviewOut:
     return ReviewOut.of(reviews.remove_file(db, user, review_id, file_id))
+
+
+# --- bills of materials (anyone) ------------------------------------------------------------------------------------
+
+
+@router.get("/programs/{program_id}/bom")
+def get_bom(program_id: int, user: ActiveUser, db: DB, component_id: int | None = None) -> list[BomLineOut]:
+    """A program's BOM, in its order (component_id: only that component's lines)."""
+    return [BomLineOut.of(line) for line in bom.lines(db, program_id, component_id=component_id)]
+
+
+@router.put("/programs/{program_id}/bom")
+def put_bom(program_id: int, body: BomImportIn, user: ActiveUser, db: DB) -> BomImportOut:
+    """Read a BOM in, from a spreadsheet: the program's whole BOM (or component_id's) becomes these lines. A line on it
+    already (its component and part number, or description) keeps its note, and its status unless one's sent."""
+    incoming = [line.model_dump(exclude_unset=True) for line in body.lines]
+    kept, counts = bom.import_bom(db, user, program_id, incoming, component_id=body.component_id, file=body.file)
+    return BomImportOut(lines=[BomLineOut.of(line) for line in kept], **counts)
+
+
+@router.post("/programs/{program_id}/bom/lines", status_code=201)
+def post_bom_line(program_id: int, body: BomLineIn, user: ActiveUser, db: DB) -> BomLineOut:
+    return BomLineOut.of(bom.add_line(db, user, program_id, body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/bom/lines/{line_id}")
+def patch_bom_line(line_id: int, body: BomLineChangeIn, user: ActiveUser, db: DB) -> BomLineOut:
+    """Change what's sent of a line: where it is (to order, ordered, received), its note, or what it is."""
+    change = {key: getattr(body, key) for key in body.model_fields_set}
+    return BomLineOut.of(bom.change_line(db, user, line_id, change))
+
+
+@router.delete("/bom/lines/{line_id}", status_code=204)
+def delete_bom_line(line_id: int, user: ActiveUser, db: DB) -> Response:
+    bom.remove_line(db, user, line_id)
+    return Response(status_code=204)
 
 
 # --- the shop -------------------------------------------------------------------------------------------------------

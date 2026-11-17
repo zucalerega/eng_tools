@@ -146,6 +146,58 @@ export interface ReviewFile {
     added_by: UserRef | null;
 }
 
+// --- bills of materials (server: buildflow/bom.py) ---
+
+export type BomStatus = "to_order" | "ordered" | "received";
+
+export const BOM_STATUS_NAMES: Record<BomStatus, string> = {
+    to_order: "To order",
+    ordered: "Ordered",
+    received: "Received",
+};
+
+/** A part on a program's BOM, read in from the team's spreadsheet (or added by hand). */
+export interface BomLine {
+    id: number;
+    program_id: number;
+    component_id: number | null; // none: not matched to a component
+    position: number;
+    part_number: string;
+    description: string;
+    quantity: number | null;
+    unit: string;
+    vendor: string;
+    unit_cost: number | null; // in cents, each
+    lead_days: number | null;
+    url: string;
+    status: BomStatus;
+    note: string;
+    updated_at: string;
+    updated_by: UserRef | null;
+}
+
+/** A line as it's read in: status none keeps a line's own (to order, for a new one). */
+export interface BomLineIn {
+    component_id: number | null;
+    part_number: string;
+    description: string;
+    quantity: number | null;
+    unit: string;
+    vendor: string;
+    unit_cost: number | null;
+    lead_days: number | null;
+    url: string;
+    status: BomStatus | null;
+}
+
+/** What reading a BOM in did: the BOM as it is now, and how many lines it added, changed, and took off. */
+export interface BomRead {
+    lines: BomLine[];
+    added: number;
+    changed: number;
+    removed: number;
+}
+
 export interface ReviewChange {
     name?: string;
     held_on?: string | null;
@@ -322,6 +374,18 @@ export const buildflow = {
     /** What has to be ready before a component can be started: these, and no others. */
     setNeeds: (id: number, componentIds: number[]) =>
         request<Component>("PUT", `${component(id)}/needs`, { component_ids: componentIds }),
+
+    /** A program's BOM (or one component's lines). */
+    bom: (programId: number, componentId?: number) =>
+        request<BomLine[]>(
+            "GET",
+            `${program(programId)}/bom${componentId === undefined ? "" : `?component_id=${componentId}`}`,
+        ),
+    /** Read a BOM in: the program's whole BOM (component_id null), or one component's, becomes these lines. */
+    readBom: (programId: number, body: { lines: BomLineIn[]; component_id: number | null; file: string }) =>
+        request<BomRead>("PUT", `${program(programId)}/bom`, body),
+    changeBomLine: (id: number, change: Partial<BomLineIn> & { note?: string }) =>
+        request<BomLine>("PATCH", `/api/buildflow/bom/lines/${id}`, change),
 
     /** A program's design reviews (removed: those taken off it instead). */
     reviews: (programId: number, removed = false) =>

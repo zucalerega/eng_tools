@@ -47,7 +47,7 @@ def test_until_admins_set_an_oldest_client_any_client_changes_the_vault(app, cli
 def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, client, team, tmp_path):
     offering(settings, tmp_path)
     chief, alice = editors(app, team, "alice@x.test", "SolidWorks add-in on ALICE-PC")
-    team.checkin(alice, {"Engine/Injector.SLDPRT": b"injector v1"})
+    injector_checkin = team.checkin(alice, {"Engine/Injector.SLDPRT": b"injector v1"}).json()["checkin_id"]
     team.checkin(alice, {"Engine/Valve.SLDPRT": b"valve v1"}, keep=True)  # checked out to her, on PC-1
     injector = files(team, alice, "Engine")["Injector.SLDPRT"]
     setting = take_changes_from(client, chief, "0.5.4")
@@ -88,6 +88,7 @@ def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, cl
         "title": client.post(
             "/api/files/metadata", json={"files": [{"file": injector["id"], "title": "Main injector"}]}, headers=old
         ),
+        "comment": client.put(f"/api/checkins/{injector_checkin}/comment", json={"comment": "Injector"}, headers=old),
         "part number": client.post("/api/numbers", json={"kind": "001"}, headers=old),
         "give a number back": client.post("/api/numbers/release", json={"numbers": ["00000001-001"]}, headers=old),
         "numbering": client.put("/api/numbering", json={"mode": "offer"}, headers=admin),
@@ -108,8 +109,9 @@ def test_an_add_in_older_than_admins_set_cant_change_the_vault(app, settings, cl
     )
     assert told["details"] == {"version": "0.5.2", "min_client_version": "0.5.4"}
 
-    # Nothing changed: no versions, check-outs, folders, models, titles, numbers, or pause.
+    # Nothing changed: no versions, check-outs, folders, models, titles, comments, numbers, or pause.
     after = files(team, alice, "Engine")
+    assert client.get(f"/api/files/{injector['id']}", headers=alice).json()["versions"][0]["comment"] == ""
     assert (after["Injector.SLDPRT"]["version"], after["Injector.SLDPRT"]["checked_out"]) == (1, None)
     assert after["Injector.SLDPRT"]["title"] == "Injector"
     assert client.get("/api/numbering", headers=chief).json()["mode"] == "off"

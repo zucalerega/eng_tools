@@ -195,7 +195,15 @@ what it is, `data-hit`).
   under their solenoids' ends, clear of their ports' lines (`tagX`, as a pump's is under its
   base). A manifold is a block that takes its supply at one end, its far end a port too, and
   gives it out to 2 to 8 outlets along its top (`outlets`), its bore drawn through it; a line
-  on an outlet that's taken away stays, ending where the outlet was (`updatePart`). A diffuser
+  on an outlet that's taken away stays, ending where the outlet was (`updatePart`). A tank has
+  two ports on each side, and 1 to 5 on its top and on its bottom (`topPorts`, `bottomPorts`):
+  on the grid at the ends of its box, spread across its heads (at 0; ±10; 0 and ±20; ±10 and
+  ±20; all five), each off its middle drawn as a nozzle out from its head. They're named `top`
+  (and `bottom`), then `top-2` to `top-5`, the first nearest the middle and the rest outward,
+  left before right, so a tank from before keeps its `top` and `bottom` where they were, and
+  fewer takes the last ones added away (a line on one stays, as on a manifold's). Every port on
+  its top is its ullage (`isTopPort`), for the fluid a line from it takes and the temperature a
+  sensor there reads. A diffuser
   goes into a line, as a tank's pressurant inlet has one: its body, a perforated face, and
   arrows spreading out from it. Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
@@ -357,7 +365,7 @@ what it is, `data-hit`).
   which makes room on a piece, doesn't write it again. Carry along its run sets it on
   every line it reaches through valves, fittings, and instruments, up to tanks and engines. A
   line drawn from a run takes its fluid, and one from a tank what the tank holds (not from its
-  top, which is its ullage, unless it holds a gas). A tank shows what it holds: a liquid in its
+  top, any of its ports there, which is its ullage, unless it holds a gas). A tank shows what it holds: a liquid in its
   lower part, a gas filling it, with the label inside. The standard fluids are in `fluids.ts`
   (oxidizers blue, fuels red, nitrogen green, helium purple, combustion gas rose...); a diagram
   can change their colors, labels, and names, and add its own, keeping only what differs; the
@@ -731,7 +739,7 @@ any client would.
   drawings made in Visio's default theme (its blue fills)?
 - A tank drawn by hand (Vespula's, a block inside its vehicle, its words "LOX Tank 400 psi
   84.7 L") is imported as a figure: Piper's tank is a capsule of its own size (scaled at most
-  double) with six ports, and the drawing's lines meet the block all along its sides. So
+  double) with its ports in set places, and the drawing's lines meet the block all along its sides. So
   Simulation mode leaves it out. Should Piper's tanks be drawn at any size, with ports where
   lines meet them, so an import can make one of it (its fluid, pressure, and volume from its
   words)?

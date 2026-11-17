@@ -20,6 +20,7 @@ import { fluidsOf, isGas, newFluidId } from "./fluids";
 import { dirOf, distance, nearestOnPolyline, simplify, type Box, type Dir } from "./geometry";
 import { figureOf, type Figure, type FigurePath, type FigureText } from "./library/figures";
 import { kindOf, presetOf } from "./library/index";
+import { isTopPort } from "./library/vessels";
 import { partsById, placeEnd, portsOf } from "./ports";
 import {
     cleanName,
@@ -1902,7 +1903,7 @@ function pageDrawing(page: VisioPage, title: string): { drawing: Drawing; report
             const part = drawing.parts.find((entry) => entry.id === end.part);
             const holds = part?.props.fluid ?? "";
             const vessel = part !== undefined && kindOf(part.kind).fields.some((field) => field.key === "fluid");
-            return vessel && holds && !(end.port === "top" && !isGas(drawing, holds)) ? holds : "";
+            return vessel && holds && !(isTopPort(end.port) && !isGas(drawing, holds)) ? holds : "";
         };
         const fluid = fluidNamed(text, fluids) || held(from) || held(to) || (pen ? fluidOfColor(pen.color) : "");
         // Its words: its tag (L-101), its size (1/2 in), the fluid it carries, or else notes.

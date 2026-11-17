@@ -12,6 +12,7 @@ import {
 import { isGas } from "../fluids";
 import { figureOf } from "../library/figures";
 import { kindOf, titleOf } from "../library/index";
+import { isTopPort } from "../library/vessels";
 import { channelNames, findChannel, type TestChannel, type TestDetail } from "../testdata";
 import type { Catalog, Conditions, Link, ModelEdge, ModelPart, PartKind, Role, Setting, SystemModel } from "./api";
 
@@ -139,8 +140,9 @@ const MEASURED: Record<string, "pressure" | "temperature"> = {
     rtd: "temperature",
 };
 
-/** A tank's ports above its liquid: a temperature sensor there reads its ullage. */
-const UPPER = new Set(["top", "left-upper", "right-upper"]);
+/** A tank's ports above its liquid (its top's, however many, and its sides' upper ones): a temperature sensor there
+ * reads its ullage. */
+const upper = (port: string): boolean => isTopPort(port) || port === "left-upper" || port === "right-upper";
 
 export type Phase = "liquid" | "gas";
 
@@ -944,7 +946,7 @@ function readsOf(
     if (choices.includes(asked)) {
         return asked;
     }
-    if (node.type === "tank" && at && UPPER.has(at) && choices.includes("gas_temperature")) {
+    if (node.type === "tank" && at && upper(at) && choices.includes("gas_temperature")) {
         return "gas_temperature";
     }
     return choices.includes("temperature") ? "temperature" : (choices[0] ?? null);

@@ -1,5 +1,17 @@
 import { ink, Letters } from "./draw";
-import { HOLDS, MATERIAL, MAWP, MEOP, MODEL, NOTES, VOLUME, type DrawContext, type Kind, type Port } from "./kinds";
+import {
+    HOLDS,
+    MATERIAL,
+    MAWP,
+    MEOP,
+    MODEL,
+    NOTES,
+    VOLUME,
+    type DrawContext,
+    type Field,
+    type Kind,
+    type Port,
+} from "./kinds";
 import type { Part } from "../drawing";
 
 // Vessels: what holds a fluid. Each shows what it holds in that fluid's color: a tank's liquid in its lower part, a gas
@@ -51,12 +63,75 @@ function Contents({
     );
 }
 
+/** A tank's ports on its top or its bottom: 1 to 5, 1 until it's said. */
+function endPorts(part: Part, key: "topPorts" | "bottomPorts"): number {
+    const count = Number(part.props[key]);
+    return Number.isInteger(count) && count >= 1 && count <= 5 ? count : 1;
+}
+
+/** Where a tank's ports on an end sit across it, as many as it has: on the grid, spread over its head, symmetric. */
+const ACROSS: Record<number, number[]> = {
+    1: [0],
+    2: [-10, 10],
+    3: [-20, 0, 20],
+    4: [-20, -10, 10, 20],
+    5: [-20, -10, 0, 10, 20],
+};
+
+/**
+ * A tank's ports on one end, named "top" (or "bottom"), then "top-2" to "top-5": the first is the one nearest the
+ * middle, the rest outward from it, left before right. So a tank from before, with one, keeps its "top" where it was,
+ * and a port taken away is the last one added.
+ */
+function endPortsOf(part: Part, end: "top" | "bottom"): Port[] {
+    const xs = [...ACROSS[endPorts(part, end === "top" ? "topPorts" : "bottomPorts")]!].sort(
+        (a, b) => Math.abs(a) - Math.abs(b) || a - b,
+    );
+    return xs.map((x, index) => ({
+        id: index === 0 ? end : `${end}-${index + 1}`,
+        x,
+        y: end === "top" ? -60 : 60,
+        dir: end === "top" ? ("up" as const) : ("down" as const),
+        inset: 0,
+    }));
+}
+
+/** A port on a tank's top (its first, or another set there): above its liquid, its ullage. */
+export const isTopPort = (port: string): boolean => port === "top" || /^top-\d$/.test(port);
+
+const portCount = (key: string, label: string): Field => ({
+    key,
+    label,
+    type: "select",
+    options: ["", "2", "3", "4", "5"].map((value) => ({ value, label: value || "1" })),
+});
+
+const TOP_PORTS = portCount("topPorts", "Top ports");
+const BOTTOM_PORTS = portCount("bottomPorts", "Bottom ports");
+
+/**
+ * The nozzles to a tank's ports off its middle: from its head out to the end of its box, where the port is, so each
+ * stays on the grid however the head curves under it.
+ */
+function nozzles(part: Part): string {
+    const head = (x: number) => Math.round(100 * (45 + 15 * Math.sqrt(1 - (x / 30) ** 2))) / 100;
+    return [...endPortsOf(part, "top"), ...endPortsOf(part, "bottom")]
+        .filter((port) => port.x !== 0)
+        .map((port) => `M${port.x} ${Math.sign(port.y) * head(port.x)} V${port.y}`)
+        .join(" ");
+}
+
 export const tank: Kind = {
     id: "tank",
     name: "Tank",
     box: () => [-30, -60, 30, 60],
-    ports: () => around(30, 60, 30),
-    fields: [HOLDS, VOLUME, MEOP, MAWP, MATERIAL, MODEL, NOTES],
+    // Its sides' ports as they always were, and its ends' as many as it's set to have.
+    ports: (part) => [
+        ...endPortsOf(part, "top"),
+        ...endPortsOf(part, "bottom"),
+        ...around(30, 60, 30).filter((port) => port.id !== "top" && port.id !== "bottom"),
+    ],
+    fields: [HOLDS, VOLUME, MEOP, MAWP, MATERIAL, TOP_PORTS, BOTTOM_PORTS, MODEL, NOTES],
     tag: "beside",
     draw: (part, context) => (
         <>
@@ -70,6 +145,7 @@ export const tank: Kind = {
                 labelAt={22}
             />
             <path d={capsule(30, 60, 15)} fill="none" {...ink(context)} />
+            {nozzles(part) && <path d={nozzles(part)} fill="none" {...ink(context)} />}
         </>
     ),
 };

@@ -6,7 +6,8 @@ data; **[Piper](#piper-pids)** (`/piper`), for its P&IDs; and
 **[Buildflow](#buildflow-bills-of-design)** (`/buildflow`), for each program's bill of design.
 The site's address on its own shows all four (the team's logo at the top left goes back to it),
 how full the server's disk is, and how much of it each takes, and **[deals](#deals)** on eBay for
-what the team wants; the switcher beside the logo goes between them.
+what the team wants; the switcher beside the logo, the four names with a dot between each,
+goes between them.
 
 **The demo**, at `/demo`, is the site with made-up data: a fictional team's rocket, its tests,
 P&IDs, and bill of design, for anyone to look around without signing in (send someone the link),

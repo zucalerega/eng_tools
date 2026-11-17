@@ -169,6 +169,8 @@ class VersionView:
     checkin: Checkin
     author: User
     references: list[RefView]
+    comment_edited_by: User | None = None  # who last changed its check-in's comment (edit_comment)
+    comment_editable: bool = False  # whether the user may change it (_comment_locks)
 
 
 @dataclass
@@ -438,9 +440,18 @@ def file_detail(db: Session, user: User, file_id: int) -> FileDetail:
         if access.can(child.folder_id, Role.VIEWER):
             path = tree.file_path(child)
             refs[ref.version_id].append(RefView(child.id, path, ref.child_version, child.deleted_at is not None))
-    authors = _users(db, {v.created_by for v, _ in rows})
+    authors = _users(db, {v.created_by for v, _ in rows} | {c.comment_edited_by for _, c in rows})
+    locks = _comment_locks(db, access, user, list({c.id: c for _, c in rows}.values()))
     versions = [
-        VersionView(v, c, authors[v.created_by], sorted(refs[v.id], key=lambda r: paths.key(r.path))) for v, c in rows
+        VersionView(
+            v,
+            c,
+            authors[v.created_by],
+            sorted(refs[v.id], key=lambda r: paths.key(r.path)),
+            authors.get(c.comment_edited_by) if c.comment_edited_by else None,
+            locks[c.id] is None,
+        )
+        for v, c in rows
     ]
     latest = next(view.version for view in versions if view.version.number == file.latest_version)
     parents = [(p, v, n) for p, v, n in _parents(db, file.id) if access.can(p.folder_id, Role.VIEWER)]
@@ -1188,6 +1199,99 @@ def revert(
     )
     db.commit()
     return _views_by_id(db, tree, access, [file])[file.id]
+
+
+def _comment_locks(db: Session, access: Access, user: User, checkins: list[Checkin]) -> dict[int, str | None]:
+    """Why the user can't change each check-in's comment, by its id, or None where they can (edit_comment).
+
+    Whoever checked it in can, while they're an editor where every file in it is; a lead (or an admin) of every one of
+    those folders can too. A revert's comment is the vault's own (it says which version came back), so it stays.
+    """
+    ids = [checkin.id for checkin in checkins]
+    folders: dict[int, set[int]] = defaultdict(set)
+    for checkin_id, folder_id in db.execute(
+        select(Version.checkin_id, File.folder_id)
+        .join(File, File.id == Version.file_id)
+        .where(Version.checkin_id.in_(ids))
+    ):
+        folders[checkin_id].add(folder_id)
+    reverts = set(
+        db.scalars(
+            select(Version.checkin_id)
+            .join(Event, Event.version_id == Version.id)
+            .where(Version.checkin_id.in_(ids), Event.action == "revert")
+        )
+    )
+    locks: dict[int, str | None] = {}
+    for checkin in checkins:
+        mine = checkin.user_id == user.id
+        if checkin.id in reverts:
+            locks[checkin.id] = "A revert's comment says which version came back, so it can't be changed"
+        elif all(access.can(folder, Role.EDITOR if mine else Role.LEAD) for folder in folders[checkin.id]):
+            locks[checkin.id] = None
+        elif mine:
+            locks[checkin.id] = (
+                "You can't change every file this check-in has any more, so its comment stays: ask a lead of their "
+                "folders to change it"
+            )
+        else:
+            locks[checkin.id] = (
+                "Only whoever checked it in, or a lead of every folder it has files in, can change its comment"
+            )
+    return locks
+
+
+_COMMENT_MAX = 5000  # as a check-in's
+
+
+def edit_comment(db: Session, user: User, checkin_id: int, comment: str) -> tuple[Checkin, User | None]:
+    """Change a check-in's comment, to fix a typo or say more, and who changed it last; the comment is the same for
+    every file it checked in. Nothing in the files changes: no version, and no check-out needed.
+
+    It takes whoever checked it in, or a lead of every folder it has files in (_comment_locks). The activity log says
+    what it said before, for each of its files, so the history keeps the old wording.
+    """
+    begin_write(db)
+    _check_not_paused(db, user)
+    tree, access = _context(db, user)
+    record = db.get(Checkin, checkin_id)
+    rows = db.execute(
+        select(File, Version)
+        .join(Version, Version.file_id == File.id)
+        .where(Version.checkin_id == checkin_id)
+        .order_by(File.id)
+    ).all()
+    # A check-in with no file the user can see isn't there, as such a file isn't.
+    if record is None or not any(access.can(file.folder_id, Role.VIEWER) for file, _ in rows):
+        raise NotFound(f"Check-in {checkin_id} not found")
+    why = _comment_locks(db, access, user, [record])[record.id]
+    if why is not None:
+        raise Forbidden(why, code="comment_locked")
+    text = unicodedata.normalize("NFC", comment).strip()
+    if not text:
+        raise ApiError("Say what changed: a comment can't be empty", code="bad_comment")
+    if len(text) > _COMMENT_MAX:
+        raise ApiError(f"A comment is at most {_COMMENT_MAX} characters", code="bad_comment")
+    if text != record.comment:
+        was = record.comment
+        record.comment, record.comment_edited_at, record.comment_edited_by = text, utcnow(), user.id
+        for file, version in rows:
+            _event(
+                db,
+                user,
+                "edit_comment",
+                file=file,
+                path=tree.file_path(file),
+                number=version.number,
+                checkin=record.id,
+                comment=text,
+                was=was,
+            )
+        db.commit()
+    else:
+        db.rollback()
+    editor = db.get(User, record.comment_edited_by) if record.comment_edited_by else None
+    return record, editor
 
 
 @dataclass

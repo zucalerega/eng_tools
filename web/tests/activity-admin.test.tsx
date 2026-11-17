@@ -26,6 +26,20 @@ test("the activity feed says when a file got a new title, and what it was", asyn
     );
 });
 
+test("the activity feed says when a check-in's comment changed, and what it said", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    const [fin] = await team.checkin(alice, { "Fins/Fin.SLDPRT": "fin" }, { comment: "frist cut" });
+    await team.editComment(alice, fin!, "First cut of the fin");
+
+    renderApp(team.chief, "/vault/activity");
+    const line = (await screen.findByText(/changed the comment/)).closest("li")!;
+    expect(line.textContent).toContain(
+        `Alice changed the comment on ${team.folder}/Fins/Fin.SLDPRT v1, which said “frist cut”`,
+    );
+    expect(within(line).getByText("First cut of the fin").tagName).toBe("BLOCKQUOTE");
+});
+
 test("admins keep the kinds of part numbers, and see that new files are offered them", async () => {
     const team = await Team.create();
     renderApp(team.chief, "/vault/admin/numbers");

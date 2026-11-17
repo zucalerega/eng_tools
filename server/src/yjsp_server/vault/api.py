@@ -31,6 +31,8 @@ from .schemas import (
     CheckinIn,
     CheckinOut,
     CheckoutIn,
+    CommentIn,
+    CommentOut,
     DeletedOut,
     DeleteIn,
     DrawingOut,
@@ -266,6 +268,11 @@ def post_revert(file_id: int, body: RevertIn, user: ChangingUser, db: DB) -> Fil
     return FileOut.of(
         vault.revert(db, user, file_id, body.version, comment=body.comment, host=body.host, force=body.force)
     )
+
+
+@router.put("/checkins/{checkin_id}/comment")
+def put_comment(checkin_id: int, body: CommentIn, user: ChangingUser, db: DB) -> CommentOut:
+    return CommentOut.of(*vault.edit_comment(db, user, checkin_id, body.comment))
 
 
 @router.post("/undo-checkout")

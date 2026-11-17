@@ -99,6 +99,12 @@ replaces Kenesto.
   can open it read-only. Check it back in with a comment to save a new version.
 - **Every version is kept.** See who changed what and why, and download any old
   version.
+- **Fix a check-in's comment** with **Edit comment…** beside it in a file's history on the
+  web: a typo, or a note that says too little. It's one comment for every file checked in
+  together, so it changes on all of them; the files stay as they are (no new version, no
+  check-out). Whoever checked it in can change it, and so can a lead of the folders its
+  files are in. The history says it was edited, by whom and when, and the activity log
+  keeps what it said before. A revert's comment ("Reverted to v2: …") stays as it is.
 - **Assemblies stay consistent.** An assembly is checked in together with the new
   or changed parts it uses. Getting an assembly brings its parts along. Saving one in
   SolidWorks saves its changed parts too, and SolidWorks 2026 counts every part saved in

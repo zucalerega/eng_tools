@@ -2087,6 +2087,17 @@ input[type="checkbox"] {
     color: var(--text);
 }
 
+/* A check-in's comment, which can be a few lines (FilePage's CommentDialog). */
+.field textarea.comment-box {
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: var(--text);
+    height: auto;
+    padding: 0.4rem 0.65rem;
+    line-height: 1.45;
+    resize: vertical;
+}
+
 .inline-form {
     display: flex;
     align-items: flex-end;

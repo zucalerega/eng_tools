@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useAdminMode } from "../admin";
-import { type FileDetail, type VaultFile, vaultApi } from "../api";
+import { type FileDetail, type Version, type VaultFile, vaultApi } from "../api";
 import { CheckinDialog, UndoCheckoutDialog } from "../checkin";
 import { checkedOutHere, WEB_HOST } from "../checkouts";
 import { Dialog, Notice, Time } from "../../components";
@@ -21,6 +21,7 @@ type Asking =
     | { action: "checkin" }
     | { action: "undo" }
     | { action: "title" }
+    | { action: "comment"; version: Version }
     | null;
 
 export function FilePage({ id }: { id: number }) {
@@ -33,9 +34,12 @@ export function FilePage({ id }: { id: number }) {
     const [asking, setAsking] = useState<Asking>(null);
     const [comment, setComment] = useState("");
     const [busy, setBusy] = useState(false);
+    const [edits, setEdits] = useState(0); // comments changed here, which the sync feed doesn't carry
 
     // The history, loaded again whenever the file changes: a check-in, check-out, or revert anywhere.
-    const stamp = live ? `${live.version}|${live.checked_out?.user.id ?? ""}|${live.checked_out?.since ?? ""}` : "";
+    const stamp = live
+        ? `${live.version}|${live.checked_out?.user.id ?? ""}|${live.checked_out?.since ?? ""}|${edits}`
+        : `${edits}`;
     useEffect(() => {
         let current = true;
         vaultApi.file(id).then(
@@ -254,7 +258,17 @@ export function FilePage({ id }: { id: number }) {
                                 {version.author.name}
                                 <span className="muted"> on {version.host}</span>
                             </td>
-                            <td className="comment">{version.comment || <span className="muted">No comment</span>}</td>
+                            <td className="comment">
+                                {version.comment || <span className="muted">No comment</span>}
+                                {version.comment_edited_at && (
+                                    <span className="muted">
+                                        {" "}
+                                        (edited
+                                        {version.comment_edited_by && ` by ${version.comment_edited_by.name}`}{" "}
+                                        <Time at={version.comment_edited_at} />)
+                                    </span>
+                                )}
+                            </td>
                             <td className="numeric">{formatSize(version.size)}</td>
                             <td className="row-actions">
                                 <a
@@ -264,6 +278,16 @@ export function FilePage({ id }: { id: number }) {
                                 >
                                     Download
                                 </a>
+                                {version.comment_editable && (
+                                    <button
+                                        type="button"
+                                        className="button-small"
+                                        title="Fix its comment: no new version, and no check-out"
+                                        onClick={() => setAsking({ action: "comment", version })}
+                                    >
+                                        Edit comment…
+                                    </button>
+                                )}
                                 {canRevert && version.number !== file.version && (
                                     <button
                                         type="button"
@@ -284,6 +308,14 @@ export function FilePage({ id }: { id: number }) {
             )}
             {asking?.action === "checkin" && <CheckinDialog file={file} onClose={() => setAsking(null)} />}
             {asking?.action === "title" && <TitleDialog file={file} onClose={() => setAsking(null)} />}
+            {asking?.action === "comment" && (
+                <CommentDialog
+                    file={file}
+                    version={asking.version}
+                    onClose={() => setAsking(null)}
+                    onSaved={() => (setAsking(null), setEdits((count) => count + 1))}
+                />
+            )}
             {asking?.action === "undo" && <UndoCheckoutDialog files={[file]} onClose={() => setAsking(null)} />}
             {asking?.action === "release" && holder && (
                 <Dialog
@@ -362,6 +394,60 @@ function TitleDialog({ file, onClose }: { file: VaultFile; onClose: () => void }
             <label className="field">
                 Title
                 <input autoFocus value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            {problem && <Notice tone="error">{problem}</Notice>}
+        </Dialog>
+    );
+}
+
+/** A check-in's comment, changed after it's made: for every file it checked in, and nothing in the files changes. */
+function CommentDialog({
+    file,
+    version,
+    onClose,
+    onSaved,
+}: {
+    file: VaultFile;
+    version: Version;
+    onClose: () => void;
+    onSaved: () => void;
+}) {
+    const [comment, setComment] = useState(version.comment);
+    const [busy, setBusy] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    async function save() {
+        setBusy(true);
+        try {
+            await vaultApi.editComment(version.checkin_id, comment.trim());
+            onSaved();
+        } catch (error) {
+            setProblem(error instanceof Error ? error.message : String(error));
+            setBusy(false);
+        }
+    }
+    return (
+        <Dialog
+            title={`Comment on ${file.name} v${version.number}`}
+            confirm="Save"
+            busy={busy}
+            disabled={!comment.trim() || comment.trim() === version.comment}
+            onConfirm={() => void save()}
+            onCancel={onClose}
+        >
+            <p className="muted">
+                It changes for every file checked in with it. The files stay as they are: it isn't a new version, and
+                doesn't need a check-out. The activity log keeps what it said before.
+            </p>
+            <label className="field">
+                Comment
+                <textarea
+                    className="comment-box"
+                    autoFocus
+                    rows={3}
+                    value={comment}
+                    maxLength={5000}
+                    onChange={(event) => setComment(event.target.value)}
+                />
             </label>
             {problem && <Notice tone="error">{problem}</Notice>}
         </Dialog>

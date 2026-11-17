@@ -91,6 +91,9 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   Vault replace the file. Close it, and any assembly or drawing that uses it, then try again.
 - **"Can't get ...: there's another file at ..."** A file that didn't come from the vault is where
   the vault's goes. Move it out of the way, then try again.
+- **There's no *Edit comment…* beside a check-in's comment.** Whoever checked it in can change
+  its comment, while they're still an editor of every file it has, and so can a lead of all
+  their folders, or an admin. A revert's comment ("Reverted to v2: …") can't be changed.
 - **A revert is refused.** *Revert to v2* (say) needs editor access, a version older than the
   latest, and the file not checked out by someone else. A lead of the folder or an admin can revert
   it anyway in admin mode, which releases the check-out.
@@ -654,6 +657,13 @@ a number. A few codes come up in more than one place.
   upload and the check-in. Let SolidWorks finish saving, then check in again.
 - **v... is already the latest version of ...**, or **... has no version ...** (`bad_version`): a
   revert to the latest version, or to one that isn't there. Pick an older version in the history.
+- **Only whoever checked it in, or a lead of every folder it has files in, can change its
+  comment**, **You can't change every file this check-in has any more, so its comment stays**, or
+  **A revert's comment says which version came back, so it can't be changed** (`comment_locked`):
+  ask whoever checked it in, or a lead of the folders its files are in. A revert's comment stays
+  as the vault wrote it.
+- **Say what changed: a comment can't be empty** (`bad_comment`): a check-in's comment can be
+  changed, not emptied. Write what changed.
 - **Say which computer this is (host)** (`bad_host`): the client didn't say which computer it's on.
   Update the add-in or the `vault` command; if it keeps happening, tell an admin.
 - **... is at v... now, not v..., which these changes start from** (`out_of_date`): someone checked

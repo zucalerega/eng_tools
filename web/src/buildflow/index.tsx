@@ -10,6 +10,7 @@ import "./buildflow.css";
 const ProgramsPage = lazy(() => import("./Programs").then((module) => ({ default: module.ProgramsPage })));
 const ProgramPage = lazy(() => import("./Program").then((module) => ({ default: module.ProgramPage })));
 const LayoutPage = lazy(() => import("./Layout").then((module) => ({ default: module.LayoutPage })));
+const ReviewPage = lazy(() => import("./Review").then((module) => ({ default: module.ReviewPage })));
 const HelpPage = lazy(() => import("./Help").then((module) => ({ default: module.HelpPage })));
 const ShopPage = lazy(() => import("./Shop").then((module) => ({ default: module.ShopPage })));
 
@@ -71,6 +72,10 @@ function buildflowPage(path: string) {
     const layout = /^\/buildflow\/programs\/(\d+)\/layout$/.exec(path);
     if (layout) {
         return <LayoutPage key={layout[1]} id={Number(layout[1])} />;
+    }
+    const review = /^\/buildflow\/programs\/(\d+)\/reviews\/(\d+)$/.exec(path);
+    if (review) {
+        return <ReviewPage key={review[2]} programId={Number(review[1])} id={Number(review[2])} />;
     }
     switch (path) {
         case "/buildflow":

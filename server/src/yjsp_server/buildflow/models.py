@@ -1,7 +1,8 @@
 """Buildflow's tables: programs, each with its vehicle's drawing, its milestones (the steps every component goes through,
 in four phases), its subsystems and their components; each component's progress through each milestone, its links (CAD,
-drawings, requirements, documents, test data), and its people; and what's been done, for the activity. And the shop's:
-its machines, who's trained on each, and the parts queued to be machined (shop.py)."""
+drawings, requirements, documents, test data), and its people; what's been done, for the activity; and its design
+reviews, each held for several components at once (reviews.py). And the shop's: its machines, who's trained on each, and
+the parts queued to be machined (shop.py)."""
 
 import enum
 from datetime import date, datetime
@@ -194,6 +195,63 @@ class Event(Base):
     what: Mapped[str] = mapped_column(String(500))  # "CDR: done", in words, as the activity shows it
 
     user: Mapped[User | None] = relationship(lazy="selectin")
+
+
+class Review(Base):
+    """A design review held for several of a program's components at once, at one of its review milestones: a
+    subsystem's PDR, say, covering its eight components (reviews.py). Its day is each one's due date at the milestone,
+    and passing it passes each one there; its files (slides, the package, the minutes, wherever they're kept) are links,
+    and its notes are taken in it. Removed, it's kept, to bring back."""
+
+    __tablename__ = "buildflow_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("buildflow_programs.id"), index=True)
+    milestone_id: Mapped[int] = mapped_column(ForeignKey("buildflow_milestones.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))  # "Feed system PDR"
+    held_on: Mapped[date | None] = mapped_column(Date)  # its day: when it's planned for, or was held
+    notes: Mapped[str] = mapped_column(Text, default="")  # taken in it, in Markdown
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    removed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    removed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    editor: Mapped[User | None] = relationship(foreign_keys=[updated_by], lazy="selectin")
+    covers: Mapped[list["ReviewComponent"]] = relationship(lazy="selectin", order_by="ReviewComponent.id")
+    links: Mapped[list["ReviewLink"]] = relationship(lazy="selectin", order_by="ReviewLink.id")
+
+
+class ReviewComponent(Base):
+    """A component a review covers. Kept while the component's removed from its program, so it's in the review again
+    when it's brought back."""
+
+    __tablename__ = "buildflow_review_components"
+    __table_args__ = (
+        UniqueConstraint("review_id", "component_id", name="uq_buildflow_review_components_review_component"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey("buildflow_reviews.id"), index=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("buildflow_components.id"), index=True)
+
+
+class ReviewLink(Base):
+    """A review's file: its slides, its package, its minutes, its recording, wherever they're kept (SharePoint, say):
+    an http or https address, or a page of the site's own, as a component's links are."""
+
+    __tablename__ = "buildflow_review_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey("buildflow_reviews.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    url: Mapped[str] = mapped_column(String(2000))
+    added_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    added_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    adder: Mapped[User | None] = relationship(foreign_keys=[added_by], lazy="selectin")
 
 
 # --- the shop -------------------------------------------------------------------------------------------------------

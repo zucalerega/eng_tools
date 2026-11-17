@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Deal, type UserRef } from "../api";
 import { Notice, Time, usePopover } from "../components";
-import { Link } from "../router";
+import { Link, navigate } from "../router";
 import {
     buildflow,
     PHASE_NAMES,
@@ -11,9 +11,12 @@ import {
     type Milestone,
     type Phase,
     type ProgramDetail,
+    type Review,
     type Status,
 } from "./api";
 import { ComponentPanel } from "./Panel";
+import { ReviewsSection } from "./Review";
+import { reviewPath, reviewsOf } from "./reviews";
 import { Vehicle } from "./VehicleView";
 import {
     formatDay,
@@ -162,6 +165,7 @@ export function ProgramPage({ id }: { id: number }) {
                 onStatus={setStatus}
                 dealsFor={dealsFor}
             />
+            <ReviewsSection program={program} phase={phase} />
             <div className="bf-lower">
                 <Coming program={program} onPick={pick} />
                 <section className="bf-activity" aria-label="Recent activity">
@@ -415,6 +419,7 @@ function Bill({
                                             <Chip
                                                 component={component}
                                                 milestone={milestone}
+                                                reviews={reviewsOf(program, component, milestone)}
                                                 onStatus={(status) => onStatus(component, milestone, status)}
                                                 onMore={() => onPick(component, milestone)}
                                             />
@@ -463,15 +468,18 @@ function DealMark({ component, deals, onOpen }: { component: Component; deals: D
     );
 }
 
-/** A component's status at a milestone, as a chip; clicked, a menu of the statuses to set, and more in its panel. */
+/** A component's status at a milestone, as a chip; clicked, a menu of the statuses to set, the reviews it's in there,
+ * and more in its panel. */
 function Chip({
     component,
     milestone,
+    reviews,
     onStatus,
     onMore,
 }: {
     component: Component;
     milestone: Milestone;
+    reviews: Review[];
     onStatus: (status: Status) => void;
     onMore: () => void;
 }) {
@@ -484,6 +492,9 @@ function Chip({
         said.push(formatDay(kept.done_on));
     } else if (kept?.due) {
         said.push(`due ${formatDay(kept.due)}`);
+    }
+    if (reviews.length > 0) {
+        said.push(`in ${reviews.map((r) => r.name).join(" and ")}`);
     }
     const late = kept?.due && status !== "done" && status !== "skipped" && kept.due < today();
     return (
@@ -521,6 +532,20 @@ function Chip({
                         </button>
                     ))}
                     <hr />
+                    {reviews.map((review) => (
+                        <button
+                            key={review.id}
+                            type="button"
+                            role="menuitem"
+                            className="menu-item"
+                            onClick={() => {
+                                setOpen(false);
+                                navigate(reviewPath(review));
+                            }}
+                        >
+                            {review.name}…
+                        </button>
+                    ))}
                     <button
                         type="button"
                         role="menuitem"

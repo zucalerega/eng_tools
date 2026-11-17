@@ -70,6 +70,12 @@ def test_the_seed_makes_a_demo_the_demo_serves(seeded):
     chamber = next(c for c in kestrel["components"] if c["name"] == "Thrust chamber")
     assert chamber["lead"]["name"] == "Ben Hartley"
     assert {link["url"].split("/")[1] for link in chamber["links"]} == {"yorg"}
+    # Its reviews: the feed system's PDR, held with its notes, and a CDR to come.
+    reviews = {each["name"]: each for each in kestrel["reviews"]}
+    assert set(reviews) == {"Feed system PDR", "Structures and recovery CDR"}
+    assert "RFA 1" in reviews["Feed system PDR"]["notes"]
+    coming = reviews["Structures and recovery CDR"]
+    assert coming["held_on"] > datetime.now(UTC).date().isoformat() and coming["component_ids"]
 
     servo = client.get("/api/folders", params={"path": "Kestrel/Avionics/Airbrake actuator"}).json()
     assert sorted(f["name"] for f in servo["files"]) == ["9347.SLDASM", "Embout.SLDPRT", "Servomoteur.SLDPRT"]

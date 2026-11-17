@@ -114,6 +114,40 @@ export interface ProgramDetail extends Program {
     subsystems: Subsystem[];
     components: Component[];
     removed: Component[]; // for admins, to bring back
+    reviews: Review[]; // by their days, those with none yet last
+}
+
+/** A design review held for several components at once, at one of the program's review milestones. */
+export interface Review {
+    id: number;
+    program_id: number;
+    milestone_id: number;
+    name: string;
+    held_on: string | null; // its day: each component's due date at its milestone
+    notes: string; // taken in it, in Markdown
+    component_ids: number[]; // those removed from the program too, covered again once they're brought back
+    files: ReviewFile[];
+    created_at: string;
+    created_by: UserRef | null;
+    updated_at: string;
+    updated_by: UserRef | null;
+    removed_at: string | null;
+}
+
+/** A review's file: its slides, its package, its minutes, wherever they're kept (SharePoint, say). */
+export interface ReviewFile {
+    id: number;
+    title: string;
+    url: string;
+    added_at: string;
+    added_by: UserRef | null;
+}
+
+export interface ReviewChange {
+    name?: string;
+    held_on?: string | null;
+    notes?: string;
+    component_ids?: number[];
 }
 
 export interface Activity {
@@ -235,6 +269,7 @@ export interface Shop {
 const program = (id: number) => `/api/buildflow/programs/${id}`;
 const component = (id: number) => `/api/buildflow/components/${id}`;
 const shopPart = (id: number) => `/api/buildflow/shop/parts/${id}`;
+const review = (id: number) => `/api/buildflow/reviews/${id}`;
 
 export const buildflow = {
     programs: (archived = false) =>
@@ -279,6 +314,23 @@ export const buildflow = {
     removeLink: (id: number) => request<Component>("DELETE", `/api/buildflow/links/${id}`),
     setPeople: (id: number, phase: Phase, userIds: number[]) =>
         request<Component>("PUT", `${component(id)}/people`, { phase, user_ids: userIds }),
+
+    /** A program's design reviews (removed: those taken off it instead). */
+    reviews: (programId: number, removed = false) =>
+        request<Review[]>("GET", `${program(programId)}/reviews${removed ? "?removed=true" : ""}`),
+    review: (id: number) => request<Review>("GET", review(id)),
+    addReview: (
+        programId: number,
+        body: { milestone_id: number; name: string; held_on: string | null; component_ids: number[] },
+    ) => request<Review>("POST", `${program(programId)}/reviews`, body),
+    changeReview: (id: number, change: ReviewChange) => request<Review>("PATCH", review(id), change),
+    /** Pass a review: each of its components passes its milestone, on the day said (else the review's, or today). */
+    passReview: (id: number, doneOn: string) => request<Review>("POST", `${review(id)}/pass`, { done_on: doneOn }),
+    removeReview: (id: number) => request<Review>("DELETE", review(id)),
+    restoreReview: (id: number) => request<Review>("POST", `${review(id)}/restore`),
+    addReviewFile: (id: number, body: { url: string; title: string }) =>
+        request<Review>("POST", `${review(id)}/files`, body),
+    removeReviewFile: (id: number, fileId: number) => request<Review>("DELETE", `${review(id)}/files/${fileId}`),
 
     /** The shop: its machines, its queue (removed: the parts taken off it instead), who's trained, and its load. */
     shop: (removed = false) => request<Shop>("GET", `/api/buildflow/shop${removed ? "?removed=true" : ""}`),

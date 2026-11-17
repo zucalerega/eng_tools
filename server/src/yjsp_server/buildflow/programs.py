@@ -18,7 +18,7 @@ from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import templates
-from .models import Component, Event, Link, Milestone, Phase, Program, Progress, Status, Subsystem
+from .models import Component, Event, Link, Milestone, Phase, Program, Progress, Review, Status, Subsystem
 from .schemas import Profile
 
 PHASES = tuple(Phase)
@@ -324,10 +324,13 @@ def remove_milestone(db: Session, admin: User, milestone_id: int) -> None:
     kept = list(db.scalars(select(Progress).where(Progress.milestone_id == found.id)))
     used = [p for p in kept if p.status != Status.NOT_STARTED or p.due or p.done_on or p.note]
     links = db.scalar(select(func.count()).where(Link.milestone_id == found.id)) or 0
-    if used or links:
+    held = db.scalar(select(func.count()).where(Review.milestone_id == found.id)) or 0  # removed ones are kept too
+    if used or links or held:
         said = [f"progress on {len(used)} component{'s' if len(used) != 1 else ''}"] if used else []
         said += [f"{links} link{'s' if links != 1 else ''}"] if links else []
-        raise MilestoneInUse(f"{found.name} has {' and '.join(said)} kept on it: rename it, or move it, instead")
+        said += [f"{held} review{'s' if held != 1 else ''}"] if held else []
+        listed = said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
+        raise MilestoneInUse(f"{found.name} has {listed} kept on it: rename it, or move it, instead")
     for blank in kept:
         db.delete(blank)
     _place([m for m in milestones(db, owner.id) if m.phase == found.phase], found, None)

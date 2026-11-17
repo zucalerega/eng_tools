@@ -37,18 +37,18 @@ class BadLink(ApiError):
     code = "bad_link"
 
 
-def check_address(url: str) -> str:
-    """A link a component can have: http or https to a host, or a page of the site's own ("/vault/file/12"), with no
-    spaces or control characters in it. Never javascript: or data:, which would run in the site when someone opened it,
-    and never //host, which a browser takes as another site."""
+def check_address(url: str, of: str = "a component") -> str:
+    """A link a component (or a review: `of`) can have: http or https to a host, or a page of the site's own
+    ("/vault/file/12"), with no spaces or control characters in it. Never javascript: or data:, which would run in the
+    site when someone opened it, and never //host, which a browser takes as another site."""
     clean = bool(url) and not any(char.isspace() or unicodedata.category(char) == "Cc" for char in url)
     if clean and url.startswith("/") and not url.startswith(("//", "/\\")):
         return url
     if clean and url.partition(":")[0].lower() in ("http", "https") and urlsplit(url).hostname:
         return url
     raise BadLink(
-        f"{url[:100]} isn't a link a component can have: a link is an http or https address, or a page of the site's "
-        "own, like /vault/file/12"
+        f"{url[:100]} isn't a link {of} can have: a link is an http or https address, or a page of the site's own, "
+        "like /vault/file/12"
     )
 
 
@@ -125,7 +125,8 @@ def _milestone_of(db: Session, program: Program, milestone_id: int) -> Milestone
     return found
 
 
-def _day(day: date) -> str:
+def day_in_words(day: date) -> str:
+    """A day as the activity says it: "Dec 3, 2026"."""
     return f"{day:%b} {day.day}, {day.year}"
 
 
@@ -139,18 +140,9 @@ def set_progress(db: Session, user: User, component_id: int, milestone_id: int, 
     for attempt in range(2):
         found, owner = _open(db, component_id)
         stone = _milestone_of(db, owner, milestone_id)
-        kept = db.scalar(
-            select(Progress).where(Progress.component_id == found.id, Progress.milestone_id == stone.id)
-        ) or Progress(component_id=found.id, milestone_id=stone.id, status=Status.NOT_STARTED, note="")
-        said = _apply(kept, stone, change)
-        if not said:
+        if not change_progress(db, user, owner, found, stone, change):
             db.rollback()
             return found
-        if kept.id is None:
-            db.add(kept)
-        kept.updated_at, kept.updated_by = utcnow(), user.id
-        log(db, owner, user, f"{stone.name}: {'; '.join(said)}", found)
-        _touch(found, user)
         try:
             db.commit()
             db.refresh(found)
@@ -160,6 +152,31 @@ def set_progress(db: Session, user: User, component_id: int, milestone_id: int, 
             if attempt:
                 raise
     raise AssertionError("unreachable")
+
+
+def progress_at(db: Session, component: Component, stone: Milestone) -> Progress | None:
+    """A component's progress at a milestone, if any's been kept: none is not started."""
+    return db.scalar(select(Progress).where(Progress.component_id == component.id, Progress.milestone_id == stone.id))
+
+
+def change_progress(
+    db: Session, user: User, owner: Program, found: Component, stone: Milestone, change: dict[str, Any], why: str = ""
+) -> bool:
+    """Make a change to a component's progress at a milestone, as set_progress does, without committing it (a review
+    changes several components' at once): whether it changed anything. The activity says why, if it's said ("Feed
+    system PDR")."""
+    kept = progress_at(db, found, stone) or Progress(
+        component_id=found.id, milestone_id=stone.id, status=Status.NOT_STARTED, note=""
+    )
+    said = _apply(kept, stone, change)
+    if not said:
+        return False
+    if kept.id is None:
+        db.add(kept)
+    kept.updated_at, kept.updated_by = utcnow(), user.id
+    log(db, owner, user, f"{stone.name}: {'; '.join(said)}" + (f" ({why})" if why else ""), found)
+    _touch(found, user)
+    return True
 
 
 def _apply(kept: Progress, stone: Milestone, change: dict[str, Any]) -> list[str]:
@@ -174,11 +191,11 @@ def _apply(kept: Progress, stone: Milestone, change: dict[str, Any]) -> list[str
             kept.done_on = (kept.done_on or utcnow().date()) if status == Status.DONE else None
     if "due" in change and change["due"] != kept.due:
         kept.due = change["due"]
-        said.append(f"due {_day(kept.due)}" if kept.due else "no due date")
+        said.append(f"due {day_in_words(kept.due)}" if kept.due else "no due date")
     if "done_on" in change and change["done_on"] != kept.done_on:
         kept.done_on = change["done_on"]
         if not restated:  # said with the status, when that changed too
-            said.append(f"done on {_day(kept.done_on)}" if kept.done_on else "no day it was done")
+            said.append(f"done on {day_in_words(kept.done_on)}" if kept.done_on else "no day it was done")
     note = change.get("note")
     if note is not None and note != kept.note:
         kept.note = note

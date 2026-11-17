@@ -15,10 +15,12 @@ import {
     type Phase,
     type ProgramDetail,
     type ProgressChange,
+    type Review,
     type ShopPart,
     type Status,
 } from "./api";
 import { appName, guessKind, KIND_NAMES, KINDS, linkHref, siteTarget, tidyUrl, useSiteName } from "./links";
+import { reviewPath, reviewsOf } from "./reviews";
 import { inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
 import { useDemo } from "../session";
 
@@ -245,6 +247,7 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                     key={milestone.id}
                     component={component}
                     milestone={milestone}
+                    reviews={reviewsOf(program, component, milestone)}
                     links={links.filter((link) => link.milestone_id === milestone.id)}
                     onChange={(change) => act(() => buildflow.setProgress(component.id, milestone.id, change))}
                     onRemoveLink={(link) => act(() => buildflow.removeLink(link.id))}
@@ -372,12 +375,14 @@ function InTheShop({ component }: { component: Component }) {
 function MilestoneRow({
     component,
     milestone,
+    reviews,
     links,
     onChange,
     onRemoveLink,
 }: {
     component: Component;
     milestone: Milestone;
+    reviews: Review[];
     links: ComponentLink[];
     onChange: (change: ProgressChange) => Promise<boolean>;
     onRemoveLink: (link: ComponentLink) => Promise<boolean>;
@@ -412,6 +417,17 @@ function MilestoneRow({
                     ))}
                 </select>
             </div>
+            {reviews.length > 0 && (
+                <p className="bf-small bf-milestone-reviews">
+                    In{" "}
+                    {reviews.map((review, index) => (
+                        <span key={review.id}>
+                            {index > 0 && " and "}
+                            <Link to={reviewPath(review)}>{review.name}</Link>
+                        </span>
+                    ))}
+                </p>
+            )}
             <div className="bf-milestone-dates">
                 <label>
                     {milestone.review ? "On" : "Due"}

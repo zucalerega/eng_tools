@@ -12,6 +12,7 @@ import type {
     Component,
     ProgramDetail,
     ProgressChange,
+    Review,
     Shop,
     ShopPart,
     ShopPartChange,
@@ -424,6 +425,20 @@ export class Team {
             status = await call<DealsStatus>("GET", "/api/deals/status", this.chief.token);
         }
         return status;
+    }
+
+    /** A design review, as someone starts one on a program's page with New review. */
+    async review(
+        who: Member,
+        program: number,
+        body: { milestone_id: number; name: string; held_on?: string | null; component_ids: number[] },
+    ): Promise<Review> {
+        return call<Review>("POST", `/api/buildflow/programs/${program}/reviews`, who.token, body);
+    }
+
+    /** A design review, as the server keeps it. */
+    async reviewOf(id: number): Promise<Review> {
+        return call<Review>("GET", `/api/buildflow/reviews/${id}`, this.chief.token);
     }
 
     /** A component's progress at a milestone, as the bill's chips and its panel set it. */

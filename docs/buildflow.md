@@ -78,11 +78,42 @@ and `web/src/buildflow`.
   first. A component's `updated_at` is its last change, its progress's included: what's been worked
   on lately.
 
+## Reviews
+
+A design review is often held for several components at once: a subsystem's PDR covers its eight
+components, and a system CDR more. A review (`reviews.py`) is one, held at one of the program's
+review milestones, so its components' progress is set once, and its files and notes are in one
+place. Anyone signed in keeps reviews, as they do progress.
+
+- **A review** (`buildflow_reviews`): its program, its milestone (one that's a review: 400
+  `not_a_review` for one that's work), a name ("Feed system PDR"), its day (`held_on`, none until
+  it's set), the notes taken in it (Markdown, up to 50,000 characters), and who made and last
+  changed it. **The components it covers** (`buildflow_review_components`) are the program's, not
+  removed (409 `removed` for one that is); one removed from the program after stays in it, out of
+  its rules, until it's brought back. **Its files** (`buildflow_review_links`): its slides, its
+  package, its minutes, wherever they're kept (SharePoint, say), each a link as a component's are
+  (`progress.check_address`, 400 `bad_link`), at most 50.
+- **Its day is each component's date at its milestone** (each one's `due` there), but those through
+  it already (done, or skipped) keep theirs. A new day moves them all; no day takes the review's
+  old day off those that had it, and leaves a date of their own. A component added gets its day;
+  one taken off keeps what it has.
+- **Passing it** passes each component it covers at its milestone (done, on the day said, or the
+  review's day, or today), but those through it already. Each component's progress is still its
+  own, set on the review's page or the bill: one back with actions to close is in progress, its
+  note saying what.
+- Its changes go through `progress.change_progress`, the same rules as a change to one component,
+  so the activity says each ("PDR: passed (Feed system PDR)"), and the review's own changes
+  ("Feed system PDR: passed, 6 components").
+- **Removed**, a review is kept, with its notes and files, off the program's list until anyone brings
+  it back (409 `removed` to change it meanwhile); its components' progress stays as it is either
+  way. A milestone a review's held at, removed or not, isn't deleted (409 `milestone_in_use`).
+
 ## The web app
 
 `web/src/buildflow`: the programs (`Programs.tsx`), a program's bill of design (`Program.tsx`, and
-`Panel.tsx` for a component beside it), its layout (`Layout.tsx`, admins'), and the help
-(`Help.tsx`, `/buildflow/help`: keep it in step with the features).
+`Panel.tsx` for a component beside it), its reviews (`Review.tsx`, and `reviews.ts`), its layout
+(`Layout.tsx`, admins'), and the help (`Help.tsx`, `/buildflow/help`: keep it in step with the
+features).
 
 - **The programs** (`/buildflow`): a card each, its vehicle's outline on black, how many components
   it has and are through CDR, and a bar for each phase: done, in progress, and blocked, of those
@@ -105,6 +136,15 @@ and `web/src/buildflow`.
   milestone's status, due date, done date, and note (saved as it's changed; a note when it's left),
   its people, and its links. *Not needed: skip what's not started* skips the phase's milestones
   that haven't started, as for a bought part's design reviews.
+- **Reviews**, under the bill: each with its milestone, its day (red once it's past and some of its
+  components haven't passed), how many have passed, and its files; *New review* (its milestone, a
+  name, its day, and its components, by subsystem, *All of* one at once); and *Removed reviews*.
+  **A review's page** (`/buildflow/programs/{id}/reviews/{review}`): its name and day, changed where
+  they are; its components, each one's status at the milestone (set there as on the bill) and its
+  note there (*Actions, outcome*); *Pass…* and *Remove…*; its files, added by their address; and its
+  notes, in Markdown (*Edit notes*, saved with *Save notes*; the browser asks before leaving them
+  unsaved). A chip on the bill says the review its component's in there, and its menu goes to it,
+  as a component's panel does at the milestone.
 - **Links to the site's own apps** (`links.ts`): an address on the site (or the site's own origin,
   pasted) is kept as its path, marked with its app, and named by what it goes to, from that app's
   API as any client would ask it (Vault's file, `GET /api/files/{id}`, with its title when that
@@ -180,7 +220,7 @@ anyone else.
 |---|---|
 | `GET /api/buildflow/programs?archived=` | the programs, in their order, each with its `profile`, `component_count`, how many are where in each phase (`phases`), how many are through each phase's last milestone (`through`, `last_milestone`), and whether you can lay it out (`can_edit`); `archived=true`: the archived ones |
 | `POST /api/buildflow/programs` | a new program `{name, description, template}` (`rocket`, `hopper`, `stand`, `blank`) (admins): its whole bill of design |
-| `GET /api/buildflow/programs/{id}` | a program's bill of design: its `milestones` and `subsystems` in order, and its `components`, each with its `progress`, `links`, and `people`; and, for admins, the components `removed` from it |
+| `GET /api/buildflow/programs/{id}` | a program's bill of design: its `milestones` and `subsystems` in order, and its `components`, each with its `progress`, `links`, and `people`; its `reviews`; and, for admins, the components `removed` from it |
 | `PATCH /api/buildflow/programs/{id}` | rename it, describe it, draw it again (`profile`: `{sections, stand}`), or move it in the list (`position`) (admins); 409 `archived`, `name_taken` |
 | `POST /api/buildflow/programs/{id}/archive`, `/restore` | archive it, or bring it back (admins) |
 | `GET /api/buildflow/programs/{id}/activity?limit=50` | what's been done to it, the latest first: each `what`, who, when, and its component's name as it is now |
@@ -193,6 +233,12 @@ anyone else.
 | `PUT /api/buildflow/components/{id}/progress/{milestone}` | change its progress at a milestone `{status, due, done_on, note}`: what's sent; 409 `removed`, `archived` |
 | `POST /api/buildflow/components/{id}/links`, `DELETE /api/buildflow/links/{id}` | a link `{phase, kind, url, title, milestone_id}` (400 `bad_link`); remove one |
 | `PUT /api/buildflow/components/{id}/people` | who's on it in a phase `{phase, user_ids}`, in order (400 `not_a_member`) |
+| `GET /api/buildflow/programs/{id}/reviews?removed=` | its reviews, by their days, those with none last (`removed=true`: those removed); also in the program's bill, as `reviews` |
+| `POST /api/buildflow/programs/{id}/reviews` | a review `{milestone_id, name, held_on, component_ids, notes}`: 400 `not_a_review`; 409 `removed`, `archived` |
+| `GET`/`PATCH /api/buildflow/reviews/{id}` | a review, each with its `component_ids` and `files`; change what's sent of it: `name`, `held_on` (null: no day), `notes`, `component_ids` (every one it's to cover); 409 `removed` |
+| `POST /api/buildflow/reviews/{id}/pass` | pass it `{done_on}`: each component it covers passes its milestone, but those through it already |
+| `DELETE /api/buildflow/reviews/{id}`, `POST .../restore` | remove a review, keeping it, or bring it back |
+| `POST /api/buildflow/reviews/{id}/files`, `DELETE .../files/{file}` | a file `{url, title}` (400 `bad_link`); remove one |
 | `GET /api/buildflow/shop?removed=` | the shop: its `machines` (each `retired` or not), the `parts` in its queue (`removed=true`: those taken off it), who's `trained` (each with their `levels` by machine id), each machine's `load`, and whether you keep the machines (`can_edit_machines`) |
 | `GET /api/buildflow/shop/parts?component_id=&program_id=&removed=` | the parts in the queue, or those for a component or a program |
 | `POST /api/buildflow/shop/parts` | a part for the queue `{name, machine_id, component_id, program_id, material, quantity, hours, drawing, cad, status, requester_id, machinist_id, need_by, note}`: `requester_id` left out is you; 409 `machine_retired`, `removed`, `archived`; 400 `bad_link`, `not_a_member` |
@@ -213,7 +259,12 @@ anyone else.
    - **Pickers for the other apps**: a file found in Vault, a diagram in Piper, a test in Yorg,
      from the panel, rather than its address pasted.
    - **A timeline**: the due dates of a phase on a calendar, for the build schedule.
-2. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
+2. **Reviews** (November 2026): a review held for several components at once, at one of the
+   program's reviews, its day each one's date there, passing it passing each one, with its files
+   and the notes taken in it. Next:
+   - **A review's actions** as items of their own (each with who's to close it and by when), rather
+     than each component's note.
+3. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
    with accounts for names, and parts for components on the bills of design. Next:
    - **Bringing the tracker's data over**, if it holds parts or levels worth keeping: its *Export
      CSV*, read in by an admin, names matched to accounts.

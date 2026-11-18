@@ -2543,6 +2543,88 @@ input[type="checkbox"] {
     margin-bottom: 0.15rem;
 }
 
+/* Screenshots (screenshots.tsx): small, in a row, each with its × to take it off before it's sent. */
+.screenshot-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 0.4rem;
+    padding: 0;
+    list-style: none;
+}
+
+.help-panel > .screenshot-strip {
+    margin: 0.25rem 1rem 0;
+}
+
+.screenshot-strip li {
+    position: relative;
+}
+
+.screenshot-strip img {
+    display: block;
+    max-width: 7rem;
+    max-height: 4.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    object-fit: contain;
+}
+
+.screenshot-remove {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    width: 1.3rem;
+    height: 1.3rem;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.screenshot-add-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+}
+
+.screenshot-add-icon:hover:not(:disabled) {
+    color: var(--text);
+}
+
+.chat-question .screenshot-strip {
+    justify-content: flex-end;
+}
+
+.feedback-screenshots {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.65rem 0 0;
+    font-size: 0.76rem;
+}
+
+.feedback-screenshots .screenshot-strip {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+.feedback-mine .screenshot-strip {
+    margin: 0.4rem 0 0;
+}
+
+.feedback-item .screenshot-strip {
+    margin: 0 0 0.75rem;
+}
+
 .chat-fine {
     margin: 0;
     padding: 0 1rem 0.75rem;

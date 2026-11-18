@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Feedback, type FeedbackList } from "./api";
+import { api, feedbackScreenshotUrl, type Feedback, type FeedbackList } from "./api";
 import { Notice, Time } from "./components";
 import { Markdown } from "./markdown";
+import {
+    AddScreenshots,
+    FOR_PEOPLE,
+    pastedPictures,
+    ScreenshotStrip,
+    screenshotSrc,
+    useScreenshots,
+} from "./screenshots";
 
 // Bug reports and feature requests (feedback.py on the server). Anyone signed in sends them from Help, beside the page
 // they're on, and sees what's become of theirs there. Claude looks at each for the site's owner, who approves one on
@@ -15,6 +23,13 @@ const STATUS: Record<Feedback["status"], string> = {
 };
 const KIND: Record<Feedback["kind"], string> = { bug: "Bug", feature: "Feature" };
 const LOOKING_EVERY_MS = 4_000; // how often the admins' list looks again while Claude is looking at one
+const MOST_SCREENSHOTS = 3; // the server's (feedback.MOST_SCREENSHOTS)
+
+/** A request's screenshots, from the server, each opening full size. */
+function SentScreenshots({ item }: { item: Feedback }) {
+    const sources = (item.screenshots ?? []).map((shot) => feedbackScreenshotUrl(item.id, shot.id));
+    return <ScreenshotStrip label={`Screenshots with request #${item.id}`} sources={sources} />;
+}
 
 /** Help's Requests tab: send a bug report or a feature request, and see your own. */
 export function FeedbackPane({ page }: { page: string }) {
@@ -25,6 +40,7 @@ export function FeedbackPane({ page }: { page: string }) {
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     const [sent, setSent] = useState(false);
+    const screenshots = useScreenshots(MOST_SCREENSHOTS, FOR_PEOPLE);
 
     useEffect(() => {
         api.myFeedback().then(setMine, (error: Error) => setProblem(error.message));
@@ -36,10 +52,18 @@ export function FeedbackPane({ page }: { page: string }) {
         setProblem(null);
         setSent(false);
         try {
-            const item = await api.sendFeedback({ kind, title, body, page });
+            const shots = screenshots.shots.map((shot) => shot.data);
+            const item = await api.sendFeedback({
+                kind,
+                title,
+                body,
+                page,
+                ...(shots.length ? { screenshots: shots } : {}),
+            });
             setMine((now) => [item, ...(now ?? [])]);
             setTitle("");
             setBody("");
+            screenshots.clear();
             setSent(true);
         } catch (error) {
             setProblem((error as Error).message);
@@ -84,8 +108,31 @@ export function FeedbackPane({ page }: { page: string }) {
                                 : "What you're trying to do, and how the site could help."
                         }
                         onChange={(event) => setBody(event.target.value)}
+                        onPaste={(event) => {
+                            const pasted = pastedPictures(event);
+                            if (pasted.length > 0) {
+                                event.preventDefault();
+                                void screenshots.add(pasted);
+                            }
+                        }}
                     />
                 </label>
+                <div className="feedback-screenshots">
+                    <ScreenshotStrip
+                        label="Screenshots to send"
+                        sources={screenshots.shots.map(screenshotSrc)}
+                        onRemove={screenshots.remove}
+                    />
+                    <AddScreenshots
+                        disabled={screenshots.shots.length >= MOST_SCREENSHOTS}
+                        onPick={(files) => void screenshots.add(files)}
+                    />
+                    <span className="muted">
+                        Up to {MOST_SCREENSHOTS}: paste one into the box above, or pick a file. Only you and the
+                        site&apos;s admins see them.
+                    </span>
+                </div>
+                {screenshots.problem && <Notice tone="error">{screenshots.problem}</Notice>}
                 <div className="feedback-send">
                     <button
                         type="submit"
@@ -95,7 +142,7 @@ export function FeedbackPane({ page }: { page: string }) {
                         Send
                     </button>
                     <span className="muted">
-                        With the page you&apos;re on. It goes to Anthropic for Claude to read.
+                        With the page you&apos;re on. It goes to Anthropic for Claude to read, screenshots and all.
                     </span>
                 </div>
             </form>
@@ -113,6 +160,7 @@ export function FeedbackPane({ page }: { page: string }) {
                                 <div className="muted">
                                     {STATUS[item.status]} · <Time at={item.created_at} />
                                 </div>
+                                <SentScreenshots item={item} />
                                 {item.reply && <p className="feedback-reply">{item.reply}</p>}
                             </li>
                         ))}
@@ -229,6 +277,7 @@ function FeedbackItem({
                 {item.page && <> · from {item.page}</>}
             </p>
             <p className="feedback-body">{item.body}</p>
+            <SentScreenshots item={item} />
             <section className="feedback-look" aria-label="Claude's look">
                 <h4>Claude&apos;s look</h4>
                 {item.looking ? (

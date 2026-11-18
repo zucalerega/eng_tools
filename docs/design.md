@@ -342,8 +342,8 @@ YJSP is the help, the whole of which it reads with every question. The instructi
 come first, the same for every question until the next deploy, and Anthropic keeps them an hour
 after each read (prompt caching), so a question in that hour reads them for a twentieth of the
 price; then whether the person asking is an admin; then the conversation, each question with
-the page it was asked from. It answers with links to the help's anchors. It can't see anyone's
-files or account, and it does nothing but answer.
+the page it was asked from, and any screenshots added to it. It answers with links to the help's
+anchors. It can't see anyone's files or account, and it does nothing but answer.
 
 - **The conversation stays in the browser** (`chat.ts`, in the tab's sessionStorage, for the
   person who had it: someone else signing in on the tab starts with none), which sends all of
@@ -352,6 +352,16 @@ files or account, and it does nothing but answer.
   10 seconds while Claude thinks, so nothing on the way closes a quiet connection. A question
   Claude declines (`stop_reason: refusal`) says so; Anthropic's server-side fallback answers the
   kinds it can with another model first.
+- **Screenshots** (`web/src/screenshots.tsx`): a question can carry up to 3, pasted into the box
+  or picked from a file, and a conversation up to 6 in all; older questions with more are left
+  out of what Claude reads, as long ones are. The browser makes each one smaller first, to 1,568
+  pixels on its longest side (what Anthropic suggests; more costs more), as a PNG, or a JPEG if a
+  PNG is over 3 MB. The server takes a PNG or a JPEG, known by its header (`pictures.py`, which
+  Piper's pictures use too), of up to 3 MB and 8,000 pixels a side (`assistant.check_screenshot`,
+  within what Anthropic takes), and sends each as an image block before its question's words.
+  They go back with every question after, unchanged, so what Anthropic kept of the conversation
+  is read again; and they stay in the tab with the conversation, or, if sessionStorage is full,
+  only as long as the page.
 - **What it may spend**: the server counts what each answer cost, from the tokens Anthropic says
   it used (read in full, kept, read from what was kept, and written, thinking included), at each
   model's prices (`assistant.PRICES`), in `assistant_requests`, which keeps only who asked, when,
@@ -405,6 +415,14 @@ against Claude's budgets as no one's question (`assistant_requests.purpose` says
 request to Claude was for: a question, a read to keep the help loaded, or a look), and isn't
 counted against anyone's daily limit; when it can't (a budget spent), the request keeps why,
 and an admin can have Claude look again. Each person sends at most 10 a day.
+
+- **Screenshots**: a request can carry up to 3 (`feedback_screenshots`, in the database like
+  Piper's pictures, so the backups keep them), each checked as a question's are
+  (`assistant.check_screenshot`); the browser makes them no bigger than 2,560 pixels on a side,
+  for people to read. Only whoever sent it and admins see them (`GET .../screenshots/{id}`;
+  anyone else gets 404, as for a request that isn't there), since a screenshot can show files and
+  names. Claude's look reads them, before the request's words, and says what they show, because
+  Claude Code gets only words: the routine's text says how many there were, never the pictures.
 
 - **Who sees what**: whoever sent one sees it, its status, and an admin's reply, under *Your
   requests*; admins see every one on Admin > Requests, with who sent it, Claude's look, and
@@ -592,10 +610,11 @@ everyone's its guest. Interactive docs are at
 | `GET /api/storage` | how full the server's disk is (`total`, `free`), and how much of it Vault's files, Yorg's, Piper's, and the database take, in bytes (admins) |
 | `GET /api/storage/summary` | the same for the site's own page, at most a minute old: `total`, `free`, `vault`, `yorg`, `piper` (anyone signed in) |
 | `GET /api/assistant` | whether you can ask Claude now, and if not, why (`available`, `reason`), and how much of your daily limit your questions in the last 24 hours took (`day_used`, 0 to 1); to admins, its `budget` in all and what it has `spent`, and its `monthly_budget` and what it has spent this month (`month_spent`, since 00:00 UTC on the 1st), in US dollars (a budget of 0 is none) |
-| `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
+| `POST /api/assistant/ask` | ask Claude `{messages}`: the conversation, questions (`role: user`, with the `page` each was asked from, and its `screenshots`, PNGs or JPEGs as base64: up to 3 a question, 6 in all) and answers in turn, the question last. The answer comes as lines of JSON as it's written (`application/x-ndjson`): `thinking`, each piece of `text`, and `done` (with its `stop_reason` and your `day_used`) or `error` |
 | `GET /api/assistant/spending` | what Claude's answers have cost, in all (`spent`), this month (`month_spent`), and in the last 24 hours; its budgets (`budget`, in all, and `monthly_budget`: 0 is none), limit, model, and effort; whether the server may keep the help loaded between questions (`keep_warm`, its setting), for how long after a question (`keep_hours`, 1 to 24, or null: always), and what that cost this month (`keep_warm_spent`); how many of this month's questions there were (`month_questions`) and found the help loaded (`month_questions_loaded`); what its looks at requests cost this month (`feedback_spent`); and each person's questions and what they cost (admins) |
 | `PUT /api/assistant/settings` | keep the help loaded for Claude around the clock (`{"keep_hours": null}`) or for 1 to 24 hours after each question (admins) |
-| `POST /api/feedback` | send a bug report or a feature request `{kind: "bug" or "feature", title, body, page}`; Claude looks at it for the owner meanwhile |
+| `POST /api/feedback` | send a bug report or a feature request `{kind: "bug" or "feature", title, body, page, screenshots}` (`screenshots`: up to 3 PNGs or JPEGs, as base64, if you like); Claude looks at it for the owner meanwhile. Each request says its `screenshots` (`id`, `width`, `height`, `size`) |
+| `GET /api/feedback/{id}/screenshots/{screenshot_id}` | a request's screenshot, as it was sent (whoever sent it, and admins; 404 to anyone else) |
 | `GET /api/feedback/mine` | the requests you've sent, the newest first: each one's `status` (`new`, `approved`, `declined`, `done`) and an admin's `reply` |
 | `GET /api/feedback` | every request, the newest first, with who sent it (`sender`), Claude's look (`evaluation`, or why it couldn't: `evaluation_problem`; `looking` while it is), what that cost, and the Claude Code session building it (`session_url`); and whether you can approve them (`can_approve`, `why_not_approve`) (admins) |
 | `POST /api/feedback/{id}/approve` | have Claude Code build it, with a `note` for it: fires the routine, and returns the request with its `session_url` (the owner) |

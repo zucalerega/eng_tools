@@ -492,3 +492,8 @@ The add-in logs to `%LOCALAPPDATA%\Vault\addin.log`. Settings are in
 `%APPDATA%\Vault\addin.json`, and saved sign-ins (encrypted) are in
 `%APPDATA%\Vault\tokens.json`. The `vault` CLI uses the same workspace and sign-in, so
 `vault status` in `C:\VLT` is a good second opinion.
+
+To report a bug in the add-in, use *Report a bug or idea* in the web app's Help: say what you
+clicked, add a screenshot of the pane or the message (Win+Shift+S, then paste it into the
+description), and paste the end of `addin.log` into the description too, since a screenshot
+can't show the log.

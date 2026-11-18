@@ -537,6 +537,40 @@ class Seed:
                 else:
                     progress(name, milestone, lead, status="in_progress", due=self.day(at - 30))
 
+        # The feed system's PDR, held for the whole subsystem at once, with its notes; and the CDR coming up for the
+        # structures and recovery components still in design.
+        self.at(52, hour=23)
+        fluids = [c["id"] for c in program["components"] if subsystems[c["subsystem_id"]] == "Fluids"]
+        notes = (
+            "Board: Ada (chair), Grace, Hugo, and two alumni reviewers. Passed, with two actions:\n\n"
+            "- **RFA 1** (Hugo): a relief valve downstream of the regulator, sized for its full flow.\n"
+            "- **RFA 2** (Chloe): the MOV flange bolts' torque on its drawing.\n\n"
+            "Next: the feed system's CDR, with the cold flows' results."
+        )
+        body = {
+            "milestone_id": stones["PDR"],
+            "name": "Feed system PDR",
+            "held_on": self.day(52),
+            "component_ids": fluids,
+            "notes": notes,
+        }
+        self.call("hugo", "POST", f"/api/buildflow/programs/{program['id']}/reviews", json=body)
+        self.at(20, hour=10)
+        coming = [
+            c["id"]
+            for c in program["components"]
+            if subsystems[c["subsystem_id"]] in ("Structures", "Recovery")
+            and not c["bought"]
+            and order.index(c["name"]) >= round(0.5 * len(order))
+        ]
+        body = {
+            "milestone_id": stones["CDR"],
+            "name": "Structures and recovery CDR",
+            "held_on": self.day(-16),
+            "component_ids": coming,
+        }
+        self.call("jonas", "POST", f"/api/buildflow/programs/{program['id']}/reviews", json=body)
+
         # Build, for what's past CDR, and the bought parts: drawings, then ordering, and the first parts made.
         self.at(18, hour=22)
         for name in order:

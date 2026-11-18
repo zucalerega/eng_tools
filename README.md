@@ -576,6 +576,16 @@ Buildflow's top bar, has all of this on one page.
   `/piper/diagrams/3`, `/yorg/datasets/7`) shows its app and the name of what it goes to; any
   other is an `http` or `https` address, which opens in a tab of its own. Anyone signed in keeps
   all of this up.
+- **Reviews** cover several components at once: a subsystem's PDR, say, for its eight components.
+  **New review**, under the bill, takes the milestone it's held at (a review: DCR, CoDR, PDR, CDR,
+  TRR, QRR, FRR), a name, its day, and the components it covers (**All of** a subsystem picks
+  them all). Its day is each component's date at that milestone, and **Pass…** on its page passes
+  each of them there (those through it already stay as they are). Its page lists each component's
+  status at the milestone and its actions, to set one apart (back *In progress* with its actions
+  to close, say); its files (its slides, its package, its minutes: SharePoint links, say); and the
+  notes taken in it (**Edit notes**, in Markdown). The bill's chips and a component's panel name the
+  review it's in. **Remove…** keeps a review, to bring back from *Removed reviews*. Anyone signed in
+  keeps reviews.
 - **Laying out a program** is the admins': **New program** starts one from a rocket's, a
   hopper's, or a test stand's layout (its drawing, subsystems, and components), or with nothing but
   the milestones. **Layout**, on a program's page, draws the vehicle from its sections (an engine

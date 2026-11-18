@@ -16,6 +16,8 @@ from .models import (
     Phase,
     Program,
     Progress,
+    Review,
+    ReviewLink,
     ShopPart,
     ShopStatus,
     Status,
@@ -164,6 +166,38 @@ class LinkIn(BaseModel):
 class PeopleIn(BaseModel):
     phase: Phase
     user_ids: list[int] = Field(max_length=MOST_PEOPLE)
+
+
+# Notes taken in a review, in Markdown: a long review's minutes, actions and all.
+ReviewNotes = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50_000)]
+MOST_COVERED = 1000  # components a review covers: as many as a program has
+
+
+class ReviewIn(BaseModel):
+    milestone_id: int  # one of the program's review milestones: its PDR, say
+    name: LongName  # "Feed system PDR"
+    held_on: date | None = None  # its day, if it has one yet
+    component_ids: list[int] = Field(default_factory=list, max_length=MOST_COVERED)
+    notes: ReviewNotes = ""
+
+
+class ReviewChangeIn(BaseModel):
+    """What's sent is changed, and what's left out stays: held_on null leaves it with no day; component_ids is every
+    component it's to cover."""
+
+    name: LongName | None = None
+    held_on: date | None = None
+    notes: ReviewNotes | None = None
+    component_ids: list[int] | None = Field(default=None, max_length=MOST_COVERED)
+
+
+class ReviewPassIn(BaseModel):
+    done_on: date | None = None  # the day it passed: its own day, or today, if not said
+
+
+class ReviewFileIn(BaseModel):
+    url: Address
+    title: Title = ""
 
 
 # --- responses ------------------------------------------------------------------------------------------------------
@@ -357,14 +391,64 @@ class Summary(BaseModel):
     last_milestone: dict[Phase, str | None]
 
 
+class ReviewFileOut(BaseModel):
+    id: int
+    title: str
+    url: str
+    added_at: datetime
+    added_by: UserRef | None
+
+    @classmethod
+    def of(cls, link: ReviewLink) -> "ReviewFileOut":
+        return cls(id=link.id, title=link.title, url=link.url, added_at=link.added_at, added_by=_ref(link.adder))
+
+
+class ReviewOut(BaseModel):
+    id: int
+    program_id: int
+    milestone_id: int
+    name: str
+    held_on: date | None
+    notes: str
+    # The components it covers, as they were added: those removed from the program too, which it covers again once
+    # they're brought back.
+    component_ids: list[int]
+    files: list[ReviewFileOut]
+    created_at: datetime
+    created_by: UserRef | None
+    updated_at: datetime
+    updated_by: UserRef | None
+    removed_at: datetime | None
+
+    @classmethod
+    def of(cls, review: Review) -> "ReviewOut":
+        return cls(
+            id=review.id,
+            program_id=review.program_id,
+            milestone_id=review.milestone_id,
+            name=review.name,
+            held_on=review.held_on,
+            notes=review.notes,
+            component_ids=[cover.component_id for cover in review.covers],
+            files=[ReviewFileOut.of(link) for link in review.links],
+            created_at=review.created_at,
+            created_by=_ref(review.creator),
+            updated_at=review.updated_at,
+            updated_by=_ref(review.editor),
+            removed_at=review.removed_at,
+        )
+
+
 class ProgramDetailOut(ProgramOut):
     """A program's whole bill of design: its milestones and subsystems in order, and its components, each with its
-    progress, links, and people; and, for admins, the components removed from it, to bring back."""
+    progress, links, and people; its reviews, by their days; and, for admins, the components removed from it, to bring
+    back."""
 
     milestones: list[MilestoneOut]
     subsystems: list[SubsystemOut]
     components: list[ComponentOut]
     removed: list[ComponentOut]
+    reviews: list[ReviewOut]
 
 
 class EventOut(BaseModel):

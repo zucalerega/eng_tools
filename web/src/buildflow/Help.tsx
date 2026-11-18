@@ -141,6 +141,38 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "Reviews",
+        body: (
+            <ul>
+                <li>
+                    A review can cover several components at once: a subsystem&apos;s PDR, say, for its eight
+                    components. <em>New review</em>, under the bill, takes the milestone it&apos;s held at (one
+                    that&apos;s a review: DCR, CoDR, PDR, CDR, TRR, QRR, FRR), a name, its day, and the components it
+                    covers; <em>All of</em> a subsystem picks every one in it.
+                </li>
+                <li>
+                    Its day is each component&apos;s date at that milestone, and moving it moves them all. Those through
+                    it already (passed, or not needed) keep theirs. <em>Pass…</em>, on its page, passes each of its
+                    components there, on its day.
+                </li>
+                <li>
+                    Each component&apos;s progress is still its own. On the review&apos;s page, set one apart (back{" "}
+                    <em>In progress</em>, say) and write its actions beside it, under <em>Actions, outcome</em>: the
+                    same note its panel shows at the milestone.
+                </li>
+                <li>
+                    Its files are links: paste the address of its slides, its package, or its minutes (from SharePoint,
+                    its <em>Copy link</em>), with a name. Take its notes on its page, as it goes: <em>Edit notes</em>,
+                    in Markdown (<code>-</code> for a list), then <em>Save notes</em>.
+                </li>
+                <li>
+                    A component&apos;s chip on the bill says which review it&apos;s in there, and its menu goes to it,
+                    as its panel does. <em>Remove…</em> keeps a review, to bring back from <em>Removed reviews</em>.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "What's coming up",
         body: (
             <ul>

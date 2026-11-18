@@ -471,6 +471,14 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   others on it (3). Set your own level under *Who's trained*; an admin can set anyone's.
 - **A machine isn't offered for a new part.** It's retired: an admin brings it back under
   *Machines*.
+- **A review's day didn't change a component's date.** A review's day is each of its components'
+  date at its milestone, but those through it already (passed, or *Not needed*) keep theirs. One
+  taken off the review keeps the date it had.
+- **Pass… is greyed out on a review.** Every component it covers is through its milestone already.
+  A component that's come back from it with actions to close is set apart in its own row (*In
+  progress*, its note saying what).
+- **A review isn't on the program's page.** Someone removed it: *Removed reviews*, under the
+  program's reviews, lists them, and *Bring it back* on its page puts it back.
 
 ## Deals
 
@@ -908,9 +916,16 @@ a number. A few codes come up in more than one place.
   from the program's Layout page, under *Removed*. **... was taken off the shop's queue: bring it
   back to change it** (`removed`): put the part back in the queue first (*Show parts taken off the
   queue*, at the bottom of the Shop page).
-- **... has progress on ... components and ... links kept on it: rename it, or move it, instead**
-  (`milestone_in_use`): a milestone something's been kept on stays, so nothing said of a component
-  is lost. Rename it, or move it to where it belongs.
+- **... has progress on ... components, ... links and ... reviews kept on it: rename it, or move it,
+  instead** (`milestone_in_use`): a milestone something's been kept on stays (a review held at it
+  too, even one removed), so nothing said of a component is lost. Rename it, or move it to where it
+  belongs.
+- **... is work, not a review: a review is held at one of ...'s review milestones, as its CDR**
+  (`not_a_review`): a review is held at a milestone that's a review (DCR, CoDR, PDR, CDR, TRR, QRR,
+  FRR, as a program starts), not at one for work, as Manufacturing. An admin marks a milestone a
+  review on the program's Layout page.
+- **The review ... was removed: bring it back to change it** (`removed`): bring it back first, with
+  *Bring it back* on its page (*Removed reviews*, on the program's page, lists it).
 - **... has ... components in it: move them to another subsystem first**, or **... removed components
   to come back to it** (`not_empty`): only an empty subsystem is deleted. Move its components
   elsewhere first; removed ones keep their subsystem, so bring them back and move them too.
@@ -921,9 +936,10 @@ a number. A few codes come up in more than one place.
   retired machine takes no new parts. Pick another, or an admin brings it back under *Machines*.
 - **There's a machine called ... already** (`name_taken`): two machines can't have the same name,
   whatever its case (a retired one keeps its name: bring it back instead).
-- **... isn't a link a component can have: a link is an http or https address, or a page of the
-  site's own, like /vault/file/12** (`bad_link`): copy the page's whole address from the browser
-  (`https://...`), or a page of the site's own from its path (`/vault/file/12`).
+- **... isn't a link a component can have** (or **a review can have**)**: a link is an http or https
+  address, or a page of the site's own, like /vault/file/12** (`bad_link`): copy the page's whole
+  address from the browser (`https://...`), or a page of the site's own from its path
+  (`/vault/file/12`). A file on SharePoint: its *Copy link*, or its address from the browser.
 
 ### Deals
 

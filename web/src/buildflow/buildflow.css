@@ -1695,3 +1695,145 @@ button.bf-deal-mark:hover:not(:disabled) {
     gap: 0.5rem;
     padding: 0.15rem 0;
 }
+
+/* --- design reviews (Review.tsx) ----------------------------------------------------------------------------------- */
+
+.bf-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.bf-reviews {
+    margin: 1.5rem 0 0.5rem;
+}
+
+/* A row's name, as a row header: in the row's own type, not the column heads' small capitals. */
+.bf-reviews-table tbody th,
+.bf-review-table tbody th {
+    font-size: inherit;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    color: inherit;
+    background: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.55rem 0.9rem;
+}
+
+.bf-reviews-table tbody tr:last-child th,
+.bf-review-table tbody tr:last-child th {
+    border-bottom: none;
+}
+
+.bf-review-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    margin: -0.25rem 0 1rem;
+}
+
+/* The review's own controls, in a fieldset that's off in the demo, or when it's removed or its program archived. */
+.bf-review-body {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.bf-review-body:disabled :is(input, select, textarea, button) {
+    color: var(--muted);
+    cursor: default;
+}
+
+.bf-review-body:disabled :is(.bf-remove, .bf-review-add-file, .bf-section-head .button-small) {
+    display: none;
+}
+
+.bf-review-about,
+.bf-review-add-file,
+.bf-review-new {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.bf-review-about .field,
+.bf-review-add-file .field,
+.bf-review-new .field {
+    margin: 0;
+}
+
+.bf-review-about .bf-small {
+    margin: 0 0 0.5rem;
+}
+
+.bf-review-name {
+    flex: 1 1 18rem;
+}
+
+.bf-review-table .bf-note {
+    width: 100%;
+    min-width: 14rem;
+}
+
+.bf-review-files li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.bf-review-add-file {
+    margin-top: 0.75rem;
+}
+
+.bf-review-notes {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+}
+
+.bf-review-notes-edit textarea {
+    width: 100%;
+    font: inherit;
+    line-height: 1.5;
+}
+
+.bf-review-notes-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+}
+
+.bf-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.bf-picker-group {
+    display: grid;
+    align-content: start;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 0.5rem 0.75rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-large);
+}
+
+.bf-picker-group legend {
+    padding: 0 0.3rem;
+    font-weight: 600;
+}
+
+.bf-milestone-reviews {
+    margin: 0.2rem 0 0.35rem;
+}

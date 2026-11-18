@@ -30,6 +30,11 @@ function variants() {
             parts.push(newPart("valve", { x: 0, y: 0 }, { props: { body: body.value, actuation } }));
         }
     }
+    for (const fuelTaps of ["", "1", "2"]) {
+        for (const oxTaps of ["", "1", "2"]) {
+            parts.push(newPart("engine", { x: 0, y: 0 }, { props: { fuelTaps, oxTaps } }));
+        }
+    }
     for (const kind of ["valve3", "angle"]) {
         for (const actuation of ["", "manual", "solenoid", "pneumatic", "motor"]) {
             parts.push(newPart(kind, { x: 0, y: 0 }, { props: { actuation } }));
@@ -491,6 +496,44 @@ test("a tank has as many ports on its top and its bottom as it's set to, and a l
         const field = kindOf("tank").fields.find((entry) => entry.key === key)!;
         expect(field.options!.map((option) => option.label)).toEqual(["1", "2", "3", "4", "5"]);
     }
+});
+
+test("an engine's injector has as many ports on each manifold as it's set to, and a line on one taken away stays", () => {
+    const at = (part: Part) => portsOf(part).map((port) => [port.id, port.at.x, port.at.y]);
+    // Its inlets and its chamber's taps as an engine's always were, and nothing more until it's said.
+    const plain = newPart("engine", { x: 0, y: 0 });
+    const before = [
+        ["fuel", -10, -50],
+        ["ox", 10, -50],
+        ["left", -30, -20],
+        ["right", 30, -20],
+    ];
+    expect(at(plain)).toEqual(before);
+    expect(boxOf(plain, emptyDrawing())).toEqual({ x0: -24, y0: -50, x1: 24, y1: 60 });
+    // Up to 2 on each manifold, on the grid across its injector's top: outward from its inlet, fuel's left, ox's right.
+    const engine = newPart("engine", { x: 0, y: 0 }, { tag: "ENG-1", props: { fuelTaps: "2", oxTaps: "1" } });
+    expect(at(engine)).toEqual([...before, ["fuel-tap", -20, -50], ["fuel-tap-2", -30, -50], ["ox-tap", 20, -50]]);
+    // Its injector reaches out under them, past its chamber, as far as its chamber's taps.
+    expect(boxOf(engine, emptyDrawing())).toEqual({ x0: -30, y0: -50, x1: 30, y1: 60 });
+    const markup = renderToStaticMarkup(createElement(PartIcon, { part: engine, palette: LIGHT }));
+    expect(markup).toContain('x="-30" y="-40" width="60" height="8"');
+    expect(renderToStaticMarkup(createElement(PartIcon, { part: plain, palette: LIGHT }))).not.toContain("<rect");
+    // Fewer: a line on a port it no longer has stays, ending where the port was; one on a port it keeps follows it.
+    const outer = newLine({ part: engine.id, port: "fuel-tap-2" }, { x: -30, y: -120 });
+    const inner = newLine({ part: engine.id, port: "fuel-tap" }, { x: -20, y: -120 });
+    const drawing = { ...emptyDrawing(), parts: [engine], lines: [outer, inner] };
+    const fewer = updatePart(drawing, engine.id, (part) => ({ ...part, props: { ...part.props, fuelTaps: "1" } }));
+    expect(fewer.lines.find((line) => line.id === outer.id)!.from).toEqual({ x: -30, y: -50 });
+    expect(fewer.lines.find((line) => line.id === inner.id)!.from).toEqual({ part: engine.id, port: "fuel-tap" });
+    // A choice of none to 2 on each, and its injector's own fields beside its chamber's.
+    const fields = kindOf("engine").fields;
+    for (const key of ["fuelTaps", "oxTaps"]) {
+        const field = fields.find((entry) => entry.key === key)!;
+        expect(field.options!.map((option) => option.label)).toEqual(["None", "1", "2"]);
+    }
+    expect(fields.map((field) => field.key)).toEqual(
+        expect.arrayContaining(["pc", "injector", "elements", "stiffness", "fuelCda", "oxCda", "injectorMaterial"]),
+    );
 });
 
 test("a pump stands on its base with its tag under it, and a vent is the spray of what it lets go", () => {

@@ -48,7 +48,7 @@ const BUILT: { part: string; type: string; when?: Record<string, string>; how: s
     {
         part: "Outlet (an engine, a vent)",
         type: "outlet",
-        how: "Its pressure follows its channel (a chamber transducer's), or stays where it's set. An engine is one for each of its inlets.",
+        how: "Its pressure follows its channel (a chamber transducer's), or stays where it's set. An engine is one for each of its inlets, reached at its injector manifold's pressure: its chamber's times one plus its Injector stiffness, which an injector manifold's transducer is compared with.",
     },
     {
         part: "Liquid line, modeled as a line",

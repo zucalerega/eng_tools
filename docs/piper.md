@@ -221,7 +221,15 @@ what it is, `data-hit`).
   left before right, so a tank from before keeps its `top` and `bottom` where they were, and
   fewer takes the last ones added away (a line on one stays, as on a manifold's). Every port on
   its top is its ullage (`isTopPort`), for the fluid a line from it takes and the temperature a
-  sensor there reads. A diffuser
+  sensor there reads. An engine is its injector and its chamber in one part: fuel and ox into
+  its injector's top (`fuel`, `ox`), a tap each side of its chamber (`left`, `right`), and, for
+  sensors on its injector's manifolds, 0 to 2 ports on each (`fuelTaps`, `oxTaps`): `fuel-tap`
+  and `fuel-tap-2` at -20 and -30 across its top, outward from its fuel inlet, and `ox-tap` and
+  `ox-tap-2` at 20 and 30 from its ox inlet (`manifoldTapped`). With any, its injector is drawn
+  reaching out under them, to ±30, as far as its chamber's taps, so its box is ±30 and they stay
+  at its edge; without, it's drawn as an engine always was. Its fields are its chamber's (thrust,
+  Pc, O/F, propellants, MAWP) and its injector's (element type, elements, stiffness, each side's
+  CdA, material), text as people write them; Simulation mode reads the stiffness. A diffuser
   goes into a line, as a tank's pressurant inlet has one: its body, a perforated face, and
   arrows spreading out from it. Valves (ball, gate, globe,
   needle, butterfly, plug, solenoid, pneumatic, motorized, check, three-way, angle, relief,
@@ -641,7 +649,10 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
   supplies and vessels (bottles, and tanks of a gas: a supply at a pressure, `source`, or a
   vessel that blows down, a `gas_junction` with a wall), outlets (the engine and vents, an
   engine one for each of its inlets with flow, as a model carries one liquid in each connected
-  set of lines, all at its pressure), and the points between parts, where lines, tees, and
+  set of lines, all at its pressure; each reached at its injector manifold's, `stiffness`, from
+  the engine's Injector stiffness field, `stiffnessOf`: "20 %" or "0.2", a bare number past 1
+  not guessed at, and the field the one place it's kept, so the Simulation box doesn't show it),
+  and the points between parts, where lines, tees, and
   plain connections join ports (a `junction` in liquid lines, a `gas_junction` of tubing in gas
   ones). Its edges carry flow between them, from a part's first port to its second: valves
   (relief valves, quick disconnects, and burst discs too, as they're set to be), check valves
@@ -671,7 +682,9 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
 - **Channels** come from the P&ID, as Test data reads them (`channelNames`): a valve's command
   is its own; an instrument's pressure or temperature, that of the node it taps (a thermocouple
   tapping a tank above its liquid, its ullage's, unless it's set to read the liquid's or the
-  wall's); and a flow meter, with no loss of its own, reads the flow of the one part it's in
+  wall's; one on an engine's chamber tap, its chamber's pressure, on each of its outlets; one on
+  a tap of its injector's manifolds, that manifold's, `manifold`, on the outlet its inlet's
+  flow reaches, or nothing, said so, with none); and a flow meter, with no loss of its own, reads the flow of the one part it's in
   line with (set to be an orifice, it's that, with its own). Only the channels the test has are
   linked, by their names there, and the panel lists the parts with none. Whether a channel
   drives the model or is compared with it is the catalog's (a fixed tank follows its
@@ -787,3 +800,8 @@ any client would.
   Simulation mode leaves it out. Should Piper's tanks be drawn at any size, with ports where
   lines meet them, so an import can make one of it (its fluid, pressure, and volume from its
   words)?
+- An engine's injector is in Simulation mode only as its stiffness: its manifolds are a fixed
+  fraction above its chamber. Should its Fuel CdA and Ox CdA (text as people write them now)
+  model it as an orifice from each manifold into its chamber instead, so its stiffness changes
+  with its flow? And should a transducer tee'd into a feed line right at the engine's inlet
+  read that manifold too, as one on its injector's port does, instead of its chamber?

@@ -265,6 +265,76 @@ test("a tank with more ports on its ends is one tank: its top's are its ullage, 
     expect(built.model.edges.map((edge) => edge.name).sort()).toEqual(["BV-bottom", "BV-bottom-2", "SV-PRESS"]);
 });
 
+test("an engine's injector manifolds: a transducer on a tap reads its inlet's, its stiffness above the chamber's", () => {
+    const draw = sketch();
+    const engine = draw.place("engine", 0, 200, {
+        tag: "ENG-1",
+        props: { fuelTaps: "2", oxTaps: "1", stiffness: "25 %" },
+    });
+    // Water into its fuel inlet, through a valve; nothing into its ox inlet.
+    const tank = draw.place("tank", 0, 0, { tag: "TK-1", props: { fluid: "water" } });
+    const valve = draw.place("ball-valve", -10, 100, { tag: "MV-1", rotation: 90 });
+    draw.join([tank, "bottom"], [valve, "a"], "water");
+    draw.join([valve, "b"], [engine, "fuel"], "water");
+    // A transducer on its fuel manifold's outer tap, one on its ox manifold's, and one on its chamber.
+    const fuel = draw.place("pressure-transducer", -30, 100, { tag: "PT-FUEL-INJ" });
+    draw.join([engine, "fuel-tap-2"], [fuel, "bottom"]);
+    const ox = draw.place("pressure-transducer", 20, 100, { tag: "PT-OX-INJ" });
+    draw.join([engine, "ox-tap"], [ox, "bottom"]);
+    const chamber = draw.place("pressure-transducer", 100, 180, { tag: "PT-CHAMBER" });
+    draw.join([engine, "right"], [chamber, "bottom"]);
+    const built = buildModel(
+        documentOf(draw.drawing),
+        catalog,
+        testWith("MV-1", "PT-FUEL-INJ", "PT-OX-INJ", "PT-CHAMBER"),
+    );
+    expect(problems(built)).toEqual([]);
+    // Its one outlet, its fuel's, reached at its manifold, the stiffness above its chamber; its chamber's transducer
+    // sets its chamber's pressure, and its fuel manifold's is compared with what flow meets.
+    expect(built.model.nodes.filter((node) => node.type === "outlet")).toEqual([
+        {
+            id: engine,
+            type: "outlet",
+            name: "ENG-1",
+            settings: { stiffness: 0.25 },
+            links: { pressure: "PT-CHAMBER", manifold: "PT-FUEL-INJ" },
+        },
+    ]);
+    expect(built.placed.get(fuel)).toMatchObject({ role: "sensor", ids: [engine], reads: "manifold" });
+    expect(comparisons(built.model, catalog).map((one) => [one.name, one.channel])).toEqual([
+        ["ENG-1 injector manifold pressure", "PT-FUEL-INJ"],
+    ]);
+    // Nothing flows into its ox manifold, so what taps it isn't compared, and says so.
+    expect(built.placed.get(ox)).toMatchObject({ ids: [], reads: null });
+    expect(notes(built)).toEqual([
+        "PT-OX-INJ taps ENG-1's ox manifold, which nothing flows into in the model: draw a line from its ox inlet to what feeds it.",
+    ]);
+    // A stiffness written as a ratio is the same; one the model can't read is left out, and said so.
+    const stiffness = (said: string) =>
+        buildModel(
+            documentOf(
+                updatePart(draw.drawing, engine, (part) => ({ ...part, props: { ...part.props, stiffness: said } })),
+            ),
+            catalog,
+            null,
+        );
+    expect(nodeOf(stiffness("0.25"), engine)!.settings).toEqual({ stiffness: 0.25 });
+    for (const said of ["", "25", "high"]) {
+        const without = stiffness(said);
+        expect(nodeOf(without, engine)!.settings, said).toEqual({});
+        expect(
+            notes(without).filter((text) => text.includes("stiffness")),
+            said,
+        ).toEqual(
+            said
+                ? [
+                      `ENG-1's injector stiffness, ${said}, isn't one the model can use (write it as 20 % or 0.2), so it's left out: its inlets are at its chamber's pressure.`,
+                  ]
+                : [],
+        );
+    }
+});
+
 test("a pneumatic valve's air line works it: it isn't in the model, even drawn as tubing", () => {
     const built = (as: string) => {
         const draw = sketch();

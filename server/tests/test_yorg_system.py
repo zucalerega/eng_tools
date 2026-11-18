@@ -507,3 +507,29 @@ def test_a_runs_data_is_every_linked_channel_in_si_units(team):
     assert values[0] == pytest.approx((250.0 - 5 * 0.49) * PSI + ATMOSPHERE)
     assert data["tank.gas_temperature"][1][0] == pytest.approx((50.0 - 0.49 - 32.0) * 5 / 9 + 273.15)
     assert list(data["mov.command"][1][:2]) == [1.0, 1.0]
+
+
+def test_an_engines_injector_stiffness_puts_its_manifold_above_its_chamber(team):
+    """An outlet with an injector stiffness (an engine's, from Piper) is reached at its injector manifold's pressure:
+    its chamber's, followed or set, times one plus the stiffness. Both are reported, and a manifold transducer is
+    compared with the manifold's."""
+    chief = team.member("chief@x.test", admin=True)
+    dataset = upload(team, chief, pressurized_csv(), "Pressurized.csv")
+    model = pressurized_model()
+    chamber = model["nodes"][4]
+    chamber["settings"] = {"stiffness": 0.25}
+    chamber["links"] = {"pressure": "PT-CHAMBER", "manifold": "PT-TANK"}
+    body = {"model": model, "dataset_id": dataset["id"], "start": 0.0, "end": 1.0}
+    text = script_of(team, chief, body)
+    assert "chamber_pressure = run.following('chamber.pressure', otherwise=101325.0)" in text
+    assert "chamber_manifold = State(126656.25).derive_from(lambda: chamber_pressure.value * 1.25)" in text
+    assert "downstream_pressure=chamber_manifold," in text  # the venturi into it flows to its manifold
+    assert "'chamber.pressure': chamber_pressure," in text and "'chamber.manifold': chamber_manifold," in text
+    assert "'chamber.manifold': ('PT-TANK', 'pressure')," in text
+    assert "chamber.manifold" in data_of(team, chief, body)
+    # With none (a vent, an engine whose injector's drawn), it's reached at its own pressure.
+    assert "'stack.manifold': vent_stack_pressure," in text and "vent_stack_manifold" not in text
+    too_stiff = pressurized_model()
+    too_stiff["nodes"][4]["settings"] = {"stiffness": 11.0}
+    response = team.client.post("/api/yorg/models/script", json={**body, "model": too_stiff}, headers=chief)
+    assert response.status_code == 422, response.text

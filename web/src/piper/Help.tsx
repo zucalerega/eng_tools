@@ -151,8 +151,13 @@ const TOPICS: Topic[] = [
                     where the port was. A <em>Tank</em> has two ports on each side, and 1 to 5 on its top and on its
                     bottom: <em>Top ports</em> and <em>Bottom ports</em>, on the right. Every port on its top is its
                     ullage, its pressurant or vent, and every one on its bottom its liquid; take one away and a line on
-                    it stays, ending where it was. A <em>Diffuser</em> goes into a line, as a tank's pressurant inlet
-                    has one, its arrows the way the flow leaves it.
+                    it stays, ending where it was. An <em>Engine</em> is its injector and its chamber in one part: fuel
+                    comes into its injector's top on the left, ox on the right, and its chamber has a tap each side. For
+                    sensors on its injector's manifolds, give it <em>Fuel manifold ports</em> and{" "}
+                    <em>Ox manifold ports</em> (up to 2 each, on the right), on its injector's top outward from each
+                    inlet; its injector is then drawn reaching out under them. Its injector's element type, elements,
+                    stiffness, CdAs, and material are fields of its own. A <em>Diffuser</em> goes into a line, as a
+                    tank's pressurant inlet has one, its arrows the way the flow leaves it.
                 </li>
                 <li>
                     Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip (a flip never mirrors the words
@@ -461,10 +466,14 @@ const TOPICS: Topic[] = [
                     Its channels come from the P&amp;ID: a valve's command is its Test channel (or its tag); a pressure
                     transducer reads the pressure where it taps (a tank's, the point between two valves); a thermocouple
                     tapping a tank above its liquid reads its ullage; and a flow meter, the flow through what it's in
-                    line with. A tank's, a supply's, or the engine's transducer drives it; the others are compared.
-                    Uncheck a channel in its part's <em>Simulation</em> box to leave it out and set the conditions
-                    yourself: the part then does what its settings say (a valve stays where they have it, a tank holds
-                    the pressure set on it).
+                    line with. A tank's, a supply's, or the engine's chamber's transducer drives it; the others are
+                    compared. A transducer on a port of the engine's injector reads that manifold's pressure: where its
+                    propellant reaches the engine, its <em>Injector stiffness</em> (20 %, or 0.2: the injector's drop
+                    over the chamber's pressure, absolute) above the chamber's. Without one, it's the chamber's; leave
+                    it empty when the injector's drawn as orifices of its own, or its drop counts twice. Uncheck a
+                    channel in its part's <em>Simulation</em> box to leave it out and set the conditions yourself: the
+                    part then does what its settings say (a valve stays where they have it, a tank holds the pressure
+                    set on it).
                 </li>
                 <li>
                     In its panel, pick the test, the run's window (<em>◷</em> takes the time on the timeline), the time

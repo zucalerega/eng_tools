@@ -356,12 +356,34 @@ PARTS: tuple[Part, ...] = (
         "node",
         "any",
         "Where the flow goes: the atmosphere, a chamber, a catch tank, a vent stack. At a fixed pressure or one you "
-        "measured.",
-        settings=(Setting("pressure", "Pressure", "pressure", ATMOSPHERE, 0.0, 1e9),),
+        "measured; an engine's chamber, with its injector's stiffness, reached at its injector manifold's.",
+        settings=(
+            Setting("pressure", "Pressure", "pressure", ATMOSPHERE, 0.0, 1e9),
+            Setting(
+                "stiffness",
+                "Injector stiffness",
+                "ratio",
+                0.0,
+                0.0,
+                10.0,
+                help="An engine's: the drop across its injector over its chamber's pressure (absolute). Flow reaches "
+                "it at its pressure times one plus this, its injector manifold's. 0: none (a vent)",
+            ),
+        ),
         links=(
             Link("pressure", "Pressure", "pressure", "boundary", "The outlet's pressure follows it (chamber pressure)"),
+            Link(
+                "manifold",
+                "Injector manifold pressure",
+                "pressure",
+                "sensor",
+                "Compared with where flow reaches it: its pressure, times one plus its injector stiffness",
+            ),
         ),
-        outputs=(Output("pressure", "Pressure", "pressure"),),
+        outputs=(
+            Output("pressure", "Pressure", "pressure"),
+            Output("manifold", "Injector manifold pressure", "pressure"),
+        ),
     ),
     Part(
         "line",

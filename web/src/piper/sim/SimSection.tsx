@@ -281,9 +281,16 @@ function whereText(sim: SimContext, role: SimRole, ids: string[]): string {
         const label = kindOfType(sim.catalog, edge.type)?.label.toLowerCase() ?? edge.type;
         return `In the model: a ${label}, from ${from} to ${to}.`;
     }
-    if (role === "outlet" && ids.length > 1) {
+    if (role === "outlet" && ids.length > 0) {
         const names = ids.map((id) => partOf(model, id)?.name ?? id);
-        return `In the model: an outlet for each of its inlets, ${names.join(" and ")}, at one pressure.`;
+        const stiffness = Number(partOf(model, ids[0]!)?.settings.stiffness ?? 0);
+        const reached =
+            stiffness > 0
+                ? ` Flow reaches it at its injector's manifolds, its Injector stiffness (${+(stiffness * 100).toFixed(1)} %) above its pressure.`
+                : "";
+        return ids.length > 1
+            ? `In the model: an outlet for each of its inlets, ${names.join(" and ")}, at one pressure.${reached}`
+            : `In the model: an outlet.${reached}`;
     }
     if (ids.length === 0) {
         return role === "through"
@@ -356,8 +363,15 @@ export function PartSimSection({ store, sim, part }: { store: EditorStore; sim: 
         );
     }
     const model = partOf(sim.built.model, placed?.ids[0] ?? "");
+    // An outlet's injector stiffness is an engine's own field's (Injector stiffness), which the drawing shows.
     const hidden = new Set(
-        model?.type === "gas_junction" ? ["wall"] : model?.type === "gas_valve" && role === "check" ? ["check"] : [],
+        model?.type === "gas_junction"
+            ? ["wall"]
+            : model?.type === "gas_valve" && role === "check"
+              ? ["check"]
+              : model?.type === "outlet"
+                ? ["stiffness"]
+                : [],
     );
     if (choices.length === 1 && choices[0] === "none" && !NOT_SIMULATED.has(part.kind)) {
         return null; // a note, a picture: nothing of it's in a model

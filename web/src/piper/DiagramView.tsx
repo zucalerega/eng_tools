@@ -208,8 +208,10 @@ const PartView = memo(function PartView({
             {kind.draw(part, context)}
             {interactive &&
                 // Where a click lands on it: all of its box, not only its strokes. A region's only its edge, so
-                // what's in it can be clicked.
-                (kind.behind ? (
+                // what's in it can be clicked; an arrow's only near its line.
+                (kind.hit ? (
+                    <path d={kind.hit(part)} fill="none" stroke="transparent" strokeWidth={12} pointerEvents="stroke" />
+                ) : kind.behind ? (
                     <rect
                         x={x0}
                         y={y0}

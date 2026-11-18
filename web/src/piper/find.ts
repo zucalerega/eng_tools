@@ -1,6 +1,6 @@
 import { pageOf, type Document, type Drawing } from "./drawing";
 import { fluidOf } from "./fluids";
-import { titleOf } from "./library/index";
+import { kindOf, titleOf } from "./library/index";
 
 // Finding what's on a drawing: a part by its tag (PUREG, PT-101), what it is (regulator), or what it holds, and a line by
 // its tag or fluid. Tags match whatever their case, and then ignoring spaces, dashes, and underscores, as test channels
@@ -64,7 +64,7 @@ function scoredOn(drawing: Drawing, wanted: string, page: number): { found: Foun
         }
     };
     for (const part of drawing.parts) {
-        if (part.kind === "junction") {
+        if (part.kind === "junction" || kindOf(part.kind).aside) {
             continue;
         }
         const holds = fluidOf(drawing, part.props.fluid ?? "");

@@ -81,6 +81,9 @@ export interface Component {
     y: number | null; // up from its centerline
     position: number;
     lead: UserRef | null;
+    lead_days: number | null; // its lead time: from ordering it (or starting to make it) to having it
+    need_by: string | null; // the day it has to be ready by, for the build
+    needs: number[]; // the components that have to be ready before it can be started
     updated_at: string;
     updated_by: UserRef | null;
     removed_at: string | null;
@@ -114,6 +117,92 @@ export interface ProgramDetail extends Program {
     subsystems: Subsystem[];
     components: Component[];
     removed: Component[]; // for admins, to bring back
+    reviews: Review[]; // by their days, those with none yet last
+}
+
+/** A design review held for several components at once, at one of the program's review milestones. */
+export interface Review {
+    id: number;
+    program_id: number;
+    milestone_id: number;
+    name: string;
+    held_on: string | null; // its day: each component's due date at its milestone
+    notes: string; // taken in it, in Markdown
+    component_ids: number[]; // those removed from the program too, covered again once they're brought back
+    files: ReviewFile[];
+    created_at: string;
+    created_by: UserRef | null;
+    updated_at: string;
+    updated_by: UserRef | null;
+    removed_at: string | null;
+}
+
+/** A review's file: its slides, its package, its minutes, wherever they're kept (SharePoint, say). */
+export interface ReviewFile {
+    id: number;
+    title: string;
+    url: string;
+    added_at: string;
+    added_by: UserRef | null;
+}
+
+// --- bills of materials (server: buildflow/bom.py) ---
+
+export type BomStatus = "to_order" | "ordered" | "received";
+
+export const BOM_STATUS_NAMES: Record<BomStatus, string> = {
+    to_order: "To order",
+    ordered: "Ordered",
+    received: "Received",
+};
+
+/** A part on a program's BOM, read in from the team's spreadsheet (or added by hand). */
+export interface BomLine {
+    id: number;
+    program_id: number;
+    component_id: number | null; // none: not matched to a component
+    position: number;
+    part_number: string;
+    description: string;
+    quantity: number | null;
+    unit: string;
+    vendor: string;
+    unit_cost: number | null; // in cents, each
+    lead_days: number | null;
+    url: string;
+    status: BomStatus;
+    note: string;
+    updated_at: string;
+    updated_by: UserRef | null;
+}
+
+/** A line as it's read in: status none keeps a line's own (to order, for a new one). */
+export interface BomLineIn {
+    component_id: number | null;
+    part_number: string;
+    description: string;
+    quantity: number | null;
+    unit: string;
+    vendor: string;
+    unit_cost: number | null;
+    lead_days: number | null;
+    url: string;
+    status: BomStatus | null;
+}
+
+/** What reading a BOM in did: the BOM as it is now, and how many lines it added, changed, and took off. */
+export interface BomRead {
+    lines: BomLine[];
+    added: number;
+    changed: number;
+    removed: number;
+}
+
+export interface ReviewChange {
+    name?: string;
+    held_on?: string | null;
+    notes?: string;
+    component_ids?: number[];
 }
 
 export interface Activity {
@@ -143,6 +232,8 @@ export interface ComponentChange {
     y?: number | null;
     position?: number;
     lead_id?: number | null;
+    lead_days?: number | null;
+    need_by?: string | null;
 }
 
 // --- the shop (server: buildflow/shop.py) ---
@@ -235,6 +326,7 @@ export interface Shop {
 const program = (id: number) => `/api/buildflow/programs/${id}`;
 const component = (id: number) => `/api/buildflow/components/${id}`;
 const shopPart = (id: number) => `/api/buildflow/shop/parts/${id}`;
+const review = (id: number) => `/api/buildflow/reviews/${id}`;
 
 export const buildflow = {
     programs: (archived = false) =>
@@ -279,6 +371,38 @@ export const buildflow = {
     removeLink: (id: number) => request<Component>("DELETE", `/api/buildflow/links/${id}`),
     setPeople: (id: number, phase: Phase, userIds: number[]) =>
         request<Component>("PUT", `${component(id)}/people`, { phase, user_ids: userIds }),
+    /** What has to be ready before a component can be started: these, and no others. */
+    setNeeds: (id: number, componentIds: number[]) =>
+        request<Component>("PUT", `${component(id)}/needs`, { component_ids: componentIds }),
+
+    /** A program's BOM (or one component's lines). */
+    bom: (programId: number, componentId?: number) =>
+        request<BomLine[]>(
+            "GET",
+            `${program(programId)}/bom${componentId === undefined ? "" : `?component_id=${componentId}`}`,
+        ),
+    /** Read a BOM in: the program's whole BOM (component_id null), or one component's, becomes these lines. */
+    readBom: (programId: number, body: { lines: BomLineIn[]; component_id: number | null; file: string }) =>
+        request<BomRead>("PUT", `${program(programId)}/bom`, body),
+    changeBomLine: (id: number, change: Partial<BomLineIn> & { note?: string }) =>
+        request<BomLine>("PATCH", `/api/buildflow/bom/lines/${id}`, change),
+
+    /** A program's design reviews (removed: those taken off it instead). */
+    reviews: (programId: number, removed = false) =>
+        request<Review[]>("GET", `${program(programId)}/reviews${removed ? "?removed=true" : ""}`),
+    review: (id: number) => request<Review>("GET", review(id)),
+    addReview: (
+        programId: number,
+        body: { milestone_id: number; name: string; held_on: string | null; component_ids: number[] },
+    ) => request<Review>("POST", `${program(programId)}/reviews`, body),
+    changeReview: (id: number, change: ReviewChange) => request<Review>("PATCH", review(id), change),
+    /** Pass a review: each of its components passes its milestone, on the day said (else the review's, or today). */
+    passReview: (id: number, doneOn: string) => request<Review>("POST", `${review(id)}/pass`, { done_on: doneOn }),
+    removeReview: (id: number) => request<Review>("DELETE", review(id)),
+    restoreReview: (id: number) => request<Review>("POST", `${review(id)}/restore`),
+    addReviewFile: (id: number, body: { url: string; title: string }) =>
+        request<Review>("POST", `${review(id)}/files`, body),
+    removeReviewFile: (id: number, fileId: number) => request<Review>("DELETE", `${review(id)}/files/${fileId}`),
 
     /** The shop: its machines, its queue (removed: the parts taken off it instead), who's trained, and its load. */
     shop: (removed = false) => request<Shop>("GET", `/api/buildflow/shop${removed ? "?removed=true" : ""}`),

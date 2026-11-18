@@ -20,6 +20,7 @@ public sealed class Workspace : IDisposable
     internal const string DownloadSuffix = ".vault-download";
     private const string ConfigFile = "config.json";
     private const string StateFile = "state.json";
+    private const string DamagedSuffix = ".damaged";
     private static readonly string[] MayReference = { ".sldasm", ".slddrw", ".sldprt" };
 
     private readonly WorkspaceState _state;
@@ -45,6 +46,19 @@ public sealed class Workspace : IDisposable
 
     /// <summary>An admin's pause, as of the last refresh: changes wait until it's back. Null when the vault isn't paused.</summary>
     public PauseInfo? Paused { get; private set; }
+
+    /// <summary>
+    /// Whether what this workspace kept (.vault/state.json) couldn't be read as it opened, so it started again without
+    /// it: the next refresh gets the whole vault, and every copy here is compared with it. A copy that isn't the latest
+    /// version (yours, changed; or just an older one) is then a conflict, to settle as any other.
+    /// </summary>
+    public bool StateWasDamaged { get; private set; }
+
+    /// <summary>What to tell someone whose workspace opened with StateWasDamaged.</summary>
+    public const string DamagedStateNote =
+        "Vault's record of the files here was damaged (the computer may have shut down while it was being saved), so it's "
+        + "checking every file against the vault again. A file that isn't the vault's latest version now shows as a "
+        + "conflict: keep your copy if you changed it, or take the vault's.";
 
     public static string DefaultRoot => RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
         ? @"C:\VLT"
@@ -76,14 +90,66 @@ public sealed class Workspace : IDisposable
     public static Workspace Open(string root, string token, HttpMessageHandler? handler = null)
     {
         root = Path.GetFullPath(root);
-        var config = ReadJson<WorkspaceConfig>(Path.Combine(root, MetaFolder, ConfigFile))
-            ?? throw new WorkspaceException($"{root} is not a vault workspace");
-        var statePath = Path.Combine(root, MetaFolder, StateFile);
-        var state = File.Exists(statePath) ? ReadJson<WorkspaceState>(statePath) ?? new WorkspaceState() : new WorkspaceState();
-        var server = new Uri(config.Server);
-        var workspace = new Workspace(root, server, config.Host ?? Environment.MachineName, new VaultApi(server, token, handler), state);
+        var (config, server) = ReadConfig(root);
+        var state = ReadState(root, out var damaged);
+        var workspace = new Workspace(root, server, config.Host ?? Environment.MachineName, new VaultApi(server, token, handler), state)
+        {
+            StateWasDamaged = damaged,
+        };
         workspace.ForgetBadPaths();
         return workspace;
+    }
+
+    // Which server a workspace is for can't be worked out again, as its state can, so a config that can't be read
+    // says how to make it again: setting the folder up again writes it, and leaves everything else.
+    private static (WorkspaceConfig Config, Uri Server) ReadConfig(string root)
+    {
+        var path = Path.Combine(root, MetaFolder, ConfigFile);
+        WorkspaceConfig? config;
+        try
+        {
+            config = ReadJson<WorkspaceConfig>(path) ?? throw new WorkspaceException($"{root} is not a vault workspace");
+        }
+        catch (JsonException)
+        {
+            config = null;
+        }
+        if (config != null && Uri.TryCreate(config.Server, UriKind.Absolute, out var server))
+        {
+            return (config, server);
+        }
+        throw new WorkspaceException(
+            $"{path} is damaged (the computer may have shut down while it was being saved), so Vault can't tell which server "
+            + $"{root} is a workspace for. Delete it, then set the workspace up again in the same folder (sign in in SolidWorks' "
+            + "Vault pane, or `vault init`): the files in it stay as they are.");
+    }
+
+    // What a workspace keeps can all be worked out again (see LocalState), so state that can't be read is set aside,
+    // to look at if it keeps happening, and the workspace starts without it. One file of zeros shouldn't stop
+    // anyone opening their vault.
+    private static WorkspaceState ReadState(string root, out bool damaged)
+    {
+        var path = Path.Combine(root, MetaFolder, StateFile);
+        damaged = false;
+        try
+        {
+            return ReadJson<WorkspaceState>(path) ?? new WorkspaceState();
+        }
+        catch (JsonException)
+        {
+            damaged = true;
+        }
+        try
+        {
+            var aside = path + DamagedSuffix;
+            File.Delete(aside);
+            File.Move(path, aside);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // It stays where it is until the next save replaces it.
+        }
+        return new WorkspaceState();
     }
 
     /// <summary>The workspace containing a path (like git finding .git), or null.</summary>
@@ -100,9 +166,7 @@ public sealed class Workspace : IDisposable
         return null;
     }
 
-    public static Uri ServerOf(string root) =>
-        new Uri((ReadJson<WorkspaceConfig>(Path.Combine(root, MetaFolder, ConfigFile))
-            ?? throw new WorkspaceException($"{root} is not a vault workspace")).Server);
+    public static Uri ServerOf(string root) => ReadConfig(root).Server;
 
     // --- paths ------------------------------------------------------------------------------
 
@@ -1821,18 +1885,6 @@ public sealed class Workspace : IDisposable
         where T : class =>
         File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path), Json.Options) : null;
 
-    private static void WriteJson<T>(string path, T value)
-    {
-        // Write then rename, so a crash never leaves half a file.
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(value, Json.Indented));
-        if (File.Exists(path))
-        {
-            File.Replace(temp, path, null);
-        }
-        else
-        {
-            File.Move(temp, path);
-        }
-    }
+    private static void WriteJson<T>(string path, T value) =>
+        DurableFile.WriteAllText(path, JsonSerializer.Serialize(value, Json.Indented));
 }

@@ -120,7 +120,7 @@ export function Inspector({ store, commands, palette, test, onPlot, schemes, sim
     );
 }
 
-/** A property field's input: text, a choice, a fluid, a channel, or notes. */
+/** A property field's input: text, a choice, a fluid, a channel, notes, or a color. */
 function FieldInput({
     id,
     field,
@@ -154,6 +154,8 @@ function FieldInput({
             return <FluidSelect id={id} drawing={drawing} value={value} onChange={onChange} none="Nothing" />;
         case "long":
             return <textarea id={id} value={value} rows={3} onChange={(event) => onChange(event.target.value)} />;
+        case "color":
+            return <ColorInput id={id} field={field} value={value} onChange={onChange} />;
         case "channel":
             return (
                 <ChannelInput
@@ -174,6 +176,41 @@ function FieldInput({
                 />
             );
     }
+}
+
+/**
+ * A color, or none: its picker, and while it's not set what that means (its placeholder: "No fill", "Ink"), else a
+ * button that unsets it.
+ */
+function ColorInput({
+    id,
+    field,
+    value,
+    onChange,
+}: {
+    id: string;
+    field: Field;
+    value: string;
+    onChange: (value: string) => void;
+}) {
+    const set = /^#[0-9a-f]{6}$/i.test(value);
+    return (
+        <span className="piper-color">
+            <input
+                id={id}
+                type="color"
+                value={set ? value.toLowerCase() : (field.swatch ?? "#000000")}
+                onChange={(event) => onChange(event.target.value)}
+            />
+            {set ? (
+                <button type="button" className="button-small" onClick={() => onChange("")}>
+                    {field.placeholder}
+                </button>
+            ) : (
+                <span className="muted">{field.placeholder}</span>
+            )}
+        </span>
+    );
 }
 
 /** A field of the team's own, added to a part or a line: named as they like. */
@@ -221,7 +258,7 @@ function AddField({ taken, onAdd }: { taken: string[]; onAdd: (name: string) => 
     );
 }
 
-const showable = (field: Field) => field.type !== "long" && field.type !== "channel";
+const showable = (field: Field) => field.type !== "long" && field.type !== "channel" && field.type !== "color";
 
 function PartPanel({
     store,
@@ -428,7 +465,9 @@ function PartPanel({
                         key={field.key}
                         label={field.label}
                         after={
-                            showable(field) && (
+                            // Shown under its tag: not where it has none (a note's, a shape's).
+                            showable(field) &&
+                            kind.tag !== "none" && (
                                 <ShowToggle
                                     label={field.label}
                                     on={part.shown.includes(field.key)}
@@ -489,7 +528,7 @@ function PartPanel({
                     )}
                 </Row>
             ))}
-            {kind.tag !== "none" || kind.fields.length > 0 ? (
+            {!kind.aside && (kind.tag !== "none" || kind.fields.length > 0) ? (
                 <AddField
                     taken={[...kind.fields.map((field) => field.key), ...Object.keys(part.props)]}
                     onAdd={(name) => setProp(name, "")}

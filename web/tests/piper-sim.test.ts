@@ -265,6 +265,36 @@ test("a tank with more ports on its ends is one tank: its top's are its ullage, 
     expect(built.model.edges.map((edge) => edge.name).sort()).toEqual(["BV-bottom", "BV-bottom-2", "SV-PRESS"]);
 });
 
+test("a manifold with ports on all four sides is one point, whichever of them its lines are on", () => {
+    const draw = sketch();
+    const bottle = draw.place("bottle", -300, 0, { tag: "B-1", props: { fluid: "gn2", meop: "2000 psi" } });
+    const manifold = draw.place("manifold", 0, 0, {
+        tag: "MAN-1",
+        props: { outlets: "2", bottomPorts: "2", leftPorts: "2", rightPorts: "0" },
+    });
+    draw.join([bottle, "top"], [manifold, "in-2"], "gn2");
+    // A transducer on its other port on its supply's end reads what it's at.
+    const pressure = draw.place("pressure-transducer", -120, -120, { tag: "PT-MAN" });
+    draw.join([pressure, "bottom"], [manifold, "in"], "gn2");
+    // It gives out through a valve on a port on its top and one on its bottom, each to a vent.
+    for (const [port, y] of [
+        ["1", -160],
+        ["bottom-2", 160],
+    ] as const) {
+        const valve = draw.place("ball-valve", 0, y, { tag: `BV-${port}`, rotation: 90 });
+        const vent = draw.place("vent", 0, y + (y < 0 ? -100 : 100));
+        draw.join([manifold, port], [valve, y < 0 ? "b" : "a"], "gn2");
+        draw.join([valve, y < 0 ? "a" : "b"], [vent, "in"], "gn2");
+    }
+    const built = buildModel(documentOf(draw.drawing), catalog, null);
+    expect(problems(built)).toEqual([]);
+    // Lossless, it's one point with the bottle: the transducer on its supply's end reads the bottle, and each valve is
+    // between that point and its vent.
+    expect(built.model.nodes.map((node) => node.type).sort()).toEqual(["outlet", "outlet", "source"]);
+    expect(nodeOf(built, bottle)!.links).toEqual({ pressure: "PT-MAN" });
+    expect(built.model.edges.map((edge) => edge.name).sort()).toEqual(["BV-1", "BV-bottom-2"]);
+});
+
 test("what flows through a part is what its lines carry: said, or mixed, or not said", () => {
     const draw = sketch();
     const tank = draw.place("tank", 0, -100, { tag: "TK-1", props: { fluid: "water" } });

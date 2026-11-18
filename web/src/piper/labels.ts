@@ -3,7 +3,7 @@ import { fluidOf } from "./fluids";
 import { inBox, segmentsOf, toWorld, type Box } from "./geometry";
 import { boxOf, kindOf } from "./library/index";
 import { MAWP, type Field } from "./library/kinds";
-import { linesOn, portOf, runLines } from "./ports";
+import { linesOn, portOf, portsOf, runLines } from "./ports";
 
 // What's written beside parts and on lines: a part's tag and the properties it shows, a line's tag, fluid, and size.
 
@@ -99,6 +99,11 @@ export function labelPlace(
         return { at: { x: toWorld(part, { x: kind.tagX, y: 0 }).x, y: below }, anchor: "middle" };
     }
     const wide = box.x1 - box.x0 >= box.y1 - box.y0 || kind.tag === "inside";
+    // A wide part with ports along its bottom (a manifold's) has lines going down from there: its label goes past its
+    // lower right corner, clear of them.
+    if (wide && portsOf(part).some((port) => port.at.y >= box.y1)) {
+        return { at: { x: box.x1 + 4, y: below }, anchor: "start" };
+    }
     return wide
         ? { at: { x: (box.x0 + box.x1) / 2, y: below }, anchor: "middle" }
         : { at: { x: box.x1 + 6, y: box.y0 + size + 2 }, anchor: "start" };

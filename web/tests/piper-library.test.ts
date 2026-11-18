@@ -376,6 +376,9 @@ test("a manifold has 0 to 5 ports on its bottom and on each end, and one from be
     ]);
     // It grows to hold them, each end's ports clear of its corners and its bottom's of its ends.
     expect(boxOf(manifold, emptyDrawing())).toEqual({ x0: -40, y0: -30, x1: 40, y1: 30 });
+    // Its tag goes under it, unless it has ports on its bottom: then past its lower right corner, clear of their lines.
+    expect(labelPlace(before, boxOf(before, emptyDrawing())).anchor).toBe("middle");
+    expect(labelPlace(manifold, boxOf(manifold, emptyDrawing()))).toEqual({ at: { x: 44, y: 40 }, anchor: "start" });
     // Its bore reaches every port: its ends' through a gallery inside each.
     const markup = renderToStaticMarkup(createElement(PartIcon, { part: manifold, palette: LIGHT }));
     expect(markup).toContain("M-30 -10 V10");

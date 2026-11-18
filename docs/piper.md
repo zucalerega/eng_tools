@@ -203,7 +203,8 @@ what it is, `data-hit`).
   to the bore. Its top keeps at least 2, so it always has outlets. Its ports are 20 apart, on
   the grid, and it grows to fit them: as wide as its top's or its bottom's need with 10 to
   spare at each end, and as tall as its ends' need with 10 to spare at each corner (a
-  manifold from before is the size it was). A line on a port that's taken away stays, ending
+  manifold from before is the size it was). With ports on its bottom, its tag goes past its
+  lower right corner, clear of their lines (`labelPlace`). A line on a port that's taken away stays, ending
   where the port was (`updatePart`). In Simulation mode a manifold is one point, whichever
   ports its lines are on. A tank has
   two ports on each side, and 1 to 5 on its top and on its bottom (`topPorts`, `bottomPorts`):

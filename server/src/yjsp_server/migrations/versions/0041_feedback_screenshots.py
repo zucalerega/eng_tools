@@ -4,8 +4,8 @@ A bug report or a feature request can carry up to 3 screenshots (feedback.py), w
 and Claude's look reads. A new table, in the database like Piper's pictures so the backups keep them: the requests
 already there have none.
 
-Revision ID: 0038
-Revises: 0037
+Revision ID: 0041
+Revises: 0040
 Create Date: 2026-11-18 09:00:00.000000
 """
 
@@ -14,8 +14,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0038"
-down_revision: str | None = "0037"
+revision: str = "0041"
+down_revision: str | None = "0040"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

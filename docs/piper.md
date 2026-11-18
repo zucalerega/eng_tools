@@ -364,7 +364,9 @@ what it is, `data-hit`).
   afresh. Dragging a selected line's end moves it to another port. Where two lines cross
   without joining, the one across hops over the one down (`hops.ts`). A line's type (pipe,
   tubing, flex hose, pneumatic, electrical, data) is its weight and dashes; flow arrows say
-  which way it flows.
+  which way it flows. A line drawn is tubing, which most of the team's lines are, and a tee
+  is the type of the line it tees into; a saved line with no type, and a Visio connector
+  with none of its own, are still pipe.
 - **Snapping**: parts' centers and ports, and lines' bends, are on a 10-unit grid, and every
   kind's ports are on it, so lines between parts lined up are straight. A part being dragged
   also lines its ports up with the ports its lines go to, and its center and ports with other

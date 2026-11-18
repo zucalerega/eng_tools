@@ -304,7 +304,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -323,7 +323,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": [],
@@ -348,7 +348,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": [],
@@ -378,7 +378,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": [],
@@ -403,7 +403,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -422,7 +422,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -450,7 +450,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -469,7 +469,7 @@
      "auto": true,
      "tag": "",
      "fluid": "gn2",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -488,7 +488,7 @@
      "auto": true,
      "tag": "",
      "fluid": "water",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -507,7 +507,7 @@
      "auto": true,
      "tag": "",
      "fluid": "water",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []
@@ -531,7 +531,7 @@
      "auto": true,
      "tag": "",
      "fluid": "water",
-     "kind": "pipe",
+     "kind": "tube",
      "arrow": "none",
      "props": {},
      "shown": []

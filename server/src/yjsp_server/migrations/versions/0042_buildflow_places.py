@@ -5,8 +5,8 @@ machine shop, a makerspace), each with training of its own (buildflow_places), a
 (buildflow_place_skills), as buildflow_skills keeps theirs on each machine. New tables, so nothing that's there changes;
 no places are put in, since each school has its own: admins add them.
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0042
+Revises: 0041
 Create Date: 2026-11-18 19:45:00.000000
 """
 
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0041"
-down_revision: str | None = "0040"
+revision: str = "0042"
+down_revision: str | None = "0041"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -390,6 +390,15 @@ on top of it.
   write time. A file is rehashed only when its size or write time changes. A workspace
   whose state is from an older client (`SyncFormat`), or that synced while its server
   didn't say what files use, or what they're called, yet, gets everything once more.
+  It's saved beside itself, flushed to the disk, and renamed into place (`DurableFile`),
+  as the saved sign-ins are: without the flush, a power cut can leave Windows with the
+  rename and not the contents, a file of the right length that's all zeros. State that
+  can't be read all the same is set aside (`state.json.damaged`) and the workspace opens
+  without it (`StateWasDamaged`, which the add-in and the CLI say): everything is synced
+  again, and each copy here is hashed against the vault, so one that isn't the latest
+  version is a conflict (below). `config.json` can't be worked out again, so a damaged
+  one is an error that says to delete it and set the folder up again; damaged sign-ins
+  mean signing in again.
   From this state each file is one of:
   - up to date
   - out of date

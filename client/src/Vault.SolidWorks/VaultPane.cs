@@ -1623,29 +1623,42 @@ internal sealed partial class VaultPane : UserControl
         _statuses = new Dictionary<string, FileStatus>(StringComparer.Ordinal);
         Uri? server = null;
         var root = Workspace.FindRoot(_settings.WorkspaceRoot);
-        if (root != null)
+        try
         {
-            server = Workspace.ServerOf(root);
-            var token = _tokens.Load(server);
-            if (token != null)
+            if (root != null)
             {
-                _workspace = Workspace.Open(root, token, _sayWhenWorking);
+                server = Workspace.ServerOf(root);
+                var token = _tokens.Load(server);
+                if (token != null)
+                {
+                    _workspace = Workspace.Open(root, token, _sayWhenWorking);
+                }
             }
         }
-        _serverBox.Text = server?.AbsoluteUri ?? _settings.Server ?? "";
-        _rootBox.Text = root ?? _settings.WorkspaceRoot;
-        _setupView.Visible = _workspace == null;
-        _workView.Visible = _workspace != null;
-        _refreshButton.Visible = _accountButton.Visible = _workspace != null;
-        _newVersionButton.Visible = _workspace != null && _newerAddIn != null;
-        _accountButton.Text = "Account ▾"; // until a refresh says who
-        _vault = null;
-        _shown = "";
-        _changes.Items.Clear();
-        _changesTab.Text = "Needs attention";
-        _tree.Nodes.Clear();
-        ShowView();
-        ShowActiveDocument();
+        finally
+        {
+            // Even when the workspace can't be opened (its config is damaged): then the pane shows setting up, with
+            // the caller's message of why, and not a list that says "Loading..." for good.
+            _serverBox.Text = server?.AbsoluteUri ?? _settings.Server ?? "";
+            _rootBox.Text = root ?? _settings.WorkspaceRoot;
+            _setupView.Visible = _workspace == null;
+            _workView.Visible = _workspace != null;
+            _refreshButton.Visible = _accountButton.Visible = _workspace != null;
+            _newVersionButton.Visible = _workspace != null && _newerAddIn != null;
+            _accountButton.Text = "Account ▾"; // until a refresh says who
+            _vault = null;
+            _shown = "";
+            _changes.Items.Clear();
+            _changesTab.Text = "Needs attention";
+            _tree.Nodes.Clear();
+            ShowView();
+            ShowActiveDocument();
+        }
+        if (_workspace?.StateWasDamaged == true)
+        {
+            Log.Info("The workspace's state couldn't be read, so it was set aside and the workspace opened without it");
+            ShowMessage(Workspace.DamagedStateNote, Tone.Attention);
+        }
     }
 
     private Dictionary<string, IReadOnlyList<string>> ReferenceMap(IEnumerable<string> roots)

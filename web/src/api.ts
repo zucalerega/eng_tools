@@ -183,6 +183,7 @@ export interface ChatMessage {
     role: "user" | "assistant";
     text: string;
     page?: string;
+    screenshots?: string[]; // a question's: PNGs or JPEGs, as base64
 }
 
 /** A piece of Claude's answer, as it comes. */
@@ -225,6 +226,7 @@ export interface Feedback {
     status: "new" | "approved" | "declined" | "done"; // approved: Claude Code is building it
     reply: string | null; // an admin's answer to whoever sent it
     decided_at: string | null;
+    screenshots?: FeedbackScreenshot[]; // sent with it, in order (left out before there were any)
     // For admins:
     sender?: UserRef | null;
     decided_by?: UserRef | null;
@@ -236,6 +238,18 @@ export interface Feedback {
     session_url?: string | null; // the Claude Code session building it
 }
 
+/** A screenshot sent with a request: its picture is at feedbackScreenshotUrl. */
+export interface FeedbackScreenshot {
+    id: number;
+    width: number; // in pixels
+    height: number;
+    size: number; // in bytes
+}
+
+/** Where a request's screenshot is, for whoever sent it and admins. */
+export const feedbackScreenshotUrl = (feedbackId: number, screenshotId: number) =>
+    apiUrl(`/api/feedback/${feedbackId}/screenshots/${screenshotId}`);
+
 /** Every request, for admins, and whether the one looking can approve them (only the site's owner can). */
 export interface FeedbackList {
     requests: Feedback[];
@@ -243,12 +257,13 @@ export interface FeedbackList {
     why_not_approve: string | null;
 }
 
-/** What someone sends: a bug report or a feature request, from a page of the web app. */
+/** What someone sends: a bug report or a feature request, from a page of the web app, with any screenshots. */
 export interface FeedbackSent {
     kind: "bug" | "feature";
     title: string;
     body: string;
     page: string | null;
+    screenshots?: string[]; // PNGs or JPEGs, as base64
 }
 
 /** A listing found for something the team wants, as its source said it at most six hours ago (server: deals/). */

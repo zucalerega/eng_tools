@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { rgbaPng } from "./pngs";
 import { renderApp, Team } from "./team";
 
 // Help, in the top bar: the help's links, and Claude to ask. The test server's assistant asks a stand-in for
@@ -136,6 +137,51 @@ test("a conversation asked from a long address goes on", async () => {
     await help.findByText(/\(question 1 here\)/);
     await ask(help, "And now?");
     expect(await help.findByText(/You asked: "And now\?" \(question 2 here\)/)).toBeTruthy();
+});
+
+/** A screenshot, as a file picked to add: a PNG of a few pixels. */
+async function screenshotFile(name: string, color: number[]): Promise<File> {
+    return new File([await rgbaPng([[color, color, color]])], name, { type: "image/png" });
+}
+
+test("a question goes to Claude with its screenshots", async () => {
+    const team = await Team.create();
+    renderApp(await team.member("Ana"), "/vault");
+    const help = await openHelp();
+    await waitFor(() =>
+        expect((help.getByRole("textbox", { name: "Ask Claude" }) as HTMLTextAreaElement).disabled).toBe(false),
+    );
+    const pick = help.getByTestId("screenshot-file");
+    await userEvent.upload(pick, await screenshotFile("dialog.png", [255, 0, 0, 255]));
+    const added = within(await help.findByRole("list", { name: "Screenshots for your question" }));
+    expect(added.getByRole("img", { name: "Screenshot 1" }).getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+    // Taken off, and two others added instead: up to three a question.
+    await userEvent.click(added.getByRole("button", { name: "Remove screenshot 1" }));
+    expect(help.queryByRole("list", { name: "Screenshots for your question" })).toBeNull();
+    await userEvent.upload(pick, [
+        await screenshotFile("error.png", [0, 0, 255, 255]),
+        await screenshotFile("page.png", [0, 255, 0, 255]),
+    ]);
+    await waitFor(() => expect(help.getAllByRole("img", { name: /^Screenshot \d$/ })).toHaveLength(2));
+    await userEvent.upload(pick, await screenshotFile("more.png", [9, 9, 9, 255]));
+    await waitFor(() => expect(help.getAllByRole("img", { name: /^Screenshot \d$/ })).toHaveLength(3));
+    expect((help.getByRole("button", { name: "Add a screenshot" }) as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(help.getByRole("button", { name: "Remove screenshot 3" }));
+
+    await ask(help, "What's this error?");
+    expect(
+        await help.findByText(
+            /You asked: "What's this error\?" \(question 1 here\)\. .* With 2 screenshots, 2 in all\./,
+        ),
+    ).toBeTruthy();
+    const log = within(help.getByRole("log", { name: "Conversation with Claude" }));
+    expect(within(log.getByRole("list", { name: "Your screenshots" })).getAllByRole("img")).toHaveLength(2);
+    expect(help.queryByRole("list", { name: "Screenshots for your question" })).toBeNull(); // sent with it
+    // They go back to Claude with the next question.
+    await ask(help, "And now?");
+    expect(
+        await help.findByText(/You asked: "And now\?" \(question 2 here\)\. .* With 0 screenshots, 2 in all\./),
+    ).toBeTruthy();
 });
 
 test("signing out forgets the tab's conversation", async () => {

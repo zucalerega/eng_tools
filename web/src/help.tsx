@@ -1,10 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { type ChatStore, type Exchange, useChat } from "./chat";
+import { type ChatStore, type Exchange, MOST_SCREENSHOTS_QUESTION, useChat } from "./chat";
 import { Notice } from "./components";
 import { FeedbackPane } from "./feedback";
 import { Markdown } from "./markdown";
 import { onSite } from "./root";
 import { Link, usePathname } from "./router";
+import {
+    AddScreenshots,
+    FOR_CLAUDE,
+    pastedPictures,
+    ScreenshotStrip,
+    screenshotSrc,
+    useScreenshots,
+} from "./screenshots";
 import { useDemo } from "./session";
 
 // Help, in the top bar of every app: a panel beside the page with the help (the server's /help, for anyone) and
@@ -67,6 +75,7 @@ export function HelpPanel({
     const [question, setQuestion] = useState("");
     const [tab, setTab] = useState<"ask" | "requests">("ask");
     const [shown] = useState(errorShown); // as it was when Help opened
+    const screenshots = useScreenshots(MOST_SCREENSHOTS_QUESTION, FOR_CLAUDE);
     const box = useRef<HTMLTextAreaElement>(null);
     const log = useRef<HTMLDivElement>(null);
     const answering = chat.answering;
@@ -91,8 +100,9 @@ export function HelpPanel({
         if (!question.trim() || answering || !available) {
             return;
         }
-        void chat.ask(question, pathname);
+        void chat.ask(question, pathname, screenshots.shots);
         setQuestion("");
+        screenshots.clear();
     }
     function keys(event: KeyboardEvent<HTMLTextAreaElement>) {
         // Enter asks, and Shift+Enter starts a new line.
@@ -190,6 +200,12 @@ export function HelpPanel({
                             </div>
                             {problem && <Notice tone="error">Couldn't ask the server about Claude: {problem}</Notice>}
                             {assistant && !available && <Notice tone="info">{assistant.reason}.</Notice>}
+                            {screenshots.problem && <Notice tone="error">{screenshots.problem}</Notice>}
+                            <ScreenshotStrip
+                                label="Screenshots for your question"
+                                sources={screenshots.shots.map(screenshotSrc)}
+                                onRemove={screenshots.remove}
+                            />
                             {/* One box, the question and its button together; it grows with the question, up to a point. */}
                             <form
                                 className="chat-ask"
@@ -201,13 +217,25 @@ export function HelpPanel({
                                 <textarea
                                     ref={box}
                                     aria-label="Ask Claude"
-                                    placeholder="Ask about Vault, Yorg or Piper, or paste an error"
+                                    placeholder="Ask about Vault, Yorg or Piper, or paste an error or a screenshot"
                                     rows={2}
                                     maxLength={20_000}
                                     value={question}
                                     disabled={!available}
                                     onChange={(event) => setQuestion(event.target.value)}
                                     onKeyDown={keys}
+                                    onPaste={(event) => {
+                                        const pasted = pastedPictures(event);
+                                        if (pasted.length > 0) {
+                                            event.preventDefault();
+                                            void screenshots.add(pasted);
+                                        }
+                                    }}
+                                />
+                                <AddScreenshots
+                                    compact
+                                    disabled={!available || screenshots.shots.length >= MOST_SCREENSHOTS_QUESTION}
+                                    onPick={(files) => void screenshots.add(files)}
                                 />
                                 {answering ? (
                                     <button type="button" className="button-small" onClick={() => chat.stop()}>
@@ -224,8 +252,8 @@ export function HelpPanel({
                                 )}
                             </form>
                             <p className="chat-fine">
-                                Claude answers from the help, and can be wrong. Your questions go to Anthropic: never
-                                paste a password or a key.
+                                Claude answers from the help, and can be wrong. Your questions, and their screenshots,
+                                go to Anthropic: never paste a password or a key.
                                 {used >= 50 && ` You've used ${used}% of your questions for today.`}
                             </p>
                         </>
@@ -239,7 +267,10 @@ export function HelpPanel({
 function ExchangeView({ exchange, again }: { exchange: Exchange; again: () => void }) {
     return (
         <div className="chat-exchange">
-            <p className="chat-question">{exchange.question}</p>
+            <div className="chat-question">
+                <ScreenshotStrip label="Your screenshots" sources={(exchange.screenshots ?? []).map(screenshotSrc)} />
+                {exchange.question}
+            </div>
             <div className="chat-answer">
                 {exchange.state === "thinking" && <p className="chat-thinking">Thinking…</p>}
                 {exchange.answer && <Markdown source={exchange.answer} />}

@@ -1,7 +1,8 @@
-"""Bug reports and feature requests' API: sending one and seeing your own, and for admins, every one, Claude's look at
-each, and answering them; the owner approves one to have Claude Code build it. feedback.py has the rules."""
+"""Bug reports and feature requests' API: sending one, with screenshots, and seeing your own, and for admins, every
+one, Claude's look at each, and answering them; the owner approves one to have Claude Code build it. feedback.py has
+the rules."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 
 from ..feedback import Requests, Sent, names
 from ..models import Feedback
@@ -22,7 +23,7 @@ def _as_admin(request: Request, db: DB, item: Feedback) -> FeedbackOut:
 @router.post("")
 def send(body: FeedbackIn, request: Request, user: ActiveUser, db: DB) -> FeedbackOut:
     """Send a bug report or a feature request. Claude looks at it for the owner meanwhile."""
-    item = _requests(request).send(db, user, Sent(body.kind, body.title, body.body, body.page))
+    item = _requests(request).send(db, user, Sent(body.kind, body.title, body.body, body.page, body.screenshots))
     return FeedbackOut.of(item)
 
 
@@ -30,6 +31,15 @@ def send(body: FeedbackIn, request: Request, user: ActiveUser, db: DB) -> Feedba
 def mine(request: Request, user: ActiveUser, db: DB) -> list[FeedbackOut]:
     """The requests you've sent, the newest first, with what's become of each."""
     return [FeedbackOut.of(item) for item in _requests(request).mine(db, user)]
+
+
+@router.get("/{feedback_id}/screenshots/{screenshot_id}")
+def screenshot(feedback_id: int, screenshot_id: int, request: Request, user: ActiveUser, db: DB) -> Response:
+    """A screenshot sent with a request, as it was sent: for whoever sent it, and admins."""
+    found = _requests(request).screenshot(db, user, feedback_id, screenshot_id)
+    # Never changes, and it's theirs: the browser keeps it, and nothing shared between does.
+    headers = {"Cache-Control": "private, max-age=31536000, immutable"}
+    return Response(found.data, media_type=found.content_type, headers=headers)
 
 
 @router.get("")

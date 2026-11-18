@@ -28,7 +28,7 @@ def ask(body: AskIn, request: Request, user: ActiveUser, db: DB) -> StreamingRes
     """Ask Claude the conversation's last question. The answer comes as lines of JSON as Claude writes it
     (application/x-ndjson): {"type": "thinking"} while it thinks, {"type": "text", "text": ...} for each piece, and last
     {"type": "done", "stop_reason": ..., "day_used": ...} or {"type": "error", "error": code, "message": ...}."""
-    turns = [Turn(m.role, m.text, m.page) for m in body.messages]
+    turns = [Turn(m.role, m.text, m.page, tuple(m.screenshots)) for m in body.messages]
     answer = _assistant(request).ask(db, user, turns)
     # The answer can take minutes to come, and needs nothing more of the database: its connection goes back now, rather
     # than when the response ends, so a few answers at once don't hold every connection the server has.

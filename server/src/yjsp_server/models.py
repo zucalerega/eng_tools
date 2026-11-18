@@ -6,8 +6,8 @@ keeps its own (vault/models.py, yorg/models.py, piper/models.py, buildflow/model
 import enum
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Float, ForeignKey, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Float, ForeignKey, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base, UTCDateTime, enum_column, utcnow
 
@@ -168,6 +168,24 @@ class Feedback(Base):
     # Approved: what the owner added for Claude Code, and the session building it.
     note: Mapped[str | None] = mapped_column(Text)
     session_url: Mapped[str | None] = mapped_column(String(500))
+
+    # What was on the screen, as they sent it, in order: whoever sent it and admins see them, and Claude's look reads them.
+    screenshots: Mapped[list["FeedbackScreenshot"]] = relationship(lazy="selectin", order_by="FeedbackScreenshot.id")
+
+
+class FeedbackScreenshot(Base):
+    """A screenshot sent with a request (feedback.py): a PNG or a JPEG, as it was sent, never changed. In the database,
+    so the nightly and off-site backups keep it with the request."""
+
+    __tablename__ = "feedback_screenshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id"), index=True)
+    content_type: Mapped[str] = mapped_column(String(32))  # image/png, image/jpeg
+    width: Mapped[int]  # in pixels
+    height: Mapped[int]
+    size: Mapped[int]  # in bytes
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)  # loaded only when it's sent
 
 
 class Deal(Base):

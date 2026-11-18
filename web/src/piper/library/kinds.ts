@@ -7,7 +7,7 @@ import type { ValveState } from "../testdata";
 // known about it, and how it behaves on a line. Kinds are drawn as the ISA (5.1) and ISO (10628, 1219) standards draw
 // them, at the size of a 10-unit grid that their ports sit on.
 
-export type Category = "valves" | "vessels" | "flow" | "instruments" | "equipment" | "fittings" | "notes";
+export type Category = "valves" | "vessels" | "flow" | "instruments" | "equipment" | "fittings" | "notes" | "shapes";
 
 export const CATEGORIES: { id: Category; name: string }[] = [
     { id: "valves", name: "Valves" },
@@ -17,6 +17,7 @@ export const CATEGORIES: { id: Category; name: string }[] = [
     { id: "equipment", name: "Equipment" },
     { id: "fittings", name: "Fittings" },
     { id: "notes", name: "Notes" },
+    { id: "shapes", name: "Shapes" },
 ];
 
 /** Where lines connect to a part: a point of its frame, on the grid, and the way a line leaves it. */
@@ -39,10 +40,11 @@ export interface Option {
 export interface Field {
     key: string;
     label: string;
-    type: "text" | "select" | "fluid" | "channel" | "long";
+    type: "text" | "select" | "fluid" | "channel" | "long" | "color";
     options?: Option[];
     placeholder?: string; // an example, with its unit
     prefix?: string; // how it reads under the tag: "Cv " for "Cv 1.2"
+    swatch?: string; // a color's: what its picker starts at while it's not set (its placeholder says what that means)
 }
 
 /** What a part needs to know to draw itself, besides itself. */
@@ -103,6 +105,12 @@ export interface Kind {
     // height.
     resize?: { step: number; least: readonly [number, number]; aspect?: (part: Part) => number | null };
     behind?: boolean; // drawn under everything else
+    // Drawn on the drawing, not part of the system (a shape, an arrow): lines route through it and labels sit on it, as
+    // they do on what's behind, and the parts list, the legend, and Find leave it out.
+    aside?: boolean;
+    // Where a click lands on it, if not anywhere in its box: SVG path data, in its frame, near which a click is on it
+    // (an arrow's line, so what's beside it can be clicked).
+    hit?: (part: Part) => string;
     text?: string; // what its words are called, if it has them (a note's Text, a region's Title)
 }
 

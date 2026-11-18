@@ -419,7 +419,7 @@ the keys.
   tanks (1 to 5 ports on the top and on the bottom: **Top ports** and **Bottom ports**, on the
   right; every port on its top is its ullage), bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
   engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
-  box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
+  box for anything else, shapes and arrows, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**
   on the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
   on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). The 3/2
@@ -436,6 +436,17 @@ the keys.
   of its own, in percent too. A **Text** note dragged
   by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif
   or monospace font, aligned, and boxed as you choose.
+- **Shapes**: the library's **Shapes** (search *cosmetic*) are rectangles, rounded rectangles,
+  ellipses, triangles, diamonds, lines, arrows, and double arrows, drawn for how the drawing looks.
+  Drag a selected one's square handle to size it. On the right, a shape has a **Fill** (none until
+  you pick one), an **Outline** color, an **Outline style** (solid, dashed, dotted, or none), a
+  **Weight**, and a **Transparency**; a line or an arrow has its **Arrowheads** (none, at its end,
+  its start, or both), a **Direction** (level, or corner to corner across its box, so sizing it
+  sets its angle; **R** turns it upright), a **Color**, a **Style**, a **Weight**, and a
+  **Transparency**. Black and white are the page's ink and paper, so they read on a dark page too.
+  Shapes aren't part of the system: lines route straight through them and labels sit on them, and
+  the parts list, the legend, Find, and the simulation leave them out. The exports have them, see-through
+  as they're drawn.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts

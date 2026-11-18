@@ -395,6 +395,46 @@ test("the inspector says what a part is: its normal state, what it shows, and fi
     expect(within(svg).queryByText("NC")).toBeNull();
 });
 
+test("a shape from the library takes its fill, outline, and transparency from the inspector", async () => {
+    const team = await Team.create();
+    const made = await team.diagram(team.chief, "Shapes", emptyDrawing());
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    await userEvent.click(screen.getByRole("button", { name: "Ellipse" }));
+    fireEvent.pointerMove(svg, at(100, 100));
+    fireEvent.pointerDown(svg, at(100, 100));
+    fireEvent.pointerUp(svg, at(100, 100));
+    const inspector = within(await screen.findByRole("complementary", { name: "Inspector" }));
+    expect(inspector.getByRole("heading", { name: "Ellipse" })).toBeTruthy();
+    // Nothing a part of the system has: no tag, nothing shown under one, no fields of the team's own.
+    expect(inspector.queryByRole("textbox", { name: "Tag" })).toBeNull();
+    expect(inspector.queryByRole("button", { name: /^Show / })).toBeNull();
+    expect(inspector.queryByRole("button", { name: "+ Add a field" })).toBeNull();
+    expect(inspector.getByText("No fill")).toBeTruthy();
+    fireEvent.input(inspector.getByLabelText("Fill"), { target: { value: "#3366cc" } });
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Transparency" }), "50%");
+    await userEvent.selectOptions(inspector.getByRole("combobox", { name: "Outline style" }), "No outline");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read.parts;
+        expect(saved).toHaveLength(1);
+        expect(saved[0]).toMatchObject({
+            kind: "shape",
+            x: 100,
+            y: 100,
+            w: 120,
+            h: 80,
+            props: { shape: "ellipse", fill: "#3366cc", transparency: "50", dash: "none" },
+        });
+    });
+    const ellipse = svg.querySelector('g[data-kind="shape"] path')!;
+    expect(ellipse.getAttribute("fill")).toBe("#3366cc");
+    expect(ellipse.getAttribute("fill-opacity")).toBe("0.5");
+    // Back to none: its button unsets it.
+    await userEvent.click(inspector.getByRole("button", { name: "No fill" }));
+    await waitFor(() => expect(svg.querySelector('g[data-kind="shape"] path')!.getAttribute("fill")).toBe("none"));
+});
+
 test("a part links to pages about it: added on the right, opened from it, only http, https, or mailto", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

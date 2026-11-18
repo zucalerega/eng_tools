@@ -78,11 +78,97 @@ and `web/src/buildflow`.
   first. A component's `updated_at` is its last change, its progress's included: what's been worked
   on lately.
 
+## The build plan
+
+Each component's lead time, the day it has to be ready by, and what it needs first make the program's
+build plan: what to order (or start making) when, so the long leads are seen early, and what holds
+up what. Anyone signed in keeps it, as they do progress.
+
+- **A component's lead time** (`lead_days`, 0 to 3,650 days: from ordering it, or starting to make
+  it, to having it) and **the day it has to be ready by** (`need_by`), each none until it's said,
+  are changed as its description is (`programs.change_component`), and noted in the activity ("Lead
+  time: 12 weeks", "Ready by Mar 1, 2027").
+- **What it needs first** (`buildflow_needs`, `progress.set_needs`): the components that have to be
+  ready before it can be started, on its program and not removed (409 `removed`). None of them may
+  need it, however far along (400 `needs_cycle`, saying the way round): neither could ever start.
+  A component removed keeps what it needs, as everything said of it.
+- **Worked out in the web app** (`planning.ts`, which `buildflow-plan.test.ts` holds to it): the day
+  to order or start it by is its ready-by day less its lead time. It's **ready** when it's through
+  the build phase. **When it'll be ready as things stand**: once ready, it is; under way, by its day
+  (or today, past it); not started, its lead time after the last of its start-by day, today, and
+  when what it needs will be ready. From that: *late* (its day's passed, not ready), *late to start*
+  (its start-by day's passed, not started), *at risk* (it won't be ready by its day), a *long lead*
+  (six weeks or more, not ready), and what it's *waiting on* and *holds up*.
+- The server keeps the numbers people say, and none it works out, so the plan's rules stay in one
+  place, beside the phases' (`phaseState`), and the deals finder, say, could use the same lead times
+  later.
+
+## Bills of materials
+
+Each program's BOM (`bom.py`) is its parts to buy, read in from the team's own BOM spreadsheet,
+which stays the team's: Buildflow reads it in again as it changes, and keeps only what the
+spreadsheet doesn't say. Anyone signed in keeps it, as they do progress.
+
+- **A line** (`buildflow_bom_lines`): its part number and description (one at least: 422 without),
+  the component it's for (one of the program's, not removed: 409 `removed`; none, for a line not
+  matched to one yet), how many and in what unit, its vendor, its cost each (cents), its lead time
+  (days), a link to where it's bought (`progress.check_address`, 400 `bad_link`), where it is
+  (`BomStatus`: to order, ordered, received), and a note. At most 5,000 on a program.
+- **Reading one in** (`PUT /programs/{id}/bom`): the program's whole BOM, or one component's,
+  becomes the lines sent, in their order. A line already on it, by its key (its component, and its
+  part number, or its description where it has none, whatever their case and spacing), is changed
+  to what the import says, and keeps its note, and its status unless the import says one; the rest
+  are added; those no longer in it go. The activity says how many of each.
+- **The spreadsheet is read in the web app** (`sheets.ts`: a CSV file, by RFC 4180, its
+  delimiter whichever its first line has most of; an Excel workbook (.xlsx) through the site's zip
+  reader, `zip.ts`, its sheets' cells as text; an .xls refused, saying to save it as .xlsx), and
+  its columns guessed from its headers (`billOfMaterials.ts`: *Part No.*, *Qty*, *Supplier*,
+  *Unit Price*, *Lead Time (days)*, ...), each cell read as the server keeps it ("$412.50" in
+  cents, "2-3 weeks" its longest, "1.5 ft" a quantity and its unit, "PO placed" ordered, a yes
+  under *Ordered?* ordered). A row with nothing but a description, a section's title, isn't a part.
+- **The day to order a part by** is the day its component's build has to start (its start-by day
+  on the build plan, or its ready-by day if it has no lead time of its own), less the part's lead
+  time; a part still to order past that is *to order now*, and one with a lead time of six weeks or
+  more, not received, a long lead.
+
+## Reviews
+
+A design review is often held for several components at once: a subsystem's PDR covers its eight
+components, and a system CDR more. A review (`reviews.py`) is one, held at one of the program's
+review milestones, so its components' progress is set once, and its files and notes are in one
+place. Anyone signed in keeps reviews, as they do progress.
+
+- **A review** (`buildflow_reviews`): its program, its milestone (one that's a review: 400
+  `not_a_review` for one that's work), a name ("Feed system PDR"), its day (`held_on`, none until
+  it's set), the notes taken in it (Markdown, up to 50,000 characters), and who made and last
+  changed it. **The components it covers** (`buildflow_review_components`) are the program's, not
+  removed (409 `removed` for one that is); one removed from the program after stays in it, out of
+  its rules, until it's brought back. **Its files** (`buildflow_review_links`): its slides, its
+  package, its minutes, wherever they're kept (SharePoint, say), each a link as a component's are
+  (`progress.check_address`, 400 `bad_link`), at most 50.
+- **Its day is each component's date at its milestone** (each one's `due` there), but those through
+  it already (done, or skipped) keep theirs. A new day moves them all; no day takes the review's
+  old day off those that had it, and leaves a date of their own. A component added gets its day;
+  one taken off keeps what it has.
+- **Passing it** passes each component it covers at its milestone (done, on the day said, or the
+  review's day, or today), but those through it already. Each component's progress is still its
+  own, set on the review's page or the bill: one back with actions to close is in progress, its
+  note saying what.
+- Its changes go through `progress.change_progress`, the same rules as a change to one component,
+  so the activity says each ("PDR: passed (Feed system PDR)"), and the review's own changes
+  ("Feed system PDR: passed, 6 components").
+- **Removed**, a review is kept, with its notes and files, off the program's list until anyone brings
+  it back (409 `removed` to change it meanwhile); its components' progress stays as it is either
+  way. A milestone a review's held at, removed or not, isn't deleted (409 `milestone_in_use`).
+
 ## The web app
 
 `web/src/buildflow`: the programs (`Programs.tsx`), a program's bill of design (`Program.tsx`, and
-`Panel.tsx` for a component beside it), its layout (`Layout.tsx`, admins'), and the help
-(`Help.tsx`, `/buildflow/help`: keep it in step with the features).
+`Panel.tsx` for a component beside it), its build plan (`Plan.tsx`, and `planning.ts`), its BOM (`Bom.tsx`, `billOfMaterials.ts`, and
+`sheets.ts`), its reviews
+(`Review.tsx`, and `reviews.ts`), its layout
+(`Layout.tsx`, admins'), and the help (`Help.tsx`, `/buildflow/help`: keep it in step with the
+features).
 
 - **The programs** (`/buildflow`): a card each, its vehicle's outline on black, how many components
   it has and are through CDR, and a bar for each phase: done, in progress, and blocked, of those
@@ -105,6 +191,36 @@ and `web/src/buildflow`.
   milestone's status, due date, done date, and note (saved as it's changed; a note when it's left),
   its people, and its links. *Not needed: skip what's not started* skips the phase's milestones
   that haven't started, as for a bought part's design reviews.
+- **The build plan** (`/buildflow/programs/{id}/plan`, *Build plan* on the program's page,
+  `Plan.tsx`): how many components are to order or start now, late, at risk, long leads, waiting on
+  others, and not planned; and a table, the soonest to order or start first (or by subsystem), each
+  component's lead time in weeks and its ready-by day (changed where they are), the day to order or
+  start it by (red when it's passed), what it needs first (*What ... needs first*, the component
+  picker, without itself), and its lane on a calendar: a bar from its start-by day to its ready-by
+  day in the color of where it is in the build phase, taller for a long lead, ringed in red when
+  it's at risk, with a red line where it'd be ready as things stand; today down the calendar, and
+  the months across its head. *Hide what's ready* hides those through the build phase. A
+  component's panel, in its build phase, has the same: its lead time and ready-by day, its start-by
+  day, what it needs first (*Change…*), what it's waiting on, and what it holds up. The bill marks
+  a long lead with a tag (*Long lead*).
+- **The BOM** (`/buildflow/programs/{id}/bom`, *BOM* on the program's page, `Bom.tsx`): how many
+  parts are to order now, long leads, to order, ordered, and received, and the cost in all; each
+  part, by the day to order it by (or as the BOM has it), with its component, quantity, vendor, cost
+  each, lead time, that day (red when it's passed), its status and note (set there), filtered by
+  component (`?component=`) or status. *Read in a spreadsheet…*: its file, its sheet, its header
+  row, which column says what (guessed), its lead times' unit, and whose lines they are (the
+  component its *Component* column names, none yet, or one component's alone), with the lines as
+  they'll come in, and the names no component has. A component's panel, in its build phase, lists
+  its parts (*Parts*), the longest lead first, with how many are still to come.
+- **Reviews**, under the bill: each with its milestone, its day (red once it's past and some of its
+  components haven't passed), how many have passed, and its files; *New review* (its milestone, a
+  name, its day, and its components, by subsystem, *All of* one at once); and *Removed reviews*.
+  **A review's page** (`/buildflow/programs/{id}/reviews/{review}`): its name and day, changed where
+  they are; its components, each one's status at the milestone (set there as on the bill) and its
+  note there (*Actions, outcome*); *Pass…* and *Remove…*; its files, added by their address; and its
+  notes, in Markdown (*Edit notes*, saved with *Save notes*; the browser asks before leaving them
+  unsaved). A chip on the bill says the review its component's in there, and its menu goes to it,
+  as a component's panel does at the milestone.
 - **Links to the site's own apps** (`links.ts`): an address on the site (or the site's own origin,
   pasted) is kept as its path, marked with its app, and named by what it goes to, from that app's
   API as any client would ask it (Vault's file, `GET /api/files/{id}`, with its title when that
@@ -113,10 +229,12 @@ and `web/src/buildflow`.
   Its kind is guessed from where it goes (a P&ID, test data, CAD) until it's picked. Anything else
   opens in a tab of its own (`noopener noreferrer`).
 - **The layout** (`/buildflow/programs/{id}/layout`, admins'; members are told it's admins'):
-  the program's name and description; its drawing's sections (an engine, with 1 to 9 nozzles side by
-  side; body tubes; tanks; couplers; transitions to another diameter; the nose cone; each with its
-  length and diameter in any one unit, fins at its aft end, landing legs from it), and whether it's
-  on a test stand, changed together, previewed, and saved with *Save the drawing*; the vehicle with
+  the program's name and description, and its drawing's sections (an engine, with 1 to 9 nozzles
+  side by side; body tubes; tanks; couplers; transitions to another diameter; the nose cone; each
+  with its length and diameter in any one unit, fins at its aft end, landing legs from it) and
+  whether it's on a test stand, changed together, the drawing previewed, and saved at once with
+  *Save*, in a bar kept at the foot of the window that says what isn't saved yet (the browser asks
+  before the page is left with changes not saved); the vehicle with
   its components' dots, which drag to move them, and *Place* for one that isn't on it, then a click
   where it goes (`toDrawing`); subsystems and components, renamed where they are, moved, added,
   removed and brought back; and milestones, by phase. *Archive…* takes the program off the list.
@@ -180,7 +298,7 @@ anyone else.
 |---|---|
 | `GET /api/buildflow/programs?archived=` | the programs, in their order, each with its `profile`, `component_count`, how many are where in each phase (`phases`), how many are through each phase's last milestone (`through`, `last_milestone`), and whether you can lay it out (`can_edit`); `archived=true`: the archived ones |
 | `POST /api/buildflow/programs` | a new program `{name, description, template}` (`rocket`, `hopper`, `stand`, `blank`) (admins): its whole bill of design |
-| `GET /api/buildflow/programs/{id}` | a program's bill of design: its `milestones` and `subsystems` in order, and its `components`, each with its `progress`, `links`, and `people`; and, for admins, the components `removed` from it |
+| `GET /api/buildflow/programs/{id}` | a program's bill of design: its `milestones` and `subsystems` in order, and its `components`, each with its `progress`, `links`, and `people`; its `reviews`; and, for admins, the components `removed` from it |
 | `PATCH /api/buildflow/programs/{id}` | rename it, describe it, draw it again (`profile`: `{sections, stand}`), or move it in the list (`position`) (admins); 409 `archived`, `name_taken` |
 | `POST /api/buildflow/programs/{id}/archive`, `/restore` | archive it, or bring it back (admins) |
 | `GET /api/buildflow/programs/{id}/activity?limit=50` | what's been done to it, the latest first: each `what`, who, when, and its component's name as it is now |
@@ -188,11 +306,21 @@ anyone else.
 | `PATCH`/`DELETE /api/buildflow/milestones/{id}` | rename it, say what it stands for, make it a review, or move it in its phase or to another, its links with it; delete one nothing's kept on (409 `milestone_in_use`) (admins) |
 | `POST /api/buildflow/programs/{id}/subsystems`, `PATCH`/`DELETE /api/buildflow/subsystems/{id}` | a new subsystem `{name, position}`; rename or move one; delete one with no components, removed ones included (409 `not_empty`) (admins) |
 | `POST /api/buildflow/programs/{id}/components` | a new component `{subsystem_id, name, description, bought, x, y}`, at the end of its subsystem (admins) |
-| `GET`/`PATCH /api/buildflow/components/{id}` | a component; change what's sent of it: its `name`, `subsystem_id`, `bought`, `x` and `y` (null: off the drawing), and `position` are admins'; its `description` and `lead_id` (null: no one; 400 `not_a_member`) anyone's |
+| `GET`/`PATCH /api/buildflow/components/{id}` | a component, with its `lead_days`, `need_by`, and `needs` (ids); change what's sent of it: its `name`, `subsystem_id`, `bought`, `x` and `y` (null: off the drawing), and `position` are admins'; its `description`, `lead_id` (null: no one; 400 `not_a_member`), `lead_days`, and `need_by` (null: none) anyone's |
+| `GET /api/buildflow/programs/{id}/bom?component_id=` | its BOM, in its order (or one component's lines) |
+| `PUT /api/buildflow/programs/{id}/bom` | read a BOM in `{lines, component_id, file}`: the whole BOM (`component_id` null) or one component's becomes `lines`, keeping each line's note and status already on it (unless sent); says how many were `added`, `changed`, and `removed`; 409 `removed`, `archived`; 400 `bad_link` |
+| `POST /api/buildflow/programs/{id}/bom/lines`, `PATCH`/`DELETE /api/buildflow/bom/lines/{id}` | a line added by hand; change what's sent of one (`status`, `note`, and the rest); take one off |
+| `PUT /api/buildflow/components/{id}/needs` | what has to be ready before it can be started `{component_ids}`: 400 `needs_cycle` for one that needs it; 409 `removed` |
 | `DELETE /api/buildflow/components/{id}`, `POST .../restore` | remove a component, keeping everything said of it, or bring it back (admins) |
 | `PUT /api/buildflow/components/{id}/progress/{milestone}` | change its progress at a milestone `{status, due, done_on, note}`: what's sent; 409 `removed`, `archived` |
 | `POST /api/buildflow/components/{id}/links`, `DELETE /api/buildflow/links/{id}` | a link `{phase, kind, url, title, milestone_id}` (400 `bad_link`); remove one |
 | `PUT /api/buildflow/components/{id}/people` | who's on it in a phase `{phase, user_ids}`, in order (400 `not_a_member`) |
+| `GET /api/buildflow/programs/{id}/reviews?removed=` | its reviews, by their days, those with none last (`removed=true`: those removed); also in the program's bill, as `reviews` |
+| `POST /api/buildflow/programs/{id}/reviews` | a review `{milestone_id, name, held_on, component_ids, notes}`: 400 `not_a_review`; 409 `removed`, `archived` |
+| `GET`/`PATCH /api/buildflow/reviews/{id}` | a review, each with its `component_ids` and `files`; change what's sent of it: `name`, `held_on` (null: no day), `notes`, `component_ids` (every one it's to cover); 409 `removed` |
+| `POST /api/buildflow/reviews/{id}/pass` | pass it `{done_on}`: each component it covers passes its milestone, but those through it already |
+| `DELETE /api/buildflow/reviews/{id}`, `POST .../restore` | remove a review, keeping it, or bring it back |
+| `POST /api/buildflow/reviews/{id}/files`, `DELETE .../files/{file}` | a file `{url, title}` (400 `bad_link`); remove one |
 | `GET /api/buildflow/shop?removed=` | the shop: its `machines` (each `retired` or not), the `parts` in its queue (`removed=true`: those taken off it), who's `trained` (each with their `levels` by machine id), each machine's `load`, and whether you keep the machines (`can_edit_machines`) |
 | `GET /api/buildflow/shop/parts?component_id=&program_id=&removed=` | the parts in the queue, or those for a component or a program |
 | `POST /api/buildflow/shop/parts` | a part for the queue `{name, machine_id, component_id, program_id, material, quantity, hours, drawing, cad, status, requester_id, machinist_id, need_by, note}`: `requester_id` left out is you; 409 `machine_retired`, `removed`, `archived`; 400 `bad_link`, `not_a_member` |
@@ -212,8 +340,26 @@ anyone else.
      SolidWorks) rather than its sections, for a vehicle the sections don't draw well.
    - **Pickers for the other apps**: a file found in Vault, a diagram in Piper, a test in Yorg,
      from the panel, rather than its address pasted.
-   - **A timeline**: the due dates of a phase on a calendar, for the build schedule.
-2. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
+   - **The milestones' due dates on the build plan's calendar**, beside each component's lead time
+     (the build plan, below, is the build schedule's calendar).
+2. **The build plan** (November 2026): each component's lead time, ready-by day, and what it needs
+   first; the day to order or start it by, on a calendar, with what's late, at risk, and a long
+   lead. Next:
+   - **A component's parts on its plan**: when a part's late, its component at risk.
+   - **Long leads first for the deals finder**: a component with a long lead, not ordered, searched
+     for first.
+3. **Bills of materials** (November 2026): each program's BOM read in from the team's own Excel or CSV
+   spreadsheets, and again as they change, its parts matched to components, with the day to order
+   each by, the long leads, and where each is. Next:
+   - **A BOM's parts for the deals finder**: those still to order, searched for by part number.
+   - **A spreadsheet kept on SharePoint, read in by its link**, once the site can reach the team's
+     Microsoft 365 (sign-in already does).
+4. **Reviews** (November 2026): a review held for several components at once, at one of the
+   program's reviews, its day each one's date there, passing it passing each one, with its files
+   and the notes taken in it. Next:
+   - **A review's actions** as items of their own (each with who's to close it and by when), rather
+     than each component's note.
+5. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
    with accounts for names, and parts for components on the bills of design. Next:
    - **Bringing the tracker's data over**, if it holds parts or levels worth keeping: its *Export
      CSV*, read in by an admin, names matched to accounts.

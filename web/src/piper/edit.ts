@@ -41,12 +41,12 @@ import { crosses, route, STUB } from "./route";
 
 // --- routing lines -------------------------------------------------------------------------------------------------
 
-/** What lines route around: every part but regions (around parts themselves) and junctions (on lines). */
+/** What lines route around: every part but regions (around parts themselves), shapes, and junctions (on lines). */
 export function obstacles(drawing: Drawing): Box[] {
     return drawing.parts
         .filter((part) => {
             const kind = kindOf(part.kind);
-            return !kind.behind && part.kind !== "junction";
+            return !kind.behind && !kind.aside && part.kind !== "junction";
         })
         .map((part) => boxOf(part, drawing));
 }
@@ -161,13 +161,14 @@ function wasOf(drawing: Drawing, parts: Map<string, Part>, line: Line): Was | nu
 /**
  * The parts a line, as it's drawn (square: ports.pathOf), runs through: any it doesn't end on, and those it ends on but
  * where it goes into them, its first run and its last (a port can be just inside its part's outline). Not what's drawn
- * behind the lines, nor where they meet.
+ * behind the lines, nor shapes, nor where they meet.
  */
 function partsThrough(drawing: Drawing, line: Line, path: Point[]): Set<string> {
     const own = new Set([line.from, line.to].filter(isPortEnd).map((end) => end.part));
     const through = new Set<string>();
     for (const part of drawing.parts) {
-        if (kindOf(part.kind).behind || part.kind === "junction") {
+        const kind = kindOf(part.kind);
+        if (kind.behind || kind.aside || part.kind === "junction") {
             continue;
         }
         const box = boxOf(part, drawing);
@@ -470,9 +471,10 @@ export function connect(drawing: Drawing, source: Target, target: Target): { dra
     }
     const tapped = [source, target].filter(onLine).map((at) => drawing.lines.find((line) => line.id === at.line));
     const fluid = fluidAt(next, from) || fluidAt(next, to) || (tapped.find((line) => line?.fluid)?.fluid ?? "");
-    // A line to a pneumatic actuator is its air, a pneumatic signal, unless it tees into a line that says otherwise.
+    // A tee is the type of the line it tees into. A line to a pneumatic actuator is its air, a pneumatic signal; any
+    // other line is tubing, which most of the team's lines are.
     const signal = [from, to].some((end) => isSignalEnd(partsById(next), end));
-    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? (signal ? "pneumatic" : "pipe") });
+    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? (signal ? "pneumatic" : "tube") });
     line.points = routeOf(next, line);
     return { drawing: { ...next, lines: [...next.lines, line] }, id: line.id };
 }

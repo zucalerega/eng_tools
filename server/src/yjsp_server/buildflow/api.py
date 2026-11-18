@@ -1,6 +1,7 @@
 """Buildflow's API (/api/buildflow): programs and their bills of design, their layout (admins'), and their components'
-progress, links, and people (anyone's); and the shop (/api/buildflow/shop): the parts queued to be machined (anyone's),
-who's trained on which machine (each their own, and admins anyone's), and the machines (admins')."""
+progress, links, and people, their design reviews, and their bills of materials (anyone's); and the shop (/api/buildflow/shop): the parts queued to
+be machined (anyone's), who's trained on which machine (each their own, and admins anyone's), and the machines
+(admins')."""
 
 from typing import Annotated
 
@@ -10,9 +11,14 @@ from sqlalchemy.orm import Session
 from ..api.deps import DB, ActiveUser
 from ..api.schemas import UserRef
 from ..models import User
-from . import programs, progress, shop
+from . import bom, programs, progress, reviews, shop
 from .models import Program
 from .schemas import (
+    BomImportIn,
+    BomImportOut,
+    BomLineChangeIn,
+    BomLineIn,
+    BomLineOut,
     ComponentChangeIn,
     ComponentIn,
     ComponentOut,
@@ -26,12 +32,18 @@ from .schemas import (
     MilestoneChangeIn,
     MilestoneIn,
     MilestoneOut,
+    NeedsIn,
     PeopleIn,
     ProgramChangeIn,
     ProgramDetailOut,
     ProgramIn,
     ProgramOut,
     ProgressIn,
+    ReviewChangeIn,
+    ReviewFileIn,
+    ReviewIn,
+    ReviewOut,
+    ReviewPassIn,
     ShopOut,
     ShopPartChangeIn,
     ShopPartIn,
@@ -58,6 +70,7 @@ def _detail(db: Session, program: Program, user: User) -> ProgramDetailOut:
         subsystems=[SubsystemOut.of(s) for s in programs.subsystems(db, program.id)],
         components=[ComponentOut.of(c) for c in programs.components(db, program.id)],
         removed=[ComponentOut.of(c) for c in removed],
+        reviews=[ReviewOut.of(r) for r in reviews.reviews(db, program.id)],
     )
 
 
@@ -207,8 +220,8 @@ def get_component(component_id: int, user: ActiveUser, db: DB) -> ComponentOut:
 @router.patch("/components/{component_id}")
 def patch_component(component_id: int, body: ComponentChangeIn, user: ActiveUser, db: DB) -> ComponentOut:
     """Change what's sent of a component: its name, subsystem, whether it's bought, its place on the drawing (x, y; null
-    takes it off), and its place in its subsystem are admins' to change; its description and lead (lead_id; null: no
-    one), anyone's."""
+    takes it off), and its place in its subsystem are admins' to change; its description, lead (lead_id; null: no
+    one), lead time (lead_days), and the day it's to be ready by (need_by), anyone's."""
     change = {key: getattr(body, key) for key in body.model_fields_set}
     return ComponentOut.of(programs.change_component(db, user, component_id, change))
 
@@ -258,10 +271,118 @@ def delete_link(link_id: int, user: ActiveUser, db: DB) -> ComponentOut:
     return ComponentOut.of(progress.remove_link(db, user, link_id))
 
 
+@router.put("/components/{component_id}/needs")
+def put_needs(component_id: int, body: NeedsIn, user: ActiveUser, db: DB) -> ComponentOut:
+    """What has to be ready before a component can be started (component_ids): 400 needs_cycle for one that needs it."""
+    return ComponentOut.of(progress.set_needs(db, user, component_id, body.component_ids))
+
+
 @router.put("/components/{component_id}/people")
 def put_people(component_id: int, body: PeopleIn, user: ActiveUser, db: DB) -> ComponentOut:
     """Who's on a component in a phase (user_ids, in order): the build phase's are who's making it."""
     return ComponentOut.of(progress.set_people(db, user, component_id, body.phase, body.user_ids))
+
+
+# --- design reviews (anyone) ----------------------------------------------------------------------------------------
+
+
+@router.get("/programs/{program_id}/reviews")
+def get_reviews(program_id: int, user: ActiveUser, db: DB, removed: bool = False) -> list[ReviewOut]:
+    """A program's design reviews, by their days (removed=true: those removed from it, to bring back)."""
+    return [ReviewOut.of(r) for r in reviews.reviews(db, program_id, removed=removed)]
+
+
+@router.post("/programs/{program_id}/reviews", status_code=201)
+def post_review(program_id: int, body: ReviewIn, user: ActiveUser, db: DB) -> ReviewOut:
+    """A review at one of the program's review milestones, for several of its components: its day is each one's due
+    date there."""
+    found = reviews.add_review(
+        db,
+        user,
+        program_id,
+        milestone_id=body.milestone_id,
+        name=body.name,
+        held_on=body.held_on,
+        component_ids=body.component_ids,
+        notes=body.notes,
+    )
+    return ReviewOut.of(found)
+
+
+@router.get("/reviews/{review_id}")
+def get_review(review_id: int, user: ActiveUser, db: DB) -> ReviewOut:
+    return ReviewOut.of(reviews.review(db, review_id))
+
+
+@router.patch("/reviews/{review_id}")
+def patch_review(review_id: int, body: ReviewChangeIn, user: ActiveUser, db: DB) -> ReviewOut:
+    """Change what's sent of a review (its name, day, notes, and the components it covers), and leave the rest."""
+    change = {key: getattr(body, key) for key in body.model_fields_set}
+    return ReviewOut.of(reviews.change_review(db, user, review_id, change))
+
+
+@router.post("/reviews/{review_id}/pass")
+def post_pass_review(review_id: int, body: ReviewPassIn, user: ActiveUser, db: DB) -> ReviewOut:
+    """Pass a review: each component it covers passes its milestone, but those through it already."""
+    return ReviewOut.of(reviews.pass_review(db, user, review_id, on=body.done_on))
+
+
+@router.delete("/reviews/{review_id}")
+def delete_review(review_id: int, user: ActiveUser, db: DB) -> ReviewOut:
+    """Take a review off its program, keeping it, its notes and files with it."""
+    return ReviewOut.of(reviews.remove_review(db, user, review_id, removed=True))
+
+
+@router.post("/reviews/{review_id}/restore")
+def post_restore_review(review_id: int, user: ActiveUser, db: DB) -> ReviewOut:
+    return ReviewOut.of(reviews.remove_review(db, user, review_id, removed=False))
+
+
+@router.post("/reviews/{review_id}/files", status_code=201)
+def post_review_file(review_id: int, body: ReviewFileIn, user: ActiveUser, db: DB) -> ReviewOut:
+    """A review's file: its slides, its package, its minutes (400 bad_link for one that isn't a link)."""
+    return ReviewOut.of(reviews.add_file(db, user, review_id, url=body.url, title=body.title))
+
+
+@router.delete("/reviews/{review_id}/files/{file_id}")
+def delete_review_file(review_id: int, file_id: int, user: ActiveUser, db: DB) -> ReviewOut:
+    return ReviewOut.of(reviews.remove_file(db, user, review_id, file_id))
+
+
+# --- bills of materials (anyone) ------------------------------------------------------------------------------------
+
+
+@router.get("/programs/{program_id}/bom")
+def get_bom(program_id: int, user: ActiveUser, db: DB, component_id: int | None = None) -> list[BomLineOut]:
+    """A program's BOM, in its order (component_id: only that component's lines)."""
+    return [BomLineOut.of(line) for line in bom.lines(db, program_id, component_id=component_id)]
+
+
+@router.put("/programs/{program_id}/bom")
+def put_bom(program_id: int, body: BomImportIn, user: ActiveUser, db: DB) -> BomImportOut:
+    """Read a BOM in, from a spreadsheet: the program's whole BOM (or component_id's) becomes these lines. A line on it
+    already (its component and part number, or description) keeps its note, and its status unless one's sent."""
+    incoming = [line.model_dump(exclude_unset=True) for line in body.lines]
+    kept, counts = bom.import_bom(db, user, program_id, incoming, component_id=body.component_id, file=body.file)
+    return BomImportOut(lines=[BomLineOut.of(line) for line in kept], **counts)
+
+
+@router.post("/programs/{program_id}/bom/lines", status_code=201)
+def post_bom_line(program_id: int, body: BomLineIn, user: ActiveUser, db: DB) -> BomLineOut:
+    return BomLineOut.of(bom.add_line(db, user, program_id, body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/bom/lines/{line_id}")
+def patch_bom_line(line_id: int, body: BomLineChangeIn, user: ActiveUser, db: DB) -> BomLineOut:
+    """Change what's sent of a line: where it is (to order, ordered, received), its note, or what it is."""
+    change = {key: getattr(body, key) for key in body.model_fields_set}
+    return BomLineOut.of(bom.change_line(db, user, line_id, change))
+
+
+@router.delete("/bom/lines/{line_id}", status_code=204)
+def delete_bom_line(line_id: int, user: ActiveUser, db: DB) -> Response:
+    bom.remove_line(db, user, line_id)
+    return Response(status_code=204)
 
 
 # --- the shop -------------------------------------------------------------------------------------------------------

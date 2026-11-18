@@ -141,6 +141,104 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "The build plan",
+        body: (
+            <ul>
+                <li>
+                    <em>Build plan</em>, on a program&apos;s page, plans its build: each component&apos;s lead time (how
+                    long it takes to get once it&apos;s ordered, or to make once it&apos;s started), the day it has to
+                    be ready by, and what it needs first (what has to be ready before it can start).
+                </li>
+                <li>
+                    From those it works out the day to order or start each one by, and draws it on a calendar, the
+                    soonest first, so the long leads (six weeks or more) come to the top. A bar runs from the day to
+                    order or start it by to the day it has to be ready, in the color of where it is in the build phase;
+                    one at risk is ringed in red, with a red line where it&apos;d be ready as things stand.
+                </li>
+                <li>
+                    Across the top: what to order or start now (its day&apos;s passed), what&apos;s late, what&apos;s at
+                    risk (it won&apos;t be ready in time: waiting on what it needs, or started too late), the long
+                    leads, what&apos;s waiting on others, and what isn&apos;t planned yet.
+                </li>
+                <li>
+                    Type a component&apos;s lead time in weeks and its ready-by day in the plan&apos;s table, or on its
+                    panel in the build phase. <em>What ... needs first</em> picks the components it needs; one that
+                    needs it, however far along, can&apos;t be picked, as neither could ever start.
+                </li>
+                <li>
+                    A component is ready once it&apos;s through the build phase. The bill marks a long lead not ready
+                    yet with <em>Long lead</em>.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "The BOM",
+        body: (
+            <ul>
+                <li>
+                    <em>BOM</em>, on a program&apos;s page, is its bill of materials: the parts to buy, read in from the
+                    team&apos;s own BOM spreadsheet. <em>Read in a spreadsheet…</em> takes an Excel workbook (.xlsx) or
+                    a CSV file (an older .xls: save it as .xlsx first; from Google Sheets: download it as .xlsx or CSV).
+                </li>
+                <li>
+                    It guesses which column says what from its headers: the part number, the description, the component
+                    it&apos;s for, how many, the vendor, the cost each, the lead time (in weeks or days), a link, and
+                    where it is. Fix any it got wrong, and the row the headers are in, and check the lines as
+                    they&apos;ll come in.
+                </li>
+                <li>
+                    <em>Lines are for</em>: the component each one&apos;s <em>Component</em> column names (by its name
+                    here), none yet, or one component (its BOM alone, the rest staying as they are). A name no component
+                    has comes in for none, and the dialog says which.
+                </li>
+                <li>
+                    Read it in again whenever the spreadsheet changes: the BOM becomes what it says, and a part already
+                    on it keeps where it is (to order, ordered, received) and its note, unless the spreadsheet says.
+                </li>
+                <li>
+                    Each part&apos;s day to order it by is the day its component&apos;s build has to start (from its
+                    lead time and ready-by day, on the build plan), less the part&apos;s own lead time. The page counts
+                    what to order now and the long leads (six weeks or more), and the cost in all. Set where each part
+                    is, and a note (a PO, a tracking number), right there. A component&apos;s panel lists its parts, in
+                    its build phase.
+                </li>
+            </ul>
+        ),
+    },
+    {
+        title: "Reviews",
+        body: (
+            <ul>
+                <li>
+                    A review can cover several components at once: a subsystem&apos;s PDR, say, for its eight
+                    components. <em>New review</em>, under the bill, takes the milestone it&apos;s held at (one
+                    that&apos;s a review: DCR, CoDR, PDR, CDR, TRR, QRR, FRR), a name, its day, and the components it
+                    covers; <em>All of</em> a subsystem picks every one in it.
+                </li>
+                <li>
+                    Its day is each component&apos;s date at that milestone, and moving it moves them all. Those through
+                    it already (passed, or not needed) keep theirs. <em>Pass…</em>, on its page, passes each of its
+                    components there, on its day.
+                </li>
+                <li>
+                    Each component&apos;s progress is still its own. On the review&apos;s page, set one apart (back{" "}
+                    <em>In progress</em>, say) and write its actions beside it, under <em>Actions, outcome</em>: the
+                    same note its panel shows at the milestone.
+                </li>
+                <li>
+                    Its files are links: paste the address of its slides, its package, or its minutes (from SharePoint,
+                    its <em>Copy link</em>), with a name. Take its notes on its page, as it goes: <em>Edit notes</em>,
+                    in Markdown (<code>-</code> for a list), then <em>Save notes</em>.
+                </li>
+                <li>
+                    A component&apos;s chip on the bill says which review it&apos;s in there, and its menu goes to it,
+                    as its panel does. <em>Remove…</em> keeps a review, to bring back from <em>Removed reviews</em>.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "What's coming up",
         body: (
             <ul>
@@ -208,8 +306,10 @@ const TOPICS: Topic[] = [
                     sections, from the aft end to the nose: an engine (with as many nozzles side by side as it has),
                     body tubes, tanks (their domes drawn inside), couplers, transitions to another diameter, and the
                     nose cone, each with its length and diameter in any one unit; fins at a section&apos;s aft end,
-                    landing legs from it, and a test stand&apos;s frame under it all. <em>Save the drawing</em> keeps
-                    the sections; the preview shows them first.
+                    landing legs from it, and a test stand&apos;s frame under it all; the preview shows the drawing as
+                    it&apos;ll be saved. The name, the description, and the sections are saved together: a bar at the
+                    foot of the window says what isn&apos;t saved yet, with <em>Save</em> and <em>Undo changes</em>.
+                    Everything else on the page is saved as it&apos;s changed.
                 </li>
                 <li>
                     Drag a component&apos;s dot to move it on the drawing. One that isn&apos;t on it goes on with{" "}

@@ -492,3 +492,10 @@ The add-in logs to `%LOCALAPPDATA%\Vault\addin.log`. Settings are in
 `%APPDATA%\Vault\addin.json`, and saved sign-ins (encrypted) are in
 `%APPDATA%\Vault\tokens.json`. The `vault` CLI uses the same workspace and sign-in, so
 `vault status` in `C:\VLT` is a good second opinion.
+
+A computer that loses power can leave one of the files Vault keeps damaged. The workspace's
+record of its files (`C:\VLT\.vault\state.json`) is set aside as `state.json.damaged` and
+worked out again, and the Vault tab says so: copies that aren't the vault's latest version
+then show as conflicts, to keep or replace. Damaged sign-ins mean signing in again. A
+damaged `C:\VLT\.vault\config.json` has to be deleted, and the folder set up again by
+signing in; the message says so. The help's troubleshooting page has each.

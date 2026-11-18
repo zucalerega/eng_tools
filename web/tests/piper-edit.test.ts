@@ -136,7 +136,7 @@ test("a line to a pneumatic valve's actuator is its air: a pneumatic signal, apa
     join([supply, "top"], [pilot, "1"]);
     const air = join([pilot, "2"], [valve, "actuator"]);
     expect([line(air).kind, line(air).fluid]).toEqual(["pneumatic", "gn2"]);
-    expect([line(feed).kind, line(on).kind]).toEqual(["pipe", "pipe"]);
+    expect([line(feed).kind, line(on).kind]).toEqual(["tube", "tube"]); // tubing, as any line drawn is
     // The valve's liquid doesn't carry to its air, nor its air to its liquid.
     drawing = carryFluid(drawing, feed, "rp1");
     expect([line(feed).fluid, line(on).fluid, line(air).fluid]).toEqual(["rp1", "rp1", "gn2"]);
@@ -153,6 +153,21 @@ test("a line to a pneumatic valve's actuator is its air: a pneumatic signal, apa
         { part: engine, port: "ox" },
     ]);
     expect(line(air).to).toEqual(at);
+});
+
+test("a line drawn is tubing, and a tee is the type of the line it tees into", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const run = join([left, "b"], [right, "a"]);
+    expect(line(run).kind).toBe("tube");
+    drawing = updateLine(drawing, run, (entry) => ({ ...entry, kind: "hose" }));
+    const gauge = place("pressure-gauge", 104, -80);
+    const made = connect(drawing, { part: gauge, port: "bottom" }, { line: run, at: { x: 100, y: 0 } })!;
+    drawing = made.drawing;
+    expect(line(made.id).kind).toBe("hose");
+    const free = connect(drawing, { part: right, port: "b" }, { x: 300, y: 0 })!;
+    expect(free.drawing.lines.find((entry) => entry.id === free.id)!.kind).toBe("tube");
 });
 
 test("a line drawn to another line tees into it at a junction on the grid", () => {

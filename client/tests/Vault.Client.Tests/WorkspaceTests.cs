@@ -210,6 +210,79 @@ public sealed class WorkspaceTests : IDisposable
         Assert.Equal(FileState.UpToDate, Assert.Single(await bob.StatusAsync([bobMount])).State);
     }
 
+    [Theory]
+    [InlineData("zeros")] // what Windows leaves of a file it hadn't finished saving when the computer lost power
+    [InlineData("empty")]
+    [InlineData("half")]
+    public async Task AWorkspaceWhoseStateIsDamagedChecksItsFilesAgain(string damage)
+    {
+        var alice = await WorkspaceAsync("alice");
+        var bob = await WorkspaceAsync("bob");
+        Write(alice, "Mount.SLDASM", "the vault's mount");
+        Write(alice, "Barrel.SLDPRT", "the barrel");
+        await alice.CheckinAsync([Folder(alice)], "add mount and barrel");
+        await bob.GetLatestAsync([Folder(bob)]);
+        var bobMount = Local(bob, "Mount.SLDASM");
+        var bobBarrel = Local(bob, "Barrel.SLDPRT");
+        await bob.CheckoutAsync([bobMount]);
+        File.WriteAllText(bobMount, "bob's mount");
+        Assert.Equal(FileState.Modified, Assert.Single(await bob.StatusAsync([bobMount])).State);
+        Assert.False(bob.StateWasDamaged);
+
+        var stateFile = Path.Combine(bob.Root, ".vault", "state.json");
+        var whole = File.ReadAllBytes(stateFile);
+        var damaged = damage switch
+        {
+            "zeros" => new byte[whole.Length],
+            "empty" => Array.Empty<byte>(),
+            _ => whole.Take(whole.Length / 2).ToArray(),
+        };
+        File.WriteAllBytes(stateFile, damaged);
+
+        // It opens all the same, with the damaged state set aside, and works out again what's here.
+        var token = await _server.MemberTokenAsync("bob@rocketry.test");
+        using (var reopened = Workspace.Open(bob.Root, token))
+        {
+            Assert.True(reopened.StateWasDamaged);
+            Assert.Equal(damaged, File.ReadAllBytes(stateFile + ".damaged"));
+            var statuses = await reopened.StatusAsync([Folder(bob)]);
+            Assert.Equal(FileState.UpToDate, statuses.Single(s => s.LocalPath == bobBarrel).State);
+            var mount = statuses.Single(s => s.LocalPath == bobMount);
+            Assert.Equal((FileState.Conflict, true), (mount.State, mount.CheckedOutByMe));
+            Assert.Equal("bob's mount", File.ReadAllText(bobMount)); // his work is as he left it
+
+            await reopened.KeepMineAsync([bobMount]);
+            var checkedIn = Assert.Single((await reopened.CheckinAsync([bobMount], "my mount")).Files);
+            Assert.Equal(("updated", 2), (checkedIn.Status, checkedIn.File.Version));
+        }
+
+        // What it keeps now is whole, so the next time it opens, nothing is wrong.
+        using var again = Workspace.Open(bob.Root, token);
+        Assert.False(again.StateWasDamaged);
+        Assert.All(await again.StatusAsync([Folder(bob)]), s => Assert.Equal(FileState.UpToDate, s.State));
+        Assert.DoesNotContain(Directory.GetFiles(Path.Combine(bob.Root, ".vault")), f => f.EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("zeros")]
+    [InlineData("{}")]
+    public async Task AWorkspaceWhoseConfigIsDamagedSaysWhatToDo(string damage)
+    {
+        var bob = await WorkspaceAsync("bob");
+        var config = Path.Combine(bob.Root, ".vault", "config.json");
+        File.WriteAllBytes(config, damage == "zeros" ? new byte[64] : Encoding.UTF8.GetBytes(damage));
+
+        var opening = Assert.Throws<WorkspaceException>(() => Workspace.Open(bob.Root, "any token"));
+        Assert.Contains(config, opening.Message, StringComparison.Ordinal);
+        Assert.Contains("Delete it, then set the workspace up again", opening.Message, StringComparison.Ordinal);
+        Assert.Equal(opening.Message, Assert.Throws<WorkspaceException>(() => Workspace.ServerOf(bob.Root)).Message);
+
+        // And that works: with the file gone, the folder is set up again, where it is.
+        File.Delete(config);
+        using var again = Workspace.Create(bob.Root, _server.Url, await _server.MemberTokenAsync("bob@rocketry.test"), host: "BOB-PC");
+        Assert.Empty(await again.StatusAsync([Folder(bob)]));
+    }
+
     [Fact]
     public async Task UndoCheckoutBacksUpAndRestores()
     {

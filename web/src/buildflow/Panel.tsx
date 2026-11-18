@@ -4,10 +4,12 @@ import { Notice } from "../components";
 import { DealCard } from "../deals";
 import { Link } from "../router";
 import {
+    BOM_STATUS_NAMES,
     buildflow,
     PHASE_NAMES,
     PHASES,
     SHOP_STATUS_NAMES,
+    type BomLine,
     type Component,
     type Link as ComponentLink,
     type LinkKind,
@@ -15,11 +17,16 @@ import {
     type Phase,
     type ProgramDetail,
     type ProgressChange,
+    type Review,
     type ShopPart,
     type Status,
 } from "./api";
 import { appName, guessKind, KIND_NAMES, KINDS, linkHref, siteTarget, tidyUrl, useSiteName } from "./links";
-import { inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
+import { partsPlan } from "./billOfMaterials";
+import { leadInWords, planOf } from "./planning";
+import { LeadField, NeedsDialog } from "./Plan";
+import { reviewPath, reviewsOf } from "./reviews";
+import { formatDay, inPhase, phaseState, STATE_NAMES, statusAt, statusName, today } from "./vehicle";
 import { useDemo } from "../session";
 
 // A component, beside the bill: what it is, its lead, and for each phase its milestones (status, due date, the day it
@@ -245,6 +252,7 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                     key={milestone.id}
                     component={component}
                     milestone={milestone}
+                    reviews={reviewsOf(program, component, milestone)}
                     links={links.filter((link) => link.milestone_id === milestone.id)}
                     onChange={(change) => act(() => buildflow.setProgress(component.id, milestone.id, change))}
                     onRemoveLink={(link) => act(() => buildflow.removeLink(link.id))}
@@ -272,6 +280,8 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
                     Not needed: skip what&apos;s not started
                 </button>
             )}
+            {phase === "build" && <PlanSection program={program} component={component} act={act} />}
+            {phase === "build" && <Parts program={program} component={component} />}
             {phase === "build" && <InTheShop component={component} />}
             <div className="bf-people">
                 <h3>{WHO[phase]}</h3>
@@ -333,6 +343,147 @@ function PhaseSection({ phase, open, program, component, members, focus, act }: 
     );
 }
 
+/** A component's build plan: its lead time, the day it has to be ready by, and so the day to order or start it by;
+ * what it needs first, and what it holds up. */
+function PlanSection({
+    program,
+    component,
+    act,
+}: {
+    program: ProgramDetail;
+    component: Component;
+    act: (action: () => Promise<Component>) => Promise<boolean>;
+}) {
+    const [needing, setNeeding] = useState(false);
+    const planned = planOf(program, today()).find((p) => p.component.id === component.id);
+    if (!planned) {
+        return null;
+    }
+    const names = (ids: number[]) =>
+        program.components
+            .filter((c) => ids.includes(c.id))
+            .map((c) => c.name)
+            .join(", ");
+    return (
+        <section className="bf-plan-section" aria-label="Build plan">
+            <h3>Build plan</h3>
+            <div className="bf-plan-fields">
+                <label>
+                    Lead time
+                    <LeadField component={component} disabled={false} change={act} />
+                    <span className="muted">weeks</span>
+                </label>
+                <label>
+                    Ready by
+                    <input
+                        type="date"
+                        aria-label={`${component.name}: ready by`}
+                        value={component.need_by ?? ""}
+                        onChange={(event) =>
+                            void act(() =>
+                                buildflow.changeComponent(component.id, { need_by: event.target.value || null }),
+                            )
+                        }
+                    />
+                </label>
+            </div>
+            {planned.startBy && (
+                <p className={`bf-small ${planned.lateToStart ? "bf-late" : ""}`}>
+                    {component.bought ? "Order" : "Start"} by {formatDay(planned.startBy)}
+                    {planned.lateToStart && ": late"}
+                    {planned.long && <span className="tag bf-long-lead">Long lead</span>}
+                </p>
+            )}
+            {planned.atRisk && planned.projected && (
+                <p className="bf-small bf-late">Ready {formatDay(planned.projected)} as things stand: after its day.</p>
+            )}
+            <p className="bf-small">
+                Needs first:{" "}
+                {component.needs.length > 0 ? names(component.needs) : <span className="muted">nothing</span>}{" "}
+                <button type="button" className="bf-link-button" onClick={() => setNeeding(true)}>
+                    Change…
+                </button>
+            </p>
+            {planned.waitingOn.length > 0 && (
+                <p className="bf-small muted">Waiting on {planned.waitingOn.map((c) => c.name).join(", ")}</p>
+            )}
+            {planned.holdsUp.length > 0 && (
+                <p className="bf-small muted">Holds up {planned.holdsUp.map((c) => c.name).join(", ")}</p>
+            )}
+            <p className="bf-small">
+                <Link to={`/buildflow/programs/${program.id}/plan`}>The build plan</Link>
+            </p>
+            {needing && (
+                <NeedsDialog
+                    program={program}
+                    component={component}
+                    onSaved={(changed) => {
+                        setNeeding(false);
+                        void act(() => Promise.resolve(changed));
+                    }}
+                    onCancel={() => setNeeding(false)}
+                />
+            )}
+        </section>
+    );
+}
+
+/** A component's parts on the program's BOM: each, where it is, and the day to order it by; the longest lead first. */
+function Parts({ program, component }: { program: ProgramDetail; component: Component }) {
+    const [lines, setLines] = useState<BomLine[] | null>(null);
+    useEffect(() => {
+        buildflow.bom(program.id, component.id).then(setLines, () => setLines([]));
+    }, [program.id, component.id]);
+    if (lines === null) {
+        return null;
+    }
+    const planned = partsPlan(lines, program, today()).sort(
+        (a, b) => (b.line.lead_days ?? -1) - (a.line.lead_days ?? -1),
+    );
+    const open = planned.filter((p) => p.line.status !== "received");
+    return (
+        <section className="bf-parts" aria-label="Parts">
+            <h3>Parts</h3>
+            {lines.length === 0 ? (
+                <p className="muted bf-small">None on the BOM.</p>
+            ) : (
+                <>
+                    <p className="bf-small muted">
+                        {open.length} of {lines.length} still to come
+                        {open.some((p) => p.late) && (
+                            <span className="bf-late">, {open.filter((p) => p.late).length} to order now</span>
+                        )}
+                    </p>
+                    <ul className="plain">
+                        {planned.slice(0, 6).map((p) => (
+                            <li key={p.line.id} className="bf-parts-line">
+                                <span>
+                                    {p.line.part_number || p.line.description}
+                                    {p.line.lead_days !== null && (
+                                        <span className="muted"> · {leadInWords(p.line.lead_days)}</span>
+                                    )}
+                                    {p.orderBy && p.line.status === "to_order" && (
+                                        <span className={p.late ? "bf-late" : "muted"}>
+                                            {" "}
+                                            · order by {formatDay(p.orderBy)}
+                                        </span>
+                                    )}
+                                </span>
+                                <span className={`bf-bom-status bf-bom-status-${p.line.status}`}>
+                                    {BOM_STATUS_NAMES[p.line.status]}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </>
+            )}
+            <p className="bf-small">
+                <Link to={`/buildflow/programs/${program.id}/bom?component=${component.id}`}>The BOM</Link>
+            </p>
+        </section>
+    );
+}
+
 /** A component's parts in the shop's queue, where each is, and a way to queue another for it. */
 function InTheShop({ component }: { component: Component }) {
     const [parts, setParts] = useState<ShopPart[] | null>(null);
@@ -372,12 +523,14 @@ function InTheShop({ component }: { component: Component }) {
 function MilestoneRow({
     component,
     milestone,
+    reviews,
     links,
     onChange,
     onRemoveLink,
 }: {
     component: Component;
     milestone: Milestone;
+    reviews: Review[];
     links: ComponentLink[];
     onChange: (change: ProgressChange) => Promise<boolean>;
     onRemoveLink: (link: ComponentLink) => Promise<boolean>;
@@ -412,6 +565,17 @@ function MilestoneRow({
                     ))}
                 </select>
             </div>
+            {reviews.length > 0 && (
+                <p className="bf-small bf-milestone-reviews">
+                    In{" "}
+                    {reviews.map((review, index) => (
+                        <span key={review.id}>
+                            {index > 0 && " and "}
+                            <Link to={reviewPath(review)}>{review.name}</Link>
+                        </span>
+                    ))}
+                </p>
+            )}
             <div className="bf-milestone-dates">
                 <label>
                     {milestone.review ? "On" : "Due"}

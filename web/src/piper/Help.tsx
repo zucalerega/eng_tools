@@ -87,6 +87,16 @@ const TOPICS: Topic[] = [
                     notes, regions, a legend, a title block, and pictures.
                 </li>
                 <li>
+                    <em>Shapes</em> (search <em>cosmetic</em>) are drawn for how the drawing looks: rectangles, rounded
+                    rectangles, ellipses, triangles, diamonds, lines, arrows, and double arrows. Drag a selected one's
+                    square corner to size it. On the right, give a shape a <em>Fill</em>, an <em>Outline</em> color and{" "}
+                    <em>Outline style</em> (solid, dashed, dotted, or none), a <em>Weight</em>, and a{" "}
+                    <em>Transparency</em>. A line or an arrow has its <em>Arrowheads</em> and a <em>Direction</em>:
+                    level, or corner to corner across its box, so sizing it sets its angle (<kbd>R</kbd> turns it).
+                    Lines route straight through shapes, and the parts list, the legend, Find, and the simulation leave
+                    them out.
+                </li>
+                <li>
                     A <em>Picture</em> shows a PNG or a JPEG of your own (an injector, a TCA, a photo of the stand), up
                     to 5 MB: drop the file on the drawing, or place one from the library and choose it on the right (
                     <em>Replace…</em> changes it). Drag its square corner to size it: it keeps its shape. It's kept in
@@ -145,11 +155,12 @@ const TOPICS: Topic[] = [
                     tank's pressurant inlet has one, its arrows the way the flow leaves it.
                 </li>
                 <li>
-                    Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select
-                    everything in a box; Shift-click adds to what's selected. Select several to line them up or space
-                    them evenly. Where parts overlap (a valve on a picture of the stand), <em>Bring to front</em> (
-                    <kbd>]</kbd>) draws what's selected over everything, and <em>Send to back</em> (<kbd>[</kbd>) under
-                    everything, the lines too.
+                    Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip (a flip never mirrors the words
+                    on a part: they still read forwards). Drag on an empty spot to select everything in a box;
+                    Shift-click adds to what's selected. Select several to line them up or space them evenly. Where
+                    parts overlap (a valve on a picture of the stand), <em>Bring to front</em> (<kbd>]</kbd>) draws
+                    what's selected over everything, and <em>Send to back</em> (<kbd>[</kbd>) under everything, the
+                    lines too.
                 </li>
                 <li>
                     Drag the round handle at a selected part's corner to make it any size from a quarter of its own to
@@ -256,8 +267,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>
                 <li>
-                    A line's type: pipe, tubing, flex hose, pneumatic, electrical, or data. Flow arrows show which way
-                    it flows.
+                    A line's type: pipe, tubing, flex hose, pneumatic, electrical, or data. A new line is tubing (a tee
+                    is the type of the line it tees into); change it in its properties. Flow arrows show which way it
+                    flows.
                 </li>
             </ul>
         ),

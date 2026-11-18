@@ -162,7 +162,7 @@ export function figureOf(part: Part): Figure {
  * A color as a figure draws it: black and white (and the grays a drawing's white often is, #fefefe) in the page's ink
  * and paper; any other as it is.
  */
-function paintOf(value: string, context: DrawContext): string {
+export function paintOf(value: string, context: DrawContext): string {
     const [r, g, b] = [1, 3, 5].map((at) => Number.parseInt(value.slice(at, at + 2), 16)) as [number, number, number];
     if (Math.max(r, g, b) - Math.min(r, g, b) <= 12) {
         if (Math.min(r, g, b) >= 240) {

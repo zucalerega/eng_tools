@@ -3,11 +3,13 @@
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from ..api.schemas import UserRef
 from .models import (
     Assignment,
+    BomLine,
+    BomStatus,
     Component,
     Event,
     Link,
@@ -16,6 +18,8 @@ from .models import (
     Phase,
     Program,
     Progress,
+    Review,
+    ReviewLink,
     ShopPart,
     ShopStatus,
     Status,
@@ -34,6 +38,9 @@ Size = Annotated[float, Field(allow_inf_nan=False, gt=0, le=100_000)]
 
 MOST_SECTIONS = 40
 MOST_PEOPLE = 50  # on a component, in a phase
+MOST_NEEDS = 100  # components one needs first
+# A lead time, in days: from ordering a part (or starting to make it) to having it, up to ten years.
+LeadDays = Annotated[int, Field(ge=0, le=3650)]
 MOST_LINKS = 100  # on a component
 MOST_URL = 2000
 
@@ -142,6 +149,12 @@ class ComponentChangeIn(BaseModel):
     y: Coordinate | None = None
     position: int | None = Field(default=None, ge=0, le=10_000)
     lead_id: int | None = None
+    lead_days: LeadDays | None = None  # its lead time, in days; null: none said
+    need_by: date | None = None  # the day it has to be ready by; null: none
+
+
+class NeedsIn(BaseModel):
+    component_ids: list[int] = Field(max_length=MOST_NEEDS)  # what has to be ready before it can be started
 
 
 class ProgressIn(BaseModel):
@@ -164,6 +177,38 @@ class LinkIn(BaseModel):
 class PeopleIn(BaseModel):
     phase: Phase
     user_ids: list[int] = Field(max_length=MOST_PEOPLE)
+
+
+# Notes taken in a review, in Markdown: a long review's minutes, actions and all.
+ReviewNotes = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50_000)]
+MOST_COVERED = 1000  # components a review covers: as many as a program has
+
+
+class ReviewIn(BaseModel):
+    milestone_id: int  # one of the program's review milestones: its PDR, say
+    name: LongName  # "Feed system PDR"
+    held_on: date | None = None  # its day, if it has one yet
+    component_ids: list[int] = Field(default_factory=list, max_length=MOST_COVERED)
+    notes: ReviewNotes = ""
+
+
+class ReviewChangeIn(BaseModel):
+    """What's sent is changed, and what's left out stays: held_on null leaves it with no day; component_ids is every
+    component it's to cover."""
+
+    name: LongName | None = None
+    held_on: date | None = None
+    notes: ReviewNotes | None = None
+    component_ids: list[int] | None = Field(default=None, max_length=MOST_COVERED)
+
+
+class ReviewPassIn(BaseModel):
+    done_on: date | None = None  # the day it passed: its own day, or today, if not said
+
+
+class ReviewFileIn(BaseModel):
+    url: Address
+    title: Title = ""
 
 
 # --- responses ------------------------------------------------------------------------------------------------------
@@ -269,6 +314,9 @@ class ComponentOut(BaseModel):
     y: float | None
     position: int
     lead: UserRef | None
+    lead_days: int | None  # its lead time: from ordering it (or starting it) to having it
+    need_by: date | None  # the day it has to be ready by, for the build
+    needs: list[int]  # the components that have to be ready before it can be started
     updated_at: datetime
     updated_by: UserRef | None
     removed_at: datetime | None
@@ -289,6 +337,9 @@ class ComponentOut(BaseModel):
             y=component.y,
             position=component.position,
             lead=_ref(component.lead),
+            lead_days=component.lead_days,
+            need_by=component.need_by,
+            needs=[need.needs_id for need in component.needs],
             updated_at=component.updated_at,
             updated_by=_ref(component.editor),
             removed_at=component.removed_at,
@@ -357,14 +408,64 @@ class Summary(BaseModel):
     last_milestone: dict[Phase, str | None]
 
 
+class ReviewFileOut(BaseModel):
+    id: int
+    title: str
+    url: str
+    added_at: datetime
+    added_by: UserRef | None
+
+    @classmethod
+    def of(cls, link: ReviewLink) -> "ReviewFileOut":
+        return cls(id=link.id, title=link.title, url=link.url, added_at=link.added_at, added_by=_ref(link.adder))
+
+
+class ReviewOut(BaseModel):
+    id: int
+    program_id: int
+    milestone_id: int
+    name: str
+    held_on: date | None
+    notes: str
+    # The components it covers, as they were added: those removed from the program too, which it covers again once
+    # they're brought back.
+    component_ids: list[int]
+    files: list[ReviewFileOut]
+    created_at: datetime
+    created_by: UserRef | None
+    updated_at: datetime
+    updated_by: UserRef | None
+    removed_at: datetime | None
+
+    @classmethod
+    def of(cls, review: Review) -> "ReviewOut":
+        return cls(
+            id=review.id,
+            program_id=review.program_id,
+            milestone_id=review.milestone_id,
+            name=review.name,
+            held_on=review.held_on,
+            notes=review.notes,
+            component_ids=[cover.component_id for cover in review.covers],
+            files=[ReviewFileOut.of(link) for link in review.links],
+            created_at=review.created_at,
+            created_by=_ref(review.creator),
+            updated_at=review.updated_at,
+            updated_by=_ref(review.editor),
+            removed_at=review.removed_at,
+        )
+
+
 class ProgramDetailOut(ProgramOut):
     """A program's whole bill of design: its milestones and subsystems in order, and its components, each with its
-    progress, links, and people; and, for admins, the components removed from it, to bring back."""
+    progress, links, and people; its reviews, by their days; and, for admins, the components removed from it, to bring
+    back."""
 
     milestones: list[MilestoneOut]
     subsystems: list[SubsystemOut]
     components: list[ComponentOut]
     removed: list[ComponentOut]
+    reviews: list[ReviewOut]
 
 
 class EventOut(BaseModel):
@@ -385,6 +486,109 @@ class EventOut(BaseModel):
             at=event.at,
             what=event.what,
         )
+
+
+# --- bills of materials (bom.py) ------------------------------------------------------------------------------------
+
+PartNumber = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+PartWords = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+Unit = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)]
+Vendor = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+LineUrl = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MOST_URL)]  # empty, or a link
+Amount = Annotated[float, Field(allow_inf_nan=False, ge=0, le=1_000_000)]
+Cents = Annotated[int, Field(ge=0, le=1_000_000_000)]
+LineNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+MOST_BOM_LINES = 5000
+
+
+class BomLineIn(BaseModel):
+    """A part on a program's BOM: a part number or a description, at least."""
+
+    component_id: int | None = None
+    part_number: PartNumber = ""
+    description: PartWords = ""
+    quantity: Amount | None = None
+    unit: Unit = ""
+    vendor: Vendor = ""
+    unit_cost: Cents | None = None  # in cents, each
+    lead_days: LeadDays | None = None
+    url: LineUrl = ""
+    status: BomStatus | None = None  # none said: to order, for a new line; as it was, for one read in again
+
+    @model_validator(mode="after")
+    def _named(self) -> "BomLineIn":
+        if not self.part_number and not self.description:
+            raise ValueError("a BOM line needs a part number or a description")
+        return self
+
+
+class BomImportIn(BaseModel):
+    lines: list[BomLineIn] = Field(max_length=MOST_BOM_LINES)
+    component_id: int | None = None  # one component's BOM; none: the program's whole BOM
+    file: Title = ""  # the spreadsheet it's from, for the activity
+
+
+class BomLineChangeIn(BaseModel):
+    """What's sent is changed, and what's left out stays (component_id null: for no component)."""
+
+    component_id: int | None = None
+    part_number: PartNumber | None = None
+    description: PartWords | None = None
+    quantity: Amount | None = None
+    unit: Unit | None = None
+    vendor: Vendor | None = None
+    unit_cost: Cents | None = None
+    lead_days: LeadDays | None = None
+    url: LineUrl | None = None
+    status: BomStatus | None = None
+    note: LineNote | None = None
+
+
+class BomLineOut(BaseModel):
+    id: int
+    program_id: int
+    component_id: int | None
+    position: int
+    part_number: str
+    description: str
+    quantity: float | None
+    unit: str
+    vendor: str
+    unit_cost: int | None
+    lead_days: int | None
+    url: str
+    status: BomStatus
+    note: str
+    updated_at: datetime
+    updated_by: UserRef | None
+
+    @classmethod
+    def of(cls, line: BomLine) -> "BomLineOut":
+        return cls(
+            id=line.id,
+            program_id=line.program_id,
+            component_id=line.component_id,
+            position=line.position,
+            part_number=line.part_number,
+            description=line.description,
+            quantity=line.quantity,
+            unit=line.unit,
+            vendor=line.vendor,
+            unit_cost=line.unit_cost,
+            lead_days=line.lead_days,
+            url=line.url,
+            status=line.status,
+            note=line.note,
+            updated_at=line.updated_at,
+            updated_by=_ref(line.editor),
+        )
+
+
+class BomImportOut(BaseModel):
+    lines: list[BomLineOut]  # the BOM read in: the program's, or the component's
+    added: int
+    changed: int
+    removed: int
 
 
 # --- the shop (shop.py) ---------------------------------------------------------------------------------------------

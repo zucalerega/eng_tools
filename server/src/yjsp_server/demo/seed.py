@@ -537,6 +537,40 @@ class Seed:
                 else:
                     progress(name, milestone, lead, status="in_progress", due=self.day(at - 30))
 
+        # The feed system's PDR, held for the whole subsystem at once, with its notes; and the CDR coming up for the
+        # structures and recovery components still in design.
+        self.at(52, hour=23)
+        fluids = [c["id"] for c in program["components"] if subsystems[c["subsystem_id"]] == "Fluids"]
+        notes = (
+            "Board: Ada (chair), Grace, Hugo, and two alumni reviewers. Passed, with two actions:\n\n"
+            "- **RFA 1** (Hugo): a relief valve downstream of the regulator, sized for its full flow.\n"
+            "- **RFA 2** (Chloe): the MOV flange bolts' torque on its drawing.\n\n"
+            "Next: the feed system's CDR, with the cold flows' results."
+        )
+        body = {
+            "milestone_id": stones["PDR"],
+            "name": "Feed system PDR",
+            "held_on": self.day(52),
+            "component_ids": fluids,
+            "notes": notes,
+        }
+        self.call("hugo", "POST", f"/api/buildflow/programs/{program['id']}/reviews", json=body)
+        self.at(20, hour=10)
+        coming = [
+            c["id"]
+            for c in program["components"]
+            if subsystems[c["subsystem_id"]] in ("Structures", "Recovery")
+            and not c["bought"]
+            and order.index(c["name"]) >= round(0.5 * len(order))
+        ]
+        body = {
+            "milestone_id": stones["CDR"],
+            "name": "Structures and recovery CDR",
+            "held_on": self.day(-16),
+            "component_ids": coming,
+        }
+        self.call("jonas", "POST", f"/api/buildflow/programs/{program['id']}/reviews", json=body)
+
         # Build, for what's past CDR, and the bought parts: drawings, then ordering, and the first parts made.
         self.at(18, hour=22)
         for name in order:
@@ -558,6 +592,112 @@ class Seed:
             status="blocked",
             note="The vendor's lead time slipped to six weeks: looking for another",
         )
+
+        # The build plan: what each part takes to get or make, the day it has to be ready for the vehicle's
+        # integration, and what has to be ready before it can be started. The regulator's lead time has slipped.
+        self.at(17, hour=20)
+        weeks = {
+            "Thrust chamber": 6,
+            "Injector": 4,
+            "Igniter": 2,
+            "Main oxidizer valve": 10,
+            "Main fuel valve": 8,
+            "LOX tank": 8,
+            "LOX vent valve": 6,
+            "Fuel tank": 8,
+            "Pressurant tank": 16,
+            "Pressure regulator": 12,
+            "Thrust structure": 3,
+            "Fins": 2,
+            "Intertank": 3,
+            "Nose cone": 3,
+            "Flight computer": 4,
+            "Telemetry radio": 4,
+            "Batteries": 2,
+            "Drogue parachute": 2,
+            "Main parachute": 3,
+        }
+        ready = {"LOX tank": -40, "Fuel tank": -40, "Thrust chamber": -45, "Injector": -45}
+        for name, lead in weeks.items():
+            component = components[name]
+            who = LEADS[subsystems[component["subsystem_id"]]]
+            change = {"lead_days": lead * 7, "need_by": self.day(ready.get(name, -60))}
+            self.call(who, "PATCH", f"/api/buildflow/components/{component['id']}", json=change)
+        for name, first in (
+            ("Thrust structure", ["Thrust chamber"]),
+            ("Intertank", ["LOX tank", "Fuel tank"]),
+            ("Fins", ["Thrust structure"]),
+        ):
+            body = {"component_ids": [components[each]["id"] for each in first]}
+            self.call("jonas", "PUT", f"/api/buildflow/components/{components[name]['id']}/needs", json=body)
+
+        # Its BOM, read in from the team's spreadsheet: the valves and fittings on order, the engine's hardware in hand.
+        self.at(16, hour=19)
+        bom = [
+            ("Main oxidizer valve", "SS-63TS8", "1/2 in ball valve, 316 SS", 1, "Swagelok", 41250, 70, "ordered"),
+            ("Main oxidizer valve", "MS-133-H", "Pneumatic actuator", 1, "Swagelok", 38900, 56, "to_order"),
+            ("Main fuel valve", "SS-63TS8", "1/2 in ball valve, 316 SS", 1, "Swagelok", 41250, 56, "ordered"),
+            (
+                "Pressure regulator",
+                "TESCOM 26-1000",
+                "Dome-loaded regulator, 6000 psi",
+                1,
+                "Emerson",
+                189000,
+                84,
+                "to_order",
+            ),
+            (
+                "Pressurant tank",
+                "COPV-2L-6K",
+                "2 L carbon composite tank, 6000 psi",
+                1,
+                "Luxfer",
+                240000,
+                112,
+                "to_order",
+            ),
+            ("LOX vent valve", "SS-4BK-1C", "Bellows-sealed valve, 1/4 in", 1, "Swagelok", 21500, 42, "ordered"),
+            ("Injector", "91251A463", "Socket head screw, 1/4-20 x 1 in", 12, "McMaster-Carr", 38, 2, "received"),
+            ("Injector", "9452K33", "O-ring, -214, Viton", 4, "McMaster-Carr", 120, 3, "received"),
+            ("Thrust chamber", "C101-PLATE-1", "C101 copper plate, 1 in", 2, "Online Metals", 31200, 21, "received"),
+            (
+                "LOX tank",
+                "6061-TUBE-8",
+                "6061-T6 tube, 8 in OD, 0.125 in wall",
+                4,
+                "Online Metals",
+                9800,
+                28,
+                "to_order",
+            ),
+            (
+                "Fuel tank",
+                "6061-TUBE-8",
+                "6061-T6 tube, 8 in OD, 0.125 in wall",
+                3,
+                "Online Metals",
+                9800,
+                28,
+                "to_order",
+            ),
+            ("Flight computer", "TEENSY-4.1", "Teensy 4.1", 2, "PJRC", 3160, 10, "received"),
+        ]
+        lines = [
+            {
+                "component_id": components[name]["id"],
+                "part_number": number,
+                "description": description,
+                "quantity": quantity,
+                "vendor": vendor,
+                "unit_cost": cost,
+                "lead_days": lead,
+                "status": status,
+            }
+            for name, number, description, quantity, vendor, cost, lead, status in bom
+        ]
+        body = {"lines": lines, "component_id": None, "file": "Kestrel BOM.xlsx"}
+        self.call("chloe", "PUT", f"/api/buildflow/programs/{program['id']}/bom", json=body)
 
         # Test: the engine's parts were proven on the stand.
         self.at(32, hour=21)

@@ -6,13 +6,23 @@ import { linesOn } from "./ports";
 
 // A diagram's parts list: every valve, instrument, tank, and the rest on its pages, each with what it is, the page it's
 // on, the fluids on it, and its specs. Not its lines, nor what's only written or drawn on it (notes, regions,
-// connectors, the title block, pictures, and a figure, a shape as Visio drew it, unless it's tagged, as a component
-// Piper has no part for is), nor a part left out of it: a copy of one drawn on another page too (on a combined
+// connectors, the title block, pictures, shapes and arrows, and a figure, a shape as Visio drew it, unless it's
+// tagged, as a component Piper has no part for is), nor a part left out of it: a copy of one drawn on another page too (on a combined
 // schematic, beside the pressurant's and the propellant's that print), so it's listed once. The parts page shows it,
 // sorted and narrowed as asked (PartsPage.tsx); as a CSV, it's a valve list and an instrument list, in a spreadsheet.
 
 /** Kinds that aren't parts to list: what's written or drawn on a drawing, and where its lines meet. */
-const NOT_PARTS = new Set(["junction", "text", "region", "offpage", "legend", "titleblock", "picture"]);
+const NOT_PARTS = new Set([
+    "junction",
+    "text",
+    "region",
+    "offpage",
+    "legend",
+    "titleblock",
+    "picture",
+    "shape",
+    "arrow",
+]);
 
 /** Fields the list has columns of their own for, or none: the fluid it holds is among its fluids. */
 const OWN_COLUMNS = new Set(["fluid", "notes", "figure"]);

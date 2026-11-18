@@ -144,6 +144,9 @@ export function ProgramPage({ id }: { id: number }) {
                     <Link to={`/buildflow/programs/${program.id}/plan`} className="button">
                         Build plan
                     </Link>
+                    <Link to={`/buildflow/programs/${program.id}/bom`} className="button">
+                        BOM
+                    </Link>
                     {program.can_edit && (
                         <Link to={`/buildflow/programs/${program.id}/layout`} className="button">
                             Layout

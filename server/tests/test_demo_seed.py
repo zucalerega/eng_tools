@@ -81,6 +81,9 @@ def test_the_seed_makes_a_demo_the_demo_serves(seeded):
     assert regulator["lead_days"] == 84 and regulator["need_by"] > datetime.now(UTC).date().isoformat()
     intertank = next(c for c in kestrel["components"] if c["name"] == "Intertank")
     assert len(intertank["needs"]) == 2
+    # Its BOM, read in from the team's spreadsheet.
+    bom = client.get(f"/api/buildflow/programs/{programs['Kestrel']['id']}/bom").json()
+    assert len(bom) == 12 and {line["status"] for line in bom} == {"to_order", "ordered", "received"}
 
     servo = client.get("/api/folders", params={"path": "Kestrel/Avionics/Airbrake actuator"}).json()
     assert sorted(f["name"] for f in servo["files"]) == ["9347.SLDASM", "Embout.SLDPRT", "Servomoteur.SLDPRT"]

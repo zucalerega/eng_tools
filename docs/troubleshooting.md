@@ -484,6 +484,24 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 - **A component is at risk though its dates look right.** What it needs first won't be ready in time:
   it can't start until that's ready (made, or bought and in hand), and then takes its lead time.
   *Waiting on* says which. Or its day to order or start it by has passed, and it hasn't started.
+- **A BOM spreadsheet won't read in.** The BOM page reads an Excel workbook (.xlsx) or a CSV
+  file. An older Excel file (.xls) has to be saved as .xlsx first (File > Save As); from Google
+  Sheets, download it as .xlsx or CSV (File > Download). A sheet with a title above its headers is
+  fine: say which row the headers are in (*Header row*).
+- **A BOM's columns aren't guessed right.** Each is guessed from its header (*Part No.*, *Qty*,
+  *Supplier*, *Unit Price*, *Lead Time (wks)*, ...): pick the right column for each under *Which
+  column says what*, and whether its lead times are in weeks or days. Only a part number or a
+  description is needed.
+- **A part on the BOM has no component.** Its *Component* (or *Assembly*) column names one the
+  program doesn't have, by that name (case and spaces don't matter): rename one or the other, and
+  read it in again. Or read each component's BOM in on its own (*Lines are for*: the component).
+- **Reading a BOM in took parts off.** It becomes what the spreadsheet says: the program's whole
+  BOM, or one component's (*Lines are for*). Parts no longer in it go; a part already on it keeps
+  its note, and where it is (to order, ordered, received), unless the spreadsheet has a status
+  column that says otherwise.
+- **A part has no order-by day on the BOM.** It takes the part's lead time, and its component's
+  ready-by day on the build plan: the part has to be in hand by the day the component's build has
+  to start.
 - **A component still shows on the build plan once it's in hand.** It's ready when it's through the
   build phase: every build milestone done, or *Not needed*. *Hide what's ready* hides those.
 

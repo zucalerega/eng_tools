@@ -103,6 +103,34 @@ up what. Anyone signed in keeps it, as they do progress.
   place, beside the phases' (`phaseState`), and the deals finder, say, could use the same lead times
   later.
 
+## Bills of materials
+
+Each program's BOM (`bom.py`) is its parts to buy, read in from the team's own BOM spreadsheet,
+which stays the team's: Buildflow reads it in again as it changes, and keeps only what the
+spreadsheet doesn't say. Anyone signed in keeps it, as they do progress.
+
+- **A line** (`buildflow_bom_lines`): its part number and description (one at least: 422 without),
+  the component it's for (one of the program's, not removed: 409 `removed`; none, for a line not
+  matched to one yet), how many and in what unit, its vendor, its cost each (cents), its lead time
+  (days), a link to where it's bought (`progress.check_address`, 400 `bad_link`), where it is
+  (`BomStatus`: to order, ordered, received), and a note. At most 5,000 on a program.
+- **Reading one in** (`PUT /programs/{id}/bom`): the program's whole BOM, or one component's,
+  becomes the lines sent, in their order. A line already on it, by its key (its component, and its
+  part number, or its description where it has none, whatever their case and spacing), is changed
+  to what the import says, and keeps its note, and its status unless the import says one; the rest
+  are added; those no longer in it go. The activity says how many of each.
+- **The spreadsheet is read in the web app** (`sheets.ts`: a CSV file, by RFC 4180, its
+  delimiter whichever its first line has most of; an Excel workbook (.xlsx) through the site's zip
+  reader, `zip.ts`, its sheets' cells as text; an .xls refused, saying to save it as .xlsx), and
+  its columns guessed from its headers (`billOfMaterials.ts`: *Part No.*, *Qty*, *Supplier*,
+  *Unit Price*, *Lead Time (days)*, ...), each cell read as the server keeps it ("$412.50" in
+  cents, "2-3 weeks" its longest, "1.5 ft" a quantity and its unit, "PO placed" ordered, a yes
+  under *Ordered?* ordered). A row with nothing but a description, a section's title, isn't a part.
+- **The day to order a part by** is the day its component's build has to start (its start-by day
+  on the build plan, or its ready-by day if it has no lead time of its own), less the part's lead
+  time; a part still to order past that is *to order now*, and one with a lead time of six weeks or
+  more, not received, a long lead.
+
 ## Reviews
 
 A design review is often held for several components at once: a subsystem's PDR covers its eight
@@ -136,7 +164,8 @@ place. Anyone signed in keeps reviews, as they do progress.
 ## The web app
 
 `web/src/buildflow`: the programs (`Programs.tsx`), a program's bill of design (`Program.tsx`, and
-`Panel.tsx` for a component beside it), its build plan (`Plan.tsx`, and `planning.ts`), its reviews
+`Panel.tsx` for a component beside it), its build plan (`Plan.tsx`, and `planning.ts`), its BOM (`Bom.tsx`, `billOfMaterials.ts`, and
+`sheets.ts`), its reviews
 (`Review.tsx`, and `reviews.ts`), its layout
 (`Layout.tsx`, admins'), and the help (`Help.tsx`, `/buildflow/help`: keep it in step with the
 features).
@@ -174,6 +203,15 @@ features).
   component's panel, in its build phase, has the same: its lead time and ready-by day, its start-by
   day, what it needs first (*Change…*), what it's waiting on, and what it holds up. The bill marks
   a long lead with a tag (*Long lead*).
+- **The BOM** (`/buildflow/programs/{id}/bom`, *BOM* on the program's page, `Bom.tsx`): how many
+  parts are to order now, long leads, to order, ordered, and received, and the cost in all; each
+  part, by the day to order it by (or as the BOM has it), with its component, quantity, vendor, cost
+  each, lead time, that day (red when it's passed), its status and note (set there), filtered by
+  component (`?component=`) or status. *Read in a spreadsheet…*: its file, its sheet, its header
+  row, which column says what (guessed), its lead times' unit, and whose lines they are (the
+  component its *Component* column names, none yet, or one component's alone), with the lines as
+  they'll come in, and the names no component has. A component's panel, in its build phase, lists
+  its parts (*Parts*), the longest lead first, with how many are still to come.
 - **Reviews**, under the bill: each with its milestone, its day (red once it's past and some of its
   components haven't passed), how many have passed, and its files; *New review* (its milestone, a
   name, its day, and its components, by subsystem, *All of* one at once); and *Removed reviews*.
@@ -269,6 +307,9 @@ anyone else.
 | `POST /api/buildflow/programs/{id}/subsystems`, `PATCH`/`DELETE /api/buildflow/subsystems/{id}` | a new subsystem `{name, position}`; rename or move one; delete one with no components, removed ones included (409 `not_empty`) (admins) |
 | `POST /api/buildflow/programs/{id}/components` | a new component `{subsystem_id, name, description, bought, x, y}`, at the end of its subsystem (admins) |
 | `GET`/`PATCH /api/buildflow/components/{id}` | a component, with its `lead_days`, `need_by`, and `needs` (ids); change what's sent of it: its `name`, `subsystem_id`, `bought`, `x` and `y` (null: off the drawing), and `position` are admins'; its `description`, `lead_id` (null: no one; 400 `not_a_member`), `lead_days`, and `need_by` (null: none) anyone's |
+| `GET /api/buildflow/programs/{id}/bom?component_id=` | its BOM, in its order (or one component's lines) |
+| `PUT /api/buildflow/programs/{id}/bom` | read a BOM in `{lines, component_id, file}`: the whole BOM (`component_id` null) or one component's becomes `lines`, keeping each line's note and status already on it (unless sent); says how many were `added`, `changed`, and `removed`; 409 `removed`, `archived`; 400 `bad_link` |
+| `POST /api/buildflow/programs/{id}/bom/lines`, `PATCH`/`DELETE /api/buildflow/bom/lines/{id}` | a line added by hand; change what's sent of one (`status`, `note`, and the rest); take one off |
 | `PUT /api/buildflow/components/{id}/needs` | what has to be ready before it can be started `{component_ids}`: 400 `needs_cycle` for one that needs it; 409 `removed` |
 | `DELETE /api/buildflow/components/{id}`, `POST .../restore` | remove a component, keeping everything said of it, or bring it back (admins) |
 | `PUT /api/buildflow/components/{id}/progress/{milestone}` | change its progress at a milestone `{status, due, done_on, note}`: what's sent; 409 `removed`, `archived` |
@@ -304,15 +345,21 @@ anyone else.
 2. **The build plan** (November 2026): each component's lead time, ready-by day, and what it needs
    first; the day to order or start it by, on a calendar, with what's late, at risk, and a long
    lead. Next:
-   - **Lead times from a BOM**: a component's parts, each with its lead time, the longest its own.
+   - **A component's parts on its plan**: when a part's late, its component at risk.
    - **Long leads first for the deals finder**: a component with a long lead, not ordered, searched
      for first.
-3. **Reviews** (November 2026): a review held for several components at once, at one of the
+3. **Bills of materials** (November 2026): each program's BOM read in from the team's own Excel or CSV
+   spreadsheets, and again as they change, its parts matched to components, with the day to order
+   each by, the long leads, and where each is. Next:
+   - **A BOM's parts for the deals finder**: those still to order, searched for by part number.
+   - **A spreadsheet kept on SharePoint, read in by its link**, once the site can reach the team's
+     Microsoft 365 (sign-in already does).
+4. **Reviews** (November 2026): a review held for several components at once, at one of the
    program's reviews, its day each one's date there, passing it passing each one, with its files
    and the notes taken in it. Next:
    - **A review's actions** as items of their own (each with who's to close it and by when), rather
      than each component's note.
-4. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
+5. **The shop** (November 2026): the machining tracker's queue, machines, and training levels,
    with accounts for names, and parts for components on the bills of design. Next:
    - **Bringing the tracker's data over**, if it holds parts or levels worth keeping: its *Export
      CSV*, read in by an admin, names matched to accounts.

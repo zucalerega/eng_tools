@@ -289,6 +289,7 @@ test("Buildflow's help says how it works", async () => {
         "A component",
         "Links",
         "The build plan",
+        "The BOM",
         "Reviews",
         "What's coming up",
         "The shop",

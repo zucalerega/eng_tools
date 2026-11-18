@@ -1,6 +1,7 @@
 """Bug reports and feature requests: sent from Help, looked at by Claude for the owner, and approved by the owner to have
 Claude Code build them (feedback.py), with Anthropic's API and Claude Code's routines played by the stand-in."""
 
+import base64
 from collections.abc import Iterator
 
 import pytest
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from yjsp_server import assistant
 
-from .conftest import BOOTSTRAP_ADMIN
+from .conftest import BOOTSTRAP_ADMIN, screenshot
 from .fake_claude import FakeClaude, Fire, Reply
 
 LOOKED = "**Recommendation**: approve. Check-in should keep the file's references."
@@ -254,3 +255,77 @@ def test_what_can_be_sent(app, client, team):
     looked(app)
     assert len(client.get("/api/feedback/mine", headers=ana).json()) == 10
     assert client.post("/api/feedback/999/decline", json={"reply": "No"}, headers=ana).json()["error"] == "admin_only"
+
+
+def test_a_bug_report_carries_screenshots_for_the_owner_and_claude(app, client, team, claude):
+    owner = team.member(BOOTSTRAP_ADMIN, admin=True)
+    ana = team.member("ana@rocketry.test")
+    ben = team.member("ben@rocketry.test")
+    error, dialog = screenshot(64, 48, shade=10), screenshot(20, 10, shade=200)
+    claude.replies.append(Reply(text=LOOKED))
+    response = send(client, ana, screenshots=[error, dialog])
+    assert response.status_code == 200, response.text
+    sent = response.json()
+    first, second = sent["screenshots"]
+    assert (first["width"], first["height"], second["width"], second["height"]) == (64, 48, 20, 10)
+    assert first["size"] == len(base64.b64decode(error))
+    assert client.get("/api/feedback/mine", headers=ana).json()[0]["screenshots"] == sent["screenshots"]
+
+    # Claude's look sees them, before what was written about them.
+    looked(app)
+    [look] = claude.requests
+    [message] = look["messages"]
+    pictures, words = message["content"][:2], message["content"][2]
+    assert [p["source"] for p in pictures] == [
+        {"type": "base64", "media_type": "image/png", "data": error},
+        {"type": "base64", "media_type": "image/png", "data": dialog},
+    ]
+    assert words["type"] == "text" and words["text"].startswith("[A bug report, sent from /vault/file/12]")
+
+    # Whoever sent it, and admins, see them; anyone else, as if there were no such request.
+    url = f"/api/feedback/{sent['id']}/screenshots/{first['id']}"
+    for who in (ana, owner):
+        got = client.get(url, headers=who)
+        assert got.status_code == 200
+        assert (got.content, got.headers["content-type"]) == (base64.b64decode(error), "image/png")
+    hidden = client.get(url, headers=ben)
+    assert (hidden.status_code, hidden.json()["message"]) == (404, f"Request #{sent['id']} not found")
+    assert client.get(f"/api/feedback/{sent['id']}/screenshots/999", headers=ana).status_code == 404
+    assert everyone(client, owner)["requests"][0]["screenshots"] == sent["screenshots"]
+
+    # Claude Code gets the words, Claude's look among them, and not the pictures.
+    assert client.post(f"/api/feedback/{sent['id']}/approve", json={}, headers=owner).status_code == 200
+    [fire] = claude.fires
+    text = fire["body"]["text"]
+    assert "## Screenshots\n\nThey sent 2 with it, which aren't sent here: Claude's look, below, saw them" in text
+    assert error not in text
+
+
+def test_what_screenshots_can_be_sent(app, client, team, claude):
+    ana = team.member("ana@rocketry.test")
+    for screenshots, status, error, message in [
+        ([screenshot()] * 4, 400, "bad_request", "A request takes up to 3 screenshots"),
+        (
+            [base64.b64encode(b"GIF89a....").decode()],
+            415,
+            "not_an_image",
+            "That isn't a PNG or a JPEG picture: save it as one (File > Export, in most programs), then add it",
+        ),
+        (
+            [screenshot(8_001, 1)],
+            413,
+            "too_large",
+            "That screenshot is 8001 by 1 pixels: Claude reads up to 8,000 on a side. Make it smaller, then add it",
+        ),
+        (
+            [base64.b64encode(base64.b64decode(screenshot()) + b"\0" * (3 << 20)).decode()],
+            413,
+            "too_large",
+            "A screenshot can be up to 3 MB: make it smaller, then add it",
+        ),
+    ]:
+        response = send(client, ana, screenshots=screenshots)
+        assert (response.status_code, response.json()) == (status, {"error": error, "message": message})
+    assert send(client, ana, screenshots=["not base64!"]).status_code == 422
+    assert client.get("/api/feedback/mine", headers=ana).json() == []
+    assert claude.requests == []

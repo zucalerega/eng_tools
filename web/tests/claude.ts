@@ -5,16 +5,28 @@ import { createServer } from "node:http";
 // questions the conversation has had, in pieces as Anthropic streams them, with a link into the help. A question with
 // [decline] in it is declined, one with [fail] is turned away as if Anthropic were overloaded, one with [slow] is
 // answered a piece every fifth of a second, for a few seconds, and one with [long] at length (about 30,000 characters).
+// It says how many screenshots the question came with, if it came with any, and how many the conversation has.
 // A request that doesn't stream gets its answer whole: an empty one to the server's reads that keep the help loaded,
 // and a recommendation to its look at a bug report or a feature request.
 //
 // It stands in for Claude Code's routines too: a fire starts a "session", unless what it's sent has [fail] in it.
 
+type Block = { type: "text"; text: string } | { type: "image"; source: { media_type: string; data: string } };
+
 interface Asked {
     model: string;
     max_tokens: number;
-    messages: { role: string; content: string }[];
+    messages: { role: string; content: string | Block[] }[];
     stream?: boolean;
+}
+
+/** A message's words, and its pictures. */
+function read(content: string | Block[]): { words: string; pictures: number } {
+    if (typeof content === "string") {
+        return { words: content, pictures: 0 };
+    }
+    const words = content.map((block) => (block.type === "text" ? block.text : "")).join("");
+    return { words, pictures: content.filter((block) => block.type === "image").length };
 }
 
 let fires = 0;
@@ -71,8 +83,10 @@ export function fakeClaude(): Promise<{ url: string; close: () => void }> {
                 );
                 return;
             }
-            const questions = asked.messages.filter((message) => message.role === "user");
-            const question = questions.at(-1)!.content.replace(/^\[Asked from [^\]]*\]\n\n/, "");
+            const questions = asked.messages.filter((message) => message.role === "user").map((m) => read(m.content));
+            const question = questions.at(-1)!.words.replace(/^\[Asked from [^\]]*\]\n\n/, "");
+            const pictures = questions.at(-1)!.pictures;
+            const seen = questions.reduce((total, each) => total + each.pictures, 0);
             if (question.includes("[fail]")) {
                 response.writeHead(529, { "content-type": "application/json", "x-should-retry": "false" });
                 response.end(
@@ -82,6 +96,9 @@ export function fakeClaude(): Promise<{ url: string; close: () => void }> {
             }
             const declined = question.includes("[decline]");
             let text = declined ? "" : answerTo(question, questions.length);
+            if (seen > 0 && !declined) {
+                text += ` With ${pictures} screenshot${pictures === 1 ? "" : "s"}, ${seen} in all.`;
+            }
             if (question.includes("[long]")) {
                 text += "\n\n" + "And there's more to it. ".repeat(1250);
             }

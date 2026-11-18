@@ -1,6 +1,6 @@
-"""Bug reports and feature requests: members send them from Help in the web app, Claude looks at each for the site's
-owner (Assistant.look), and on Admin > Requests the owner approves one, or an admin declines it, or marks it done, with
-a reply for whoever sent it.
+"""Bug reports and feature requests: members send them from Help in the web app, with screenshots if they like (only
+they and admins see those), Claude looks at each for the site's owner (Assistant.look, screenshots and all), and on
+Admin > Requests the owner approves one, or an admin declines it, or marks it done, with a reply for whoever sent it.
 
 Approving starts Claude Code building it (docs/deploying.md, "Requests"): the server fires a Claude Code routine, a
 saved cloud session on the owner's Claude account with the repository, whose own prompt says to build what it's sent,
@@ -13,18 +13,18 @@ Code only after they've read it. Each request is approved at most once: there's 
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 import httpx2
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from .assistant import Assistant
+from .assistant import Assistant, check_screenshot
 from .config import Settings
 from .db import utcnow
 from .errors import ApiError, Conflict, Forbidden, NotFound
-from .models import Feedback, FeedbackKind, FeedbackStatus, User
+from .models import Feedback, FeedbackKind, FeedbackScreenshot, FeedbackStatus, User
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,8 @@ MOST_TITLE = 200
 MOST_BODY = 10_000
 MOST_PAGE = 500
 MOST_REPLY = 2_000  # a reply to whoever sent it, or the owner's note to Claude Code
+# Screenshots with one: each as Claude takes it (assistant.check_screenshot), as Claude's look reads them.
+MOST_SCREENSHOTS = 3
 # How many one person can send in a day: each costs a look from Claude.
 DAILY = 10
 DAY = timedelta(hours=24)
@@ -61,12 +63,13 @@ class TooMany(ApiError):
 
 @dataclass
 class Sent:
-    """What someone sends: a bug report or a feature request, from a page of the web app."""
+    """What someone sends: a bug report or a feature request, from a page of the web app, with any screenshots."""
 
     kind: str
     title: str
     body: str
     page: str | None
+    screenshots: list[bytes] = field(default_factory=list)  # PNGs or JPEGs: what was on the screen
 
 
 class Requests:
@@ -94,12 +97,20 @@ class Requests:
         if not body or len(body) > MOST_BODY:
             raise ApiError(f"Say what happened, or what you'd like, in 1 to {MOST_BODY:,} characters")
         page = (sent.page or "").strip()[:MOST_PAGE] or None
+        if len(sent.screenshots) > MOST_SCREENSHOTS:
+            raise ApiError(f"A request takes up to {MOST_SCREENSHOTS} screenshots")
+        screenshots = []
+        for data in sent.screenshots:
+            content_type, width, height = check_screenshot(data)
+            screenshots.append(
+                FeedbackScreenshot(content_type=content_type, width=width, height=height, size=len(data), data=data)
+            )
         recent = db.scalar(
             select(func.count()).where(Feedback.user_id == user.id, Feedback.created_at >= utcnow() - DAY)
         )
         if (recent or 0) >= DAILY:
             raise TooMany(f"You've sent {DAILY} requests in the last 24 hours: send more tomorrow")
-        item = Feedback(user_id=user.id, kind=kind, title=title, body=body, page=page)
+        item = Feedback(user_id=user.id, kind=kind, title=title, body=body, page=page, screenshots=screenshots)
         db.add(item)
         db.commit()
         self.look_later(item.id)
@@ -135,8 +146,9 @@ class Requests:
             with self.sessions() as db:
                 item = db.get_one(Feedback, feedback_id)
                 kind, title, body, page = item.kind.value, item.title, item.body, item.page
+                screenshots = [shot.data for shot in item.screenshots]
             try:
-                written, spent = self.assistant.look(kind, title, body, page)
+                written, spent = self.assistant.look(kind, title, body, page, screenshots)
                 problem = None if written else "Claude wouldn't look at this one: read it yourself"
             except ApiError as error:
                 written, spent, problem = None, 0, error.message
@@ -159,6 +171,17 @@ class Requests:
         return list(
             db.scalars(select(Feedback).where(Feedback.user_id == user.id).order_by(Feedback.created_at.desc()))
         )
+
+    def screenshot(self, db: Session, user: User, feedback_id: int, screenshot_id: int) -> FeedbackScreenshot:
+        """A request's screenshot, with its bytes: for whoever sent it, and admins. To anyone else, as if it weren't
+        there, since it can show what's theirs to see."""
+        item = _get(db, feedback_id)
+        if item.user_id != user.id and not user.is_admin:
+            raise NotFound(f"Request #{feedback_id} not found")
+        found = next((shot for shot in item.screenshots if shot.id == screenshot_id), None)
+        if found is None:
+            raise NotFound(f"Request #{feedback_id} has no screenshot {screenshot_id}")
+        return found
 
     def everyone(self, db: Session, admin: User) -> list[Feedback]:
         """Every request, the newest first (admins)."""
@@ -309,6 +332,9 @@ def _for_claude_code(item: Feedback) -> str:
         f"## Title\n\n{item.title}",
         f"## What they wrote\n\n{item.body}",
     ]
+    if shots := len(item.screenshots):
+        seen = "Claude's look, below, saw them, and says what they show" if item.evaluation else "the owner has them"
+        parts.append(f"## Screenshots\n\nThey sent {shots} with it, which aren't sent here: {seen}.")
     if item.note:
         parts.append(f"## The owner's note\n\n{item.note}")
     if item.evaluation:

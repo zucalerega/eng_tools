@@ -224,7 +224,7 @@ test("a part dragged from the library goes where it's let go, and the drag doesn
     });
 });
 
-test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the library; a manifold's outlets are chosen", async () => {
+test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the library; a manifold's ports are chosen", async () => {
     const team = await Team.create();
     const made = await team.diagram(team.chief, "Pneumatics panel");
     renderApp(team.chief, `/piper/diagrams/${made.id}`);
@@ -240,11 +240,19 @@ test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the libr
         fireEvent.pointerDown(svg, at(x, 0));
         fireEvent.pointerUp(svg, at(x, 0));
     }
-    // The manifold, placed last, is selected: six outlets for it, on the right, drawn along its top.
+    // The manifold, placed last, is selected: six ports on its top, two on its bottom, and three on its supply's end
+    // for it, on the right, its bore drawn out to each.
     expect(screen.getByRole("heading", { name: "Manifold" })).toBeTruthy();
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Outlets" }), "6");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Top ports" }), "6");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Bottom ports" }), "2");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Left ports" }), "3");
+    expect((screen.getByRole("combobox", { name: "Right ports" }) as HTMLSelectElement).selectedOptions[0]!.text).toBe(
+        "1",
+    );
     const bore = svg.querySelector('[data-kind="manifold"] path[stroke-dasharray]')!.getAttribute("d")!;
-    expect(bore.match(/V-8/g)).toHaveLength(6);
+    expect(bore.match(/V-28/g)).toHaveLength(6);
+    expect(bore.match(/V28/g)).toHaveLength(2);
+    expect(bore).toContain("M-60 -20 V20");
     // A 3/2 is normally closed or open, never failing in place: its spring returns it.
     fireEvent.pointerDown(within(svg).getByRole("button", { name: "SV-1" }), at(0, 0));
     fireEvent.pointerUp(svg, at(0, 0));
@@ -261,6 +269,7 @@ test("3/2 and 5/2 solenoid valves, a diffuser, and a manifold come from the libr
             ["diffuser", "DIFF-1", "", ""],
             ["manifold", "MAN-1", "", "6"],
         ]);
+        expect(saved.parts[3]!.props).toMatchObject({ bottomPorts: "2", leftPorts: "3" });
     });
 });
 

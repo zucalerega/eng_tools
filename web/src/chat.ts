@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { api, ApiError, askClaude, type AnswerEvent, type Assistant, type ChatMessage } from "./api";
+import type { Screenshot } from "./screenshots";
 
 // Asking Claude, from Help in the top bar: the conversation in this tab, and Claude's answer as it's written. The tab
 // keeps the conversation (sessionStorage), so it's still there after a reload or a look at the help page, for whoever
@@ -12,6 +13,7 @@ export type AnswerState = "thinking" | "writing" | "done" | "cut" | "declined" |
 export interface Exchange {
     question: string;
     page: string; // the page of the web app it was asked from
+    screenshots?: Screenshot[]; // added to the question, for Claude to see
     answer: string;
     state: AnswerState;
     problem?: string; // why it failed
@@ -29,6 +31,9 @@ const KEPT = "yjsp.chat";
 const MOST_MESSAGES = 40;
 const MOST_CHARACTERS = 120_000;
 const MOST_PAGE = 300;
+// And up to 3 screenshots in a question, 6 in all: questions before that with more are left out too.
+export const MOST_SCREENSHOTS_QUESTION = 3;
+const MOST_SCREENSHOTS = 6;
 
 const say = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -63,7 +68,13 @@ function keep(kept: Kept): void {
     try {
         sessionStorage.setItem(KEPT, JSON.stringify(kept));
     } catch {
-        // storage full or blocked: the conversation lasts as long as the page, then
+        // Storage full, as screenshots can fill it: the words are kept, and the screenshots last as long as the page.
+        try {
+            const words = kept.exchanges.map(({ screenshots: _, ...exchange }) => exchange);
+            sessionStorage.setItem(KEPT, JSON.stringify({ ...kept, exchanges: words }));
+        } catch {
+            // blocked: the conversation lasts as long as the page, then
+        }
     }
 }
 
@@ -77,25 +88,31 @@ export function forgetChat(): void {
 }
 
 /**
- * What Claude reads before the question: the exchanges it answered, as questions and answers. Answers that failed,
- * were stopped, or were declined are left out, and so are the oldest when there are more than a conversation holds.
+ * What Claude reads before a question with `screenshots` of its own: the exchanges it answered, as questions and
+ * answers. Answers that failed, were stopped, or were declined are left out, and so are the oldest when there are more
+ * than a conversation holds.
  */
-function conversation(exchanges: Exchange[]): ChatMessage[] {
+function conversation(exchanges: Exchange[], screenshots: number): ChatMessage[] {
     const answered = exchanges.filter((e) => (e.state === "done" || e.state === "cut") && e.answer.trim());
     const kept: ChatMessage[] = [];
     let characters = 0;
     for (const exchange of answered.reverse()) {
         characters += exchange.question.length + exchange.answer.length;
-        if (kept.length + 3 > MOST_MESSAGES || characters > MOST_CHARACTERS) {
+        screenshots += exchange.screenshots?.length ?? 0;
+        if (kept.length + 3 > MOST_MESSAGES || characters > MOST_CHARACTERS || screenshots > MOST_SCREENSHOTS) {
             break;
         }
         kept.unshift(
-            { role: "user", text: exchange.question, page: exchange.page },
+            { role: "user", text: exchange.question, page: exchange.page, ...pictures(exchange.screenshots) },
             { role: "assistant", text: exchange.answer },
         );
     }
     return kept;
 }
+
+/** A question's screenshots, as it's sent: none, if it has none, so it reads as it did before there were any. */
+const pictures = (screenshots: Screenshot[] | undefined) =>
+    screenshots?.length ? { screenshots: screenshots.map((shot) => shot.data) } : {};
 
 export class ChatStore {
     private state: ChatState = { exchanges: [], assistant: null, problem: null };
@@ -139,16 +156,23 @@ export class ChatStore {
     }
 
     /** Ask Claude, with the conversation so far: its answer fills in as it's written. */
-    async ask(question: string, page: string): Promise<void> {
+    async ask(question: string, page: string, screenshots: Screenshot[] = []): Promise<void> {
         const text = question.trim();
         if (!text || this.answering) {
             return;
         }
         // Kept as it's sent, as it goes back with each question after.
         const where = page.slice(0, MOST_PAGE);
-        const messages: ChatMessage[] = [...conversation(this.state.exchanges), { role: "user", text, page: where }];
+        const shots = screenshots.length ? { screenshots } : {};
+        const messages: ChatMessage[] = [
+            ...conversation(this.state.exchanges, screenshots.length),
+            { role: "user", text, page: where, ...pictures(screenshots) },
+        ];
         const at = this.state.exchanges.length;
-        this.exchanges([...this.state.exchanges, { question: text, page: where, answer: "", state: "thinking" }]);
+        this.exchanges([
+            ...this.state.exchanges,
+            { question: text, page: where, ...shots, answer: "", state: "thinking" },
+        ]);
         const controller = new AbortController();
         this.controller = controller;
         const asked = this.current;
@@ -194,7 +218,7 @@ export class ChatStore {
             return;
         }
         this.exchanges(this.state.exchanges.filter((_, index) => index !== at));
-        await this.ask(exchange.question, exchange.page);
+        await this.ask(exchange.question, exchange.page, exchange.screenshots);
     }
 
     /** Start over: the conversation so far goes. */

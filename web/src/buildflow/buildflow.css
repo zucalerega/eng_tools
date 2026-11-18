@@ -1059,6 +1059,28 @@ button.bf-chip:hover:not(:disabled) {
     margin-top: 0.5rem;
 }
 
+/* What isn't saved yet on the layout page, and its Save: kept in view at the foot of the window wherever the page is
+   scrolled to, as the fields it saves are far apart (the name at the top, the drawing's sections below the vehicle). */
+.bf-save-bar {
+    position: sticky;
+    bottom: 1rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.5rem;
+    padding: 0.55rem 0.6rem 0.55rem 1rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-large);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.bf-save-problem {
+    color: var(--danger);
+}
+
 .bf-structure {
     display: grid;
     gap: 0.75rem;

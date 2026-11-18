@@ -208,8 +208,10 @@ const TOPICS: Topic[] = [
                     sections, from the aft end to the nose: an engine (with as many nozzles side by side as it has),
                     body tubes, tanks (their domes drawn inside), couplers, transitions to another diameter, and the
                     nose cone, each with its length and diameter in any one unit; fins at a section&apos;s aft end,
-                    landing legs from it, and a test stand&apos;s frame under it all. <em>Save the drawing</em> keeps
-                    the sections; the preview shows them first.
+                    landing legs from it, and a test stand&apos;s frame under it all; the preview shows the drawing as
+                    it&apos;ll be saved. The name, the description, and the sections are saved together: a bar at the
+                    foot of the window says what isn&apos;t saved yet, with <em>Save</em> and <em>Undo changes</em>.
+                    Everything else on the page is saved as it&apos;s changed.
                 </li>
                 <li>
                     Drag a component&apos;s dot to move it on the drawing. One that isn&apos;t on it goes on with{" "}

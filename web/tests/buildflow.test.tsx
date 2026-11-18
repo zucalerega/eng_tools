@@ -184,7 +184,9 @@ test("admins lay a program out: its drawing, subsystems, components, and milesto
     await userEvent.click(screen.getByRole("button", { name: "+ Add a section" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Section 2: kind" }), "Nose cone");
     expect(screen.getByRole("group", { name: "The drawing as it'll be saved's vehicle" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Save the drawing" }));
+    await userEvent.click(
+        within(screen.getByRole("region", { name: "Changes not saved yet" })).getByRole("button", { name: "Save" }),
+    );
     await waitFor(async () =>
         expect((await team.bill(program.id)).profile.sections.map((s) => s.kind)).toEqual(["tank", "nose"]),
     );
@@ -221,6 +223,41 @@ test("admins lay a program out: its drawing, subsystems, components, and milesto
             "Hotfire",
         ]),
     );
+});
+
+test("the layout's one Save keeps everything changed on it: the drawing, the name, and the description", async () => {
+    const team = await Team.create();
+    const program = await team.program("Elytra");
+    renderApp(team.chief, `/buildflow/programs/${program.id}/layout`);
+    expect(await screen.findByRole("heading", { name: "Layout" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Changes not saved yet" })).toBeNull();
+
+    // A length typed over: the field clears, to type a new one.
+    const length = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Section 2: length" });
+    await userEvent.clear(length);
+    await userEvent.type(length, "33");
+    expect(length.value).toBe("33");
+    const bar = within(await screen.findByRole("region", { name: "Changes not saved yet" }));
+    expect(bar.getByText("Not saved yet: the drawing.")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "The drawing as it'll be saved's vehicle" })).toBeTruthy();
+
+    await userEvent.type(screen.getByLabelText("Description"), "The second flight vehicle");
+    expect(bar.getByText("Not saved yet: the description and the drawing.")).toBeTruthy();
+    await userEvent.click(bar.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Changes not saved yet" })).toBeNull());
+    const saved = await team.bill(program.id);
+    expect(saved.profile.sections[1]!.length).toBe(33);
+    expect(saved.description).toBe("The second flight vehicle");
+
+    // Undo puts back what's saved.
+    await userEvent.click(screen.getByRole("checkbox", { name: "On a test stand" }));
+    await userEvent.click(
+        within(await screen.findByRole("region", { name: "Changes not saved yet" })).getByRole("button", {
+            name: "Undo changes",
+        }),
+    );
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "On a test stand" }).checked).toBe(false);
+    expect(screen.queryByRole("region", { name: "Changes not saved yet" })).toBeNull();
 });
 
 test("an admin makes a program from a starting layout", async () => {

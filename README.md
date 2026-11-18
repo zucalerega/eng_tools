@@ -581,7 +581,9 @@ Buildflow's top bar, has all of this on one page.
   the milestones. **Layout**, on a program's page, draws the vehicle from its sections (an engine
   with its nozzles, body tubes, tanks, couplers, transitions, and the nose cone, with fins, landing
   legs, or a test stand's frame), places components on it by dragging their dots, and changes its
-  subsystems, components, and milestones. **Remove** keeps everything said of a component, to
+  subsystems, components, and milestones. The name, the description, and the drawing are saved
+  together with **Save**, in the bar at the foot of the window that says what isn't saved yet;
+  everything else is saved as it's changed. **Remove** keeps everything said of a component, to
   **Bring back**; a milestone with anything kept on it can be renamed but not deleted; and
   **Archive…** takes a program off the list, kept as it was, until an admin brings it back.
 - **The shop** (**Shop**, in Buildflow's top bar) is the queue of parts the team needs machined,

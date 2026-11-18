@@ -444,7 +444,8 @@ the keys.
   from behind, through a part, or round a loop it didn't have): then it routes itself again. Parts dragged together take the
   lines between them along, and a tee comes too. Everything snaps to a grid, and a part being
   dragged lines up with what its lines go to (a gold guide shows it; **Alt** drags freely).
-  Lines that cross hop over each other.
+  Lines that cross hop over each other. A new line is tubing, and a tee is the type of the line
+  it tees into; change a line's type in its properties.
 - **Into a line**: drop a valve (an orifice, a filter...) on a line and it goes into it;
   delete it and the line joins up again.
 - **Properties**: select anything to name it and say what it is, on the right: a valve's body,

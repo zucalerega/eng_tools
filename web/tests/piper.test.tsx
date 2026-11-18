@@ -331,7 +331,7 @@ test("a line drawn from one part's port to another's is routed, and carries the 
         });
         expect(saved.lines[0]!.points.length).toBeGreaterThan(0); // up out of the bottle, then across
     });
-    expect(screen.getByRole("heading", { name: "Pipe" })).toBeTruthy(); // the new line's selected
+    expect(screen.getByRole("heading", { name: "Tubing" })).toBeTruthy(); // the new line's selected, and tubing
 });
 
 test("a valve dropped on a line goes into it; deleting it joins the line up again", async () => {

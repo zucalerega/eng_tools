@@ -122,6 +122,21 @@ test("a tank's top is its ullage: a line from it doesn't take the liquid it hold
     expect(line(join([more, "bottom-3"], [drain, "a"])).fluid).toBe("lox");
 });
 
+test("a line drawn is tubing, and a tee is the type of the line it tees into", () => {
+    fresh();
+    const left = place("ball-valve", 0, 0);
+    const right = place("ball-valve", 200, 0);
+    const run = join([left, "b"], [right, "a"]);
+    expect(line(run).kind).toBe("tube");
+    drawing = updateLine(drawing, run, (entry) => ({ ...entry, kind: "hose" }));
+    const gauge = place("pressure-gauge", 104, -80);
+    const made = connect(drawing, { part: gauge, port: "bottom" }, { line: run, at: { x: 100, y: 0 } })!;
+    drawing = made.drawing;
+    expect(line(made.id).kind).toBe("hose");
+    const free = connect(drawing, { part: right, port: "b" }, { x: 300, y: 0 })!;
+    expect(free.drawing.lines.find((entry) => entry.id === free.id)!.kind).toBe("tube");
+});
+
 test("a line drawn to another line tees into it at a junction on the grid", () => {
     fresh();
     const left = place("ball-valve", 0, 0);

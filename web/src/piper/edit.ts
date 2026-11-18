@@ -466,7 +466,8 @@ export function connect(drawing: Drawing, source: Target, target: Target): { dra
     }
     const tapped = [source, target].filter(onLine).map((at) => drawing.lines.find((line) => line.id === at.line));
     const fluid = fluidAt(next, from) || fluidAt(next, to) || (tapped.find((line) => line?.fluid)?.fluid ?? "");
-    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? "pipe" });
+    // A tee is the type of the line it tees into; any other line is tubing, which most of the team's lines are.
+    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? "tube" });
     line.points = routeOf(next, line);
     return { drawing: { ...next, lines: [...next.lines, line] }, id: line.id };
 }

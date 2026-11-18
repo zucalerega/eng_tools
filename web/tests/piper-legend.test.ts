@@ -71,7 +71,7 @@ test("a page's legend lists its parts by what they're called, in the library's o
         ["Equipment", "Engine"],
         ["Equipment", "Vent"],
     ]); // each once, and not what's only written on it (its legend, its title block) or a tee
-    expect(entries.lines).toEqual(["pipe", "pneumatic"]);
+    expect(entries.lines).toEqual(["tube", "pneumatic"]);
     expect(entries.fluids.map((fluid) => fluid.id)).toEqual(["gn2", "gox", "rp1", "lox"]);
     expect(entries.states).toEqual(["NO", "NC"]);
     // In black and white, every line's in ink: its fluids aren't told apart, so they aren't listed.

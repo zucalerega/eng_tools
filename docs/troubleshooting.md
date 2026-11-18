@@ -311,6 +311,28 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 - **There's no Update button, though a newer add-in is out.** The add-in looks every few hours.
   Add-ins 0.4.0 and older have no *Update*: run the new `Vault-Setup.exe` once, from the web app's
   SolidWorks page.
+- **The Vault tab says its record of the files here was damaged.** Vault keeps what it knows of
+  your copies in `C:\VLT\.vault\state.json`, and that file couldn't be read: most often the
+  computer lost power, or was shut down hard, while it was being saved. Nothing of yours is gone.
+  Vault set the file aside (`state.json.damaged`) and compares every file here with the vault
+  again, which takes a little longer once. A copy that isn't the vault's latest version then shows
+  as a conflict, since Vault no longer knows which version it came from: *Keep mine...* if you
+  changed it (a file you had checked out stays checked out to you), *Use the vault's version...*
+  if you didn't, which keeps your copy in `C:\VLT\.vault\backup` all the same. The `vault`
+  command says the same in a note.
+- **The Vault tab shows `'0x00' is an invalid start of a value`, with Needs attention stuck on
+  "Loading..." and Browse empty.** An older add-in, stopped by the same damaged file. Update the
+  add-in (run the new `Vault-Setup.exe` from the web app's SolidWorks page), which gets past it on
+  its own. Or by hand: close SolidWorks, delete `C:\VLT\.vault\state.json` (`.vault` is a hidden
+  folder: type the path into File Explorer's address bar), and open SolidWorks again. Your files
+  stay as they are, and what isn't the latest version shows as a conflict, as above. If the
+  message is still there, the damaged file is one of the other two, which
+  `%LOCALAPPDATA%\Vault\addin.log` names: for `tokens.json` (in `%APPDATA%\Vault`), delete it and
+  sign in again; for `config.json`, see the next one.
+- **A message says `C:\VLT\.vault\config.json` is damaged.** That file says which server the
+  folder is a workspace for, and it can't be read. Close SolidWorks, delete it, open SolidWorks
+  again, and sign in in the Vault tab with the same folder (or run `vault init` with the server's
+  address). The files in the folder stay as they are, and so do your check-outs.
 - **The Vault tab says it can't reach the Vault server, or couldn't refresh.** The rest of the
   message says why, most often that the vault is out of reach from this computer; the tab tries
   again every 20 seconds. Files already on this computer still open, but checking out and in need

@@ -218,9 +218,13 @@ what it is, `data-hit`).
   transducers, two or three bubbles side by side on one tap, A, B, C, each reading its own
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
-  fittings (tees, manifolds, caps, reducers, flex hoses); notes (text, regions, off-page connectors, a
-  legend, a title block, pictures); and shapes (rectangles, rounded rectangles, ellipses, triangles,
-  diamonds, lines, arrows, double arrows). The library's search finds a part by any of its names (MOV, PRV,
+  fittings (tees, manifolds, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
+  legend, a title block, pictures). A part's words are drawn in its frame, so they move as it
+  turns and flips, but a flip never mirrors them: a symbol's letters are drawn upright
+  (`Letters`, `upright`), and a note's words are mirrored back (`unflipped`), an off-page
+  connector's about their own middle, so they stay at its box's, and a text note's, a region's,
+  a legend's, and a title block's about theirs, as their boxes are the same either way round
+  (a picture's own image still flips). The library's search finds a part by any of its names (MOV, PRV,
   COPV, cav...). A part is dragged from it onto the drawing, clicked and then placed with a
   click (Shift-click to place more), or double-clicked into the middle of the view. The drag
   is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's

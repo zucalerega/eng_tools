@@ -150,11 +150,12 @@ const TOPICS: Topic[] = [
                     pressurant inlet has one, its arrows the way the flow leaves it.
                 </li>
                 <li>
-                    Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip. Drag on an empty spot to select
-                    everything in a box; Shift-click adds to what's selected. Select several to line them up or space
-                    them evenly. Where parts overlap (a valve on a picture of the stand), <em>Bring to front</em> (
-                    <kbd>]</kbd>) draws what's selected over everything, and <em>Send to back</em> (<kbd>[</kbd>) under
-                    everything, the lines too.
+                    Drag to move, <kbd>R</kbd> to turn a quarter, <kbd>F</kbd> to flip (a flip never mirrors the words
+                    on a part: they still read forwards). Drag on an empty spot to select everything in a box;
+                    Shift-click adds to what's selected. Select several to line them up or space them evenly. Where
+                    parts overlap (a valve on a picture of the stand), <em>Bring to front</em> (<kbd>]</kbd>) draws
+                    what's selected over everything, and <em>Send to back</em> (<kbd>[</kbd>) under everything, the
+                    lines too.
                 </li>
                 <li>
                     Drag the round handle at a selected part's corner to make it any size from a quarter of its own to

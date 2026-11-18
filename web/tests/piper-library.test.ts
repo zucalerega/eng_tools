@@ -527,3 +527,65 @@ test("an off-page connector's words fit inside it, however long the page's name 
         expect(size, words).toBe(9);
     }
 });
+
+/** Whether an element's drawn mirrored: its transform's, and its groups' up to its part's, determinants' sign. */
+function mirrored(element: Element): boolean {
+    let sign = 1;
+    for (let at: Element | null = element; at; at = at.hasAttribute("data-kind") ? null : at.parentElement) {
+        sign *= transformSign(at.getAttribute("transform") ?? "");
+    }
+    return sign < 0;
+}
+
+/** The sign of a transform's determinant: -1 where it mirrors. */
+function transformSign(transform: string): number {
+    let sign = 1;
+    for (const [, name, args] of transform.matchAll(/(\w+)\s*\(([^)]*)\)/g)) {
+        const [a = 1, b, c = 0, d = 1] = args!
+            .split(/[\s,]+/)
+            .filter(Boolean)
+            .map(Number);
+        if (name === "scale") {
+            sign *= Math.sign(a * (b ?? a));
+        } else if (name === "matrix") {
+            sign *= Math.sign(a * d - (b ?? 0) * c);
+        }
+    }
+    return sign;
+}
+
+test("a flipped part's words read forwards, whatever its kind and however it's turned", () => {
+    const parts = [
+        ...variants(),
+        newPart("offpage", { x: 0, y: 0 }, { text: "TO GSE" }),
+        newPart("text", { x: 0, y: 0 }, { text: "Fill line", props: { align: "left", border: "box" } }),
+        newPart("text", { x: 0, y: 0 }, { text: "Fill line", w: 120, h: 40, props: { align: "right" } }),
+        newPart("region", { x: 0, y: 0 }, { text: "Vehicle", w: 200, h: 100 }),
+        newPart("picture", { x: 0, y: 0 }, { w: 100, h: 60 }),
+    ];
+    let words = 0;
+    for (const part of parts) {
+        for (const rotation of [0, 90, 180, 270] as const) {
+            const flipped = { ...part, rotation, flip: true };
+            const markup = renderToStaticMarkup(
+                createElement(
+                    "svg",
+                    null,
+                    createElement(DiagramView, {
+                        drawing: { ...emptyDrawing(), parts: [flipped] },
+                        palette: LIGHT,
+                        meta: META,
+                    }),
+                ),
+            );
+            const drawn = new DOMParser().parseFromString(markup, "image/svg+xml");
+            const group = drawn.querySelector("[data-kind]")!;
+            expect(transformSign(group.getAttribute("transform")!), part.kind).toBe(-1);
+            for (const text of Array.from(group.querySelectorAll("text"))) {
+                words++;
+                expect(mirrored(text), `${part.kind} ${rotation}: ${text.textContent}`).toBe(false);
+            }
+        }
+    }
+    expect(words).toBeGreaterThan(0);
+});

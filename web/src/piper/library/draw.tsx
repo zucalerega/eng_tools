@@ -15,6 +15,13 @@ export const ink = (context: DrawContext, width = 1.6) => ({
     strokeLinecap: "round" as const,
 });
 
+/**
+ * What reads a flipped part's words forwards again, mirroring them back about the upright line through x in its frame:
+ * a flip moves them, and its turn turns them, but a flip never mirrors them. Nothing, unflipped.
+ */
+export const unflipped = (part: Pick<Part, "flip">, x = 0): string | undefined =>
+    part.flip ? `translate(${2 * x} 0) scale(-1 1)` : undefined;
+
 /** Words in a part's frame at (x, y), centered there, reading upright. */
 export function Letters({
     part,

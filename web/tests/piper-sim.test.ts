@@ -292,6 +292,8 @@ test("a pneumatic valve's air line works it: it isn't in the model, even drawn a
     expect(problems(built("through"))).toEqual([
         "TK-1 and Vent are joined with nothing between them that the model has: put a valve or an orifice between them, or model a line between them as a line.",
     ]);
+});
+
 test("a manifold with ports on all four sides is one point, whichever of them its lines are on", () => {
     const draw = sketch();
     const bottle = draw.place("bottle", -300, 0, { tag: "B-1", props: { fluid: "gn2", meop: "2000 psi" } });

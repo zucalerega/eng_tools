@@ -424,7 +424,7 @@ the keys.
   tanks (1 to 5 ports on the top and on the bottom: **Top ports** and **Bottom ports**, on the
   right; every port on its top is its ullage), bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
   engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
-  box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
+  box for anything else, shapes and arrows, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**
   on the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
   on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). The 3/2
@@ -435,12 +435,24 @@ the keys.
   for pressure, T for temperature, F, W, L, Z, PD), and its whole tag at its side;
   a duplicated or triplicated transducer is two or three bubbles on one tap, reading PT-101A,
   PT-101B (and C). Each part is tagged with the next number free (PT-3); **R** turns it, **F**
-  flips it, and where parts overlap, **Bring to front** (**]**) and **Send to back** (**[**,
+  flips it (its words move with it but still read forwards: a flip never mirrors them, and a
+  note's, a region's, a legend's, or a title block's stay just as they were), and where parts overlap, **Bring to front** (**]**) and **Send to back** (**[**,
   under the lines too) choose which is on top. Drag the round handle at a selected part's corner (or type its **Size**, in percent)
   to draw it at any size from a quarter of its own to four times, and give it a **Label size**
   of its own, in percent too. A **Text** note dragged
   by its square handle becomes a block of that size, its words wrapped, in bold, italic, a serif
   or monospace font, aligned, and boxed as you choose.
+- **Shapes**: the library's **Shapes** (search *cosmetic*) are rectangles, rounded rectangles,
+  ellipses, triangles, diamonds, lines, arrows, and double arrows, drawn for how the drawing looks.
+  Drag a selected one's square handle to size it. On the right, a shape has a **Fill** (none until
+  you pick one), an **Outline** color, an **Outline style** (solid, dashed, dotted, or none), a
+  **Weight**, and a **Transparency**; a line or an arrow has its **Arrowheads** (none, at its end,
+  its start, or both), a **Direction** (level, or corner to corner across its box, so sizing it
+  sets its angle; **R** turns it upright), a **Color**, a **Style**, a **Weight**, and a
+  **Transparency**. Black and white are the page's ink and paper, so they read on a dark page too.
+  Shapes aren't part of the system: lines route straight through them and labels sit on them, and
+  the parts list, the legend, Find, and the simulation leave them out. The exports have them, see-through
+  as they're drawn.
 - **Lines**: drag from a part's port (the dots on it) to another's, to a line (a tee), or
   anywhere. Lines route themselves around parts, leaving each port the way it faces, and stay
   as they are until their parts move. Drag a segment to move it; **Route automatically** puts
@@ -581,12 +593,44 @@ Buildflow's top bar, has all of this on one page.
   `/piper/diagrams/3`, `/yorg/datasets/7`) shows its app and the name of what it goes to; any
   other is an `http` or `https` address, which opens in a tab of its own. Anyone signed in keeps
   all of this up.
+- **The build plan** (**Build plan**, on a program's page) is each component's lead time (how long
+  it takes to get once it's ordered, or to make once it's started), the day it has to be ready by,
+  and what it needs first (what has to be ready before it can start). From them it works out the day
+  to order or start each one by, and draws it all on a calendar: the soonest to order first, so the
+  long leads (six weeks or more) come to the top. It counts what to order or start now (past its
+  day), what's late, what's at risk (it won't be ready in time as things stand, waiting on what it
+  needs), and what isn't planned yet. Set a component's lead time (in weeks) and ready-by day in the
+  plan's table or on its panel, in the build phase, and what it needs first with **What ... needs
+  first** (not one that needs it). The bill marks a long lead not in hand yet with *Long lead*.
+- **The BOM** (**BOM**, on a program's page) is its bill of materials, read in from the team's own
+  spreadsheet: **Read in a spreadsheet…** takes an Excel workbook (.xlsx) or a CSV file, guesses
+  which column says what from its headers (part number, description, the component it's for,
+  quantity, vendor, cost each, lead time, link, status), and shows the lines as they'll come in.
+  Each line goes to the component its *Component* column names, or all to one component (that
+  component's BOM alone). Reading it in again as the spreadsheet changes keeps what the site says
+  of a part already on it (where it is, and its note). The page lists each part with the day to
+  order it by (to have it when its component's build has to start, by the build plan), the long
+  leads (six weeks or more), what to order now, and the cost in all; set where each is (to order,
+  ordered, received) and a note (a PO, a tracking number) there. A component's panel lists its
+  parts in its build phase, the longest lead first.
+- **Reviews** cover several components at once: a subsystem's PDR, say, for its eight components.
+  **New review**, under the bill, takes the milestone it's held at (a review: DCR, CoDR, PDR, CDR,
+  TRR, QRR, FRR), a name, its day, and the components it covers (**All of** a subsystem picks
+  them all). Its day is each component's date at that milestone, and **Pass…** on its page passes
+  each of them there (those through it already stay as they are). Its page lists each component's
+  status at the milestone and its actions, to set one apart (back *In progress* with its actions
+  to close, say); its files (its slides, its package, its minutes: SharePoint links, say); and the
+  notes taken in it (**Edit notes**, in Markdown). The bill's chips and a component's panel name the
+  review it's in. **Remove…** keeps a review, to bring back from *Removed reviews*. Anyone signed in
+  keeps reviews.
 - **Laying out a program** is the admins': **New program** starts one from a rocket's, a
   hopper's, or a test stand's layout (its drawing, subsystems, and components), or with nothing but
   the milestones. **Layout**, on a program's page, draws the vehicle from its sections (an engine
   with its nozzles, body tubes, tanks, couplers, transitions, and the nose cone, with fins, landing
   legs, or a test stand's frame), places components on it by dragging their dots, and changes its
-  subsystems, components, and milestones. **Remove** keeps everything said of a component, to
+  subsystems, components, and milestones. The name, the description, and the drawing are saved
+  together with **Save**, in the bar at the foot of the window that says what isn't saved yet;
+  everything else is saved as it's changed. **Remove** keeps everything said of a component, to
   **Bring back**; a milestone with anything kept on it can be renamed but not deleted; and
   **Archive…** takes a program off the list, kept as it was, until an admin brings it back.
 - **The shop** (**Shop**, in Buildflow's top bar) is the queue of parts the team needs machined,

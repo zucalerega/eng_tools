@@ -18,7 +18,7 @@ from ..db import utcnow
 from ..errors import ApiError, Conflict, Forbidden, NotFound
 from ..models import User, UserStatus
 from . import templates
-from .models import Component, Event, Link, Milestone, Phase, Program, Progress, Status, Subsystem
+from .models import Component, Event, Link, Milestone, Phase, Program, Progress, Review, Status, Subsystem
 from .schemas import Profile
 
 PHASES = tuple(Phase)
@@ -324,10 +324,13 @@ def remove_milestone(db: Session, admin: User, milestone_id: int) -> None:
     kept = list(db.scalars(select(Progress).where(Progress.milestone_id == found.id)))
     used = [p for p in kept if p.status != Status.NOT_STARTED or p.due or p.done_on or p.note]
     links = db.scalar(select(func.count()).where(Link.milestone_id == found.id)) or 0
-    if used or links:
+    held = db.scalar(select(func.count()).where(Review.milestone_id == found.id)) or 0  # removed ones are kept too
+    if used or links or held:
         said = [f"progress on {len(used)} component{'s' if len(used) != 1 else ''}"] if used else []
         said += [f"{links} link{'s' if links != 1 else ''}"] if links else []
-        raise MilestoneInUse(f"{found.name} has {' and '.join(said)} kept on it: rename it, or move it, instead")
+        said += [f"{held} review{'s' if held != 1 else ''}"] if held else []
+        listed = said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
+        raise MilestoneInUse(f"{found.name} has {listed} kept on it: rename it, or move it, instead")
     for blank in kept:
         db.delete(blank)
     _place([m for m in milestones(db, owner.id) if m.phase == found.phase], found, None)
@@ -510,8 +513,9 @@ LAYOUT = ("name", "subsystem_id", "bought", "x", "y", "position")
 
 def change_component(db: Session, user: User, component_id: int, change: dict[str, Any]) -> Component:
     """Change what's in `change` (and only that): a component's name, subsystem, whether it's bought, where it's drawn,
-    and its place in its subsystem are its layout, which admins change; its description and its lead, anyone. x and y
-    None take it off the drawing; lead_id None leaves it with no lead."""
+    and its place in its subsystem are its layout, which admins change; its description, its lead, and its build plan
+    (its lead time, and when it has to be ready by), anyone. x and y None take it off the drawing; lead_id None leaves
+    it with no lead; lead_days and need_by None, with no lead time or day."""
     found = component(db, component_id)
     owner = program(db, found.program_id)
     check_open(owner)
@@ -540,6 +544,13 @@ def change_component(db: Session, user: User, component_id: int, change: dict[st
         if (lead.id if lead else None) != found.lead_id:
             found.lead_id = lead.id if lead else None
             said.append(f"Lead: {lead.display_name}" if lead else "No lead")
+    if "lead_days" in change and change["lead_days"] != found.lead_days:
+        found.lead_days = change["lead_days"]
+        said.append(f"Lead time: {lead_time(found.lead_days)}" if found.lead_days is not None else "No lead time")
+    if "need_by" in change and change["need_by"] != found.need_by:
+        found.need_by = change["need_by"]
+        day = found.need_by
+        said.append(f"Ready by {day:%b} {day.day}, {day.year}" if day else "No day it's to be ready by")
     every = components(db, owner.id)
     if moved_to is not None:
         old = [c for c in every if c.subsystem_id == found.subsystem_id]
@@ -557,6 +568,13 @@ def change_component(db: Session, user: User, component_id: int, change: dict[st
     db.commit()
     db.refresh(found)  # its lead, as it is now: sessions keep what they loaded past a commit
     return found
+
+
+def lead_time(days: int) -> str:
+    """A lead time in words: in weeks when it's whole weeks ("8 weeks"), else in days ("10 days")."""
+    if days and days % 7 == 0:
+        return f"{days // 7} week{'s' if days != 7 else ''}"
+    return f"{days} day{'s' if days != 1 else ''}"
 
 
 def member(db: Session, user_id: int) -> User:

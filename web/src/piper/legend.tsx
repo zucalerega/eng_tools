@@ -12,8 +12,20 @@ import type { DiagramMeta, DrawContext } from "./library/kinds";
 // color; and the colors of its valves' normal states. Laid out in columns as the team's own P&ID legends are, and drawn
 // in the drawing's units, at its labels' size, so a PDF prints it as it prints the drawing.
 
-/** What isn't one of the system's parts: what's written or drawn on the page, a tee, a shape drawn as Visio drew it. */
-const NOT_PARTS = new Set(["junction", "text", "region", "offpage", "legend", "titleblock", "picture", "figure"]);
+/** What isn't one of the system's parts: what's written or drawn on the page (shapes and arrows too), a tee, a
+ * shape drawn as Visio drew it. */
+const NOT_PARTS = new Set([
+    "junction",
+    "text",
+    "region",
+    "offpage",
+    "legend",
+    "titleblock",
+    "picture",
+    "shape",
+    "arrow",
+    "figure",
+]);
 
 const STATE_NAMES: Record<string, string> = { NO: "Normally open", NC: "Normally closed", FIP: "Fails in place" };
 

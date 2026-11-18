@@ -497,3 +497,9 @@ To report a bug in the add-in, use *Report a bug or idea* in the web app's Help:
 clicked, add a screenshot of the pane or the message (Win+Shift+S, then paste it into the
 description), and paste the end of `addin.log` into the description too, since a screenshot
 can't show the log.
+A computer that loses power can leave one of the files Vault keeps damaged. The workspace's
+record of its files (`C:\VLT\.vault\state.json`) is set aside as `state.json.damaged` and
+worked out again, and the Vault tab says so: copies that aren't the vault's latest version
+then show as conflicts, to keep or replace. Damaged sign-ins mean signing in again. A
+damaged `C:\VLT\.vault\config.json` has to be deleted, and the folder set up again by
+signing in; the message says so. The help's troubleshooting page has each.

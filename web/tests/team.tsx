@@ -9,9 +9,13 @@ import { writeMesh, type Mesh } from "../src/vault/caliper/format";
 import { SessionContext, SessionStore } from "../src/session";
 import { StoreContext, VaultStore } from "../src/vault/store";
 import type {
+    BomLine,
+    BomLineIn,
+    BomRead,
     Component,
     ProgramDetail,
     ProgressChange,
+    Review,
     Shop,
     ShopPart,
     ShopPartChange,
@@ -440,6 +444,52 @@ export class Team {
             status = await call<DealsStatus>("GET", "/api/deals/status", this.chief.token);
         }
         return status;
+    }
+
+    /** A component's build plan, as its panel or the plan page sets it: its lead time (days), and its ready-by day. */
+    async plan(component: number, change: { lead_days?: number | null; need_by?: string | null }): Promise<Component> {
+        return call<Component>("PATCH", `/api/buildflow/components/${component}`, this.chief.token, change);
+    }
+
+    /** A program's BOM read in, as the BOM page reads in a spreadsheet: the whole BOM (or one component's). */
+    async readBom(program: number, lines: Partial<BomLineIn>[], componentId: number | null = null): Promise<BomRead> {
+        const full = lines.map((line) => ({
+            component_id: null,
+            part_number: "",
+            description: "",
+            quantity: null,
+            unit: "",
+            vendor: "",
+            unit_cost: null,
+            lead_days: null,
+            url: "",
+            status: null,
+            ...line,
+        }));
+        return call<BomRead>("PUT", `/api/buildflow/programs/${program}/bom`, this.chief.token, {
+            lines: full,
+            component_id: componentId,
+            file: "BOM.xlsx",
+        });
+    }
+
+    /** A program's BOM, as the server keeps it. */
+    async bom(program: number): Promise<BomLine[]> {
+        return call<BomLine[]>("GET", `/api/buildflow/programs/${program}/bom`, this.chief.token);
+    }
+
+    /** A design review, as someone starts one on a program's page with New review. */
+    async review(
+        who: Member,
+        program: number,
+        body: { milestone_id: number; name: string; held_on?: string | null; component_ids: number[] },
+    ): Promise<Review> {
+        return call<Review>("POST", `/api/buildflow/programs/${program}/reviews`, who.token, body);
+    }
+
+    /** A design review, as the server keeps it. */
+    async reviewOf(id: number): Promise<Review> {
+        return call<Review>("GET", `/api/buildflow/reviews/${id}`, this.chief.token);
     }
 
     /** A component's progress at a milestone, as the bill's chips and its panel set it. */

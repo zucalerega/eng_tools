@@ -311,6 +311,28 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 - **There's no Update button, though a newer add-in is out.** The add-in looks every few hours.
   Add-ins 0.4.0 and older have no *Update*: run the new `Vault-Setup.exe` once, from the web app's
   SolidWorks page.
+- **The Vault tab says its record of the files here was damaged.** Vault keeps what it knows of
+  your copies in `C:\VLT\.vault\state.json`, and that file couldn't be read: most often the
+  computer lost power, or was shut down hard, while it was being saved. Nothing of yours is gone.
+  Vault set the file aside (`state.json.damaged`) and compares every file here with the vault
+  again, which takes a little longer once. A copy that isn't the vault's latest version then shows
+  as a conflict, since Vault no longer knows which version it came from: *Keep mine...* if you
+  changed it (a file you had checked out stays checked out to you), *Use the vault's version...*
+  if you didn't, which keeps your copy in `C:\VLT\.vault\backup` all the same. The `vault`
+  command says the same in a note.
+- **The Vault tab shows `'0x00' is an invalid start of a value`, with Needs attention stuck on
+  "Loading..." and Browse empty.** An older add-in, stopped by the same damaged file. Update the
+  add-in (run the new `Vault-Setup.exe` from the web app's SolidWorks page), which gets past it on
+  its own. Or by hand: close SolidWorks, delete `C:\VLT\.vault\state.json` (`.vault` is a hidden
+  folder: type the path into File Explorer's address bar), and open SolidWorks again. Your files
+  stay as they are, and what isn't the latest version shows as a conflict, as above. If the
+  message is still there, the damaged file is one of the other two, which
+  `%LOCALAPPDATA%\Vault\addin.log` names: for `tokens.json` (in `%APPDATA%\Vault`), delete it and
+  sign in again; for `config.json`, see the next one.
+- **A message says `C:\VLT\.vault\config.json` is damaged.** That file says which server the
+  folder is a workspace for, and it can't be read. Close SolidWorks, delete it, open SolidWorks
+  again, and sign in in the Vault tab with the same folder (or run `vault init` with the server's
+  address). The files in the folder stay as they are, and so do your check-outs.
 - **The Vault tab says it can't reach the Vault server, or couldn't refresh.** The rest of the
   message says why, most often that the vault is out of reach from this computer; the tab tries
   again every 20 seconds. Files already on this computer still open, but checking out and in need
@@ -471,6 +493,39 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
   others on it (3). Set your own level under *Who's trained*; an admin can set anyone's.
 - **A machine isn't offered for a new part.** It's retired: an admin brings it back under
   *Machines*.
+- **A review's day didn't change a component's date.** A review's day is each of its components'
+  date at its milestone, but those through it already (passed, or *Not needed*) keep theirs. One
+  taken off the review keeps the date it had.
+- **Pass… is greyed out on a review.** Every component it covers is through its milestone already.
+  A component that's come back from it with actions to close is set apart in its own row (*In
+  progress*, its note saying what).
+- **A review isn't on the program's page.** Someone removed it: *Removed reviews*, under the
+  program's reviews, lists them, and *Bring it back* on its page puts it back.
+- **A component has no order-by day on the build plan.** It takes a lead time and a day it has to be
+  ready by, both: the day to order it (or start making it) by is the one less the other.
+- **A component is at risk though its dates look right.** What it needs first won't be ready in time:
+  it can't start until that's ready (made, or bought and in hand), and then takes its lead time.
+  *Waiting on* says which. Or its day to order or start it by has passed, and it hasn't started.
+- **A BOM spreadsheet won't read in.** The BOM page reads an Excel workbook (.xlsx) or a CSV
+  file. An older Excel file (.xls) has to be saved as .xlsx first (File > Save As); from Google
+  Sheets, download it as .xlsx or CSV (File > Download). A sheet with a title above its headers is
+  fine: say which row the headers are in (*Header row*).
+- **A BOM's columns aren't guessed right.** Each is guessed from its header (*Part No.*, *Qty*,
+  *Supplier*, *Unit Price*, *Lead Time (wks)*, ...): pick the right column for each under *Which
+  column says what*, and whether its lead times are in weeks or days. Only a part number or a
+  description is needed.
+- **A part on the BOM has no component.** Its *Component* (or *Assembly*) column names one the
+  program doesn't have, by that name (case and spaces don't matter): rename one or the other, and
+  read it in again. Or read each component's BOM in on its own (*Lines are for*: the component).
+- **Reading a BOM in took parts off.** It becomes what the spreadsheet says: the program's whole
+  BOM, or one component's (*Lines are for*). Parts no longer in it go; a part already on it keeps
+  its note, and where it is (to order, ordered, received), unless the spreadsheet has a status
+  column that says otherwise.
+- **A part has no order-by day on the BOM.** It takes the part's lead time, and its component's
+  ready-by day on the build plan: the part has to be in hand by the day the component's build has
+  to start.
+- **A component still shows on the build plan once it's in hand.** It's ready when it's through the
+  build phase: every build milestone done, or *Not needed*. *Hide what's ready* hides those.
 
 ## Deals
 
@@ -909,9 +964,20 @@ a number. A few codes come up in more than one place.
   from the program's Layout page, under *Removed*. **... was taken off the shop's queue: bring it
   back to change it** (`removed`): put the part back in the queue first (*Show parts taken off the
   queue*, at the bottom of the Shop page).
-- **... has progress on ... components and ... links kept on it: rename it, or move it, instead**
-  (`milestone_in_use`): a milestone something's been kept on stays, so nothing said of a component
-  is lost. Rename it, or move it to where it belongs.
+- **... has progress on ... components, ... links and ... reviews kept on it: rename it, or move it,
+  instead** (`milestone_in_use`): a milestone something's been kept on stays (a review held at it
+  too, even one removed), so nothing said of a component is lost. Rename it, or move it to where it
+  belongs.
+- **... is work, not a review: a review is held at one of ...'s review milestones, as its CDR**
+  (`not_a_review`): a review is held at a milestone that's a review (DCR, CoDR, PDR, CDR, TRR, QRR,
+  FRR, as a program starts), not at one for work, as Manufacturing. An admin marks a milestone a
+  review on the program's Layout page.
+- **... needs ... already (through ...): a component can't need one that needs it**, or **... can't
+  need itself** (`needs_cycle`): what a component needs first has to be ready before it can start, so
+  it can't need one that needs it, however far along: neither could ever start. Take one of them off
+  what the other needs first.
+- **The review ... was removed: bring it back to change it** (`removed`): bring it back first, with
+  *Bring it back* on its page (*Removed reviews*, on the program's page, lists it).
 - **... has ... components in it: move them to another subsystem first**, or **... removed components
   to come back to it** (`not_empty`): only an empty subsystem is deleted. Move its components
   elsewhere first; removed ones keep their subsystem, so bring them back and move them too.
@@ -922,9 +988,10 @@ a number. A few codes come up in more than one place.
   retired machine takes no new parts. Pick another, or an admin brings it back under *Machines*.
 - **There's a machine called ... already** (`name_taken`): two machines can't have the same name,
   whatever its case (a retired one keeps its name: bring it back instead).
-- **... isn't a link a component can have: a link is an http or https address, or a page of the
-  site's own, like /vault/file/12** (`bad_link`): copy the page's whole address from the browser
-  (`https://...`), or a page of the site's own from its path (`/vault/file/12`).
+- **... isn't a link a component can have** (or **a review can have**)**: a link is an http or https
+  address, or a page of the site's own, like /vault/file/12** (`bad_link`): copy the page's whole
+  address from the browser (`https://...`), or a page of the site's own from its path
+  (`/vault/file/12`). A file on SharePoint: its *Copy link*, or its address from the browser.
 
 ### Deals
 

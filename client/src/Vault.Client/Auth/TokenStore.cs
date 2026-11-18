@@ -59,8 +59,17 @@ public sealed class TokenStore
         {
             return new Dictionary<string, string>();
         }
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(FilePath))
-            ?? new Dictionary<string, string>();
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(FilePath))
+                ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            // Damaged (the computer shut down while it was being saved, say): no sign-ins, so sign in again, which
+            // saves it whole.
+            return new Dictionary<string, string>();
+        }
     }
 
     private void Write(Dictionary<string, string> tokens)
@@ -72,18 +81,12 @@ public sealed class TokenStore
         {
             const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             Directory.CreateDirectory(folder, ownerOnly | UnixFileMode.UserExecute);
-            var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, UnixCreateMode = ownerOnly };
-            using (var stream = new FileStream(FilePath, options))
-            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
-            {
-                writer.Write(json);
-            }
-            File.SetUnixFileMode(FilePath, ownerOnly); // in case the file already existed with wider permissions
+            DurableFile.WriteAllText(FilePath, json, ownerOnly: true);
             return;
         }
 #endif
         Directory.CreateDirectory(folder);
-        File.WriteAllText(FilePath, json);
+        DurableFile.WriteAllText(FilePath, json);
     }
 
     private static string Protect(string token)

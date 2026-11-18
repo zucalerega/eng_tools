@@ -219,7 +219,12 @@ what it is, `data-hit`).
   channel, `channelNames`); equipment
   (engines, pumps, igniters, heat exchangers, vents, and a box for what has no symbol);
   fittings (tees, manifolds, caps, reducers, flex hoses); and notes (text, regions, off-page connectors, a
-  legend, a title block, pictures). The library's search finds a part by any of its names (MOV, PRV,
+  legend, a title block, pictures). A part's words are drawn in its frame, so they move as it
+  turns and flips, but a flip never mirrors them: a symbol's letters are drawn upright
+  (`Letters`, `upright`), and a note's words are mirrored back (`unflipped`), an off-page
+  connector's about their own middle, so they stay at its box's, and a text note's, a region's,
+  a legend's, and a title block's about theirs, as their boxes are the same either way round
+  (a picture's own image still flips). The library's search finds a part by any of its names (MOV, PRV,
   COPV, cav...). A part is dragged from it onto the drawing, clicked and then placed with a
   click (Shift-click to place more), or double-clicked into the middle of the view. The drag
   is the pointer's own (`LibraryPanel` tells the canvas, `libraryDrop`), not the browser's
@@ -235,6 +240,23 @@ what it is, `data-hit`).
   25 megapixels (10,000 on a side, as a PDF of it decodes it in the browser), and never
   changed or deleted, as a revision may still show one; the same bytes added again are the
   same picture. It's sent with its name as its ETag, for the browser to keep (`immutable`).
+- **Shapes** (`shape` and `arrow`, `library/shapes.tsx`): drawn on a drawing for how it looks (a
+  team member's request, #7), each sized by its corner handle (`w`, `h`) and set in its props, as
+  text: a `shape`'s outline (`shape`: a rectangle, `rounded`, `ellipse`, `triangle`, `diamond`),
+  its `fill` and `outline` colors (`#rrggbb`; left out, no fill and the page's ink), its `dash`
+  (`dashed`, `dotted`, `none`), `weight`, and `transparency` (a percent, of its fill and its
+  outline both); an `arrow`'s `heads` (`end`, `start`, `both`; none, a line), and `slant` (level
+  across its box's middle, or `down` or `up` corner to corner, so its box sets its length and
+  angle), with the same color, dashes, weight, and transparency. Black and white are drawn in the
+  page's ink and paper, as a figure's are (`paintOf`). An arrow's line runs to its heads' bases,
+  so a see-through one isn't darker where they'd overlap, and it's clicked near its line (its
+  kind's `hit`), not anywhere in its box. Both kinds are `aside`: drawn over the lines, as parts
+  are (Send to back puts one under them), but not what lines route around or through
+  (`obstacles`, `partsThrough`), nor what labels keep clear of, and left out of the parts list,
+  the legend, Find, and the simulation (no ports). Colors are a free picker, not the diagram's
+  palette. The exports draw them as the page does; the PDF's see-through as a graphics state.
+  They're new kinds, not a new format: a web app from before them shows one as an unknown part's
+  dashed box and keeps it as it is, so a drawing with them is safe in an older tab.
 - **Figures** (`figure`, `library/figures.tsx`): a shape drawn as it was in Visio, for what Piper
   has no part of its own for (a drawing's vehicle and tanks, a manifold's box, a key, a title
   block, a symbol from another stencil). Only an import makes one: the library has none. Its
@@ -265,7 +287,7 @@ what it is, `data-hit`).
   line with its port, so lines between parts lined up stay straight. Drawn small, ports close
   together would meet on the grid, so then they go on the half grid, or, smaller still, just
   where they fall: a part's ports never meet. Not for what's sized by its
-  width and height (boxes, regions, text blocks), tees, legends, or title blocks. Each part's
+  width and height (boxes, regions, text blocks, shapes), tees, legends, or title blocks. Each part's
   label can have a size of its own, in percent of the standard (`labelSize`, a number within
   `LABEL_SCALE`, half to three times; null, the diagram's). Before sizes were numbers they were
   small, normal, and large, which `readDrawing` reads as 0.8, 1, and 1.3.
@@ -397,7 +419,7 @@ what it is, `data-hit`).
 - **Parts** (`PartsPage.tsx`, `/piper/diagrams/{id}/parts`, opened from the toolbar in a tab
   of its own, so the drawing stays open, and yours if you were editing it): the parts list
   (`parts.ts`, every page's) in one table. Parts only: not lines, and not what's only written or
-  drawn on a drawing (notes, regions, connectors, legends, title blocks, pictures, untagged
+  drawn on a drawing (notes, regions, connectors, legends, title blocks, pictures, shapes, untagged
   figures). Each part's tag, what it is, its page (with more than one), the fluids on it (what
   it holds and what its lines carry), then each spec any part shown has (but not one that only
   says again what each is: a ball valve's body, what a pressure transducer measures), in the

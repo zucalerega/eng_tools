@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Deal, type UserRef } from "../api";
 import { Notice, Time, usePopover } from "../components";
-import { Link } from "../router";
+import { Link, navigate } from "../router";
 import {
     buildflow,
     PHASE_NAMES,
@@ -11,9 +11,13 @@ import {
     type Milestone,
     type Phase,
     type ProgramDetail,
+    type Review,
     type Status,
 } from "./api";
 import { ComponentPanel } from "./Panel";
+import { leadInWords, planOf } from "./planning";
+import { ReviewsSection } from "./Review";
+import { reviewPath, reviewsOf } from "./reviews";
 import { Vehicle } from "./VehicleView";
 import {
     formatDay,
@@ -137,6 +141,12 @@ export function ProgramPage({ id }: { id: number }) {
                 </div>
                 <div className="page-actions">
                     {program.archived_at && <span className="tag tag-warning">Archived</span>}
+                    <Link to={`/buildflow/programs/${program.id}/plan`} className="button">
+                        Build plan
+                    </Link>
+                    <Link to={`/buildflow/programs/${program.id}/bom`} className="button">
+                        BOM
+                    </Link>
                     {program.can_edit && (
                         <Link to={`/buildflow/programs/${program.id}/layout`} className="button">
                             Layout
@@ -161,7 +171,15 @@ export function ProgramPage({ id }: { id: number }) {
                 onPick={pick}
                 onStatus={setStatus}
                 dealsFor={dealsFor}
+                longLeads={
+                    new Set(
+                        planOf(program, today())
+                            .filter((p) => p.long)
+                            .map((p) => p.component.id),
+                    )
+                }
             />
+            <ReviewsSection program={program} phase={phase} />
             <div className="bf-lower">
                 <Coming program={program} onPick={pick} />
                 <section className="bf-activity" aria-label="Recent activity">
@@ -316,6 +334,7 @@ function Bill({
     onPick,
     onStatus,
     dealsFor,
+    longLeads,
 }: {
     program: ProgramDetail;
     phase: Phase;
@@ -323,6 +342,7 @@ function Bill({
     onPick: (component: Component, milestone?: Milestone | null) => void;
     onStatus: (component: Component, milestone: Milestone, status: Status) => void;
     dealsFor: Map<number, Deal[]>;
+    longLeads: Set<number>; // not ready yet, with a lead time of six weeks or more
 }) {
     const { milestones, subsystems, components } = program;
     if (components.length === 0) {
@@ -403,6 +423,14 @@ function Bill({
                                                 COTS
                                             </span>
                                         )}
+                                        {longLeads.has(component.id) && (
+                                            <span
+                                                className="tag bf-long-lead"
+                                                title={`A lead time of ${leadInWords(component.lead_days!)}: on the build plan`}
+                                            >
+                                                Long lead
+                                            </span>
+                                        )}
                                         <DealMark
                                             component={component}
                                             deals={dealsFor.get(component.id) ?? []}
@@ -415,6 +443,7 @@ function Bill({
                                             <Chip
                                                 component={component}
                                                 milestone={milestone}
+                                                reviews={reviewsOf(program, component, milestone)}
                                                 onStatus={(status) => onStatus(component, milestone, status)}
                                                 onMore={() => onPick(component, milestone)}
                                             />
@@ -463,15 +492,18 @@ function DealMark({ component, deals, onOpen }: { component: Component; deals: D
     );
 }
 
-/** A component's status at a milestone, as a chip; clicked, a menu of the statuses to set, and more in its panel. */
+/** A component's status at a milestone, as a chip; clicked, a menu of the statuses to set, the reviews it's in there,
+ * and more in its panel. */
 function Chip({
     component,
     milestone,
+    reviews,
     onStatus,
     onMore,
 }: {
     component: Component;
     milestone: Milestone;
+    reviews: Review[];
     onStatus: (status: Status) => void;
     onMore: () => void;
 }) {
@@ -484,6 +516,9 @@ function Chip({
         said.push(formatDay(kept.done_on));
     } else if (kept?.due) {
         said.push(`due ${formatDay(kept.due)}`);
+    }
+    if (reviews.length > 0) {
+        said.push(`in ${reviews.map((r) => r.name).join(" and ")}`);
     }
     const late = kept?.due && status !== "done" && status !== "skipped" && kept.due < today();
     return (
@@ -521,6 +556,20 @@ function Chip({
                         </button>
                     ))}
                     <hr />
+                    {reviews.map((review) => (
+                        <button
+                            key={review.id}
+                            type="button"
+                            role="menuitem"
+                            className="menu-item"
+                            onClick={() => {
+                                setOpen(false);
+                                navigate(reviewPath(review));
+                            }}
+                        >
+                            {review.name}…
+                        </button>
+                    ))}
                     <button
                         type="button"
                         role="menuitem"

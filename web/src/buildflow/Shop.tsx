@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type UserRef } from "../api";
 import { Dialog, Notice } from "../components";
 import { Link, navigate } from "../router";
@@ -7,11 +7,13 @@ import { siteName } from "../site";
 import {
     buildflow,
     LEVEL_NAMES,
+    PLACE_LEVEL_NAMES,
     RUNS_IT,
     SHOP_STATUS_NAMES,
     SHOP_STATUSES,
     type Load,
     type Machine,
+    type Place,
     type Program,
     type ProgramDetail,
     type Shop,
@@ -21,9 +23,10 @@ import {
 } from "./api";
 
 // Buildflow's shop, from the team's machining tracker (/buildflow/shop): the parts queued to be machined, how much work
-// each machine has waiting, and who can run it; how far each person's trained on each machine (/buildflow/shop/skills);
-// and, for admins, the machines (/buildflow/shop/machines). Anyone keeps the queue; the server keeps the rules
-// (buildflow/shop.py). A part can be for a component on a program's bill of design, whose panel then shows it.
+// each machine has waiting, and who can run it; how far each person's trained on each machine, and at each place people
+// are trained in (/buildflow/shop/skills); and, for admins, the machines and the places (/buildflow/shop/machines).
+// Anyone keeps the queue; the server keeps the rules (buildflow/shop.py). A part can be for a component on a program's
+// bill of design, whose panel then shows it.
 
 export type ShopSection = "queue" | "skills" | "machines";
 
@@ -141,7 +144,8 @@ export function ShopPage({ section }: { section: ShopSection }) {
             </div>
             <p className="muted bf-lead">
                 The parts the team needs machined, how much work each machine has waiting, and who can run it. Anyone
-                can add a part, or move one along; each person says how far they&apos;re trained on each machine.
+                can add a part, or move one along; each person says how far they&apos;re trained on each machine, and
+                where.
             </p>
             {problem && <Notice tone="error">{problem}</Notice>}
             {shop === null && !problem && <p className="muted">Loading…</p>}
@@ -149,7 +153,7 @@ export function ShopPage({ section }: { section: ShopSection }) {
             <nav className="bf-shop-tabs" aria-label="Shop">
                 {tab("/buildflow/shop", "queue", "Queue")}
                 {tab("/buildflow/shop/skills", "skills", "Who's trained")}
-                {shop?.can_edit_machines && tab("/buildflow/shop/machines", "machines", "Machines")}
+                {shop?.can_edit_machines && tab("/buildflow/shop/machines", "machines", "Machines and places")}
             </nav>
             {shop && section === "queue" && (
                 <Queue shop={shop} onEdit={(part) => setEditing(draftOf(part))} onChanged={reload} />
@@ -829,22 +833,69 @@ function Pips({ level }: { level: number }) {
     );
 }
 
+/** A machine's or a place's level, 0 to 3, as buttons side by side. */
+function LevelChoice({
+    name,
+    names,
+    level,
+    onChange,
+}: {
+    name: string;
+    names: string[];
+    level: number;
+    onChange: (level: number) => void;
+}) {
+    return (
+        <div className="bf-shop-level" role="group" aria-label={`${name} level`}>
+            <span className="bf-shop-machine-name">{name}</span>
+            <span className="bf-shop-segments">
+                {[0, 1, 2, 3].map((each) => (
+                    <button
+                        key={each}
+                        type="button"
+                        title={names[each]}
+                        aria-label={`${name}: ${names[each]}`}
+                        aria-pressed={level === each}
+                        onClick={() => onChange(each)}
+                    >
+                        {each}
+                    </button>
+                ))}
+            </span>
+        </div>
+    );
+}
+
+/** A level in the table of who's trained: its pips, and what it means, said only where they're trained, so what
+ * they are stands out across the places and the machines. */
+function LevelCell({ name, names, level, first }: { name: string; names: string[]; level: number; first?: boolean }) {
+    return (
+        <td className={first ? "bf-shop-group-start" : undefined} aria-label={`${name}: ${names[level]}`}>
+            <Pips level={level} /> {level > 0 && <span className="muted bf-small">{names[level]}</span>}
+        </td>
+    );
+}
+
 function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; onChanged: () => Promise<void> }) {
     const { me } = useSession();
     const admin = me?.is_admin ?? false;
     const [whose, setWhose] = useState(me?.id ?? 0);
     const [levels, setLevels] = useState<Record<number, number>>({});
+    const [atPlaces, setAtPlaces] = useState<Record<number, number>>({});
     const [dirty, setDirty] = useState(false);
     const [busy, setBusy] = useState(false);
     const [said, setSaid] = useState<string | null>(null);
     const [problem, setProblem] = useState<string | null>(null);
+    const [trainedAt, setTrainedAt] = useState(0); // a place's id: only who's trained there; 0, anyone trained
     const machines = shop.machines.filter((each) => !each.retired);
-    const kept = shop.trained.find((each) => each.user.id === whose)?.levels;
+    const places = shop.places.filter((each) => !each.retired);
+    const kept = shop.trained.find((each) => each.user.id === whose);
 
     // Their levels as the server has them, unless they're being changed.
     useEffect(() => {
         if (!dirty) {
-            setLevels(Object.fromEntries(machines.map((each) => [each.id, kept?.[each.id] ?? 0])));
+            setLevels(Object.fromEntries(machines.map((each) => [each.id, kept?.levels[each.id] ?? 0])));
+            setAtPlaces(Object.fromEntries(places.map((each) => [each.id, kept?.places[each.id] ?? 0])));
         }
     }, [whose, shop, dirty]);
 
@@ -853,7 +904,7 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
         setBusy(true);
         setProblem(null);
         try {
-            await buildflow.setLevels(whose, levels);
+            await buildflow.setLevels(whose, levels, atPlaces);
             await onChanged(); // the levels kept, before the form goes back to showing them
             setDirty(false);
             setSaid(`Saved how far ${name === "you" ? "you're" : `${name} is`} trained.`);
@@ -863,6 +914,18 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
             setBusy(false);
         }
     }
+    function changed() {
+        setDirty(true);
+        setSaid(null);
+    }
+
+    // Who's shown: everyone trained, or, at a place, who's trained there, those who train others first.
+    const place = places.find((each) => each.id === trainedAt);
+    const shown = place
+        ? shop.trained
+              .filter((each) => (each.places[place.id] ?? 0) > 0)
+              .sort((a, b) => (b.places[place.id] ?? 0) - (a.places[place.id] ?? 0))
+        : shop.trained;
     return (
         <section className="bf-shop-skills" aria-label="Who's trained">
             <form
@@ -901,31 +964,47 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
                         </span>
                     ))}
                 </p>
+                {places.length > 0 && (
+                    <>
+                        <h3 className="bf-shop-group">Where</h3>
+                        <div className="bf-shop-levels">
+                            {places.map((each) => (
+                                <LevelChoice
+                                    key={each.id}
+                                    name={each.name}
+                                    names={PLACE_LEVEL_NAMES}
+                                    level={atPlaces[each.id] ?? 0}
+                                    onChange={(level) => {
+                                        setAtPlaces((now) => ({ ...now, [each.id]: level }));
+                                        changed();
+                                    }}
+                                />
+                            ))}
+                        </div>
+                        <h3 className="bf-shop-group">Machines</h3>
+                    </>
+                )}
                 <div className="bf-shop-levels">
                     {machines.map((each) => (
-                        <div key={each.id} className="bf-shop-level" role="group" aria-label={`${each.name} level`}>
-                            <span className="bf-shop-machine-name">{each.name}</span>
-                            <span className="bf-shop-segments">
-                                {[0, 1, 2, 3].map((level) => (
-                                    <button
-                                        key={level}
-                                        type="button"
-                                        title={LEVEL_NAMES[level]}
-                                        aria-label={`${each.name}: ${LEVEL_NAMES[level]}`}
-                                        aria-pressed={(levels[each.id] ?? 0) === level}
-                                        onClick={() => {
-                                            setLevels((now) => ({ ...now, [each.id]: level }));
-                                            setDirty(true);
-                                            setSaid(null);
-                                        }}
-                                    >
-                                        {level}
-                                    </button>
-                                ))}
-                            </span>
-                        </div>
+                        <LevelChoice
+                            key={each.id}
+                            name={each.name}
+                            names={LEVEL_NAMES}
+                            level={levels[each.id] ?? 0}
+                            onChange={(level) => {
+                                setLevels((now) => ({ ...now, [each.id]: level }));
+                                changed();
+                            }}
+                        />
                     ))}
                 </div>
+                {admin && places.length === 0 && (
+                    <p className="muted bf-small">
+                        Add the places people are trained in, such as a department&apos;s machine shop or a makerspace,
+                        under <Link to="/buildflow/shop/machines">Machines and places</Link>, and each person can say
+                        how far they&apos;re trained at each.
+                    </p>
+                )}
                 {problem && <Notice tone="error">{problem}</Notice>}
                 <div className="bf-shop-form-foot">
                     {said && <span className="muted">{said}</span>}
@@ -934,36 +1013,91 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
                     </button>
                 </div>
             </form>
+            {places.length > 0 && shop.trained.length > 0 && (
+                <div className="bf-shop-where">
+                    <label className="field">
+                        <span>Trained at</span>
+                        <select value={trainedAt} onChange={(event) => setTrainedAt(Number(event.target.value))}>
+                            <option value={0}>Anywhere</option>
+                            {places.map((each) => (
+                                <option key={each.id} value={each.id}>
+                                    {each.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    {place && shown.length > 0 && (
+                        <span className="muted">
+                            {shown.length} {shown.length === 1 ? "person is" : "people are"} trained at {place.name}
+                        </span>
+                    )}
+                </div>
+            )}
             {shop.trained.length === 0 ? (
                 <p className="empty">No one&apos;s said how far they&apos;re trained yet. Be the first, above.</p>
+            ) : shown.length === 0 ? (
+                <p className="empty">No one&apos;s said they&apos;re trained at {place?.name} yet.</p>
             ) : (
                 <div className="table-scroll">
                     <table className="table" aria-label="Who's trained on what">
                         <thead>
+                            {places.length > 0 && (
+                                <tr>
+                                    <th />
+                                    <th colSpan={places.length} scope="colgroup" className="bf-shop-group-start">
+                                        Where
+                                    </th>
+                                    {machines.length > 0 && (
+                                        <th colSpan={machines.length} scope="colgroup" className="bf-shop-group-start">
+                                            Machines
+                                        </th>
+                                    )}
+                                    {admin && <th />}
+                                </tr>
+                            )}
                             <tr>
                                 <th>Who</th>
-                                {machines.map((each) => (
-                                    <th key={each.id}>{each.name}</th>
+                                {places.map((each, index) => (
+                                    <th key={`place-${each.id}`} className={index ? undefined : "bf-shop-group-start"}>
+                                        {each.name}
+                                    </th>
+                                ))}
+                                {machines.map((each, index) => (
+                                    <th
+                                        key={each.id}
+                                        className={index || places.length === 0 ? undefined : "bf-shop-group-start"}
+                                    >
+                                        {each.name}
+                                    </th>
                                 ))}
                                 {admin && <th />}
                             </tr>
                         </thead>
                         <tbody>
-                            {shop.trained.map((each) => (
+                            {shown.map((each) => (
                                 <tr key={each.user.id}>
                                     <td>
                                         {each.user.name}
                                         {each.user.id === me?.id && <span className="bf-shop-you"> you</span>}
                                     </td>
-                                    {machines.map((machine) => {
-                                        const level = each.levels[machine.id] ?? 0;
-                                        return (
-                                            <td key={machine.id} aria-label={`${machine.name}: ${LEVEL_NAMES[level]}`}>
-                                                <Pips level={level} />{" "}
-                                                <span className="muted bf-small">{LEVEL_NAMES[level]}</span>
-                                            </td>
-                                        );
-                                    })}
+                                    {places.map((at, index) => (
+                                        <LevelCell
+                                            key={`place-${at.id}`}
+                                            name={at.name}
+                                            names={PLACE_LEVEL_NAMES}
+                                            level={each.places[at.id] ?? 0}
+                                            first={index === 0}
+                                        />
+                                    ))}
+                                    {machines.map((machine, index) => (
+                                        <LevelCell
+                                            key={machine.id}
+                                            name={machine.name}
+                                            names={LEVEL_NAMES}
+                                            level={each.levels[machine.id] ?? 0}
+                                            first={index === 0 && places.length > 0}
+                                        />
+                                    ))}
                                     {admin && (
                                         <td>
                                             <button
@@ -990,9 +1124,60 @@ function Skills({ shop, members, onChanged }: { shop: Shop; members: UserRef[]; 
     );
 }
 
-// --- the machines (admins) ------------------------------------------------------------------------------------------
+// --- the machines and the places (admins) --------------------------------------------------------------------------
 
 function Machines({ shop, onChanged }: { shop: Shop; onChanged: () => void }) {
+    return (
+        <>
+            <KeptList
+                label="Machines"
+                what="machine"
+                example="Laser cutter"
+                kept={shop.machines}
+                add={buildflow.addMachine}
+                change={buildflow.changeMachine}
+                onChanged={onChanged}
+            >
+                The machines parts are made on, and people are trained on. A machine that&apos;s retired takes no new
+                parts, and keeps those made on it.
+            </KeptList>
+            <KeptList
+                label="Places"
+                what="place"
+                example="Makerspace"
+                kept={shop.places}
+                add={buildflow.addPlace}
+                change={buildflow.changePlace}
+                onChanged={onChanged}
+            >
+                Where people are trained to make parts, such as a department&apos;s machine shop or a makerspace: each
+                has training of its own, so each person says how far they&apos;re trained at each. A place that&apos;s
+                retired isn&apos;t offered, and keeps who was trained there.
+            </KeptList>
+        </>
+    );
+}
+
+/** A list admins keep, the machines or the places: each one renamed, retired, or brought back, and new ones added. */
+function KeptList({
+    label,
+    what,
+    example,
+    kept,
+    add,
+    change,
+    onChanged,
+    children,
+}: {
+    label: string;
+    what: string;
+    example: string;
+    kept: (Machine | Place)[];
+    add: (name: string) => Promise<unknown>;
+    change: (id: number, change: { name?: string; retired?: boolean }) => Promise<unknown>;
+    onChanged: () => void;
+    children: ReactNode;
+}) {
     const [names, setNames] = useState<Record<number, string>>({});
     const [adding, setAdding] = useState("");
     const [problem, setProblem] = useState<string | null>(null);
@@ -1006,14 +1191,12 @@ function Machines({ shop, onChanged }: { shop: Shop; onChanged: () => void }) {
         }
     }
     return (
-        <section className="bf-shop-machines" aria-label="Machines">
-            <p className="muted">
-                The machines parts are made on, and people are trained on. A machine that&apos;s retired takes no new
-                parts, and keeps those made on it.
-            </p>
+        <section className="bf-shop-machines" aria-label={label}>
+            <h2>{label}</h2>
+            <p className="muted">{children}</p>
             {problem && <Notice tone="error">{problem}</Notice>}
             <ul className="plain bf-shop-machine-list">
-                {shop.machines.map((each) => {
+                {kept.map((each) => {
                     const name = names[each.id] ?? each.name;
                     return (
                         <li key={each.id}>
@@ -1029,7 +1212,7 @@ function Machines({ shop, onChanged }: { shop: Shop; onChanged: () => void }) {
                                     className="button-small"
                                     onClick={() =>
                                         void act(async () => {
-                                            await buildflow.changeMachine(each.id, { name: name.trim() });
+                                            await change(each.id, { name: name.trim() });
                                             setNames((now) => {
                                                 const next = { ...now };
                                                 delete next[each.id];
@@ -1045,9 +1228,7 @@ function Machines({ shop, onChanged }: { shop: Shop; onChanged: () => void }) {
                             <button
                                 type="button"
                                 className="button-small"
-                                onClick={() =>
-                                    void act(() => buildflow.changeMachine(each.id, { retired: !each.retired }))
-                                }
+                                onClick={() => void act(() => change(each.id, { retired: !each.retired }))}
                             >
                                 {each.retired ? "Bring back" : "Retire"}
                             </button>
@@ -1060,20 +1241,20 @@ function Machines({ shop, onChanged }: { shop: Shop; onChanged: () => void }) {
                 onSubmit={(event) => {
                     event.preventDefault();
                     void act(async () => {
-                        await buildflow.addMachine(adding.trim());
+                        await add(adding.trim());
                         setAdding("");
                     });
                 }}
             >
                 <input
-                    aria-label="New machine"
-                    placeholder="Laser cutter"
+                    aria-label={`New ${what}`}
+                    placeholder={example}
                     maxLength={40}
                     value={adding}
                     onChange={(event) => setAdding(event.target.value)}
                 />
                 <button type="submit" className="button-small" disabled={!adding.trim()}>
-                    Add machine
+                    Add {what}
                 </button>
             </form>
         </section>
@@ -1090,6 +1271,7 @@ function exportCsv(shop: Shop) {
     };
     const row = (values: unknown[]) => values.map(cell).join(",");
     const machines = shop.machines.filter((each) => !each.retired);
+    const places = shop.places.filter((each) => !each.retired);
     const lines = [
         row([
             "part",
@@ -1126,8 +1308,14 @@ function exportCsv(shop: Shop) {
             ]),
         ),
         "",
-        row(["engineer", ...machines.map((each) => each.name)]),
-        ...shop.trained.map((each) => row([each.user.name, ...machines.map((m) => each.levels[m.id] ?? 0)])),
+        row(["engineer", ...places.map((each) => each.name), ...machines.map((each) => each.name)]),
+        ...shop.trained.map((each) =>
+            row([
+                each.user.name,
+                ...places.map((at) => each.places[at.id] ?? 0),
+                ...machines.map((m) => each.levels[m.id] ?? 0),
+            ]),
+        ),
     ];
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));

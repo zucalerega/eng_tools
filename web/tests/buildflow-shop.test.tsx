@@ -97,7 +97,7 @@ test("each person says how far they're trained, and those who run a machine can 
 
     expect(await screen.findByRole("heading", { name: "Your experience" })).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: /^Whose/ })).toBeNull(); // only admins say anyone's
-    expect(screen.queryByRole("link", { name: "Machines" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Machines and places" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Lathe: Runs it on their own" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Saved how far you're trained.")).toBeTruthy();
@@ -126,4 +126,39 @@ test("admins keep the shop's machines: one retired takes no new parts", async ()
     const kept = (await team.shop()).machines.find((each) => each.name === name)!;
     expect(kept.retired).toBe(true);
     await expect(team.queuePart(admin, { name: team.named("Gasket"), machine_id: kept.id })).rejects.toThrow(/retired/);
+});
+
+test("admins add the places people are trained in, and each person says how far they're trained at each", async () => {
+    const team = await Team.create();
+    const admin = await team.admin(someone(team, "Avery"));
+    const asAdmin = renderApp(admin, "/buildflow/shop/machines");
+    const places = within(await screen.findByRole("region", { name: "Places" }));
+    const studio = team.named("Studio");
+    await userEvent.type(places.getByRole("textbox", { name: "New place" }), studio);
+    await userEvent.click(places.getByRole("button", { name: "Add place" }));
+    expect(await places.findByRole("textbox", { name: `Name of the ${studio}` })).toBeTruthy();
+    expect((await team.shop()).places.find((each) => each.name === studio)?.retired).toBe(false);
+    asAdmin.unmount();
+
+    // A member says they work there on their own.
+    const member = await team.member(someone(team, "Jordan"));
+    renderApp(member, "/buildflow/shop/skills");
+    await userEvent.click(await screen.findByRole("button", { name: `${studio}: On their own` }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved how far you're trained.")).toBeTruthy();
+    const trained = within(await screen.findByRole("table", { name: "Who's trained on what" }));
+    const mine = within((await trained.findByText(member.user.name)).closest("tr")!);
+    expect(mine.getByLabelText(`${studio}: On their own`)).toBeTruthy();
+    expect(mine.getByLabelText("Lathe: Not trained")).toBeTruthy(); // a place's training isn't a machine's
+
+    // Who's trained there, and only them.
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Trained at" }), studio);
+    expect(await screen.findByText(`1 person is trained at ${studio}`)).toBeTruthy();
+    const there = within(screen.getByRole("table", { name: "Who's trained on what" }));
+    expect(
+        there
+            .getAllByRole("row")
+            .slice(2)
+            .map((row) => within(row).getAllByRole("cell")[0]!.textContent),
+    ).toEqual([`${member.user.name} you`]);
 });

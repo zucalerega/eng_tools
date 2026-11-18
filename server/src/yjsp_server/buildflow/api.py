@@ -1,7 +1,7 @@
 """Buildflow's API (/api/buildflow): programs and their bills of design, their layout (admins'), and their components'
 progress, links, and people, their design reviews, and their bills of materials (anyone's); and the shop (/api/buildflow/shop): the parts queued to
-be machined (anyone's), who's trained on which machine (each their own, and admins anyone's), and the machines
-(admins')."""
+be machined (anyone's), who's trained on which machine and where (each their own, and admins anyone's), and the
+machines and the places people are trained in (admins')."""
 
 from typing import Annotated
 
@@ -34,6 +34,9 @@ from .schemas import (
     MilestoneOut,
     NeedsIn,
     PeopleIn,
+    PlaceChangeIn,
+    PlaceIn,
+    PlaceOut,
     ProgramChangeIn,
     ProgramDetailOut,
     ProgramIn,
@@ -394,8 +397,9 @@ def get_shop(user: ActiveUser, db: DB, removed: bool = False) -> ShopOut:
     who's trained on what, and how much work each machine has waiting."""
     return ShopOut(
         machines=[MachineOut.of(m) for m in shop.machines(db)],
+        places=[PlaceOut.of(p) for p in shop.places(db)],
         parts=[ShopPartOut.of(p) for p in shop.parts(db, removed=removed)],
-        trained=[TrainedOut(user=UserRef.of(person), levels=levels) for person, levels in shop.trained(db)],
+        trained=[_trained(each) for each in shop.trained(db)],
         load=[
             LoadOut(
                 machine_id=each.machine.id,
@@ -449,11 +453,15 @@ def post_restore_shop_part(part_id: int, user: ActiveUser, db: DB) -> ShopPartOu
     return ShopPartOut.of(shop.remove_part(db, user, part_id, removed=False))
 
 
+def _trained(each: shop.Trained) -> TrainedOut:
+    return TrainedOut(user=UserRef.of(each.user), levels=each.machines, places=each.places)
+
+
 @router.put("/shop/skills/{user_id}")
 def put_skills(user_id: int, body: LevelsIn, user: ActiveUser, db: DB) -> TrainedOut:
-    """How far someone's trained on each machine sent (0 to 3): your own, or anyone's, for admins."""
-    person, levels = shop.set_levels(db, user, user_id, body.levels)
-    return TrainedOut(user=UserRef.of(person), levels=levels)
+    """How far someone's trained on each machine sent, and at each place (0 to 3): your own, or anyone's, for
+    admins."""
+    return _trained(shop.set_levels(db, user, user_id, body.levels, body.places))
 
 
 @router.post("/shop/machines", status_code=201)
@@ -466,3 +474,15 @@ def post_machine(body: MachineIn, user: ActiveUser, db: DB) -> MachineOut:
 def patch_machine(machine_id: int, body: MachineChangeIn, user: ActiveUser, db: DB) -> MachineOut:
     """Rename a machine, or retire it (it takes no new parts), or bring it back (admins)."""
     return MachineOut.of(shop.change_machine(db, user, machine_id, name=body.name, retired=body.retired))
+
+
+@router.post("/shop/places", status_code=201)
+def post_place(body: PlaceIn, user: ActiveUser, db: DB) -> PlaceOut:
+    """A new place people are trained in: a department's machine shop, a makerspace (admins)."""
+    return PlaceOut.of(shop.add_place(db, user, body.name))
+
+
+@router.patch("/shop/places/{place_id}")
+def patch_place(place_id: int, body: PlaceChangeIn, user: ActiveUser, db: DB) -> PlaceOut:
+    """Rename a place, or retire it (it isn't offered, and keeps who was trained there), or bring it back (admins)."""
+    return PlaceOut.of(shop.change_place(db, user, place_id, name=body.name, retired=body.retired))

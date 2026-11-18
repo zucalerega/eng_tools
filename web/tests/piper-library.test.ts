@@ -35,6 +35,11 @@ function variants() {
             parts.push(newPart("engine", { x: 0, y: 0 }, { props: { fuelTaps, oxTaps } }));
         }
     }
+    for (const kind of ["valve3", "angle"]) {
+        for (const actuation of ["", "manual", "solenoid", "pneumatic", "motor"]) {
+            parts.push(newPart(kind, { x: 0, y: 0 }, { props: { actuation } }));
+        }
+    }
     for (const topPorts of ["", "2", "3", "4", "5"]) {
         for (const bottomPorts of ["", "2", "3", "4", "5"]) {
             parts.push(newPart("tank", { x: 0, y: 0 }, { props: { topPorts, bottomPorts } }));
@@ -205,6 +210,39 @@ test("solenoid, pneumatic, and motorized valves have the same box on their stems
         expect(words(symbol), actuation).toEqual([letter]);
         expect(kindOf("valve").box(valve, emptyDrawing())[1], actuation).toBe(-26);
     }
+});
+
+test("a pneumatic valve's actuator has a port on top of its box, for its air; no other valve's ports change", () => {
+    const ids = (part: Part) => portsOf(part).map((port) => port.id);
+    for (const [kind, flow] of [
+        ["valve", ["a", "b"]],
+        ["valve3", ["a", "b", "c"]],
+        ["angle", ["a", "b"]],
+    ] as const) {
+        for (const actuation of ["", "manual", "solenoid", "motor"]) {
+            expect(ids(newPart(kind, { x: 0, y: 0 }, { props: { actuation } })), `${kind} ${actuation}`).toEqual(flow);
+        }
+        const pneumatic = newPart(kind, { x: 0, y: 0 }, { props: { actuation: "pneumatic" } });
+        expect(ids(pneumatic), kind).toEqual([...flow, "actuator"]);
+        // On the grid above the box's top (-26), its line drawn on down to the box; a port for a signal, not flow.
+        const port = portsOf(pneumatic).find((entry) => entry.id === "actuator")!;
+        expect([port.at, port.dir, port.edge, port.signal]).toEqual([{ x: 0, y: -30 }, "up", { x: 0, y: -26 }, true]);
+        expect(kindOf(kind).box(pneumatic, emptyDrawing())[1]).toBe(-26);
+    }
+    // It turns with its valve, and a valve mirrored to keep its actuator up keeps it there.
+    const turned = newPart("valve", { x: 100, y: 100 }, { rotation: 90, props: { actuation: "pneumatic" } });
+    expect(portsOf(turned).find((entry) => entry.id === "actuator")!.dir).toBe("right");
+    const flipped = newPart("valve", { x: 0, y: 0 }, { flip: true, props: { actuation: "pneumatic" } });
+    expect(portsOf(flipped).find((entry) => entry.id === "actuator")!.at).toEqual({ x: 0, y: -30 });
+    // Worked another way: a line on its actuator stays, ending where the port was.
+    const valve = newPart("valve", { x: 0, y: 0 }, { props: { body: "ball", actuation: "pneumatic" } });
+    const air = newLine({ x: 0, y: -100 }, { part: valve.id, port: "actuator" });
+    const drawing = { ...emptyDrawing(), parts: [valve], lines: [air] };
+    const solenoid = updatePart(drawing, valve.id, (part) => ({
+        ...part,
+        props: { ...part.props, actuation: "solenoid" },
+    }));
+    expect(solenoid.lines[0]!.to).toEqual({ x: 0, y: -30 });
 });
 
 test("valves come without their state written beside them: their color says it", () => {

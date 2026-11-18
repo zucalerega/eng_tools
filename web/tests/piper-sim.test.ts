@@ -335,6 +335,35 @@ test("an engine's injector manifolds: a transducer on a tap reads its inlet's, i
     }
 });
 
+test("a pneumatic valve's air line works it: it isn't in the model, even drawn as tubing", () => {
+    const built = (as: string) => {
+        const draw = sketch();
+        const tank = draw.place("tank", 0, 0, { tag: "TK-1", props: { fluid: "water" } });
+        const valve = draw.place("pneumatic-valve", 0, 160, { tag: "PV-1", rotation: 90, sim: { as, settings: {} } });
+        const vent = draw.place("vent", 0, 260);
+        draw.join([tank, "bottom"], [valve, "a"], "water");
+        draw.join([valve, "b"], [vent, "in"], "water");
+        // Its air, straight from a bottle, drawn as tubing rather than a pneumatic signal.
+        const bottle = draw.place("bottle", 200, -100, { tag: "B-1", props: { fluid: "gn2", meop: "2000 psi" } });
+        const air = draw.join([bottle, "top"], [valve, "actuator"], "gn2");
+        return buildModel(
+            documentOf(updateLine(draw.drawing, air, (line) => ({ ...line, kind: "tube" }))),
+            catalog,
+            null,
+        );
+    };
+    // A valve: between its tank and its vent, the bottle on a point of its own, joined to nothing.
+    const valve = built("");
+    expect(problems(valve)).toEqual([]);
+    expect(valve.model.edges.map((edge) => edge.name)).toEqual(["PV-1"]);
+    const bottle = valve.model.nodes.find((node) => node.name === "B-1")!;
+    expect(valve.model.edges.some((edge) => edge.source === bottle.id || edge.target === bottle.id)).toBe(false);
+    // Modeled as a plain connection, its ports one point: the tank and the vent are joined, but not its air.
+    expect(problems(built("through"))).toEqual([
+        "TK-1 and Vent are joined with nothing between them that the model has: put a valve or an orifice between them, or model a line between them as a line.",
+    ]);
+});
+
 test("a manifold with ports on all four sides is one point, whichever of them its lines are on", () => {
     const draw = sketch();
     const bottle = draw.place("bottle", -300, 0, { tag: "B-1", props: { fluid: "gn2", meop: "2000 psi" } });

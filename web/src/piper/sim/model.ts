@@ -14,6 +14,7 @@ import { manifoldTapped, type Manifold } from "../library/equipment";
 import { figureOf } from "../library/figures";
 import { kindOf, titleOf } from "../library/index";
 import { isTopPort } from "../library/vessels";
+import { isSignalEnd } from "../ports";
 import { channelNames, findChannel, type TestChannel, type TestDetail } from "../testdata";
 import type { Catalog, Conditions, Link, ModelEdge, ModelPart, PartKind, Role, Setting, SystemModel } from "./api";
 
@@ -349,7 +350,10 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
     const kinds = kindsOf(catalog);
     const parts = document.pages.flatMap((page) => page.parts);
     const byId = new Map(parts.map((part) => [part.id, part]));
-    const lines = document.pages.flatMap((page) => page.lines).filter((line) => !SIGNALS.has(line.kind));
+    // Not signals, nor a pneumatic actuator's air line, whatever it's drawn as.
+    const lines = document.pages
+        .flatMap((page) => page.lines)
+        .filter((line) => !SIGNALS.has(line.kind) && ![line.from, line.to].some((end) => isSignalEnd(byId, end)));
     const lineById = new Map(lines.map((line) => [line.id, line]));
     const roles = new Map(parts.map((part) => [part.id, roleOf(part, fluids)]));
     const role = (id: string): SimRole => roles.get(id) ?? "none";
@@ -379,7 +383,10 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
     }
     for (const part of parts) {
         if (role(part.id) === "through" || role(part.id) === "sensor" || role(part.id) === "meter") {
-            const [first, ...rest] = kindOf(part.kind).ports(part);
+            // All one point, but for an actuator's air, which isn't what flows through it.
+            const [first, ...rest] = kindOf(part.kind)
+                .ports(part)
+                .filter((port) => !port.signal);
             for (const port of rest) {
                 joins.union(portPoint(part.id, first!.id), portPoint(part.id, port.id));
             }

@@ -92,6 +92,16 @@ function actuatorLetter(actuation: string): string | null {
     }
 }
 
+/**
+ * The port on a pneumatic actuator's box, for the air line that works it: on the grid just above the box's top, its
+ * line drawn on down to the box. Only a pneumatic valve has it, so no other valve's ports change.
+ */
+function actuatorPorts(part: Part): Port[] {
+    return part.props.actuation === "pneumatic"
+        ? [{ id: "actuator", x: 0, y: -30, dir: "up", inset: 4, signal: true }]
+        : [];
+}
+
 /** What works a valve, on a stem up from its middle: a handle, or a box with a letter saying what drives it. */
 function Actuator({ part, context }: { part: Part; context: DrawContext }) {
     const actuation = part.props.actuation ?? "";
@@ -138,7 +148,7 @@ export const valve: Kind = {
     id: "valve",
     name: "Valve",
     box: (part) => [-20, -actuatorTop(part.props.actuation), 20, 8],
-    ports: () => inlinePorts(BODY_INSET),
+    ports: (part) => [...inlinePorts(BODY_INSET), ...actuatorPorts(part)],
     fields: [BODY, ACTUATION, NORMAL, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     title: valveTitle,
     state: true,
@@ -311,7 +321,11 @@ export const valve3: Kind = {
     id: "valve3",
     name: "Three-way valve",
     box: (part) => [-20, -actuatorTop(part.props.actuation), 20, 20],
-    ports: () => [...inlinePorts(BODY_INSET), { id: "c", x: 0, y: 20, dir: "down", inset: BODY_INSET }],
+    ports: (part) => [
+        ...inlinePorts(BODY_INSET),
+        { id: "c", x: 0, y: 20, dir: "down", inset: BODY_INSET },
+        ...actuatorPorts(part),
+    ],
     fields: [ACTUATION, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     reads: "state",
     tag: "beside",
@@ -334,9 +348,10 @@ export const angle: Kind = {
     id: "angle",
     name: "Angle valve",
     box: (part) => [-20, -actuatorTop(part.props.actuation), 10, 20],
-    ports: () => [
+    ports: (part) => [
         { id: "a", x: -20, y: 0, dir: "left", inset: BODY_INSET },
         { id: "b", x: 0, y: 20, dir: "down", inset: BODY_INSET },
+        ...actuatorPorts(part),
     ],
     fields: [ACTUATION, NORMAL, SIZE, CV, MAWP, MODEL, CHANNEL, NOTES],
     state: true,

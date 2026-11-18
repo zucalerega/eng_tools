@@ -337,6 +337,27 @@ test("a stencil's group is one part, its members its master's, worked as its act
     expect(byKind(drawing, "text")).toEqual([]); // its tag is its, not words beside it
 });
 
+test("an air line glued to a pneumatic valve's actuator ends on its actuator's port, its process lines on its ends", async () => {
+    const shapes = [
+        valve(10, [4, 4]),
+        shapeXml(connector(20, [2, 4.2], [3.8, 4.2])),
+        shapeXml(connector(21, [4.2, 4.2], [6, 4.2])),
+        // Its air, down to its actuator's box, which is above its body.
+        shapeXml(connector(22, [4, 6], [4, 4.4], { master: 6 })),
+    ].join("");
+    const glue = [glued(20, "End", 10), glued(21, "Begin", 10), glued(22, "End", 10)].join("");
+    const file = vsdxOf({ pages: [{ name: "P", shapes, connects: glue }], masters: [POWERED, ...FEED_MASTERS] });
+    const { drawing } = (await read(file))[0]!;
+    const [pv] = byKind(drawing, "valve");
+    expect([pv!.props.actuation, pv!.rotation]).toEqual(["pneumatic", 0]);
+    const ends = drawing.lines.map((line) => [line.kind, [line.from, line.to].find(isPortEnd)]);
+    expect(ends).toEqual([
+        ["pipe", { part: pv!.id, port: "a" }],
+        ["pipe", { part: pv!.id, port: "b" }],
+        ["pneumatic", { part: pv!.id, port: "actuator" }],
+    ]);
+});
+
 /**
  * An ISO 1219 directional valve as Visio's stencils draw one: its two boxes (0.4 by 0.3 inches each, a hundred of
  * Piper's units to the inch on a page with no bowtie valves), without its solenoid and spring, with the same ports in

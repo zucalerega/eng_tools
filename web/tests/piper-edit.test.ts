@@ -122,6 +122,39 @@ test("a tank's top is its ullage: a line from it doesn't take the liquid it hold
     expect(line(join([more, "bottom-3"], [drain, "a"])).fluid).toBe("lox");
 });
 
+test("a line to a pneumatic valve's actuator is its air: a pneumatic signal, apart from what flows through it", () => {
+    fresh();
+    const tank = place("tank", 0, 0, { props: { fluid: "lox" } });
+    const valve = place("pneumatic-valve", 0, 200, { rotation: 90 });
+    const engine = place("engine", 0, 400);
+    const feed = join([tank, "bottom"], [valve, "a"]);
+    const on = join([valve, "b"], [engine, "ox"]);
+    expect(line(on).fluid).toBe("lox");
+    // Its air, from a 3/2 solenoid valve's port 2: a pneumatic signal, carrying the nitrogen it's fed.
+    const pilot = place("solenoid-valve-32", 200, 100);
+    const supply = place("bottle", 300, 0, { props: { fluid: "gn2" } });
+    join([supply, "top"], [pilot, "1"]);
+    const air = join([pilot, "2"], [valve, "actuator"]);
+    expect([line(air).kind, line(air).fluid]).toEqual(["pneumatic", "gn2"]);
+    expect([line(feed).kind, line(on).kind]).toEqual(["pipe", "pipe"]);
+    // The valve's liquid doesn't carry to its air, nor its air to its liquid.
+    drawing = carryFluid(drawing, feed, "rp1");
+    expect([line(feed).fluid, line(on).fluid, line(air).fluid]).toEqual(["rp1", "rp1", "gn2"]);
+    drawing = carryFluid(drawing, air, "air");
+    expect([line(feed).fluid, line(on).fluid, line(air).fluid]).toEqual(["rp1", "rp1", "air"]);
+    // A line drawn from the actuator takes its air; one from the valve's body, its liquid.
+    const vent = place("vent", 100, 0);
+    expect(line(join([valve, "actuator"], [vent, "in"])).fluid).toBe("air");
+    // Deleting the valve joins its liquid's line up again; its air lines stay, ending where its actuator was.
+    const at = portOf(part(valve), "actuator")!.at;
+    drawing = deleteItems(drawing, new Set([valve]));
+    expect([line(feed).from, line(feed).to]).toEqual([
+        { part: tank, port: "bottom" },
+        { part: engine, port: "ox" },
+    ]);
+    expect(line(air).to).toEqual(at);
+});
+
 test("a line drawn to another line tees into it at a junction on the grid", () => {
     fresh();
     const left = place("ball-valve", 0, 0);

@@ -87,6 +87,16 @@ const TOPICS: Topic[] = [
                     notes, regions, a legend, a title block, and pictures.
                 </li>
                 <li>
+                    <em>Shapes</em> (search <em>cosmetic</em>) are drawn for how the drawing looks: rectangles, rounded
+                    rectangles, ellipses, triangles, diamonds, lines, arrows, and double arrows. Drag a selected one's
+                    square corner to size it. On the right, give a shape a <em>Fill</em>, an <em>Outline</em> color and{" "}
+                    <em>Outline style</em> (solid, dashed, dotted, or none), a <em>Weight</em>, and a{" "}
+                    <em>Transparency</em>. A line or an arrow has its <em>Arrowheads</em> and a <em>Direction</em>:
+                    level, or corner to corner across its box, so sizing it sets its angle (<kbd>R</kbd> turns it).
+                    Lines route straight through shapes, and the parts list, the legend, Find, and the simulation leave
+                    them out.
+                </li>
+                <li>
                     A <em>Picture</em> shows a PNG or a JPEG of your own (an injector, a TCA, a photo of the stand), up
                     to 5 MB: drop the file on the drawing, or place one from the library and choose it on the right (
                     <em>Replace…</em> changes it). Drag its square corner to size it: it keeps its shape. It's kept in

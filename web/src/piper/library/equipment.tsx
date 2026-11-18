@@ -1,18 +1,75 @@
 import { ink, Letters } from "./draw";
-import { MAWP, MODEL, NOTES, type Kind } from "./kinds";
+import { MAWP, MODEL, NOTES, type Field, type Kind, type Port } from "./kinds";
+import type { Part } from "../drawing";
 
 // Equipment: what a system is for (an engine), or what moves its fluids (a pump), and where they leave it (a vent).
 
+/** The propellants an engine's injector takes, each into a manifold of its own: its inlet, and its manifold's taps. */
+export const MANIFOLDS = ["fuel", "ox"] as const;
+export type Manifold = (typeof MANIFOLDS)[number];
+
+/** How many ports an engine's injector has on a manifold, for its sensors: none until it's said, at most 2. */
+function taps(part: Part, manifold: Manifold): number {
+    const count = Number(part.props[`${manifold}Taps`]);
+    return count === 1 || count === 2 ? count : 0;
+}
+
+/**
+ * An engine's ports on its injector's manifolds, for their sensors: "fuel-tap" and "fuel-tap-2" outward from its fuel
+ * inlet, on its left, and "ox-tap" and "ox-tap-2" from its ox inlet, on its right, on the grid across its top.
+ */
+function tapsOf(part: Part): Port[] {
+    return MANIFOLDS.flatMap((manifold) => {
+        const side = manifold === "fuel" ? -1 : 1;
+        return [20, 30].slice(0, taps(part, manifold)).map((x, index) => ({
+            id: index === 0 ? `${manifold}-tap` : `${manifold}-tap-${index + 1}`,
+            x: side * x,
+            y: -50,
+            dir: "up" as const,
+            inset: 10,
+        }));
+    });
+}
+
+/** The injector manifold an engine's port taps, if it's one of their taps ("fuel-tap-2": the fuel's). */
+export function manifoldTapped(port: string): Manifold | null {
+    return MANIFOLDS.find((manifold) => port === `${manifold}-tap` || port === `${manifold}-tap-2`) ?? null;
+}
+
+/**
+ * How far out an engine's injector reaches each side: its chamber's width, or, with taps on its top, out to the outer
+ * ones' place, as far as its chamber's taps are, so they stay at its box's edge.
+ */
+function injectorHalf(part: Part): number {
+    return MANIFOLDS.some((manifold) => taps(part, manifold) > 0) ? 30 : 20;
+}
+
+const tapCount = (manifold: Manifold, label: string): Field => ({
+    key: `${manifold}Taps`,
+    label,
+    type: "select",
+    options: ["", "1", "2"].map((value) => ({ value, label: value || "None" })),
+});
+
+/**
+ * An engine: its injector and its chamber, in one part. Its propellants come into its injector's top, fuel on the left
+ * and ox on the right, and its injector can have taps on each manifold for their sensors; its chamber has a tap each
+ * side. What's known of it is its chamber's and its injector's.
+ */
 export const engine: Kind = {
     id: "engine",
     name: "Engine",
-    box: () => [-24, -50, 24, 60],
-    ports: () => [
+    box: (part) => {
+        const half = Math.max(24, injectorHalf(part));
+        return [-half, -50, half, 60];
+    },
+    ports: (part) => [
         { id: "fuel", x: -10, y: -50, dir: "up", inset: 10 },
         { id: "ox", x: 10, y: -50, dir: "up", inset: 10 },
         // The chamber's taps, out past its nozzle's widest, so a line from one starts clear of it.
         { id: "left", x: -30, y: -20, dir: "left", inset: 10 },
         { id: "right", x: 30, y: -20, dir: "right", inset: 10 },
+        ...tapsOf(part),
     ],
     fields: [
         { key: "thrust", label: "Thrust", type: "text", placeholder: "1000 lbf" },
@@ -20,19 +77,35 @@ export const engine: Kind = {
         { key: "of", label: "O/F", type: "text", placeholder: "2.1", prefix: "O/F " },
         { key: "propellants", label: "Propellants", type: "text", placeholder: "LOX/RP-1" },
         MAWP,
+        // Its injector's: what it's made of and how, and how stiff it is (which Simulation mode uses).
+        { key: "injector", label: "Element type", type: "text", placeholder: "Unlike doublet" },
+        { key: "elements", label: "Elements", type: "text", placeholder: "12 pairs" },
+        { key: "stiffness", label: "Injector stiffness", type: "text", placeholder: "20 %", prefix: "Stiffness " },
+        { key: "fuelCda", label: "Fuel CdA", type: "text", placeholder: "0.012 in²", prefix: "Fuel CdA " },
+        { key: "oxCda", label: "Ox CdA", type: "text", placeholder: "0.020 in²", prefix: "Ox CdA " },
+        { key: "injectorMaterial", label: "Injector material", type: "text", placeholder: "Copper C101" },
+        tapCount("fuel", "Fuel manifold ports"),
+        tapCount("ox", "Ox manifold ports"),
         NOTES,
     ],
     tag: "beside",
-    draw: (_part, context) => (
-        <>
-            <path
-                d="M-20 -40 H20 V0 Q20 8 8 14 L24 60 H-24 L-8 14 Q-20 8 -20 0 Z"
-                fill={context.paper}
-                {...ink(context)}
-            />
-            <path d="M-20 -32 H20" {...ink(context, 1.2)} />
-        </>
-    ),
+    draw: (part, context) => {
+        const half = injectorHalf(part);
+        return (
+            <>
+                <path
+                    d="M-20 -40 H20 V0 Q20 8 8 14 L24 60 H-24 L-8 14 Q-20 8 -20 0 Z"
+                    fill={context.paper}
+                    {...ink(context)}
+                />
+                <path d="M-20 -32 H20" {...ink(context, 1.2)} />
+                {/* With taps on its manifolds, its injector reaches out under them, past its chamber. */}
+                {half > 20 && (
+                    <rect x={-half} y={-40} width={2 * half} height={8} fill={context.paper} {...ink(context)} />
+                )}
+            </>
+        );
+    },
 };
 
 /**

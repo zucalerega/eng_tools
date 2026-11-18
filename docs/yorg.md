@@ -235,7 +235,10 @@ in `web/src/yorg/index.tsx`).
   properties from ThermoProp through FullFlow's `Lookup`. Yorg adds only what joins a model
   to a test (`library.py`, `components.py`: the channels in,
   anchors, the results out). A fixed tank, supply, or outlet is a pressure that follows its
-  channel (a `Sequence`); lines are `DarcyWeisbach` (fittings' K folded into f); liquid
+  channel (a `Sequence`); an outlet with an injector stiffness (an engine's, from Piper) is
+  reached at its injector manifold's pressure, a `State` derived as its own times one plus the
+  stiffness (absolute), and reports both (`pressure`, and `manifold`, which a manifold's
+  transducer is compared with); lines are `DarcyWeisbach` (fittings' K folded into f); liquid
   valves and orifices `DischargeCoefficient`s (a valve's position its discharge
   coefficient); venturis `CavitatingVenturi`s (continuous where they start to cavitate, the
   noncavitating Cd the cavitating one over sqrt(1 - R)); gas valves, orifices, and

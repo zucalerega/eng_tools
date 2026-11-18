@@ -10,6 +10,7 @@ import {
     type SimValues,
 } from "../drawing";
 import { isGas } from "../fluids";
+import { manifoldTapped, type Manifold } from "../library/equipment";
 import { figureOf } from "../library/figures";
 import { kindOf, titleOf } from "../library/index";
 import { isTopPort } from "../library/vessels";
@@ -143,6 +144,21 @@ const MEASURED: Record<string, "pressure" | "temperature"> = {
 /** A tank's ports above its liquid (its top's, however many, and its sides' upper ones): a temperature sensor there
  * reads its ullage. */
 const upper = (port: string): boolean => isTopPort(port) || port === "left-upper" || port === "right-upper";
+
+/**
+ * An engine's injector stiffness, as the model has it: its field's, the drop across its injector over its chamber's
+ * pressure, as people write it ("20 %", or "0.2"), up to the model's most, 1000 %. Null: an engine without one, one
+ * the model can't read, or not an engine.
+ */
+export function stiffnessOf(part: Part): number | null {
+    const found = part.kind === "engine" ? /^([0-9]*\.?[0-9]+)\s*(%?)$/.exec(part.props.stiffness?.trim() ?? "") : null;
+    if (!found) {
+        return null;
+    }
+    // A number alone past 1 might be a percentage without its sign: it's not guessed at.
+    const value = Number(found[1]) / (found[2] ? 100 : 1);
+    return value <= (found[2] ? 10 : 1) ? value : null;
+}
 
 export type Phase = "liquid" | "gas";
 
@@ -317,7 +333,8 @@ interface Net {
     root: string;
     owners: Set<string>; // the tanks, supplies, vessels, and outlets it's at
     ends: { item: string; end: 0 | 1 }[]; // the ends of what carries flow (parts, and lines modeled) that are on it
-    sensors: { part: string; at: string | null }[]; // the instruments on it, and the tank's port they tap
+    // The instruments on it, the tank's port they tap, and the engine's injector manifold, if they tap one of its taps.
+    sensors: { part: string; at: string | null; manifold: { engine: string; inlet: Manifold } | null }[];
     lines: string[];
     ports: { part: string; port: string }[];
 }
@@ -431,7 +448,9 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
         if (first) {
             const net = netAt(portPoint(part.id, first.id));
             const tapped = net.ports.find((port) => VESSELS.has(byId.get(port.part)?.kind ?? ""));
-            net.sensors.push({ part: part.id, at: tapped?.port ?? null });
+            const tap = net.ports.find((port) => byId.get(port.part)?.kind === "engine" && manifoldTapped(port.port));
+            const manifold = tap ? { engine: tap.part, inlet: manifoldTapped(tap.port)! } : null;
+            net.sensors.push({ part: part.id, at: tapped?.port ?? null, manifold });
         }
     }
 
@@ -685,6 +704,17 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
     for (const [owner, found] of outletNets) {
         const part = byId.get(owner)!;
         const settings = keep(kinds.get("outlet")!, part.sim?.settings ?? {});
+        // An engine's injector stiffness is its own field's, the one the drawing shows: its inlets meet its manifolds.
+        delete settings.stiffness;
+        const stiffness = stiffnessOf(part);
+        if (stiffness !== null) {
+            settings.stiffness = stiffness;
+        } else if (part.kind === "engine" && part.props.stiffness?.trim()) {
+            note(
+                `${nameOf(part)}'s injector stiffness, ${part.props.stiffness.trim()}, isn't one the model can use (write it as 20 % or 0.2), so it's left out: its inlets are at its chamber's pressure.`,
+                [owner],
+            );
+        }
         for (const net of found) {
             const port = net.ports.find((one) => one.part === owner)?.port ?? "";
             const name = found.length > 1 ? `${nameOf(part)} (${port})`.slice(0, 80) : nameOf(part);
@@ -761,17 +791,34 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
         for (const sensor of net.sensors) {
             const part = byId.get(sensor.part)!;
             const measured = MEASURED[part.props.type ?? ""];
-            const first = modelParts.get(targets[0] ?? "");
-            const reads = first && measured ? readsOf(part, first, measured, sensor.at, kinds) : null;
-            placed.set(part.id, { role: "sensor", ids: targets, phase: null, reads });
+            // On an engine's injector manifold: where its inlet's flow meets it, and, for a pressure, the manifold's.
+            const { manifold } = sensor;
+            const fed = manifold
+                ? outletNets
+                      .get(manifold.engine)
+                      ?.find((one) =>
+                          one.ports.some((port) => port.part === manifold.engine && port.port === manifold.inlet),
+                      )
+                : undefined;
+            const at = manifold ? (fed ? [nodeOfNet.get(fed.root)!] : []) : targets;
+            const first = modelParts.get(at[0] ?? "");
+            const reads =
+                first && measured
+                    ? manifold && measured === "pressure"
+                        ? "manifold"
+                        : readsOf(part, first, measured, sensor.at, kinds)
+                    : null;
+            placed.set(part.id, { role: "sensor", ids: at, phase: null, reads });
             if (!first || !reads) {
                 if (measured || part.props.type === "flow") {
                     note(
-                        !first
-                            ? `${nameOf(part)} taps nothing in the model: draw its line to what it measures.`
-                            : part.props.type === "flow"
-                              ? `${nameOf(part)} isn't compared: the model's flows are in its lines, so put a flow meter in the line.`
-                              : `${nameOf(part)} measures what the model doesn't have at ${first.name}.`,
+                        !first && manifold
+                            ? `${nameOf(part)} taps ${nameOf(byId.get(manifold.engine)!)}'s ${manifold.inlet} manifold, which nothing flows into in the model: draw a line from its ${manifold.inlet} inlet to what feeds it.`
+                            : !first
+                              ? `${nameOf(part)} taps nothing in the model: draw its line to what it measures.`
+                              : part.props.type === "flow"
+                                ? `${nameOf(part)} isn't compared: the model's flows are in its lines, so put a flow meter in the line.`
+                                : `${nameOf(part)} measures what the model doesn't have at ${first.name}.`,
                         [part.id],
                     );
                 }
@@ -785,7 +832,7 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
                 continue;
             }
             if (part.sim?.unlinked) {
-                left.push(...targets.map((target) => ({ model: target, key: reads, channel, from: part.id })));
+                left.push(...at.map((target) => ({ model: target, key: reads, channel, from: part.id })));
                 continue;
             }
             const already = links.find((one) => one.model === first.id && one.key === reads);
@@ -797,7 +844,7 @@ export function buildModel(document: Document, catalog: Catalog, test: TestDetai
                 );
                 continue;
             }
-            for (const target of targets) {
+            for (const target of at) {
                 modelParts.get(target)!.links[reads] = channel;
                 links.push({ model: target, key: reads, channel, from: part.id });
             }
@@ -1012,9 +1059,14 @@ export function linkRole(link: Link, settings: SimValues): Role {
     return applies(link.start_when, settings) ? "start" : link.role;
 }
 
-/** What a link reads, in a few words: "pressure" (a junction's "pressure transducer"), "flow", "ullage temperature". */
+/** What a link reads, in a few words: "pressure" (a junction's "pressure transducer"), "flow", "ullage temperature",
+ * "injector manifold pressure". */
 export const linkWords = (link: Link): string =>
-    link.quantity === "pressure" ? "pressure" : link.quantity === "mass_flow" ? "flow" : link.label.toLowerCase();
+    link.quantity === "pressure" && link.key === "pressure"
+        ? "pressure"
+        : link.quantity === "mass_flow"
+          ? "flow"
+          : link.label.toLowerCase();
 
 /** The output a link's channel is compared with: an edge's flow, or the node's value of the link's name. */
 export const outputOf = (link: Link): string => (link.quantity === "mass_flow" ? "mass_flow" : link.key);

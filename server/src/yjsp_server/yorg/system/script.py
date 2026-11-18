@@ -350,6 +350,17 @@ class _Writer:
         elif kind == "outlet":
             self.comment(f"{node['name']}: an outlet")
             pressure = self.following(node, "pressure", settings["pressure"], f"{base}_pressure")
+            self.outputs[f"{node_id}.pressure"] = pressure
+            if settings["stiffness"] > 0:
+                # An engine's chamber, reached through its injector: flow meets its manifold's pressure, the stiffness
+                # (the injector's drop over the chamber's pressure) above it.
+                factor = 1.0 + float(settings["stiffness"])
+                pressure = self.assign(
+                    f"{base}_manifold",
+                    _derived(_number(float(settings["pressure"]) * factor), f"{pressure}.value * {_number(factor)}"),
+                    "Pa: its injector manifold's",
+                )
+            self.outputs[f"{node_id}.manifold"] = pressure
             self.pressure[node_id] = self.liquid_pressure[node_id] = pressure
             if node_id in self.gas_of and self._gives_gas(node_id):
                 temperature = self.assign(f"{base}_temperature", "State(OUTSIDE)", "K: gas that flows back in from it")

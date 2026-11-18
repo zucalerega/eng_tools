@@ -418,7 +418,11 @@ the keys.
   check, relief, regulators, burst discs, quick disconnects, 3/2 and 5/2 solenoid valves...),
   tanks (1 to 5 ports on the top and on the bottom: **Top ports** and **Bottom ports**, on the
   right; every port on its top is its ullage), bottles and COPVs, orifices and venturis, flow meters, filters, diffusers, instruments,
-  engines, pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
+  engines (its injector and its chamber in one: fuel and ox into its injector's top, a tap each
+  side of its chamber, and up to 2 ports on each of its injector's manifolds for their sensors,
+  **Fuel manifold ports** and **Ox manifold ports**, on the right; its injector's element type,
+  elements, stiffness, CdAs, and material beside its thrust and chamber pressure),
+  pumps, vents (a spray), tees, manifolds (2 to 8 outlets: **Outlets**, on the right), a
   box for anything else, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**
   on the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
@@ -503,8 +507,12 @@ the keys.
   and inertia), and a gas line's box sets the tubing it's part of. Its channels come from the
   P&ID: a valve's command is its Test channel or tag, a pressure transducer reads the pressure
   where it taps, a thermocouple above a tank's liquid reads its ullage, and a flow meter the
-  flow through what it's in line with; a tank's, a supply's, or the engine's transducer drives
-  it, and the rest are compared. Uncheck a channel in its part's **Simulation** box to leave it
+  flow through what it's in line with; a tank's, a supply's, or the engine's chamber's transducer
+  drives it, and the rest are compared. A transducer on a port of the engine's injector reads
+  that manifold's pressure: where its propellant's flow reaches the engine, its **Injector
+  stiffness** (20 %, or 0.2: the injector's drop over the chamber's pressure, absolute) above
+  the chamber's (leave it empty when the injector's drawn as orifices of its own, or its drop
+  counts twice). Uncheck a channel in its part's **Simulation** box to leave it
   out and set the conditions yourself: the part then does what its settings say (a valve stays
   where they have it, a tank holds the pressure set on it). In its panel, pick the test, the
   run's window (◷ takes the time on the timeline), the time step, and the solver, and **Run**

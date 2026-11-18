@@ -300,6 +300,49 @@ test("a tank's ports on its top and its bottom are chosen on the right, and a li
     });
 });
 
+test("an engine's injector ports and its fields are set on the right, and a line drawn to a port stays on it", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const engine = place(drawing, "engine", 0, 0); // ENG-1
+    const made = await team.diagram(team.chief, "Hotfire", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    fireEvent.pointerDown(within(svg).getByRole("button", { name: "ENG-1" }), at(0, 0));
+    fireEvent.pointerUp(svg, at(0, 0));
+    expect(await screen.findByRole("heading", { name: "Engine" })).toBeTruthy();
+    expect(svg.querySelector('[data-kind="engine"] rect[height="8"]')).toBeNull(); // its injector as an engine's always was
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fuel manifold ports" }), "2");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Ox manifold ports" }), "1");
+    await userEvent.type(screen.getByRole("textbox", { name: "Injector stiffness" }), "20 %");
+    await userEvent.type(screen.getByRole("textbox", { name: "Element type" }), "Unlike doublet");
+    // Its injector reaches out under its taps, past its chamber.
+    expect(svg.querySelector('[data-kind="engine"] rect[height="8"]')!.getAttribute("width")).toBe("60");
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.parts[0]!.props).toMatchObject({
+            fuelTaps: "2",
+            oxTaps: "1",
+            stiffness: "20 %",
+            injector: "Unlike doublet",
+        });
+    });
+    // The pointer on the engine shows its new ports, to drag a line from.
+    fireEvent.pointerMove(within(svg).getByRole("button", { name: "ENG-1" }), at(0, 0));
+    const port = await waitFor(() => {
+        const found = svg.querySelector(`[data-hit="port:${engine}:fuel-tap-2"]`);
+        expect(found).not.toBeNull();
+        return found!;
+    });
+    fireEvent.pointerDown(port, at(-30, -50));
+    fireEvent.pointerMove(svg, at(-30, -90));
+    fireEvent.pointerUp(svg, at(-30, -130));
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.lines.map((line) => line.from)).toEqual([{ part: engine, port: "fuel-tap-2" }]);
+    });
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

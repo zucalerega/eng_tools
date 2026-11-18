@@ -259,3 +259,92 @@ def test_the_shop_starts_with_the_trackers_machines_and_admins_keep_the_list(tea
     ]  # a retired machine has no load to show
     team.client.patch(f"{SHOP}/machines/{laser['id']}", json={"retired": False}, headers=chief)
     assert queue(team, alice, name="Another gasket", machine_id=laser["id"]).status_code == 201
+
+
+# --- where people are trained ---------------------------------------------------------------------------------------
+
+
+def place(team, who, name: str) -> dict:
+    made = team.client.post(f"{SHOP}/places", json={"name": name}, headers=who)
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def test_admins_keep_the_places_people_are_trained_in(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    assert the_shop(team, alice)["places"] == []  # each school has its own: admins add them
+
+    refused = team.client.post(f"{SHOP}/places", json={"name": "Makerspace"}, headers=alice)
+    assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")
+    shop_floor, makerspace = place(team, chief, "Machine shop"), place(team, chief, "Makerspace")
+    taken = team.client.post(f"{SHOP}/places", json={"name": "MAKERSPACE "}, headers=chief)
+    assert (taken.status_code, taken.json()["error"]) == (409, "name_taken")
+    assert "There's a place called Makerspace already" in taken.json()["message"]
+    renamed = team.client.patch(f"{SHOP}/places/{makerspace['id']}", json={"name": "Student makerspace"}, headers=chief)
+    assert renamed.json()["name"] == "Student makerspace"
+    refused = team.client.patch(f"{SHOP}/places/{shop_floor['id']}", json={"retired": True}, headers=alice)
+    assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")
+    unknown = team.client.patch(f"{SHOP}/places/999", json={"retired": True}, headers=chief)
+    assert unknown.status_code == 404
+
+    # Retired, it's still listed, to bring back, and keeps who was trained there.
+    team.client.put(f"{SHOP}/skills/{team.ids['alice@x.test']}", json={"places": {shop_floor["id"]: 2}}, headers=alice)
+    retired = team.client.patch(f"{SHOP}/places/{shop_floor['id']}", json={"retired": True}, headers=chief)
+    assert retired.json()["retired"] is True
+    shop = the_shop(team, alice)
+    assert [(p["name"], p["retired"]) for p in shop["places"]] == [
+        ("Machine shop", True),
+        ("Student makerspace", False),
+    ]
+    assert shop["trained"][0]["places"] == {str(shop_floor["id"]): 2}
+    # A place and a machine are kept apart: one can be called what the other is.
+    assert team.client.post(f"{SHOP}/places", json={"name": "Lathe"}, headers=chief).status_code == 201
+
+
+def test_each_person_says_where_theyre_trained_and_admins_can_say_anyones(team):
+    chief = team.member("chief@x.test", admin=True)
+    alice = team.member("alice@x.test")
+    team.member("bob@x.test")
+    shop_floor, makerspace = place(team, chief, "Machine shop"), place(team, chief, "Makerspace")
+    mill = machine_id(team, alice, "Mill")
+    mine = team.client.put(
+        f"{SHOP}/skills/{team.ids['alice@x.test']}",
+        json={"levels": {mill: 2}, "places": {shop_floor["id"]: 2, makerspace["id"]: 1}},
+        headers=alice,
+    )
+    assert mine.status_code == 200, mine.text
+    assert (mine.json()["levels"], mine.json()["places"]) == (
+        {str(mill): 2},
+        {str(shop_floor["id"]): 2, str(makerspace["id"]): 1},
+    )
+    bobs = f"{SHOP}/skills/{team.ids['bob@x.test']}"
+    refused = team.client.put(bobs, json={"places": {makerspace["id"]: 3}}, headers=alice)
+    assert (refused.status_code, refused.json()["error"]) == (403, "admin_only")
+    # Bob's trained only at the makerspace, where he trains others: he's on the list all the same.
+    assert team.client.put(bobs, json={"places": {makerspace["id"]: 3}}, headers=chief).status_code == 200
+    shop = the_shop(team, alice)
+    assert [(t["user"]["email"], t["levels"], t["places"]) for t in shop["trained"]] == [
+        ("alice@x.test", {str(mill): 2}, {str(shop_floor["id"]): 2, str(makerspace["id"]): 1}),
+        ("bob@x.test", {}, {str(makerspace["id"]): 3}),
+    ]
+    # A place's training doesn't make someone a machine's operator.
+    assert load_of(shop, mill)["operators"] == 1
+
+    # Back to not trained there; the machines and places left out stay as they were.
+    alices = f"{SHOP}/skills/{team.ids['alice@x.test']}"
+    team.client.put(alices, json={"places": {makerspace["id"]: 0}}, headers=alice)
+    assert the_shop(team, alice)["trained"][0]["levels"] == {str(mill): 2}
+    assert the_shop(team, alice)["trained"][0]["places"] == {str(shop_floor["id"]): 2}
+    for bad in ({shop_floor["id"]: 4}, {shop_floor["id"]: -1}):
+        assert team.client.put(alices, json={"places": bad}, headers=alice).status_code == 422
+    unknown = team.client.put(alices, json={"places": {999: 1}}, headers=alice)
+    assert unknown.status_code == 404
+    # Nothing's said when one of them isn't there: not the machine's level either.
+    assert team.client.put(alices, json={"levels": {mill: 3}, "places": {999: 1}}, headers=alice).status_code == 404
+    assert the_shop(team, alice)["trained"][0]["levels"] == {str(mill): 2}
+
+    # Someone who's left the team isn't counted anywhere.
+    disabled = team.client.patch(f"/api/users/{team.ids['bob@x.test']}", json={"status": "disabled"}, headers=chief)
+    assert disabled.status_code == 200, disabled.text
+    assert [t["user"]["email"] for t in the_shop(team, chief)["trained"]] == ["alice@x.test"]

@@ -646,9 +646,13 @@ Buildflow's top bar, has all of this on one page.
   phase (*In the shop*), and **Queue a part for it**, there, starts one for it. **Who's trained**
   is each person's level on each machine (0 not trained, 1 supervised only, 2 runs it on their
   own, 3 trains others): set your own there, and admins can set anyone's. Those at 2 or 3 are who
-  can make a machine's parts, and the queue names them. Admins add, rename, and retire machines
-  (**Machines**); a retired one takes no new parts. **Export CSV** saves the queue and who's
-  trained as a spreadsheet.
+  can make a machine's parts, and the queue names them. It's also where each person is trained:
+  each place the team makes parts in, such as a department's machine shop or a makerspace, has
+  training of its own, so you say your level at each the same way, from 0 not trained to 3 trains
+  others there. **Trained at** shows only who's trained at one place, those who train others there
+  first. Admins add, rename, and retire machines and places (**Machines and places**); a retired
+  machine takes no new parts, and a retired place isn't offered, keeping who was trained there.
+  **Export CSV** saves the queue and who's trained as a spreadsheet.
 
 ## Deals
 

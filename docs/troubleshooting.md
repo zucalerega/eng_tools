@@ -985,8 +985,10 @@ a number. A few codes come up in more than one place.
   a component's lead and people, and a shop part's responsible engineer and machinist, are people
   who've joined the site. Pick someone from the list.
 - **The ... is retired: put the part on another machine, or ask an admin** (`machine_retired`): a
-  retired machine takes no new parts. Pick another, or an admin brings it back under *Machines*.
-- **There's a machine called ... already** (`name_taken`): two machines can't have the same name,
+  retired machine takes no new parts. Pick another, or an admin brings it back under *Machines and
+  places*.
+- **There's a machine called ... already**, or **There's a place called ... already**
+  (`name_taken`): two machines, or two places people are trained in, can't have the same name,
   whatever its case (a retired one keeps its name: bring it back instead).
 - **... isn't a link a component can have** (or **a review can have**)**: a link is an http or https
   address, or a page of the site's own, like /vault/file/12** (`bad_link`): copy the page's whole

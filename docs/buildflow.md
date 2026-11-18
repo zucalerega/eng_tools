@@ -243,8 +243,8 @@ features).
 
 The shop (`shop.py`; `Shop.tsx`, at `/buildflow/shop`) is the team's machining tracker, moved into
 Buildflow: the parts the team needs machined, in a queue, and how far each person's trained on each
-machine. The tracker ran on one laptop behind a secret link, with no accounts; here, people sign in
-as they do for everything else, names are accounts, and the site's backups keep it.
+machine, and where. The tracker ran on one laptop behind a secret link, with no accounts; here,
+people sign in as they do for everything else, names are accounts, and the site's backups keep it.
 
 - **Machines** (`buildflow_machines`): the lathe, the mill, the waterjet, and the CNC to start (the
   tracker's), which admins rename, add to, and retire. One retired takes no new parts (409
@@ -265,6 +265,14 @@ as they do for everything else, names are accounts, and the site's backups keep 
   anyone's, and each level keeps who said it. Those at 2 or 3 (`RUNS_IT`) are who can make a
   machine's parts: the queue names them for each part, and the part's form offers them first as its
   machinist. Someone who's left the team (their account disabled) runs nothing.
+- **Places** (`buildflow_places`, and each person's level at each, `buildflow_place_skills`): where
+  people are trained to make parts, such as a department's machine shop or a makerspace on campus,
+  each with training of its own, so someone can work on their own in one and only supervised in
+  another. Admins add, rename, and retire them, as machines, and none are put in to start, since
+  each school has its own. The levels are a machine's (2: on their own there), each says their
+  own and admins anyone's, and one retired keeps who was trained there. A place's training is kept
+  apart from the machines': it doesn't make anyone a machine's operator. The *Who's trained* table
+  shows the places first, and *Trained at* only who's trained at one.
 - **Load**: for each machine that isn't retired, its parts not done, their hours added up (and how
   many have no estimate), and how many can run it, and train others on it: the cards across the top
   of the Shop page.
@@ -321,13 +329,14 @@ anyone else.
 | `POST /api/buildflow/reviews/{id}/pass` | pass it `{done_on}`: each component it covers passes its milestone, but those through it already |
 | `DELETE /api/buildflow/reviews/{id}`, `POST .../restore` | remove a review, keeping it, or bring it back |
 | `POST /api/buildflow/reviews/{id}/files`, `DELETE .../files/{file}` | a file `{url, title}` (400 `bad_link`); remove one |
-| `GET /api/buildflow/shop?removed=` | the shop: its `machines` (each `retired` or not), the `parts` in its queue (`removed=true`: those taken off it), who's `trained` (each with their `levels` by machine id), each machine's `load`, and whether you keep the machines (`can_edit_machines`) |
+| `GET /api/buildflow/shop?removed=` | the shop: its `machines` (each `retired` or not), the `places` people are trained in (likewise), the `parts` in its queue (`removed=true`: those taken off it), who's `trained` (each with their `levels` by machine id, and their `places` by place id), each machine's `load`, and whether you keep the machines and places (`can_edit_machines`) |
 | `GET /api/buildflow/shop/parts?component_id=&program_id=&removed=` | the parts in the queue, or those for a component or a program |
 | `POST /api/buildflow/shop/parts` | a part for the queue `{name, machine_id, component_id, program_id, material, quantity, hours, drawing, cad, status, requester_id, machinist_id, need_by, note}`: `requester_id` left out is you; 409 `machine_retired`, `removed`, `archived`; 400 `bad_link`, `not_a_member` |
 | `PATCH /api/buildflow/shop/parts/{id}` | change what's sent of a part (`component_id` and `program_id` together: either sent, the other left out is none); 409 `removed` for one taken off the queue |
 | `DELETE /api/buildflow/shop/parts/{id}`, `POST .../restore` | take a part off the queue, keeping it, or put it back |
-| `PUT /api/buildflow/shop/skills/{user_id}` | someone's levels `{levels: {machine_id: 0-3}}`: your own, or anyone's (admins); machines left out stay as they were |
+| `PUT /api/buildflow/shop/skills/{user_id}` | someone's levels `{levels: {machine_id: 0-3}, places: {place_id: 0-3}}`, either left out: your own, or anyone's (admins); machines and places left out stay as they were |
 | `POST /api/buildflow/shop/machines`, `PATCH /api/buildflow/shop/machines/{id}` | a new machine `{name}`; rename one, or retire it or bring it back `{name, retired}` (admins); 409 `name_taken` |
+| `POST /api/buildflow/shop/places`, `PATCH /api/buildflow/shop/places/{id}` | a new place people are trained in `{name}`; rename one, or retire it or bring it back `{name, retired}` (admins); 409 `name_taken` |
 
 ## Roadmap
 

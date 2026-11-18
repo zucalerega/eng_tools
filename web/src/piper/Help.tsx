@@ -264,8 +264,9 @@ const TOPICS: Topic[] = [
                 </li>
                 <li>Lines that cross without joining hop over each other. A tee shows its dot.</li>
                 <li>
-                    A line's type: pipe, tubing, flex hose, pneumatic, electrical, or data. Flow arrows show which way
-                    it flows.
+                    A line's type: pipe, tubing, flex hose, pneumatic, electrical, or data. A new line is tubing (a tee
+                    is the type of the line it tees into); change it in its properties. Flow arrows show which way it
+                    flows.
                 </li>
             </ul>
         ),

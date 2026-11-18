@@ -81,6 +81,9 @@ export interface Component {
     y: number | null; // up from its centerline
     position: number;
     lead: UserRef | null;
+    lead_days: number | null; // its lead time: from ordering it (or starting to make it) to having it
+    need_by: string | null; // the day it has to be ready by, for the build
+    needs: number[]; // the components that have to be ready before it can be started
     updated_at: string;
     updated_by: UserRef | null;
     removed_at: string | null;
@@ -177,6 +180,8 @@ export interface ComponentChange {
     y?: number | null;
     position?: number;
     lead_id?: number | null;
+    lead_days?: number | null;
+    need_by?: string | null;
 }
 
 // --- the shop (server: buildflow/shop.py) ---
@@ -314,6 +319,9 @@ export const buildflow = {
     removeLink: (id: number) => request<Component>("DELETE", `/api/buildflow/links/${id}`),
     setPeople: (id: number, phase: Phase, userIds: number[]) =>
         request<Component>("PUT", `${component(id)}/people`, { phase, user_ids: userIds }),
+    /** What has to be ready before a component can be started: these, and no others. */
+    setNeeds: (id: number, componentIds: number[]) =>
+        request<Component>("PUT", `${component(id)}/needs`, { component_ids: componentIds }),
 
     /** A program's design reviews (removed: those taken off it instead). */
     reviews: (programId: number, removed = false) =>

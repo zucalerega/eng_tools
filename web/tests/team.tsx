@@ -443,6 +443,11 @@ export class Team {
         return status;
     }
 
+    /** A component's build plan, as its panel or the plan page sets it: its lead time (days), and its ready-by day. */
+    async plan(component: number, change: { lead_days?: number | null; need_by?: string | null }): Promise<Component> {
+        return call<Component>("PATCH", `/api/buildflow/components/${component}`, this.chief.token, change);
+    }
+
     /** A design review, as someone starts one on a program's page with New review. */
     async review(
         who: Member,

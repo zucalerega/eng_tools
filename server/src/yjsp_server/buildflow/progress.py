@@ -17,7 +17,7 @@ from ..db import utcnow
 from ..errors import ApiError, NotFound
 from ..models import User
 from . import programs
-from .models import Assignment, Component, Event, Link, Milestone, Phase, Program, Progress, Status
+from .models import Assignment, Component, Event, Link, Milestone, Need, Phase, Program, Progress, Status
 from .programs import PHASES, log
 from .schemas import MOST_LINKS, PhaseCounts, Summary
 
@@ -35,6 +35,12 @@ class BadLink(ApiError):
     """A link that's neither a web address nor a page of the site's own."""
 
     code = "bad_link"
+
+
+class NeedsCycle(ApiError):
+    """A component said to need one that needs it, or needs it through others: it could never be started."""
+
+    code = "needs_cycle"
 
 
 def check_address(url: str, of: str = "a component") -> str:
@@ -270,6 +276,67 @@ def set_people(db: Session, user: User, component_id: int, phase: Phase, user_id
     db.commit()
     db.refresh(found)
     return found
+
+
+def set_needs(db: Session, user: User, component_id: int, needs_ids: Iterable[int]) -> Component:
+    """What has to be ready before a component can be started: these of its program's components, and no others. None
+    of them may need it, however far along (400 needs_cycle): it could never be started."""
+    found, owner = _open(db, component_id)
+    wanted: list[Component] = []
+    for needs_id in dict.fromkeys(needs_ids):
+        other = db.get(Component, needs_id)
+        if other is None or other.program_id != owner.id:
+            raise NotFound(f"{owner.name} has no component #{needs_id}")
+        if other.id == found.id:
+            raise NeedsCycle(f"{found.name} can't need itself")
+        programs.check_live(other)
+        wanted.append(other)
+    if [n.needs_id for n in found.needs] == [w.id for w in wanted]:
+        return found
+    # What each of the program's components needs now, to follow from each one wanted to see if it comes back here.
+    edges: dict[int, list[int]] = {}
+    for need in db.scalars(
+        select(Need).join(Component, Component.id == Need.component_id).where(Component.program_id == owner.id)
+    ):
+        edges.setdefault(need.component_id, []).append(need.needs_id)
+    for other in wanted:
+        path = _path(edges, other.id, found.id)
+        if path is not None:
+            names = {c.id: c.name for c in programs.components(db, owner.id)}
+            through = [names.get(each, "a removed component") for each in path[1:-1]]
+            via = f" (through {', '.join(through)})" if through else ""
+            raise NeedsCycle(f"{other.name} needs {found.name} already{via}: a component can't need one that needs it")
+    for need in found.needs:
+        db.delete(need)
+    db.flush()
+    for other in wanted:
+        db.add(Need(component_id=found.id, needs_id=other.id))
+    log(
+        db, owner, user, f"Needs first: {', '.join(c.name for c in wanted)}" if wanted else "Needs nothing first", found
+    )
+    _touch(found, user)
+    db.commit()
+    db.refresh(found)
+    return found
+
+
+def _path(edges: dict[int, list[int]], start: int, goal: int) -> list[int] | None:
+    """A way from one component to another along what each needs, if there's one: the components on it, in order."""
+    came: dict[int, int] = {}  # each component reached, from the one before it
+    seen, waiting = {start}, [start]
+    while waiting:
+        here = waiting.pop()
+        if here == goal:
+            path = [here]
+            while path[-1] != start:
+                path.append(came[path[-1]])
+            return path[::-1]
+        for after in edges.get(here, []):
+            if after not in seen:
+                seen.add(after)
+                came[after] = here
+                waiting.append(after)
+    return None
 
 
 def activity(db: Session, program_id: int, limit: int) -> list[tuple[Event, str | None]]:

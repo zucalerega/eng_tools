@@ -15,6 +15,7 @@ import {
     type Status,
 } from "./api";
 import { ComponentPanel } from "./Panel";
+import { leadInWords, planOf } from "./planning";
 import { ReviewsSection } from "./Review";
 import { reviewPath, reviewsOf } from "./reviews";
 import { Vehicle } from "./VehicleView";
@@ -140,6 +141,9 @@ export function ProgramPage({ id }: { id: number }) {
                 </div>
                 <div className="page-actions">
                     {program.archived_at && <span className="tag tag-warning">Archived</span>}
+                    <Link to={`/buildflow/programs/${program.id}/plan`} className="button">
+                        Build plan
+                    </Link>
                     {program.can_edit && (
                         <Link to={`/buildflow/programs/${program.id}/layout`} className="button">
                             Layout
@@ -164,6 +168,13 @@ export function ProgramPage({ id }: { id: number }) {
                 onPick={pick}
                 onStatus={setStatus}
                 dealsFor={dealsFor}
+                longLeads={
+                    new Set(
+                        planOf(program, today())
+                            .filter((p) => p.long)
+                            .map((p) => p.component.id),
+                    )
+                }
             />
             <ReviewsSection program={program} phase={phase} />
             <div className="bf-lower">
@@ -320,6 +331,7 @@ function Bill({
     onPick,
     onStatus,
     dealsFor,
+    longLeads,
 }: {
     program: ProgramDetail;
     phase: Phase;
@@ -327,6 +339,7 @@ function Bill({
     onPick: (component: Component, milestone?: Milestone | null) => void;
     onStatus: (component: Component, milestone: Milestone, status: Status) => void;
     dealsFor: Map<number, Deal[]>;
+    longLeads: Set<number>; // not ready yet, with a lead time of six weeks or more
 }) {
     const { milestones, subsystems, components } = program;
     if (components.length === 0) {
@@ -405,6 +418,14 @@ function Bill({
                                         {component.bought && (
                                             <span className="tag" title="Off the shelf: bought, not made">
                                                 COTS
+                                            </span>
+                                        )}
+                                        {longLeads.has(component.id) && (
+                                            <span
+                                                className="tag bf-long-lead"
+                                                title={`A lead time of ${leadInWords(component.lead_days!)}: on the build plan`}
+                                            >
+                                                Long lead
                                             </span>
                                         )}
                                         <DealMark

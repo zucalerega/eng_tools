@@ -27,6 +27,7 @@ from .schemas import (
     MilestoneChangeIn,
     MilestoneIn,
     MilestoneOut,
+    NeedsIn,
     PeopleIn,
     ProgramChangeIn,
     ProgramDetailOut,
@@ -214,8 +215,8 @@ def get_component(component_id: int, user: ActiveUser, db: DB) -> ComponentOut:
 @router.patch("/components/{component_id}")
 def patch_component(component_id: int, body: ComponentChangeIn, user: ActiveUser, db: DB) -> ComponentOut:
     """Change what's sent of a component: its name, subsystem, whether it's bought, its place on the drawing (x, y; null
-    takes it off), and its place in its subsystem are admins' to change; its description and lead (lead_id; null: no
-    one), anyone's."""
+    takes it off), and its place in its subsystem are admins' to change; its description, lead (lead_id; null: no
+    one), lead time (lead_days), and the day it's to be ready by (need_by), anyone's."""
     change = {key: getattr(body, key) for key in body.model_fields_set}
     return ComponentOut.of(programs.change_component(db, user, component_id, change))
 
@@ -263,6 +264,12 @@ def post_link(component_id: int, body: LinkIn, user: ActiveUser, db: DB) -> Comp
 def delete_link(link_id: int, user: ActiveUser, db: DB) -> ComponentOut:
     """Remove a link: its component, without it."""
     return ComponentOut.of(progress.remove_link(db, user, link_id))
+
+
+@router.put("/components/{component_id}/needs")
+def put_needs(component_id: int, body: NeedsIn, user: ActiveUser, db: DB) -> ComponentOut:
+    """What has to be ready before a component can be started (component_ids): 400 needs_cycle for one that needs it."""
+    return ComponentOut.of(progress.set_needs(db, user, component_id, body.component_ids))
 
 
 @router.put("/components/{component_id}/people")

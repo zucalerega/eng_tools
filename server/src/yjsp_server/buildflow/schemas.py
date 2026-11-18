@@ -36,6 +36,9 @@ Size = Annotated[float, Field(allow_inf_nan=False, gt=0, le=100_000)]
 
 MOST_SECTIONS = 40
 MOST_PEOPLE = 50  # on a component, in a phase
+MOST_NEEDS = 100  # components one needs first
+# A lead time, in days: from ordering a part (or starting to make it) to having it, up to ten years.
+LeadDays = Annotated[int, Field(ge=0, le=3650)]
 MOST_LINKS = 100  # on a component
 MOST_URL = 2000
 
@@ -144,6 +147,12 @@ class ComponentChangeIn(BaseModel):
     y: Coordinate | None = None
     position: int | None = Field(default=None, ge=0, le=10_000)
     lead_id: int | None = None
+    lead_days: LeadDays | None = None  # its lead time, in days; null: none said
+    need_by: date | None = None  # the day it has to be ready by; null: none
+
+
+class NeedsIn(BaseModel):
+    component_ids: list[int] = Field(max_length=MOST_NEEDS)  # what has to be ready before it can be started
 
 
 class ProgressIn(BaseModel):
@@ -303,6 +312,9 @@ class ComponentOut(BaseModel):
     y: float | None
     position: int
     lead: UserRef | None
+    lead_days: int | None  # its lead time: from ordering it (or starting it) to having it
+    need_by: date | None  # the day it has to be ready by, for the build
+    needs: list[int]  # the components that have to be ready before it can be started
     updated_at: datetime
     updated_by: UserRef | None
     removed_at: datetime | None
@@ -323,6 +335,9 @@ class ComponentOut(BaseModel):
             y=component.y,
             position=component.position,
             lead=_ref(component.lead),
+            lead_days=component.lead_days,
+            need_by=component.need_by,
+            needs=[need.needs_id for need in component.needs],
             updated_at=component.updated_at,
             updated_by=_ref(component.editor),
             removed_at=component.removed_at,

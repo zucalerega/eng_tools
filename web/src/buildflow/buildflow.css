@@ -769,6 +769,7 @@ button.bf-chip:hover:not(:disabled) {
 .bf-people h3,
 .bf-links h3,
 .bf-in-shop h3,
+.bf-plan-section h3,
 .bf-removed h3 {
     margin: 0 0 0.35rem;
     font-size: 0.78rem;
@@ -1836,4 +1837,222 @@ button.bf-deal-mark:hover:not(:disabled) {
 
 .bf-milestone-reviews {
     margin: 0.2rem 0 0.35rem;
+}
+
+/* --- the build plan (Plan.tsx) ------------------------------------------------------------------------------------- */
+
+.bf-plan-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.6rem;
+    margin: 0.75rem 0 1rem;
+    padding: 0;
+    list-style: none;
+}
+
+.bf-plan-counts li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    color: var(--muted);
+}
+
+.bf-plan-count {
+    font-size: 1.45rem;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.bf-plan-count-danger .bf-plan-count {
+    color: var(--danger);
+}
+
+.bf-plan-count-warning .bf-plan-count {
+    color: var(--warning);
+}
+
+.bf-plan-count-muted .bf-plan-count {
+    color: var(--muted);
+}
+
+.bf-plan-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.bf-plan-table {
+    font-size: 0.86rem;
+}
+
+.bf-plan-table tbody th[scope="row"] {
+    font-size: inherit;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    color: inherit;
+    background: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.9rem;
+    white-space: nowrap;
+}
+
+.bf-plan-table td {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+
+.bf-plan-table .bf-number {
+    width: 4.5rem;
+}
+
+.bf-plan-needs {
+    min-width: 9rem;
+}
+
+.bf-plan-needs .bf-plan-nothing {
+    color: var(--muted);
+    font-weight: 400;
+}
+
+/* The calendar: each row's lane, the months across its head, and today down it. */
+.bf-plan-time {
+    position: relative;
+    width: 42%;
+    min-width: 24rem;
+}
+
+.bf-plan-months {
+    position: relative;
+    height: 1rem;
+}
+
+.bf-plan-months span {
+    position: absolute;
+    top: 0;
+    padding-left: 0.25rem;
+    border-left: 1px solid var(--border-strong);
+    white-space: nowrap;
+}
+
+.bf-plan-months .bf-plan-today-label {
+    border-left: 1px dashed var(--accent);
+    color: var(--accent);
+}
+
+.bf-plan-lane {
+    position: relative;
+    height: 1.4rem;
+}
+
+.bf-plan-today {
+    position: absolute;
+    top: -0.4rem;
+    bottom: -0.4rem;
+    border-left: 1px dashed var(--accent);
+}
+
+.bf-plan-bar {
+    position: absolute;
+    top: 0.4rem;
+    height: 0.6rem;
+    border-radius: 0.3rem;
+    background: var(--border-strong);
+}
+
+.bf-plan-bar-long {
+    top: 0.2rem;
+    height: 1rem;
+}
+
+.bf-plan-bar-done {
+    background: var(--bf-chip-done);
+    opacity: 0.55;
+}
+
+.bf-plan-bar-in_progress {
+    background: var(--bf-chip-progress);
+}
+
+.bf-plan-bar-blocked {
+    background: var(--bf-chip-blocked);
+}
+
+.bf-plan-bar-risk {
+    outline: 2px solid var(--danger);
+    outline-offset: 1px;
+}
+
+/* One with a ready-by day and no lead time: its day, as a diamond. */
+.bf-plan-day {
+    position: absolute;
+    top: 0.35rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    background: var(--border-strong);
+    transform: translateX(-50%) rotate(45deg);
+}
+
+/* When one at risk would be ready, as things stand. */
+.bf-plan-projected {
+    position: absolute;
+    top: 0.1rem;
+    height: 1.2rem;
+    border-left: 2px solid var(--danger);
+}
+
+.bf-plan-ready th[scope="row"] a,
+.bf-plan-ready .bf-plan-lane {
+    opacity: 0.6;
+}
+
+.bf-plan-flag {
+    margin-left: 0.4rem;
+}
+
+/* Tags of the site's own (styles.css, after this in the bundle), in the plan's colors: a class more to outweigh them. */
+.tag.bf-plan-flag-late,
+.tag.bf-plan-flag-at-risk {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.tag.bf-plan-flag-long-lead,
+.tag.bf-long-lead {
+    color: var(--warning);
+    border-color: var(--warning);
+    background: var(--warning-soft);
+}
+
+.bf-long-lead {
+    margin-left: 0.4rem;
+}
+
+/* The plan on a component's panel, in its build phase. */
+.bf-plan-section {
+    margin: 0.6rem 0;
+}
+
+.bf-plan-section p {
+    margin: 0.25rem 0;
+}
+
+.bf-plan-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    font-size: 0.85rem;
+}
+
+.bf-plan-fields label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.bf-plan-fields .bf-number {
+    width: 4.5rem;
 }

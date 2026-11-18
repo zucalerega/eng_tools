@@ -141,6 +141,38 @@ const TOPICS: Topic[] = [
         ),
     },
     {
+        title: "The build plan",
+        body: (
+            <ul>
+                <li>
+                    <em>Build plan</em>, on a program&apos;s page, plans its build: each component&apos;s lead time (how
+                    long it takes to get once it&apos;s ordered, or to make once it&apos;s started), the day it has to
+                    be ready by, and what it needs first (what has to be ready before it can start).
+                </li>
+                <li>
+                    From those it works out the day to order or start each one by, and draws it on a calendar, the
+                    soonest first, so the long leads (six weeks or more) come to the top. A bar runs from the day to
+                    order or start it by to the day it has to be ready, in the color of where it is in the build phase;
+                    one at risk is ringed in red, with a red line where it&apos;d be ready as things stand.
+                </li>
+                <li>
+                    Across the top: what to order or start now (its day&apos;s passed), what&apos;s late, what&apos;s at
+                    risk (it won&apos;t be ready in time: waiting on what it needs, or started too late), the long
+                    leads, what&apos;s waiting on others, and what isn&apos;t planned yet.
+                </li>
+                <li>
+                    Type a component&apos;s lead time in weeks and its ready-by day in the plan&apos;s table, or on its
+                    panel in the build phase. <em>What ... needs first</em> picks the components it needs; one that
+                    needs it, however far along, can&apos;t be picked, as neither could ever start.
+                </li>
+                <li>
+                    A component is ready once it&apos;s through the build phase. The bill marks a long lead not ready
+                    yet with <em>Long lead</em>.
+                </li>
+            </ul>
+        ),
+    },
+    {
         title: "Reviews",
         body: (
             <ul>

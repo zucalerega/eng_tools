@@ -35,6 +35,20 @@ function variants() {
             parts.push(newPart("tank", { x: 0, y: 0 }, { props: { topPorts, bottomPorts } }));
         }
     }
+    for (const outlets of ["2", "", "8"]) {
+        for (const bottomPorts of ["", "1", "4", "5"]) {
+            for (const side of ["0", "", "2", "3", "4", "5"]) {
+                parts.push(
+                    newPart(
+                        "manifold",
+                        { x: 0, y: 0 },
+                        { props: { outlets, bottomPorts, leftPorts: side, rightPorts: "5" } },
+                    ),
+                );
+                parts.push(newPart("manifold", { x: 0, y: 0 }, { props: { outlets, bottomPorts, rightPorts: side } }));
+            }
+        }
+    }
     return parts;
 }
 
@@ -322,9 +336,75 @@ test("a manifold has as many outlets as it's set to, and a line on one taken awa
     const fewer = updatePart(drawing, manifold.id, (part) => ({ ...part, props: { ...part.props, outlets: "2" } }));
     expect(fewer.lines.find((line) => line.id === first.id)!.from).toEqual({ part: manifold.id, port: "1" });
     expect(fewer.lines.find((line) => line.id === last.id)!.from).toEqual({ x: 50, y: -10 });
-    // Its outlets are a choice of 2 to 8, 4 as it starts.
+    // Its outlets are a choice of 2 to 8, 4 as it starts: its top's ports.
     const field = kindOf("manifold").fields.find((entry) => entry.key === "outlets")!;
+    expect(field.label).toBe("Top ports");
     expect(field.options!.map((option) => option.label)).toEqual(["2", "3", "4", "5", "6", "7", "8"]);
+});
+
+test("a manifold has 0 to 5 ports on its bottom and on each end, and one from before keeps its ports", () => {
+    const at = (part: Part) => portsOf(part).map((port) => [port.id, port.at.x, port.at.y, port.dir]);
+    // One from before, with nothing said of its other sides: one port on each end, none on its bottom, as it was.
+    const before = newPart("manifold", { x: 0, y: 0 }, { props: { outlets: "2" } });
+    expect(at(before)).toEqual([
+        ["in", -30, 0, "left"],
+        ["end", 30, 0, "right"],
+        ["1", -10, -10, "up"],
+        ["2", 10, -10, "up"],
+    ]);
+    expect(boxOf(before, emptyDrawing())).toEqual({ x0: -30, y0: -10, x1: 30, y1: 10 });
+    // Ports on all four sides, on the grid, 20 apart: its ends' first nearest the middle, then outward, upper first.
+    const manifold = newPart(
+        "manifold",
+        { x: 0, y: 0 },
+        {
+            tag: "MAN-1",
+            props: { outlets: "2", bottomPorts: "3", leftPorts: "2", rightPorts: "3" },
+        },
+    );
+    expect(at(manifold)).toEqual([
+        ["in", -40, -10, "left"],
+        ["in-2", -40, 10, "left"],
+        ["end", 40, 0, "right"],
+        ["end-2", 40, -20, "right"],
+        ["end-3", 40, 20, "right"],
+        ["1", -10, -30, "up"],
+        ["2", 10, -30, "up"],
+        ["bottom-1", -20, 30, "down"],
+        ["bottom-2", 0, 30, "down"],
+        ["bottom-3", 20, 30, "down"],
+    ]);
+    // It grows to hold them, each end's ports clear of its corners and its bottom's of its ends.
+    expect(boxOf(manifold, emptyDrawing())).toEqual({ x0: -40, y0: -30, x1: 40, y1: 30 });
+    // Its tag goes under it, unless it has ports on its bottom: then past its lower right corner, clear of their lines.
+    expect(labelPlace(before, boxOf(before, emptyDrawing())).anchor).toBe("middle");
+    expect(labelPlace(manifold, boxOf(manifold, emptyDrawing()))).toEqual({ at: { x: 44, y: 40 }, anchor: "start" });
+    // Its bore reaches every port: its ends' through a gallery inside each.
+    const markup = renderToStaticMarkup(createElement(PartIcon, { part: manifold, palette: LIGHT }));
+    expect(markup).toContain("M-30 -10 V10");
+    expect(markup).toContain("M30 -20 V20");
+    expect(markup).toContain("M-20 0 V28");
+    // None on an end: its supply's port goes, and a line on it stays, ending where it was.
+    const supply = newLine({ part: manifold.id, port: "in" }, { x: -100, y: -10 });
+    const far = newLine({ part: manifold.id, port: "end" }, { x: 100, y: 0 });
+    const drawing = { ...emptyDrawing(), parts: [manifold], lines: [supply, far] };
+    const none = updatePart(drawing, manifold.id, (part) => ({ ...part, props: { ...part.props, leftPorts: "0" } }));
+    expect(portsOf(none.parts[0]!).some((port) => port.dir === "left")).toBe(false);
+    expect(none.lines.find((line) => line.id === supply.id)!.from).toEqual({ x: -40, y: -10 });
+    expect(none.lines.find((line) => line.id === far.id)!.from).toEqual({ part: manifold.id, port: "end" });
+    // A choice of 0 to 5 on its bottom and on each end, its top's at least 2, so it always has a port to give out to.
+    for (const [key, label, first] of [
+        ["bottomPorts", "Bottom ports", "0"],
+        ["leftPorts", "Left ports", "1"],
+        ["rightPorts", "Right ports", "1"],
+    ]) {
+        const field = kindOf("manifold").fields.find((entry) => entry.key === key)!;
+        expect(field.label).toBe(label);
+        expect(field.options!.map((option) => option.label)).toEqual(["0", "1", "2", "3", "4", "5"]);
+        expect(field.options!.find((option) => option.value === "")!.label).toBe(first);
+    }
+    const least = newPart("manifold", { x: 0, y: 0 }, { props: { leftPorts: "0", rightPorts: "0", outlets: "0" } });
+    expect(portsOf(least).map((port) => port.id)).toEqual(["1", "2", "3", "4"]);
 });
 
 test("a tank has as many ports on its top and its bottom as it's set to, and a line on one taken away stays", () => {

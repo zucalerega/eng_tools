@@ -322,7 +322,7 @@ const middleOf = (box: Box): Point => ({ x: (box.x0 + box.x1) / 2, y: (box.y0 + 
 /** Which library entry a master's name says it is: Visio's P&ID stencils' names, and the words people use. */
 const NAMES: [RegExp, string | null][] = [
     // A manifold stays drawn as Visio drew it, with ports where its lines were glued: a stencil's is a box of any size,
-    // its lines anywhere along it, which Piper's (its outlets along its top) would move.
+    // its lines anywhere along it, which Piper's (its ports in set places) would move.
     [/manifold|title block|legend|\bzones?\b|border/, null],
     // ISO 1219's directional control valves, by their ports and positions.
     [/\b3\/2\b/, "solenoid-valve-32"],

@@ -193,9 +193,20 @@ what it is, `data-hit`).
   normally closed, its supply shut and 2 exhausted, or normally open; a 5/2 has none); in a
   test, open (the position that feeds 2 from 1, or a 5/2 worked) or closed. Their tags are
   under their solenoids' ends, clear of their ports' lines (`tagX`, as a pump's is under its
-  base). A manifold is a block that takes its supply at one end, its far end a port too, and
-  gives it out to 2 to 8 outlets along its top (`outlets`), its bore drawn through it; a line
-  on an outlet that's taken away stays, ending where the outlet was (`updatePart`). A tank has
+  base). A manifold is a block that takes its supply at one end and gives it out to ports on
+  all four sides, its bore drawn through it to each: 2 to 8 outlets along its top (`outlets`,
+  named `1` to `8`, 4 until it's said), and 0 to 5 along its bottom (`bottomPorts`,
+  `bottom-1` to `bottom-5`, none until it's said) and on each end (`leftPorts`, `rightPorts`,
+  one until it's said). An end's ports are named `in` (or `end`), then `in-2` to `in-5`, the
+  first nearest the middle and the rest outward, upper first, so a manifold from before keeps
+  its `in` and `end` where they were; with more than one, a gallery inside the end joins them
+  to the bore. Its top keeps at least 2, so it always has outlets. Its ports are 20 apart, on
+  the grid, and it grows to fit them: as wide as its top's or its bottom's need with 10 to
+  spare at each end, and as tall as its ends' need with 10 to spare at each corner (a
+  manifold from before is the size it was). With ports on its bottom, its tag goes past its
+  lower right corner, clear of their lines (`labelPlace`). A line on a port that's taken away stays, ending
+  where the port was (`updatePart`). In Simulation mode a manifold is one point, whichever
+  ports its lines are on. A tank has
   two ports on each side, and 1 to 5 on its top and on its bottom (`topPorts`, `bottomPorts`):
   on the grid at the ends of its box, spread across its heads (at 0; ±10; 0 and ±20; ±10 and
   ±20; all five), each off its middle drawn as a nozzle out from its head. They're named `top`
@@ -528,7 +539,7 @@ valves as long as Piper's (40), or a hundred where it has none. Its shapes, in V
   box, moved over by a box where the drawing's lines meet their left one, so the box they rest
   in (their ports') is the one the lines met, each port the one it was. A manifold stays a figure,
   with ports where its lines were glued: a stencil's is a box of any size, its lines anywhere
-  along it, which Piper's own (its outlets along its top) would move. A plain bowtie is Piper's
+  along it, which Piper's own (its ports in set places) would move. A plain bowtie is Piper's
   gate valve. Its tag is its
   label's (a tag, or a tag over a set pressure: "PNRV" over "S.P. 165 PSI"), which is its
   part's set pressure; a label beside a symbol rather than grouped with it is the nearest

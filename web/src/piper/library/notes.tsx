@@ -1,7 +1,7 @@
 import { imageHref } from "../api";
 import type { Drawing, Part } from "../drawing";
 import { fluidsUsed } from "../fluids";
-import { FONT, ink } from "./draw";
+import { FONT, ink, unflipped } from "./draw";
 import type { DrawContext, Field, Kind } from "./kinds";
 import { siteName } from "../../site";
 
@@ -127,8 +127,9 @@ export const text: Kind = {
         const x = !set || align === "" ? 0 : align === "left" ? x0 + 4 : x1 - 4;
         const anchor = !set || align === "" ? "middle" : align === "left" ? "start" : "end";
         const top = set ? y0 + 4 + size * 0.9 : (-(lines.length - 1) * size * 1.25) / 2;
+        // Its box is the same either way round, so a flip leaves it, and its words, as they are.
         return (
-            <>
+            <g transform={unflipped(part)}>
                 {part.props.border === "box" && (
                     <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill={context.paper} {...ink(context, 1)} />
                 )}
@@ -147,7 +148,7 @@ export const text: Kind = {
                         </tspan>
                     ))}
                 </text>
-            </>
+            </g>
         );
     },
 };
@@ -163,8 +164,9 @@ export const region: Kind = {
     text: "Title",
     resizable: true,
     behind: true,
+    // Its box is the same either way round, so a flip leaves it, and its name at its top left, as they are.
     draw: (part, context) => (
-        <>
+        <g transform={unflipped(part)}>
             <rect
                 x={-part.w / 2}
                 y={-part.h / 2}
@@ -188,7 +190,7 @@ export const region: Kind = {
                     {part.text.toUpperCase()}
                 </text>
             )}
-        </>
+        </g>
     ),
 };
 
@@ -236,6 +238,7 @@ export const picture: Kind = {
                 <text
                     x={0}
                     y={0}
+                    transform={unflipped(part)}
                     fontSize={11}
                     fontFamily={FONT}
                     textAnchor="middle"
@@ -273,6 +276,7 @@ export const offpage: Kind = {
             <text
                 x={-30 + connectorWidth(part) / 2}
                 y={0}
+                transform={unflipped(part, -30 + connectorWidth(part) / 2)}
                 fontSize={9}
                 fontFamily={FONT}
                 fontWeight={600}
@@ -324,11 +328,12 @@ export const legend: Kind = {
     ports: () => [],
     fields: [],
     tag: "none",
-    draw: (_part, context) => {
+    // Its box is the same either way round, so a flip leaves it, and its words, as they are.
+    draw: (part, context) => {
         const rows = legendRows(context.drawing, context);
         const h = legendHeight(rows.length);
         return (
-            <>
+            <g transform={unflipped(part)}>
                 <rect x={-90} y={-h / 2} width={180} height={h} fill={context.paper} {...ink(context, 1.2)} />
                 <text
                     x={-80}
@@ -372,7 +377,7 @@ export const legend: Kind = {
                         </g>
                     );
                 })}
-            </>
+            </g>
         );
     },
 };
@@ -425,8 +430,9 @@ export const titleblock: Kind = {
         const meta = context.meta;
         const value = (key: string, fallback: string) => part.props[key] || fallback;
         const date = meta.savedAt ? new Date(meta.savedAt).toLocaleDateString("en-CA") : "";
+        // Its box is the same either way round, so a flip leaves it, and its cells, as they are.
         return (
-            <>
+            <g transform={unflipped(part)}>
                 <rect x={-150} y={-40} width={300} height={80} fill={context.paper} {...ink(context, 1.4)} />
                 <path d="M-150 -8 H150 M-150 16 H150 M80 -40 V-8 M-50 -8 V40 M30 -8 V40" {...ink(context, 1)} />
                 <Cell x={-150} y={-40} label="TITLE" value={value("title", meta.name)} context={context} size={12} />
@@ -449,7 +455,7 @@ export const titleblock: Kind = {
                 <Cell x={-150} y={16} label="DRAWN" value={value("drawn", meta.by)} context={context} />
                 <Cell x={-50} y={16} label="CHECKED" value={value("checked", "")} context={context} />
                 <Cell x={30} y={16} label="SHEET" value={meta.sheet ?? "1 OF 1"} context={context} />
-            </>
+            </g>
         );
     },
 };

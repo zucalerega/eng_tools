@@ -178,7 +178,7 @@ export function badgePlacer(
     const inTheWayOf = () =>
         (found ??= {
             parts: drawing.parts
-                .filter((part) => !kindOf(part.kind).behind) // a region's around what's in it
+                .filter((part) => !kindOf(part.kind).behind && !kindOf(part.kind).aside) // a region's around what's in it
                 .map((part) => ({ id: part.id, box: boxOf(part, drawing) })),
             labels: drawing.parts.flatMap((part) => labelBox(drawing, part) ?? []),
             segments: [...paths.values()].flatMap((path) =>
@@ -278,7 +278,9 @@ export function lineLabelPlaces(drawing: Drawing, paths: Map<string, Point[]>): 
     const size = textSizes(drawing).line;
     const lines = new Map(drawing.lines.map((line) => [line.id, line]));
     const texts = new Map(drawing.lines.map((line) => [line.id, lineLabel(drawing, line)]));
-    const over = drawing.parts.filter((part) => !kindOf(part.kind).behind).map((part) => boxOf(part, drawing));
+    const over = drawing.parts
+        .filter((part) => !kindOf(part.kind).behind && !kindOf(part.kind).aside)
+        .map((part) => boxOf(part, drawing));
     const done = new Set<string>();
     const places: LineLabelPlace[] = [];
     for (const line of drawing.lines) {

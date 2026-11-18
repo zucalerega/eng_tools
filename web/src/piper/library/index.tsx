@@ -8,6 +8,7 @@ import { FLOW_KINDS } from "./flow";
 import { INSTRUMENT_KINDS } from "./instruments";
 import { CATEGORIES, NOTES, type Category, type Field, type Kind, type Preset } from "./kinds";
 import { NOTE_KINDS } from "./notes";
+import { SHAPE_KINDS } from "./shapes";
 import { VALVE_KINDS } from "./valves";
 import { VESSEL_KINDS } from "./vessels";
 
@@ -23,6 +24,7 @@ const ALL: Kind[] = [
     ...EQUIPMENT_KINDS,
     ...FITTING_KINDS,
     ...NOTE_KINDS,
+    ...SHAPE_KINDS,
     figure,
 ];
 
@@ -547,6 +549,43 @@ export const PRESETS: Preset[] = [
         prefix: "",
         keywords: "revision drawing number",
     },
+    // Shapes
+    ...(
+        [
+            ["rectangle", "Rectangle", "", "box square frame"],
+            ["rounded-rectangle", "Rounded rectangle", "rounded", "box frame callout"],
+            ["ellipse", "Ellipse", "ellipse", "circle oval round"],
+            ["triangle", "Triangle", "triangle", "warning"],
+            ["diamond", "Diamond", "diamond", "rhombus decision"],
+        ] as const
+    ).map(([id, name, shape, keywords]): Preset => ({
+        id,
+        kind: "shape",
+        name,
+        category: "shapes",
+        prefix: "",
+        keywords: `cosmetic shape ${keywords}`,
+        props: shape ? { shape } : {},
+        w: 120,
+        h: 80,
+    })),
+    ...(
+        [
+            ["drawn-line", "Line", "", "rule divider straight slanted"],
+            ["arrow", "Arrow", "end", "pointer callout"],
+            ["double-arrow", "Double arrow", "both", "dimension span"],
+        ] as const
+    ).map(([id, name, heads, keywords]): Preset => ({
+        id,
+        kind: "arrow",
+        name,
+        category: "shapes",
+        prefix: "",
+        keywords: `cosmetic ${keywords}`,
+        props: heads ? { heads } : {},
+        w: 120,
+        h: 20,
+    })),
 ];
 
 const BY_ID = new Map(PRESETS.map((preset) => [preset.id, preset]));

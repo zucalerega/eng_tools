@@ -336,7 +336,12 @@ internal static class Program
             ?? throw new WorkspaceException($"This isn't a vault workspace. Go to yours (usually {Workspace.DefaultRoot}) or create one with `vault init`.");
         var server = Workspace.ServerOf(root);
         var token = Tokens.Load(server) ?? throw new WorkspaceException($"Sign in first: vault login {server}");
-        return Workspace.Open(root, token);
+        var workspace = Workspace.Open(root, token);
+        if (workspace.StateWasDamaged)
+        {
+            Console.Error.WriteLine("note: " + Workspace.DamagedStateNote);
+        }
+        return workspace;
     }
 
     private static Uri? ServerArgument(Options options)

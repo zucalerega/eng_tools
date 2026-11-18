@@ -1605,8 +1605,13 @@ button.bf-deal-mark:hover:not(:disabled) {
     gap: 0.75rem;
 }
 
+.bf-shop-level .bf-shop-machine-name {
+    min-width: 0; /* a long name wraps, rather than squeezing its levels */
+}
+
 .bf-shop-segments {
     display: inline-flex;
+    flex: none;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     overflow: hidden;
@@ -1629,6 +1634,43 @@ button.bf-deal-mark:hover:not(:disabled) {
 .bf-shop-segments button[aria-pressed="true"] {
     background: var(--primary);
     color: #ffffff;
+}
+
+.bf-shop-card h3.bf-shop-group {
+    margin: 0.25rem 0 -0.25rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* Who's trained at a place, and the table's groups: where, then the machines. */
+.bf-shop-where {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.bf-shop-where .field {
+    min-width: 14rem;
+}
+
+.bf-shop-where > .muted {
+    padding-bottom: 0.45rem;
+}
+
+.bf-shop-skills .table .bf-shop-group-start {
+    border-left: 1px solid var(--border-strong);
+}
+
+.bf-shop-skills .table th[scope="colgroup"] {
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .bf-shop-form-foot {
@@ -1669,7 +1711,15 @@ button.bf-deal-mark:hover:not(:disabled) {
     border-color: var(--border-strong);
 }
 
-/* The machines (admins). */
+/* The machines and the places (admins). */
+.bf-shop-machines + .bf-shop-machines {
+    margin-top: 1.75rem;
+}
+
+.bf-shop-machines h2 {
+    margin: 0 0 0.25rem;
+}
+
 .bf-shop-machine-list li,
 .bf-shop-add-machine {
     display: flex;

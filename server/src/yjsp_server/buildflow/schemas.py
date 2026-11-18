@@ -16,6 +16,7 @@ from .models import (
     Machine,
     Milestone,
     Phase,
+    Place,
     Program,
     Progress,
     Review,
@@ -602,6 +603,8 @@ Quantity = Annotated[int, Field(ge=1, le=100_000)]
 Hours = Annotated[float, Field(allow_inf_nan=False, ge=0, le=100_000)]
 Level = Annotated[int, Field(ge=0, le=3)]
 MOST_MACHINES = 100
+PlaceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+MOST_PLACES = 100
 
 
 class MachineIn(BaseModel):
@@ -624,16 +627,40 @@ class MachineOut(BaseModel):
         return cls(id=machine.id, name=machine.name, position=machine.position, retired=machine.retired_at is not None)
 
 
-class LevelsIn(BaseModel):
-    """Someone's level on each machine sent, by its id: 0 not trained, 1 supervised only, 2 runs it on their own, 3
-    trains others. Machines left out stay as they were."""
+class PlaceIn(BaseModel):
+    name: PlaceName
 
-    levels: dict[int, Level] = Field(max_length=MOST_MACHINES)
+
+class PlaceChangeIn(BaseModel):
+    name: PlaceName | None = None
+    retired: bool | None = None  # true: it isn't offered; false: brought back
+
+
+class PlaceOut(BaseModel):
+    """A place people are trained to make parts in: a department's machine shop, a makerspace."""
+
+    id: int
+    name: str
+    position: int
+    retired: bool
+
+    @classmethod
+    def of(cls, place: Place) -> "PlaceOut":
+        return cls(id=place.id, name=place.name, position=place.position, retired=place.retired_at is not None)
+
+
+class LevelsIn(BaseModel):
+    """Someone's level on each machine sent, and at each place, by its id: 0 not trained, 1 supervised only, 2 on their
+    own, 3 trains others. Machines and places left out stay as they were."""
+
+    levels: dict[int, Level] = Field(default_factory=dict, max_length=MOST_MACHINES)  # by machine id
+    places: dict[int, Level] = Field(default_factory=dict, max_length=MOST_PLACES)  # by place id
 
 
 class TrainedOut(BaseModel):
     user: UserRef
     levels: dict[int, int]  # by machine id: 1 to 3 (none: not trained)
+    places: dict[int, int]  # by place id, likewise
 
 
 class ShopPartIn(BaseModel):
@@ -743,11 +770,12 @@ class LoadOut(BaseModel):
 
 
 class ShopOut(BaseModel):
-    """The shop: its machines (retired ones too), the parts in its queue, who's trained on what, and each machine's
-    load."""
+    """The shop: its machines (retired ones too), the places people are trained in, the parts in its queue, who's
+    trained on what and where, and each machine's load."""
 
     machines: list[MachineOut]
+    places: list[PlaceOut]  # where people are trained (retired ones too)
     parts: list[ShopPartOut]
     trained: list[TrainedOut]
     load: list[LoadOut]
-    can_edit_machines: bool  # admins
+    can_edit_machines: bool  # admins: they keep the machines and the places

@@ -248,6 +248,8 @@ export const SHOP_STATUS_NAMES: Record<ShopStatus, string> = {
 };
 /** How far someone's trained on a machine. */
 export const LEVEL_NAMES = ["Not trained", "Supervised only", "Runs it on their own", "Trains others"];
+/** How far someone's trained at a place: a department's machine shop, a makerspace. */
+export const PLACE_LEVEL_NAMES = ["Not trained", "Supervised only", "On their own", "Trains others"];
 /** The level at which someone can make a machine's parts: they run it on their own. */
 export const RUNS_IT = 2;
 
@@ -258,9 +260,18 @@ export interface Machine {
     retired: boolean; // takes no new parts
 }
 
+/** A place people are trained to make parts in, with training of its own: a department's machine shop, a makerspace. */
+export interface Place {
+    id: number;
+    name: string;
+    position: number;
+    retired: boolean; // not offered; who was trained there is kept
+}
+
 export interface Trained {
     user: UserRef;
     levels: Record<string, number>; // by machine id: 1 to 3 (left out: not trained)
+    places: Record<string, number>; // by place id, likewise
 }
 
 export interface ShopPart {
@@ -317,6 +328,7 @@ export interface Load {
 
 export interface Shop {
     machines: Machine[];
+    places: Place[]; // where people are trained
     parts: ShopPart[];
     trained: Trained[];
     load: Load[];
@@ -414,10 +426,13 @@ export const buildflow = {
     changeShopPart: (id: number, change: ShopPartChange) => request<ShopPart>("PATCH", shopPart(id), change),
     removeShopPart: (id: number) => request<ShopPart>("DELETE", shopPart(id)),
     restoreShopPart: (id: number) => request<ShopPart>("POST", `${shopPart(id)}/restore`),
-    /** Say how far someone's trained on each machine sent (0 to 3): your own, or anyone's for admins. */
-    setLevels: (userId: number, levels: Record<number, number>) =>
-        request<Trained>("PUT", `/api/buildflow/shop/skills/${userId}`, { levels }),
+    /** Say how far someone's trained on each machine sent, and at each place (0 to 3): your own, or anyone's for admins. */
+    setLevels: (userId: number, levels: Record<number, number>, places: Record<number, number> = {}) =>
+        request<Trained>("PUT", `/api/buildflow/shop/skills/${userId}`, { levels, places }),
     addMachine: (name: string) => request<Machine>("POST", "/api/buildflow/shop/machines", { name }),
     changeMachine: (id: number, change: { name?: string; retired?: boolean }) =>
         request<Machine>("PATCH", `/api/buildflow/shop/machines/${id}`, change),
+    addPlace: (name: string) => request<Place>("POST", "/api/buildflow/shop/places", { name }),
+    changePlace: (id: number, change: { name?: string; retired?: boolean }) =>
+        request<Place>("PATCH", `/api/buildflow/shop/places/${id}`, change),
 };

@@ -1,4 +1,7 @@
+import base64
 import hashlib
+import struct
+import zlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -110,3 +113,15 @@ class Team:
 @pytest.fixture
 def team(app, client) -> Team:
     return Team(app, client)
+
+
+def screenshot(width: int = 40, height: int = 30, shade: int = 0) -> str:
+    """A gray PNG of this size, as base64: a screenshot, as the web app sends one with a question or a request."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    rows = b"".join(b"\x00" + bytes([shade]) * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+    return base64.b64encode(png).decode()

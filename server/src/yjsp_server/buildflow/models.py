@@ -351,6 +351,36 @@ class Skill(Base):
     user: Mapped[User] = relationship(foreign_keys=[user_id], lazy="selectin")
 
 
+class Place(Base):
+    """A place people are trained to make parts in (a department's machine shop, a makerspace on campus), each with
+    training of its own: someone can work on their own in one, and only supervised in another. Admins keep the list;
+    one that's retired isn't offered, and keeps who was trained there."""
+
+    __tablename__ = "buildflow_places"
+    __table_args__ = (UniqueConstraint("name_key", name="uq_buildflow_places_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    name_key: Mapped[str] = mapped_column(String(40))  # lowercased: two places can't differ only in case
+    position: Mapped[int] = mapped_column(default=0)  # its place in the list
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class PlaceSkill(Base):
+    """How far someone's trained at a place, as a Skill is on a machine: 1, only supervised there; 2, works there on
+    their own; 3, trains others there (none kept: not trained). Each person says their own; admins can change anyone's."""
+
+    __tablename__ = "buildflow_place_skills"
+    __table_args__ = (UniqueConstraint("user_id", "place_id", name="uq_buildflow_place_skills_user_place"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    place_id: Mapped[int] = mapped_column(ForeignKey("buildflow_places.id"), index=True)
+    level: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # who said so: them, or an admin
+
+
 class ShopPart(Base):
     """A part to be machined in the team's shop: on which machine, from what, how many, and about how long they'll
     take; who asked for it (its responsible engineer) and who's making it; its drawing and CAD; when it's needed; and

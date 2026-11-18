@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { rgbaPng } from "./pngs";
 import { renderApp, Team } from "./team";
 
 // Bug reports and feature requests: sent from Help, looked at by Claude (the test server's stand-in, claude.ts, which
@@ -106,6 +107,42 @@ test("only the owner approves; any admin can decline, saying why", async () => {
     const item = mine.getByText(title).closest("li") as HTMLElement;
     expect(within(item).getByText(/Declined/)).toBeTruthy();
     expect(within(item).getByText("Yorg already sorts by date.")).toBeTruthy();
+});
+
+test("a bug report carries screenshots, which its sender and admins see", async () => {
+    const team = await Team.create();
+    const ida = await team.member("Ida");
+    renderApp(ida, "/vault");
+    const help = await openRequests();
+    const red = [255, 0, 0, 255];
+    const png = new File(
+        [
+            await rgbaPng([
+                [red, red],
+                [red, red],
+            ]),
+        ],
+        "addin.png",
+        { type: "image/png" },
+    );
+    await userEvent.upload(help.getByTestId("screenshot-file"), png);
+    const toSend = within(await help.findByRole("list", { name: "Screenshots to send" }));
+    expect(toSend.getByRole("img", { name: "Screenshot 1" })).toBeTruthy();
+    const title = `The add-in's pane is blank ${unique()}`;
+    await sendRequest(help, "Bug report", title, "After checking in, Vault's pane in SolidWorks shows nothing.");
+    expect(help.queryByRole("list", { name: "Screenshots to send" })).toBeNull(); // sent with it
+
+    const mine = within(help.getByRole("region", { name: "Your requests" }));
+    const item = within(mine.getByText(title).closest("li") as HTMLElement);
+    const shot = item.getByRole("img", { name: "Screenshot 1" });
+    const src = shot.getAttribute("src")!;
+    expect(src).toMatch(/\/api\/feedback\/\d+\/screenshots\/\d+$/);
+    expect(shot.closest("a")?.getAttribute("href")).toBe(src); // opens full size
+    cleanup();
+
+    renderApp(team.chief, "/vault/admin/requests");
+    const request = within(await screen.findByRole("article", { name: new RegExp(title) }));
+    expect(request.getByRole("img", { name: "Screenshot 1" }).getAttribute("src")).toBe(src);
 });
 
 test("members don't see Admin > Requests", async () => {

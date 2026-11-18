@@ -285,8 +285,16 @@ const TOPICS: Topic[] = [
                     are offered first as its machinist.
                 </li>
                 <li>
-                    Admins keep the list of machines, under <em>Machines</em>: add one, rename it, or retire it, which
-                    stops new parts going on it and keeps those made on it. <em>Export CSV</em> saves the queue and
+                    It&apos;s also where each person is trained. Each place the team makes parts in, such as a
+                    department&apos;s machine shop or a makerspace, has training of its own, so you say your level at
+                    each, under <em>Where</em>, the same way: 0 not trained to 3 trains others there.{" "}
+                    <em>Trained at</em>, above the table, shows only who&apos;s trained at one place, those who train
+                    others there first.
+                </li>
+                <li>
+                    Admins keep the lists of machines and places, under <em>Machines and places</em>: add one, rename
+                    it, or retire it. A retired machine takes no new parts and keeps those made on it; a retired place
+                    isn&apos;t offered, and keeps who was trained there. <em>Export CSV</em> saves the queue and
                     who&apos;s trained as a spreadsheet.
                 </li>
             </ul>

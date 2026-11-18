@@ -141,14 +141,16 @@ const TOPICS: Topic[] = [
                     normal state); with a test, open or closed.
                 </li>
                 <li>
-                    A <em>Manifold</em> takes its supply at one end and gives it out along its top to its{" "}
-                    <em>Outlets</em> (2 to 8, on the right); its far end is a port too. Take an outlet away and a line
-                    on it stays, ending where the outlet was. A <em>Tank</em> has two ports on each side, and 1 to 5 on
-                    its top and on its bottom: <em>Top ports</em> and <em>Bottom ports</em>, on the right. Every port on
-                    its top is its ullage, its pressurant or vent, and every one on its bottom its liquid; take one away
-                    and a line on it stays, ending where it was. An <em>Engine</em> is its injector and its chamber in
-                    one part: fuel comes into its injector's top on the left, ox on the right, and its chamber has a tap
-                    each side. For sensors on its injector's manifolds, give it <em>Fuel manifold ports</em> and{" "}
+                    A <em>Manifold</em> takes its supply at one end and gives it out to its ports on all four sides, set
+                    on the right: <em>Top ports</em> (2 to 8, 4 as it starts), and <em>Bottom ports</em>,{" "}
+                    <em>Left ports</em>, and <em>Right ports</em> (0 to 5 each; one on each end and none on its bottom
+                    as it starts). It grows to fit them, on the grid. Take a port away and a line on it stays, ending
+                    where the port was. A <em>Tank</em> has two ports on each side, and 1 to 5 on its top and on its
+                    bottom: <em>Top ports</em> and <em>Bottom ports</em>, on the right. Every port on its top is its
+                    ullage, its pressurant or vent, and every one on its bottom its liquid; take one away and a line on
+                    it stays, ending where it was. An <em>Engine</em> is its injector and its chamber in one part: fuel
+                    comes into its injector's top on the left, ox on the right, and its chamber has a tap each side. For
+                    sensors on its injector's manifolds, give it <em>Fuel manifold ports</em> and{" "}
                     <em>Ox manifold ports</em> (up to 2 each, on the right), on its injector's top outward from each
                     inlet; its injector is then drawn reaching out under them. Its injector's element type, elements,
                     stiffness, CdAs, and material are fields of its own. A <em>Diffuser</em> goes into a line, as a

@@ -1,6 +1,8 @@
 """Request and response bodies of the site's own API: accounts, sign-in, and tokens, and the pieces of bodies the apps
 share. Each app has its own (vault/schemas.py, yorg/schemas.py, piper/schemas.py)."""
 
+import base64
+import binascii
 from datetime import date, datetime
 from typing import Annotated, Literal
 
@@ -310,12 +312,25 @@ class WhitelistAddedOut(BaseModel):
     not_georgia_tech: list[str]  # left off: only the school's addresses make accounts (its name's from before: API)
 
 
+def _decoded(value: str) -> bytes:
+    try:
+        return base64.b64decode(value, validate=True)
+    except binascii.Error:
+        raise ValueError("a screenshot is a PNG or a JPEG, written as base64") from None
+
+
+# A screenshot, as base64 (a PNG or a JPEG: assistant.check_screenshot says whether Claude can read it): its bytes.
+Screenshot = Annotated[str, Field(max_length=5_000_000), AfterValidator(_decoded)]
+
+
 class AssistantMessageIn(BaseModel):
     role: Literal["user", "assistant"]
     # A question's length, and an answer's, are the assistant's to check (assistant._check), saying which is too long.
     text: str = Field(max_length=100_000)
     # A question's: the page of the web app it was asked from, like /vault/file/12.
     page: str | None = Field(default=None, max_length=300)
+    # A question's screenshots, for Claude to see with it (assistant._check says how many, and how big).
+    screenshots: list[Screenshot] = Field(default_factory=list, max_length=10)
 
 
 class AskIn(BaseModel):
@@ -332,6 +347,8 @@ class FeedbackIn(BaseModel):
     title: str = Field(max_length=2_000)
     body: str = Field(max_length=50_000)
     page: str | None = Field(default=None, max_length=2_000)
+    # What was on the screen, for the owner and Claude's look to see (feedback.py says how many, and how big).
+    screenshots: list[Screenshot] = Field(default_factory=list, max_length=10)
 
 
 class FeedbackReplyIn(BaseModel):
@@ -340,6 +357,15 @@ class FeedbackReplyIn(BaseModel):
 
 class FeedbackApproveIn(BaseModel):
     note: str | None = Field(default=None, max_length=20_000)  # for Claude Code, with the request
+
+
+class FeedbackScreenshotOut(BaseModel):
+    """A screenshot sent with a request: its bytes are at GET /api/feedback/{id}/screenshots/{screenshot id}."""
+
+    id: int
+    width: int  # in pixels
+    height: int
+    size: int  # in bytes
 
 
 class FeedbackOut(BaseModel):
@@ -354,6 +380,7 @@ class FeedbackOut(BaseModel):
     status: str  # "new" (waiting for the owner), "approved" (Claude Code is building it), "declined", or "done"
     reply: str | None  # an admin's answer to whoever sent it
     decided_at: datetime | None
+    screenshots: list[FeedbackScreenshotOut] = []  # sent with it, in order
     # Admins only:
     sender: UserRef | None = None
     decided_by: UserRef | None = None
@@ -377,6 +404,10 @@ class FeedbackOut(BaseModel):
             status=item.status.value,
             reply=item.reply,
             decided_at=item.decided_at,
+            screenshots=[
+                FeedbackScreenshotOut(id=shot.id, width=shot.width, height=shot.height, size=shot.size)
+                for shot in item.screenshots
+            ],
         )
         if names is not None:
             sender, decider = names(item.user_id), names(item.decided_by_id)

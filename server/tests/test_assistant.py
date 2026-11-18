@@ -1,6 +1,7 @@
 """The assistant: Claude answering members' questions from the help, as it writes, within its budgets (in all, and each
 month) and each person's daily limit. Anthropic's API is a stand-in on a port of its own (fake_claude.py), which the real SDK talks to."""
 
+import base64
 import json
 import threading
 from collections.abc import Iterator
@@ -14,7 +15,7 @@ from yjsp_server.app import create_app
 from yjsp_server.assistant import Assistant
 from yjsp_server.config import Settings
 
-from .conftest import BOOTSTRAP_ADMIN
+from .conftest import BOOTSTRAP_ADMIN, screenshot
 from .fake_claude import FakeClaude, Reply
 from .test_auth import production_settings
 
@@ -618,6 +619,56 @@ def test_a_long_answer_goes_back_with_the_next_question(client, team, claude):
 def test_a_conversation_is_questions_and_answers_in_turn(client, team, claude, conversation):
     response, _ = ask(client, team.member("ana@rocketry.test"), *conversation)
     assert (response.status_code, response.json()["error"]) == (400, "bad_conversation")
+    assert claude.requests == []
+
+
+def test_claude_sees_a_questions_screenshots(client, team, claude):
+    member = team.member("ana@rocketry.test")
+    error = screenshot(64, 48)
+    question = {**QUESTION, "screenshots": [error]}
+    response, events = ask(client, member, question)
+    assert response.status_code == 200, response.text
+    assert events[-1]["type"] == "done"
+    picture = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": error}}
+    words = {"type": "text", "text": "[Asked from /vault/file/12]\n\nWhy is Fin.SLDPRT read-only?"}
+    assert claude.requests[0]["messages"] == [{"role": "user", "content": [picture, words]}]
+    # They go back with the questions after, as they were, so what Anthropic kept of the conversation is read again.
+    follow_up = {"role": "user", "text": "And now?", "page": "/vault"}
+    ask(client, member, question, {"role": "assistant", "text": Reply().text}, follow_up)
+    assert claude.requests[1]["messages"][0] == claude.requests[0]["messages"][0]
+    assert claude.requests[1]["messages"][2] == {"role": "user", "content": "[Asked from /vault]\n\nAnd now?"}
+
+
+@pytest.mark.parametrize(
+    "conversation, status, message",
+    [
+        ([{**QUESTION, "screenshots": [screenshot()] * 4}], 400, "A question takes up to 3 screenshots"),
+        (
+            [
+                {**QUESTION, "screenshots": [screenshot()] * 3},
+                {"role": "assistant", "text": "An answer."},
+                {**QUESTION, "screenshots": [screenshot()] * 3},
+                {"role": "assistant", "text": "An answer."},
+                {**QUESTION, "screenshots": [screenshot()]},
+            ],
+            400,
+            "A conversation takes up to 6 screenshots in all: start a new one",
+        ),
+        (
+            [QUESTION, {"role": "assistant", "text": "An answer.", "screenshots": [screenshot()]}, QUESTION],
+            400,
+            "Only a question has screenshots",
+        ),
+        (
+            [{**QUESTION, "screenshots": [base64.b64encode(b"<svg/>").decode()]}],
+            415,
+            "That isn't a PNG or a JPEG picture: save it as one (File > Export, in most programs), then add it",
+        ),
+    ],
+)
+def test_what_screenshots_claude_takes(client, team, claude, conversation, status, message):
+    response, _ = ask(client, team.member("ana@rocketry.test"), *conversation)
+    assert (response.status_code, response.json()["message"]) == (status, message)
     assert claude.requests == []
 
 

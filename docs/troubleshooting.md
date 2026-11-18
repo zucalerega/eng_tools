@@ -929,8 +929,9 @@ a number. A few codes come up in more than one place.
 - **... can't go inside itself** (`cycle`): a folder can't move into one of its own folders.
 - **... isn't empty: move what's in it out first** (`not_empty`): only an empty folder can be
   deleted. Move its diagrams and folders out (or delete the diagrams) first.
-- **That isn't a PNG or a JPEG picture** (`not_an_image`): a picture on a drawing is a PNG or a
-  JPEG. Save it as one (File > Export in most programs; a screenshot is a PNG), then add it.
+- **That isn't a PNG or a JPEG picture** (`not_an_image`): a picture on a drawing (or a
+  screenshot in Help) is a PNG or a JPEG. Save it as one (File > Export in most programs; a
+  screenshot is a PNG), then add it.
 - **A picture can be up to 5 MB**, or **That picture is ... by ... pixels** (`too_large`): save
   it smaller (fewer pixels, or a JPEG instead of a PNG for a photo), then add it.
 - **... is a Visio drawing from before 2013 (.vsd)**, or **... is a Visio XML drawing (.vdx)**:
@@ -984,8 +985,10 @@ a number. A few codes come up in more than one place.
   a component's lead and people, and a shop part's responsible engineer and machinist, are people
   who've joined the site. Pick someone from the list.
 - **The ... is retired: put the part on another machine, or ask an admin** (`machine_retired`): a
-  retired machine takes no new parts. Pick another, or an admin brings it back under *Machines*.
-- **There's a machine called ... already** (`name_taken`): two machines can't have the same name,
+  retired machine takes no new parts. Pick another, or an admin brings it back under *Machines and
+  places*.
+- **There's a machine called ... already**, or **There's a place called ... already**
+  (`name_taken`): two machines, or two places people are trained in, can't have the same name,
   whatever its case (a retired one keeps its name: bring it back instead).
 - **... isn't a link a component can have** (or **a review can have**)**: a link is an http or https
   address, or a page of the site's own, like /vault/file/12** (`bad_link`): copy the page's whole
@@ -1027,6 +1030,19 @@ a number. A few codes come up in more than one place.
   **A question holds up to 20,000 characters**, and the like (`bad_conversation`): a question, or
   the conversation so far, is longer than Claude takes. Shorten the question, or click
   *New conversation*.
+- **A question takes up to 3 screenshots**, or **A conversation takes up to 6 screenshots in
+  all: start a new one** (`bad_conversation`): take one off with its ×, or click
+  *New conversation*. **Only a question has screenshots**: whatever sent it sent a screenshot
+  with an answer, which Help never does.
+- **A screenshot can be up to 3 MB**, or **That screenshot is ... by ... pixels: Claude reads up
+  to 8,000 on a side** (`too_large`): Help makes a screenshot smaller before it sends it, so this
+  comes from something else sending one; crop it, or save it smaller, then add it.
+- **That isn't a PNG or a JPEG picture** (`not_an_image`), with a screenshot: add a PNG or a
+  JPEG (a screenshot pasted is a PNG).
+- **That isn't a picture**, **This browser can't make that picture smaller**, or **That picture
+  is too big to send, even made smaller** (in Help, as you add one): the file isn't a picture
+  the browser can open, or it's too big for the browser to shrink. Save it as a PNG or a JPEG,
+  cropped to what matters, then add it. **You can add up to 3 screenshots**: take one off first.
 - **Claude is overloaded or down**, **The server couldn't reach Claude**,
   **Claude's answer broke off**, and the like (`assistant_failed`): Claude didn't take the question,
   or its answer stopped partway. Try again in a minute or two, or ask another way if it says to; if
@@ -1037,6 +1053,11 @@ a number. A few codes come up in more than one place.
 - **You've sent 10 requests in the last 24 hours** (`feedback_daily_limit`): each request has
   Claude look at it, so each person sends so many a day. Send more tomorrow, or put several
   things in one.
+- **A request takes up to 3 screenshots** (`bad_request`): take one off with its ×. A screenshot
+  that's too big, or isn't a PNG or a JPEG, says so as a question's does (see *Asking Claude*).
+- **Request #... has no screenshot ...** (`not_found`): the screenshot's address is wrong. Open
+  it from the request instead. Only whoever sent a request and admins see its screenshots: to
+  anyone else, the request isn't there.
 - **Only the site's owner can approve requests** (`feedback_owner_only`): approving starts
   Claude Code building it on the owner's Claude account, so only they can. Other admins can
   decline a request, or mark it done.

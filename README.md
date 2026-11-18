@@ -72,8 +72,11 @@ In the web app, **Help** (the question mark at the top right) opens beside the p
 the help, the app's own (Yorg's Help page, Vault's SolidWorks page), and Claude, to ask how to do
 something or what an error means. An error on the page is offered as a question, in a click.
 Claude has read all of the help, and answers with links to it, but it can be wrong: all it knows
-is the help, and it can't see your files or change anything. What you ask goes to Anthropic, so
-never paste a password or a key. The tab keeps the conversation until you start a new one. Each
+is the help, and it can't see your files or change anything. To show it what you see, add up to
+3 screenshots to a question: paste one into the box (after Win+Shift+S on Windows, or
+Cmd+Ctrl+Shift+4 on a Mac), or pick a file with the paperclip; × takes one off before you ask. A
+conversation holds 6 in all. What you ask goes to Anthropic, screenshots and all, so never paste
+a password or a key, or a screenshot of one. The tab keeps the conversation until you start a new one. Each
 person can ask so much a day, and the server sets what Claude may spend each month, or in all;
 admins see what it has spent, and on whose questions, on Admin > People. There, *Keep the help
 loaded* says whether the server keeps the help loaded for Claude around the clock, so every
@@ -82,8 +85,10 @@ question, for a team that asks rarely.
 
 **Report a bug or idea**, Help's other tab, sends the site's owner a bug report or a feature
 request, with the page you're on. Say what you did, what happened (an error's exact words, if
-there was one), and what you expected; or what you'd like, and what it's for. Claude looks at
-it first, from the help, and the owner decides whether Claude Code builds it: approved, it
+there was one), and what you expected; or what you'd like, and what it's for. Add up to 3
+screenshots of what you saw, as for Claude: paste them into the description, or *Add a
+screenshot*. Only you and the site's admins see them. Claude looks at it first, from the help
+and the screenshots, and the owner decides whether Claude Code builds it: approved, it
 becomes a change the owner reviews like any other. *Your requests*, under the form, says what's
 become of each, with any reply. You can send 10 a day. Admins see every request on
 Admin > Requests, with Claude's look at it, and can decline one, saying why, or mark one done;
@@ -649,9 +654,13 @@ Buildflow's top bar, has all of this on one page.
   phase (*In the shop*), and **Queue a part for it**, there, starts one for it. **Who's trained**
   is each person's level on each machine (0 not trained, 1 supervised only, 2 runs it on their
   own, 3 trains others): set your own there, and admins can set anyone's. Those at 2 or 3 are who
-  can make a machine's parts, and the queue names them. Admins add, rename, and retire machines
-  (**Machines**); a retired one takes no new parts. **Export CSV** saves the queue and who's
-  trained as a spreadsheet.
+  can make a machine's parts, and the queue names them. It's also where each person is trained:
+  each place the team makes parts in, such as a department's machine shop or a makerspace, has
+  training of its own, so you say your level at each the same way, from 0 not trained to 3 trains
+  others there. **Trained at** shows only who's trained at one place, those who train others there
+  first. Admins add, rename, and retire machines and places (**Machines and places**); a retired
+  machine takes no new parts, and a retired place isn't offered, keeping who was trained there.
+  **Export CSV** saves the queue and who's trained as a spreadsheet.
 
 ## Deals
 

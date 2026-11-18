@@ -28,6 +28,9 @@ export interface Port {
     dir: Dir | null; // null: any way (a junction's)
     inset: number; // how far in from the port the symbol's outline is: its lines are drawn on to it
     many?: boolean; // takes any number of lines, as a junction does
+    // A line on it carries a signal, not what flows through the part: a pneumatic actuator's air. A run's fluid doesn't
+    // reach it, and Simulation mode leaves its lines out.
+    signal?: boolean;
 }
 
 export interface Option {

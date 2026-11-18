@@ -177,7 +177,14 @@ what it is, `data-hit`).
   is (a solenoid valve: a valve, a globe body, a solenoid, NC). Valves are small on their lines,
   as P&IDs draw them: a bowtie 22 long and 13 high between ports 40 apart, and its actuator on a
   14-unit stem, a handle or a 12-unit box with a letter, S for a solenoid, P for pneumatic, M for
-  a motor; a regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
+  a motor. A pneumatic one (a valve, a three-way, or an angle valve) has a port for its air,
+  `actuator`, on the grid 4 above its box (0, -30), drawn on down to it; no other valve's ports
+  change, so drawings from before keep theirs. It's a port for a signal (`Port.signal`): a line
+  drawn to it is a pneumatic signal unless it tees into a line of another kind, takes the fluid
+  only of other lines on that port, and a run's fluid doesn't carry through the valve to or from
+  it (`runLines`); deleting the valve joins its process line up again and leaves its air line
+  ending where the port was, and Simulation mode leaves lines on it out, whatever they're drawn
+  as. Set to another actuation, a line on it stays, ending where it was. A regulator's sensing line runs from its diaphragm to the pipe it holds (after it,
   or before it for back pressure); an orifice's plate sits on a pipe that runs through it,
   between ports 20 apart (half a valve's: a plate, not a fitting as long as a valve), the pipe
   as wide as a line's however big the orifice is drawn; a vent is the spray of what it lets
@@ -547,7 +554,8 @@ valves as long as Piper's (40), or a hundred where it has none. Its shapes, in V
   tank's words naming a fluid are what it holds. It's turned and flipped as its frame is, unless
   the lines that meet an in-line part all meet it the other way (a stencil can draw a symbol
   standing up), and put on its lines: across them where they met it, along them between where
-  they met it each side (not where an actuator's air line met its box). It's sized as it was
+  they met it each side (not where an actuator's air line met its box, which a glued line ends
+  on: a pneumatic valve's actuator port). It's sized as it was
   drawn, of its kind's size; its tag is written where it was, unless that was in it (an
   instrument's, which Piper writes beside it), at about the size it was.
 - **Words** alone are Piper's text, set as they were (size, weight, slant, font, alignment), if
@@ -643,7 +651,8 @@ they wait for Edit, as every change does (the box's fields are only read, and Ap
   of its choices unless its `sim.as` picks another; a pump, a three-way valve, a 3/2 or 5/2
   solenoid valve (`NOT_SIMULATED`), or a figure
   (only drawn: an imported drawing's tanks may be) isn't simulated, so the lines at it end
-  there, as the model says (of a figure, where lines do). Lines that carry signals aren't in it.
+  there, as the model says (of a figure, where lines do). Lines that carry signals aren't in
+  it, nor any line on a pneumatic actuator's port.
 - **Liquid or gas**: what flows through a part is what its lines' fluids say (Piper's fluids say
   which are gases), through what carries flow from point to point; failing that, what's on
   them (a regulator's gas, a venturi's liquid, a supply's or a vessel's gas). A tank's liquid

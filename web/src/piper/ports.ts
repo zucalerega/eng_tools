@@ -12,6 +12,7 @@ export interface PlacedPort {
     dir: Dir | null; // the way a line leaves it (null: any way)
     edge: Point; // where the line is drawn to: the symbol's outline
     many: boolean;
+    signal: boolean; // a line on it carries a signal (a pneumatic actuator's air), not what flows through the part
 }
 
 export function portsOf(part: Part): PlacedPort[] {
@@ -39,6 +40,7 @@ export function portsOf(part: Part): PlacedPort[] {
             dir,
             edge: back.x !== 0 ? { x: outline.x, y: at.y } : back.y !== 0 ? { x: at.x, y: outline.y } : at,
             many: port.many === true,
+            signal: port.signal === true,
         };
     });
 }
@@ -61,6 +63,19 @@ export function placeEnd(parts: Map<string, Part>, end: End): PlacedEnd | null {
     const part = parts.get(end.part);
     const port = part ? portOf(part, end.port) : null;
     return port ? { at: port.at, dir: port.dir, edge: port.edge } : null;
+}
+
+/** Whether an end is on a port for a signal (a pneumatic actuator's), which what flows through its part doesn't reach. */
+export function isSignalEnd(parts: Map<string, Part>, end: End): boolean {
+    if (!isPortEnd(end)) {
+        return false;
+    }
+    const part = parts.get(end.part);
+    return part
+        ? kindOf(part.kind)
+              .ports(part)
+              .some((port) => port.id === end.port && port.signal === true)
+        : false;
 }
 
 export const partsById = (drawing: Drawing): Map<string, Part> => new Map(drawing.parts.map((part) => [part.id, part]));
@@ -119,7 +134,8 @@ export function linesOn(drawing: Drawing, partId: string): { line: Line; end: "f
 
 /**
  * The lines a line's run reaches, itself among them: on through what a fluid flows through (valves, fittings, tees,
- * instruments' taps), up to what holds or uses it (tanks, engines).
+ * instruments' taps), up to what holds or uses it (tanks, engines). Not to or from a pneumatic actuator's air line,
+ * which works its valve but carries none of what flows through it.
  */
 export function runLines(drawing: Drawing, lineId: string): Set<string> {
     const reached = new Set<string>([lineId]);
@@ -133,7 +149,7 @@ export function runLines(drawing: Drawing, lineId: string): Set<string> {
             continue;
         }
         for (const end of [line.from, line.to]) {
-            if (!isPortEnd(end) || seen.has(end.part)) {
+            if (!isPortEnd(end) || isSignalEnd(parts, end) || seen.has(end.part)) {
                 continue;
             }
             seen.add(end.part);
@@ -141,8 +157,8 @@ export function runLines(drawing: Drawing, lineId: string): Set<string> {
             if (!part || !(kindOf(part.kind).through || kindOf(part.kind).reads === "value")) {
                 continue;
             }
-            for (const { line: next } of linesOn(drawing, end.part)) {
-                if (!reached.has(next.id)) {
+            for (const { line: next, port } of linesOn(drawing, end.part)) {
+                if (!reached.has(next.id) && !isSignalEnd(parts, { part: end.part, port })) {
                     reached.add(next.id);
                     queue.push(next.id);
                 }

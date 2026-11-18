@@ -31,7 +31,7 @@ import { isGas } from "./fluids";
 import { boxOf, kindOf } from "./library/index";
 import type { Preset } from "./library/kinds";
 import { isTopPort } from "./library/vessels";
-import { linesOn, partsById, placeEnd, portOf, portsOf, runLines, type PlacedEnd } from "./ports";
+import { isSignalEnd, linesOn, partsById, placeEnd, portOf, portsOf, runLines, type PlacedEnd } from "./ports";
 import { crosses, route, STUB } from "./route";
 
 // The changes the editor makes to a drawing, each a pure function from one drawing to the next: placing parts,
@@ -375,6 +375,10 @@ function fluidAt(drawing: Drawing, end: End): string {
     }
     const part = drawing.parts.find((entry) => entry.id === end.part);
     const kind = part ? kindOf(part.kind) : null;
+    // A pneumatic actuator's air line carries what other lines on it do, not what flows through its valve.
+    if (isSignalEnd(partsById(drawing), end)) {
+        return linesOn(drawing, end.part).find(({ line, port }) => port === end.port && line.fluid)?.line.fluid ?? "";
+    }
     for (const { line, port } of linesOn(drawing, end.part)) {
         // A run's fluid carries on through what it flows through, and from the same port of anything.
         if (line.fluid && (port === end.port || kind?.through)) {
@@ -467,8 +471,10 @@ export function connect(drawing: Drawing, source: Target, target: Target): { dra
     }
     const tapped = [source, target].filter(onLine).map((at) => drawing.lines.find((line) => line.id === at.line));
     const fluid = fluidAt(next, from) || fluidAt(next, to) || (tapped.find((line) => line?.fluid)?.fluid ?? "");
-    // A tee is the type of the line it tees into; any other line is tubing, which most of the team's lines are.
-    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? "tube" });
+    // A tee is the type of the line it tees into. A line to a pneumatic actuator is its air, a pneumatic signal; any
+    // other line is tubing, which most of the team's lines are.
+    const signal = [from, to].some((end) => isSignalEnd(partsById(next), end));
+    const line = newLine(from, to, { fluid, kind: tapped[0]?.kind ?? (signal ? "pneumatic" : "tube") });
     line.points = routeOf(next, line);
     return { drawing: { ...next, lines: [...next.lines, line] }, id: line.id };
 }
@@ -901,11 +907,14 @@ export function deleteItems(drawing: Drawing, ids: Set<string>): Drawing {
 }
 
 /**
- * Lines through a part that's going, joined up: two on a part's two inline ports (or any two on a junction). deleting:
+ * Lines through a part that's going, joined up: two on a part's two inline ports (or any two on a junction), whatever
+ * else is on its actuator. deleting:
  * the part's being deleted anyway; otherwise (a junction) it goes only if it's left joining nothing.
  */
 function heal(drawing: Drawing, part: Part, deleting: boolean): Drawing {
-    const on = linesOn(drawing, part.id);
+    // Not counting an actuator's air line, which stays, ending where its port was.
+    const parts = partsById(drawing);
+    const on = linesOn(drawing, part.id).filter(({ port }) => !isSignalEnd(parts, { part: part.id, port }));
     const kind = kindOf(part.kind);
     if (part.kind === "junction" && !deleting) {
         if (on.length >= 3) {

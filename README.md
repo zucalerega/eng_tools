@@ -427,7 +427,10 @@ the keys.
   box for anything else, shapes and arrows, notes, regions, a legend, a title block, and pictures of your own (a PNG
   or a JPEG of an injector or a TCA, up to 5 MB: drop it on the drawing, or **Choose a picture…**
   on the right; it keeps its shape as it's sized, and the exports have it). What works a valve is
-  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). The 3/2
+  on a stem above it: a handle, or a box with S (solenoid), P (pneumatic), or M (motor). A
+  pneumatic valve's P box has a port on its top for the air that works it: a line drawn to it is
+  a pneumatic signal, follows the valve when it moves, and carries none of what flows through the
+  valve (Simulation leaves it out). The 3/2
   and 5/2 solenoid valves are drawn as pneumatic schematics draw them (ISO 1219): a box for each
   position, the solenoid at one end and the return spring at the other, their ports numbered as
   ISO 5599 numbers them, and the position they're in tinted in their state's color. An
@@ -548,7 +551,7 @@ the keys.
   ones too), regulators, relief valves, orifices, diffusers, quick disconnects, and sensors become
   parts (by their stencil, or by their tags: PRV, FTPT, FO-1, ODIFF), tagged with their labels,
   with their set pressures, worked as
-  their actuators' letters say; everything else (the vehicle, its tanks, the key, the title
+  their actuators' letters say (a line glued to a P box ends on its air port); everything else (the vehicle, its tanks, the key, the title
   block) is drawn as Visio drew it, as figures. Its connectors become lines along their routes,
   on the parts they were glued to, carrying what the drawing's key (or their words, or their
   color) says they carry, and sized as the key says. The import lists the symbols Piper has no

@@ -126,7 +126,10 @@ const TOPICS: Topic[] = [
                 <li>
                     Valves are small on their lines, as P&IDs draw them: a bowtie body, with what works it on a short
                     stem: a handle, or a box with <code>S</code> for a solenoid, <code>P</code> for pneumatic, or{" "}
-                    <code>M</code> for a motor. A regulator's line from its diaphragm goes to the pressure it holds; an
+                    <code>M</code> for a motor. A pneumatic valve's <code>P</code> box has a port on its top for the air
+                    that works it, from a 3/2 or 5/2 solenoid valve's port: a line drawn to it is a pneumatic signal,
+                    follows the valve when it moves, and carries none of what flows through the valve, which Simulation
+                    mode leaves it out of. A regulator's line from its diaphragm goes to the pressure it holds; an
                     orifice is its plate on a short run of pipe, half a valve's length; a vent is the spray of what it
                     lets go, in its line's color; a pump stands on its base, its discharge leaving its top.
                 </li>
@@ -538,7 +541,8 @@ const TOPICS: Topic[] = [
                     or, drawn by hand, by what their tags say (<code>PRV</code> a relief valve, <code>FTPT</code> a
                     pressure transducer, <code>FO-1</code> an orifice, <code>ODIFF</code> a diffuser). Each is tagged
                     with its label, beside it or grouped with it, given its set pressure (<code>S.P. 145 PSI</code>),
-                    and worked as its actuator's letter says (S a solenoid, P air).
+                    and worked as its actuator's letter says (S a solenoid, P air). A line glued to a pneumatic valve's
+                    actuator ends on the port on top of its box.
                 </li>
                 <li>
                     A <em>3/2 valve</em> or <em>5/2 valve</em> becomes Piper's 3/2 or 5/2 solenoid valve, its lines on

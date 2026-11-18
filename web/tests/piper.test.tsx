@@ -309,6 +309,32 @@ test("a tank's ports on its top and its bottom are chosen on the right, and a li
     });
 });
 
+test("a line drawn from a pneumatic valve's actuator is its air, a pneumatic signal", async () => {
+    const team = await Team.create();
+    const drawing = { value: emptyDrawing() };
+    const valve = place(drawing, "pneumatic-valve", 0, 0); // PV-1
+    const made = await team.diagram(team.chief, "Main valve", drawing.value);
+    renderApp(team.chief, `/piper/diagrams/${made.id}`);
+    const svg = await screen.findByRole("application", { name: "Drawing" });
+    await startEditing();
+    // The pointer on the valve shows the port on top of its actuator's box, to drag a line from.
+    fireEvent.pointerMove(within(svg).getByRole("button", { name: "PV-1" }), at(0, 0));
+    const port = await waitFor(() => {
+        const found = svg.querySelector(`[data-hit="port:${valve}:actuator"]`);
+        expect(found).not.toBeNull();
+        return found!;
+    });
+    fireEvent.pointerDown(port, at(0, -30));
+    fireEvent.pointerMove(svg, at(0, -80));
+    fireEvent.pointerUp(svg, at(0, -120));
+    await waitFor(async () => {
+        const saved = (await team.piperDiagram(team.chief, made.id)).read;
+        expect(saved.lines.map((line) => [line.from, line.kind])).toEqual([
+            [{ part: valve, port: "actuator" }, "pneumatic"],
+        ]);
+    });
+});
+
 test("a line drawn from one part's port to another's is routed, and carries the fluid it's drawn from", async () => {
     const team = await Team.create();
     const drawing = { value: emptyDrawing() };

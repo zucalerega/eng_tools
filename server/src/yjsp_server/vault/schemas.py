@@ -242,12 +242,14 @@ class MoveIn(BaseModel):
     files: list[int | str] = Field(default=[], max_length=5000)  # ids or vault paths
     folders: list[str] = Field(default=[], max_length=500)  # vault paths
     to: str  # the folder they go into, made if it isn't there; "" is the top of the vault
+    force: bool = False  # move even if files that use these wouldn't find them: they're pointed at them again after
 
 
 class RenameIn(BaseModel):
     file: int | str | None = None  # a file (id or vault path), or
     folder: str | None = None  # a folder (vault path)
     name: str
+    force: bool = False  # rename even if files that use it, or what's in it, wouldn't find it afterwards
 
 
 class DescriptionIn(BaseModel):

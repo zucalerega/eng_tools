@@ -122,7 +122,13 @@ or get a new name (a file keeps its type), all or nothing, and never while check
 SolidWorks finds a file that an assembly or drawing uses by its name, in the assembly's
 folder or where it was relative to the assembly. So a move that would lose a file from
 the files using it is refused (`_still_found`): move a part into its assembly's folder,
-or their whole folder together, and rename used files in a check-in (below). Moving or renaming
+or their whole folder together, and rename used files in a check-in (below). With `force`
+it goes ahead all the same (the web app's *Move anyway* and *Rename anyway*, a second yes
+after the refusal, as *Delete anyway* is): a team reorganizing its vault sometimes means
+to break links, and to point the files at what moved again in SolidWorks. What used a
+file still uses it, as the vault has it; the event keeps how many files lost it
+(`links_broken`, a count, since some may be out of the reader's sight), which the
+activity page says. A check-out is never left behind, forced or not. Moving or renaming
 a folder, which takes its permissions along, takes a lead of it. Afterwards every client
 syncs everything again (clients know folders by path, and where a file is decides who
 can see it), and the CLI and add-in move their copies to match; a copy SolidWorks has
@@ -1017,7 +1023,7 @@ are in [design.md](design.md#api).
 | `POST /api/undo-checkout` | release locks (leads: anyone's) |
 | `POST /api/delete` | to the trash `{files, folders, force}`: folders go with everything in them |
 | `POST /api/files/{id}/restore`, `POST /api/folders/{id}/restore` | bring a file or folder back |
-| `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}` |
+| `POST /api/move`, `POST /api/rename` | move files and folders `{files, folders, to}`; rename one `{file or folder, name}`; either with `force`, even if files that use them wouldn't find them |
 | `POST /api/files/metadata` | say what files are called and which are vendors' parts `{files: [{file: id or path, title, vendor}]}` (null leaves either as it is) |
 | `GET/PUT /api/numbering` | whether new files take part numbers `{mode: off, offer, or require}`, and the next number `{next_number}` (admins change them) |
 | `GET/PUT/DELETE /api/vault/pause` | whether an admin has the vault paused, by whom and why; pause it `{host, reason}`; unpause it (admins) |

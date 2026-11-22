@@ -175,9 +175,19 @@ export class Team {
         await call("POST", "/api/checkout", who.token, { files: [this.path(relative)], host });
     }
 
-    /** Rename a file where it is: given its part number, say. */
-    async rename(who: Member, relative: string, name: string): Promise<void> {
-        await call("POST", "/api/rename", who.token, { file: this.path(relative), name });
+    /** Rename a file where it is: given its part number, say. force: even if files that use it wouldn't find it. */
+    async rename(who: Member, relative: string, name: string, force = false): Promise<void> {
+        await call("POST", "/api/rename", who.token, { file: this.path(relative), name, force });
+    }
+
+    /** Move a file into a folder. force: even if files that use it wouldn't find it there. */
+    async move(who: Member, relative: string, to: string, force = false): Promise<void> {
+        await call("POST", "/api/move", who.token, {
+            files: [this.path(relative)],
+            folders: [],
+            to: this.path(to),
+            force,
+        });
     }
 
     /** A part number handed out (00000123-001), as New gets one; admins get them before numbering is turned on. */

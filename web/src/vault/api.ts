@@ -283,10 +283,12 @@ export const vaultApi = {
     downloadUrl: (fileId: number, version?: number) =>
         apiUrl(`/api/files/${fileId}/content` + (version === undefined ? "" : "?" + query({ version }))),
     createFolder: (path: string) => request<Folder>("POST", "/api/folders", { path }),
-    move: (files: number[], folders: string[], to: string) =>
-        request<Moved>("POST", "/api/move", { files, folders, to }),
-    rename: (target: { file: number } | { folder: string }, name: string) =>
-        request<Moved>("POST", "/api/rename", { ...target, name }),
+    /** Into a folder. force: even if files that use them wouldn't find them there (they're pointed at them again). */
+    move: (files: number[], folders: string[], to: string, force = false) =>
+        request<Moved>("POST", "/api/move", { files, folders, to, force }),
+    /** Where it is. force: even if files that use it, or what's in it, wouldn't find it under the new name. */
+    rename: (target: { file: number } | { folder: string }, name: string, force = false) =>
+        request<Moved>("POST", "/api/rename", { ...target, name, force }),
     numbering: () => request<Numbering>("GET", "/api/numbering"),
     /** Turn part numbers on or off for new files, or move the next number on (admins). */
     setNumbering: (change: { mode?: Numbering["mode"]; next_number?: number }) =>

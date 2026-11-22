@@ -235,6 +235,65 @@ function uploadSummary(count: number, updates: number, size: number): string {
         : `${files(added)} as version 1, and ${checkedOut}: ${formatSize(size)} in all.`;
 }
 
+const MAX_LISTED = 5; // of the files that use what's going or moving
+
+/** A move or rename refused because files that use what's moving wouldn't find it: what the server said. */
+interface Lost {
+    change: string; // where to, or the new name: a second yes is for that change only
+    message: string;
+    usedBy: { path: string; used_by: string }[];
+}
+
+/**
+ * Make a change that may lose files to what uses them. The server refuses it the first time (`in_use`), and says
+ * which files; asked again for the same change, it goes ahead anyway. Any other change starts over.
+ */
+function useAnyway(change: string | null) {
+    const [lost, setLost] = useState<Lost | null>(null);
+    const asked = lost !== null && lost.change === change ? lost : null;
+    async function attempt(make: (force: boolean) => Promise<unknown>) {
+        try {
+            await make(asked !== null);
+        } catch (error) {
+            if (change !== null && error instanceof ApiError && error.code === "in_use") {
+                const usedBy = Array.isArray(error.details.used_by) ? error.details.used_by : [];
+                setLost({ change, message: error.message, usedBy: usedBy.filter(isUse) });
+            }
+            throw error;
+        }
+    }
+    return { asked, attempt };
+}
+
+const isUse = (use: unknown): use is { path: string; used_by: string } =>
+    typeof use === "object" &&
+    use !== null &&
+    typeof (use as { path?: unknown }).path === "string" &&
+    typeof (use as { used_by?: unknown }).used_by === "string";
+
+/**
+ * What going ahead would lose, as the server said it: a question, not a refusal. Its message names what uses the
+ * first file; when several files would be lost, each is listed with what uses it.
+ */
+function LostNotice({ lost }: { lost: Lost }) {
+    const several = new Set(lost.usedBy.map(({ path }) => path)).size > 1;
+    return (
+        <Notice tone="warning">
+            {lost.message}
+            {several && (
+                <ul className="plain in-use">
+                    {lost.usedBy.slice(0, MAX_LISTED).map(({ path, used_by }) => (
+                        <li key={`${path}/${used_by}`}>
+                            {path.slice(path.lastIndexOf("/") + 1)} is used by {used_by}
+                        </li>
+                    ))}
+                    {lost.usedBy.length > MAX_LISTED && <li>and {lost.usedBy.length - MAX_LISTED} more</li>}
+                </ul>
+            )}
+        </Notice>
+    );
+}
+
 /** Move files and folders into another folder you can add files to. */
 export function MoveDialog({
     from,
@@ -251,6 +310,7 @@ export function MoveDialog({
     const [filter, setFilter] = useState("");
     const [to, setTo] = useState<string | null>(null);
     const { busy, problem, run } = useChange(onClose);
+    const { asked, attempt } = useAnyway(to);
     const moving = folders.map((folder) => pathKey(folder.path));
     const inside = (path: string) => moving.some((key) => pathKey(path) === key || pathKey(path).startsWith(key + "/"));
     const wanted = filter.trim().toLowerCase();
@@ -265,16 +325,20 @@ export function MoveDialog({
     return (
         <Dialog
             title={`Move ${what}`}
-            confirm={to === null ? "Move" : `Move to ${to || "the top folder"}`}
+            confirm={asked ? "Move anyway" : to === null ? "Move" : `Move to ${to || "the top folder"}`}
+            danger={asked !== null}
             busy={busy}
             disabled={to === null}
             onConfirm={() =>
                 to !== null &&
                 run(() =>
-                    vaultApi.move(
-                        files.map((file) => file.id),
-                        folders.map((folder) => folder.path),
-                        to,
+                    attempt((force) =>
+                        vaultApi.move(
+                            files.map((file) => file.id),
+                            folders.map((folder) => folder.path),
+                            to,
+                            force,
+                        ),
                     ),
                 )
             }
@@ -303,9 +367,10 @@ export function MoveDialog({
             </div>
             <p className="muted">
                 Files SolidWorks assemblies use stay with them: into their folder, or with their whole folder. Vault
-                says so if a move would lose one, and every computer's copies follow.
+                asks first if a move would lose one, and every computer's copies follow.
             </p>
-            {problem && <Notice tone="error">{problem}</Notice>}
+            {asked && <LostNotice lost={asked} />}
+            {problem && problem !== asked?.message && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
 }
@@ -317,6 +382,7 @@ export function RenameDialog({ file, folder, onClose }: { file?: VaultFile; fold
     const [name, setName] = useState(current);
     const { busy, problem, run } = useChange(onClose);
     const typed = name.trim();
+    const { asked, attempt } = useAnyway(typed);
     const parent = parentOf(file?.path ?? folder?.path ?? "");
     const path = parent ? `${parent}/${typed}` : typed;
     const same = pathKey(typed) === pathKey(current);
@@ -332,10 +398,17 @@ export function RenameDialog({ file, folder, onClose }: { file?: VaultFile; fold
     return (
         <Dialog
             title={`Rename ${current}`}
-            confirm="Rename"
+            confirm={asked ? "Rename anyway" : "Rename"}
+            danger={asked !== null}
             busy={busy}
             disabled={typed === "" || typed === current || invalid !== null}
-            onConfirm={() => run(() => vaultApi.rename(file ? { file: file.id } : { folder: folder!.path }, typed))}
+            onConfirm={() =>
+                run(() =>
+                    attempt((force) =>
+                        vaultApi.rename(file ? { file: file.id } : { folder: folder!.path }, typed, force),
+                    ),
+                )
+            }
             onCancel={onClose}
         >
             <label className="field">
@@ -350,15 +423,14 @@ export function RenameDialog({ file, folder, onClose }: { file?: VaultFile; fold
             {file && (
                 <p className="muted">
                     A file that assemblies or drawings use keeps its name: SolidWorks finds it by name. Rename those in
-                    SolidWorks.
+                    SolidWorks; Vault asks first before renaming one here.
                 </p>
             )}
-            {problem && <Notice tone="error">{problem}</Notice>}
+            {asked && <LostNotice lost={asked} />}
+            {problem && problem !== asked?.message && <Notice tone="error">{problem}</Notice>}
         </Dialog>
     );
 }
-
-const MAX_LISTED = 5;
 
 /**
  * Delete files, and folders with everything in them. They go to the trash of the folder they were in,

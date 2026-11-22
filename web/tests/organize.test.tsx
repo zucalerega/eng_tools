@@ -127,13 +127,37 @@ test("files and folders move and get new names, but not away from what uses them
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     expect(await screen.findByRole("link", { name: "Rocket notes.txt" })).toBeTruthy();
 
-    // The fin can't leave its assembly behind: the server says why.
+    // The fin doesn't leave its assembly behind without a second yes: the server says why, and what it takes after.
     await openFolder("Fins");
     await userEvent.click(await screen.findByRole("checkbox", { name: "Select Fin.SLDPRT" }));
     await userEvent.click(screen.getByRole("button", { name: "Move to…" }));
     await userEvent.click(screen.getByRole("radio", { name: team.folder }));
     await userEvent.click(screen.getByRole("button", { name: `Move to ${team.folder}` }));
-    expect((await screen.findByRole("alert")).textContent).toContain("wouldn't find it");
+    let dialog = screen.getByRole("dialog");
+    expect((await within(dialog).findByRole("status")).textContent).toContain("wouldn't find it");
+    expect(within(dialog).getByRole("status").textContent).toContain(
+        `Fin.SLDPRT is used by ${team.folder}/Rocket/Fin Can.SLDASM`,
+    );
+    expect(within(dialog).queryByRole("alert")).toBeNull(); // a question now, not a refusal
+    // Somewhere else is another question: the yes was for that move.
+    await userEvent.click(within(dialog).getByRole("radio", { name: `${team.folder}/Inbox` }));
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: `Move to ${team.folder}/Inbox` }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Move anyway" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Fin.SLDPRT" })).toBeNull());
+
+    // Nor does it change its name, which the assembly finds it by, without one.
+    await userEvent.click((await breadcrumbs()).getByRole("link", { name: team.folder }));
+    await openFolder("Inbox");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Select Fin.SLDPRT" }));
+    await userEvent.click(screen.getByRole("button", { name: "Rename…" }));
+    dialog = screen.getByRole("dialog");
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "New name" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "New name" }), "Fin left.SLDPRT");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+    expect((await within(dialog).findByRole("status")).textContent).toContain("wouldn't find it");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename anyway" }));
+    expect(await screen.findByRole("link", { name: "Fin left.SLDPRT" })).toBeTruthy();
 });
 
 test("uploading a file checked out here checks it in, and the rest say why they're left out", async () => {

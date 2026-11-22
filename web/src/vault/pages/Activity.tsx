@@ -100,6 +100,10 @@ function describe(event: VaultEvent): ReactNode {
     const path = text("path");
     const file = event.file_id ? <Link to={fileUrl(event.file_id)}>{path}</Link> : <strong>{path}</strong>;
     const place = path ? <Link to={folderUrl(path)}>{path}</Link> : "the whole vault";
+    // A move or rename made anyway (vault.move, force): how many files that use it, or what's in it, lost it.
+    const broken = typeof detail.links_broken === "number" ? detail.links_broken : 0;
+    const breaking = (what: string) =>
+        broken === 0 ? "" : `, breaking ${broken === 1 ? "1 link" : `${broken} links`} to ${what}`;
     switch (event.action) {
         case "add":
             return (
@@ -179,12 +183,14 @@ function describe(event: VaultEvent): ReactNode {
             return (
                 <>
                     {who} moved {text("moved_from")} to {file}
+                    {breaking("it")}
                 </>
             );
         case "rename":
             return (
                 <>
                     {who} renamed {text("moved_from")} to {file}
+                    {breaking("it")}
                 </>
             );
         case "describe": {
@@ -250,12 +256,14 @@ function describe(event: VaultEvent): ReactNode {
             return (
                 <>
                     {who} moved the folder {text("moved_from")} to {place}
+                    {breaking("files in it")}
                 </>
             );
         case "rename_folder":
             return (
                 <>
                     {who} renamed the folder {text("moved_from")} to {place}
+                    {breaking("files in it")}
                 </>
             );
         case "create_folder":

@@ -161,10 +161,17 @@ with its code. If your problem isn't here, see [Getting more help](#getting-more
 
 ### Moving, renaming, deleting, and the trash
 
-- **Move or rename is refused because SolidWorks wouldn't find a file.** SolidWorks finds the files
-  an assembly or drawing uses by name, in its folder or where they were next to it, so Vault refuses
-  a move or rename that would lose one. Move a part into its assembly's folder, or move their whole
-  folder together. To rename a file something uses, rename it in SolidWorks, then check both in.
+- **Move or rename says SolidWorks wouldn't find a file.** SolidWorks finds the files an assembly or
+  drawing uses by name, in its folder or where they were next to it, so Vault stops at a move or
+  rename that would lose one, and names the files that use it. To keep the links, move a part into
+  its assembly's folder, or move their whole folder together; to rename a file something uses,
+  rename it in SolidWorks, then check both in. To break them on purpose, when the vault is being
+  reorganized, say, click *Move anyway* or *Rename anyway*: it moves, history and all, and each file
+  that used it has to be pointed at it again. Get the moved file, check out the assembly or drawing
+  that used it, open it in SolidWorks, and when SolidWorks says it can't find the file, browse to
+  where it is now; then save and check in. Until then it opens with that file missing. The activity
+  page says who made the move, and how many links it broke. A file that's checked out still doesn't
+  move.
 - **Move, rename, or delete is refused because a file is checked out.** Files don't move or get
   renamed while anyone has them checked out, you included: check them in, or undo the check-out,
   first. A file someone else has checked out can't be deleted until it's checked in or released.
@@ -667,7 +674,9 @@ a number. A few codes come up in more than one place.
   miss it. Delete them together, or *Delete anyway*.
 - **... is used by ..., and SolidWorks wouldn't find it after this** (`in_use`): a move or rename
   would lose a file from what uses it. Keep it in their folder, or where it was next to them (move
-  their folder together); to rename it, rename it in SolidWorks, then check both in.
+  their folder together); to rename it, rename it in SolidWorks, then check both in. Or go ahead
+  anyway (*Move anyway*, *Rename anyway*; `force` in the API), and point the files that use it at it
+  again in SolidWorks.
 - **... can't go inside itself**, **... is moving with its folder already**,
   **The top of the vault doesn't move**, or **Say what to move** (`bad_move`): a move that can't be
   done as asked, like a folder into one of its own folders. Pick another place, or move the folder

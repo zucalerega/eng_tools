@@ -1,12 +1,14 @@
 """Moving and renaming: SolidWorks references stay findable, check-outs stay put, and every client hears."""
 
 
-def move(client, who, *, files=(), folders=(), to=""):
-    return client.post("/api/move", json={"files": list(files), "folders": list(folders), "to": to}, headers=who)
+def move(client, who, *, files=(), folders=(), to="", force=None):
+    body = {"files": list(files), "folders": list(folders), "to": to} | ({} if force is None else {"force": force})
+    return client.post("/api/move", json=body, headers=who)
 
 
-def rename(client, who, name, *, file=None, folder=None):
-    return client.post("/api/rename", json={"file": file, "folder": folder, "name": name}, headers=who)
+def rename(client, who, name, *, file=None, folder=None, force=None):
+    body = {"file": file, "folder": folder, "name": name} | ({} if force is None else {"force": force})
+    return client.post("/api/rename", json=body, headers=who)
 
 
 def test_moving_files_into_a_folder(team, client):
@@ -69,6 +71,61 @@ def test_folders_move_with_their_insides_in_place(team, client):
     assert move(client, chief, folders=["Propulsion"], to="Propulsion/Main Engine").json()["error"] == "bad_move"
 
 
+def test_a_move_that_loses_a_file_goes_ahead_when_told_to(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(
+        chief,
+        {"Rocket/Fins/Fin.SLDPRT": b"fin", "Rocket/Fin Can.SLDASM": b"can", "Rocket/Fin Can.SLDDRW": b"drawing"},
+        refs={"Rocket/Fin Can.SLDASM": ["Rocket/Fins/Fin.SLDPRT"], "Rocket/Fin Can.SLDDRW": ["Rocket/Fins/Fin.SLDPRT"]},
+    )
+    refused = move(client, chief, files=["Rocket/Fins/Fin.SLDPRT"], to="Parts", force=False)
+    assert (refused.status_code, refused.json()["error"]) == (409, "in_use")
+    assert "go ahead anyway" in refused.json()["message"]  # it says there's a way, and what it costs
+
+    moved = move(client, chief, files=["Rocket/Fins/Fin.SLDPRT"], to="Parts", force=True)
+    assert moved.status_code == 200, moved.text
+    fin = moved.json()["files"][0]
+    assert fin["path"] == "Parts/Fin.SLDPRT"
+    # What used it still does, as the vault has it: only where SolidWorks looks for it is out of date.
+    used_by = client.get(f"/api/files/{fin['id']}", headers=chief).json()["used_by"]
+    assert sorted(u["file"]["path"] for u in used_by) == ["Rocket/Fin Can.SLDASM", "Rocket/Fin Can.SLDDRW"]
+    event = client.get("/api/activity", headers=chief).json()[0]
+    assert (event["action"], event["detail"]["links_broken"]) == ("move", 2)  # the log says it lost them
+
+    # A folder goes the same way, away from what uses the files in it, and a move that loses nothing says nothing.
+    folder = move(client, chief, folders=["Parts"], to="Library", force=True)
+    assert [f["path"] for f in folder.json()["folders"]] == ["Library/Parts"]
+    event = client.get("/api/activity", headers=chief).json()[0]
+    assert (event["action"], event["detail"]["links_broken"]) == ("move_folder", 2)
+    assert move(client, chief, folders=["Rocket"], to="Vehicles", force=True).status_code == 200
+    assert "links_broken" not in client.get("/api/activity", headers=chief).json()[0]["detail"]
+
+
+def test_a_rename_that_loses_a_file_goes_ahead_when_told_to(team, client):
+    chief = team.member("chief@x.test", admin=True)
+    team.checkin(
+        chief,
+        {"Engine/Parts/Injector.SLDPRT": b"injector", "Engine/Engine.SLDASM": b"engine"},
+        refs={"Engine/Engine.SLDASM": ["Engine/Parts/Injector.SLDPRT"]},
+    )
+    assert rename(client, chief, "Components", folder="Engine/Parts", force=False).json()["error"] == "in_use"
+    renamed = rename(client, chief, "Components", folder="Engine/Parts", force=True)
+    assert [f["path"] for f in renamed.json()["folders"]] == ["Engine/Components"]
+    event = client.get("/api/activity", headers=chief).json()[0]
+    assert (event["action"], event["detail"]["links_broken"]) == ("rename_folder", 1)
+
+    file = "Engine/Components/Injector.SLDPRT"
+    assert rename(client, chief, "Injector v2.SLDPRT", file=file).json()["error"] == "in_use"
+    renamed = rename(client, chief, "Injector v2.SLDPRT", file=file, force=True)
+    assert [f["path"] for f in renamed.json()["files"]] == ["Engine/Components/Injector v2.SLDPRT"]
+    assert renamed.json()["files"][0]["former_names"] == ["Injector.SLDPRT"]  # what the engine still calls it
+    event = client.get("/api/activity", headers=chief).json()[0]
+    assert (event["action"], event["detail"]["links_broken"]) == ("rename", 1)
+    # The other rules of a rename hold all the same.
+    renamed_file = "Engine/Components/Injector v2.SLDPRT"
+    assert rename(client, chief, "Injector.STEP", file=renamed_file, force=True).json()["error"] == "bad_rename"
+
+
 def test_checked_out_files_stay_put(team, client):
     chief = team.member("chief@x.test", admin=True)
     alice = team.member("alice@x.test")
@@ -78,6 +135,9 @@ def test_checked_out_files_stay_put(team, client):
     refused = move(client, chief, folders=["Tank"], to="Propulsion")
     assert (refused.status_code, refused.json()["error"]) == (409, "checked_out")
     assert "ALICE-PC" in refused.json()["message"]
+    # Going ahead anyway is for links, which can be made again: a check-out still can't be left behind.
+    forced = move(client, chief, folders=["Tank"], to="Propulsion", force=True)
+    assert (forced.status_code, forced.json()["error"]) == (409, "checked_out")
 
 
 def test_moving_takes_edit_access_and_folders_take_a_lead(team, client):

@@ -327,14 +327,14 @@ def post_restore_folder(folder_id: int, user: ChangingUser, db: DB) -> FolderOut
 
 @router.post("/move")
 def post_move(body: MoveIn, user: ChangingUser, db: DB) -> MovedOut:
-    """Move files and folders into a folder; what SolidWorks files use has to stay findable."""
-    return MovedOut.of(vault.move(db, user, files=body.files, folders=body.folders, to=body.to))
+    """Move files and folders into a folder; what SolidWorks files use has to stay findable, unless force."""
+    return MovedOut.of(vault.move(db, user, files=body.files, folders=body.folders, to=body.to, force=body.force))
 
 
 @router.post("/rename")
 def post_rename(body: RenameIn, user: ChangingUser, db: DB) -> MovedOut:
     """Rename a file (keeping its type) or a folder."""
-    return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name))
+    return MovedOut.of(vault.rename(db, user, file=body.file, folder=body.folder, name=body.name, force=body.force))
 
 
 @router.post("/files/metadata")

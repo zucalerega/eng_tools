@@ -1489,8 +1489,14 @@ def _still_found(old: str, new: str, user_old: str, user_new: str) -> bool:
     return _relative(_folder_of(user_old), _folder_of(old)) == _relative(_folder_of(user_new), _folder_of(new))
 
 
-def _check_moves(db: Session, tree: Tree, access: Access, moves: dict[int, tuple[str, str]]) -> None:
-    """Refuse moves that would break SolidWorks references or strand a check-out; moves maps file ids to paths."""
+def _check_moves(
+    db: Session, tree: Tree, access: Access, moves: dict[int, tuple[str, str]], *, force: bool = False
+) -> dict[int, int]:
+    """Refuse moves that would strand a check-out, or break SolidWorks references; moves maps file ids to paths.
+
+    With force, broken references go ahead: someone reorganizing means to point those files at it again in
+    SolidWorks. A check-out is never left behind. Says how many files lose each moving file (by its id), for the log.
+    """
     for file_id in moves:
         file = db.get(File, file_id)
         assert file is not None
@@ -1501,27 +1507,37 @@ def _check_moves(db: Session, tree: Tree, access: Access, moves: dict[int, tuple
                 code="checked_out",
                 files=[lock],
             )
-    broken: list[tuple[str, File]] = []  # a moving file's path, and a file using it that wouldn't find it
+    broken: list[tuple[int, str, File]] = []  # a moving file, its path, and a file using it that wouldn't find it
     for file_id, (old, new) in moves.items():
         for user_file, _, _ in _parents(db, file_id):
             user_old = tree.file_path(user_file)
             user_new = moves.get(user_file.id, (user_old, user_old))[1]
             if not _still_found(old, new, user_old, user_new):
-                broken.append((old, user_file))
-    if broken:
-        first = broken[0][0]
+                broken.append((file_id, old, user_file))
+    if broken and not force:
+        first = broken[0][1]
         raise Conflict(
-            f"{first} is used by {_named(tree, access, [u for path, u in broken if path == first])}, and SolidWorks "
+            f"{first} is used by {_named(tree, access, [u for _, path, u in broken if path == first])}, and SolidWorks "
             "wouldn't find it after this. Keep a file where the files that use it can find it: in their folder, or "
             "where it was next to them (move their folder together). To rename it, rename it in SolidWorks, then "
-            "check both in.",
+            "check both in. Or go ahead anyway, and point the files that use it at it again in SolidWorks.",
             code="in_use",
             used_by=[
                 {"path": path, "used_by": tree.file_path(u)}
-                for path, u in broken
+                for _, path, u in broken
                 if access.can(u.folder_id, Role.VIEWER)
             ],
         )
+    lost: dict[int, int] = {}
+    for file_id, _, _ in broken:
+        lost[file_id] = lost.get(file_id, 0) + 1
+    return lost
+
+
+def _links_broken(lost: dict[int, int], file_ids: Iterable[int]) -> dict[str, int]:
+    """For an event's detail: how many files lost the ones that moved (a count, since some may be out of sight)."""
+    count = sum(lost.get(file_id, 0) for file_id in file_ids)
+    return {"links_broken": count} if count else {}
 
 
 def _remember(db: Session, user: User, moves: dict[int, tuple[str, str]]) -> None:
@@ -1574,11 +1590,12 @@ def _finish_move(db: Session, user: User, seq: int, files: list[File], folders: 
     return Moved([_folder_view(tree, access, f) for f in folders], [views[f.id] for f in files])
 
 
-def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], to: str) -> Moved:
+def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], to: str, force: bool = False) -> Moved:
     """Move files and folders into a folder (made if it isn't there yet), all or nothing.
 
     Checked-out files don't move, and neither does a file that the files using it wouldn't find
-    afterwards (see _still_found). Moving files takes editor access where they are and where they
+    afterwards (see _still_found), unless force: then it moves, and those files have to be pointed
+    at it again in SolidWorks. Moving files takes editor access where they are and where they
     go; moving a folder, which takes its permissions along, takes a lead of it.
     """
     seq = begin_write(db)
@@ -1606,6 +1623,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
 
     moves: dict[int, tuple[str, str]] = {}
     names: set[str] = set()  # of what's moving into dest, so two things can't take one name
+    inside: dict[int, list[File]] = {}  # the files in each folder that moves
     dest_path = tree.path(dest.id)
     for folder in moving_folders:
         if folder.parent_id == dest.id:
@@ -1614,7 +1632,8 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
             raise Conflict(f"{paths.join(dest_path, folder.name)} is taken", code="exists")
         names.add(paths.key(folder.name))
         old_base, new_base = tree.path(folder.id), paths.join(dest_path, folder.name)
-        for file in _files_under(db, tree, folder):
+        inside[folder.id] = _files_under(db, tree, folder)
+        for file in inside[folder.id]:
             old = tree.file_path(file)
             moves[file.id] = (old, new_base + old[len(old_base) :])
     for file in moving_files:
@@ -1630,7 +1649,7 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
         moves[file.id] = (old, paths.join(dest_path, file.name))
     for _, new in moves.values():
         paths.split(new)  # still within the length limit
-    _check_moves(db, tree, access, moves)
+    lost = _check_moves(db, tree, access, moves, force=force)
     _remember(db, user, moves)
 
     moved_folders = [f for f in moving_folders if f.parent_id != dest.id]
@@ -1643,10 +1662,19 @@ def move(db: Session, user: User, *, files: list[FileRef], folders: list[str], t
             folder_id=folder.id,
             path=paths.join(dest_path, folder.name),
             moved_from=tree.path(folder.id),
+            **_links_broken(lost, [f.id for f in inside[folder.id]]),
         )
         folder.parent_id = dest.id
     for file in moved_files:
-        _event(db, user, "move", file=file, path=moves[file.id][1], moved_from=moves[file.id][0])
+        _event(
+            db,
+            user,
+            "move",
+            file=file,
+            path=moves[file.id][1],
+            moved_from=moves[file.id][0],
+            **_links_broken(lost, [file.id]),
+        )
         file.folder_id = dest.id
     db.flush()
     return _finish_move(db, user, seq, moved_files, moved_folders)
@@ -1689,12 +1717,21 @@ def _check_drawing_name(db: Session, drawing: File, name: str) -> None:
         )
 
 
-def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str | None = None, name: str) -> Moved:
+def rename(
+    db: Session,
+    user: User,
+    *,
+    file: FileRef | None = None,
+    folder: str | None = None,
+    name: str,
+    force: bool = False,
+) -> Moved:
     """Rename a file (keeping its type) or a folder, where it is.
 
     A file that other files use keeps its name, since SolidWorks finds it by name; so do folders
-    with such files in them, unless the files using them are inside too. Renaming a file takes
-    editor access to its folder; renaming a folder takes a lead of it.
+    with such files in them, unless the files using them are inside too. With force they're renamed
+    all the same, and the files that use them have to be pointed at them again in SolidWorks.
+    Renaming a file takes editor access to its folder; renaming a folder takes a lead of it.
     """
     new_name = paths.clean_name(name)
     seq = begin_write(db)
@@ -1717,9 +1754,9 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         new = paths.join(tree.path(parent.id), new_name)
         paths.split(new)
         moves[target.id] = (old, new)
-        _check_moves(db, tree, access, moves)
+        lost = _check_moves(db, tree, access, moves, force=force)
         _remember(db, user, moves)
-        _event(db, user, "rename", file=target, path=new, moved_from=old)
+        _event(db, user, "rename", file=target, path=new, moved_from=old, **_links_broken(lost, [target.id]))
         target.name, target.name_key = new_name, paths.key(new_name)
         if number is not None:
             number.file_id = target.id
@@ -1742,9 +1779,17 @@ def rename(db: Session, user: User, *, file: FileRef | None = None, folder: str 
         moves[inside.id] = (old, new_base + old[len(old_base) :])
     for _, new in moves.values():
         paths.split(new)
-    _check_moves(db, tree, access, moves)
+    lost = _check_moves(db, tree, access, moves, force=force)
     _remember(db, user, moves)
-    _event(db, user, "rename_folder", folder_id=renamed.id, path=new_base, moved_from=old_base)
+    _event(
+        db,
+        user,
+        "rename_folder",
+        folder_id=renamed.id,
+        path=new_base,
+        moved_from=old_base,
+        **_links_broken(lost, moves),
+    )
     renamed.name, renamed.name_key = new_name, paths.key(new_name)
     db.flush()
     return _finish_move(db, user, seq, [], [renamed])

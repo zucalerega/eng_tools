@@ -154,7 +154,8 @@ replaces Kenesto.
   download any version; follow the activity as it happens; start new parts,
   assemblies, and drawings, which SolidWorks makes on your computer; and organize the
   vault: new folders, uploads (files, whole folders, or what's in a zip, by dropping them
-  on the page), moving or renaming, which every computer's copies follow, and deleting,
+  on the page), moving or renaming, which every computer's copies follow (Vault asks
+  first before one that would leave an assembly without a part), and deleting,
   to a trash each folder keeps. Admins and folder leads find Admin (people, access, the
   whitelist, and how full the server's disk is) and admin mode in the account menu; admin mode releases someone's check-out
   or reverts a file they have checked out.
@@ -234,8 +235,10 @@ replaces Kenesto.
   out of it. Once the team works from the vault, disconnect Kenesto's drive, so no one
   opens a part from there.
 - **Move files with Move, not by uploading them again:** Move or Rename in the web app
-  keeps a file's history, and refuses a move that would leave an assembly without its
-  parts. Uploading a folder again under another name and deleting the old one starts every
+  keeps a file's history, and asks first before a move that would leave an assembly
+  without its parts: **Move anyway** (or **Rename anyway**) is for reorganizing, when the
+  links are worth breaking, and each assembly or drawing that used the file then has to be
+  pointed at it again in SolidWorks, and checked in. Uploading a folder again under another name and deleting the old one starts every
   file's history over, and assemblies saved before still name the old folder. The add-in
   finds the new copies when it opens such an assembly (the file whose path ends the same
   way, in a folder of the same name at least), but check the assembly out, save it, and

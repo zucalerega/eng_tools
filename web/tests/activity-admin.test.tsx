@@ -26,6 +26,36 @@ test("the activity feed says when a file got a new title, and what it was", asyn
     );
 });
 
+test("the activity feed says when a move or a rename was made anyway, and how many links it broke", async () => {
+    const team = await Team.create();
+    const alice = await team.member("Alice");
+    await team.checkin(
+        alice,
+        { "Rocket/Fin.SLDPRT": "fin", "Rocket/Fin Can.SLDASM": "can", "Rocket/Fin Can.SLDDRW": "drawing" },
+        { refs: { "Rocket/Fin Can.SLDASM": ["Rocket/Fin.SLDPRT"], "Rocket/Fin Can.SLDDRW": ["Rocket/Fin.SLDPRT"] } },
+    );
+    await team.move(alice, "Rocket/Fin.SLDPRT", "Parts", true);
+    await team.rename(alice, "Parts/Fin.SLDPRT", "Fin left.SLDPRT", true);
+    await team.move(alice, "Rocket/Fin Can.SLDDRW", "Drawings"); // nothing uses it: nothing to say
+
+    renderApp(team.chief, "/vault/activity");
+    await screen.findAllByText(/breaking/);
+    const lines = screen.getAllByRole("listitem").map((line) => line.textContent);
+    const at = (relative: string) => `${team.folder}/${relative}`;
+    expect(lines).toContainEqual(
+        expect.stringContaining(
+            `Alice moved ${at("Rocket/Fin.SLDPRT")} to ${at("Parts/Fin.SLDPRT")}, breaking 2 links to it`,
+        ),
+    );
+    expect(lines).toContainEqual(
+        expect.stringContaining(
+            `Alice renamed ${at("Parts/Fin.SLDPRT")} to ${at("Parts/Fin left.SLDPRT")}, breaking 2 links to it`,
+        ),
+    );
+    const drawing = lines.find((line) => line.includes(at("Drawings/Fin Can.SLDDRW")))!;
+    expect(drawing).not.toContain("breaking");
+});
+
 test("the activity feed says when a check-in's comment changed, and what it said", async () => {
     const team = await Team.create();
     const alice = await team.member("Alice");
